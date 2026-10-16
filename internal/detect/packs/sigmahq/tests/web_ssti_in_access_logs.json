@@ -1,0 +1,6 @@
+{"rule": "ada3bc4f-f0fd-42b9-ba91-e105e8af7342", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"T(org.apache.commons.io.IOUtils)"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"T(org.apache.commons.io.IOUtils)","status":"404"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"T(org.apache.commons.io.IOUtils)"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}}
+]}

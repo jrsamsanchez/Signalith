@@ -1,0 +1,8 @@
+{"rule": "33efc23c-6ea2-4503-8cfe-bdf82ce8f705", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\AMSI\\Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Avast Software\\Avast\\RegSvr.exe","TargetObject":"\\{FB904E4E-D2C7-4C8D-8492-B620BB9896B1}\\SOFTWARE\\Microsoft\\AMSI\\Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\AVG\\Antivirus\\x86\\RegSvr.exe","TargetObject":"\\SOFTWARE\\Microsoft\\AMSI\\Providers\\ \\{FB904E4E-D2C7-4C8D-8492-B620BB9896B1}"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Avira\\Endpoint Protection SDK\\endpointprotection.exe","TargetObject":"\\{00000001-3DCC-4B48-A82E-E2071FE58E05} \\SOFTWARE\\Microsoft\\AMSI\\Providers\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"FakeAmsi","EventType":"SetValue","Image":"C:\\Windows\\system32\\regsvr32.exe","ProcessGuid":"5AA13A44-620F-68FD-9A3E-000000004002","ProcessId":"9952","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\AMSI\\Providers\\{00000000-DEAD-DEAD-DEAD-B2B2E0859059}\\(Default)","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-25 23:49:35.941"}}
+]}

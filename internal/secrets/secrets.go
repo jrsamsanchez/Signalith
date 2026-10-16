@@ -169,10 +169,15 @@ type OpenError struct {
 	// Reason is set when the value itself is the problem: damaged,
 	// changed, or copied from another setting.
 	Reason string
+	// Key names the kind of key, such as "cluster key", when it is not
+	// the master key (see Key).
+	Key string
 }
 
 func (e *OpenError) Error() string {
 	switch {
+	case e.Key != "" && e.Reason == "":
+		return fmt.Sprintf("%s is encrypted with %s %s, but the %s here is %s. Enter the value again", e.Field, e.Key, e.KeyID, e.Key, e.Have)
 	case e.Reason != "":
 		// The master key is there; the value itself is the problem.
 		return fmt.Sprintf("%s cannot be decrypted: %s. Enter the value again", e.Field, e.Reason)

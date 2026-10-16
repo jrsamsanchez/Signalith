@@ -1,0 +1,5 @@
+{"rule": "060c3ef1-fd0a-4091-bf46-e7d625f60b73", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-All -Server Get-ADReplAccount"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"0bfc8445-3973-4ce1-b9a4-7ab8cc622131","ScriptBlockText":"\u0026 {Get-ADReplAccount -All -Server $ENV:logonserver.TrimStart(\"\\\")}"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "2b140a5c-dc02-4bb8-b6b1-8bdb45714cde", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\appwiz.cpl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\System32\\ \\appwiz.cpl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Company":"-","Description":"-","FileVersion":"-","Hashes":"MD5=221877743CF329314E571E9398EFCA70,SHA256=863390BB749E466975A6A5330CCD077C846E1F387AAE0327AFFE33DF87153E67,IMPHASH=7FF91A855D5B3D338EB5B4CE63698F4A","Image":"C:\\Users\\SwachchhandaP\\Downloads\\fsquirt.exe","ImageLoaded":"C:\\Users\\SwachchhandaP\\Downloads\\bthprops.cpl","OriginalFileName":"-","ProcessGuid":"14207D89-06B0-6983-CF01-000000004402","ProcessId":"6672","Product":"-","RuleName":"-","Signature":"-","SignatureStatus":"Unavailable","Signed":"false","User":"MIDGARDNET\\SwachchhandaP","UtcTime":"2026-02-04 08:43:28.234"}}
+]}

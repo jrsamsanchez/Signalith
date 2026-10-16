@@ -1,0 +1,4 @@
+{"rule": "1de68c67-af5c-4097-9c85-fe5578e09e67", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\wceaux.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{}}
+]}

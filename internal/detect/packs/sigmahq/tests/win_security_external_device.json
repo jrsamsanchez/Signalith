@@ -1,0 +1,4 @@
+{"rule": "f69a87ea-955e-4fb4-adb2-bb9fd6685632", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"6416","data":{"DeviceDescription":"USB Mass Storage Device"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"6416","data":{}}
+]}

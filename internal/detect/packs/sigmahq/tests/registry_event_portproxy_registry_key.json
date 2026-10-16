@@ -1,0 +1,4 @@
+{"rule": "a54f842a-3713-4b45-8c84-5f136fdebd3c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\PortProxy\\v4tov4\\tcp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

@@ -1,0 +1,21 @@
+{"rule": "250fd1b5-e62a-4515-baff-3010b52b4c12", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/group","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/nsswitch.conf","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/pam.conf","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/passwd","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/shadow","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/sudo.conf","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/sudoers","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /libnss_ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /libnss_ y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/grouq","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/etc/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/var/lib/docker/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/nsswitch.cong","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/pam.cong","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/passwe","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/shadox","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/sudo.cong","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /etc/sudoert","User":"tester"}}
+]}

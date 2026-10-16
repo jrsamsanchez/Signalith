@@ -1,0 +1,5 @@
+{"rule": "8ffc5407-52e3-478f-9596-0a7371eafe13", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Policies\\Microsoft\\Windows Defender\\PUAProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Policies\\Microsoft\\Windows Defender\\PUAProtection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

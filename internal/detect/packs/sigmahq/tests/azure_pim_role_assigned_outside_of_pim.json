@@ -1,0 +1,4 @@
+{"rule": "b1bc08d1-8224-4758-a0e6-fbcfc98c73bb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"pim","data":{"riskEventType":"rolesAssignedOutsidePrivilegedIdentityManagementAlertConfiguration"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"pim","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "e61e8a88-59a9-451c-874e-70fcc9740d67", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\services\\DNS\\Parameters\\ServerLevelPluginDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

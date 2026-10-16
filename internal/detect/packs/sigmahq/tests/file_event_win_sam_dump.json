@@ -1,0 +1,4 @@
+{"rule": "4e87b8e2-2ee9-4b2a-a715-4727d297ece0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Documents\\SAM.export"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

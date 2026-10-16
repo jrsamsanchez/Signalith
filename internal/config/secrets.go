@@ -29,7 +29,11 @@ import (
 //	opensearch.password (and a password written into opensearch.url,
 //	which "signalith secrets encrypt" moves there)
 //	assistant.api_key
+//	vulns.nvd_api_key
+//	m365.client_secret
+//	vulns.openvas_password
 //	auth.ldap.bind_password
+//	auth.oidc.client_secret
 //	ingest.tokens (each one)
 //	intel.feeds[].password and .headers (values that use ${ENV_VAR} are
 //	left as they are)
@@ -122,6 +126,10 @@ func (c *Config) secretRefs() []secretRef {
 	}
 	str(secretRef{field: "opensearch.password", label: "opensearch.password"}, &c.OpenSearch.Password)
 	str(secretRef{field: "assistant.api_key", label: "assistant.api_key"}, &c.Assistant.APIKey)
+	str(secretRef{field: "vulns.nvd_api_key", label: "vulns.nvd_api_key"}, &c.Vulns.NVDAPIKey)
+	str(secretRef{field: "vulns.openvas_password", label: "vulns.openvas_password"}, &c.Vulns.OpenVASPassword)
+	str(secretRef{field: "m365.client_secret", label: "m365.client_secret"}, &c.M365.ClientSecret)
+	str(secretRef{field: "auth.oidc.client_secret", label: "auth.oidc.client_secret"}, &c.Auth.OIDC.ClientSecret)
 	// A bind password from SIGNALITH_LDAP_BIND_PASSWORD replaces the one
 	// in the file, which then need not be readable.
 	if c.Auth.LDAP != nil && c.ldapBindPassword == "" {
@@ -285,7 +293,7 @@ func (c *Config) FeedProblem(name string) string {
 // fixHint says how to enter a secret again.
 func fixHint(r secretRef, err error) string {
 	switch r.field {
-	case "opensearch.password", "assistant.api_key", "auth.ldap.bind_password":
+	case "opensearch.password", "assistant.api_key", "vulns.nvd_api_key", "vulns.openvas_password", "auth.ldap.bind_password", "auth.oidc.client_secret", "m365.client_secret":
 		return "Enter it again with: signalith secrets set " + r.field
 	case "ingest.tokens":
 		return "Remove it from ingest.tokens and add a token with: signalith secrets set ingest.tokens"
@@ -584,7 +592,11 @@ func secretNodes(doc *yaml.Node) []secretNode {
 	}
 	add("opensearch.password", "opensearch.password", false, mapValue(mapValue(root, "opensearch"), "password"))
 	add("assistant.api_key", "assistant.api_key", false, mapValue(mapValue(root, "assistant"), "api_key"))
+	add("vulns.nvd_api_key", "vulns.nvd_api_key", false, mapValue(mapValue(root, "vulns"), "nvd_api_key"))
+	add("vulns.openvas_password", "vulns.openvas_password", false, mapValue(mapValue(root, "vulns"), "openvas_password"))
+	add("m365.client_secret", "m365.client_secret", false, mapValue(mapValue(root, "m365"), "client_secret"))
 	add("auth.ldap.bind_password", "auth.ldap.bind_password", false, mapValue(mapValue(mapValue(root, "auth"), "ldap"), "bind_password"))
+	add("auth.oidc.client_secret", "auth.oidc.client_secret", false, mapValue(mapValue(mapValue(root, "auth"), "oidc"), "client_secret"))
 	if toks := mapValue(mapValue(root, "ingest"), "tokens"); toks != nil && toks.Kind == yaml.SequenceNode {
 		for i, t := range toks.Content {
 			add("ingest.tokens", fmt.Sprintf("ingest.tokens[%d]", i), false, t)
@@ -702,13 +714,13 @@ func secretsAre(data []byte, want []string) bool {
 }
 
 // SettableSecrets are the settings "signalith secrets set" stores.
-var SettableSecrets = []string{"opensearch.password", "assistant.api_key", "auth.ldap.bind_password", "ingest.tokens"}
+var SettableSecrets = []string{"opensearch.password", "assistant.api_key", "vulns.nvd_api_key", "vulns.openvas_password", "auth.ldap.bind_password", "auth.oidc.client_secret", "m365.client_secret", "ingest.tokens"}
 
 // CheckSecret checks a value "signalith secrets set" is to store as the
 // setting field.
 func CheckSecret(field, value string) error {
 	switch field {
-	case "opensearch.password", "assistant.api_key", "auth.ldap.bind_password":
+	case "opensearch.password", "assistant.api_key", "vulns.nvd_api_key", "vulns.openvas_password", "auth.ldap.bind_password", "auth.oidc.client_secret", "m365.client_secret":
 	case "ingest.tokens":
 		if len(value) < 16 {
 			return errors.New("an ingest token must be at least 16 characters")
@@ -737,7 +749,7 @@ func ReadForEdit(path string) ([]byte, error) {
 // ingest.tokens), and nothing else changed.
 func SetSecretText(data []byte, field, stored string) ([]byte, error) {
 	switch field {
-	case "opensearch.password", "assistant.api_key":
+	case "opensearch.password", "assistant.api_key", "vulns.nvd_api_key", "vulns.openvas_password", "auth.oidc.client_secret", "m365.client_secret":
 		return setScalar(data, strings.Split(field, "."), stored)
 	case "auth.ldap.bind_password":
 		var doc yaml.Node

@@ -112,6 +112,15 @@ type runOptions struct {
 	// scheduler turns detections.scheduler on, so the server runs the
 	// background jobs.
 	scheduler bool
+	// os is a fake OpenSearch to share with another server; nil makes
+	// one. name is the server's name ("" is siem-test), and extra is
+	// added to signalith.yaml.
+	os    *ostest.Server
+	name  string
+	extra string
+	// dir starts the server of an earlier test start again, with its
+	// files as they are; "" makes a new one.
+	dir string
 }
 
 // noFollow is a client that does not follow redirects.
@@ -128,22 +137,37 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 		"SIGNALITH_STATE_DIR", "SIGNALITH_NODE_URL"} {
 		t.Setenv(name, "")
 	}
-	t.Setenv("SIGNALITH_NODE_NAME", "siem-test")
+	name := o.name
+	if name == "" {
+		name = "siem-test"
+	}
+	t.Setenv("SIGNALITH_NODE_NAME", name)
 	restartDelay, drainWait, oldAddressGrace = 10*time.Millisecond, time.Second, 300*time.Millisecond
 	t.Cleanup(func() { restartDelay, drainWait, oldAddressGrace = 200*time.Millisecond, 5*time.Second, 30*time.Second })
 
-	fos := ostest.New(t)
-	dir := t.TempDir()
+	fos := o.os
+	if fos == nil {
+		fos = ostest.New(t)
+	}
+	dir := o.dir
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	h, err := config.HashPassword("s3cret-pass")
 	if err != nil {
 		t.Fatal(err)
 	}
 	addr := freeAddr(t)
 	path := filepath.Join(dir, "signalith.yaml")
-	body := "server:\n  listen: " + addr + "\n" + o.server + "opensearch:\n  url: " + fos.URL + "\nauth:\n  admin_password_hash: " + h +
-		"\ningest:\n  tokens: [tok-0123456789abcdef]\ndetections:\n  scheduler: " + strconv.FormatBool(o.scheduler) + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
+	if prev, err := config.LoadFile(path); err == nil && o.dir != "" {
+		// The same server again, with its files as they are.
+		addr = prev.Server.Listen
+	} else {
+		body := "server:\n  listen: " + addr + "\n" + o.server + "opensearch:\n  url: " + fos.URL + "\nauth:\n  admin_password_hash: " + h +
+			"\ningest:\n  tokens: [tok-0123456789abcdef]\ndetections:\n  scheduler: " + strconv.FormatBool(o.scheduler) + "\n" + o.extra
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(page) > 0 {
 		p := &config.PageSettings{}
@@ -165,7 +189,10 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 	}
 	r := newRunner(path, log)
 	r.node = node
+	r.shared, r.sharedContent = openShared(c, node, log)
 	node.Start(context.Background())
+	sharedCtx, sharedStop := context.WithCancel(context.Background())
+	r.shared.Start(sharedCtx)
 	rs := &running{t: t, r: r, addr: addr, os: fos, logs: logs, dir: dir, scheme: "http", client: &http.Client{Timeout: 10 * time.Second}}
 	r.failStart = func(c *config.Config) error {
 		rs.mu.Lock()
@@ -190,10 +217,15 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 			}
 			node.Stop()
 			node.Close()
+			sharedStop()
+			r.shared.Wait()
 		})
 	}
 	t.Cleanup(rs.stop)
-	deadline := time.Now().Add(10 * time.Second)
+	// The first server of a test process parses the built-in detection
+	// packs (once per process), which takes well over 10s under -race on
+	// a busy machine.
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		// With HTTPS on, plain HTTP on the same port answers with a
 		// redirect.
@@ -276,6 +308,13 @@ func (rs *running) call(addr, method, path, body string) (int, map[string]any, e
 func (rs *running) save(values string) {
 	rs.t.Helper()
 	code, out, err := rs.call("", "PUT", "/api/settings", `{"values":`+values+`}`)
+	// A server that just founded the cluster shares its users from then
+	// on, and everyone signs in once more.
+	for deadline := time.Now().Add(20 * time.Second); err == nil && code == 401 && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		rs.signIn()
+		code, out, err = rs.call("", "PUT", "/api/settings", `{"values":`+values+`}`)
+	}
 	if err != nil || code != 200 {
 		rs.t.Fatalf("save %s: %d %v %v", values, code, out, err)
 	}
@@ -285,6 +324,16 @@ func (rs *running) save(values string) {
 func (rs *running) restart() (map[string]any, *api.RestartResult) {
 	rs.t.Helper()
 	code, out, err := rs.call("", "POST", "/api/settings/restart", "")
+	// A server that just founded the cluster restarts its components in
+	// place by itself: wait for that one to end. Its users are then shared,
+	// and everyone signs in once more.
+	for deadline := time.Now().Add(20 * time.Second); err == nil && (code == 401 || code == 409 && out["code"] == "restarting") && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		if code == 401 {
+			rs.signIn()
+		}
+		code, out, err = rs.call("", "POST", "/api/settings/restart", "")
+	}
 	if err != nil || code != 202 {
 		rs.t.Fatalf("restart: %d %v %v", code, out, err)
 	}

@@ -1,0 +1,5 @@
+{"rule": "f7997770-92c3-4ec9-b112-774c4ef96f96", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\AllowMultipleTSSessions"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\AllowMultipleTSSessions"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

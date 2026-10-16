@@ -1,0 +1,5 @@
+{"rule": "9f2cc74d-78af-4eb2-bb64-9cd1d292b87b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\mobsync.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"fc00::1","Image":"\\mobsync.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{}}
+]}

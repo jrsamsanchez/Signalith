@@ -13,6 +13,13 @@ import (
 // MalwareID is the ID of the built-in Malware dashboard.
 const MalwareID = "malware"
 
+// NetworkID is the ID of the built-in Network dashboard, filled by a
+// network sensor (Zeek, Suricata).
+const NetworkID = "network"
+
+// VulnerabilitiesID is the ID of the built-in Vulnerabilities dashboard.
+const VulnerabilitiesID = "vulnerabilities"
+
 //go:embed builtin/*.yaml
 var builtinFS embed.FS
 

@@ -9,11 +9,18 @@
 
 Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x; see [Install from packages](https://signalith.io/docs/install-packages/).
 
+Adding a server to a cluster? Use **Add a server** on the Servers page: it gives one line to run on the new computer. `install.sh` and `signalith-{VERSION}-windows-amd64.zip` (the program and `install.ps1`) are the same install scripts, for automation; see [Adding servers](https://signalith.io/docs/multi-server/).
+
+{GPG}Already using Signalith's [apt or dnf repository](https://signalith.io/docs/install-packages/)? `sudo apt upgrade` or `sudo dnf upgrade` installs this release.
+
 ## Check your download
 
 ```sh
 gh attestation verify <file> --repo jrsamsanchez/Signalith
 ```
 
-or check `SHA256SUMS` against `SHA256SUMS.sigstore.json` (Sigstore) or `SHA256SUMS.asc` (GPG, key `signalith-release-key.asc`), as [the docs](https://signalith.io/docs/install-packages/#check-a-download) show. The SBOM is in `signalith-{VERSION}.spdx.json` (SPDX) and `signalith-{VERSION}.cdx.json` (CycloneDX).
+or check `SHA256SUMS` against `SHA256SUMS.sigstore.json` (Sigstore), as [the docs](https://signalith.io/docs/install-packages/#check-a-download) show. See the [code signing policy](https://signalith.io/docs/code-signing/).
+{GPG}`SHA256SUMS.asc` is a GPG signature of the same file, made with the key in `signalith-release-key.asc`.
+
+The SBOM is in `signalith-{VERSION}.spdx.json` (SPDX) and `signalith-{VERSION}.cdx.json` (CycloneDX).
 

@@ -1,0 +1,5 @@
+{"rule": "6c0a7755-6d31-44fa-80e1-133e57752680", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7036","data":{"Provider_Name":"Service Control Manager","param1":"Service antivirus Microsoft Defender","param2":"stopped"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Provider_Name":"Service Control Manager","param2":"stopped"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Provider_Name":"Service Control Manager","param1":"Service antivirus Microsoft Defender"}}
+]}

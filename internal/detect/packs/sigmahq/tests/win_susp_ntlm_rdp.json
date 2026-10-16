@@ -1,0 +1,4 @@
+{"rule": "ce5678bb-b9aa-4fb5-be4b-e57f686256ad", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-NTLM/Operational","event_id":"8001","data":{"TargetName":"TERMSRV"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-NTLM/Operational","event_id":"8001","data":{}}
+]}

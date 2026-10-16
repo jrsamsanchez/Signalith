@@ -220,13 +220,13 @@ func TestUnusedProxyEnvironmentIsExplained(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			if h := New(tc.cfg).proxyHint; h != "" {
+			if h := New(tc.cfg).eps.list[0].proxyHint; h != "" {
 				t.Errorf("hint: %s", h)
 			}
 		})
 	}
 	t.Setenv("HTTP_PROXY", "http://p:1")
-	if h := New(Config{URL: "http://os.corp:9200"}).proxyHint; !strings.Contains(h, "HTTP_PROXY is set") {
+	if h := New(Config{URL: "http://os.corp:9200"}).eps.list[0].proxyHint; !strings.Contains(h, "HTTP_PROXY is set") {
 		t.Errorf("plain http with HTTP_PROXY: %q", h)
 	}
 }
@@ -242,5 +242,31 @@ func TestConfigHidesPassword(t *testing.T) {
 	}
 	if c.cfg.Password.Reveal() != "URL-SECRET" || c.cfg.Username != "admin" {
 		t.Errorf("credentials from the URL: %q", c.cfg.Username)
+	}
+}
+
+// Replicate leaves a missing index alone and reports other errors.
+func TestReplicateMissingIndex(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/gone/") {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"type":"index_not_found_exception","reason":"no such index [gone]"},"status":404}`)
+			return
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+		io.WriteString(w, `{"error":{"type":"cluster_block_exception","reason":"blocked"},"status":429}`)
+	}))
+	defer srv.Close()
+	cl := New(Config{URL: srv.URL})
+	if err := Replicate(context.Background(), cl, "gone", nil); err != nil {
+		t.Errorf("missing index: %v", err)
+	}
+	if err := Replicate(context.Background(), cl, "full", nil); err == nil {
+		t.Error("a blocked index was taken as done")
+	}
+	if len(paths) == 0 || paths[0] != "GET /gone/_settings" {
+		t.Errorf("requests %v", paths)
 	}
 }

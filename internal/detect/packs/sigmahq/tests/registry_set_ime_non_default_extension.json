@@ -1,0 +1,5 @@
+{"rule": "b888e3f2-224d-4435-b00b-9dd66e9ea1f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Ime File\\Control\\Keyboard Layouts\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":".ime","TargetObject":"Ime File \\Control\\Keyboard Layouts\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

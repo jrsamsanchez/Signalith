@@ -1,0 +1,12 @@
+{"rule": "1543ae20-cbdf-4ec1-8d12-7664d667a825", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"chmod","a1":"777","argc":"2"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"chmod","a1":"u+s","argc":"2"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","a1":"/bin/ksh","argc":"2"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","a1":"/bin/sh","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"777","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"chmod","argc":"1"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"u+s","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"/bin/ksh","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"cp","argc":"1"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"/bin/sh","argc":"2"}}
+]}

@@ -1,0 +1,29 @@
+id: network-sensor-shell-port
+title: $src$ connected to $dest$ on port $dest_port$ (seen on the network)
+name: Connection on a reverse shell port (network sensor)
+description: A network sensor saw an internal host connect out to an internet address on a port commonly used by reverse shells and attack frameworks (Metasploit, IRC bots, Tor). The network counterpart of network-shell-port, which needs the process from host data.
+query: |
+  datamodel=Network_Traffic direction=outbound dest_port IN (4444, 4445, 1337, 31337, 8888, 9001, 6666, 6667) action=allowed NOT process_name=*
+  | stats count, sum(bytes) as bytes, min(_time) as first_seen by src, dest, dest_port
+schedule: 5m
+lookback: 10m
+severity: medium
+mitre: [T1571]
+throttle:
+  fields: [src, dest, dest_port]
+  window: 24h
+risk:
+  score: 40
+  objects:
+    - {field: src, type: system}
+  only: true
+enabled: true
+tags: [network, command-and-control, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Risk only, like network-shell-port: it adds risk to the source and raises no finding by
+  itself. Only answered connections from your network out to the internet count, which
+  is the reverse shell case, so internal services on these ports (a notebook server on
+  8888) are left out; each source, destination and port adds risk once a day. Check the
+  same flow's community_id for IDS alerts and the host's processes at that time. Some
+  legitimate internet services use these ports (9001 for Tor relays and some agents);
+  add an exception on dest for one you use.

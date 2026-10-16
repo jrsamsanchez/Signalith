@@ -24,6 +24,9 @@ const (
 	// RefusedOldToken: sent with the example token from an older
 	// docker-compose.yml, which this server no longer accepts.
 	RefusedOldToken = "old_token"
+	// RefusedRevoked: sent with an agent token that was revoked, or a
+	// shared one an admin stopped accepting.
+	RefusedRevoked = "revoked"
 	// RefusedToken: sent with a wrong ingest token, or none.
 	RefusedToken = "token"
 )

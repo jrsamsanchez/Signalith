@@ -1,5 +1,6 @@
 id: endpoint-office-child-shell
 title: $parent_process_name$ started $process_name$ on $dest$
+name: Office app started a shell
 description: An Office application started a shell or script host, typical of a malicious document macro.
 query: |
   datamodel=Endpoint

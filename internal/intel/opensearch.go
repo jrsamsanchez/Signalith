@@ -23,6 +23,9 @@ type Doer interface {
 type OpenSearch struct {
 	Client Doer
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns a backend using index "<prefix>_intel".
@@ -49,7 +52,7 @@ func properties() map[string]any {
 // any time; changes to an index that exists are Upgrade's.
 func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(o.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := o.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(o.Index), body, nil)
@@ -58,6 +61,14 @@ func (o *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the threat intel index, when it was made with no copy on
+// another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (o *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, o.Client, o.Index, o.Replicas)
 }
 
 // Upgrade adds fields introduced since the index was created. Only the
@@ -168,6 +179,45 @@ func (o *OpenSearch) All(ctx context.Context) ([]Indicator, error) {
 		hits := resp.Hits.Hits
 		for _, h := range hits {
 			out = append(out, h.Source)
+		}
+		if len(hits) < 10000 {
+			return out, nil
+		}
+		after = hits[len(hits)-1].Sort
+	}
+}
+
+// SourceIDs lists the IDs of every stored indicator of a source, a page
+// at a time.
+func (o *OpenSearch) SourceIDs(ctx context.Context, source string) ([]string, error) {
+	var out []string
+	var after []any
+	for {
+		body := map[string]any{
+			"size":             10000,
+			"query":            map[string]any{"term": map[string]any{"source": source}},
+			"_source":          []string{"id"},
+			"sort":             []any{map[string]any{"id": "asc"}},
+			"track_total_hits": false,
+		}
+		if after != nil {
+			body["search_after"] = after
+		}
+		var resp struct {
+			Hits struct {
+				Hits []struct {
+					ID   string `json:"_id"`
+					Sort []any  `json:"sort"`
+				} `json:"hits"`
+			} `json:"hits"`
+		}
+		path := "/" + url.PathEscape(o.Index) + "/_search?ignore_unavailable=true&allow_no_indices=true"
+		if err := o.Client.Do(ctx, http.MethodPost, path, body, &resp); err != nil {
+			return nil, err
+		}
+		hits := resp.Hits.Hits
+		for _, h := range hits {
+			out = append(out, h.ID)
 		}
 		if len(hits) < 10000 {
 			return out, nil

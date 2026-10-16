@@ -1,0 +1,5 @@
+{"rule": "c6714a24-d7d5-4283-a36b-3ffd091d5f7e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"fsockopencsh -r x","Image":"/php"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/php"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"fsockopencsh -r x"}}
+]}

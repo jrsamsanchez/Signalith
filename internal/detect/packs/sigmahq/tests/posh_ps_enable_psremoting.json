@@ -1,0 +1,5 @@
+{"rule": "991a9744-f2f0-44f2-bd33-9092eba17dc3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Enable-PSRemoting x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"d8751afa-c004-41fa-bc75-833eee636190","ScriptBlockText":"\u0026 {Enable-PSRemoting -Force}"}}
+]}

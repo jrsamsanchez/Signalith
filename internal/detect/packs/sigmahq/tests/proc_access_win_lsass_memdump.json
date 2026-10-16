@@ -1,0 +1,9 @@
+{"rule": "5ef9853e-4d0e-4a70-846f-a9ca37d876da", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"dbghelp.dll","GrantedAccess":"0x1038","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"dbghelp.dll","GrantedAccess":"0x1038","SourceUser":"AUTORI","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"dbghelp.dll","GrantedAccess":"0x1038","SourceImage":":\\Windows\\Sysmon64a.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"\\thor\\thor64.exe+ :\\Windows\\Temp\\asgard2-agent\\ dbghelp.dll |UNKNOWN(","GrantedAccess":"0x103800","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1038","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"dbghelp.dll","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"dbghelp.dll","GrantedAccess":"0x1038"}}
+]}

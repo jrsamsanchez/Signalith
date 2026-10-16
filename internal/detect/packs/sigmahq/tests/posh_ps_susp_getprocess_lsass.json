@@ -1,0 +1,5 @@
+{"rule": "84c174ab-d3ef-481f-9c86-a50d0b8e3edb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Get-Process lsass"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"2911f180-ac92-4970-9dd7-55c8c07ee22c","ScriptBlockText":"\u0026 {C:\\Windows\\System32\\rundll32.exe C:\\windows\\System32\\comsvcs.dll, MiniDump (Get-Process lsass).id $env:TEMP\\lsass-comsvcs.dmp full}"}}
+]}

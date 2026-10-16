@@ -1,0 +1,4 @@
+{"rule": "4d7f1827-1637-4def-8d8a-fd254f9454df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"26","data":{"Caption":"sysmon64.exe - Application Error","Provider_Name":"Application Popup"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"26","data":{"Provider_Name":"Application Popup"}}
+]}

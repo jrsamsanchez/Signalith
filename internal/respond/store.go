@@ -62,6 +62,9 @@ type Doer interface {
 type OpenSearch struct {
 	Client Doer
 	Index  string
+	// Replicas are the index's replicas settings (opensearch.replicas,
+	// see config.Replicas.IndexSettings); nil is auto.
+	Replicas map[string]any
 }
 
 // NewOpenSearch returns a store using index "<prefix>_actions".
@@ -89,7 +92,7 @@ func properties() map[string]any {
 // any time.
 func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 	body := map[string]any{
-		"settings": map[string]any{"number_of_shards": 1, "number_of_replicas": 0},
+		"settings": store.SmallIndexSettings(s.Replicas),
 		"mappings": map[string]any{"dynamic": "false", "properties": properties()},
 	}
 	err := s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index), body, nil)
@@ -98,6 +101,14 @@ func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Replicate gives the response actions index, when it was made with no
+// copy on another node, the replicas settings new indices get (see
+// store.Replicate). Only the server that runs the background jobs does,
+// when it starts running them; doing it again changes nothing.
+func (s *OpenSearch) Replicate(ctx context.Context) error {
+	return store.Replicate(ctx, s.Client, s.Index, s.Replicas)
 }
 
 func (s *OpenSearch) Put(ctx context.Context, run *Run, done bool) error {

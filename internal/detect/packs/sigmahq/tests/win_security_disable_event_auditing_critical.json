@@ -1,0 +1,7 @@
+{"rule": "ab4561b1-6c7e-48a7-ad08-087cfb9ce8f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4719","data":{"AuditPolicyChanges":"%%8448","SubcategoryGuid":"{0CCE9240-69AE-11D9-BED3-505054503030}"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4719","data":{"AuditPolicyChanges":"%%8448","SubcategoryGuid":"{0CCE9217-69AE-11D9-BED3-505054503030}"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4719","data":{"SubcategoryGuid":"{0CCE9240-69AE-11D9-BED3-505054503030}"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4719","data":{"AuditPolicyChanges":"%%8448"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4719","data":{"SubcategoryGuid":"{0CCE9217-69AE-11D9-BED3-505054503030}"}}
+]}

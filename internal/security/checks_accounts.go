@@ -122,36 +122,69 @@ func checkDirectory(f *Facts) *Check {
 	return c
 }
 
-// checkSessions: accounts.sessions.
+// checkSessions: accounts.sessions. NIST SP 800-63B rev 4 asks, at AAL2,
+// for a sign-out after at most 1 hour without use and a new sign-in at
+// least every 24 hours.
 func checkSessions(f *Facts) *Check {
-	idle := f.Config.SessionIdle()
-	if idle > 24*time.Hour {
-		return &Check{State: Attention, Line: "People stay signed in for up to " + span(idle) + " without using Signalith.",
-			Fix: &Fix{Steps: []string{"Set Sign out after to 12h or less."}, Setting: "auth.session_timeout"}}
+	idle, maxAge := f.Config.SessionIdle(), f.Config.SessionMaxAge()
+	const baseline = "NIST SP 800-63B (AAL2) asks for "
+	if idle > config.DefaultSessionIdle {
+		c := &Check{State: Attention, Line: "People stay signed in for up to " + span(idle) + " without using Signalith. " + baseline + "at most 1 hour.",
+			Fix: &Fix{Steps: []string{"Set Sign out after to 1h or less."}, Setting: "auth.session_timeout"}}
+		if maxAge > config.DefaultSessionMaxAge {
+			c.Fix.Steps = append(c.Fix.Steps, "Set Sign in again after to 24h or less.")
+		}
+		return c
 	}
-	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, which keeps them signed in for up to 7 days."}
+	if maxAge > config.DefaultSessionMaxAge {
+		return &Check{State: Attention, Line: "A sign-in lasts up to " + span(maxAge) + " before people must sign in again. " + baseline + "at most 24 hours.",
+			Fix: &Fix{Steps: []string{"Set Sign in again after to 24h or less."}, Setting: "auth.session_max_age"}}
+	}
+	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, and every sign-in ends after " + span(maxAge) + "."}
+}
+
+// checkMFA: accounts.mfa.
+func checkMFA(f *Facts) *Check {
+	switch f.Config.MFARequiredMode() {
+	case "everyone":
+		return &Check{State: Good, Line: "Everyone who signs in with a password also enters a code from an authenticator app."}
+	case "admins":
+		return &Check{State: Good, Line: "Admins who sign in with a password also enter a code from an authenticator app.",
+			Details: []string{"Other users can turn two-step sign-in on for themselves from the user menu."}}
+	}
+	return &Check{State: Attention, Line: "Admins can sign in with a password alone.",
+		Details: []string{"Users can turn two-step sign-in on for themselves from the user menu, but nobody has to."},
+		Fix: &Fix{Steps: []string{"Set Require two-step sign-in to admins or everyone."}, Setting: "auth.mfa_required",
+			Docs: docLabeled(docUsersMFA, "Two-step sign-in")}}
 }
 
 // checkAgentTokens: accounts.agent_tokens.
 func checkAgentTokens(f *Facts) *Check {
-	tokens := f.Config.Ingest.Tokens
-	if len(tokens) == 0 && !f.PublicTokenAccepted {
+	t := f.AgentTokens
+	if t == nil {
+		t = &AgentTokenFacts{}
+		for _, tok := range f.Config.Ingest.Tokens {
+			t.Legacy = append(t.Legacy, LegacyTokenFact{Public: config.IsPublicIngestToken(tok), Length: len(tok)})
+		}
+	}
+	var accepted []LegacyTokenFact
+	for _, l := range t.Legacy {
+		if !l.Refused {
+			accepted = append(accepted, l)
+		}
+	}
+	if len(accepted) == 0 && t.Active == 0 && !f.PublicTokenAccepted && (t.Loaded || f.AgentTokens == nil) {
 		return nil
 	}
 	fix := &Fix{Steps: []string{
-		"Add a new token: signalith secrets set ingest.tokens, and press Enter to have one made.",
-		"Give each agent a new configuration from Add data.",
-		"Then remove the old token.",
-	}, Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: doc(docEncCommands),
-		Commands: signalithCommands(f, "secrets set ingest.tokens")}
-	details := []string{"All agents share a token, so one taken from any agent works for all of them until it's replaced."}
-	shortest := 0
-	for _, t := range tokens {
-		if config.IsPublicIngestToken(t) {
+		"Open Add data and give each agent a configuration with its own token.",
+		"Under Agent tokens, choose Stop accepting on the shared token once its Last used is older than the last agent you updated.",
+		"That's all: a token that is no longer accepted can't be used. You may also delete it from signalith.yaml (ingest.tokens) or SIGNALITH_INGEST_TOKEN; on the Docker quick start, leave docker-compose.yml as it is.",
+	}, Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: docLabeled(docTokensReplace, "Replace a shared token")}
+	details := []string{"Every agent set up with a shared token uses the same secret, so a copy taken from any one of them works for all of them."}
+	for _, l := range accepted {
+		if l.Public {
 			return &Check{State: Risk, Line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.", Details: details, Fix: fix}
-		}
-		if n := len(t); shortest == 0 || n < shortest {
-			shortest = n
 		}
 	}
 	if f.PublicTokenAccepted {
@@ -169,11 +202,59 @@ func checkAgentTokens(f *Facts) *Check {
 	if f.Docker {
 		details = append(details, oldTokenRefused(f.Config))
 	}
-	if shortest < 24 {
-		return &Check{State: Attention, Line: "An agent token is only " + itoa(shortest) + plural(shortest, " character", " characters") +
-			" long, so it's easier to guess. Tokens Signalith makes have 48.", Details: details, Fix: fix}
+	if len(accepted) > 0 {
+		shortest, recent := 0, false
+		for _, l := range accepted {
+			if shortest == 0 || l.Length < shortest {
+				shortest = l.Length
+			}
+			if !l.LastUsed.IsZero() && f.Now.Sub(l.LastUsed) < 7*24*time.Hour {
+				recent = true
+			}
+		}
+		if shortest < 24 {
+			return &Check{State: Attention, Line: "An agent token is only " + itoa(shortest) + plural(shortest, " character", " characters") +
+				" long, so it's easier to guess. Tokens Signalith makes have 56.", Details: details, Fix: fix}
+		}
+		if !t.Loaded {
+			return &Check{State: Attention, Line: "A shared agent token is accepted; how it was used couldn't be read from OpenSearch.", Details: details, Fix: fix}
+		}
+		if recent {
+			return &Check{State: Attention, Line: "Some agents still send with a shared token.", Details: details, Fix: fix}
+		}
+		if !everUsed(accepted) && (t.Active > 0 || f.Docker) {
+			// A token no agent ever sent with, such as the one the Docker
+			// quick start's setup makes: nothing to replace, only one
+			// secret less to keep.
+			return &Check{State: Good, Line: "No agent sends with a shared token, though one is still accepted.",
+				Details: []string{"Signalith hasn't seen any agent send with it. New agents get their own token from Add data."},
+				Tip: &Fix{Steps: []string{"Under Agent tokens on Add data, choose Stop accepting on the shared token, so a copy of it can never be used."},
+					Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: docLabeled(docTokensReplace, "Replace a shared token")}}
+		}
+		return &Check{State: Attention, Line: "A shared agent token is still accepted, though no agent has used it in the last 7 days.", Details: details, Fix: fix}
 	}
-	return &Check{State: Good, Line: "Agents send with tokens of 24 characters or more.", Details: details}
+	if !t.Loaded {
+		return &Check{State: Unknown, Line: "Couldn't read the agent tokens from OpenSearch."}
+	}
+	details = []string{"Each token is kept only as a SHA-256 fingerprint, and revoking one refuses it on every server within a few seconds."}
+	if len(t.Legacy) > 0 {
+		details = append(details, "The shared token in the configuration is no longer accepted, so it can't be used. Leaving it there is fine.")
+	}
+	if f.Docker {
+		details = append(details, oldTokenRefused(f.Config))
+	}
+	return &Check{State: Good, Line: "Each agent group sends with its own token (" + itoa(t.Active) + " active).", Details: details,
+		Tip: &Fix{Docs: doc(docTokensHow)}}
+}
+
+// everUsed reports whether any agent has sent with one of these tokens.
+func everUsed(ls []LegacyTokenFact) bool {
+	for _, l := range ls {
+		if !l.LastUsed.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 // oldTokenRefused says why a Docker quick start refuses the example token
@@ -194,6 +275,36 @@ func oldTokenRefused(c *config.Config) string {
 }
 
 // checkOpenSearchRole: accounts.opensearch_role.
+// checkOpenSearchCRL: accounts.opensearch_crl.
+func checkOpenSearchCRL(f *Facts) *Check {
+	l := f.CRL
+	if l == nil {
+		return nil
+	}
+	fix := &Fix{Steps: []string{
+		"On the Docker quick start, run docker compose -f deploy/docker/docker-compose.yml up -d, which makes it again.",
+		"Otherwise, when the cluster keeps OpenSearch's certificate authority, Signalith writes it again within a minute; to copy it to OpenSearch's nodes yourself, run signalith cluster opensearch-ca crl -o crl.pem on a server.",
+	}, Setting: "opensearch.crl_file", LockedBy: f.SettingEnv["opensearch.crl_file"], Docs: doc(docServersCRL)}
+	const refuses = " While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."
+	switch {
+	case l.Missing:
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " is missing." + refuses, Fix: fix}
+	case l.Err != "":
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " cannot be used: " + l.Err + "." + refuses, Fix: fix}
+	case !l.NextUpdate.IsZero() && l.NextUpdate.Sub(f.Now) < 30*24*time.Hour:
+		return &Check{State: Attention, Line: "OpenSearch's revocation list expires on " + l.NextUpdate.Format(time.DateOnly) + ", with OpenSearch's certificate authority." + refuses,
+			Fix: &Fix{Steps: []string{"Make OpenSearch's certificates again from a new certificate authority before then: bootstrap-docker -new-ca on the Docker quick start."}, Docs: doc(docOSCerts)}}
+	case f.Runtime != nil && f.Runtime.CRLProblem != "":
+		// The file reads well, but the server knows it is behind.
+		return &Check{State: Risk, Line: f.Runtime.CRLProblem, Fix: fix}
+	}
+	line := "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."
+	if l.Revoked > 0 {
+		line += " It names " + itoa(l.Revoked) + plural(l.Revoked, " certificate.", " certificates.")
+	}
+	return &Check{State: Good, Line: line}
+}
+
 func checkOpenSearchRole(f *Facts) *Check {
 	o := f.OpenSearch
 	if o.Anonymous == "open" || o.AuthNoPlugin || !o.AuthProbed && !o.DemoAdmin {

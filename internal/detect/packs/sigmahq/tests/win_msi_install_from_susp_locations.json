@@ -1,0 +1,6 @@
+{"rule": "c7c8aa1c-5aff-408e-828b-998e3620b341", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"1040","data":{"Data":"\\\\","Provider_Name":"MsiInstaller"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"1040","data":{"Data":"\\\\C:\\Windows\\TEMP\\UpdHealthTools.msi","Provider_Name":"MsiInstaller"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"1040","data":{"Data":"\\AppData\\Local\\Temp\\WinGet\\\\\\","Provider_Name":"MsiInstaller"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"1040","data":{"Provider_Name":"MsiInstaller"}}
+]}

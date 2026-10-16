@@ -1,0 +1,15 @@
+{"rule": "e043f529-8514-4205-8ab0-7f7d2927b400", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Avant Browser\\\\avant.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\BraveSoftware\\ \\brave.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\MsMpEng.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files (x86)\\Microsoft\\EdgeCore\\ \\msedge.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Falkon\\\\falkon.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Flock\\ \\Flock.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\Internet Explorer\\iexplore.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Maxthon\\\\maxthon.exe","QueryName":"azurewebsites.net"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"\\AppData\\Local\\Programs\\midori-ng\\\\Midori Next Generation.exe","QueryName":"azurewebsites.net"}}
+]}

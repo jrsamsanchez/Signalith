@@ -1,0 +1,4 @@
+{"rule": "8c3c76ca-8f8b-4b1d-aaf3-81aebcd367c9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\program.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

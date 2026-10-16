@@ -1,0 +1,4 @@
+{"rule": "77564cc2-7382-438b-a7f6-395c2ae53b9a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"TargetImage":"\\KeePass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{}}
+]}

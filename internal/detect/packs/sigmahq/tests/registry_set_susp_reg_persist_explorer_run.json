@@ -1,0 +1,5 @@
+{"rule": "b7916c2a-fa2f-4795-9477-32b731f70f11", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":":\\Windows\\Temp\\","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\\Run"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":":\\Windows\\Temp\\"}}
+]}

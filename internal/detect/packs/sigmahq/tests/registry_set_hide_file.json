@@ -1,0 +1,5 @@
+{"rule": "5a5152f1-463f-436b-b2f5-8eceb3964b42", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\Hidden"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\Hidden"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

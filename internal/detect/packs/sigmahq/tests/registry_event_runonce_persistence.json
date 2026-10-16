@@ -1,0 +1,6 @@
+{"rule": "c74d7efc-8826-45d9-b8bb-f04fac9e4eff", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Active Setup\\Installed Components\\StubPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Installer\\chrmstp.exe\" --configure-user-settings --verbose-logging --system-level C:\\Program Files\\Google\\Chrome\\Application\\","TargetObject":"\\Microsoft\\Active Setup\\Installed Components\\StubPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\\\Installer\\setup.exe\" --configure-user-settings --verbose-logging --system-level --msedge --channel=stable","TargetObject":"\\Microsoft\\Active Setup\\Installed Components\\StubPath"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

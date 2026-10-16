@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"encoding/xml"
 	"net/netip"
 	"regexp"
 	"strconv"
@@ -30,7 +31,10 @@ func parseSyslogLine(line, sourcetype string, now time.Time) Event {
 	}
 	ev := ParseProgram(m[3], m[4], m[5], m[6], sourcetype)
 	ev.Fields["message"] = line
-	ev.Time = ts
+	// An audit record has its own, more precise time.
+	if ev.Time.IsZero() {
+		ev.Time = ts
+	}
 	return ev
 }
 
@@ -84,11 +88,16 @@ var (
 
 // ParseProgram maps one syslog program's message onto a data model: sshd
 // (including OpenSSH 9.8+ sshd-session), sudo and su logons become Authentication events; useradd, userdel,
-// usermod and gpasswd become Change events; ClamAV's threats, definition
+// usermod and gpasswd become Change events; audit records (auditd's
+// syslog plugin) are read as from the audit log; ClamAV's threats, definition
 // updates and problems become Malware events; anything else is Other. Agent
 // logs and the syslog receiver both use it, so the built-in detections fire
 // whichever way Linux auth logs arrive.
 func ParseProgram(host, program, pid, msg, sourcetype string) Event {
+	// Audit records forwarded to syslog (auditd's syslog plugin).
+	if ev, ok := parseAuditdLine(msg, host); ok {
+		return ev
+	}
 	f := map[string]any{
 		"host":       host,
 		"dest":       host,
@@ -186,6 +195,8 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 			delete(f, "app")
 			delete(f, "process_id")
 		}
+	case "sysmon":
+		parseLinuxSysmon(msg, &ev)
 	case "usermod", "gpasswd":
 		if m := groupAdd.FindStringSubmatch(msg); m != nil {
 			ev.Model = "Change"
@@ -200,6 +211,53 @@ func ParseProgram(host, program, pid, msg, sourcetype string) Event {
 		f["vendor_product"] = "Linux"
 	}
 	return ev
+}
+
+// SysmonLinuxSourcetype is the sourcetype of Sysmon for Linux events.
+const SysmonLinuxSourcetype = "sysmon:linux"
+
+// linuxSysmonEvent is the XML event Sysmon for Linux writes to syslog.
+type linuxSysmonEvent struct {
+	System struct {
+		EventID  string `xml:"EventID"`
+		Computer string `xml:"Computer"`
+	} `xml:"System"`
+	Data []struct {
+		Name  string `xml:"Name,attr"`
+		Value string `xml:",chardata"`
+	} `xml:"EventData>Data"`
+}
+
+// parseLinuxSysmon reads a Sysmon for Linux event: the same events and
+// fields as Sysmon on Windows (process creation, network connections,
+// file creation and deletion), so they land in the same data models.
+func parseLinuxSysmon(msg string, ev *Event) {
+	msg = strings.TrimSpace(msg)
+	if !strings.HasPrefix(msg, "<Event") {
+		return
+	}
+	var x linuxSysmonEvent
+	if err := xml.Unmarshal([]byte(msg), &x); err != nil || x.System.EventID == "" {
+		return
+	}
+	kv := make(map[string]string, len(x.Data))
+	for _, d := range x.Data {
+		// Sysmon for Linux writes - for a value it does not have.
+		if d.Value != "-" {
+			kv[d.Name] = d.Value
+		}
+	}
+	f := ev.Fields
+	f["sourcetype"] = SysmonLinuxSourcetype
+	f["signature_id"] = x.System.EventID
+	if c := truncateUTF8(x.System.Computer, maxHostLen); c != "" {
+		f["host"], f["dest"] = c, c
+	}
+	// The program and its process ID are Sysmon's own.
+	delete(f, "app")
+	delete(f, "process_id")
+	parseSysmon(x.System.EventID, kv, ev)
+	f["vendor_product"] = "Sysmon for Linux"
 }
 
 // ambiguousSSH reports whether an Accepted or Failed line's source cannot

@@ -1,0 +1,5 @@
+{"rule": "b86f6dea-0b2f-41f5-bdcc-a057bd19cd6a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-GetCACAPS ://0.0.0.0","OriginalFileName":"CertOC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"CertOC.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"-GetCACAPS ://0.0.0.0"}}
+]}

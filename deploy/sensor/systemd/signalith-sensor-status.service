@@ -1,0 +1,19 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+# Writes the sensor's status line (versions, rules, capture port, packet
+# drops, disk) for the agent to send.
+[Unit]
+Description=Signalith sensor: status line
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/signalith-sensor/status.sh
+# With --docker, the docker command keeps its settings here.
+Environment=DOCKER_CONFIG=/var/lib/signalith-sensor/docker
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/signalith-sensor /var/lib/signalith-sensor -/run/docker.sock
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

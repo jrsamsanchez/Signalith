@@ -1,0 +1,8 @@
+{"rule": "220457c1-1c9f-4c2e-afe6-9598926222c1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /delete  /f/tn *","Image":"\\schtasks.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /delete  /f/tn *","NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\schtasks.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /delete  /f/tn *"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x /delete  /f/tn *","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

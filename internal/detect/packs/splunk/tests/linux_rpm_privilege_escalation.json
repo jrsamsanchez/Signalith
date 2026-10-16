@@ -1,0 +1,5 @@
+{"rule": "f8e58a23-cecd-495f-9c65-6c76b4cb9774", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x rpm --eval x x lua:os.execute x x sudo x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x rpm --eval x x lua:os.execute x x sudo y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

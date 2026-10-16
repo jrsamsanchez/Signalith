@@ -1,7 +1,7 @@
 # HTTPS
 
 Signalith serves its web UI, API and agent ingest over HTTPS by default. Passwords,
-sessions, the ingest token and events never cross the network in clear text, and there
+sessions, agent tokens and events never cross the network in clear text, and there
 is nothing to set up: the server makes its own certificate the first time it starts.
 
 - [What happens by default](#what-happens-by-default)
@@ -17,7 +17,7 @@ is nothing to set up: the server makes its own certificate the first time it sta
 - [Troubleshooting](#troubleshooting)
 
 Every HTTPS setting described here can also be changed on the **Settings** page
-(**Configure > Settings**, the **HTTPS** card), without editing `signalith.yaml`: see
+(**Settings > Server**, the **HTTPS** card), without editing `signalith.yaml`: see
 [Settings page](#on-the-settings-page) below.
 
 ## What happens by default
@@ -281,6 +281,25 @@ With a strict CA, a name it doesn't cover is refused under **Agents send to**, w
 to do instead. CAs made by versions before Signalith had limits can vouch for any
 website. The Security page marks them **Needs attention**; switch to a new one.
 
+### On the servers of a cluster
+
+Servers that share one OpenSearch share one certificate authority once every server
+runs a version that can (see [One certificate authority](servers.md#one-certificate-authority)).
+Then:
+
+- the CA's key is not in `tls/ca.key`: it is kept in the cluster's shared settings,
+  encrypted with the cluster key, and in the server's encrypted copy of them
+  (`cluster/cache.enc`). `tls/ca.pem` holds a copy of the cluster's CA certificate, and
+  `tls/cluster-ca.txt` marks that the server uses it;
+- `GET /api/tls/ca.pem` and Add data give out the cluster's CA, the same file on every
+  server;
+- the CA a server used before is kept, certificate only, in
+  `tls/retired/<date>-<fingerprint>/ca.pem`, and never signs again;
+- a name added for agents on one server is covered by every server's certificate within
+  seconds, instead of being kept in `tls/names.txt`;
+- the steps below are refused (`409`): changing the cluster's CA comes in a later
+  version.
+
 ## Switching to a new certificate authority
 
 Make a new CA when:
@@ -294,7 +313,7 @@ Browsers and agents must trust a new CA before Signalith uses it. So the change 
 few steps, and both CAs are trusted in between. Nothing stops working as long as every
 computer trusts the new one before you switch.
 
-Each step is on the Security page (**Configure > Security**), for the server that
+Each step is on the Security page (**Settings > Security**), for the server that
 serves the page. A script can take the same steps with `POST /api/security/ca`, as an
 admin, with `{"action": "prepare"}` (and `"scope": "standard"` or `"strict"` if you
 want to change it), then `switch`, `rollback`, `discard` or `prune`. Each step goes to
@@ -430,7 +449,10 @@ The Fluent Bit setup on the **Add data** page checks the server's certificate:
 - One of the steps saves the CA next to the configuration. The page shows its fingerprint,
   **Download** and **Copy** buttons, and the certificate itself under **Show certificate**.
 - The steps also make the configuration readable only by root (Linux) or SYSTEM and
-  Administrators (Windows), since it holds the ingest token. On Windows they do the same
+  Administrators (Windows), since it holds the agent token.
+- The configuration carries a token of its own, made when you copy or download it (see
+  [agent-tokens.md](agent-tokens.md#create-a-token)), so one group of agents can be
+  turned away without touching the others. On Windows they do the same
   for the agent's buffer in `C:\ProgramData\fluent-bit`, which holds Security log events
   until they are sent.
 
@@ -595,7 +617,7 @@ New configs from `signalith init` and `install.ps1` already have `mode: auto` an
 
 ### The Docker quick start's old example token
 
-Older versions of the Docker quick start gave every agent the same ingest token,
+Older versions of the Docker quick start gave every agent the same agent token,
 `change-this-ingest-token`, over plain HTTP. Anyone can look it up, so it is accepted only
 where agents may still have it: on a Docker quick start upgraded from such a version.
 
@@ -692,8 +714,9 @@ is older than 3.1. Update Fluent Bit with the install step on Add data.
 while `plaintext_ingest` is `deny`, or with the old example token from an earlier Docker
 quick start. It keeps its events and retries; give it a new configuration from Add data.
 
-**An agent gets 401.** Its ingest token is wrong; on a Docker quick start that started new,
-that includes the old example token `change-this-ingest-token` (see
+**An agent gets 401.** Its agent token is wrong, was revoked, or is a shared token you
+stopped accepting (see [agent-tokens.md](agent-tokens.md)); on a Docker quick start that
+started new, that includes the old example token `change-this-ingest-token` (see
 [The Docker quick start's old example token](#the-docker-quick-starts-old-example-token)).
 Fluent Bit drops what is refused this way. Give it a new configuration from Add data.
 

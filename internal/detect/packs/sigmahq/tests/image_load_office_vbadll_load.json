@@ -1,0 +1,5 @@
+{"rule": "e6ce8457-68b1-485b-9bdd-3c2b5d679aa9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\onenote.exe","ImageLoaded":"\\VBEUI.DLL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\VBEUI.DLL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\onenote.exe"}}
+]}

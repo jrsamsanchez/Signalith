@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/detect"
 )
 
 func TestDetectionsCRUD(t *testing.T) {
@@ -172,15 +174,12 @@ func TestHealthWarnsOfLateDetections(t *testing.T) {
 	if strings.Contains(fmt.Sprint(h["warnings"]), "behind schedule") {
 		t.Fatalf("warned before anything ran: %v", h["warnings"])
 	}
-	// Ran an hour ago, due every five minutes, and not run since.
+	// First seen an hour ago, due every five minutes, and not run since.
 	srv.Scheduler.Now = func() time.Time { return time.Now().Add(-time.Hour) }
-	d, err := srv.Detections.Get("auth-brute-force")
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Scheduler.Run(context.Background(), d)
+	srv.Scheduler.RunDue(context.Background())
 	_, h = do(t, ts, "GET", "/api/health", "", true)
-	if w := fmt.Sprint(h["warnings"]); !strings.Contains(w, "Detections are running behind schedule. auth-brute-force waited") {
+	brute, _ := srv.Detections.Get("auth-brute-force")
+	if w := fmt.Sprint(h["warnings"]); !strings.Contains(w, "Detections are running behind schedule. ") || !strings.Contains(w, "‘"+brute.BaseTitle()+"’") {
 		t.Errorf("warnings = %v", w)
 	}
 	_, got := do(t, ts, "GET", "/api/detections/auth-brute-force", "", true)
@@ -188,11 +187,27 @@ func TestHealthWarnsOfLateDetections(t *testing.T) {
 		t.Errorf("state = %v", got["state"])
 	}
 
-	// A server that does not run the scheduler cannot tell.
+	// Missed runs older than the catch-up limit are skipped.
+	srv.Scheduler.Now = time.Now
+	srv.Scheduler.SetCatchUp(10 * time.Minute)
+	srv.Scheduler.RunDue(context.Background())
+	_, h = do(t, ts, "GET", "/api/health", "", true)
+	if w := fmt.Sprint(h["warnings"]); !strings.Contains(w, "missed runs of") || !strings.Contains(w, "were skipped") {
+		t.Errorf("warnings after skipped runs = %v", w)
+	}
+
+	// A lone server that does not run the scheduler cannot tell.
 	srv.Config.Detections.Scheduler = false
 	_, h = do(t, ts, "GET", "/api/health", "", true)
-	if strings.Contains(fmt.Sprint(h["warnings"]), "behind schedule") {
-		t.Errorf("scheduler off, warnings = %v", h["warnings"])
+	if w := fmt.Sprint(h["warnings"]); strings.Contains(w, "behind schedule") || strings.Contains(w, "skipped") {
+		t.Errorf("scheduler off, warnings = %v", w)
+	}
+	// With several servers the run state is shared: one that does not
+	// run the detections warns as the one that does.
+	srv.Cluster = &fakeCluster{holder: "siem-a"}
+	_, h = do(t, ts, "GET", "/api/health", "", true)
+	if w := fmt.Sprint(h["warnings"]); !strings.Contains(w, "behind schedule") || !strings.Contains(w, "were skipped") {
+		t.Errorf("another server runs the detections, warnings = %v", w)
 	}
 }
 
@@ -200,12 +215,15 @@ func TestContentPacks(t *testing.T) {
 	ts, _ := newTestServer(t)
 	code, body := do(t, ts, "GET", "/api/detections/packs", "", true)
 	packs, _ := body["packs"].([]any)
-	if code != 200 || len(packs) != 1 {
+	if code != 200 || len(packs) != 2 {
 		t.Fatalf("packs = %d %v", code, body)
 	}
 	p := packs[0].(map[string]any)
 	if p["name"] != "sigmahq" || p["license"] != "DRL-1.1" || p["rules"].(float64) < 500 || p["enabled"].(float64) != 0 {
 		t.Fatalf("pack = %v", p)
+	}
+	if p := packs[1].(map[string]any); p["name"] != "splunk" || p["license"] != "Apache-2.0" || p["format"] != "splunk" || p["rules"].(float64) < 100 {
+		t.Fatalf("splunk pack = %v", p)
 	}
 
 	// Turn two pack rules and a built-in on or off at once; pack rules keep
@@ -227,8 +245,12 @@ func TestContentPacks(t *testing.T) {
 		t.Fatalf("enabled pack rule = %d %v", code, body)
 	}
 	code, body = do(t, ts, "GET", "/api/detections/packs", "", true)
-	if p := body["packs"].([]any)[0].(map[string]any); p["enabled"].(float64) != 2 {
-		t.Errorf("pack after enabling = %v", p)
+	on := 0.0
+	for _, x := range body["packs"].([]any) {
+		on += x.(map[string]any)["enabled"].(float64)
+	}
+	if on != 2 {
+		t.Errorf("packs after enabling = %v", body["packs"])
 	}
 	// An unknown ID changes nothing.
 	code, _ = do(t, ts, "POST", "/api/detections/enable", fmt.Sprintf(`{"ids":["%s","no-such-rule"],"enabled":false}`, ids[0]), true)
@@ -245,5 +267,56 @@ func TestContentPacks(t *testing.T) {
 	// Pack rules cannot be deleted.
 	if code, _ = do(t, ts, "DELETE", "/api/detections/"+ids[1], "", true); code != 400 {
 		t.Errorf("delete pack rule = %d", code)
+	}
+}
+
+// The run state is shared: a server that does not run the detections
+// shows the last run, skipped runs and "Run now" the other servers
+// recorded, and its own "Run now" is recorded with who asked.
+func TestDetectionsShowSharedRunState(t *testing.T) {
+	shared := detect.NewMemoryRunStore()
+	cl := &fakeCluster{holder: "siem-a"}
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Cluster = cl
+		s.Scheduler.Runtime, s.Scheduler.NodeID = shared, "siem-b"
+	})
+	ctx := context.Background()
+	lastRun := time.Now().Add(-2 * time.Minute).UTC().Truncate(time.Second)
+	from, to := lastRun.Add(-10*time.Hour), lastRun.Add(-6*time.Hour)
+	st := detect.DetState{Kind: "detstate", DetectionID: "auth-brute-force", LastRun: lastRun, LastSlot: lastRun,
+		NextSlot: lastRun.Add(5 * time.Minute), LastResults: 4, LastDuplicates: 1, Schedule: "5m", Enabled: true, Node: "siem-a", Epoch: 3,
+		Skipped: detect.Skipped{From: from, To: to, At: lastRun, Count: 48}}
+	if _, err := shared.Create(ctx, "signalith_runtime", "detstate:auth-brute-force", st, false); err != nil {
+		t.Fatal(err)
+	}
+	_, out := do(t, ts, "GET", "/api/detections", "", true)
+	if out["runs_on"] != "siem-a" || out["state_error"] != nil {
+		t.Errorf("runs_on %v state_error %v", out["runs_on"], out["state_error"])
+	}
+	var got map[string]any
+	for _, d := range out["detections"].([]any) {
+		if d.(map[string]any)["id"] == "auth-brute-force" {
+			got = d.(map[string]any)["state"].(map[string]any)
+		}
+	}
+	sk, _ := got["skipped"].(map[string]any)
+	if got["last_run"] != lastRun.Format(time.RFC3339) || got["node"] != "siem-a" || got["last_duplicates"] != float64(1) ||
+		sk == nil || sk["count"] != float64(48) {
+		t.Fatalf("state on another server = %v", got)
+	}
+
+	code, res := do(t, ts, "POST", "/api/detections/auth-brute-force/run", "", true)
+	if code != 200 {
+		t.Fatalf("run now = %d %v", code, res)
+	}
+	_, one := do(t, ts, "GET", "/api/detections/auth-brute-force", "", true)
+	state := one["state"].(map[string]any)
+	m, _ := state["manual"].(map[string]any)
+	if m == nil || m["by"] != "admin" || m["node"] != "siem-b" || m["results"] != res["results"] {
+		t.Errorf("manual = %v (run %v)", state["manual"], res)
+	}
+	// Run now leaves the schedule's state alone.
+	if state["last_run"] != lastRun.Format(time.RFC3339) || state["last_slot"] != lastRun.Format(time.RFC3339) {
+		t.Errorf("state after Run now = %v", state)
 	}
 }

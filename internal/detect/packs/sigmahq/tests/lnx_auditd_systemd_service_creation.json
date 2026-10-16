@@ -1,0 +1,7 @@
+{"rule": "1bac86ba-41aa-4f62-9d6b-405eac99b485", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/systemd/system/","nametype":"CREATE"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/.config/systemd/user/","nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/systemd/system/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/.config/systemd/user/"}}
+]}

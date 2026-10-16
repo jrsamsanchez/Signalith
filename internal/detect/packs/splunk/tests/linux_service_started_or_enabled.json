@@ -1,0 +1,17 @@
+{"rule": "e0428212-61b7-11ec-88a3-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  start  x","Image":"/usr/bin/systemctl","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  enable  x","Image":"/usr/bin/service","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x systemctl  x x  start  x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x service  x x  enable  x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  start  y","Image":"/usr/bin/systemctl","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  enable  y","Image":"/usr/bin/service","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x systemctl  x x  start  y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x service  x x  enable  y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  start  x","Image":"/usr/bin/systemctm","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  start  x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/systemctl","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  enable  x","Image":"/usr/bin/servicf","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  enable  x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/service","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

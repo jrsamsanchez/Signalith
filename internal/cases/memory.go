@@ -7,16 +7,21 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Memory is an in-memory Store for tests and evaluation.
 type Memory struct {
 	mu   sync.Mutex
 	byID map[string]*Case
+	// ver counts the writes to each case, so Modify can tell whether
+	// someone else wrote it while change ran, as OpenSearch's versions do.
+	ver map[string]int64
 }
 
 // NewMemory returns an empty in-memory store.
-func NewMemory() *Memory { return &Memory{byID: map[string]*Case{}} }
+func NewMemory() *Memory { return &Memory{byID: map[string]*Case{}, ver: map[string]int64{}} }
 
 func clone(c *Case) *Case {
 	b, _ := json.Marshal(c)
@@ -32,6 +37,7 @@ func (m *Memory) Create(_ context.Context, c *Case) error {
 		return ErrExists
 	}
 	m.byID[c.ID] = clone(c)
+	m.ver[c.ID]++
 	return nil
 }
 
@@ -52,13 +58,56 @@ func (m *Memory) Save(_ context.Context, c *Case) error {
 		return ErrNotFound
 	}
 	m.byID[c.ID] = clone(c)
+	m.ver[c.ID]++
 	return nil
+}
+
+// Modify runs change without holding the lock, since change may read
+// other stores, or this one, and writes only if the case was not written
+// meanwhile; otherwise it tries again, like the OpenSearch store.
+func (m *Memory) Modify(ctx context.Context, id string, change func(c *Case) (bool, error)) (*Case, error) {
+	var out *Case
+	err := store.RetryConflicts(ctx, func() error {
+		m.mu.Lock()
+		cur, ok := m.byID[id]
+		var c *Case
+		if ok {
+			c = clone(cur)
+		}
+		v := m.ver[id]
+		m.mu.Unlock()
+		if !ok {
+			return ErrNotFound
+		}
+		changed, err := change(c)
+		if err != nil {
+			return changeError{err}
+		}
+		if !changed {
+			out = c
+			return nil
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if _, ok := m.byID[id]; !ok || m.ver[id] != v {
+			return store.ErrConflict
+		}
+		m.byID[id] = clone(c)
+		m.ver[id]++
+		out = c
+		return nil
+	})
+	if err != nil {
+		return nil, modifyResult(err)
+	}
+	return out, nil
 }
 
 func (m *Memory) Delete(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.byID, id)
+	m.ver[id]++
 	return nil
 }
 

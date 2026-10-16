@@ -1,0 +1,5 @@
+{"rule": "204b17ae-4007-471b-917b-b917b315c5db", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\*.au3del x","OriginalFileName":"Cmd.Exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"Cmd.Exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"\\*.au3del x"}}
+]}

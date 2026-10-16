@@ -44,6 +44,10 @@ func NewBrowserKey() *BrowserKey {
 	return browserKeyFrom(raw)
 }
 
+// NewBrowserKeyFrom returns the key made of raw, such as one derived from
+// the cluster key, so every server that has raw knows the same browsers.
+func NewBrowserKeyFrom(raw []byte) *BrowserKey { return browserKeyFrom(raw) }
+
 func browserKeyFrom(raw []byte) *BrowserKey {
 	derive := func(label string) []byte {
 		h := hmac.New(sha256.New, raw)

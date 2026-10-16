@@ -13,6 +13,8 @@ const rtState = {
   // last_run.started before a run we asked for, to tell when it finished
   awaitRun: null,
   edit: null, guard: null, confirm: null,
+  // true while another server is asked for a run (see rtFollowRun)
+  asking: false,
 };
 
 // ---------- formatting ----------
@@ -20,7 +22,7 @@ const RT_ICON = {
   authentication: 'key-round', endpoint: 'monitor', network_traffic: 'network', change: 'square-pen', malware: 'bug',
   filesystem: 'folder', registry: 'layers', network_resolution: 'globe', image_load: 'cpu', script: 'square-terminal',
   inventory: 'list', configuration_check: 'list-checks', alerts: 'bell',
-  other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar',
+  other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar', audit: 'scroll-text',
 };
 const RT_FIELD_NAME = { keep_days: 'Keep', max_size_gb: 'Size cap', compact_after_days: 'Compact after', max_disk_percent: 'Max disk use', min_days: 'Min days' };
 
@@ -62,7 +64,7 @@ function rtCount(n) {
   return `${v.toLocaleString(undefined, { maximumFractionDigits: v < 10 ? 1 : 0 })} ${big[1]}`;
 }
 function rtNoun(id, n) {
-  const nouns = { findings: ['finding', 'findings'], cases: ['investigation', 'investigations'], intel: ['indicator', 'indicators'] };
+  const nouns = { findings: ['finding', 'findings'], cases: ['investigation', 'investigations'], intel: ['indicator', 'indicators'], audit: ['record', 'records'] };
   const [one, many] = nouns[id] || ['event', 'events'];
   return `${rtCount(n)} ${n === 1 ? one : many}`;
 }
@@ -240,9 +242,10 @@ function rtRender() {
   $('rt-activity-count').textContent = errs;
   $('rt-activity-count').classList.toggle('hidden', !errs);
   $('rt-activity-count').title = errs ? `The last run had ${plural(errs, 'error')}` : '';
-  // A server that only shows retention has no Run now.
-  $('rt-run').classList.toggle('hidden', !!ov.schedule.read_only);
-  $('rt-run').disabled = !!ov.schedule.running || !!ov.settings_error;
+  // A server that only shows retention has no Run now, unless the
+  // policies are shared: then it asks the server that runs retention.
+  $('rt-run').classList.toggle('hidden', !!ov.schedule.read_only && !ov.shared);
+  $('rt-run').disabled = !!ov.schedule.running || !!ov.settings_error || !!rtState.asking;
   $('rt-run').replaceChildren(icon('play'), ov.schedule.running ? (ov.schedule.current === 'restore' ? 'Restoring…' : 'Running…') : 'Run now');
   if (fk) {
     const back = page.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
@@ -360,7 +363,25 @@ function rtAlerts(ov) {
   }
   const sch = ov.schedule;
   const servers = () => (can('admin') ? el('a', { href: '#servers', 'data-page': 'servers' }, 'Servers page') : 'Servers page');
-  if (sch.read_only && sch.no_runner) {
+  if (ov.hold) {
+    // The policies were imported from one server's files while another
+    // server's differed: until an admin confirms them, runs only take
+    // the disk guard's steps.
+    const confirm = can('admin') ? el('button', { class: 'btn btn--primary btn--sm', type: 'button', id: 'rt-hold-confirm', onclick: rtConfirmHold },
+      icon('check'), 'Confirm these policies') : null;
+    out.push(riAlert('warning', 'These retention policies wait to be confirmed.', p(rtSentence(ov.hold.reason)),
+      p('Until they are, retention deletes, archives and compacts nothing; only the disk guard acts. Check every category below, change what is wrong, then confirm.'),
+      confirm ? el('div', { class: 'row' }, confirm) : null));
+  }
+  if (sch.read_only && ov.shared) {
+    if (sch.no_runner) {
+      out.push(riAlert('danger', 'No server runs retention right now.',
+        el('p', {}, 'Old days are not deleted until a server runs the background jobs again. The ', servers(), ' says why.')));
+    } else {
+      out.push(riAlert('info', `Retention runs on ${sch.runs_on || 'the server that runs the background jobs'}.`,
+        el('p', {}, 'Every server shares these policies: a change saved here applies on every server, and that server enforces it. Restores are made on that server.')));
+    }
+  } else if (sch.read_only && sch.no_runner) {
     out.push(riAlert('danger', 'No server runs retention right now.',
       el('p', {}, 'Old days are not deleted until a server runs the background jobs again. The ', servers(), ' says why.')));
   } else if (sch.read_only && sch.runs_on) {
@@ -381,7 +402,7 @@ const RT_COLS = [['Category', 'rt-c-name'], ['Size', 'num rt-c-size'], ['Oldest 
 
 function rtSourceBadge(c) {
   switch (c.source) {
-    case 'ui': return el('span', { class: 'badge', title: 'Its own policy, saved on this page' }, 'Custom');
+    case 'ui': return el('span', { class: 'badge', title: c.from ? c.from.note : 'Its own policy, saved on this page' }, 'Custom');
     case 'config': return el('span', { class: 'badge badge--outline', title: 'From signalith.yaml; change it there' }, icon('lock', 'icon--xs'), 'signalith.yaml');
     case 'feeds': return el('span', { class: 'badge badge--outline', title: 'Each feed’s max_age decides when its indicators expire' }, 'Feeds');
     default: return el('span', { class: 'badge badge--outline', title: c.kind === 'records' ? 'Kept forever until you set a policy' : 'Uses the default policy' }, 'Default');
@@ -393,7 +414,7 @@ const rtCanEdit = (c) => c.editable && !rtState.ov.settings_error;
 // rtLock is the badge for settings the page can't change, saying why.
 function rtLock(ov, source) {
   if (ov.settings_error) return el('span', { class: 'badge badge--outline', title: 'Fix the settings file first' }, icon('lock', 'icon--xs'), 'Settings file error');
-  if (ov.schedule.read_only) return el('span', { class: 'badge badge--outline', title: 'Change it on the server that runs the background jobs' }, icon('lock', 'icon--xs'), 'Read-only here');
+  if (ov.schedule.read_only && !ov.shared) return el('span', { class: 'badge badge--outline', title: 'Change it on the server that runs the background jobs' }, icon('lock', 'icon--xs'), 'Read-only here');
   return el('span', { class: 'badge badge--outline', title: source === 'config' ? 'From signalith.yaml; change it there' : '' }, icon('lock', 'icon--xs'), 'signalith.yaml');
 }
 
@@ -414,7 +435,8 @@ function rtRow(c, ov) {
   if (!c.oldest_day) oldest = el('td', { class: 'rt-c-oldest hide-sm' }, rtDash());
   else {
     const bits = [];
-    if (c.kind === 'events') {
+    if (c.kind === 'monthly') bits.push(c.days === 1 ? '1 month' : `${c.days.toLocaleString()} months`);
+    else if (c.kind === 'events') {
       bits.push(rtDays(c.days));
       if (c.compacted_days) bits.push(`${c.compacted_days.toLocaleString()} compacted`);
       if (c.restored_days) bits.push(`${c.restored_days.toLocaleString()} restored`);
@@ -447,7 +469,7 @@ function rtRow(c, ov) {
       variant('rt-show-wide', [...closing, ...due]), variant('rt-show-md', [...closing, ...md, ...due]), variant('rt-show-phone', [...md, ...due])];
   }
   const compact = el('td', { class: 'rt-c-compact hide-md hide-sm' }, c.kind === 'events' && pol.compact_after_days ? `After ${rtDays(pol.compact_after_days)}` : rtDash());
-  const archive = el('td', { class: 'rt-c-archive hide-md hide-sm' }, c.kind === 'events' && pol.archive ? el('span', { class: 'rt-yes' }, icon('check', 'icon--sm'), 'Yes') : rtDash());
+  const archive = el('td', { class: 'rt-c-archive hide-md hide-sm' }, (c.kind === 'events' || c.kind === 'monthly') && pol.archive ? el('span', { class: 'rt-yes' }, icon('check', 'icon--sm'), 'Yes') : rtDash());
 
   const can = rtCanEdit(c);
   const open = () => rtOpenCategory(c.id);
@@ -488,8 +510,12 @@ function rtDefaults(ov) {
   const g = ov.guard;
   const locked = !!ov.settings_error;
   const users = ov.categories.filter((c) => c.kind === 'events' && c.source === 'default').map((c) => c.name);
-  const editable = !locked && !ov.schedule.read_only;
-  const dsrc = { days: editable ? 'Set by retention.days in signalith.yaml until you save one here.' : 'Set by retention.days in signalith.yaml.', ui: 'Saved on this page.', config: 'From signalith.yaml; change it there.' }[d.source] || '';
+  const editable = !locked && (!ov.schedule.read_only || ov.shared);
+  // Shared policies say where a value came from instead: a server's
+  // signalith.yaml, applied when it changed, or the founder's files.
+  const dsrc = d.from ? `${d.from.note}.` : ov.shared && d.source === 'days'
+    ? (editable ? 'Set by retention.days, shared by every server, until you save one here.' : 'Set by retention.days, shared by every server.')
+    : { days: editable ? 'Set by retention.days in signalith.yaml until you save one here.' : 'Set by retention.days in signalith.yaml.', ui: 'Saved on this page.', config: 'From signalith.yaml; change it there.' }[d.source] || '';
   const editBtn = (label, run, fk) => el('button', { class: 'btn btn--secondary btn--sm', type: 'button', 'data-fk': fk, 'aria-label': label, onclick: run }, icon('pencil'), 'Edit');
   const block = (iconName, title, value, lines, btn) => el('section', { class: 'rt-def', 'aria-label': title },
     el('div', { class: 'rt-def__head' }, el('span', { class: 'rt-cat__icon' }, icon(iconName)), el('h4', { class: 'rt-def__title' }, title), el('span', { class: 'spacer' }), btn),
@@ -502,7 +528,7 @@ function rtDefaults(ov) {
     [riCap(rest) + '.', users.length ? `Used by ${users.join(', ')}.` : 'No category uses it now.', dsrc],
     d.editable && !locked ? editBtn('Edit the default policy', rtOpenDefault, 'def-edit') : rtLock(ov, d.source));
 
-  const gsrc = { builtin: 'Built-in settings.', ui: 'Saved on this page.', config: 'From signalith.yaml; change it there.' }[g.source] || '';
+  const gsrc = g.from ? `${g.from.note}.` : { builtin: 'Built-in settings.', ui: 'Saved on this page.', config: 'From signalith.yaml; change it there.' }[g.source] || '';
   const guard = block('shield', 'Disk guard', g.enabled ? `On above ${g.max_disk_percent}% disk use` : 'Off',
     [g.enabled ? `Deletes the oldest event days first, never the last ${rtDays(g.min_days)}, and only when that gets the disk under the limit.` : 'OpenSearch stops taking new events when its disk reaches 95%.',
       locked && g.enabled ? 'Paused: it doesn’t check the disk until the settings file is fixed.' : gsrc],
@@ -531,7 +557,7 @@ function rtGroupActions(acts) {
     const t = new Date(a.time).getTime();
     if (prev === null || Math.abs(prev - t) > 10 * 60 * 1000) burst = new Map();
     prev = t;
-    const key = !a.error && a.day ? [a.action, a.category, a.reason, a.by].join('\u0000') : null;
+    const key = !a.error && a.day ? [a.action, a.category, a.reason, a.by, a.server].join('\u0000') : null;
     const g = key && burst.get(key);
     if (g) {
       g.days.push(a.day);
@@ -601,7 +627,8 @@ function rtActivity(ov) {
     else if (a.bytes) amount = rtBytes(a.bytes);
     const why = failed
       ? el('span', { class: 'rt-bad' }, rtFix(a.error))
-      : [a.reason ? rtSentence(a.reason) : '', a.by ? el('span', { class: 'subtle' }, ` By ${a.by}.`) : null];
+      : [a.reason ? rtSentence(a.reason) : '', a.by ? el('span', { class: 'subtle' }, ` By ${a.by}.`) : null,
+        a.server ? el('span', { class: 'subtle' }, ` On ${a.server}.`) : null];
     const ix = [...a.indices].sort();
     const title = ix.length > 1 ? `${ix[0]} to ${ix[ix.length - 1]}` : ix[0] || '';
     return el('tr', failed ? { 'data-failed': '' } : {},
@@ -879,12 +906,13 @@ function rtOpenCategory(id) {
   rtRememberOpener();
   if (!rtState.opener) rtState.opener = 'row-' + id;
   const records = c.kind === 'records';
-  rtState.edit = { target: 'category', cat: c, mode: c.source === 'ui' ? 'own' : 'default' };
+  // Audit records have no default policy to follow: theirs is built in.
+  rtState.edit = { target: 'category', cat: c, mode: c.source === 'ui' || c.kind === 'monthly' ? 'own' : 'default' };
   $('rt-edit-title').textContent = c.name;
   $('rt-edit-desc').textContent = records
     ? (c.id === 'findings' ? 'Alerts raised by detections. Only resolved and closed findings are ever deleted.' : 'Only resolved and closed investigations are ever deleted.')
     : c.description;
-  rtFillForm(c.policy, records ? 'records' : 'events', c);
+  rtFillForm(c.policy, records ? 'records' : c.kind === 'monthly' ? 'monthly' : 'events', c);
   rtEditOpen();
 }
 function rtOpenDefault() {
@@ -915,6 +943,10 @@ function rtFillForm(p, kind, c) {
     $('rt-keep-hint').textContent = c.id === 'findings'
       ? 'Days since a resolved or closed finding last changed. Open findings stay, and so do findings in an investigation, for as long as the investigation is kept.'
       : 'Days since a resolved or closed investigation last changed. Open ones stay, with their notes and pinned events.';
+  } else if (kind === 'monthly') {
+    $('rt-keep-label').textContent = 'Keep for';
+    $('rt-forever-label').textContent = 'Forever';
+    $('rt-keep-hint').textContent = 'Kept by month: a month is deleted once its last day is older than this. The current month is always kept.';
   } else {
     $('rt-keep-label').textContent = 'Keep searchable for';
     $('rt-forever-label').textContent = 'Forever';
@@ -946,8 +978,12 @@ function rtSetMode(mode, focus) {
   const days = e.target === 'default' && rtState.ov.default.source === 'days';
   note.classList.toggle('hidden', !useDefault && !days);
   if (days) {
-    note.replaceChildren(icon('info'), el('div', {}, el('b', {}, `Now retention.days (${rtState.ov.default.policy.keep_days || 'forever'}) from signalith.yaml.`),
-      el('p', {}, 'Saving here replaces it on this server; signalith.yaml stays as it is.')));
+    const kept = rtState.ov.default.policy.keep_days || 'forever';
+    note.replaceChildren(icon('info'), rtState.ov.shared
+      ? el('div', {}, el('b', {}, `Now retention.days (${kept}), shared by every server.`),
+        el('p', {}, 'Saving here replaces it on every server. A later change of retention.days in a server’s signalith.yaml applies again.'))
+      : el('div', {}, el('b', {}, `Now retention.days (${kept}) from signalith.yaml.`),
+        el('p', {}, 'Saving here replaces it on this server; signalith.yaml stays as it is.')));
   }
   if (useDefault) {
     const d = rtState.ov.default;
@@ -1010,6 +1046,7 @@ function rtFormBody() {
   const forever = $('rt-forever').checked;
   const keep = forever ? 0 : rtNum($('rt-keep'));
   if (records) return forever ? null : { keep_days: keep };
+  if (e.target === 'category' && e.cat.kind === 'monthly') return { keep_days: keep, archive: $('rt-archive').checked };
   return {
     keep_days: keep,
     max_size_gb: rtNum($('rt-cap'), true) || 0,
@@ -1106,17 +1143,25 @@ $('rt-forever').addEventListener('change', () => {
 // when there is no preview because OpenSearch is down. said(reply) is the
 // toast for the saved change. The run that a save starts (or queues behind
 // the run or restore going now) reports under it when it does something.
+// rtIfMatch makes a change apply only to the policies the page shows
+// (412 when someone changed them meanwhile).
+const rtIfMatch = () => (rtState.ov && rtState.ov.etag ? { 'If-Match': rtState.ov.etag } : undefined);
+
 async function rtSave(req, preview, what, msgBox, dialog, said) {
   const work = !!preview && ['steps', 'records', 'due_steps', 'due_records'].some((k) => (preview[k] || []).length > 0);
   const send = async () => {
     const before = rtLastStart();
     const busy = rtState.ov && rtState.ov.schedule.current;
     try {
-      const res = await api(req.path, req.method === 'DELETE' ? undefined : req.body, req.method);
+      const res = await api(req.path, req.method === 'DELETE' ? undefined : req.body, req.method, rtIfMatch());
       dialog.close();
       const msg = said(res);
       const want = { quiet: true, title: msg.replace(/\.$/, '') };
-      if (res.run_started) {
+      if (res.request_id) {
+        // Another server runs retention: it was asked to apply the
+        // change, and its result shows on its own Data retention page.
+        rtFollowRun(res, `${msg} Asked ${res.queued_on || 'the server that runs retention'} to apply it now.`);
+      } else if (res.run_started) {
         rtExpectRun(want, before);
         toast(work ? `${msg} Retention is applying it now.` : msg);
       } else if (res.run_queued) {
@@ -1128,6 +1173,14 @@ async function rtSave(req, preview, what, msgBox, dialog, said) {
     } catch (e) {
       if (!dialog.open) dialog.showModal();
       if (e.problems && e.problems.length) rtMarkProblems(e.problems, dialog.querySelector('form'));
+      if (e.status === 412) {
+        // Someone changed the policies since the page read them: show
+        // theirs; saving again replaces them.
+        msgBox.replaceChildren(riAlert('warning', 'Someone else changed the retention policies meanwhile.', el('p', {}, rtSentence(e.message)),
+          el('p', {}, 'The page now shows their change. Save again to replace it with yours.')));
+        rtLoad(true);
+        return;
+      }
       msgBox.replaceChildren(riAlert('danger', 'Couldn’t save.', el('p', {}, rtFix(e.message))));
     }
   };
@@ -1298,20 +1351,61 @@ for (const d of ['rt-edit', 'rt-guard', 'rt-restore']) {
   });
 }
 
+// rtFollowRun follows a request that asked the server that runs retention
+// (res.queued_on) for a run: the run is made there, and its result shows
+// on that server's Data retention page, as this server keeps its own run
+// history. Run now stays off until the request is taken up.
+function rtFollowRun(res, said) {
+  const on = res.queued_on || 'the server that runs retention';
+  toast(`${said} The run is made there; its result shows on ${on}’s Data retention page.`);
+  rtState.asking = true;
+  $('rt-run').disabled = true;
+  followRequest(res.request_id).then((r) => {
+    if (!r) toastError('Couldn’t follow the retention run', new Error(`The request is gone. ${on}’s Data retention page shows how it went.`));
+    else if (r.state === 'failed') toastError('The retention run didn’t start', new Error(r.error || 'it failed'));
+    else if (r.state === 'done') {
+      const got = (r.result || {}).result;
+      toast(got === 'queued' ? `${on} runs retention as soon as the run or restore going there ends.` : `${on} started the retention run.`);
+    }
+  }).finally(() => {
+    rtState.asking = false;
+    rtLoad(true);
+  });
+}
+
 // ---------- run now ----------
 $('rt-run').addEventListener('click', async () => {
   const btn = $('rt-run');
   btn.disabled = true;
   const before = rtLastStart();
   try {
-    await api('api/retention/run', {}, 'POST');
-    rtExpectRun({}, before);
-    toast('Retention is running. The result shows here when it finishes.');
+    const res = await api('api/retention/run', {}, 'POST');
+    if (res.request_id) {
+      rtFollowRun(res, `Asked ${res.queued_on || 'the server that runs retention'} to run retention.`);
+    } else {
+      rtExpectRun({}, before);
+      toast('Retention is running. The result shows here when it finishes.');
+    }
   } catch (e) {
     toastError('Couldn’t start a run', e);
   }
   rtLoad(true);
 });
+
+// rtConfirmHold confirms policies that wait to be confirmed, so runs
+// enforce them in full again.
+async function rtConfirmHold() {
+  const btn = $('rt-hold-confirm');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api('api/retention/policies/confirm', {}, 'POST');
+    toast(res.run_started || res.run_queued || res.request_id
+      ? 'Policies confirmed. Retention applies them in full now.' : 'Policies confirmed. Retention applies them in full at the next run.');
+  } catch (e) {
+    toastError('Couldn’t confirm the policies', e);
+  }
+  rtLoad(true);
+}
 
 $('rt-refresh').addEventListener('click', () => {
   rtLoad();
@@ -1364,7 +1458,8 @@ async function rtLoadArchive(quiet) {
 const rtArchBusy = (a) => !!a && (a.restores || []).some((r) => r.state === 'queued' || r.state === 'running');
 const rtArchRowBusy = (a) => !!a.restore && (a.restore.state === 'queued' || a.restore.state === 'running');
 // Only the server that runs retention restores.
-const rtCanRestore = () => !!rtState.ov && !rtState.ov.schedule.read_only;
+// Where archives are shared, any server asks it to, and follows along.
+const rtCanRestore = () => !!rtState.ov && (!rtState.ov.schedule.read_only || !!rtState.ov.restore_queued);
 
 function rtArchState(a) {
   const r = a.restore;
@@ -1497,6 +1592,13 @@ function rtRenderArchive() {
   if (ov && ov.archive.same_disk && (res.archives.length || ov.categories.some((c) => c.kind === 'events' && c.policy.archive))) {
     msgs.push(riAlert('info', 'The archive folder looks to be on OpenSearch’s disk.',
       el('p', {}, 'Archiving the days the disk guard picks then takes space on the disk it is trying to free. Point retention.archive_dir at another disk.')));
+  }
+  if (ov && ov.archive.held_back) {
+    msgs.push(riAlert('warning', 'Days that should be archived are kept for now.', el('p', {}, rtSentence(ov.archive.held_back))));
+  }
+  if (ov && (ov.archive.on || []).length) {
+    msgs.push(riAlert('info', `Retention archiving can run on: ${ov.archive.on.join(', ')}.`,
+      el('p', {}, 'These servers reach the shared archive folder. Restores asked on any server run on the one that runs retention.')));
   }
   const msgKey = JSON.stringify(msgs.map((m) => m.textContent));
   if ($('rt-arch-msg').dataset.key !== msgKey) {
@@ -1725,8 +1827,10 @@ $('rt-restore-form').addEventListener('submit', async (ev) => {
     const res = await api('api/retention/archive/restore', { ids, keep_days: keep, confirm: !!chk.needs_confirm }, 'POST');
     $('rt-restore').close();
     rtState.selected.clear();
-    const n = (res.restores || []).length;
-    toast(`Restoring ${rtDays(n)}. Each is searchable as soon as it finishes.`);
+    const n = res.request_id ? ids.length : (res.restores || []).length;
+    toast(res.request_id
+      ? `Asked ${res.queued_on || 'the server that runs retention'} to restore ${rtDays(n)}. Each is searchable as soon as it finishes.`
+      : `Restoring ${rtDays(n)}. Each is searchable as soon as it finishes.`);
     rtLoadArchive(true);
     rtLoad(true);
   } catch (e) {

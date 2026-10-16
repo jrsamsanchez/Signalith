@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -69,12 +70,17 @@ const maxGuardPasses = 3
 type Manager struct {
 	Cluster Cluster
 	Prefix  string
-	// Config is what signalith.yaml says; Store holds what the page saved.
+	// Config is what signalith.yaml says; Store holds what the page saved
+	// (or, when servers share their settings, the shared policies, with
+	// Config left empty).
 	Config  Config
-	Store   *Store
+	Store   PolicyStore
 	Archive *Archive
-	// HistoryFile keeps the last run and recent actions.
+	// HistoryFile keeps the last run and recent actions, unless History
+	// is set: then History keeps them (the audit records of servers that
+	// share one OpenSearch).
 	HistoryFile string
+	History     HistorySink
 	// Interval is how often Start enforces policies; default 1h.
 	Interval time.Duration
 	Log      *slog.Logger
@@ -94,9 +100,38 @@ type Manager struct {
 	// OpenSearch; the step runs only when it returns nil. It confirms that
 	// this server still holds the background jobs.
 	Fence func(ctx context.Context) error
+	// Claim, when set, is asked after Fence before each step that changes
+	// an index (step names it: compact, archive, delete, thaw, restore,
+	// delete_records). It records the step with this server's lease
+	// epoch, and refuses it when a server with a later epoch claimed the
+	// index, so a server that lost the background jobs without knowing
+	// stops before it changes anything.
+	Claim func(ctx context.Context, index, step string) error
+	// CanArchive, when set, says whether this server can write archives
+	// now, and why not: runs hold back the steps that archive until it
+	// can, rather than delete days unarchived.
+	CanArchive func() (bool, string)
+	// Jobs, when set, shares the progress of restores with the servers
+	// that do not run them.
+	Jobs JobStore
+	// ArchiveOn, when set, names the servers that can archive (servers
+	// that share one OpenSearch say so in their heartbeats).
+	ArchiveOn func() []string
+	// Shared is set when the policies are the servers' shared ones: then
+	// any server may change them (ReadOnly and Leader only keep it from
+	// running retention and restoring).
+	Shared bool
+	// Hold, when set, says whether the policies wait to be confirmed, and
+	// why: until they are, runs only take the disk guard's steps, and
+	// freeze, archive and delete nothing else. ConfirmHold confirms them.
+	Hold        func() (held bool, why string)
+	ConfirmHold func(ctx context.Context, by string) error
+	// OnSettings, when set, is called with the settings in effect after
+	// this server changed them.
+	OnSettings func(Settings)
 
 	initOnce sync.Once
-	hist     *history
+	hist     HistorySink
 	// job is held by a run or a restore, so they never overlap. It is
 	// released through release, which hands it to a queued run.
 	job sync.Mutex
@@ -115,12 +150,65 @@ type Manager struct {
 	// starting runs every few minutes.
 	guardPaused    time.Time
 	guardPausedWhy string
+	// liveInterval replaces Interval once SetInterval changed it (in
+	// nanoseconds; 0 is none), and reschedule tells Start.
+	liveInterval atomic.Int64
+	reschedule   chan struct{}
 }
 
 type queuedRun struct{ trigger, by string }
 
 // maxRestores is how many restores the archive view remembers.
 const maxRestores = 50
+
+// PolicyStore keeps the policies changed on the page: *Store in a file,
+// or the shared policies of servers that share one OpenSearch.
+type PolicyStore interface {
+	// Get returns the saved settings, and an error when they cannot be
+	// used (runs then do nothing until it is fixed).
+	Get() (Saved, error)
+	// Update changes them with change, checking the result.
+	Update(change func(*Saved)) error
+}
+
+// VersionedStore is a PolicyStore whose changes can be made only if
+// nobody changed the policies since a page read them.
+type VersionedStore interface {
+	PolicyStore
+	// ETag is the version of the policies now, "" when unknown.
+	ETag() string
+	// UpdateIf is Update, refused when the version is no longer etag.
+	UpdateIf(etag string, change func(*Saved)) error
+}
+
+// ErrNoHold is a confirmation when nothing waits for one.
+var ErrNoHold = errors.New("the retention policies do not wait to be confirmed")
+
+// held reports whether the policies wait to be confirmed, and why.
+func (m *Manager) held() (bool, string) {
+	if m.Hold == nil {
+		return false, ""
+	}
+	return m.Hold()
+}
+
+// ETag is the version of the saved policies, for a page that changes
+// them only if nobody else did meanwhile; "" when the store has none.
+func (m *Manager) ETag() string {
+	if v, ok := m.Store.(VersionedStore); ok {
+		return v.ETag()
+	}
+	return ""
+}
+
+// Confirm confirms policies that wait to be confirmed, so runs enforce
+// them in full again.
+func (m *Manager) Confirm(ctx context.Context, by string) error {
+	if held, _ := m.held(); !held || m.ConfirmHold == nil {
+		return ErrNoHold
+	}
+	return m.ConfirmHold(ctx, by)
+}
 
 // readOnly returns why this server cannot change retention now, or nil.
 func (m *Manager) readOnly() error {
@@ -147,15 +235,43 @@ func (m *Manager) fence(ctx context.Context) error {
 	return nil
 }
 
+// step checks, before a step that changes index, that this server may
+// still take it, and claims the index for it.
+func (m *Manager) step(ctx context.Context, index, step string) error {
+	if err := m.fence(ctx); err != nil {
+		return err
+	}
+	if m.Claim == nil {
+		return nil
+	}
+	if err := m.Claim(ctx, index, step); err != nil {
+		return fmt.Errorf("refused: another server runs retention now (%w)", err)
+	}
+	return nil
+}
+
+// JobStore shares the restores' progress between servers.
+type JobStore interface {
+	// Save records the restores this server runs, newest last.
+	Save(ctx context.Context, restores []RestoreStatus) error
+	// Load returns the restores the server that runs them recorded.
+	Load(ctx context.Context) ([]RestoreStatus, error)
+}
+
 func (m *Manager) init() {
 	m.initOnce.Do(func() {
-		m.hist = loadHistory(m.HistoryFile)
+		if m.History != nil {
+			m.hist = m.History
+		} else {
+			m.hist = loadHistory(m.HistoryFile)
+		}
 		if m.Log == nil {
 			m.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 		}
 		if m.Archive == nil {
 			m.Archive = &Archive{}
 		}
+		m.reschedule = make(chan struct{}, 1)
 	})
 }
 
@@ -167,6 +283,9 @@ func (m *Manager) now() time.Time {
 }
 
 func (m *Manager) interval() time.Duration {
+	if d := time.Duration(m.liveInterval.Load()); d > 0 {
+		return d
+	}
 	if m.Interval > 0 {
 		return m.Interval
 	}
@@ -307,7 +426,7 @@ func (m *Manager) snapshot(ctx context.Context) (*state, error) {
 		return nil, fmt.Errorf("%w: could not list indices: %w", ErrOpenSearch, err)
 	}
 	for _, ix := range all {
-		if strings.HasPrefix(ix.Name, m.Prefix+"-") {
+		if cat, _, ok := ParseIndex(m.Prefix, ix.Name); strings.HasPrefix(ix.Name, m.Prefix+"-") || ok && isMonthly(cat) {
 			st.snap.Indices = append(st.snap.Indices, ix)
 		} else {
 			st.records[ix.Name] = ix
@@ -447,7 +566,7 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 			m.Log.Warn("retention run failed", "err", err)
 		}
 		run.Finished = m.now()
-		if err := m.hist.add(run); err != nil {
+		if err := m.hist.Record(context.WithoutCancel(ctx), run); err != nil {
 			m.Log.Warn("could not save the retention history", "file", m.HistoryFile, "err", err)
 		}
 		return run, err
@@ -494,12 +613,17 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 		}
 		wanted := m.stillWanted(s, st.snap)
 		guardFailed = false
+		hold, why := m.held()
+		if hold && pass == 0 {
+			m.Log.Info("retention: the policies wait to be confirmed, so only the disk guard acts", "why", why)
+		}
 		for _, d := range plan.Steps() {
 			if ctx.Err() != nil {
 				break
 			}
-			// Later passes only let the guard pick other days.
-			if attempted[d.Index] || (pass > 0 && d.Rule != RuleGuard) {
+			// Later passes only let the guard pick other days, and so do
+			// policies that wait to be confirmed.
+			if attempted[d.Index] || ((pass > 0 || hold) && d.Rule != RuleGuard) {
 				continue
 			}
 			d, ok, why := wanted(d)
@@ -531,7 +655,7 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 				run.Deleted++
 			}
 		}
-		if pass == 0 {
+		if pass == 0 && !hold {
 			m.deleteRecords(ctx, run, plan.Records)
 		}
 		if !guardFailed || ctx.Err() != nil {
@@ -579,7 +703,7 @@ func (m *Manager) deleteRecords(ctx context.Context, run *Run, recs []RecordStep
 			r.KeepDays = pol.KeepDays
 			r.Before = m.now().Add(-time.Duration(pol.KeepDays) * 24 * time.Hour)
 		}
-		if err := m.fence(ctx); err != nil {
+		if err := m.step(ctx, r.Index, ActionDeleteRecords); err != nil {
 			run.Errors = append(run.Errors, r.Category+": "+err.Error())
 			return
 		}
@@ -655,7 +779,7 @@ func (m *Manager) record(run *Run, act Action) {
 	if run != nil && run.Trigger != "" && act.By == "" {
 		act.By = run.By
 	}
-	if err := m.hist.add(nil, act); err != nil {
+	if err := m.hist.Record(m.ctx(), nil, act); err != nil {
 		m.Log.Warn("could not save the retention history", "file", m.HistoryFile, "err", err)
 	}
 }
@@ -668,16 +792,25 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	cat, day, ok := ParseIndex(m.Prefix, d.Index)
 	switch {
 	case !ok || cat != d.Category:
-		act.Error = "refused: not a Signalith daily index"
+		act.Error = "refused: not a Signalith daily or monthly index"
 		return act
 	case d.Removes() && !day.Before(today):
 		act.Error = "refused: today's and future days are never deleted"
+		return act
+	case isMonthly(cat) && (d.Action == ActionCompact || !monthEnd(day).Before(today)):
+		act.Error = "refused: the current month is never deleted, and monthly indices are never compacted"
 		return act
 	case d.Action == ActionCompact && !day.Before(today.AddDate(0, 0, -1)):
 		act.Error = "refused: today and yesterday are never compacted"
 		return act
 	}
-	if err := m.fence(ctx); err != nil {
+	if d.Action == ActionArchive && m.CanArchive != nil {
+		if ok, why := m.CanArchive(); !ok {
+			act.Error = "held back: this server cannot archive now (" + why + "), so the day was kept"
+			return act
+		}
+	}
+	if err := m.step(ctx, d.Index, d.Action); err != nil {
 		act.Error = err.Error()
 		return act
 	}
@@ -744,6 +877,10 @@ func (m *Manager) thaw(ctx context.Context, d Decision, set bool) {
 	}
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
+	if err := m.step(cctx, d.Index, "thaw"); err != nil {
+		m.Log.Warn("retention: did not make a kept index writable again", "index", d.Index, "err", err)
+		return
+	}
 	if err := m.Cluster.BlockWrites(cctx, d.Index, false); err != nil {
 		m.Log.Warn("retention: could not make a kept index writable again", "index", d.Index, "err", err)
 	}
@@ -779,6 +916,10 @@ func (m *Manager) archiveFrozen(ctx context.Context, d Decision, act *Action) er
 		return fmt.Errorf("archiving failed, so the index was kept: %w", err)
 	}
 	act.File, act.Docs = man.File, man.Docs
+	// The export may have taken long: check again before deleting.
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
+		return fmt.Errorf("archived to %s, but the index was not deleted: %w", man.File, err)
+	}
 	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
 		return fmt.Errorf("archived to %s, but deleting the index failed: %w", man.File, err)
 	}
@@ -812,6 +953,10 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 		return nil
 	}
 	act.Docs = n
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
+		m.thaw(ctx, d, set)
+		return err
+	}
 	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
 		m.thaw(ctx, d, set)
 		return err
@@ -820,12 +965,27 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 	return nil
 }
 
+// SetInterval changes how often Start enforces policies, at once: the
+// next run comes one new interval after the last one, or now when that
+// is past. retention.interval is shared by the servers of a cluster and
+// applies without a restart.
+func (m *Manager) SetInterval(d time.Duration) {
+	m.init()
+	if d <= 0 || d == m.interval() {
+		return
+	}
+	m.liveInterval.Store(int64(d))
+	select {
+	case m.reschedule <- struct{}{}:
+	default:
+	}
+}
+
 // Start enforces retention every Interval until ctx ends, and checks the
 // disk every few minutes so the guard can act between runs. Only the
 // server that runs the detection scheduler calls it.
 func (m *Manager) Start(ctx context.Context) {
 	m.init()
-	interval := m.interval()
 	m.mu.Lock()
 	m.automatic, m.baseCtx, m.nextRun = true, ctx, m.now().Add(firstRunDelay)
 	m.mu.Unlock()
@@ -843,16 +1003,32 @@ func (m *Manager) Start(ctx context.Context) {
 			m.Log.Info("retention run skipped; another job is in progress", "trigger", trigger)
 		}
 	}
+	// lastRun is when the last scheduled run ended; zero before the first,
+	// which comes a moment after the start whatever the interval.
+	var lastRun time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			scheduled(TriggerSchedule)
+			lastRun = m.now()
 			m.mu.Lock()
-			m.nextRun = m.now().Add(interval)
+			m.nextRun = lastRun.Add(m.interval())
 			m.mu.Unlock()
-			timer.Reset(interval)
+			timer.Reset(m.interval())
+		case <-m.reschedule:
+			if lastRun.IsZero() {
+				continue
+			}
+			next := lastRun.Add(m.interval())
+			if now := m.now(); next.Before(now) {
+				next = now
+			}
+			m.mu.Lock()
+			m.nextRun = next
+			m.mu.Unlock()
+			timer.Reset(next.Sub(m.now()))
 		case <-check.C:
 			if m.guardTripped(ctx) {
 				scheduled(TriggerGuard)
@@ -891,8 +1067,13 @@ func (m *Manager) guardPause() (time.Time, bool) {
 
 // SetPolicy saves a category's own policy, or with nil goes back to the
 // default.
-func (m *Manager) SetPolicy(id string, p *Policy) error {
-	return m.change(Change{Category: id, Policy: p}, func(sv *Saved) {
+func (m *Manager) SetPolicy(id string, p *Policy) error { return m.SetPolicyIf(id, p, "") }
+
+// SetPolicyIf is SetPolicy, refused when the policies are no longer at
+// version etag ("" saves whatever their version).
+func (m *Manager) SetPolicyIf(id string, p *Policy, etag string) error {
+	return m.change(Change{Category: id, Policy: p}, etag, func(sv *Saved) {
+		delete(sv.From, "policies."+id)
 		if p == nil {
 			delete(sv.Policies, id)
 			return
@@ -905,19 +1086,35 @@ func (m *Manager) SetPolicy(id string, p *Policy) error {
 }
 
 // SetDefault saves the default policy for event categories.
-func (m *Manager) SetDefault(p Policy) error {
-	return m.change(Change{Default: &p}, func(sv *Saved) { sv.Default = &p })
+func (m *Manager) SetDefault(p Policy) error { return m.SetDefaultIf(p, "") }
+
+// SetDefaultIf is SetDefault at version etag (see SetPolicyIf).
+func (m *Manager) SetDefaultIf(p Policy, etag string) error {
+	return m.change(Change{Default: &p}, etag, func(sv *Saved) {
+		sv.Default = &p
+		delete(sv.From, "default")
+	})
 }
 
 // SetGuard saves the disk guard settings.
-func (m *Manager) SetGuard(g Guard) error {
+func (m *Manager) SetGuard(g Guard) error { return m.SetGuardIf(g, "") }
+
+// SetGuardIf is SetGuard at version etag (see SetPolicyIf).
+func (m *Manager) SetGuardIf(g Guard, etag string) error {
 	g = g.Normalized()
-	return m.change(Change{Guard: &g}, func(sv *Saved) { sv.Guard = &g })
+	return m.change(Change{Guard: &g}, etag, func(sv *Saved) {
+		sv.Guard = &g
+		delete(sv.From, "guard")
+	})
 }
 
-func (m *Manager) change(ch Change, save func(*Saved)) error {
-	if err := m.readOnly(); err != nil {
-		return err
+func (m *Manager) change(ch Change, etag string, save func(*Saved)) error {
+	if !m.Shared {
+		// A server's own files are only used by it, so only the server
+		// that runs retention may change them.
+		if err := m.readOnly(); err != nil {
+			return err
+		}
 	}
 	if m.Store == nil {
 		return errors.New("retention settings cannot be saved on this server")
@@ -929,7 +1126,20 @@ func (m *Manager) change(ch Change, save func(*Saved)) error {
 	if _, err := cur.apply(ch); err != nil {
 		return err
 	}
-	return m.Store.Update(save)
+	if v, ok := m.Store.(VersionedStore); ok && etag != "" {
+		err = v.UpdateIf(etag, save)
+	} else {
+		err = m.Store.Update(save)
+	}
+	if err != nil {
+		return err
+	}
+	if m.OnSettings != nil {
+		if s, err := m.Settings(); err == nil {
+			m.OnSettings(s)
+		}
+	}
+	return nil
 }
 
 // ---- previews ----
@@ -1027,6 +1237,13 @@ type Overview struct {
 	Notes   []string `json:"notes"`
 	LastRun *Run     `json:"last_run"`
 	Recent  []Action `json:"recent"`
+	// RestoreQueued is set where restores asked on any server go to the
+	// one that runs retention (servers that share their archives).
+	RestoreQueued bool `json:"restore_queued,omitempty"`
+	// HistorySource says where the history is kept: "file" on a server
+	// of its own, "audit" when servers that share one OpenSearch keep it
+	// as audit records.
+	HistorySource string `json:"history_source"`
 	// Unmanaged lists indices under the prefix that are not daily indices
 	// of a known category; retention leaves them alone.
 	Unmanaged []IndexInfo `json:"unmanaged"`
@@ -1034,6 +1251,35 @@ type Overview struct {
 	Error string `json:"error,omitempty"`
 	// SettingsError says retention.yaml has errors; runs are paused.
 	SettingsError string `json:"settings_error,omitempty"`
+	// Hold is set while the policies wait to be confirmed: runs only take
+	// the disk guard's steps until they are.
+	Hold *HoldView `json:"hold,omitempty"`
+	// ETag is the version of the saved policies, for If-Match.
+	ETag string `json:"etag,omitempty"`
+	// Shared is set when the policies are the servers' shared ones: any
+	// server changes them, and the one that runs retention enforces them.
+	Shared bool `json:"shared,omitempty"`
+}
+
+// HoldView says why the policies wait to be confirmed.
+type HoldView struct {
+	Reason string `json:"reason"`
+}
+
+// FromView is where a shared setting's value came from, for the page.
+type FromView struct {
+	Provenance
+	Note string `json:"note"`
+}
+
+// from returns where the first of keys that has a record came from.
+func (s Settings) from(keys ...string) *FromView {
+	for _, k := range keys {
+		if p, ok := s.From[k]; ok {
+			return &FromView{Provenance: p, Note: p.Note()}
+		}
+	}
+	return nil
 }
 
 // CategoryView is one row of the page's table.
@@ -1052,18 +1298,20 @@ type CategoryView struct {
 	Policy        Policy `json:"policy"`
 	// Source is default, ui, config or feeds; Editable is false for
 	// policies from signalith.yaml and for threat intel.
-	Source   string  `json:"source"`
-	Editable bool    `json:"editable"`
-	Note     string  `json:"note,omitempty"`
-	Pending  Summary `json:"pending"`
+	Source   string    `json:"source"`
+	Editable bool      `json:"editable"`
+	Note     string    `json:"note,omitempty"`
+	From     *FromView `json:"from,omitempty"`
+	Pending  Summary   `json:"pending"`
 }
 
 // DefaultView is the default policy for event categories.
 type DefaultView struct {
-	Policy   Policy `json:"policy"`
-	Source   string `json:"source"` // days, ui or config
-	Editable bool   `json:"editable"`
-	Note     string `json:"note,omitempty"`
+	Policy   Policy    `json:"policy"`
+	Source   string    `json:"source"` // days, ui or config
+	Editable bool      `json:"editable"`
+	Note     string    `json:"note,omitempty"`
+	From     *FromView `json:"from,omitempty"`
 }
 
 // GuardView is the disk guard's settings and what it sees.
@@ -1074,6 +1322,7 @@ type GuardView struct {
 	Source         string      `json:"source"` // builtin, ui or config
 	Editable       bool        `json:"editable"`
 	Note           string      `json:"note,omitempty"`
+	From           *FromView   `json:"from,omitempty"`
 	Status         GuardStatus `json:"status"`
 	// PausedUntil is set while the disk check waits for the next scheduled
 	// run, after a run in which the guard could not get the disk under its
@@ -1094,6 +1343,12 @@ type ArchiveSummary struct {
 	// SameDisk is true when the archive folder looks to be on the same
 	// disk as OpenSearch's data (this server's disk has the same size).
 	SameDisk bool `json:"same_disk,omitempty"`
+	// HeldBack says why this server cannot archive now, so runs keep the
+	// days they would archive; empty when it can.
+	HeldBack string `json:"held_back,omitempty"`
+	// On names the servers that can archive, when servers share one
+	// OpenSearch.
+	On []string `json:"on,omitempty"`
 }
 
 // ScheduleView says when retention runs.
@@ -1142,24 +1397,48 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		ov.SettingsError = serr.Error()
 	}
 	roErr := m.readOnly()
-	canEdit := m.Store != nil && roErr == nil
+	canEdit := m.Store != nil && (roErr == nil || m.Shared)
+	if held, why := m.held(); held {
+		ov.Hold = &HoldView{Reason: why}
+	}
 	ov.Default = DefaultView{Policy: s.Default, Source: s.DefaultSource, Editable: s.DefaultSource != SourceConfig && canEdit}
 	if s.DefaultSource == SourceConfig {
 		ov.Default.Note = fromConfig
+	}
+	// retention.days gives the default policy only until one is saved.
+	if s.DefaultSource == SourceDays {
+		ov.Default.From = s.from("days")
+	} else {
+		ov.Default.From = s.from("default")
 	}
 	ov.Guard = GuardView{Enabled: s.Guard.IsEnabled(), MaxDiskPercent: s.Guard.MaxDiskPercent, MinDays: s.Guard.MinDays,
 		Source: s.GuardSource, Editable: s.GuardSource != SourceConfig && canEdit}
 	if s.GuardSource == SourceConfig {
 		ov.Guard.Note = fromConfig
 	}
+	ov.Guard.From = s.from("guard")
 	if until, paused := m.guardPause(); paused {
 		ov.Guard.PausedUntil = &until
 		m.mu.Lock()
 		ov.Guard.PauseReason = m.guardPausedWhy
 		m.mu.Unlock()
 	}
-	ov.LastRun, ov.Recent = m.hist.get()
+	ov.ETag, ov.Shared = m.ETag(), m.Shared
+	ov.HistorySource = m.hist.Source()
+	if run, acts, err := m.hist.Recent(ctx); err != nil {
+		ov.Notes = append(ov.Notes, "The retention history could not be read: "+err.Error())
+	} else {
+		ov.LastRun, ov.Recent = run, acts
+	}
 	ov.Archive = ArchiveSummary{Dir: m.Archive.Dir, Problems: []string{}, Free: -1}
+	if m.CanArchive != nil {
+		if ok, why := m.CanArchive(); !ok {
+			ov.Archive.HeldBack = why
+		}
+	}
+	if m.ArchiveOn != nil {
+		ov.Archive.On = m.ArchiveOn()
+	}
 	iv := m.interval()
 	m.mu.Lock()
 	ov.Schedule = ScheduleView{Interval: shortDuration(iv), IntervalSeconds: int64(iv / time.Second),
@@ -1231,6 +1510,9 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		case c.Kind == KindManaged:
 			cv.Note = "Managed by feeds"
 		}
+		if _, own := s.Policies[c.ID]; own {
+			cv.From = s.from("policies." + c.ID)
+		}
 		var cs []Decision
 		for _, d := range steps {
 			if d.Category == c.ID {
@@ -1290,7 +1572,9 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 	for _, c := range Categories() {
 		cv := byCat[c.ID]
 		// "Other events" only shows once there are some, or a policy for them.
-		if c.ID == "other" && cv.Days == 0 && cv.Source == SourceDefault {
+		// Neither do audit records, which only servers that share one
+		// OpenSearch keep.
+		if (c.ID == "other" || c.Kind == KindMonthly) && cv.Days == 0 && cv.Source == SourceDefault {
 			continue
 		}
 		ov.TotalBytes += cv.Bytes
@@ -1358,13 +1642,13 @@ func (m *Manager) Archives(ctx context.Context) (*ArchiveList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read the archive folder %s: %w", m.Archive.Dir, err)
 	}
-	out := &ArchiveList{Dir: m.Archive.Dir, Archives: []ArchiveView{}, Problems: []string{}, Restores: m.restoreStatuses(),
+	out := &ArchiveList{Dir: m.Archive.Dir, Archives: []ArchiveView{}, Problems: []string{}, Restores: m.RestoreStatuses(ctx),
 		DefaultKeepDays: DefaultRestoreDays, MaxKeepDays: MaxRestoreDays}
 	if problems != nil {
 		out.Problems = problems
 	}
 	live := map[string]IndexInfo{}
-	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*"); err != nil {
+	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*,"+m.Prefix+"_*"); err != nil {
 		out.Error = "could not check OpenSearch for restored days: " + err.Error()
 	} else {
 		for _, ix := range ixs {
@@ -1411,6 +1695,39 @@ func (m *Manager) updateRestore(st *RestoreStatus, change func(*RestoreStatus)) 
 	m.mu.Lock()
 	change(st)
 	m.mu.Unlock()
+	m.saveJobs()
+}
+
+// saveJobs shares the restores' progress, when servers share it.
+func (m *Manager) saveJobs() {
+	if m.Jobs == nil {
+		return
+	}
+	m.mu.Lock()
+	list := make([]RestoreStatus, len(m.restores))
+	for i, r := range m.restores {
+		list[i] = *r
+	}
+	m.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(m.ctx()), 10*time.Second)
+	defer cancel()
+	if err := m.Jobs.Save(ctx, list); err != nil {
+		m.Log.Debug("could not share the progress of restores", "err", err)
+	}
+}
+
+// RestoreStatuses returns recent restores, newest first: this server's
+// own, or, on a server that does not run them, those the server that
+// does shared.
+func (m *Manager) RestoreStatuses(ctx context.Context) []RestoreStatus {
+	m.init()
+	if m.Jobs != nil && m.readOnly() != nil {
+		if list, err := m.Jobs.Load(ctx); err == nil {
+			slices.Reverse(list)
+			return list
+		}
+	}
+	return m.restoreStatuses()
 }
 
 // restoreManifests checks a restore request and returns its archives.
@@ -1620,6 +1937,7 @@ func (m *Manager) Restore(ctx context.Context, ids []string, keepDays int, by st
 		out[i] = *st
 	}
 	m.mu.Unlock()
+	m.saveJobs()
 
 	go func() {
 		m.job.Lock()
@@ -1662,7 +1980,7 @@ func (m *Manager) RestoreArchive(ctx context.Context, man Manifest, until string
 	if err := m.Archive.Verify(man); err != nil {
 		return 0, fmt.Errorf("the archive file failed its check, so nothing was restored: %w", err)
 	}
-	if err := m.fence(ctx); err != nil {
+	if err := m.step(ctx, man.Index, ActionRestore); err != nil {
 		return 0, err
 	}
 	if err := m.Cluster.CreateIndex(ctx, man.Index); err != nil {
@@ -1721,4 +2039,44 @@ func (m *Manager) RestoreArchive(ctx context.Context, man Manifest, until string
 		return done, err
 	}
 	return done, nil
+}
+
+// WaitRestores waits until none of the archives ids is queued or being
+// restored by this server, and returns their latest statuses. progress,
+// when set, is called with the events restored so far and in all.
+func (m *Manager) WaitRestores(ctx context.Context, ids []string, progress func(done, total int64)) ([]RestoreStatus, error) {
+	m.init()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		latest := map[string]RestoreStatus{}
+		for _, r := range m.restoreStatuses() {
+			if _, ok := latest[r.ID]; !ok && slices.Contains(ids, r.ID) {
+				latest[r.ID] = r
+			}
+		}
+		var done, total int64
+		busy := false
+		out := make([]RestoreStatus, 0, len(latest))
+		for _, id := range ids {
+			r, ok := latest[id]
+			if !ok {
+				continue
+			}
+			out = append(out, r)
+			done, total = done+r.Restored, total+r.Docs
+			busy = busy || r.State == RestoreQueued || r.State == RestoreRunning
+		}
+		if progress != nil {
+			progress(done, total)
+		}
+		if !busy {
+			return out, nil
+		}
+		select {
+		case <-ctx.Done():
+			return out, ctx.Err()
+		case <-tick.C:
+		}
+	}
 }

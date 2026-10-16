@@ -1,0 +1,5 @@
+{"rule": "de62b809-a04d-46b5-9a15-8298d330f0c8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x \u0026amp;\u0026gt;/dev/null x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x \u0026amp;\u0026gt;/dev/null y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "778ba9a8-45e4-4b80-8e3e-34a419f0b85e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"udp.ping.teamviewer.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"TeamViewer","QueryName":"udp.ping.teamviewer.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

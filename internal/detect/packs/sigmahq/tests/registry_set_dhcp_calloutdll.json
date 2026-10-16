@@ -1,0 +1,4 @@
+{"rule": "9d3436ef-9476-4c43-acca-90ce06bdf33a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Services\\DHCPServer\\Parameters\\CalloutDlls"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

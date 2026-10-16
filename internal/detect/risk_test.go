@@ -53,7 +53,7 @@ func TestRiskOnlyDetectionRecordsRiskAndThrottles(t *testing.T) {
 	if d.Risk == nil || !d.Risk.Only {
 		t.Fatalf("expected a risk-only detection: %+v", d.Risk)
 	}
-	res, err := s.Run(context.Background(), d)
+	res, err := s.RunManual(context.Background(), d, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestRiskOnlyDetectionRecordsRiskAndThrottles(t *testing.T) {
 	}
 	// Overlapping run: the same rows are throttled by the risk store.
 	now = now.Add(5 * time.Minute)
-	res, _ = s.Run(context.Background(), d)
+	res, _ = s.RunManual(context.Background(), d, "")
 	if res.Risk != 0 || res.Throttled != 2 {
 		t.Errorf("second run = %+v", res)
 	}
@@ -88,7 +88,7 @@ func TestFindingGetsContextAndUrgency(t *testing.T) {
 	rs := &memRisk{}
 	s := &Scheduler{Library: lib, Engine: run, Findings: findings.NewMemory(), Risk: rs, Assets: testAssets(t)}
 	d, _ := lib.Get("endpoint-encoded-powershell")
-	res, err := s.Run(context.Background(), d)
+	res, err := s.RunManual(context.Background(), d, "")
 	if err != nil || len(res.Findings) != 1 {
 		t.Fatal(res, err)
 	}

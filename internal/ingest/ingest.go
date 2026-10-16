@@ -32,6 +32,19 @@ type Event struct {
 	// time (too old, or too far ahead); the event is then filed under the
 	// time it arrived and this is stored as device_time.
 	DeviceTime time.Time
+	// Origin is where the event came from, when it differs from the
+	// origin of the request (see WithOrigin), as for syslog messages,
+	// whose batches mix devices. It is recorded in the event's
+	// signalith_* fields.
+	Origin Origin
+	// ID is the event's document ID, "" to let the request's position
+	// (IngestBody) or OpenSearch pick one. Parsers set it when the raw
+	// line identifies the event (network sensors, see sensorDocID), so the
+	// same line sent again, even in another batch, is stored once.
+	ID string
+	// Sensor is what a sensor's status line says (tag sensor.status), for
+	// the agent inventory; it is not stored with the event.
+	Sensor *SensorStatus
 }
 
 // DefaultMaxEventAge is how old an event's own time may be and still be
@@ -83,11 +96,26 @@ type Pipeline struct {
 	// SampleMark marks every event this pipeline writes as sample data
 	// with this load ID (datamodel.SampleField). Only the sample-data
 	// loader sets it, on a pipeline of its own: every other pipeline
-	// removes the marker from what senders send (see reservedFields).
+	// removes the marker from what senders send (see Reserved).
 	SampleMark string
+	// Servers returns how many servers share each day's field-name
+	// budgets: those that stored events in the last 10 minutes (see
+	// cluster.Node.IndexingServers). nil is this server alone.
+	Servers func() int
+	// FieldCount returns how many fields an index's mapping has (see
+	// MappingFieldCount); nil does not look.
+	FieldCount func(ctx context.Context, index string) (int, error)
+	// liveMaxAge, when set (SetMaxEventAge), replaces MaxEventAge: the
+	// retention policies it follows can change while the pipeline runs.
+	liveMaxAge atomic.Int64
+	// urlQuery is ingest.url_query (SetURLQuery): 0 keeps the query
+	// strings of web addresses, 1 hides their values, 2 drops them.
+	urlQuery atomic.Int32
 
 	stats   Stats
 	names   fieldBudget
+	procs   ProcessTracker
+	counter fieldCounter
 	slots   chan struct{}
 	slotsMu sync.Mutex
 	warnMu  sync.Mutex
@@ -110,12 +138,14 @@ type Stats struct {
 	Indexed  atomic.Int64
 	Failed   atomic.Int64
 	LastSeen atomic.Int64 // unix seconds
+	// LastIndexed is when an event was last stored (unix seconds).
+	LastIndexed atomic.Int64
 	// Retimed counts events whose own time was too old or too far ahead,
 	// so they were filed under the time they arrived.
 	Retimed atomic.Int64
 	// FieldsDropped counts fields left out of events: invalid names, too
 	// many fields, names over an index's budget, or names Signalith sets
-	// itself (reservedFields).
+	// itself (Reserved).
 	FieldsDropped atomic.Int64
 }
 
@@ -127,6 +157,7 @@ type Snapshot struct {
 	Retimed       int64     `json:"retimed"`
 	FieldsDropped int64     `json:"fields_dropped"`
 	LastSeen      time.Time `json:"last_seen,omitzero"`
+	LastIndexed   time.Time `json:"last_indexed,omitzero"`
 }
 
 // Stats returns current counters.
@@ -141,7 +172,17 @@ func (p *Pipeline) Stats() Snapshot {
 	if ls := p.stats.LastSeen.Load(); ls > 0 {
 		s.LastSeen = time.Unix(ls, 0).UTC()
 	}
+	s.LastIndexed = p.LastIndexed()
 	return s
+}
+
+// LastIndexed returns when this pipeline last stored an event, zero
+// before the first.
+func (p *Pipeline) LastIndexed() time.Time {
+	if t := p.stats.LastIndexed.Load(); t > 0 {
+		return time.Unix(t, 0).UTC()
+	}
+	return time.Time{}
 }
 
 func (p *Pipeline) now() time.Time {
@@ -151,7 +192,18 @@ func (p *Pipeline) now() time.Time {
 	return time.Now()
 }
 
+// SetMaxEventAge changes MaxEventAge while the pipeline runs, as when
+// the shared retention policies change; zero or less is ignored.
+func (p *Pipeline) SetMaxEventAge(d time.Duration) {
+	if d > 0 {
+		p.liveMaxAge.Store(int64(d))
+	}
+}
+
 func (p *Pipeline) maxAge() time.Duration {
+	if d := p.liveMaxAge.Load(); d > 0 {
+		return time.Duration(d)
+	}
 	if p.MaxEventAge > 0 {
 		return p.MaxEventAge
 	}
@@ -180,6 +232,9 @@ type Result struct {
 	// Hosts are the first few host names in the events, to tell agents
 	// apart in Health page warnings (see NotePlaintext).
 	Hosts []string `json:"-"`
+	// Sensor is the last sensor status line among the events that were
+	// stored (in the order they came), nil when there is none.
+	Sensor *SensorStatus `json:"-"`
 }
 
 // maxResultHosts caps Result.Hosts, and maxHostName the length of a name
@@ -200,6 +255,11 @@ func (r *Result) noteHost(ev *Event) {
 }
 
 func (r *Result) add(o *Result) {
+	// Batches are written in the order they came: a later one's status
+	// line is the newer.
+	if o.Sensor != nil {
+		r.Sensor = o.Sensor
+	}
 	r.Indexed += o.Indexed
 	r.Rejected += o.Rejected
 	r.Duplicates += o.Duplicates
@@ -268,12 +328,39 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	res := &Result{Received: len(events)}
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
+	ctxOrigin := OriginFrom(ctx)
+	// Linux program starts, joined from their audit records, are stored
+	// too. Each takes its ID from its EXECVE record's.
+	for i := range min(len(ids), len(events)) {
+		if events[i].ID == "" && isAuditRecord(&events[i], "EXECVE") {
+			events[i].ID = ids[i]
+		}
+	}
+	if starts := p.procs.Starts(events); len(starts) > 0 {
+		events = append(events, starts...)
+	}
+	// Each server's share of the day's new field names, and the indices
+	// whose mapping is near OpenSearch's limit, asked once per index.
+	budget := namesBudget(p.servers())
+	full := map[string]bool{}
+	urlQuery := p.URLQuery()
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
 			ev.Fields = map[string]any{}
 		}
 		nReserved := p.dropReserved(ev.Fields, &reserved)
+		ApplyURLQuery(ev.Fields, urlQuery)
+		// After the drop, so only Signalith sets these. The sample data
+		// carries its own marker instead.
+		if p.SampleMark == "" {
+			o := ev.Origin
+			if o.IsZero() {
+				o = ctxOrigin
+			}
+			o.stamp(ev.Fields)
+			setSource(ev.Fields, o.Intake)
+		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
 		} else if !TimeUsable(ev.Time, recv, p.maxAge()) {
@@ -288,12 +375,17 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		}
 		day := dayOf(ev.Time)
 		index := datamodel.IndexName(prefix, ev.Model, day)
-		if n := nReserved + p.names.limit(index, day, oldest, ev.Fields); n > 0 {
+		isFull, asked := full[index]
+		if !asked && hasUnknown(ev.Fields) {
+			isFull = p.mappingFull(ctx, index)
+			full[index] = isFull
+		}
+		if n := nReserved + p.names.limitTo(index, day, oldest, ev.Fields, budget, isFull); n > 0 {
 			ev.Fields["dropped_fields"] = int64(n)
 			res.FieldsDropped += n
 		}
-		doc := store.IndexedDoc{Index: index, Doc: ev.Document()}
-		if i < len(ids) {
+		doc := store.IndexedDoc{Index: index, Doc: ev.Document(), ID: ev.ID}
+		if doc.ID == "" && i < len(ids) {
 			doc.ID = ids[i]
 		}
 		docs = append(docs, doc)
@@ -319,9 +411,10 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		errs = append(errs, again...)
 		res.FieldsDropped += removed
 	}
-	errs, res.Duplicates = withoutDuplicates(errs, docs)
+	errs, res.Duplicates = store.WithoutConflicts(errs, docs)
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
+	res.Sensor = storedSensor(events, errs, recv)
 	for _, e := range errs {
 		if temporary(e) {
 			res.Temporary++
@@ -332,6 +425,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	}
 	res.Errors = errs
 	p.stats.Indexed.Add(int64(res.Indexed))
+	if res.Indexed > 0 {
+		p.stats.LastIndexed.Store(p.now().Unix())
+	}
 	p.stats.Failed.Add(int64(res.Rejected))
 	p.stats.Retimed.Add(int64(res.Retimed))
 	p.stats.FieldsDropped.Add(int64(res.FieldsDropped))
@@ -350,25 +446,40 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	return res, nil
 }
 
-// reservedFields are the fields Signalith sets on events itself, which a
-// sender must not choose: the event time and data model (from where the
-// event is filed), device_time and dropped_fields (what ingest did to the
-// event), and the sample-data marker. Live detections leave out every
-// event with the marker, and removing the sample data deletes them, so an
-// event that could carry one would hide from detections and then be
-// deleted. Ingest drops these from what senders send rather than refuse
-// the event: the event is real activity that must stay visible, and an
-// agent that is refused sends the same batch again forever.
-var reservedFields = []string{"@timestamp", "datamodel", "device_time", "dropped_fields", datamodel.SampleField}
+// storedSensor returns the last sensor status line among the events that
+// were stored (errs are the ones that were not). Which line is newest
+// goes by the order they came, never by the time a line gives itself: a
+// sensor whose clock ran ahead, or a sender writing a time far ahead,
+// would otherwise keep its status forever. That time is kept for the
+// page, but never later than when the line arrived (recv).
+func storedSensor(events []Event, errs []store.BulkItemError, recv time.Time) *SensorStatus {
+	var out *SensorStatus
+	for i := len(events) - 1; i >= 0 && out == nil; i-- {
+		s := events[i].Sensor
+		if s == nil || slices.ContainsFunc(errs, func(e store.BulkItemError) bool { return e.Pos == i }) {
+			continue
+		}
+		out = s
+	}
+	if out != nil && (out.At.IsZero() || out.At.After(recv)) {
+		out.At = recv
+	}
+	return out
+}
 
-// dropReserved removes reservedFields from an event's fields, adds the
-// names it found to seen, and returns how many it removed. On the
-// sample-data loader's pipeline it then marks the event with the load's
-// ID; the marker the generator already put there is not counted.
+// dropReserved removes the fields a sender may not set (see Reserved)
+// from an event's fields, adds the names it found to seen, and returns how
+// many it removed. Ingest drops them rather than refuse the event: the
+// event is real activity that must stay visible, and an agent that is
+// refused sends the same batch again forever. An event that could carry
+// the sample-data marker would hide from live detections and be deleted
+// with the sample data. On the sample-data loader's pipeline it then
+// marks the event with the load's ID; the marker the generator already
+// put there is not counted.
 func (p *Pipeline) dropReserved(f map[string]any, seen *[]string) int {
 	n := 0
-	for _, k := range reservedFields {
-		if _, ok := f[k]; !ok {
+	for k := range f {
+		if !Reserved(k) {
 			continue
 		}
 		delete(f, k)
@@ -376,7 +487,7 @@ func (p *Pipeline) dropReserved(f map[string]any, seen *[]string) int {
 			continue
 		}
 		n++
-		if !slices.Contains(*seen, k) {
+		if !slices.Contains(*seen, k) && len(*seen) < 20 {
 			*seen = append(*seen, k)
 		}
 	}
@@ -410,22 +521,6 @@ func retryable(errs []store.BulkItemError, events []Event, docs []store.IndexedD
 		pos = append(pos, e.Pos)
 	}
 	return retry, pos, removed
-}
-
-// withoutDuplicates drops the errors saying a document with the same ID is
-// already stored (an earlier send of the same request got it in), and
-// reports how many there were.
-func withoutDuplicates(errs []store.BulkItemError, docs []store.IndexedDoc) ([]store.BulkItemError, int) {
-	out := errs[:0]
-	n := 0
-	for _, e := range errs {
-		if e.Type == "version_conflict_engine_exception" && e.Pos >= 0 && e.Pos < len(docs) && docs[e.Pos].ID != "" {
-			n++
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, n
 }
 
 // temporary reports whether OpenSearch turned an event away for a reason
@@ -563,21 +658,7 @@ func (e Event) Document() map[string]any {
 // Normalize maps one record to an event. tag is the Fluent Bit tag, which
 // says what kind of source the record came from.
 func Normalize(tag string, r map[string]any, now time.Time) Event {
-	var ev Event
-	switch {
-	case isWazuhTag(tag) || IsWazuhAlert(r):
-		ev = parseWazuhRecord(r)
-	case isWindowsRecord(tag, r):
-		ev = parseWindows(r)
-	case strings.HasPrefix(tag, "linux.clamav"):
-		ev = parseClamAVRecord(r)
-	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
-		ev = parseJournal(r)
-	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
-		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
-	default:
-		ev = parseGeneric(r)
-	}
+	ev := parseRecord(tag, r, now)
 	if ev.Time.IsZero() {
 		ev.Time = recordTime(r, now)
 	}
@@ -591,7 +672,37 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 		raw, _ := json.Marshal(r)
 		ev.Fields["message"] = string(raw)
 	}
+	if !hasSource(ev.Fields) {
+		// Where the agent read it: the file (the tail inputs' Path_Key),
+		// or the journal.
+		if f := str(r, "file"); f != "" {
+			ev.Fields["source"] = truncateUTF8(CapValue(f), maxSourceLen)
+		} else if strings.HasPrefix(tag, "linux.journal") {
+			ev.Fields["source"] = "journald"
+		}
+	}
 	return ev
+}
+
+// maxSourceLen caps a source taken from a file path.
+const maxSourceLen = 1024
+
+func hasSource(f map[string]any) bool {
+	s, ok := f["source"].(string)
+	return ok && s != ""
+}
+
+// setSource gives an event without a source one, as Splunk's source field
+// reads: a Windows event's log (WinEventLog:Security), else how it arrived.
+func setSource(f map[string]any, intake string) {
+	if hasSource(f) {
+		return
+	}
+	if st, _ := f["sourcetype"].(string); strings.HasPrefix(st, "WinEventLog:") {
+		f["source"] = st
+	} else if intake != "" {
+		f["source"] = intake
+	}
 }
 
 func sourcetypeForTag(tag string) string {
@@ -719,3 +830,59 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// parseRecord runs the parser for a record's kind of source. A parser that
+// panics on a crafted record stores the record as a generic event instead,
+// so one bad record cannot fail the batch it came in or stop the server.
+func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
+	defer func() {
+		if p := recover(); p != nil {
+			parserPanics.Add(1)
+			if last := lastParserPanicLog.Load(); now.Unix()-last >= 60 && lastParserPanicLog.CompareAndSwap(last, now.Unix()) {
+				slog.Warn("a record stopped its parser; stored it as a generic event (logged once a minute)", "tag", tag, "panic", fmt.Sprint(p))
+			}
+			ev = parseGeneric(r)
+		}
+	}()
+	switch {
+	case tag == SensorStatusTag:
+		ev = parseSensorStatus(r)
+	case isWazuhTag(tag) || IsWazuhAlert(r):
+		ev = parseWazuhRecord(r)
+	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
+		ev = parseZeekRecord(tag, r)
+	case isSuricataTag(tag) || IsSuricataEVE(r):
+		ev = parseSuricataRecord(r)
+	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
+		ev = ParseCloudTrail(r)
+	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
+		ev = ParseAzure(r)
+	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
+		ev = ParseO365(r)
+	case tag == GCPTag || strings.HasPrefix(tag, GCPTag+".") || IsGCPRecord(r):
+		ev = ParseGCP(r)
+	case isWindowsRecord(tag, r):
+		ev = parseWindows(r)
+	case strings.HasPrefix(tag, "linux.clamav"):
+		ev = parseClamAVRecord(r)
+	case strings.HasPrefix(tag, WebTag):
+		ev = parseWebRecord(r)
+	case strings.HasPrefix(tag, "linux.audit"):
+		ev = parseAuditdRecord(r)
+	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
+		ev = parseJournal(r)
+	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
+		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
+	default:
+		ev = parseGeneric(r)
+	}
+	return ev
+}
+
+var (
+	// parserPanics counts records whose parser panicked.
+	parserPanics atomic.Int64
+	// lastParserPanicLog is when a parser panic was last logged, in Unix
+	// seconds.
+	lastParserPanicLog atomic.Int64
+)

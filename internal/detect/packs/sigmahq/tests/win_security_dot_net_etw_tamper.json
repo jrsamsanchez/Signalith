@@ -1,0 +1,10 @@
+{"rule": "a4c90ea1-2634-4ca0-adbb-35eae169b6fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectName":"\\Environment","ObjectValueName":"COMPlus_ETWFlags"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectName":"\\SOFTWARE\\Microsoft\\.NETFramework","ObjectValueName":"ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectName":"\\Environment","ObjectValueName":"COMPlus_ETWFlags"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectValueName":"COMPlus_ETWFlags"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectName":"\\Environment"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"ObjectName":"\\SOFTWARE\\Microsoft\\.NETFramework","ObjectValueName":"ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectValueName":"ETWEnabled"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4657","data":{"NewValue":"0","ObjectName":"\\SOFTWARE\\Microsoft\\.NETFramework"}}
+]}

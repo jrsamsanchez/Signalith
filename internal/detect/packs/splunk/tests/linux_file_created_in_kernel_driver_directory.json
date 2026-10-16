@@ -1,0 +1,5 @@
+{"rule": "b85bbeec-6326-11ec-9311-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /kernel/drivers/ x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /kernel/drivers/ y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","User":"tester"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "cdb15e19-c2d0-432a-928e-e49c8c60dcf2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\mscorsvc.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\Microsoft.NET\\FrameworkArm64\\ \\mscorsvc.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

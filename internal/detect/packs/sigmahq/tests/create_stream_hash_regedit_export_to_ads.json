@@ -1,0 +1,4 @@
+{"rule": "0d7a9363-af70-4e7b-a3b7-1a176b7fbe84", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Image":"\\regedit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "8b7273a4-ba5d-4d8a-b04f-11f2900d043a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Microsoft\\Windows\\DeviceGuard\\HypervisorEnforcedCodeIntegrity"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\DeviceGuard\\HypervisorEnforcedCodeIntegrity"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-66E9-68FE-AC56-000000004002","ProcessId":"7108","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity\\Enabled","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:22:33.654"}}
+]}

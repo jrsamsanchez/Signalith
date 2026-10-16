@@ -1,0 +1,4 @@
+{"rule": "bacf58c6-e199-4040-a94f-95dea0f1e45a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5157","data":{"Application":"\\TMBMSRV.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5157","data":{}}
+]}

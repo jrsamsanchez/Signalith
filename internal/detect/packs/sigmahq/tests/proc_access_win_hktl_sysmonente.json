@@ -1,0 +1,9 @@
+{"rule": "d29ada0f-af45-4f27-8f32-f7b77c3dbc4e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1400","TargetImage":":\\Windows\\Sysmon64.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"Ente"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1400","SourceImage":":\\Windows\\SysWOW64\\","TargetImage":":\\Windows\\Sysmon64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1400","SourceImage":":\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsMpEng.exe","TargetImage":":\\Windows\\Sysmon64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"TargetImage":":\\Windows\\Sysmon64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1400"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "977ef627-4539-4875-adf4-ed8f780c4922", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/libaudit.conf"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

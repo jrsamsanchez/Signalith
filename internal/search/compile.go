@@ -3,18 +3,39 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 // TimeField is the event timestamp field in every Signalith index.
 const TimeField = "@timestamp"
+
+// IndexField is the search field that holds the index an event is stored
+// in, as in Splunk (stats count by index). OpenSearch keeps it as the
+// metadata field _index, which no event's own fields can change.
+const IndexField = "index"
+
+// indexMeta is OpenSearch's name for IndexField.
+const indexMeta = "_index"
+
+// storedField returns the name OpenSearch keeps a search field under.
+func storedField(f string) string {
+	switch f {
+	case "_time":
+		return TimeField
+	case IndexField:
+		return indexMeta
+	}
+	return f
+}
 
 // RawField is the name users see for the original event text. It is stored
 // as StoredRawField because OpenSearch reserves leading-underscore names.
@@ -85,11 +106,26 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 		return equalsQuery(c.Field, c.Value), nil
 	case "!=":
 		return boolQuery("must_not", []any{equalsQuery(c.Field, c.Value)}), nil
+	case "=~":
+		if c.Field == IndexField {
+			return nil, indexOnlyEquals()
+		}
+		if c.Field == RawField || c.Field == "_time" {
+			return nil, fmt.Errorf("a regular expression (=~) needs a field other than %s", c.Field)
+		}
+		re, err := ParseRegex(c.Value)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"regexp": map[string]any{c.Field: map[string]any{"value": re.Lucene}}}, nil
 	case "<", "<=", ">", ">=":
 		key := map[string]string{"<": "lt", "<=": "lte", ">": "gt", ">=": "gte"}[c.Op]
 		var v any = c.Value
 		if n, ok := parseNumber(c.Value); ok {
 			v = n
+		}
+		if c.Field == IndexField {
+			return nil, indexOnlyEquals()
 		}
 		field := c.Field
 		if field == "_time" {
@@ -101,7 +137,34 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 	return nil, fmt.Errorf("unsupported operator %q", c.Op)
 }
 
+// WildcardFields are the fields the index template maps as OpenSearch
+// wildcard fields (ingest.IndexTemplate): long text, such as a PowerShell
+// script block, searched for words inside it.
+var WildcardFields = map[string]bool{
+	"script_block_text": true, "task_content": true, "ad_value": true, "file_contents": true,
+	"service_principal_names": true, "cert_attributes": true, "system_message": true, "event_data": true, "security_template_content": true, "security_new_template_content": true, "security_old_template_content": true, "security_conditions": true,
+	"auditd_execve_command": true, "auditd_proctitle": true, "auditd_data": true,
+	"request_parameters": true, "response_elements": true, "properties.targetResources": true,
+	"requestParameters.containerDefinitions": true,
+}
+
+func indexOnlyEquals() error {
+	return errors.New("index can be compared only with = and != (with * wildcards), as in index=signalith-authentication-*")
+}
+
 func equalsQuery(field, value string) map[string]any {
+	if field == IndexField {
+		// Index names are lower case. OpenSearch takes term and
+		// wildcard queries on _index, not exists.
+		value = strings.ToLower(value)
+		if value == "*" {
+			return map[string]any{"match_all": map[string]any{}}
+		}
+		if strings.ContainsAny(value, "*?") {
+			return map[string]any{"wildcard": map[string]any{indexMeta: map[string]any{"value": value}}}
+		}
+		return map[string]any{"term": map[string]any{indexMeta: map[string]any{"value": value}}}
+	}
 	if field == "_time" {
 		field = TimeField
 	}
@@ -117,7 +180,15 @@ func equalsQuery(field, value string) map[string]any {
 	if strings.ContainsAny(value, "*?") {
 		// Backslash is the wildcard escape character; Windows paths need it literal.
 		escaped := strings.ReplaceAll(value, `\`, `\\`)
-		return map[string]any{"wildcard": map[string]any{field: map[string]any{"value": escaped, "case_insensitive": true}}}
+		q := map[string]any{"wildcard": map[string]any{field: map[string]any{"value": escaped, "case_insensitive": true}}}
+		if WildcardFields[field] && escaped != value {
+			// A wildcard field takes backslash literally, and older days
+			// or an OpenSearch before 2.15 have the field as a keyword:
+			// match either way.
+			raw := map[string]any{"wildcard": map[string]any{field: map[string]any{"value": value, "case_insensitive": true}}}
+			return boolQuery("should", []any{q, raw})
+		}
+		return q
 	}
 	if _, ok := parseNumber(value); ok {
 		// Numbers match both numeric and keyword fields exactly.
@@ -128,12 +199,15 @@ func equalsQuery(field, value string) map[string]any {
 
 // cidrQuery matches an IPv4 range such as 10.0.0.0/8 against a field that
 // stores addresses as text. The range becomes at most 128 prefix patterns
-// ("10.*", "10.0.4.*") or, below /24, exact addresses. IPv6 ranges are not
-// expanded and match as plain text.
+// ("10.*", "10.0.4.*") or, below /24, exact addresses. An IPv6 range is
+// a regular expression for its addresses' text (see ipv6RangePattern).
 func cidrQuery(field, value string) (map[string]any, bool) {
 	p, err := netip.ParsePrefix(value)
-	if err != nil || !p.Addr().Is4() {
+	if err != nil {
 		return nil, false
+	}
+	if !p.Addr().Is4() {
+		return ipv6Query(field, p)
 	}
 	p = p.Masked()
 	bits := p.Bits()
@@ -141,28 +215,52 @@ func cidrQuery(field, value string) (map[string]any, bool) {
 	if bits == 0 {
 		return map[string]any{"exists": map[string]any{"field": field}}, true
 	}
-	// Round the prefix up to the next octet and list every value of the
-	// partial octet.
+	// Round the prefix up to the next octet; the partial octet takes any
+	// of its values. More than one value is one regular expression, not a
+	// prefix query each: OpenSearch expands each into the terms it
+	// matches, and a few wide ranges in one search could pass its limit
+	// of 1,024 clauses.
 	octets := (bits + 7) / 8
 	free := octets*8 - bits
 	base := int(a[octets-1])
-	var qs []any
-	for i := 0; i < 1<<free; i++ {
-		parts := make([]string, 0, 4)
-		for k := 0; k < octets-1; k++ {
-			parts = append(parts, strconv.Itoa(int(a[k])))
-		}
-		parts = append(parts, strconv.Itoa(base+i))
+	parts := make([]string, 0, 4)
+	for k := 0; k < octets-1; k++ {
+		parts = append(parts, strconv.Itoa(int(a[k])))
+	}
+	if free == 0 {
+		v := strings.Join(append(parts, strconv.Itoa(base)), ".")
 		if octets == 4 {
-			qs = append(qs, map[string]any{"term": map[string]any{field: map[string]any{"value": strings.Join(parts, ".")}}})
-		} else {
-			qs = append(qs, map[string]any{"prefix": map[string]any{field: map[string]any{"value": strings.Join(parts, ".") + "."}}})
+			return map[string]any{"term": map[string]any{field: map[string]any{"value": v}}}, true
 		}
+		return map[string]any{"prefix": map[string]any{field: map[string]any{"value": v + "."}}}, true
 	}
-	if len(qs) == 1 {
-		return qs[0].(map[string]any), true
+	values := make([]string, 0, 1<<free)
+	for i := 0; i < 1<<free; i++ {
+		values = append(values, strconv.Itoa(base+i))
 	}
-	return map[string]any{"bool": map[string]any{"should": qs, "minimum_should_match": 1}}, true
+	re := strings.Join(append(parts, "("+strings.Join(values, "|")+")"), `\.`)
+	if octets < 4 {
+		re += `\..*`
+	}
+	return map[string]any{"regexp": map[string]any{field: map[string]any{"value": re}}}, true
+}
+
+// ipv6Query matches an IPv6 range against a field that stores addresses
+// as text.
+func ipv6Query(field string, p netip.Prefix) (map[string]any, bool) {
+	p = p.Masked()
+	if p.Bits() == 0 {
+		return map[string]any{"exists": map[string]any{"field": field}}, true
+	}
+	pat, err := ipv6RangePattern(p)
+	if err != nil {
+		return nil, false
+	}
+	re, err := ParseRegex(pat)
+	if err != nil {
+		return nil, false
+	}
+	return map[string]any{"regexp": map[string]any{field: map[string]any{"value": re.Lucene}}}, true
 }
 
 var queryStringReserved = regexp.MustCompile(`[+\-=&|><!(){}\[\]^"~:\\/]`)
@@ -326,4 +424,85 @@ func spanInterval(span string) (map[string]any, error) {
 		return map[string]any{"calendar_interval": map[string]string{"M": "month", "y": "year"}[unit]}, nil
 	}
 	return map[string]any{"fixed_interval": strconv.Itoa(n) + unit}, nil
+}
+
+// WildcardFieldTerms estimates how many index terms a filter's searches of
+// wildcard fields expand to. OpenSearch finds a value in a wildcard field
+// by the three-character pieces of its literal parts, and one search may
+// use at most indices.query.bool.max_clause_count of them (1,024 by
+// default), so a rule listing many long script snippets can be refused.
+func WildcardFieldTerms(e query.Expr) int {
+	cost := func(field, value string) int {
+		if !WildcardFields[field] {
+			return 0
+		}
+		n := 0
+		for _, part := range strings.FieldsFunc(value, func(r rune) bool { return r == '*' || r == '?' }) {
+			if l := utf8.RuneCountInString(part); l > 2 {
+				n += l - 2
+			}
+		}
+		if strings.ContainsAny(value, "*?") && strings.Contains(value, `\`) {
+			n *= 2 // searched both ways (see equalsQuery)
+		}
+		return n
+	}
+	switch x := e.(type) {
+	case *query.And:
+		n := 0
+		for _, c := range x.Children {
+			n += WildcardFieldTerms(c)
+		}
+		return n
+	case *query.Or:
+		n := 0
+		for _, c := range x.Children {
+			n += WildcardFieldTerms(c)
+		}
+		return n
+	case *query.Not:
+		return WildcardFieldTerms(x.Child)
+	case *query.Compare:
+		return cost(x.Field, x.Value)
+	case *query.In:
+		n := 0
+		for _, v := range x.Values {
+			n += cost(x.Field, v)
+		}
+		return n
+	}
+	return 0
+}
+
+// Clauses estimates the clauses OpenSearch counts against its limit of
+// 1024 (indices.query.bool.max_clause_count) for a search: each query the
+// search compiles to, plus the pieces a wildcard field's patterns are
+// split into (WildcardFieldTerms).
+func Clauses(e query.Expr) (int, error) {
+	q, err := compileExpr(e)
+	if err != nil {
+		return 0, err
+	}
+	var count func(v any) int
+	count = func(v any) int {
+		switch x := v.(type) {
+		case []any:
+			n := 0
+			for _, c := range x {
+				n += count(c)
+			}
+			return n
+		case map[string]any:
+			if b, ok := x["bool"].(map[string]any); ok {
+				n := 0
+				for _, k := range []string{"filter", "must", "should", "must_not"} {
+					n += count(b[k])
+				}
+				return n
+			}
+			return 1
+		}
+		return 0
+	}
+	return count(q) + WildcardFieldTerms(e), nil
 }

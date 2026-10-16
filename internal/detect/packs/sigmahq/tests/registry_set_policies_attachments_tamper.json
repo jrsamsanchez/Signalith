@@ -1,0 +1,10 @@
+{"rule": "ee77a5db-b0f3-4be2-bfd4-b58be1c6b15a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\ \\HideZoneInfoOnProperties"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)","TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\\\SaveZoneInformation"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\\\ScanWithAntiVirus"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\ \\HideZoneInfoOnProperties"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\\\SaveZoneInformation"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Attachments\\\\ScanWithAntiVirus"}}
+]}

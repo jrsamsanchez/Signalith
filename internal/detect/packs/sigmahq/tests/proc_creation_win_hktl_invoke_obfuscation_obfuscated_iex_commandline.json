@@ -1,0 +1,6 @@
+{"rule": "4bf943c6-5146-4273-98dd-e958fd1e3abf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"$VerbosePreference.ToString("}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"$VerbosePreference.ToString(","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

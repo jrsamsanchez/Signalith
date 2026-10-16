@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -17,9 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -192,7 +196,7 @@ func TestSecretsStatusAndEncrypt(t *testing.T) {
 func TestSecretsSet(t *testing.T) {
 	path, _ := secretsSetup(t)
 	if _, err := runCmd(t, "", "set", "server.listen", "-c", path); err == nil ||
-		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, auth.ldap.bind_password, ingest.tokens") {
+		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, vulns.nvd_api_key, vulns.openvas_password, auth.ldap.bind_password, auth.oidc.client_secret, m365.client_secret, ingest.tokens") {
 		t.Errorf("unknown setting: %v", err)
 	}
 	if _, err := runCmd(t, "", "set", "-c", path); err == nil {
@@ -319,6 +323,64 @@ func TestSecretsRotateAndPrune(t *testing.T) {
 	}
 }
 
+// TestSecretsRotateResealsClusterFiles checks that rotate-master seals the
+// node key, the cluster keys and the copy of the shared settings in the
+// state folder again with the new master key, as it does the other files.
+func TestSecretsRotateResealsClusterFiles(t *testing.T) {
+	path, _ := secretsSetup(t)
+	state := filepath.Dir(path)
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	if _, err := runCmd(t, "", "encrypt", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	master := secrets.NewKeyring(state)
+	oldID := master.KeyID()
+	ks := shared.KeyStore{Dir: state, Master: master}
+	node, err := ks.NodeKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck, _ := shared.NewClusterKey()
+	if err := ks.SaveClusterKey(ck); err != nil {
+		t.Fatal(err)
+	}
+	cache := shared.Cache{Path: shared.CachePath(state), Master: master, ClusterID: "c_1", Prefix: "signalith"}
+	if err := cache.Write(shared.CacheData{WrittenAt: time.Now(), MaxRev: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := runCmd(t, "", "status", "-c", path); !strings.Contains(out, "cluster key "+ck.ID()) || !strings.Contains(out, "copy of the shared settings") {
+		t.Errorf("status:\n%s", out)
+	}
+	out, err := runCmd(t, "", "rotate-master", "-c", path)
+	if err != nil {
+		t.Fatalf("rotate (%v):\n%s", err, out)
+	}
+	files := []string{shared.NodeKeyPath(state), shared.ClusterKeyPath(state, ck.ID()), shared.CachePath(state)}
+	for _, f := range files {
+		if !strings.Contains(out, "Encrypted 1 value again in "+f) {
+			t.Errorf("rotate output does not name %s:\n%s", f, out)
+		}
+	}
+	// Without the previous key, everything opens with the new one.
+	if _, err := runCmd(t, "", "rotate-master", "-prune", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	master = secrets.NewKeyring(state)
+	if master.KeyID() == oldID {
+		t.Fatal("same master key")
+	}
+	ks.Master, cache.Master = master, master
+	if n, err := ks.LoadNodeKey(); err != nil || n.Fingerprint() != node.Fingerprint() {
+		t.Errorf("node key after rotation: %v", err)
+	}
+	if keys, err := ks.ClusterKeys(); err != nil || len(keys) != 1 || keys[0].ID() != ck.ID() {
+		t.Errorf("cluster key after rotation: %v", err)
+	}
+	if d, err := cache.Read(time.Now()); err != nil || d.MaxRev != 7 {
+		t.Errorf("cache after rotation: %+v %v", d, err)
+	}
+}
+
 // TestSecretsRotateFailureChangesNothing makes writing a file fail, before
 // and after the new key is in place, and checks that everything is as it
 // was.
@@ -437,11 +499,8 @@ func TestInitWritesEncryptedValues(t *testing.T) {
 	if !strings.Contains(out, "Master key:  "+filepath.Join(filepath.Dir(path), "keys")) || !strings.Contains(out, "Back it up") {
 		t.Errorf("init output:\n%s", out)
 	}
-	data, _ := os.ReadFile(path)
-	if !regexp.MustCompile(`tokens:\n\s+- enc:v1:`).Match(data) {
-		t.Errorf("the ingest token is not encrypted:\n%s", data)
-	}
-	if c, err := config.Load(path); err != nil || len(c.Ingest.Tokens[0]) < 16 || len(c.PlainSecrets()) != 0 {
+	// No shared agent token: Add data gives each agent its own.
+	if c, err := config.Load(path); err != nil || len(c.Ingest.Tokens) != 0 || len(c.PlainSecrets()) != 0 {
 		t.Errorf("load: %v", err)
 	}
 }
@@ -635,6 +694,30 @@ func TestPruneKeepsAKeyThatMayBeNeeded(t *testing.T) {
 	}
 	os.WriteFile(dirFile, good, 0o600)
 
+	// An archive encrypted with the previous key alone needs it; one also
+	// encrypted with a cluster key does not.
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := c.Keyring().Source()
+	if err != nil || src.OldKeyID == "" {
+		t.Fatal(src, err)
+	}
+	oldID := src.OldKeyID
+	archived := func(id, kid string) {
+		os.MkdirAll(c.ArchiveDir(), 0o700)
+		b, _ := json.Marshal(retention.Manifest{Format: retention.ArchiveFormat, ID: id, Index: id, File: id + ".ndjson.gz", Encryption: archivecrypt.Scheme, KID: kid})
+		os.WriteFile(filepath.Join(c.ArchiveDir(), id+".json"), b, 0o600)
+	}
+	archived("signalith-endpoint-2026.07.01", oldID+",c1usterk3y00")
+	archived("signalith-endpoint-2026.07.02", oldID)
+	if _, err := runCmd(t, "", "rotate-master", "-prune", "-c", path); err == nil || !strings.Contains(err.Error(), "1 archived day") ||
+		!strings.Contains(err.Error(), "2026.07.02") || strings.Contains(err.Error(), "2026.07.01") {
+		t.Errorf("prune with an archive that needs the key: %v", err)
+	}
+	os.RemoveAll(c.ArchiveDir())
+
 	// With the key as a systemd credential, the service must have
 	// restarted since the rotation.
 	defer func() { keyIsCredential, serviceRestarted = false, serviceStartedAfter }()
@@ -754,5 +837,56 @@ func TestEncryptMovesTheURLPassword(t *testing.T) {
 	c, err := config.Load(path)
 	if err != nil || c.OpenSearch.Username != "admin" || c.OpenSearch.Password != "Plain OS pw#1" || len(c.PlainSecrets()) != 0 {
 		t.Errorf("load: %v %+v %v", err, c.OpenSearch, c.PlainSecrets())
+	}
+}
+
+// The NVD API key can be stored encrypted in a file with no vulns section.
+func TestSecretsSetNVDKey(t *testing.T) {
+	path, _ := secretsSetup(t)
+	if _, err := runCmd(t, "nvd-key-0123\n", "set", "vulns.nvd_api_key", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "nvd-key-0123") || !strings.Contains(string(data), "nvd_api_key: enc:v1:") {
+		t.Errorf("file after set:\n%s", data)
+	}
+	c, err := config.Load(path)
+	if err != nil || c.Vulns.NVDAPIKey != "nvd-key-0123" {
+		t.Errorf("loaded %v %q", err, c.Vulns.NVDAPIKey)
+	}
+}
+
+// The OpenVAS password can be stored encrypted, as the settings page
+// says, and a plain one is encrypted in place.
+func TestSecretsOpenVASPassword(t *testing.T) {
+	path, _ := secretsSetup(t)
+	if _, err := runCmd(t, "gvm-pass-0123\n", "set", "vulns.openvas_password", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "gvm-pass-0123") || !strings.Contains(string(data), "openvas_password: enc:v1:") {
+		t.Errorf("file after set:\n%s", data)
+	}
+	c, err := config.Load(path)
+	if err != nil || c.Vulns.OpenVASPassword != "gvm-pass-0123" {
+		t.Errorf("loaded %v %q", err, c.Vulns.OpenVASPassword)
+	}
+
+	path, _ = secretsSetup(t)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("vulns:\n  openvas_password: plain-gvm-pass\n")
+	f.Close()
+	if out, err := runCmd(t, "", "encrypt", "-c", path); err != nil {
+		t.Fatalf("encrypt (%v):\n%s", err, out)
+	}
+	data, _ = os.ReadFile(path)
+	if strings.Contains(string(data), "plain-gvm-pass") {
+		t.Errorf("file after encrypt:\n%s", data)
+	}
+	if c, err := config.Load(path); err != nil || c.Vulns.OpenVASPassword != "plain-gvm-pass" {
+		t.Errorf("loaded after encrypt %v", err)
 	}
 }

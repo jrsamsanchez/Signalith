@@ -1,0 +1,5 @@
+{"rule": "3da70954-0f2c-4103-adff-b7440368f50e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\ PROCEXP152.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\procexp64a.exe","TargetFilename":"\\AppData\\Local\\Temp\\ PROCEXP152.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

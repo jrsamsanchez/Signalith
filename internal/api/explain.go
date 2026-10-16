@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -11,6 +13,30 @@ import (
 // analysts can read detections and searches someone else wrote.
 func Explain(q *query.Query) []string {
 	var steps []string
+	if len(q.Commands) > 0 {
+		if c, ok := q.Commands[0].(*query.InputLookup); ok {
+			first := "Read the rows of the lookup table " + c.Table
+			if c.Max > 0 {
+				first += fmt.Sprintf(", at most %d", c.Max)
+			}
+			steps = append(steps, first+".")
+			for _, c := range q.Commands[1:] {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
+		if c, ok := q.Commands[0].(*query.MakeResults); ok {
+			first := "Make one row holding only the current time"
+			if c.Count > 1 {
+				first = fmt.Sprintf("Make %d rows, each holding only the current time", c.Count)
+			}
+			steps = append(steps, first+".")
+			for _, c := range q.Commands[1:] {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
+	}
 	src := "all events"
 	if q.Datamodel != "" {
 		src = q.Datamodel + " events"
@@ -94,11 +120,16 @@ func describeExpr(e query.Expr) string {
 		if e.Value == "*" && e.Op == "=" {
 			return e.Field + " has any value"
 		}
+		if e.Op == "=~" {
+			return fmt.Sprintf("%s matches the regular expression %s", e.Field, e.Value)
+		}
 		verb := map[string]string{"=": "is", "!=": "is not", "<": "is less than", "<=": "is at most", ">": "is greater than", ">=": "is at least"}[e.Op]
 		if strings.ContainsAny(e.Value, "*?") && (e.Op == "=" || e.Op == "!=") {
 			verb = map[string]string{"=": "matches", "!=": "does not match"}[e.Op]
 		}
 		return fmt.Sprintf("%s %s %s", e.Field, verb, e.Value)
+	case *query.Cond:
+		return e.String() + " holds"
 	}
 	return e.String()
 }
@@ -124,6 +155,30 @@ func describeAggs(aggs []query.Agg) string {
 			s = "the smallest " + a.Field
 		case "max":
 			s = "the largest " + a.Field
+		case "median":
+			s = "the median " + a.Field
+		case "stdev":
+			s = "the standard deviation of " + a.Field
+		case "var":
+			s = "the variance of " + a.Field
+		case "range":
+			s = "the range (largest minus smallest) of " + a.Field
+		case "mode":
+			s = "the most common " + a.Field
+		case "values":
+			s = "the distinct values of " + a.Field
+		case "list":
+			s = "every value of " + a.Field
+		case "first", "latest":
+			s = "the newest " + a.Field
+		case "last", "earliest":
+			s = "the oldest " + a.Field
+		default:
+			if n := query.Percentile(a.Func); n > 0 {
+				s = fmt.Sprintf("the %s percentile of %s", ordinal(n), a.Field)
+			} else {
+				s = a.String()
+			}
 		}
 		if a.Alias != "" {
 			s += fmt.Sprintf(" (as %s)", a.Alias)
@@ -131,6 +186,20 @@ func describeAggs(aggs []query.Agg) string {
 		parts[i] = s
 	}
 	return strings.Join(parts, ", ")
+}
+
+func ordinal(n int) string {
+	suffix := "th"
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		suffix = "st"
+	case n%10 == 2:
+		suffix = "nd"
+	case n%10 == 3:
+		suffix = "rd"
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func describeCommand(c query.Command) string {
@@ -151,14 +220,200 @@ func describeCommand(c query.Command) string {
 			s += ", one line per " + c.By
 		}
 		return s + "."
-	case *query.Top:
-		s := fmt.Sprintf("List the %d most common values of %s with their count and percentage", c.Limit, strings.Join(c.Fields, " and "))
+	case *query.EventStats:
+		s := "Add " + describeAggs(c.Aggs)
 		if len(c.By) > 0 {
 			s += " for each " + strings.Join(c.By, " and ")
 		}
+		return s + " to every row, keeping the rows."
+	case *query.Eval:
+		parts := make([]string, len(c.Assigns))
+		for i, a := range c.Assigns {
+			parts[i] = a.Field + " to " + a.Expr.String()
+		}
+		if c.Format {
+			return "Set " + strings.Join(parts, ", then ") + " (fieldformat runs as eval)."
+		}
+		return "Set " + strings.Join(parts, ", then ") + "."
+	case *query.NoMV:
+		return "Join the values of " + c.Field + " into one, a line each."
+	case *query.MVCombine:
+		return "Merge rows that differ only in " + c.Field + " into one row holding all their " + c.Field + " values."
+	case *query.StrCat:
+		parts := make([]string, len(c.Parts))
+		for i, p := range c.Parts {
+			parts[i] = p.Text
+			if p.Literal {
+				parts[i] = strconv.Quote(p.Text)
+			}
+		}
+		s := "Join " + strings.Join(parts, ", ") + " into " + c.Dest
+		if c.AllRequired {
+			s += ", only where every field has a value"
+		}
+		return s + "."
+	case *query.RangeMap:
+		parts := make([]string, len(c.Ranges))
+		for i, r := range c.Ranges {
+			parts[i] = fmt.Sprintf("%s for %g to %g", r.Name, r.Lo, r.Hi)
+		}
+		return "Set range by " + c.Field + ": " + strings.Join(parts, ", ") + ", otherwise " + c.DefaultName() + "."
+	case *query.ForEach:
+		return "For each field matching " + strings.Join(c.Fields, ", ") + ", run: " + c.Body + "."
+	case *query.Rex:
+		if c.Sed != "" {
+			return "Change the text of " + c.Field + " with the sed expression " + c.Sed + "."
+		}
+		re, err := regexp.Compile(c.Pattern)
+		var names []string
+		if err == nil {
+			for _, n := range re.SubexpNames() {
+				if n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+		s := "Extract " + strings.Join(names, ", ") + " from " + c.Field + " with the regular expression " + c.Pattern
+		switch c.MaxMatch {
+		case 1:
+		case 0:
+			s += ", keeping every match"
+		default:
+			s += fmt.Sprintf(", keeping up to %d matches", c.MaxMatch)
+		}
+		return s + "."
+	case *query.Join:
+		s := "Join each row to the rows of a subsearch that share its " + strings.Join(c.Fields, " and ")
+		switch c.Max {
+		case 0:
+			s += fmt.Sprintf(" (every match, up to %d)", query.MaxJoinMatches)
+		case 1:
+			s += " (the first match)"
+		default:
+			s += fmt.Sprintf(" (up to %d matches)", c.Max)
+		}
+		s += ", adding their fields"
+		if c.Left {
+			s += "; rows with no match are kept"
+		} else {
+			s += "; rows with no match are dropped"
+		}
+		return s + ". The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Transaction:
+		s := "Group the events"
+		if len(c.Fields) > 0 {
+			s += " by " + strings.Join(c.Fields, " and ")
+		}
+		s += " into transactions, oldest event first"
+		var limits []string
+		if c.MaxSpan > 0 {
+			limits = append(limits, fmt.Sprintf("at most %d seconds long", c.MaxSpan))
+		}
+		if c.MaxPause > 0 {
+			limits = append(limits, fmt.Sprintf("with at most %d seconds between events", c.MaxPause))
+		}
+		limits = append(limits, fmt.Sprintf("of at most %d events", c.MaxEvents))
+		s += ", each " + strings.Join(limits, ", ")
+		if c.StartsWith != nil {
+			s += "; an event where " + describeExpr(c.StartsWith) + " starts one"
+		}
+		if c.EndsWith != nil {
+			s += "; an event where " + describeExpr(c.EndsWith) + " ends one, and one that never ends is dropped"
+		}
+		return s + ". Each gets duration (seconds) and eventcount."
+	case *query.Dedup:
+		s := "Keep only the first row"
+		if c.N > 1 {
+			s = fmt.Sprintf("Keep only the first %d rows", c.N)
+		}
+		s += " for each " + strings.Join(c.Fields, " and ")
+		if c.Consecutive {
+			s += ", dropping only repeats that follow each other"
+		}
+		if c.KeepEmpty {
+			s += "; rows missing one of these fields are kept"
+		} else {
+			s += "; rows missing one of these fields are dropped"
+		}
+		return s + "."
+	case *query.Fillnull:
+		what := "every column"
+		if len(c.Fields) > 0 {
+			what = strings.Join(c.Fields, ", ")
+		}
+		return fmt.Sprintf("Fill missing values in %s with %s.", what, c.Value)
+	case *query.Top:
+		which := "most"
+		if c.Rare {
+			which = "least"
+		}
+		var with []string
+		if !c.NoCount {
+			with = append(with, "count")
+		}
+		if !c.NoPercent {
+			with = append(with, "percentage")
+		}
+		s := fmt.Sprintf("List the %d %s common values of %s", c.Limit, which, strings.Join(c.Fields, " and "))
+		if len(with) > 0 {
+			s += " with their " + strings.Join(with, " and ")
+		}
+		if len(c.By) > 0 {
+			s += " for each " + strings.Join(c.By, " and ")
+		}
+		if c.UseOther {
+			s += ", and a row counting the rest as " + c.Other()
+		}
 		return s + "."
 	case *query.Where:
+		if c.Search {
+			return "Keep only rows matching " + describeExpr(c.Expr) + "."
+		}
 		return "Keep only rows where " + describeExpr(c.Expr) + "."
+	case *query.MVExpand:
+		s := "Make one row for each value of " + c.Field
+		if c.Limit > 0 {
+			s += fmt.Sprintf(" (up to %d per row)", c.Limit)
+		}
+		return s + "."
+	case *query.MakeMV:
+		switch {
+		case c.Tokenizer != "":
+			return "Split " + c.Field + " into a value for each match of " + c.Tokenizer + "."
+		case c.Delim != "":
+			return "Split " + c.Field + " into values at each " + strconv.Quote(c.Delim) + "."
+		}
+		return "Split " + c.Field + " into values at each space."
+	case *query.Reverse:
+		return "Turn the order of the rows around."
+	case *query.Tail:
+		return fmt.Sprintf("Keep the last %d rows, last first.", c.N)
+	case *query.Uniq:
+		return "Drop rows that repeat the row before them exactly."
+	case *query.Convert:
+		parts := make([]string, 0, len(c.Funcs))
+		for _, f := range c.Funcs {
+			s := f.Func + "(" + f.Field + ")"
+			if f.As != "" {
+				s += " into " + f.As
+			}
+			parts = append(parts, s)
+		}
+		return "Convert " + strings.Join(parts, ", ") + "."
+	case *query.AddTotals:
+		var parts []string
+		what := "the numeric fields"
+		if len(c.Fields) > 0 {
+			what = strings.Join(c.Fields, ", ")
+		}
+		if !c.NoRow {
+			parts = append(parts, "add up "+what+" of each row into "+c.TotalName())
+		}
+		if c.Col {
+			parts = append(parts, "add a last row with each column's total")
+		}
+		s := strings.Join(parts, " and ")
+		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
 		parts := make([]string, len(c.Keys))
 		for i, k := range c.Keys {
@@ -173,12 +428,99 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
 	case *query.Table:
 		return "Show only the columns " + strings.Join(c.Fields, ", ") + "."
+	case *query.Chart:
+		s := "Chart " + describeAggs(c.Aggs) + " for each " + c.Over
+		if c.By != "" {
+			s += ", one column per " + c.By
+			if c.Limit > 0 {
+				s += fmt.Sprintf(" (the %d largest)", c.Limit)
+			}
+		}
+		return s + "."
+	case *query.XYSeries:
+		return "Make one row per " + c.X + " with one column per " + c.Y + ", holding " + strings.Join(c.Values, " and ") + "."
+	case *query.Untable:
+		return "Make one row per cell: " + c.X + ", the column's name as " + c.Label + " and its value as " + c.Value + "."
+	case *query.Spath:
+		if c.Path == "" {
+			return "Extract every value from the JSON in " + c.Input + ", each named by its path."
+		}
+		out := c.Output
+		if out == "" {
+			out = c.Path
+		}
+		return "Extract " + c.Path + " from the JSON in " + c.Input + " into " + out + "."
+	case *query.FromJSON:
+		if c.Prefix != "" {
+			return "Extract each top-level key of the JSON object in " + c.Field + " as a field named " + c.Prefix + " and the key."
+		}
+		return "Extract each top-level key of the JSON object in " + c.Field + " as a field of the same name."
+	case *query.FieldsRemove:
+		return "Remove the fields " + strings.Join(c.Fields, ", ") + "."
+	case *query.StreamStats:
+		s := "Add a running " + describeAggs(c.Aggs)
+		if len(c.By) > 0 {
+			s += " for each " + strings.Join(c.By, " and ")
+		}
+		s += " to every row, over the rows before it"
+		if c.Current {
+			s += " and the row itself"
+		}
+		if c.Window > 0 {
+			s += fmt.Sprintf(", looking back at most %d rows", c.Window)
+		}
+		return s + "."
+	case *query.Bin:
+		s := "Round " + c.Field + " down into buckets of " + c.Span
+		if c.As != "" {
+			s += ", writing the bucket to " + c.As
+		}
+		return s + "."
+	case *query.Regex:
+		if c.Negate {
+			return "Keep only rows where " + c.Field + " does not match the regular expression " + c.Pattern + "."
+		}
+		return "Keep only rows where " + c.Field + " matches the regular expression " + c.Pattern + "."
+	case *query.MakeResults:
+		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
+	case *query.Append:
+		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.AppendPipe:
+		parts := make([]string, len(c.Commands))
+		for i, cmd := range c.Commands {
+			parts[i] = describeCommand(cmd)
+		}
+		return "Run these steps over a copy of the rows and add the rows they give after them: " + strings.Join(parts, " ")
 	case *query.Rename:
 		parts := make([]string, len(c.Pairs))
 		for i, p := range c.Pairs {
 			parts[i] = p[0] + " to " + p[1]
 		}
 		return "Rename " + strings.Join(parts, ", ") + "."
+	case *query.Lookup:
+		keys := make([]string, len(c.Keys))
+		for i, k := range c.Keys {
+			keys[i] = k.Field()
+			if k.As != "" {
+				keys[i] += " (as the table's " + k.Column + ")"
+			}
+		}
+		what := "every other column"
+		if len(c.Outputs) > 0 {
+			cols := make([]string, len(c.Outputs))
+			for i, o := range c.Outputs {
+				cols[i] = o.Column
+				if o.As != "" {
+					cols[i] += " as " + o.As
+				}
+			}
+			what = strings.Join(cols, ", ")
+		}
+		s := "Look up " + strings.Join(keys, " and ") + " in the lookup table " + c.Table + " and add " + what + " from the matching rows"
+		if c.New {
+			s += ", only where the field is not already set"
+		}
+		return s + "."
 	case *query.Enrich:
 		what := "user, src, dest and host fields"
 		if len(c.Fields) > 0 {

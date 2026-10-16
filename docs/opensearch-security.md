@@ -27,10 +27,11 @@ OpenSearch. First the setup step, `signalith bootstrap-docker`, which:
   OpenSearch, one for Signalith (`CN=signalith,O=Signalith`) and an admin certificate
   (`CN=signalith-admin,O=Signalith`) that can change OpenSearch's security settings;
 - keeps them in the `opensearch-certs` and `signalith-secrets` volumes, readable only by
-  the container that uses them, and leaves them alone on later runs. If one is missing,
-  damaged or due to expire within 30 days, it makes a new set; restart both then with
+  the container that uses them, and the CA's key in a volume of its own (below). It leaves
+  them alone on later runs. If a certificate is missing, damaged or due to expire within
+  30 days, it makes that one again under the same CA; restart both then with
   `docker compose -f deploy/docker/docker-compose.yml restart opensearch signalith`;
-- makes the first admin password and the agents' ingest token the same way.
+- makes the first admin password and the shared agent token (the quick start's `ingest-token`) the same way.
 
 Then, once OpenSearch has started, the step that loads OpenSearch's security settings
 (the `opensearch-security` service, `deploy/docker/opensearch/load-security.sh`).
@@ -59,6 +60,82 @@ docker compose -f deploy/docker/docker-compose.yml exec opensearch curl -s --cac
 If you change the files in `security/`, for example to give `roles.yml` another
 `index_prefix`, run `docker compose -f deploy/docker/docker-compose.yml up -d` again: the
 step sees the change and loads them.
+
+### Where the CA's key is kept
+
+The CA's certificate and key are in the `opensearch-ca` volume, which only the setup step
+mounts: OpenSearch and Signalith never see the key. Guard it like a password: whoever has
+it can make certificates OpenSearch trusts. A backup of the Docker volumes holds it, so
+keep such backups as private as the data itself.
+
+Versions before this one did not keep the key. Such an install keeps working as it is, and
+the setup step's log says once per `up` that the key was not kept. Its certificates last
+10 years, but to renew one, or to add servers, give it a CA with a key first (see
+[Replacing the CA](#replacing-the-ca)).
+
+To run the setup step by hand with one of the options below, from the folder you cloned
+Signalith into (one line, in PowerShell too):
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker <option>
+```
+
+### More names or nodes under the same CA
+
+- `-opensearch-name NAME` adds a host name or IP address to OpenSearch's certificate, for
+  when something reaches OpenSearch by another name. Repeat it, or separate names with
+  commas. The certificate is made again under the same CA and keeps the name from then on;
+  restart OpenSearch to use it.
+- `-nodes N` keeps certificates for N OpenSearch nodes: `node.pem` for the first
+  (`CN=opensearch`), then `node-2.pem` (`CN=opensearch-2`) and so on, all in the
+  `opensearch-certs` volume. They are kept and renewed like the first, and never deleted
+  when N goes down.
+
+### Handing the CA key to Signalith
+
+To add servers, Signalith gives each one its own OpenSearch certificate
+(`CN=signalith-server-<name>,O=Signalith`), which `roles_mapping.yml` maps to the same
+`signalith_server` role. For that it needs the CA:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
+```
+
+This puts `opensearch-ca.pem` and `opensearch-ca-key.pem` in the `import` folder of
+Signalith's state volume, readable only by Signalith. Within a minute Signalith keeps the
+CA in the cluster's shared settings, its key encrypted with the cluster key, deletes the
+key file, and switches itself to a certificate of its own (see
+[Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
+Start Signalith at least once before running it. If the files are already waiting there,
+it leaves them as they are.
+
+### Loading changed security settings
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -apply-security
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+The first command makes the step that loads OpenSearch's security settings forget what it
+loaded last, so the next `up` loads every file again. You seldom need it: an update of
+Signalith that changes `roles_mapping.yml` or another file in `security/` is loaded on the
+next `up` anyway, since the step compares the files with what it loaded last. On OpenSearch
+installed without Docker, run `securityadmin.sh` (or `.bat`) as in
+[step 3](#3-load-the-security-settings).
+
+### Replacing the CA
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -new-ca
+docker compose -f deploy/docker/docker-compose.yml restart opensearch signalith
+```
+
+This makes a new CA, keeps its key, and makes every certificate again under it. The setup
+step never does this by itself, even when the CA is about to expire (after 10 years): it
+stops with a message pointing here instead. Everything the old CA issued stops working:
+the certificates Signalith made for other servers, and Signalith's own copy of the CA. Run
+`-export-ca-key` again: Signalith then keeps the new CA in place of the old one, and each
+server gets a new certificate of its own.
 
 ### If OpenSearch's security settings aren't loaded
 
@@ -172,9 +249,12 @@ The folder it writes holds:
 | `opensearch/opensearch-security/` | OpenSearch: `config.yml`, `internal_users.yml`, `roles.yml`, `roles_mapping.yml` |
 | `opensearch/add-to-opensearch.yml` | Lines to add to `opensearch.yml` |
 | `signalith/` | Signalith: the CA, its client certificate and key, and `add-to-signalith.yaml` |
+| `ca/` | The CA's certificate and key: never copy it to OpenSearch |
 
-The `*-key.pem` files are private keys. Copy them only where the steps say, and delete the
-`opensearch-pki` folder when you are done.
+The `*-key.pem` files are private keys. Copy them only where the steps say. Keep the `ca`
+folder with the admin, somewhere safe, like a password: it makes certificates for more
+nodes and servers under the same CA (below). Delete the rest of the `opensearch-pki`
+folder when you are done.
 
 Signalith uses indices named `signalith*`. If you set another `opensearch.index_prefix`,
 change `index_patterns` in `opensearch-security/roles.yml` to match before step 4.
@@ -187,15 +267,23 @@ change `index_patterns` in `opensearch-security/roles.yml` to match before step 
    sudo chown -R opensearch:opensearch /etc/opensearch/certs
    sudo chmod 700 /etc/opensearch/certs && sudo chmod 600 /etc/opensearch/certs/*
    ```
-2. Copy the four files in `opensearch/opensearch-security/` into
+2. Delete the demo certificates OpenSearch put directly in `<config>` (`esnode.pem`,
+   `kirk.pem`, `root-ca.pem` and their keys), but not your new `certs` folder. OpenSearch
+   refuses to start while they are there (`Demo certificates found`), and the Linux
+   packages put them there even when the demo setup is skipped. On Linux:
+   ```sh
+   sudo rm -f /etc/opensearch/*.pem
+   ```
+   On Windows, delete the `.pem` files in `C:\opensearch\config` (not in its `certs` folder).
+3. Copy the four files in `opensearch/opensearch-security/` into
    `<config>/opensearch-security/`, replacing the ones there (keep a copy of the old ones).
-3. Edit `<config>/opensearch.yml`: delete the block from
+4. Edit `<config>/opensearch.yml`: delete the block from
    `######## Start OpenSearch Security Demo Configuration ########` to
    `######## End OpenSearch Security Demo Configuration ########` if there is one, and any
    other line starting with `plugins.security.`. Then paste in the contents of
    `opensearch/add-to-opensearch.yml`. Leave `network.host` as it is when Signalith runs on
    the same machine (OpenSearch then listens on this machine only).
-4. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
+5. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
    service (or `opensearch.bat`).
 
 ### 3. Load the security settings
@@ -253,18 +341,76 @@ curl -s -o /dev/null -w '%{http_code}\n' --cacert /etc/opensearch/certs/root-ca.
 3. Run `signalith validate`, then restart Signalith. The **Health** page shows OpenSearch's
    status.
 
+### More nodes under the same CA
+
+For another node of the same OpenSearch cluster, give `-ca-dir` the `ca` folder of the first
+run (or that run's `-out` folder), the new node's name, and with `-peer` the names of the
+other nodes:
+
+```sh
+signalith opensearch-certs -ca-dir opensearch-pki/ca -node search2 -san 10.0.0.6 -peer search1 -out opensearch-pki-search2
+```
+
+It writes that node's certificate and the CA's certificate in `opensearch/certs/`, and a
+new Signalith client certificate in `signalith/`, all under the same CA; no new admin
+certificate (use the first one). `add-to-opensearch.yml` lists every node in
+`plugins.security.nodes_dn`; add the new node's name to the other nodes' `nodes_dn` too.
+Node names may not be `signalith` or start with `signalith-`: those are for Signalith's own
+certificates.
+
 ## Renewing
 
-The certificates last 10 years. To replace them, run `signalith opensearch-certs` into a
-new folder and repeat steps 2 and 4 (step 3 too if you changed the security files), then
-restart OpenSearch and Signalith, since the CA is new as well.
+The CA and the certificates last 10 years. In the Docker quick start, the setup step makes
+a certificate again under the same CA when it is within 30 days of expiry; only the CA
+itself needs [replacing](#replacing-the-ca) by hand.
+
+Without Docker, make new certificates under the same CA with
+`signalith opensearch-certs -ca-dir opensearch-pki/ca -node <name> -out <new folder>` and
+repeat steps 2 and 4, then restart OpenSearch and Signalith. Without the `ca` folder, run
+`signalith opensearch-certs` into a new folder instead and repeat steps 2 and 4 (step 3
+too if you changed the security files): the CA is then new as well.
+
+## Moving to OpenSearch 3.x
+
+The Docker quick start uses OpenSearch 3.9 from Signalith 0.3.0 on; earlier versions used
+2.17. Signalith works with both, and the security settings on this page are the same for
+each. An OpenSearch 2.17 data volume starts directly on 3.9 and keeps its events, findings
+and security settings, so a quick start updated with `git pull` moves on its next `up`.
+
+OpenSearch can't go back to 2.17 on the same data once 3.9 has started on it, so copy the
+OpenSearch volume first, from the Signalith folder (PowerShell or a terminal):
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml stop
+docker run --rm -v docker_opensearch-data:/data -v "${PWD}:/backup" alpine tar czf /backup/opensearch-data-2.17.tgz -C /data .
+```
+
+Then update and start as in
+[Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith#upgrading-the-docker-quick-start).
+The step that loads the security settings loads them once more after the move (3.x has no
+`whitelist.yml`), which is expected. To stay on 2.17 for now, put the 2.17 image on the
+`opensearch` and `opensearch-security` services in an override file and add
+`-f deploy/docker/docker-compose.override.yml` to each command:
+
+```yaml
+# deploy/docker/docker-compose.override.yml
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+  opensearch-security:
+    image: opensearchproject/opensearch:2.17.1
+```
+
+On OpenSearch installed without Docker, follow OpenSearch's own upgrade steps and keep the
+`opensearch.yml` lines from [step 2](#2-put-the-files-in-place-on-the-opensearch-machine).
 
 ## Other setups
 
-- **A cluster of several nodes**: `opensearch-certs` makes a certificate for one node.
-  For more, use your own CA, list every node's certificate subject in
-  `plugins.security.nodes_dn`, and give Signalith a client certificate whose common name
-  is `signalith` (or map yours to `signalith_server` in `roles_mapping.yml`).
+- **A cluster of several nodes**: make each node's certificate under the same CA (see
+  [More nodes under the same CA](#more-nodes-under-the-same-ca)), or use your own CA, list
+  every node's certificate subject in `plugins.security.nodes_dn`, and give Signalith a
+  client certificate whose common name is `signalith` (or map yours to `signalith_server`
+  in `roles_mapping.yml`).
 - **Passwords instead of certificates**: Signalith can also sign in with
   `opensearch.username` and `opensearch.password` (or `SIGNALITH_OPENSEARCH_PASSWORD`, or
   `SIGNALITH_OPENSEARCH_PASSWORD_FILE`). It sends them over `https://` only, unless the

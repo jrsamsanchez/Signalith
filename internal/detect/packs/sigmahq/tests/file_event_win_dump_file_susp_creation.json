@@ -1,0 +1,6 @@
+{"rule": "aba15bdd-657f-422a-bab3-ac2d2a0d6f1c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\mshta.exe","TargetFilename":".hdmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".hdmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\mshta.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:45:24.804","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"5AA13A44-0C90-68FC-BF1D-000000004002","ProcessId":"10048","RuleName":"-","TargetFilename":"C:\\lsass.dmp","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:45:24.804"}}
+]}

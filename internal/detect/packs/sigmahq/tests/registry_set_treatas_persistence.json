@@ -1,0 +1,8 @@
+{"rule": "dc5c24af-6995-49b2-86eb-a9ff62199e82", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"TreatAs\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\SysWOW64\\msiexec.exe","TargetObject":"TreatAs\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\\\OfficeClickToRun.exe","TargetObject":"TreatAs\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files (x86)\\Microsoft Office\\root\\integration\\integrator.exe","TargetObject":"TreatAs\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\system32\\svchost.exe","TargetObject":"TreatAs\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

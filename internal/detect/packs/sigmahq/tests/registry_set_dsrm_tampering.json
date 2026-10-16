@@ -1,0 +1,5 @@
+{"rule": "b61e87c0-50db-4b2e-8986-6a2be94b33b0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Lsa\\DsrmAdminLogonBehavior"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Control\\Lsa\\DsrmAdminLogonBehavior"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

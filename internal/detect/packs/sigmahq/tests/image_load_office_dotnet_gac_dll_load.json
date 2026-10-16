@@ -1,0 +1,5 @@
+{"rule": "90217a70-13fc-48e4-b3db-0d836c5824ac", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\mspub.exe","ImageLoaded":"C:\\Windows\\Microsoft.NET\\assembly\\GAC_MSIL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\Microsoft.NET\\assembly\\GAC_MSIL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\mspub.exe"}}
+]}

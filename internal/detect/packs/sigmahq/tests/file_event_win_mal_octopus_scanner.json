@@ -1,0 +1,4 @@
+{"rule": "805c55d9-31e6-4846-9878-c34c75054fe9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Microsoft\\ExplorerSync.db"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

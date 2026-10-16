@@ -36,7 +36,12 @@ type Config struct {
 	// URL is the OpenSearch address. A user name and password in it are
 	// used as Username and Password (when those are empty) and are never
 	// shown in errors.
-	URL      string
+	URL string
+	// URLs are more addresses of the same OpenSearch cluster, separated
+	// by commas, without user names or passwords. Requests are spread over
+	// URL and these, and one that is down is skipped for a while. (A
+	// string, not a slice, so that a Config can be compared with ==.)
+	URLs     string
 	Username string
 	// Password shows as [redacted] when a Config is printed or logged.
 	Password secrets.Secret
@@ -47,6 +52,12 @@ type Config struct {
 	// to OpenSearch. They are read again when they change on disk, so a
 	// renewed certificate needs no restart.
 	CertFile, KeyFile string
+	// ManagedCertFile and ManagedKeyFile are the client certificate and
+	// key the cluster issued this server (internal/clusterpki). Whenever
+	// both are there and the certificate has not expired, they are
+	// presented instead of CertFile and KeyFile; until then, and when
+	// they cannot be read, CertFile and KeyFile are.
+	ManagedCertFile, ManagedKeyFile string
 	// TLSSkipVerify turns certificate checks off. Anyone on the network
 	// path can then read and change the traffic; for lab clusters only.
 	TLSSkipVerify bool
@@ -67,21 +78,19 @@ var ErrResponseTooLarge = errors.New("the answer is larger than OpenSearch sends
 
 // Client is an OpenSearch REST client.
 type Client struct {
-	base string
-	// shown is base as errors show it, with any secrets hidden.
-	shown string
-	cfg   Config
-	http  *http.Client
+	// eps are the OpenSearch addresses; with only Config.URL set, one.
+	eps  *endpointSet
+	cfg  Config
+	http *http.Client
 	// setupErr is why the TLS or proxy settings could not be used; every
 	// request then fails with it. config.Validate reports the same
 	// problems before the server starts.
 	setupErr error
-	// proxyHint is added to connection errors when the environment names
-	// a proxy that OpenSearch traffic does not use.
-	proxyHint string
 }
 
-// New returns a client for one OpenSearch endpoint.
+// New returns a client for one OpenSearch cluster, at Config.URL and any
+// Config.URLs. All addresses share one transport, and so one client
+// certificate.
 func New(cfg Config) *Client {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 60 * time.Second
@@ -92,26 +101,24 @@ func New(cfg Config) *Client {
 			cfg.Username, cfg.Password = user, secrets.New("opensearch.password", pw)
 		}
 	}
-	base := strings.TrimRight(cfg.URL, "/")
+	bases, listErr := endpointList(cfg)
 	tr, err := Transport(cfg)
 	c := &Client{
-		base:     base,
-		shown:    redact.URL(base),
+		eps:      newEndpointSet(cfg, bases),
 		cfg:      cfg,
-		setupErr: err,
+		setupErr: errors.Join(err, listErr),
 		http: &http.Client{Timeout: cfg.Timeout, Transport: tr,
 			// A redirect is never part of the OpenSearch API, and following
 			// one could send the credentials somewhere else.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
-	c.proxyHint = proxyHint(cfg, base)
 	return c
 }
 
-// Endpoint is the OpenSearch address, as errors show it: without any
-// password.
-func (c *Client) Endpoint() string { return c.shown }
+// Endpoint is the (first) OpenSearch address, as errors show it: without
+// any password.
+func (c *Client) Endpoint() string { return c.eps.list[0].shown }
 
 // CloseIdleConnections closes the connections kept open for the next
 // request, for a client that is no longer used, such as the one of the
@@ -157,6 +164,10 @@ func Transport(cfg Config) (*http.Transport, error) {
 		} else {
 			tlsCfg.GetClientCertificate = kp.get
 		}
+	}
+	if cfg.ManagedCertFile != "" && cfg.ManagedKeyFile != "" {
+		m := &managedPair{managed: keyPair{cert: cfg.ManagedCertFile, key: cfg.ManagedKeyFile}, fallback: tlsCfg.GetClientCertificate}
+		tlsCfg.GetClientCertificate = m.get
 	}
 	return tr, errors.Join(errs...)
 }
@@ -277,6 +288,27 @@ func (k *keyPair) get(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 	return k.loaded, nil
 }
 
+// managedPair presents the client certificate the cluster issued this
+// server while it is there and valid, and the configured one (fallback)
+// otherwise. Checked on each connection, so the switch needs no restart.
+type managedPair struct {
+	managed  keyPair
+	fallback func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+}
+
+func (m *managedPair) get(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+	if _, err := os.Stat(m.managed.cert); err == nil {
+		if c, err := m.managed.get(info); err == nil && c.Leaf != nil && time.Now().Before(c.Leaf.NotAfter) {
+			return c, nil
+		}
+	}
+	if m.fallback != nil {
+		return m.fallback(info)
+	}
+	// No certificate: the same as not being asked for one.
+	return &tls.Certificate{}, nil
+}
+
 // Error is a non-2xx response from OpenSearch.
 type Error struct {
 	Status int
@@ -307,32 +339,86 @@ func (e *Error) Error() string {
 }
 
 // Do sends a request and decodes a JSON response into out (if non-nil).
+// With several OpenSearch addresses, a request that could not be sent to
+// one is tried on the next, and so is one that may have arrived, when
+// sending it again is harmless (see resendable).
 func (c *Client) Do(ctx context.Context, method, path string, body any, out any) error {
-	var rd io.Reader
+	var raw []byte
 	contentType := "application/json"
 	switch b := body.(type) {
 	case nil:
 	case []byte:
-		rd = bytes.NewReader(b)
+		raw = b
 		contentType = "application/x-ndjson"
 	default:
 		buf, err := json.Marshal(b)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(buf)
+		raw = buf
 	}
 	if c.setupErr != nil {
 		return c.setupErr
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
+	eps := c.eps.pick()
+	if len(eps) == 1 {
+		err, _ := c.doOne(ctx, eps[0], method, path, raw, body != nil, contentType, out)
+		return err
+	}
+	var last error
+	var lastAt *endpoint
+	tried := 0
+	for i, e := range eps {
+		if i > 0 && ctx.Err() != nil {
+			break
+		}
+		err, fail := c.doOne(ctx, e, method, path, raw, body != nil, contentType, out)
+		tried++
+		if fail == failNone {
+			c.eps.markUp(e)
+			return err
+		}
+		c.eps.markDown(e, err)
+		last, lastAt = err, e
+		if fail == failAfterSend && !resendable(method, path, raw) {
+			break
+		}
+	}
+	if tried == 1 {
+		return last
+	}
+	return &failedOverError{err: last, shown: lastAt.shown, others: tried - 1}
+}
+
+// failure says whether a request failed because of the address it was
+// sent to, and whether it was sent first.
+type failure int
+
+const (
+	// failNone: OpenSearch answered (possibly with an error).
+	failNone failure = iota
+	// failNotSent: no byte of the request was sent.
+	failNotSent
+	// failAfterSend: the request may have arrived, and then the
+	// connection failed, the time ran out or a proxy in front of
+	// OpenSearch answered 502, 503 or 504.
+	failAfterSend
+)
+
+// doOne sends a request to one address.
+func (c *Client) doOne(ctx context.Context, e *endpoint, method, path string, raw []byte, hasBody bool, contentType string, out any) (error, failure) {
+	var rd io.Reader
+	if hasBody {
+		rd = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, e.base+path, rd)
 	if err != nil {
 		// The parse error would repeat the whole URL.
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
-		return fmt.Errorf("opensearch request to %s: %w", c.shown, err)
+		return fmt.Errorf("opensearch request to %s: %w", e.shown, err), failNone
 	}
 	if rd != nil {
 		req.Header.Set("Content-Type", contentType)
@@ -355,15 +441,19 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, out any)
 	}))
 	resp, err := c.http.Do(req)
 	if err != nil {
+		fail := failNotSent
+		if sent.Load() {
+			fail = failAfterSend
+		}
 		// Go hides the password in the URL it repeats, but not the rest.
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			ue.URL = redact.URL(ue.URL)
 		}
-		if sent.Load() && timedOut(err) && (!reused.Load() || c.reachable()) {
-			return &noAnswerError{msg: fmt.Sprintf("opensearch at %s did not answer in time: %v%s", c.shown, err, c.proxyHint), err: err}
+		if sent.Load() && timedOut(err) && (!reused.Load() || c.reachable(e)) {
+			return &noAnswerError{msg: fmt.Sprintf("opensearch at %s did not answer in time: %v%s", e.shown, err, e.proxyHint), err: err}, fail
 		}
-		return fmt.Errorf("opensearch unreachable at %s: %w%s", c.shown, err, c.proxyHint)
+		return fmt.Errorf("opensearch unreachable at %s: %w%s", e.shown, err, e.proxyHint), fail
 	}
 	defer resp.Body.Close()
 	var rd2 io.Reader = resp.Body
@@ -372,24 +462,28 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, out any)
 	}
 	data, err := io.ReadAll(rd2)
 	if err != nil {
-		return err
+		return err, failAfterSend
 	}
 	if limit := c.cfg.MaxResponseBytes; limit > 0 && int64(len(data)) > limit {
-		return fmt.Errorf("%s at %s: %w", path, c.shown, ErrResponseTooLarge)
+		return fmt.Errorf("%s at %s: %w", path, e.shown, ErrResponseTooLarge), failNone
 	}
 	if resp.StatusCode/100 == 3 {
 		return fmt.Errorf("opensearch at %s answered with a redirect (%d) to %q; Signalith does not follow redirects, so set opensearch.url to the address OpenSearch is really at",
-			c.shown, resp.StatusCode, redact.URL(resp.Header.Get("Location")))
+			e.shown, resp.StatusCode, redact.URL(resp.Header.Get("Location"))), failNone
 	}
 	if resp.StatusCode/100 != 2 {
-		return &Error{Status: resp.StatusCode, Body: string(data)}
+		fail := failNone
+		if failsOver(resp.StatusCode) {
+			fail = failAfterSend
+		}
+		return &Error{Status: resp.StatusCode, Body: string(data)}, fail
 	}
 	if out != nil {
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.UseNumber()
-		return dec.Decode(out)
+		return dec.Decode(out), failNone
 	}
-	return nil
+	return nil, failNone
 }
 
 // Search implements Searcher.
@@ -408,12 +502,12 @@ func (c *Client) Search(ctx context.Context, index string, body map[string]any) 
 // OpenSearch still takes connections. It also drops the other kept
 // connections, which may lead nowhere too. Through a proxy it can't tell,
 // and reports true.
-func (c *Client) reachable() bool {
+func (c *Client) reachable(e *endpoint) bool {
 	c.http.CloseIdleConnections()
 	if c.cfg.Proxy != "" {
 		return true
 	}
-	u, err := url.Parse(c.base)
+	u, err := url.Parse(e.base)
 	if err != nil || u.Hostname() == "" {
 		return true
 	}
@@ -451,6 +545,31 @@ type BulkItemError struct {
 	Pos    int    `json:"-"`
 	Type   string `json:"-"`
 	Status int    `json:"-"`
+}
+
+// Conflict reports whether OpenSearch refused the document because one
+// with its ID is already stored.
+func (e BulkItemError) Conflict() bool {
+	return e.Status == http.StatusConflict || e.Type == "version_conflict_engine_exception"
+}
+
+// WithoutConflicts drops the errors saying a document sent with an
+// explicit ID is already stored, and reports how many there were. Such a
+// document is "already there" because an earlier send of the same write
+// got it in (a retry after a lost answer, or another server writing the
+// same thing), so the write succeeded. A conflict on a document without
+// an ID, and every other error, is kept.
+func WithoutConflicts(errs []BulkItemError, docs []IndexedDoc) ([]BulkItemError, int) {
+	var out []BulkItemError
+	n := 0
+	for _, e := range errs {
+		if e.Conflict() && e.Pos >= 0 && e.Pos < len(docs) && docs[e.Pos].ID != "" {
+			n++
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, n
 }
 
 // Bulk indexes documents. docs maps each document to its target index.

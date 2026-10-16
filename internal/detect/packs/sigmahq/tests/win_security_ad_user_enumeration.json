@@ -1,0 +1,7 @@
+{"rule": "ab6bffca-beff-4baa-af11-6733f296d57a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"1x","ObjectType":"bf967aba-0de6-11d0-a285-00aa003049e2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"1x","ObjectType":"bf967aba-0de6-11d0-a285-00aa003049e2","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"1x","ObjectType":"bf967aba-0de6-11d0-a285-00aa003049e2","SubjectUserName":"MSOL_"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"ObjectType":"bf967aba-0de6-11d0-a285-00aa003049e2"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"1x"}}
+]}

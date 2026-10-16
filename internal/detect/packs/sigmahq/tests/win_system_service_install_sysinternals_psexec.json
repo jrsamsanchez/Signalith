@@ -1,0 +1,4 @@
+{"rule": "42c575ea-e41e-41f1-b248-8093c3e82a28", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager","ServiceName":"PSEXESVC"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

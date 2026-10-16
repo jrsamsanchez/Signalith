@@ -1,0 +1,13 @@
+{"rule": "8230c407-1b47-4d95-ac2e-718bd6381386", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  u+s  x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  g+s  x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  4777  x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  4577  x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  u+s  y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  g+s  y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  4777  y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x chmod  x x  4577  y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:25.530:44646) : proctitle=chmod u+s vulnerable"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:25.528:44645) : proctitle=chmod u+s vulnerable"}}
+]}

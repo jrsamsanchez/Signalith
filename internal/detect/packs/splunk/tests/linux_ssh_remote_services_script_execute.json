@@ -1,0 +1,15 @@
+{"rule": "aa1748dd-4a5c-457a-9cf6-ca7b4eb711b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oStrictHostKeyChecking x x http: x","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oConnectTimeout x x https: x","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oBatchMode x x http: x","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oStrictHostKeyChecking x x http: y","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oConnectTimeout x x https: y","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oBatchMode x x http: y","Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oStrictHostKeyChecking x x http: x","Image":"/usr/bin/ssi","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oStrictHostKeyChecking x x http: x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/ssh","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oConnectTimeout x x https: x","Image":"/usr/bin/ssi","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oConnectTimeout x x https: x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oBatchMode x x http: x","Image":"/usr/bin/ssi","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x oBatchMode x x http: x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

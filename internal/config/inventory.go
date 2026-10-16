@@ -9,6 +9,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -29,15 +30,26 @@ type SecretFile struct {
 // which only the secrets commands and "signalith init" write, then the
 // files the server keeps, the Settings page's settings.yaml among them.
 // "signalith secrets" and the Security page both go by this list.
+//
+// The keys and the copy of the shared settings that a server of a cluster
+// keeps in its state folder are sealed under the master key too: its node
+// key, each cluster key (only those there), and cluster/cache.enc.
 func (c *Config) SecretFiles() []SecretFile {
-	return []SecretFile{
+	files := []SecretFile{
 		{Path: c.Path(), Reseal: ResealFile},
+		{Path: c.UsersFile(), Reseal: users.ResealUsersFile, Server: true},
 		{Path: c.DirectoryFile(), Reseal: users.ResealDirectoryFile, Server: true},
 		{Path: c.IntelFeedsFile(), Reseal: intel.ResealFeedsFile, Server: true},
 		{Path: c.NotifyFile(), Reseal: notify.Reseal, Server: true},
 		{Path: c.ResponseFile(), Reseal: respond.ResealFile, Server: true},
 		{Path: c.SettingsFile(), Reseal: ResealSettingsFile, Server: true, Replace: true},
 	}
+	state := c.StateDir()
+	files = append(files, SecretFile{Path: shared.NodeKeyPath(state), Reseal: shared.ResealNodeKeyFile, Server: true})
+	for _, p := range shared.ClusterKeyFiles(state) {
+		files = append(files, SecretFile{Path: p, Reseal: shared.ResealClusterKeyFile, Server: true})
+	}
+	return append(files, SecretFile{Path: shared.CachePath(state), Reseal: shared.ResealCacheFile, Server: true})
 }
 
 // ListSecrets returns the values stored in the text of a file with

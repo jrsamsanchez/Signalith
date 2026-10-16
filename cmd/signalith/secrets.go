@@ -33,7 +33,10 @@ const secretsUsage = `Usage:
                                                before going back to a version older than this one
 
 Settings for "set": opensearch.password, assistant.api_key, auth.ldap.bind_password,
-and ingest.tokens (adds a token; leave it empty to have one made).
+auth.oidc.client_secret and ingest.tokens (adds a shared agent token; leave it empty to
+have one made).
+New agents get a token of their own instead: signalith tokens create, or the
+Add data page.
 "encrypt" and "set" make the master key if there is none. If the files hold values
 encrypted with a key that cannot be found, they stop instead; add -new-key to make a
 new key anyway, when that one is lost (those values must then be entered again).
@@ -45,7 +48,11 @@ See docs/encryption.md.
 var secretEnv = map[string]string{
 	"opensearch.password":     "SIGNALITH_OPENSEARCH_PASSWORD",
 	"assistant.api_key":       "SIGNALITH_ASSISTANT_API_KEY",
+	"vulns.nvd_api_key":       "SIGNALITH_NVD_API_KEY",
+	"vulns.openvas_password":  "SIGNALITH_OPENVAS_PASSWORD",
 	"auth.ldap.bind_password": "SIGNALITH_LDAP_BIND_PASSWORD",
+	"m365.client_secret":      "SIGNALITH_M365_CLIENT_SECRET",
+	"auth.oidc.client_secret": "SIGNALITH_OIDC_CLIENT_SECRET",
 	"ingest.tokens":           "SIGNALITH_INGEST_TOKEN",
 }
 
@@ -290,7 +297,7 @@ func secretsStatus(c *config.Config, out io.Writer) error {
 		}
 	}
 	var env []string
-	for _, name := range []string{"SIGNALITH_OPENSEARCH_PASSWORD", "SIGNALITH_ADMIN_PASSWORD", "SIGNALITH_INGEST_TOKEN", "SIGNALITH_ASSISTANT_API_KEY", "SIGNALITH_LDAP_BIND_PASSWORD"} {
+	for _, name := range []string{"SIGNALITH_OPENSEARCH_PASSWORD", "SIGNALITH_ADMIN_PASSWORD", "SIGNALITH_INGEST_TOKEN", "SIGNALITH_ASSISTANT_API_KEY", "SIGNALITH_NVD_API_KEY", "SIGNALITH_OPENVAS_PASSWORD", "SIGNALITH_LDAP_BIND_PASSWORD"} {
 		if os.Getenv(name) != "" {
 			env = append(env, name)
 		}
@@ -691,7 +698,7 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 	}
 	label := "New value for " + field + ": "
 	if field == "ingest.tokens" {
-		label = "New ingest token (press Enter to have one made): "
+		label = "New shared agent token (press Enter to have one made): "
 	}
 	value, err := readSecret(in, out, label, field == "ingest.tokens")
 	if err != nil {
@@ -723,9 +730,9 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 	}
 	if field == "ingest.tokens" {
 		if made {
-			fmt.Fprintf(out, "Added this ingest token, encrypted, to %s:\n\n  %s\n\nIt is shown only now; give it to the agents that send data.\n", c.Path(), value)
+			fmt.Fprintf(out, "Added this shared agent token, encrypted, to %s:\n\n  %s\n\nIt is shown only now. Every agent that has it can send as all of them; for a token of each agent's own, use signalith tokens create or the Add data page.\n", c.Path(), value)
 		} else {
-			fmt.Fprintf(out, "Added the ingest token, encrypted, to %s.\n", c.Path())
+			fmt.Fprintf(out, "Added the shared agent token, encrypted, to %s.\n", c.Path())
 		}
 	} else {
 		fmt.Fprintf(out, "Saved %s, encrypted, in %s.\n", field, c.Path())
@@ -910,6 +917,9 @@ func secretsPrune(c *config.Config, out io.Writer) error {
 		return fmt.Errorf("the previous master key was not removed, since %d stored %s cannot be decrypted and may need it: %s. "+
 			"Enter %s again, or remove %s, then run this again", len(unknown), plural(len(unknown), "value", "values"),
 			strings.Join(unknown, ", "), plural(len(unknown), "it", "them"), plural(len(unknown), "it", "them"))
+	}
+	if err := archivesNeedKey(c, src.OldKeyID, src.OldPath); err != nil {
+		return err
 	}
 	if keyIsCredential {
 		// The running service still has the key it read when it started;

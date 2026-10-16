@@ -1,5 +1,6 @@
 id: risk-threshold-exceeded
 title: Risk score $risk_score$ for $risk_object_type$ $risk_object$
+name: High risk score
 description: Detections added up to a high risk score for one user or system in the last 24 hours. Each signal alone may be weak; together they deserve a look.
 query: |
   datamodel=Risk

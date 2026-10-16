@@ -73,7 +73,7 @@ func setup(t *testing.T) (*store.Client, *search.Engine, string) {
 	}
 	// Under signalith*, the indices a secured OpenSearch lets Signalith use.
 	prefix := "signalithtest" + config.RandomToken(3)
-	if err := cl.PutIndexTemplate(ctx, prefix, ingest.IndexTemplate(prefix, 0)); err != nil {
+	if err := ingest.PutIndexTemplate(ctx, cl, prefix, map[string]any{"number_of_replicas": 0}, nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -228,6 +228,79 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("no src has both outcomes, got %v", res.Rows)
 		}
 	})
+	t.Run("eval, rex, dedup and eventstats", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure
+| rex "port (?<port>\d+)"
+| eval port=tonumber(port), high=if(port >= 40106, "yes", "no")
+| where like(user, "ora%")
+| stats count by high`)
+		got := map[any]any{}
+		for _, r := range res.Rows {
+			got[r["high"]] = r["count"]
+		}
+		if got["yes"] != int64(6) || got["no"] != int64(6) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | dedup src | eventstats count as n | table src, n`)
+		if len(res.Rows) != 2 || res.Rows[0]["n"] != int64(2) {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
+	t.Run("percentiles, spread and values", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication src=203.0.113.9 | stats median(src_port) as med, perc95(src_port) as p95, stdev(src_port) as sd, range(src_port) as r, values(user) as users, latest(user) as newest, earliest(user) as oldest`)
+		r := res.Rows[0]
+		med, _ := r["med"].(float64)
+		if m, ok := r["med"].(int64); ok {
+			med = float64(m)
+		}
+		if med < 40105 || med > 40107 || r["r"] != int64(11134) || r["sd"] == nil || r["p95"] == nil {
+			t.Errorf("row = %v", r)
+		}
+		if users, ok := r["users"].([]any); !ok || len(users) != 2 {
+			t.Errorf("users = %#v", r["users"])
+		}
+		if r["newest"] == r["oldest"] || r["oldest"] != "oracle" {
+			t.Errorf("newest = %v, oldest = %v", r["newest"], r["oldest"])
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | stats latest(user) as newest, list(user) as all by src | sort src`)
+		if len(res.Rows) != 2 || res.Rows[0]["newest"] != "root" {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
+	t.Run("index is a field", func(t *testing.T) {
+		total := run(t, eng, `index=`+prefix+`-* | stats count`).Rows[0]["count"].(int64)
+		res := run(t, eng, `index=`+prefix+`-* | stats count, dc(index) as n, values(index) as names by index | sort index`)
+		var sum int64
+		for _, r := range res.Rows {
+			ix, _ := r["index"].(string)
+			if !strings.HasPrefix(ix, prefix+"-") || r["n"] != int64(1) || r["names"] != ix {
+				t.Errorf("row = %v", r)
+			}
+			sum += r["count"].(int64)
+		}
+		if len(res.Rows) < 2 || sum != total {
+			t.Fatalf("rows = %v, total %d", res.Rows, total)
+		}
+		first, _ := res.Rows[0]["index"].(string)
+		for _, q := range []string{
+			`* | where index="` + first + `"`,
+			`(index="` + strings.ToUpper(first) + `" OR index=nothing-here)`,
+			`(index=` + first[:len(first)-3] + `* NOT index=nothing-*) | where index="` + first + `"`,
+		} {
+			got := run(t, eng, q+` | stats count by index`)
+			if len(got.Rows) != 1 || got.Rows[0]["index"] != first || got.Rows[0]["count"] != res.Rows[0]["count"] {
+				t.Errorf("%s: rows = %v", q, got.Rows)
+			}
+		}
+		ev := run(t, eng, `* | where index="`+first+`" | head 1 | table index`)
+		if len(ev.Rows) != 1 || ev.Rows[0]["index"] != first {
+			t.Errorf("events = %v", ev.Rows)
+		}
+		tc := run(t, eng, `index=`+prefix+`-* | timechart span=1h count by index`)
+		if len(tc.Columns) < 3 {
+			t.Errorf("timechart columns = %v", tc.Columns)
+		}
+	})
 	t.Run("plain-English questions run", func(t *testing.T) {
 		ip, err := nlq.Translate("failed logins from 203.0.113.9", nil)
 		if err != nil {
@@ -250,6 +323,18 @@ func TestEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("transaction", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure | transaction src maxpause=1h | sort -eventcount`)
+		if len(res.Rows) != 2 || res.Rows[0]["src"] != "203.0.113.9" || res.Rows[0]["eventcount"] != int64(13) || res.Rows[0]["duration"] == nil {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
+	t.Run("join", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication action=failure | stats count by src | join type=left src [search datamodel=Authentication action=failure user=root | stats count as root by src] | sort src`)
+		if len(res.Rows) != 2 || res.Rows[0]["src"] != "198.51.100.23" || res.Rows[0]["root"] != int64(3) || res.Rows[1]["root"] != nil {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
 	t.Run("mapping discovers fields", func(t *testing.T) {
 		m, err := cl.Mapping(context.Background(), prefix+"-authentication-*")
 		if err != nil {
@@ -299,7 +384,7 @@ func TestDetectionsEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		d.Lookback = "1h" // test data spans the last 16 minutes
-		res, err := sched.Run(ctx, d)
+		res, err := sched.RunManual(ctx, d, "")
 		if err != nil {
 			t.Fatalf("%s: %v", id, err)
 		}
@@ -328,7 +413,7 @@ func TestDetectionsEndToEnd(t *testing.T) {
 	if err := cl.Do(ctx, http.MethodPost, "/"+prefix+"-risk-*/_refresh", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := sched.Run(ctx, mustGet(t, lib, "change-account-created", "1h")); err != nil || res.Throttled != 1 || res.Risk != 0 {
+	if res, err := sched.RunManual(ctx, mustGet(t, lib, "change-account-created", "1h"), ""); err != nil || res.Throttled != 1 || res.Risk != 0 {
 		t.Errorf("risk-only rerun = %+v %v", res, err)
 	}
 	ps := run("endpoint-encoded-powershell", 1)
@@ -556,7 +641,7 @@ func TestThreatIntelEndToEnd(t *testing.T) {
 	rs := &risk.Store{Client: cl, Prefix: prefix}
 	sched := &detect.Scheduler{Library: lib, Engine: eng, Findings: fs, Risk: rs}
 	d := mustGet(t, lib, "threat-activity", "1h")
-	res, err := sched.Run(ctx, d)
+	res, err := sched.RunManual(ctx, d, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,7 +667,7 @@ func TestThreatIntelEndToEnd(t *testing.T) {
 			}
 		}
 	}
-	if res, err := sched.Run(ctx, d); err != nil || len(res.Findings) != 0 {
+	if res, err := sched.RunManual(ctx, d, ""); err != nil || len(res.Findings) != 0 {
 		t.Errorf("rerun should be throttled: %+v %v", res, err)
 	}
 	if err := cl.Do(ctx, http.MethodPost, "/"+prefix+"-risk-*/_refresh", nil, nil); err != nil {
@@ -632,7 +717,7 @@ func TestDashboardsEndToEnd(t *testing.T) {
 	sched := &detect.Scheduler{Library: lib, Engine: eng, Findings: fs, Risk: &risk.Store{Client: cl, Prefix: prefix}}
 	var bf *findings.Finding
 	for _, id := range []string{"auth-brute-force", "auth-shadow-file-access"} {
-		res, err := sched.Run(ctx, mustGet(t, lib, id, "1h"))
+		res, err := sched.RunManual(ctx, mustGet(t, lib, id, "1h"), "")
 		if err != nil || len(res.Findings) != 1 {
 			t.Fatalf("%s: %v %+v", id, err, res)
 		}
@@ -791,7 +876,7 @@ func TestCasesEndToEnd(t *testing.T) {
 	for _, id := range []string{"auth-brute-force", "auth-shadow-file-access"} {
 		d, _ := lib.Get(id)
 		d.Lookback = "1h"
-		res, err := sched.Run(ctx, d)
+		res, err := sched.RunManual(ctx, d, "")
 		if err != nil || len(res.Findings) != 1 {
 			t.Fatalf("%s: %v %+v", id, err, res)
 		}

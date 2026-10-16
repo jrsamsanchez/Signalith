@@ -1,6 +1,6 @@
 # Security checks
 
-The **Security** page (**Configure > Security**) and the `signalith security` command
+The **Security** page (**Settings > Security**) and the `signalith security` command
 check how this server is set up: what is encrypted on the network and on disk, who can
 sign in, how passwords and keys are kept, and how Signalith runs on this computer. They
 say what to fix first and how, and they are honest about what Signalith can't see.
@@ -137,6 +137,14 @@ that refused the new certificate (from failed TLS handshakes, over HTTPS and sys
 
 **To fix:** follow
 [Switching to a new certificate authority](https.md#switching-to-a-new-certificate-authority).
+
+On a server that uses the certificate authority the servers of a cluster share, the page
+shows a **Cluster certificate authority** card with its fingerprint instead of the steps
+to change it, and the buttons that would change it open the Servers page: the cluster's
+certificate authority isn't changed on one server (see
+[One certificate authority](servers.md#one-certificate-authority)). `GET /api/security`
+then says `"ca_owner": "cluster"`, and `POST /api/security/ca` answers `409`. Its key
+isn't in `tls/ca.key`, so the command below shows the copy of its certificate.
 
 **How to check by hand:**
 
@@ -345,14 +353,19 @@ config file. Each disk is reported once.
 Shown when the archive folder holds archives, or a retention policy archives days.
 
 **Looks at:** the archive folder (`retention.archive_dir`): how many days it holds and
-their size, who can read it, and the disk under it, as for
-[Disk encryption](#disk-encryption). Signalith doesn't encrypt archives itself.
+their size, how many are plain files rather than encrypted, who can read it, and,
+when some are plain, the disk under it, as for [Disk encryption](#disk-encryption).
+Signalith encrypts archives unless `retention.encrypt_archives` is `false`; days
+archived before it did stay plain (see [Encryption](retention.md#encryption)).
 
-- Good: on an encrypted disk, readable only by Signalith.
-- Needs attention: other accounts can read the archives, or the disk isn't encrypted.
-- Can't tell: Signalith can't see the disk or share under them.
+- Good: every archive is encrypted, or the plain ones are on an encrypted disk, and
+  only Signalith can read the folder.
+- Needs attention: other accounts can read the archives, or plain archives are on a
+  disk that isn't encrypted.
+- Can't tell: Signalith can't see the disk or share under plain archives.
 
-**To fix:** keep the archive folder on an encrypted disk, readable only by Signalith; see
+**To fix:** keep the archive folder readable only by Signalith, and keep plain
+archives on an encrypted disk or leave archive encryption on; see
 [Archives](retention.md#archives). Copies of archives you move elsewhere are only as safe
 as where you put them.
 
@@ -499,41 +512,84 @@ certificate, and turn off **Skip certificate check**
 
 ### Sign-in sessions
 
-**Looks at:** **Sign out after** (`auth.session_timeout`, 12 hours by default): how
-long a sign-in lasts without use. An open tab's own refreshes (the Health card,
-dashboards and other timers) don't count as use, so a tab left unattended still signs
-out. Someone who ticks **Keep me signed in** isn't signed
-out for being idle; every sign-in ends after 7 days at most.
+**Looks at:** **Sign out after** (`auth.session_timeout`, 1 hour by default): how
+long a sign-in lasts without use, and **Sign in again after** (`auth.session_max_age`,
+24 hours by default): how long any sign-in lasts. An open tab's own refreshes (the
+Health card, dashboards and other timers) don't count as use, so a tab left unattended
+still signs out. Someone who ticks **Keep me signed in** isn't signed out for being
+idle, but is still signed out once **Sign in again after** has passed.
 
-- Good: 24 hours or less.
-- Needs attention: longer than 24 hours.
+- Good: 1 hour or less idle, and 24 hours or less in all: the NIST SP 800-63B rev 4
+  limits for AAL2.
+- Needs attention: longer than either.
 
-**To fix:** set **Sign out after** to 12h or less on the **Settings** page.
+**To fix:** set **Sign out after** to 1h or less and **Sign in again after** to 24h or
+less on the **Settings** page.
+
+### Two-step sign-in
+
+**Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
+whether people who sign in with a password must also enter a code from an
+authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+users get their second step from their identity provider.
+
+- Good: `admins` or `everyone`.
+- Needs attention: `off`, so an admin's password alone signs in.
+
+**To fix:** set **Require two-step sign-in** to `admins` or `everyone` on the
+**Settings** page. Set it up for your own account first (user menu, **Two-step
+sign-in**), so you are not asked to in the middle of something.
 
 ### Agent tokens
 
-Shown when agent tokens are set (`ingest.tokens`).
+Shown when there are agent tokens: tokens made on **Add data** or with
+`signalith tokens`, or shared tokens from signalith.yaml (`ingest.tokens`),
+`SIGNALITH_INGEST_TOKEN` or `SIGNALITH_INGEST_TOKEN_FILE`. See
+[agent-tokens.md](agent-tokens.md).
 
-**Looks at:** whether a token is the public example token, and how long each token is.
-All agents share a token, so one taken from any agent works for all of them until it is
-replaced.
+**Looks at:** whether a shared token (one every agent uses) is still accepted, when an
+agent last sent with it, how long it is, and whether it is the public example token. A
+shared token copied from any one agent works for all of them, and can't be turned off
+for one agent alone.
 
-- Good: every token has 24 characters or more. Tokens Signalith makes have 48.
-- Needs attention: a token is shorter than 24 characters.
-- At risk: the example token `change-this-ingest-token`, which anyone can look up. On a
-  Docker quick start upgraded from an older version, whose agents all have it, Signalith
-  accepts it from them over plain HTTP while **Agents on plain HTTP** accepts them, even
-  when it isn't in `ingest.tokens`. Choose **Refuse them** once every agent has its
-  configuration from **Add data**; that ends it for good.
+- Good: no shared token is accepted; each agent group sends with its own token
+  ("Each agent group sends with its own token (N active)."). A shared token you chose
+  **Stop accepting** on counts as retired, even while it is still in the configuration.
+- Good, with a tip: a shared token is accepted but no agent has ever sent with it, and
+  either agent tokens exist or this is the Docker quick start, whose setup step makes one
+  ("No agent sends with a shared token, though one is still accepted."). The tip says to
+  choose **Stop accepting** on it.
+- Needs attention:
+  - a shared token is accepted and an agent sent with it in the last 7 days ("Some agents
+    still send with a shared token, so a copy taken from any one of them works for all of
+    them.");
+  - a shared token is accepted though no agent has used it in the last 7 days;
+  - a shared token is shorter than 24 characters;
+  - a shared token is accepted and the tokens couldn't be read from OpenSearch, so how it
+    was used isn't known.
+- At risk: the example token `change-this-ingest-token`, which anyone can look up, is
+  accepted. On a Docker quick start upgraded from an older version, whose agents all have
+  it, Signalith accepts it from them over plain HTTP while **Agents on plain HTTP**
+  accepts them, even when it isn't in `ingest.tokens`. Choose **Refuse them** once every
+  agent has its configuration from **Add data**; that ends it for good.
+- Can't tell: the agent tokens couldn't be read from OpenSearch (for example when
+  `signalith security` runs while OpenSearch is down).
 
 On the Docker quick start the check also says why the old example token is refused: the
 install started new, it was upgraded and agents on plain HTTP were refused since a date,
 or Signalith couldn't yet ask OpenSearch which it is. See
 [The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).
 
-**To fix:** add a new token with `sudo signalith secrets set ingest.tokens` (press Enter
-to have one made), give each agent a new configuration from **Add data**, then remove the
-old token. See [Commands](encryption.md#commands).
+**To fix:**
+
+1. Open **Add data** and give each agent a configuration with its own token.
+2. Under **Agent tokens**, choose **Stop accepting** on the shared token once its
+   **Last used** is older than the last agent you updated.
+3. That's all. You may also delete it from signalith.yaml (`ingest.tokens`) or
+   `SIGNALITH_INGEST_TOKEN`; on the Docker quick start, leave `docker-compose.yml` as it
+   is.
+
+See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
 
 ### Signalith's OpenSearch account
 
@@ -557,6 +613,32 @@ signing in with a certificate
 
 ```sh
 curl -s --cacert root-ca.pem --cert signalith.pem --key signalith-key.pem 'https://localhost:9200/_plugins/_security/authinfo?pretty'
+```
+
+### OpenSearch's revocation list
+
+Shown when `opensearch.crl_file` is set: the revocation list OpenSearch checks client
+certificates against, which makes a removed server lose its OpenSearch access at once
+(see [Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)).
+
+**Looks at:** whether the file is there, signed by the CA in `opensearch.ca_file`, and in
+force.
+
+- Good: it is, and OpenSearch hears of a revocation at once.
+- Needs attention: it expires within 30 days, with OpenSearch's CA.
+- At risk: it is missing, can't be read, isn't signed by OpenSearch's CA or has expired.
+  OpenSearch refuses every certificate sign-in, Signalith's included, while the list it
+  checks is in that state.
+
+**To fix:** on the Docker quick start, run `docker compose -f
+deploy/docker/docker-compose.yml up -d`, which makes it again. Otherwise, when the
+cluster keeps OpenSearch's CA, Signalith writes it again within a minute; `signalith
+cluster opensearch-ca crl -o crl.pem` writes a copy for OpenSearch's nodes.
+
+**How to check by hand:**
+
+```sh
+openssl crl -in crl.pem -CAfile root-ca.pem -noout -nextupdate
 ```
 
 ## This server
@@ -669,7 +751,8 @@ server:
   site.
 - Guessing passwords is slowed: after 10 wrong tries for one account from one address in
   15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.
-- Sign-ins end after 7 days at most, even with **Keep me signed in**.
+- Sign-ins end after 24 hours by default (`auth.session_max_age`, 30 days at most),
+  even with **Keep me signed in**.
 - Passwords are stored only as bcrypt hashes.
 - Logs, pages and the API never show stored passwords or keys.
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
@@ -688,7 +771,6 @@ them every time:
   [Backing up the key](encryption.md#backing-up-the-key)).
 - **Updates** for Signalith, OpenSearch and the operating system. Signalith doesn't
   contact the internet to check.
-- **Two-step sign-in**. Signalith has none of its own.
 - **The computers agents run on**.
 - **Copies of events outside Signalith**, such as exports, moved archives and OpenSearch
   snapshots.

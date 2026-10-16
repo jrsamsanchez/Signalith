@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	neturl "net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,8 +59,29 @@ func New(provider, url, model, apiKey string) *Client {
 	if model == "" {
 		model = DefaultModel[provider]
 	}
-	return &Client{Provider: provider, URL: strings.TrimRight(url, "/"), Model: model, APIKey: apiKey,
-		HTTP: &http.Client{Timeout: 60 * time.Second, CheckRedirect: sameOriginRedirects}}
+	if id, ok := ModelID(provider, model); ok {
+		model = id
+	}
+	return &Client{Provider: provider, URL: BaseURL(provider, url), Model: strings.TrimSpace(model), APIKey: apiKey,
+		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects}}
+}
+
+// BaseURL is the address requests are made under: Anthropic's paths
+// start with /v1 themselves, so a trailing /v1 is dropped; an
+// OpenAI-compatible address without a path, such as
+// http://localhost:11434, gets the /v1 that Ollama, LM Studio and vLLM
+// all serve under.
+func BaseURL(provider, raw string) string {
+	u := strings.TrimRight(strings.TrimSpace(raw), "/")
+	switch provider {
+	case Anthropic:
+		u = strings.TrimSuffix(u, "/v1")
+	case OpenAI:
+		if p, err := neturl.Parse(u); err == nil && p.Host != "" && (p.Path == "" || p.Path == "/") {
+			u += "/v1"
+		}
+	}
+	return u
 }
 
 // sameOriginRedirects follows a redirect only to the same scheme, host and
@@ -92,10 +114,10 @@ func (c *Client) Name() string { return c.Model }
 // attempt, offered as a hint. The returned query always parses: a reply
 // that does not is sent back once with the parser's error.
 func (c *Client) Translate(ctx context.Context, question, draft string) (string, error) {
-	msgs := []message{{Role: "user", Content: userPrompt(question, draft)}}
+	msgs := []Message{{Role: "user", Content: userPrompt(question, draft)}}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		reply, err := c.complete(ctx, msgs)
+		reply, err := c.Chat(ctx, SystemPrompt(), msgs, 600)
 		if err != nil {
 			return "", err
 		}
@@ -104,31 +126,37 @@ func (c *Client) Translate(ctx context.Context, question, draft string) (string,
 			return q, nil
 		} else {
 			lastErr = err
-			msgs = append(msgs, message{Role: "assistant", Content: reply},
-				message{Role: "user", Content: fmt.Sprintf("That query does not parse: %v. Reply with a corrected query only.", err)})
+			msgs = append(msgs, Message{Role: "assistant", Content: reply},
+				Message{Role: "user", Content: fmt.Sprintf("That query does not parse: %v. Reply with a corrected query only.", err)})
 		}
 	}
 	return "", fmt.Errorf("the model's query did not parse: %v", lastErr)
 }
 
-type message struct {
+// Message is one turn of a conversation: Role is "user" or "assistant".
+type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
+// Chat sends a conversation with a system prompt and returns the model's
+// reply. maxTokens bounds the reply's length.
+func (c *Client) Chat(ctx context.Context, system string, msgs []Message, maxTokens int) (string, error) {
 	var path string
 	var body any
 	hdr := http.Header{"Content-Type": {"application/json"}}
 	switch c.Provider {
 	case Anthropic:
 		path = "/v1/messages"
-		body = map[string]any{"model": c.Model, "max_tokens": 600, "system": SystemPrompt(), "messages": msgs, "temperature": 0}
+		// Current Claude models think before they answer, out of the same
+		// max_tokens, and refuse a temperature, so neither is narrowed.
+		// Only the tokens used are billed.
+		body = map[string]any{"model": c.Model, "max_tokens": maxTokens + thinkingRoom, "system": system, "messages": msgs}
 		hdr.Set("x-api-key", c.APIKey)
 		hdr.Set("anthropic-version", "2023-06-01")
 	case OpenAI:
 		path = "/chat/completions"
-		all := append([]message{{Role: "system", Content: SystemPrompt()}}, msgs...)
+		all := append([]Message{{Role: "system", Content: system}}, msgs...)
 		body = map[string]any{"model": c.Model, "messages": all, "temperature": 0}
 		if c.APIKey != "" {
 			hdr.Set("Authorization", "Bearer "+c.APIKey)
@@ -140,36 +168,19 @@ func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+path, bytes.NewReader(b))
+	data, err := c.do(ctx, http.MethodPost, path, hdr, b)
+	var ae *APIError
+	if c.Provider == OpenAI && errors.As(err, &ae) && ae.Status == http.StatusBadRequest && strings.Contains(strings.ToLower(ae.Message), "temperature") {
+		// Some models, such as OpenAI's reasoning models, take only their
+		// own temperature.
+		delete(body.(map[string]any), "temperature")
+		if b, err = json.Marshal(body); err != nil {
+			return "", err
+		}
+		data, err = c.do(ctx, http.MethodPost, path, hdr, b)
+	}
 	if err != nil {
 		return "", err
-	}
-	req.Header = hdr
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		// Go's error repeats the request URL, which may hold a key.
-		var ue *neturl.Error
-		if errors.As(err, &ue) {
-			ue.URL = redact.URL(ue.URL)
-		}
-		return "", fmt.Errorf("could not reach the AI model at %s: %w", redact.URL(c.URL), err)
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != http.StatusOK {
-		msg := strings.TrimSpace(string(data))
-		var e struct {
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(data, &e) == nil && e.Error.Message != "" {
-			msg = e.Error.Message
-		}
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return "", fmt.Errorf("the AI model returned %s: %s", resp.Status, msg)
 	}
 	var out struct {
 		Content []struct {
@@ -177,7 +188,7 @@ func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
 			Text string `json:"text"`
 		} `json:"content"`
 		Choices []struct {
-			Message message `json:"message"`
+			Message Message `json:"message"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &out); err != nil {
@@ -194,6 +205,80 @@ func (c *Client) complete(ctx context.Context, msgs []message) (string, error) {
 	return "", errors.New("the AI model returned no text")
 }
 
+// thinkingRoom is added to an Anthropic request's max_tokens for the
+// model's thinking.
+const thinkingRoom = 8000
+
+// APIError is an answer from the model's service other than 200 OK.
+type APIError struct {
+	Status int
+	// StatusText is such as "404 Not Found".
+	StatusText string
+	// Message is the service's own error message, shortened.
+	Message string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("the AI model returned %s: %s", e.StatusText, e.Message)
+}
+
+// UnknownModel reports whether the service said it has no such model.
+func (e *APIError) UnknownModel() bool {
+	m := strings.ToLower(e.Message)
+	if e.Status != http.StatusNotFound && e.Status != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(m, "model") && (e.Status == http.StatusNotFound || strings.Contains(m, "not found") ||
+		strings.Contains(m, "does not exist") || strings.Contains(m, "invalid model") || strings.Contains(m, "unknown model"))
+}
+
+// do makes one request under c.URL and returns the answer's body.
+func (c *Client) do(ctx context.Context, method, path string, hdr http.Header, body []byte) ([]byte, error) {
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, rd)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = hdr.Clone()
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		// Go's error repeats the request URL, which may hold a key.
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			ue.URL = redact.URL(ue.URL)
+		}
+		return nil, fmt.Errorf("could not reach the AI model at %s: %w", redact.URL(c.URL), err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(data))
+		var e struct {
+			Error json.RawMessage `json:"error"`
+		}
+		if json.Unmarshal(data, &e) == nil && len(e.Error) > 0 {
+			// {"error": {"message": ...}}, or Ollama's {"error": "..."}.
+			var obj struct {
+				Message string `json:"message"`
+			}
+			var str string
+			if json.Unmarshal(e.Error, &obj) == nil && obj.Message != "" {
+				msg = obj.Message
+			} else if json.Unmarshal(e.Error, &str) == nil && str != "" {
+				msg = str
+			}
+		}
+		if len(msg) > 300 {
+			msg = msg[:300]
+		}
+		return nil, &APIError{Status: resp.StatusCode, StatusText: resp.Status, Message: msg}
+	}
+	return data, nil
+}
+
 // cleanReply strips code fences and explanations around the query.
 func cleanReply(s string) string {
 	s = strings.TrimSpace(s)
@@ -207,7 +292,18 @@ func cleanReply(s string) string {
 		}
 		s = rest
 	}
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	// A model may wrap the whole query in quotes or backticks, which would
+	// make it one phrase that matches nothing. Quotes inside the query
+	// (status="failed") are kept.
+	for len(s) >= 2 {
+		q := s[0]
+		if q != '`' && q != '\'' && q != '"' || s[len(s)-1] != q || strings.IndexByte(s[1:len(s)-1], q) >= 0 {
+			break
+		}
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 func userPrompt(question, draft string) string {
@@ -222,22 +318,68 @@ func userPrompt(question, draft string) string {
 
 // SystemPrompt describes the query language and data models.
 func SystemPrompt() string {
-	var b strings.Builder
-	b.WriteString(`You write queries for Signalith, a SIEM. Translate the analyst's question into one Signalith query and reply with the query only, no explanation and no code fences.
+	return "You write queries for Signalith, a SIEM. Translate the analyst's question into one Signalith query and reply with the query only, no explanation and no code fences.\n\n" +
+		QueryReference()
+}
 
-Query language (SPL-like, but only what is listed here exists):
+func evalFuncList() string {
+	names := make([]string, 0, len(query.EvalFuncs))
+	for n := range query.EvalFuncs {
+		names = append(names, n+"()")
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+// QueryReference describes the query language, the data models and their
+// fields, with examples.
+func QueryReference() string {
+	var b strings.Builder
+	b.WriteString(`Query language (SPL-like, but only what is listed here exists):
 - A search, then zero or more commands each after "|".
 - Search terms: datamodel=Name, field=value (case-insensitive exact), field=val* (wildcards * ?), field!=value, field>10 (also >= < <=), field IN (a, b), bare words or "quoted phrases" (text anywhere in the raw event), NOT term, ( ... ), a OR b (OR binds tighter than the implicit AND).
 - Time: earliest=-24h latest=now. Units s m h d w mon y; snap with @d @h @w, e.g. earliest=-1d@d latest=@d for yesterday. Leave time out unless the question names a period.
 - Commands: ` + strings.Join(query.Commands, ", ") + `.
-  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), each optionally "as name"
+  stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), median(f), perc95(f) (any perc1 to perc99), stdev(f), var(f), range(f), mode(f), values(f) (distinct values), list(f), first(f)/latest(f) (newest value), last(f)/earliest(f) (oldest value), each optionally "as name"; any agg can take eval(<expression>) with "as name", e.g. count(eval(action="failure")) as failures
   timechart [span=1h] <agg> [by field]
-  top [limit=N] field [by field]
-  where <expression on result columns>
+  eventstats <aggs> [by f1, f2]   like stats, but adds the aggregate columns to every row instead of replacing the rows
+  top [limit=N] [countfield=c] [percentfield=p] [showcount=f] [showperc=f] [useother=t] [otherstr=x] field [by field]
+  rare [limit=N] field [by field]   least common values first; same options as top
+  search <search terms>   after the first |, filters rows with search syntax (field=val*, bare words, OR)
+  where <expression on result columns>   a filter such as count > 20 AND user=adm*, or an eval expression such as len(process) > 200 or bytes_out > bytes_in * 10
+  eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; dotted names such as userIdentity.userName read as one field; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
+  rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
+  dedup [N] f1, f2 [keepempty=true] [consecutive=true]   keeps the first N rows (default 1) per value; events come newest first
+  transaction f1, f2 [maxspan=10m] [maxpause=1m] [maxevents=N] [startswith="text"|(search)] [endswith="text"|(search)]   groups events sharing the fields into one row each, with duration (seconds) and eventcount
+  streamstats [current=f] [window=N] <aggs> [by f1, f2]   running totals in result order; aggs: ` + strings.Join(query.StreamFuncs, ", ") + `
+  bin span=1h _time [AS name]   rounds times down to the span (s m h d w); span=100 on a number gives ranges like 0-100; also bucket
+  regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
+  | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
+  append [search <query>]   adds a subsearch's rows after the results
+  | tstats <aggs> from datamodel=Endpoint.Processes [where Processes.field=value ...] [by Processes.f1, _time span=1h]   Splunk's tstats: runs as the data model search plus stats; columns keep the Node. prefix; also | tstats count where index=* by sourcetype
+  chart [limit=N] <aggs> over f1 [by f2]   one row per f1, one column per f2 value (also chart count by f1, f2)
+  xyseries x y value   pivots rows into one row per x and one column per y; untable x name value turns them back
+  spath [input=f] [output=g] [path=a.b{}.c]   extracts JSON values (default from _raw); no path extracts every value by its path
+  fromjson f [prefix=p]   extracts each top-level key of the JSON object in f as a field
+  mvcombine f   merges rows that differ only in f into one with all f values; nomv f joins a multivalue field into one value
+  strcat [allrequired=t] f1 " text " f2 dest   joins fields and quoted text into dest
+  rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
+  foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
+  appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
+  join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
+  fillnull [value=X] [fields]   sets missing values (default 0)
   sort [-]field, ...    ("-" is descending)
   head N
-  table f1, f2
-  rename f as g
+  table f1, f2   (fields - f1, f2 removes fields instead)
+  rename f as g[, f2 as g2]   rename *_ip as * renames by pattern
+  mvexpand f [limit=N]   one row per value of a multivalue field
+  makemv [delim=","] [tokenizer="<regex>"] f   splits text into a multivalue field (default at spaces)
+  reverse   turns the row order around; tail N keeps the last N rows; uniq drops exact repeats of the row before
+  convert [timeformat="%Y-%m-%d"] ctime(f) [AS g], dur2sec(f), mktime(f), num(f), rmcomma(f), rmunit(f), memk(f)   converts values; * matches many fields
+  rex field=f mode=sed "s/find/replace/g"   changes text with a sed expression (y/abc/xyz/ swaps characters)
+  addtotals [fieldname=Total] [col=t] [labelfield=f] [fields]   adds each row's numbers into Total; col=t adds a totals row; addcoltotals adds only that row
+  lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
+  | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events
   enrich [fields]   adds asset and identity context columns
   intel [fields]    adds threat intel columns (<field>_intel_source, _intel_type, _intel_weight) for values that are known indicators
   threatmatch [fields]   keeps only events whose IP, domain, URL, hash or email fields match threat intel; must come right after the search
@@ -248,6 +390,7 @@ Data models and their fields (every event also has: `)
 	for _, f := range datamodel.Common {
 		common = append(common, f.Name)
 	}
+	common = append(common, "index (the daily index the event is stored in)")
 	b.WriteString(strings.Join(common, ", ") + "):\n")
 	for _, m := range datamodel.Models {
 		fmt.Fprintf(&b, "- %s: %s\n", m.Name, m.Description)

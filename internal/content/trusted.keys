@@ -1,0 +1,5 @@
+# Public keys whose content updates this build installs, one base64 Ed25519
+# key per line. The private key is the SIGNALITH_CONTENT_KEY secret of the
+# content workflow (.github/workflows/content.yml); docs/releasing.md says
+# how to make one and add it here.
+bB2ZrI4E+E4uqvtB+XivcihyK7UllC1AcuAskQtRnkA= # key 45266d88de96, SIGNALITH_CONTENT_KEY from 2026-10-14

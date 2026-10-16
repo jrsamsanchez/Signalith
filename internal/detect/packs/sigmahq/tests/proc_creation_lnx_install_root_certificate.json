@@ -1,0 +1,4 @@
+{"rule": "78a80655-a51e-4669-bc6b-e9d206a462ee", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/update-ca-trust"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

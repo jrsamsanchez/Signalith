@@ -439,18 +439,68 @@ func wazuhSCA(a map[string]any) Event {
 var windowsInsertNames = map[string][]string{
 	"4624": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TargetUserSid", "TargetUserName",
 		"TargetDomainName", "TargetLogonId", "LogonType", "LogonProcessName", "AuthenticationPackageName", "WorkstationName",
-		"LogonGuid", "TransmittedServices", "LmPackageName", "KeyLength", "ProcessId", "ProcessName", "IpAddress", "IpPort"},
+		"LogonGuid", "TransmittedServices", "LmPackageName", "KeyLength", "ProcessId", "ProcessName", "IpAddress", "IpPort",
+		"ImpersonationLevel", "RestrictedAdminMode", "TargetOutboundUserName", "TargetOutboundDomainName", "VirtualAccount",
+		"TargetLinkedLogonId", "ElevatedToken"},
 	"4625": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TargetUserSid", "TargetUserName",
 		"TargetDomainName", "Status", "FailureReason", "SubStatus", "LogonType", "LogonProcessName", "AuthenticationPackageName",
 		"WorkstationName", "TransmittedServices", "LmPackageName", "KeyLength", "ProcessId", "ProcessName", "IpAddress", "IpPort"},
 	"4688": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "NewProcessId", "NewProcessName",
 		"TokenElevationType", "ProcessId", "CommandLine", "TargetUserSid", "TargetUserName", "TargetDomainName", "TargetLogonId",
 		"ParentProcessName", "MandatoryLabel"},
-	"4720": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
-	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
-	"4728": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
-	"4732": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
-	"4756": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName"},
+	"4663": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectServer", "ObjectType",
+		"ObjectName", "HandleId", "AccessList", "AccessMask", "ProcessId", "ProcessName"},
+	"4648": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "LogonGuid", "TargetUserName",
+		"TargetDomainName", "TargetLogonGuid", "TargetServerName", "TargetInfo", "ProcessId", "ProcessName", "IpAddress", "IpPort"},
+	"5156": {"ProcessID", "Application", "Direction", "SourceAddress", "SourcePort", "DestAddress", "DestPort", "Protocol",
+		"FilterRTID", "LayerName", "LayerRTID"},
+	"5157": {"ProcessID", "Application", "Direction", "SourceAddress", "SourcePort", "DestAddress", "DestPort", "Protocol",
+		"FilterRTID", "LayerName", "LayerRTID"},
+	"4656": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectServer", "ObjectType",
+		"ObjectName", "HandleId", "TransactionId", "AccessList", "AccessReason", "AccessMask", "PrivilegeList",
+		"RestrictedSidCount", "ProcessId", "ProcessName"},
+	"4657": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectName", "ObjectValueName",
+		"HandleId", "OperationType", "OldValueType", "OldValue", "NewValueType", "NewValue", "ProcessId", "ProcessName"},
+	"4661": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectServer", "ObjectType",
+		"ObjectName", "HandleId", "TransactionId", "AccessList", "AccessMask", "PrivilegeList", "Properties",
+		"RestrictedSidCount", "ProcessId", "ProcessName"},
+	"4662": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectServer", "ObjectType",
+		"ObjectName", "OperationType", "HandleId", "AccessList", "AccessMask", "Properties"},
+	"4768": {"TargetUserName", "TargetDomainName", "TargetSid", "ServiceName", "ServiceSid", "TicketOptions", "Status",
+		"TicketEncryptionType", "PreAuthType", "IpAddress", "IpPort", "CertIssuerName", "CertSerialNumber", "CertThumbprint"},
+	"4769": {"TargetUserName", "TargetDomainName", "ServiceName", "ServiceSid", "TicketOptions", "TicketEncryptionType",
+		"IpAddress", "IpPort", "Status"},
+	"4698": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "TaskName", "TaskContent"},
+	"5136": {"OpCorrelationID", "AppCorrelationID", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId",
+		"DSName", "DSType", "ObjectDN", "ObjectGUID", "ObjectClass", "AttributeLDAPDisplayName", "AttributeSyntaxOID",
+		"AttributeValue", "OperationType"},
+	"5145": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectType", "IpAddress", "IpPort",
+		"ShareName", "ShareLocalPath", "RelativeTargetName", "AccessMask", "AccessList"},
+	"4719": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CategoryId", "SubcategoryId",
+		"SubcategoryGuid", "AuditPolicyChanges"},
+	"4706": {"DomainName", "DomainSid", "TdoType", "TdoDirection", "TdoAttributes", "SidFilteringEnabled", "SubjectUserSid",
+		"SubjectUserName", "SubjectDomainName", "SubjectLogonId"},
+	"4794": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "Workstation"},
+	"4697": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ServiceName", "ServiceFileName",
+		"ServiceType", "ServiceStartType", "ServiceAccount", "ClientProcessStartKey", "ClientProcessId", "ParentProcessId"},
+	"4720": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId", "PrivilegeList", "SamAccountName", "DisplayName", "UserPrincipalName", "HomeDirectory",
+		"HomePath", "ScriptPath", "ProfilePath", "UserWorkstations", "PasswordLastSet", "AccountExpires",
+		"PrimaryGroupId", "AllowedToDelegateTo", "OldUacValue", "NewUacValue", "UserAccountControl",
+		"UserParameters", "SidHistory"},
+	"4738": {"Dummy", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+		"SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SamAccountName", "DisplayName", "UserPrincipalName",
+		"HomeDirectory", "HomePath", "ScriptPath", "ProfilePath", "UserWorkstations", "PasswordLastSet",
+		"AccountExpires", "PrimaryGroupId", "AllowedToDelegateTo", "OldUacValue", "NewUacValue",
+		"UserAccountControl", "UserParameters", "SidHistory"},
+	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4728": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+		"SubjectDomainName", "SubjectLogonId"},
+	"4732": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+		"SubjectDomainName", "SubjectLogonId"},
+	"4756": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+		"SubjectDomainName", "SubjectLogonId"},
 }
 
 // wazuhWindows maps a Windows event channel alert with the Windows parser,
@@ -471,13 +521,23 @@ func wazuhWindows(a map[string]any) (Event, bool) {
 	channel := wstr(sys["channel"])
 	eventID := wstr(sys["eventID"])
 	r := map[string]any{
-		"Channel":     channel,
-		"EventID":     eventID,
-		"Computer":    wstr(sys["computer"]),
-		"TimeCreated": wstr(sys["systemTime"]),
-		"Message":     strings.Trim(wstr(sys["message"]), `"`),
+		"Channel":      channel,
+		"EventID":      eventID,
+		"Computer":     wstr(sys["computer"]),
+		"TimeCreated":  wstr(sys["systemTime"]),
+		"Message":      strings.Trim(wstr(sys["message"]), `"`),
+		"ProviderName": wstr(sys["providerName"]),
 	}
-	if names, ok := windowsInsertNames[eventID]; ok && channel == "Security" {
+	names, ok := windowsInsertNames[eventID]
+	if !ok {
+		names, ok = windowsSchema[eventID]
+	}
+	if channel == SystemChannel {
+		names, ok = windowsSchemaFor(channel, wstr(sys["providerName"]), eventID)
+	} else if channel != "Security" {
+		ok = false
+	}
+	if ok {
 		ins := make([]any, len(names))
 		for i, n := range names {
 			ins[i] = byName[strings.ToLower(n)]

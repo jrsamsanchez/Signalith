@@ -1,0 +1,169 @@
+# Compliance frameworks and the controls Signalith gives evidence for.
+#
+# Only controls a SIEM can show evidence for are listed: logging, monitoring,
+# detection, incident handling, configuration and vulnerability checks, and
+# the protection of the logs themselves. Each control names the Signalith
+# capabilities that support it (see capabilities.go) and the NIST SP 800-53
+# Rev. 5 controls it lines up with, which decide the configuration checks
+# that count as its evidence.
+#
+# Licences: NIST SP 800-53 and the HIPAA Security Rule are works of the US
+# government and are used with their official titles. For the other
+# frameworks only the control and requirement numbers are used; every title
+# here is Signalith's own short summary, not the standard's text. The
+# mapping itself is Signalith's own work, under the project's Apache 2.0
+# licence. It shows where Signalith gives evidence; it is not legal advice
+# and does not make anyone compliant.
+
+frameworks:
+  - id: nist-800-53
+    name: NIST SP 800-53
+    version: Rev. 5
+    publisher: National Institute of Standards and Technology
+    url: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+    notice: NIST SP 800-53 is a work of the US government and is not subject to copyright in the United States.
+    controls:
+      - {id: AC-2, group: Access Control, title: Account Management, caps: [data-change, detect-change], nist: [AC-2]}
+      - {id: AC-6(9), group: Access Control, title: Least Privilege | Log Use of Privileged Functions, caps: [data-auth, data-process, detect-privilege], nist: [AC-6(9)]}
+      - {id: AC-7, group: Access Control, title: Unsuccessful Logon Attempts, caps: [data-auth, detect-auth], nist: [AC-7]}
+      - {id: AU-2, group: Audit and Accountability, title: Event Logging, caps: [data-auth, data-process, data-change], nist: [AU-2]}
+      - {id: AU-3, group: Audit and Accountability, title: Content of Audit Records, caps: [record-content], nist: [AU-3]}
+      - {id: AU-4, group: Audit and Accountability, title: Audit Log Storage Capacity, caps: [storage-guard], nist: [AU-4]}
+      - {id: AU-5, group: Audit and Accountability, title: Response to Audit Logging Process Failures, caps: [source-health, notify], nist: [AU-5]}
+      - {id: AU-6, group: Audit and Accountability, title: Audit Record Review, Analysis, and Reporting, caps: [detect-any, triage], nist: [AU-6]}
+      - {id: AU-7, group: Audit and Accountability, title: Audit Record Reduction and Report Generation, caps: [search], nist: [AU-7]}
+      - {id: AU-8, group: Audit and Accountability, title: Time Stamps, caps: [timestamps], nist: [AU-8]}
+      - {id: AU-9, group: Audit and Accountability, title: Protection of Audit Information, caps: [siem-access, siem-tls, siem-secrets], nist: [AU-9]}
+      - {id: AU-11, group: Audit and Accountability, title: Audit Record Retention, caps: [retention-1y], nist: [AU-11]}
+      - {id: AU-12, group: Audit and Accountability, title: Audit Record Generation, caps: [data-any, config-checks], nist: [AU-12]}
+      - {id: CA-7, group: Assessment, Authorization, and Monitoring, title: Continuous Monitoring, caps: [detect-any, config-checks, vuln-scan], nist: [CA-7, CM-6]}
+      - {id: CM-6, group: Configuration Management, title: Configuration Settings, caps: [config-checks], nist: [CM-6]}
+      - {id: CM-7, group: Configuration Management, title: Least Functionality, caps: [config-checks], nist: [CM-7]}
+      - {id: CM-8, group: Configuration Management, title: System Component Inventory, caps: [assets, data-inventory], nist: [CM-8]}
+      - {id: IA-5, group: Identification and Authentication, title: Authenticator Management, caps: [config-checks], nist: [IA-5]}
+      - {id: IR-4, group: Incident Response, title: Incident Handling, caps: [cases, response, detect-any], nist: [IR-4]}
+      - {id: IR-5, group: Incident Response, title: Incident Monitoring, caps: [cases, triage], nist: [IR-5]}
+      - {id: IR-6, group: Incident Response, title: Incident Reporting, caps: [notify], nist: [IR-6]}
+      - {id: PM-16, group: Program Management, title: Threat Awareness Program, caps: [intel], nist: [PM-16]}
+      - {id: RA-5, group: Risk Assessment, title: Vulnerability Monitoring and Scanning, caps: [vuln-scan], nist: [RA-5]}
+      - {id: SC-8, group: System and Communications Protection, title: Transmission Confidentiality and Integrity, caps: [config-checks], nist: [SC-8]}
+      - {id: SC-28, group: System and Communications Protection, title: Protection of Information at Rest, caps: [config-checks], nist: [SC-28]}
+      - {id: SI-2, group: System and Information Integrity, title: Flaw Remediation, caps: [vuln-scan, config-checks], nist: [SI-2]}
+      - {id: SI-3, group: System and Information Integrity, title: Malicious Code Protection, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: SI-4, group: System and Information Integrity, title: System Monitoring, caps: [detect-any, data-process, data-network, notify], nist: [SI-4]}
+      - {id: SI-5, group: System and Information Integrity, title: Security Alerts, Advisories, and Directives, caps: [intel], nist: [SI-5]}
+      - {id: SI-7, group: System and Information Integrity, title: Software, Firmware, and Information Integrity, caps: [data-files], nist: [SI-7]}
+
+  - id: cis-v8
+    name: CIS Controls
+    version: v8
+    publisher: Center for Internet Security
+    url: https://www.cisecurity.org/controls/v8
+    notice: Safeguard numbers refer to the CIS Critical Security Controls v8. Titles here are Signalith's own summaries; read the CIS Controls for the safeguard text. CIS Controls is a trademark of the Center for Internet Security.
+    controls:
+      - {id: "1.1", group: Inventory of Enterprise Assets, title: Keep a detailed inventory of enterprise assets, caps: [assets, data-inventory], nist: [CM-8]}
+      - {id: "2.1", group: Inventory of Software Assets, title: Keep an inventory of installed software, caps: [data-inventory], nist: [CM-8]}
+      - {id: "4.1", group: Secure Configuration, title: Keep a secure configuration process, caps: [config-checks], nist: [CM-6, CM-7]}
+      - {id: "7.1", group: Continuous Vulnerability Management, title: Run a vulnerability management process, caps: [vuln-scan], nist: [RA-5]}
+      - {id: "7.5", group: Continuous Vulnerability Management, title: Scan internal assets for vulnerabilities automatically, caps: [vuln-scan], nist: [RA-5]}
+      - {id: "8.2", group: Audit Log Management, title: Collect audit logs, caps: [data-auth, data-process, data-change], nist: [AU-2, AU-12]}
+      - {id: "8.3", group: Audit Log Management, title: Keep enough storage for audit logs, caps: [storage-guard], nist: [AU-4]}
+      - {id: "8.4", group: Audit Log Management, title: Use consistent time across systems, caps: [timestamps], nist: [AU-8]}
+      - {id: "8.5", group: Audit Log Management, title: Collect detailed audit logs, caps: [record-content, data-process], nist: [AU-3]}
+      - {id: "8.6", group: Audit Log Management, title: Collect DNS query logs, caps: [data-dns], nist: []}
+      - {id: "8.8", group: Audit Log Management, title: Collect command-line logs, caps: [data-process], nist: []}
+      - {id: "8.9", group: Audit Log Management, title: Keep audit logs in one central place, caps: [data-any], nist: []}
+      - {id: "8.10", group: Audit Log Management, title: Keep audit logs for at least 90 days, caps: [retention-90], nist: [AU-11]}
+      - {id: "8.11", group: Audit Log Management, title: Review audit logs regularly, caps: [detect-any, triage], nist: [AU-6]}
+      - {id: "10.1", group: Malware Defenses, title: Run anti-malware software, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: "13.1", group: Network Monitoring and Defense, title: Centralize security event alerting, caps: [detect-any, notify], nist: [SI-4]}
+      - {id: "13.2", group: Network Monitoring and Defense, title: Detect intrusions on hosts, caps: [data-process, detect-any], nist: [SI-4]}
+      - {id: "13.3", group: Network Monitoring and Defense, title: Detect intrusions on the network, caps: [data-network, detect-network], nist: [SI-4]}
+      - {id: "13.6", group: Network Monitoring and Defense, title: Collect network traffic flow logs, caps: [data-network], nist: []}
+      - {id: "17.4", group: Incident Response Management, title: Run an incident response process, caps: [cases, response], nist: [IR-4]}
+
+  - id: pci-dss
+    name: PCI DSS
+    version: v4.0
+    publisher: PCI Security Standards Council
+    url: https://www.pcisecuritystandards.org/document_library/
+    notice: Requirement numbers refer to PCI DSS v4.0, © PCI Security Standards Council. Titles here are Signalith's own summaries; read the standard for the requirement text.
+    controls:
+      - {id: "2.2.1", group: "2: Secure configurations", title: Configuration standards are applied to system components, caps: [config-checks], nist: [CM-6, CM-7]}
+      - {id: "5.2.1", group: "5: Malware protection", title: Anti-malware runs on system components, caps: [data-malware], nist: [SI-3]}
+      - {id: "5.2.2", group: "5: Malware protection", title: Anti-malware detects and handles known malware, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: "5.3.4", group: "5: Malware protection", title: Anti-malware logs are kept, caps: [data-malware, retention-1y], nist: []}
+      - {id: "6.3.1", group: "6: Secure systems and software", title: Security vulnerabilities are found and ranked, caps: [vuln-scan], nist: [RA-5]}
+      - {id: "6.3.3", group: "6: Secure systems and software", title: Security patches are installed, caps: [vuln-scan, config-checks], nist: [SI-2]}
+      - {id: "8.3.4", group: "8: Identification and authentication", title: Repeated failed sign-ins are limited, caps: [data-auth, detect-auth], nist: [AC-7]}
+      - {id: "10.2.1", group: "10: Logging and monitoring", title: Audit logs are on for all system components, caps: [data-any, data-auth, data-process], nist: [AU-2, AU-12]}
+      - {id: "10.2.1.2", group: "10: Logging and monitoring", title: Actions by administrators are logged, caps: [data-auth, data-process, detect-privilege], nist: [AC-6(9)]}
+      - {id: "10.2.1.4", group: "10: Logging and monitoring", title: Failed access attempts are logged, caps: [data-auth, detect-auth], nist: []}
+      - {id: "10.2.1.5", group: "10: Logging and monitoring", title: Changes to accounts and credentials are logged, caps: [data-change, detect-change], nist: [AC-2]}
+      - {id: "10.2.2", group: "10: Logging and monitoring", title: Log records hold the required details, caps: [record-content], nist: [AU-3]}
+      - {id: "10.3.1", group: "10: Logging and monitoring", title: Read access to audit logs is limited, caps: [siem-access], nist: [AU-9]}
+      - {id: "10.3.2", group: "10: Logging and monitoring", title: Audit logs are protected from change, caps: [siem-access, siem-tls], nist: [AU-9]}
+      - {id: "10.3.3", group: "10: Logging and monitoring", title: Audit logs are copied promptly to a central log server, caps: [data-any], nist: []}
+      - {id: "10.4.1", group: "10: Logging and monitoring", title: Security events are reviewed at least daily, caps: [detect-any, triage], nist: [AU-6]}
+      - {id: "10.4.1.1", group: "10: Logging and monitoring", title: Log reviews are automated, caps: [detect-any], nist: []}
+      - {id: "10.4.3", group: "10: Logging and monitoring", title: Exceptions and anomalies are followed up, caps: [triage, cases], nist: [IR-5]}
+      - {id: "10.5.1", group: "10: Logging and monitoring", title: Logs are kept 12 months, with 3 months at hand, caps: [retention-90, retention-1y], nist: [AU-11]}
+      - {id: "10.6.1", group: "10: Logging and monitoring", title: System clocks use synchronized time, caps: [timestamps], nist: [AU-8]}
+      - {id: "10.7.2", group: "10: Logging and monitoring", title: Failures of security controls are detected and alerted, caps: [source-health, notify], nist: [AU-5]}
+      - {id: "11.3.1", group: "11: Testing security", title: Internal vulnerability scans run at least every three months, caps: [vuln-scan], nist: [RA-5]}
+      - {id: "11.5.1", group: "11: Testing security", title: Intrusions are detected and alerted, caps: [detect-any, detect-network, notify], nist: [SI-4]}
+      - {id: "11.5.2", group: "11: Testing security", title: Changes to critical files are detected, caps: [data-files], nist: [SI-7]}
+      - {id: "12.5.1", group: "12: Policies and programs", title: An inventory of in-scope system components is kept, caps: [assets, data-inventory], nist: [CM-8]}
+      - {id: "12.10.1", group: "12: Policies and programs", title: An incident response plan is ready to use, caps: [cases, response], nist: [IR-4]}
+      - {id: "12.10.5", group: "12: Policies and programs", title: The response plan covers alerts from security monitoring, caps: [notify, triage, data-files], nist: [IR-6]}
+
+  - id: iso-27001
+    name: ISO/IEC 27001
+    version: "2022"
+    publisher: International Organization for Standardization
+    url: https://www.iso.org/standard/27001
+    notice: Control numbers refer to Annex A of ISO/IEC 27001:2022, © ISO/IEC. Titles here are Signalith's own summaries; read the standard for the control text.
+    controls:
+      - {id: A.5.7, group: Organizational controls, title: Gather and use threat intelligence, caps: [intel], nist: [PM-16]}
+      - {id: A.5.9, group: Organizational controls, title: Keep an inventory of assets, caps: [assets, data-inventory], nist: [CM-8]}
+      - {id: A.5.24, group: Organizational controls, title: Plan and prepare for incidents, caps: [cases, response], nist: [IR-4]}
+      - {id: A.5.25, group: Organizational controls, title: Assess security events, caps: [triage], nist: [IR-5]}
+      - {id: A.5.26, group: Organizational controls, title: Respond to incidents, caps: [cases, response], nist: [IR-4]}
+      - {id: A.5.28, group: Organizational controls, title: Collect and keep evidence, caps: [cases, retention-1y], nist: []}
+      - {id: A.8.2, group: Technological controls, title: Watch the use of privileged access, caps: [data-auth, detect-privilege], nist: [AC-6(9)]}
+      - {id: A.8.7, group: Technological controls, title: Protect against malware, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: A.8.8, group: Technological controls, title: Manage technical vulnerabilities, caps: [vuln-scan], nist: [RA-5, SI-2]}
+      - {id: A.8.9, group: Technological controls, title: Manage secure configurations, caps: [config-checks], nist: [CM-6]}
+      - {id: A.8.15, group: Technological controls, title: Produce, keep and protect logs, caps: [data-any, retention-1y, siem-access], nist: [AU-2, AU-12]}
+      - {id: A.8.16, group: Technological controls, title: Monitor for unusual behaviour, caps: [detect-any, data-network, notify], nist: [SI-4]}
+      - {id: A.8.17, group: Technological controls, title: Synchronize clocks, caps: [timestamps], nist: [AU-8]}
+
+  - id: hipaa
+    name: HIPAA Security Rule
+    version: 45 CFR 164 Subpart C
+    publisher: US Department of Health and Human Services
+    url: https://www.hhs.gov/hipaa/for-professionals/security/index.html
+    notice: The HIPAA Security Rule is US federal regulation and is not subject to copyright.
+    controls:
+      - {id: 164.308(a)(1)(ii)(A), group: Administrative safeguards, title: Risk analysis, caps: [vuln-scan, config-checks], nist: [RA-5, CM-6]}
+      - {id: 164.308(a)(1)(ii)(D), group: Administrative safeguards, title: Information system activity review, caps: [detect-any, triage], nist: [AU-6]}
+      - {id: 164.308(a)(5)(ii)(B), group: Administrative safeguards, title: Protection from malicious software, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: 164.308(a)(5)(ii)(C), group: Administrative safeguards, title: Log-in monitoring, caps: [data-auth, detect-auth], nist: [AC-7]}
+      - {id: 164.308(a)(6)(ii), group: Administrative safeguards, title: Response and reporting, caps: [cases, notify, response], nist: [IR-4]}
+      - {id: 164.312(b), group: Technical safeguards, title: Audit controls, caps: [data-any, data-auth, data-process], nist: [AU-2, AU-12]}
+      - {id: 164.312(c)(1), group: Technical safeguards, title: Integrity, caps: [data-files], nist: [SI-7]}
+      - {id: 164.312(e)(1), group: Technical safeguards, title: Transmission security, caps: [config-checks], nist: [SC-8]}
+
+  - id: soc2
+    name: SOC 2
+    version: TSC 2017 (rev. 2022)
+    publisher: AICPA
+    url: https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services
+    notice: Criteria numbers refer to the AICPA Trust Services Criteria. Titles here are Signalith's own summaries; read the criteria for their text. SOC 2 is a trademark of the AICPA.
+    controls:
+      - {id: CC4.1, group: Monitoring activities, title: Controls are evaluated on an ongoing basis, caps: [config-checks, vuln-scan], nist: [CA-7, CM-6]}
+      - {id: CC6.8, group: Logical and physical access, title: Unauthorized or malicious software is prevented or detected, caps: [data-malware, detect-malware], nist: [SI-3]}
+      - {id: CC7.1, group: System operations, title: Configuration changes and vulnerabilities are detected, caps: [config-checks, vuln-scan, data-files], nist: [CM-6]}
+      - {id: CC7.2, group: System operations, title: System components are monitored for anomalies, caps: [data-any, detect-any, notify], nist: [SI-4]}
+      - {id: CC7.3, group: System operations, title: Security events are evaluated, caps: [triage, cases], nist: [IR-5]}
+      - {id: CC7.4, group: System operations, title: Security incidents are responded to, caps: [cases, response], nist: [IR-4]}

@@ -1,0 +1,4 @@
+{"rule": "93d94efc-d7ad-4161-ad7d-1638c4f908d8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"dumpert.dmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

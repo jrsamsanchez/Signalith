@@ -1,0 +1,4 @@
+{"rule": "bbb7e38c-0b41-4a11-b306-d2a457b7ac2b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\PerfLogs\\ .scr"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

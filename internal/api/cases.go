@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -42,35 +44,68 @@ func (s *Server) casesReady(w http.ResponseWriter) bool {
 	return true
 }
 
+// errCaseBusy is what an analyst sees when other changes to the same case
+// kept getting in first.
+var errCaseBusy = errors.New("Someone else changed this investigation at the same moment. Try again.")
+
 func writeCaseError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, cases.ErrNotFound), errors.Is(err, cases.ErrEntryNotFound), errors.Is(err, findings.ErrNotFound):
 		writeError(w, http.StatusNotFound, err)
+	case errors.Is(err, cases.ErrBusy):
+		writeError(w, http.StatusConflict, errCaseBusy)
 	default:
 		writeError(w, http.StatusBadGateway, err)
 	}
 }
 
 // modifyCase loads a case, lets change edit it and saves it if change
-// reports a modification. Changes are serialized so two analysts editing
-// the same case do not overwrite each other's additions.
+// reports a modification. The store writes only over the version it read
+// and reruns change when someone changed the case meanwhile, on this
+// server or another, so nobody's addition is lost; change must therefore
+// be safe to run more than once, write nothing else, and reset whatever
+// it reports out at its start. Changes on this server also wait for each
+// other, so two tabs do not spend tries on each other; changes to other
+// cases do not wait.
 func (s *Server) modifyCase(ctx context.Context, id string, change func(c *cases.Case) (bool, error)) (*cases.Case, error) {
-	s.caseMu.Lock()
-	defer s.caseMu.Unlock()
-	c, err := s.Cases.Get(ctx, id)
-	if err != nil {
-		return nil, err
+	defer s.caseLocks.lock(id)()
+	return s.Cases.Modify(ctx, id, change)
+}
+
+// caseLocks holds a lock for each case being changed on this server, and
+// forgets it once nobody holds or waits for it.
+type caseLocks struct {
+	mu    sync.Mutex
+	locks map[string]*caseLock
+}
+
+type caseLock struct {
+	sync.Mutex
+	users int // holding it or waiting for it
+}
+
+// lock locks case id and returns the function that unlocks it.
+func (l *caseLocks) lock(id string) (unlock func()) {
+	l.mu.Lock()
+	if l.locks == nil {
+		l.locks = map[string]*caseLock{}
 	}
-	changed, err := change(c)
-	if err != nil {
-		return nil, err
+	cl := l.locks[id]
+	if cl == nil {
+		cl = &caseLock{}
+		l.locks[id] = cl
 	}
-	if changed {
-		if err := s.Cases.Save(ctx, c); err != nil {
-			return nil, err
+	cl.users++
+	l.mu.Unlock()
+	cl.Lock()
+	return func() {
+		cl.Unlock()
+		l.mu.Lock()
+		if cl.users--; cl.users == 0 {
+			delete(l.locks, id)
 		}
+		l.mu.Unlock()
 	}
-	return c, nil
 }
 
 // badRequest marks an error as the client's fault.
@@ -186,19 +221,13 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	if c.Owner != "" {
 		c.Status = findings.StatusInProgress
 	}
-	s.caseMu.Lock()
-	err := s.Cases.Create(r.Context(), c)
-	for try := 0; errors.Is(err, cases.ErrExists) && try < 3; try++ {
-		c.ID = cases.NewID(now) // practically never needed
-		err = s.Cases.Create(r.Context(), c)
-	}
-	s.caseMu.Unlock()
-	if err != nil {
+	if err := s.createCase(r.Context(), c, now); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
 	failed := map[string]string{}
 	if len(req.Findings) > 0 {
+		var err error
 		c, failed, err = s.addCaseFindings(r.Context(), c.ID, req.Findings, user)
 		if err != nil {
 			writeCaseError(w, err)
@@ -206,6 +235,16 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"case": c, "failed": failed})
+}
+
+// createCase stores a new case, with a new ID should its own be taken.
+func (s *Server) createCase(ctx context.Context, c *cases.Case, now time.Time) error {
+	err := s.Cases.Create(ctx, c)
+	for try := 0; errors.Is(err, cases.ErrExists) && try < 3; try++ {
+		c.ID = cases.NewID(now) // practically never needed
+		err = s.Cases.Create(ctx, c)
+	}
+	return err
 }
 
 func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
@@ -321,51 +360,82 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 
 // addCaseFindings links findings to a case. A finding already in another
 // case moves to this one, since a finding belongs to one investigation.
+// The case is changed first, then each finding, then any case a finding
+// left, each with its own versioned write: if two analysts link one
+// finding to two cases at once, the finding names the last, and that
+// last link's "moved" step takes it out of the other case.
 func (s *Server) addCaseFindings(ctx context.Context, caseID string, ids []string, user string) (*cases.Case, map[string]string, error) {
 	failed := map[string]string{}
 	if s.Findings == nil {
 		return nil, nil, errDetectionsOff
 	}
+	var read []*findings.Finding
+	for _, id := range ids {
+		f, err := s.Findings.Get(ctx, id)
+		if err != nil {
+			failed[id] = err.Error()
+			continue
+		}
+		read = append(read, f)
+	}
+	var linked []string
+	var refused map[string]string
 	c, err := s.modifyCase(ctx, caseID, func(c *cases.Case) (bool, error) {
+		linked, refused = nil, map[string]string{}
 		changed := false
-		for _, id := range ids {
-			now := time.Now().UTC()
-			f, err := s.Findings.Get(ctx, id)
-			if err != nil {
-				failed[id] = err.Error()
-				continue
-			}
-			if f.CaseID != "" && f.CaseID != c.ID {
-				if old, err := s.Cases.Get(ctx, f.CaseID); err == nil && old.RemoveFinding(f.ID, user, now) {
-					old.History[len(old.History)-1].To = "moved to " + c.ID
-					if err := s.Cases.Save(ctx, old); err != nil {
-						failed[id] = err.Error()
-						continue
-					}
-				}
-			}
+		now := time.Now().UTC()
+		for _, f := range read {
 			added, err := c.AddFinding(f, user, now)
 			if err != nil {
-				failed[id] = err.Error()
+				refused[f.ID] = err.Error()
 				continue
 			}
 			changed = changed || added
-			if f.CaseID != c.ID {
-				f.History = append(f.History, findings.Change{Author: user, Field: "case", From: f.CaseID, To: c.ID, Time: now})
-				f.CaseID = c.ID
-				if f.Status == findings.StatusNew {
-					f.History = append(f.History, findings.Change{Author: user, Field: "status", From: f.Status, To: findings.StatusInProgress, Time: now})
-					f.Status = findings.StatusInProgress
-				}
-				f.Updated = now
-				if err := s.Findings.Save(ctx, f); err != nil {
-					failed[id] = err.Error()
-				}
-			}
+			linked = append(linked, f.ID)
 		}
 		return changed, nil
 	})
-	return c, failed, err
+	if err != nil {
+		return nil, nil, err
+	}
+	maps.Copy(failed, refused)
+	for _, id := range linked {
+		var prev string
+		_, err := s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+			prev = ""
+			if f.CaseID == c.ID {
+				return false, nil
+			}
+			now := time.Now().UTC()
+			prev = f.CaseID
+			f.History = append(f.History, findings.Change{Author: user, Field: "case", From: f.CaseID, To: c.ID, Time: now})
+			f.CaseID = c.ID
+			if f.Status == findings.StatusNew {
+				f.History = append(f.History, findings.Change{Author: user, Field: "status", From: f.Status, To: findings.StatusInProgress, Time: now})
+				f.Status = findings.StatusInProgress
+			}
+			f.Updated = now
+			return true, nil
+		})
+		if err != nil {
+			failed[id] = err.Error()
+			continue
+		}
+		if prev == "" || prev == c.ID {
+			continue
+		}
+		_, err = s.modifyCase(ctx, prev, func(old *cases.Case) (bool, error) {
+			if !old.RemoveFinding(id, user, time.Now().UTC()) {
+				return false, nil
+			}
+			old.History[len(old.History)-1].To = "moved to " + c.ID
+			return true, nil
+		})
+		if err != nil && !errors.Is(err, cases.ErrNotFound) {
+			failed[id] = err.Error()
+		}
+	}
+	return c, failed, nil
 }
 
 func (s *Server) handleAddCaseFindings(w http.ResponseWriter, r *http.Request) {
@@ -407,12 +477,17 @@ func (s *Server) handleRemoveCaseFinding(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if s.Findings != nil {
-		if f, err := s.Findings.Get(r.Context(), fid); err == nil && f.CaseID == c.ID {
+		// Only while the finding still names this case: if it moved on to
+		// another meanwhile, that link stays.
+		_, _ = s.Findings.Modify(r.Context(), fid, func(f *findings.Finding) (bool, error) {
+			if f.CaseID != c.ID {
+				return false, nil
+			}
 			now := time.Now().UTC()
 			f.History = append(f.History, findings.Change{Author: user, Field: "case", From: c.ID, To: "", Time: now})
 			f.CaseID, f.Updated = "", now
-			_ = s.Findings.Save(r.Context(), f)
-		}
+			return true, nil
+		})
 	}
 	writeJSON(w, http.StatusOK, c)
 }

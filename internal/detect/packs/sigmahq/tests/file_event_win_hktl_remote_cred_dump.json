@@ -1,0 +1,5 @@
+{"rule": "6e2a900a-ced9-4e4a-a9c2-13e706f9518a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe","TargetFilename":"\\Windows\\System32\\AAAAAAAA.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Windows\\System32\\AAAAAAAA.tmp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\svchost.exe"}}
+]}

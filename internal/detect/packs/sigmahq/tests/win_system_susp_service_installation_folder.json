@@ -1,0 +1,5 @@
+{"rule": "5e993621-67d4-488a-b9ae-b420d08b96cb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"\\\\127.0.0.1","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":":\\Program Files\\Common Files\\Zoom\\Support\\CptService.exe \\\\127.0.0.1","Provider_Name":"Service Control Manager","ServiceName":"Zoom Sharing Service"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

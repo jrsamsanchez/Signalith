@@ -1,0 +1,5 @@
+{"rule": "99b97608-3e21-4bfe-8217-2a127c396a0e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\powershell.exe","TargetImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"TargetImage":"\\rundll32.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"\\powershell.exe"}}
+]}

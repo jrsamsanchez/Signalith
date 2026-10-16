@@ -1,0 +1,4 @@
+{"rule": "4aafb0fa-bff5-4b9d-b99e-8093e659c65f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\\\127.0.0\\ADMIN$\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

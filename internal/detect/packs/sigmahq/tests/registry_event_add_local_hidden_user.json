@@ -1,0 +1,6 @@
+{"rule": "460479f3-80b7-42da-9c43-2cc1d54dbccd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\lsass.exe","TargetObject":"\\SAM\\SAM\\Domains\\Account\\Users\\Names\\$\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SAM\\SAM\\Domains\\Account\\Users\\Names\\$\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"\\lsass.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"Binary Data","EventType":"SetValue","Image":"C:\\Windows\\system32\\lsass.exe","ProcessGuid":"747F3D96-68DD-5FDD-0000-00101B660000","ProcessId":"648","RuleName":"Hidden Local Account Created","TargetObject":"HKLM\\SAM\\SAM\\Domains\\Account\\Users\\Names\\hideme0007$\\(Default)","UtcTime":"2020-12-18 17:56:07.015"}}
+]}

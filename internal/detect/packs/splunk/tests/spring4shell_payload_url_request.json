@@ -1,0 +1,12 @@
+{"rule": "9d44d649-7d67-4559-95c1-8022ff49420b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x tomcatwar.jsp x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x poc.jsp x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x shell.jsp x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x tomcatwar.jsp y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x poc.jsp y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x shell.jsp y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x tomcatwar.jsp x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x poc.jsp x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x shell.jsp x"}}
+]}

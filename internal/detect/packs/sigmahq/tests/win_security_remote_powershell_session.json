@@ -1,0 +1,5 @@
+{"rule": "13acf386-b8c6-4fe0-9a6e-c4756b974698", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5156","data":{"DestPort":"5986","LayerRTID":"44"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"LayerRTID":"44"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"DestPort":"5986"}}
+]}

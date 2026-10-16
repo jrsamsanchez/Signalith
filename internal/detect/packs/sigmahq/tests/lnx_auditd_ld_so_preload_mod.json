@@ -1,0 +1,4 @@
+{"rule": "4b3cb710-5e83-4715-8c45-8b2b5b3e5751", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/ld.so.preload"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

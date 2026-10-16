@@ -25,12 +25,19 @@ package integration
 // Each server serves HTTPS with its own certificate, as by default: the
 // tests ask /readyz over plain HTTP on the same port, as a load balancer
 // may, and call the API over HTTPS, trusting that server's own CA.
+//
+// Every server gets one cluster key through SIGNALITH_CLUSTER_KEY_FILE,
+// as servers set up by hand are told to, so each one joins the cluster
+// the first server founds; a server started with noKey does not.
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -40,6 +47,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -96,6 +104,10 @@ type clusterHarness struct {
 	prefix string
 	root   string
 	os     *store.Client
+	// keyFile holds the cluster key every server is given.
+	keyFile string
+	// fake is the in-memory OpenSearch, nil with a real one.
+	fake *ostest.Server
 }
 
 // newClusterHarness gives a test its own index prefix on the OpenSearch of
@@ -110,9 +122,16 @@ func newClusterHarness(t *testing.T) *clusterHarness {
 		if os.Getenv("CI") != "" {
 			t.Fatal("SIGNALITH_TEST_OPENSEARCH is not set: in CI these tests must run against a real OpenSearch")
 		}
-		h.url = ostest.New(t).URL
+		h.fake = ostest.New(t)
+		h.url = h.fake.URL
 	}
 	h.os = store.New(storeConfig(h.url))
+	h.keyFile = filepath.Join(h.root, "cluster.key")
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	if err := os.WriteFile(h.keyFile, []byte(base64.StdEncoding.EncodeToString(key)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
@@ -136,7 +155,7 @@ func newClusterHarness(t *testing.T) *clusterHarness {
 			for _, n := range names {
 				_ = h.os.DeleteIndex(ctx, n)
 			}
-			for _, tpl := range []string{h.prefix, h.prefix + "_runtime"} {
+			for _, tpl := range []string{h.prefix, h.prefix + "_runtime", h.prefix + "_config"} {
 				_ = h.os.Do(ctx, http.MethodDelete, "/_index_template/"+tpl, nil, nil)
 			}
 		})
@@ -154,7 +173,8 @@ type testServer struct {
 	cmd  *exec.Cmd
 	done chan struct{}
 	// api calls the server over HTTPS, trusting its own CA.
-	api *http.Client
+	api  *http.Client
+	opts serverOptions
 }
 
 // serverOptions are what a server is started with.
@@ -165,18 +185,31 @@ type serverOptions struct {
 	// retention is written to lookups/retention.yaml, as the Data
 	// retention page saves it.
 	retention string
+	// noKey starts the server without the cluster key, so it does not
+	// join the cluster by itself.
+	noKey bool
+	// yaml is added to signalith.yaml.
+	yaml string
+	// opensearch is the OpenSearch address in place of the harness's.
+	opensearch string
+	// env is added to the server's environment.
+	env []string
 }
 
 // add makes a server's folder and config, without starting it.
 func (h *clusterHarness) add(name string, o serverOptions) *testServer {
 	t := h.t
 	t.Helper()
-	s := &testServer{h: h, name: name, dir: filepath.Join(h.root, name), port: freePort(t)}
+	s := &testServer{h: h, name: name, dir: filepath.Join(h.root, name), port: freePort(t), opts: o}
 	if err := os.MkdirAll(filepath.Join(s.dir, "lookups"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	osURL := h.url
+	if o.opensearch != "" {
+		osURL = o.opensearch
+	}
 	cfg := fmt.Sprintf("server:\n  listen: 127.0.0.1:%d\nopensearch:\n  url: %q\n  index_prefix: %s\ncluster:\n  node_name: %s\n",
-		s.port, h.url, h.prefix, name)
+		s.port, osURL, h.prefix, name)
 	tlsFiles := storeConfig(h.url)
 	for _, f := range []struct{ key, file string }{{"ca_file", tlsFiles.CAFile}, {"cert_file", tlsFiles.CertFile}, {"key_file", tlsFiles.KeyFile}} {
 		if f.file != "" {
@@ -186,6 +219,7 @@ func (h *clusterHarness) add(name string, o serverOptions) *testServer {
 	if o.noJobs {
 		cfg += "detections:\n  scheduler: false\n"
 	}
+	cfg += o.yaml
 	if err := os.WriteFile(filepath.Join(s.dir, "signalith.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -205,14 +239,30 @@ func (h *clusterHarness) start(name string, o serverOptions) *testServer {
 	return s
 }
 
+// nextPort is the last port freePort handed out. It starts at a place of
+// its own for each test process, so two packages' tests that run at once
+// seldom try the same ports.
+var nextPort atomic.Int32
+
+func init() { nextPort.Store(int32(20000 + os.Getpid()%6000)) }
+
+// freePort returns a port nothing listens on, for a server to listen on.
+// It is below Linux's ephemeral range (32768 and up): a port from there,
+// free when asked, may be taken as the source port of one of the many
+// connections to OpenSearch before the server listens on it.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	for range 2000 {
+		port := 20000 + (int(nextPort.Add(1))-20000)%12000
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			continue
+		}
+		l.Close()
+		return port
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("no free port between 20000 and 32000")
+	return 0
 }
 
 // start runs the server and waits until it answers /readyz with 200.
@@ -224,7 +274,7 @@ func (s *testServer) start() {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(signalithBinary(t), "serve", "-c", filepath.Join(s.dir, "signalith.yaml"))
-	cmd.Env = append(os.Environ(), "SIGNALITH_ADMIN_PASSWORD="+clusterPassword, "SIGNALITH_STATE_DIR="+s.dir)
+	cmd.Env = s.env()
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if err := cmd.Start(); err != nil {
 		logf.Close()
@@ -256,20 +306,59 @@ func (s *testServer) start() {
 	s.api = s.httpsClient()
 }
 
-// httpsClient is a client that trusts the server's own certificate
-// authority, which it made in its state folder.
+// env is the server's environment, for serve and the command line.
+func (s *testServer) env() []string {
+	env := append(os.Environ(), "SIGNALITH_ADMIN_PASSWORD="+clusterPassword, "SIGNALITH_STATE_DIR="+s.dir)
+	if !s.opts.noKey {
+		env = append(env, "SIGNALITH_CLUSTER_KEY_FILE="+s.h.keyFile)
+	}
+	return append(env, s.opts.env...)
+}
+
+// httpsClient is a client that trusts the certificate authority in the
+// server's state folder, read again at each connection: once the servers
+// share the cluster's certificate authority (one certificate authority,
+// servers.md), tls/ca.pem holds that one instead of the server's own.
 func (s *testServer) httpsClient() *http.Client {
 	t := s.h.t
 	t.Helper()
+	if _, err := s.caPool(); err != nil {
+		t.Fatalf("%s: %v", s.name, err)
+	}
+	conf := &tls.Config{
+		// The chain and the name are checked in VerifyConnection, against
+		// the certificate authority in use now.
+		InsecureSkipVerify: true, //nolint:gosec // verified below
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			pool, err := s.caPool()
+			if err != nil {
+				return err
+			}
+			if len(cs.PeerCertificates) == 0 {
+				return fmt.Errorf("%s sent no certificate", s.name)
+			}
+			inter := x509.NewCertPool()
+			for _, c := range cs.PeerCertificates[1:] {
+				inter.AddCert(c)
+			}
+			_, err = cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: pool, Intermediates: inter, DNSName: "127.0.0.1"})
+			return err
+		},
+	}
+	return &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: conf}}
+}
+
+// caPool is the certificate authority in the server's tls/ca.pem.
+func (s *testServer) caPool() (*x509.CertPool, error) {
 	pem, err := os.ReadFile(filepath.Join(s.dir, "tls", "ca.pem"))
 	if err != nil {
-		t.Fatalf("%s has no certificate authority in its state folder: %v", s.name, err)
+		return nil, fmt.Errorf("no certificate authority in its state folder: %w", err)
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		t.Fatalf("%s: no certificate in tls/ca.pem", s.name)
+		return nil, errors.New("no certificate in tls/ca.pem")
 	}
-	return &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
+	return pool, nil
 }
 
 func (s *testServer) logPath() string { return filepath.Join(s.dir, "signalith.log") }
@@ -338,6 +427,13 @@ type clusterView struct {
 		State          string `json:"state"`
 		Jobs           string `json:"jobs"`
 		CannotTakeOver string `json:"cannot_take_over"`
+		NotEligible    string `json:"not_eligible"`
+		Fingerprints   *struct {
+			Retention string `json:"retention"`
+		} `json:"files_fingerprint"`
+		Shared *struct {
+			Mode string `json:"mode"`
+		} `json:"shared"`
 	} `json:"servers"`
 	Warnings []struct {
 		Level string `json:"level"`
@@ -442,6 +538,29 @@ func waitStandby(t *testing.T, leader, other *testServer) {
 	})
 }
 
+// waitSettled waits until other is on standby behind leader with both
+// taking their files from the shared settings: until each has switched
+// to them, the two report different retention and feed files, and other
+// would not take the jobs over.
+func waitSettled(t *testing.T, leader, other *testServer) {
+	t.Helper()
+	waitStandby(t, leader, other)
+	waitUntil(t, 60*time.Second, "both servers take their files from the shared settings", func() bool {
+		for _, s := range []*testServer{leader, other} {
+			v, ok := s.view()
+			if !ok || len(v.Servers) != 2 {
+				return false
+			}
+			for _, sv := range v.Servers {
+				if sv.Fingerprints == nil || !strings.HasPrefix(sv.Fingerprints.Retention, "shared:") || sv.CannotTakeOver != "" {
+					return false
+				}
+			}
+		}
+		return true
+	})
+}
+
 func TestClusterTwoServersOneRunsTheJobs(t *testing.T) {
 	t.Parallel()
 	h := newClusterHarness(t)
@@ -539,12 +658,56 @@ func refusesTakeover(t *testing.T, h *clusterHarness, leader, standby *testServe
 	}
 }
 
-func TestClusterNoTakeoverWhenRetentionDiffers(t *testing.T) {
+// Retention policies are shared once the servers are a cluster, so a
+// server whose own retention.yaml differs takes the jobs over, and
+// enforces the shared policies, the founder's.
+func TestClusterTakeoverWhenRetentionFilesDiffer(t *testing.T) {
 	t.Parallel()
 	h := newClusterHarness(t)
 	a := h.startLeader("siem-a", serverOptions{retention: "default:\n  keep_days: 30\n"})
 	b := h.start("siem-b", serverOptions{retention: "default:\n  keep_days: 60\n"})
-	refusesTakeover(t, h, a, b, "retention policies")
+	waitStandby(t, a, b)
+	a.kill9()
+	waitUntil(t, 45*time.Second, "siem-b takes the jobs over", func() bool {
+		v, ok := b.view()
+		return ok && v.Lease.Mine
+	})
+	var ov struct {
+		Default struct {
+			Policy struct {
+				KeepDays int `json:"keep_days"`
+			} `json:"policy"`
+		} `json:"default"`
+	}
+	if code := b.call(http.MethodGet, "/api/retention", nil, &ov); code != http.StatusOK || ov.Default.Policy.KeepDays != 30 {
+		t.Errorf("siem-b enforces keep_days %d (%d), want the shared 30", ov.Default.Policy.KeepDays, code)
+	}
+}
+
+// A server without the cluster key is not part of the cluster, so it
+// never takes the jobs over, whatever its files say.
+func TestClusterNoTakeoverWithoutTheClusterKey(t *testing.T) {
+	t.Parallel()
+	h := newClusterHarness(t)
+	a := h.startLeader("siem-a", serverOptions{})
+	b := h.start("siem-b", serverOptions{noKey: true})
+	waitUntil(t, 45*time.Second, "siem-a lists siem-b as not part of the cluster", func() bool {
+		v, ok := a.view()
+		for _, s := range v.Servers {
+			if ok && s.Name == "siem-b" && s.State == "ready" && strings.Contains(s.NotEligible, "not part of the cluster") {
+				return true
+			}
+		}
+		return false
+	})
+	killed := time.Now()
+	a.kill9()
+	for time.Since(killed) < 50*time.Second {
+		if v, ok := b.view(); ok && (v.Lease.Mine || strings.Contains(strings.Join(v.runners(), ","), "siem-b")) {
+			t.Fatalf("siem-b took the jobs over without the cluster key: %+v", v.Lease)
+		}
+		time.Sleep(time.Second)
+	}
 }
 
 func TestClusterNoTakeoverWhenArchiveFoldersDiffer(t *testing.T) {
@@ -594,7 +757,7 @@ func TestClusterPausedLeaderGivesWay(t *testing.T) {
 	h := newClusterHarness(t)
 	a := h.startLeader("siem-a", serverOptions{})
 	b := h.start("siem-b", serverOptions{})
-	waitStandby(t, a, b)
+	waitSettled(t, a, b)
 	a.pause()
 	waitUntil(t, 45*time.Second, "siem-b takes the jobs over from the paused siem-a", func() bool {
 		v, ok := b.view()

@@ -3,7 +3,6 @@ package dashboards
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -29,8 +28,8 @@ type Posture struct {
 	Status      func() map[string]detect.RunState
 	SchedulerOn bool
 	// Elsewhere is true when another server runs the detections (RunsOn
-	// names it) or none does: this server's run times and errors are not
-	// theirs, so they are left out.
+	// names it) or none does. The run state is shared, so health is the
+	// same on every server; these only label who runs them.
 	Elsewhere bool
 	RunsOn    string
 	// StaleAfter is how long a host and source type can be quiet before it
@@ -58,7 +57,9 @@ type Report struct {
 	EventsBySourcetype *search.Result    `json:"events_by_sourcetype,omitempty"`
 	Health             *Health           `json:"health,omitempty"`
 	Queries            map[string]string `json:"queries"`
-	Errors             map[string]string `json:"errors,omitempty"`
+	// Drills finds the events behind the numbers each query gives.
+	Drills map[string]*query.Drill `json:"drills"`
+	Errors map[string]string       `json:"errors,omitempty"`
 	// FindingsTruncated is set when there were more findings in the period
 	// than one request returns; finding metrics then undercount.
 	FindingsTruncated bool `json:"findings_truncated,omitempty"`
@@ -101,14 +102,20 @@ type Health struct {
 	Enabled     int  `json:"enabled"`
 	SchedulerOn bool `json:"scheduler_on"`
 	// RunsElsewhere is true when this server does not run the detections:
-	// RunsOn names the one that does, if any. NotRun and Erroring are then
-	// not known here.
+	// RunsOn names the one that does, if any. The counts below come from
+	// the run state every server shares, so they are the same anyway.
 	RunsElsewhere bool   `json:"runs_elsewhere,omitempty"`
 	RunsOn        string `json:"runs_on,omitempty"`
-	// NotRun counts enabled detections that have not run since the server
-	// started.
+	// NotRun counts enabled detections that have never run on schedule.
 	NotRun   int              `json:"not_run"`
 	Erroring []DetectionIssue `json:"erroring"`
+	// Behind lists enabled detections falling behind their schedule (see
+	// detect.Behind).
+	Behind []DetectionIssue `json:"behind"`
+	// Skipped is the stretch of missed runs that were too old to make up
+	// (older than detections.catch_up), found within the dashboard range
+	// or the last 24 hours; nil when there was none.
+	Skipped *SkippedGap `json:"skipped,omitempty"`
 	// Silent lists enabled detections with no findings and no risk events
 	// in SilentWindow.
 	Silent       []DetectionIssue `json:"silent"`
@@ -118,6 +125,17 @@ type Health struct {
 	StaleSources   []Source `json:"stale_sources"`
 	StaleAfter     string   `json:"stale_after"`
 	SourceLookback string   `json:"source_lookback"`
+}
+
+// SkippedGap merges the skipped runs of every detection: from the
+// earliest start to the latest end, Runs in all over Detections rules.
+// Title names the detection when only one is involved.
+type SkippedGap struct {
+	From       time.Time `json:"from"`
+	To         time.Time `json:"to"`
+	Runs       int       `json:"runs"`
+	Detections int       `json:"detections"`
+	Title      string    `json:"title,omitempty"`
 }
 
 // DetectionIssue names a detection that needs a look.
@@ -185,6 +203,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 		},
 		Errors: map[string]string{},
 	}
+	rep.Drills = drills(rep.Queries)
 
 	var (
 		mu                                     sync.Mutex
@@ -353,7 +372,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 	titles := map[string]string{}
 	if p.Detections != nil {
 		for _, d := range p.Detections.List() {
-			titles[d.ID] = cleanTitle(d.Title)
+			titles[d.ID] = d.BaseTitle()
 		}
 	}
 	byDet := map[string]*DetectionCount{}
@@ -425,16 +444,16 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 		rep.Tactics = append(rep.Tactics, *c)
 	}
 
-	rep.Health = p.health(fs, r30, sources, rep.Errors, now, stale, lookback)
+	rep.Health = p.health(fs, r30, sources, rep.Errors, now, stale, lookback, rng)
 	if len(rep.Errors) == 0 {
 		rep.Errors = nil
 	}
 	return rep
 }
 
-func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map[string]string, now time.Time, stale, lookback time.Duration) *Health {
+func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map[string]string, now time.Time, stale, lookback, rng time.Duration) *Health {
 	h := &Health{SchedulerOn: p.SchedulerOn && !p.Elsewhere, RunsElsewhere: p.Elsewhere, RunsOn: p.RunsOn,
-		Erroring: []DetectionIssue{}, Silent: []DetectionIssue{}, StaleSources: []Source{},
+		Erroring: []DetectionIssue{}, Behind: []DetectionIssue{}, Silent: []DetectionIssue{}, StaleSources: []Source{},
 		StaleAfter: durLabel(stale)[1:], SourceLookback: durLabel(lookback)[1:], SilentWindow: durLabel(silentWindow)[1:]}
 	if p.Detections == nil {
 		errs["health"] = "detections are not configured on this server"
@@ -461,17 +480,35 @@ func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map
 				continue
 			}
 			h.Enabled++
-			st, ran := states[d.ID]
-			if !ran || st.LastRun.IsZero() {
-				if !p.Elsewhere {
-					h.NotRun++
-				}
+			st := states[d.ID]
+			if st.LastRun.IsZero() {
+				h.NotRun++
 			}
-			if st.LastError != "" && !p.Elsewhere {
-				h.Erroring = append(h.Erroring, DetectionIssue{ID: d.ID, Title: cleanTitle(d.Title), Error: st.LastError, LastRun: st.LastRun})
+			if st.LastError != "" {
+				h.Erroring = append(h.Erroring, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), Error: st.LastError, LastRun: st.LastRun})
+			}
+			if detect.Behind(d, st, now) {
+				h.Behind = append(h.Behind, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), LastRun: st.LastRun})
+			}
+			if sk := st.Skipped; sk != nil && sk.Count > 0 && (now.Sub(sk.At) < max(rng, 24*time.Hour)) {
+				g := h.Skipped
+				if g == nil {
+					g = &SkippedGap{From: sk.From, To: sk.To, Title: d.BaseTitle()}
+					h.Skipped = g
+				} else {
+					g.Title = ""
+				}
+				if sk.From.Before(g.From) {
+					g.From = sk.From
+				}
+				if sk.To.After(g.To) {
+					g.To = sk.To
+				}
+				g.Runs += sk.Count
+				g.Detections++
 			}
 			if canJudgeSilence && !matched[d.ID] && st.LastResults == 0 {
-				h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: cleanTitle(d.Title), LastRun: st.LastRun})
+				h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), LastRun: st.LastRun})
 			}
 		}
 	}
@@ -556,8 +593,13 @@ func computeFindingStats(list []*findings.Finding, start, end, prevStart time.Ti
 		case 1:
 			fs.newCur++
 			fs.byDetection[f.DetectionID]++
-			if fs.titles[f.DetectionID] == "" {
+			// A detection no longer in the library is named by its
+			// findings' title, but only when they all agree: a title
+			// filled in for one host must not name a count across hosts.
+			if t, ok := fs.titles[f.DetectionID]; !ok {
 				fs.titles[f.DetectionID] = f.Title
+			} else if t != f.Title {
+				fs.titles[f.DetectionID] = ""
 			}
 			for _, t := range detect.Tactics(f.MITRE) {
 				fs.tactics[t]++
@@ -627,11 +669,6 @@ func bucketFor(rng time.Duration) time.Duration {
 	return 7 * 24 * time.Hour
 }
 
-var titleToken = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_.()]*)\$`)
-
-// cleanTitle turns "Brute force against $dest$" into "Brute force against dest".
-func cleanTitle(t string) string { return titleToken.ReplaceAllString(t, "$1") }
-
 // durLabel renders a duration as a relative search time such as -7d.
 func durLabel(d time.Duration) string {
 	switch {
@@ -679,4 +716,15 @@ func toFloatAny(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// drills works out each posture query's drilldown.
+func drills(queries map[string]string) map[string]*query.Drill {
+	out := map[string]*query.Drill{}
+	for k, src := range queries {
+		if q, err := query.Parse(src); err == nil {
+			out[k] = q.Drilldown()
+		}
+	}
+	return out
 }

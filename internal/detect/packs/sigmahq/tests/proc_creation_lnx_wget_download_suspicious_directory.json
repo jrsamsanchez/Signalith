@@ -1,0 +1,5 @@
+{"rule": "cf610c15-ed71-46e1-bdf8-2bd1a99de6c4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/tmp/--output-document","Image":"/wget"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/wget"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"/tmp/--output-document"}}
+]}

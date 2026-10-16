@@ -1,0 +1,5 @@
+{"rule": "34aa0252-6039-40ff-951f-939fd6ce47d8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"429","TargetObject":"\\Keyboard Layout\\Substitutes\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Keyboard Layout\\Substitutes\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"429"}}
+]}

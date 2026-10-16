@@ -1,0 +1,6 @@
+{"rule": "f6de6525-4509-495a-8a82-1f8b0ed73a00", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","RelativeTargetName":"atsvc","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"atsvc","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","RelativeTargetName":"atsvc"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "6ec86d9e-912e-4726-91a2-209359b999b9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\rundll32.exe","ImageLoaded":"\\amsi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\amsi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\rundll32.exe"}}
+]}

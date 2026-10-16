@@ -1,0 +1,5 @@
+{"rule": "2111118f-7e46-4fc8-974a-59fd8ec95196", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonType":"9","TargetOutboundUserName":"thisisnotvaliduser"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"TargetOutboundUserName":"thisisnotvaliduser"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonType":"9"}}
+]}

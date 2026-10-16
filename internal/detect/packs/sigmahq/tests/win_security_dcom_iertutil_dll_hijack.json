@@ -1,0 +1,5 @@
+{"rule": "c39f0c81-7348-4965-ab27-2fde35a1b641", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"\\Internet Explorer\\iertutil.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"\\Internet Explorer\\iertutil.dll","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{}}
+]}

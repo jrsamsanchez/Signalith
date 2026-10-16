@@ -1,0 +1,8 @@
+{"rule": "982e9f2d-1a85-4d5b-aea4-31f5e97c6555", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie ://0.0.0.0","Image":"\\rundll32.exe","ParentCommandLine":"-s WebClient","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie ://172.23. ://0.0.0.0","Image":"\\rundll32.exe","ParentCommandLine":"-s WebClient","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\rundll32.exe","ParentCommandLine":"-s WebClient","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie ://0.0.0.0","ParentCommandLine":"-s WebClient","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie ://0.0.0.0","Image":"\\rundll32.exe","ParentImage":"\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\windows\\system32\\davclnt.dll,DavSetCookie ://0.0.0.0","Image":"\\rundll32.exe","ParentCommandLine":"-s WebClient"}}
+]}

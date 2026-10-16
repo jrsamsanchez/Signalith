@@ -1,0 +1,4 @@
+{"rule": "ad87d14e-7599-4633-ba81-aeb60cfe8cd6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/APPLICATIONGATEWAYS/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

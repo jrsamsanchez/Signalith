@@ -1,0 +1,17 @@
+{"rule": "152f3630-77c1-4284-bcc0-4cc68ab2f6e7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Software\\Classes\\{","EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Classes\\ms-settings\\shell\\open\\command\\DelegateExecute"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"{BFEC0C93-0B7D-4F2C-B09C-AFFFC4BDAE78}","EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Software\\Classes\\{","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\SymbolicLinkValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Software\\Classes\\{","EventType":"SetValue"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"{4ED3A719-CEA8-4BD9-910D-E252F997AFC2}","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\DelegateExecute"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"{BFEC0C93-0B7D-4F2C-B09C-AFFFC4BDAE78}","EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","TargetObject":"Classes\\ms-settings\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Classes\\ms-settings\\shell\\open\\command\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"EventType":"SetValue"}}
+]}

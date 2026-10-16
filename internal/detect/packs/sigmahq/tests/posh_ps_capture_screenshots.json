@@ -1,0 +1,5 @@
+{"rule": "d4a11f63-2390-411c-9adf-d791fd152830", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".CopyFromScreen"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"645d322b-b5ad-4c00-a5a3-4c644a4d34e8","ScriptBlockText":"\u0026 {Add-Type -AssemblyName System.Windows.Forms\n$screen = [Windows.Forms.SystemInformation]::VirtualScreen\n$bitmap = New-Object Drawing.Bitmap $screen.Width, $screen.Height\n$graphic = [Drawing.Graphics]::FromImage($bitmap)\n$graphic.CopyFromScreen($screen.Left, $screen.Top, 0, 0, $bitmap.Size)\n$bitmap.Save(\"$env:TEMP\\T1113.png\")}"}}
+]}

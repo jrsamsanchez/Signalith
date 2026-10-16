@@ -1,0 +1,4 @@
+{"rule": "b6f91281-20aa-446a-b986-38a92813a18f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Program Files (x86) \\ .dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

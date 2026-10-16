@@ -15,6 +15,9 @@ finding or a case. Playbooks come next.
 Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
 **https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
+Choosing a SIEM? [How Signalith compares](https://signalith.io/docs/comparison/) with
+Wazuh, Security Onion, Elastic Security and others, including where it is weaker.
+
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
@@ -33,8 +36,9 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
 ```
 
-The first command starts OpenSearch and Signalith. On first start a setup step makes the
-admin password, the agents' ingest token and the certificates OpenSearch and Signalith use
+The first command downloads Signalith's ready-made image from GitHub
+(`ghcr.io/jrsamsanchez/signalith`) and starts OpenSearch and Signalith. On first start a setup step makes the
+admin password, a shared agent token and the certificates OpenSearch and Signalith use
 with each other, and keeps them in Docker volumes; no password is written in the compose
 files. Once OpenSearch is up, a second step loads OpenSearch's security settings (who may
 sign in, and what each may do), and Signalith starts after it. If the first command ends
@@ -45,9 +49,19 @@ in as `admin` with it. Signalith serves HTTPS with a certificate it makes for it
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
-Agents get their configuration from the **Add data** page: they send over HTTPS, with the
-ingest token this install made. A new install refuses events sent over plain `http://`,
-and refuses `change-this-ingest-token`, the example token older versions gave every agent.
+Agents get their configuration from the **Add data** page: they send over HTTPS, and each
+group of agents gets its own token when you copy or download its configuration. A new
+install refuses events sent over plain `http://`, and refuses `change-this-ingest-token`,
+the example token older versions gave every agent.
+
+The token the setup step made (`ingest-token` in the `signalith-secrets` volume, passed in
+as `SIGNALITH_INGEST_TOKEN_FILE`) is a **legacy shared token**: every agent set up with it
+uses the same secret. It is kept so agents set up before per-agent tokens keep working.
+To switch, give those agents a new configuration from **Add data**, then, under **Agent
+tokens**, choose **Stop accepting** on the shared token. That's all: you don't need to
+edit `docker-compose.yml`, and the Security page counts the token as retired. On a new
+install no agent has it, so you can choose **Stop accepting** straight away. See
+[Replace a shared token](docs/agent-tokens.md#replace-a-shared-token).
 Coming from an older version? See
 [Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
 
@@ -72,8 +86,8 @@ Settings changed on the **Settings** page are kept in the `signalith-data` volum
 certificate authority, so they survive updates; settings given in `docker-compose.yml`'s
 `environment:` show there locked.
 
-To update, run `git pull` and then the first command again. It rebuilds Signalith from the
-new code each time. If `git pull` says your local changes to
+To update, run `git pull` and then the first command again. It downloads the Signalith
+image built from the newest code each time. If `git pull` says your local changes to
 `deploy/docker/signalith.yaml` would be overwritten, run `git stash` and `git pull` again.
 If the change you had made there was `plaintext_ingest: deny`, add that line back under
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
@@ -84,7 +98,53 @@ while the first command was still waiting for the step that loads OpenSearch's s
 settings, Signalith had not started yet and does not start by itself: https://localhost:8080
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
+Signalith stops within a few seconds when an update replaces it, and Docker stops it by
+force after 90 seconds at most. If the first command stays at `Container
+docker-signalith-1 Stopping` for longer than that, and `docker kill docker-signalith-1`
+doesn't help either, Docker itself is stuck, not Signalith. On Windows, quit Docker Desktop
+(right-click its icon by the clock, **Quit Docker Desktop**), run `wsl --shutdown` in
+PowerShell, start Docker Desktop again and run the first command again. Your data is kept.
+If `wsl --shutdown` hangs too, restart the computer, or end WSL in PowerShell run as
+administrator with `taskkill /F /IM wslservice.exe`, then start Docker Desktop again.
+
+This happens most when the computer is short of memory: OpenSearch alone uses about 1.5 GB.
+To keep Docker from taking all of it, give WSL a fixed share in `%UserProfile%\.wslconfig`
+(make the file if there is none), for example on a computer with 16 GB:
+
+```ini
+[wsl2]
+memory=6GB
+```
+
+then run `wsl --shutdown` and start Docker Desktop again. Signalith with OpenSearch needs
+at least 4 GB there.
+
+#### Running a release, or building the image yourself
+
+The quick start runs the image GitHub builds from `main`, which matches the code `git pull`
+gives you. To run a release instead, check out its tag and set `SIGNALITH_VERSION` to the
+same version before the first command, for example in PowerShell:
+
+```powershell
+git checkout v0.1.0
+$env:SIGNALITH_VERSION = "0.1.0"
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.1.0`). To build the image
+from the code you checked out, for example to try a change of your own, add
+`-f deploy/docker/docker-compose.build.yml` after the first `-f` in every command:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d
+```
+
 #### Upgrading the Docker quick start
+
+From 0.3.0 on, the quick start runs OpenSearch 3.9 instead of 2.17. Your data moves over
+by itself on the next start, but OpenSearch can't go back to 2.17 afterwards, so copy the
+OpenSearch volume first as in
+[Moving to OpenSearch 3.x](docs/opensearch-security.md#moving-to-opensearch-3x).
 
 Earlier versions of the quick start served plain HTTP, ran OpenSearch without security,
 and took the admin password and ingest token from `docker-compose.yml`
@@ -103,7 +163,7 @@ same):
    ```sh
    docker compose -f deploy/docker/docker-compose.yml up -d
    ```
-   This rebuilds Signalith, runs the setup step once, restarts OpenSearch with its
+   This downloads the new Signalith image, runs the setup step once, restarts OpenSearch with its
    security plugin on, and then runs the step that loads OpenSearch's security settings;
    Signalith starts after that. The first start takes a minute or two longer, and up to
    about 10 minutes on a slow computer, where that step keeps trying while OpenSearch is
@@ -126,10 +186,10 @@ same):
    such as sample data, never change it.) The **Health** page lists each agent still
    sending over plain `http://` (behind Docker Desktop they share one address, so it names
    them by the computer names in their events). On each of them, install the configuration
-   from the **Add data** page again; it has this server's own token and moves the agent to
+   from the **Add data** page again; it gives the agent a token of its own and moves it to
    HTTPS. Syslog devices need no change. If you had set a token of your own in
    `SIGNALITH_INGEST_TOKEN`, add that line back under `environment:` of the `signalith`
-   service in `docker-compose.yml` and run step 2 again; new agents still get the new
+   service in `docker-compose.yml` and run step 2 again; new agents still get their own
    token.
 6. If you had changed other things, such as ports or `SIGNALITH_PUBLIC_URL`, make the same
    changes in the new files (`SIGNALITH_PUBLIC_URL` now starts with `https://`).
@@ -148,7 +208,7 @@ Docker commands).
 
 ### Try it with sample data
 
-No logs to hand? On the **Add data** page (under Configure, admins only), **Load
+No logs to hand? On the **Add data** page (under Data, admins only), **Load
 sample data** fills Signalith with a week of made-up activity for a fictional company,
 with a handful of attacks hidden in it, so detections fire, the triage queue fills,
 risk builds up, threat intel matches and the dashboards light up. Everything is
@@ -170,13 +230,14 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm     # Red Hat, Rocky, Alma, Fedo
 sudo signalith initial-password                     # the first admin password
 ```
 
-On Windows, double-click `signalith-0.1.0-x64.msi`. See
-[docs/install-packages.md](docs/install-packages.md) for what they set up, upgrades, and
-how to check a download's signature and SBOM. The steps below install by hand.
+On Windows, double-click `signalith-0.1.0-x64.msi`. On Linux you can instead add
+Signalith's signed apt or dnf repository, so `apt upgrade` and `dnf upgrade` bring new
+releases. See [docs/install-packages.md](docs/install-packages.md) for the repositories,
+what the packages set up, upgrades, and how to check a download's signature and SBOM. The steps below install by hand.
 
 ### Linux
 
-1. Install OpenSearch 2.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
+1. Install OpenSearch 2.x or 3.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
    ```sh
    sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -215,7 +276,7 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 ### Windows
 
-1. Install OpenSearch 2.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
+1. Install OpenSearch 2.x or 3.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
 2. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
@@ -240,7 +301,8 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 Open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
 Fluent Bit, save Signalith's CA certificate and the generated configuration, restart it.
-The configuration already contains the server address and ingest token, and sends over
+The configuration already contains the server address and a token of its own for this group
+of agents (made when you copy or download it; see [docs/agent-tokens.md](docs/agent-tokens.md)), and sends over
 HTTPS, checking the server's certificate with that CA. For firewalls, switches and other network
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
@@ -250,6 +312,11 @@ osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
 Fluent Bit on the manager or its own syslog output (see [docs/wazuh.md](docs/wazuh.md)).
+If you run Zeek or Suricata on a network sensor, pick **Network sensor** to send
+their connections, DNS lookups, web requests, certificates and TLS fingerprints (JA3, JA4),
+files, sign-ins (SSH, RDP, Kerberos, NTLM), file share activity and IDS alerts; the hosts
+it sees join the asset list (see
+[docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
 
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
@@ -263,16 +330,24 @@ Supported sources in Phase 1:
 | Windows Security log: 4624, 4625 logons | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
-| Sysmon: event 1 process create, event 3 network connection | Endpoint, Network_Traffic |
+| Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
+| PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](docs/detections.md#powershell-script-blocks)) | Script |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
 | Microsoft Defender Antivirus (Windows agent, collected automatically) | Malware |
 | ClamAV (Linux agent: /var/log/clamav or the journal) | Malware |
+| Linux audit log (Linux agent: /var/log/audit/audit.log; or syslog) | Other |
 | Antivirus consoles via syslog (CEF, LEEF, Symantec, Trellix ePO): Trend Micro, Sophos, ESET, CrowdStrike, SentinelOne, Kaspersky, Bitdefender and others | Malware |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([docs/opentelemetry.md](docs/opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | osquery ([docs/endpoints.md](docs/endpoints.md)): file changes, software, accounts, ports, services, startup items, configuration checks | Filesystem, Inventory, Configuration_Check |
 | Wazuh alerts from a Wazuh manager ([docs/wazuh.md](docs/wazuh.md)) | Authentication, Filesystem, Registry, Configuration_Check, Endpoint, Change or Alerts |
+| Apache and Nginx access logs (Linux agent; see [Detections](docs/detections.md#web-server-access-logs)) | Web |
+| AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
+| Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
+| Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
+| Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).
@@ -392,7 +467,9 @@ search, change nothing), **Analyst** (also triage findings, work investigations,
 dashboards) or **Admin** (also detections, feeds, lists, data collection and users).
 New users get a temporary password they replace at their first sign-in. People can
 also sign in with their **Active Directory or LDAP** account, with their role coming
-from their groups; set it up and test it on the same page. The `admin` account from
+from their groups; set it up and test it on the same page. Single sign-on with
+**Microsoft Entra ID, Okta, Google, Keycloak** or another OpenID Connect provider is set
+up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The `admin` account from
 `signalith.yaml` stays as a break-glass account that always works. See
 [docs/users.md](docs/users.md).
 
@@ -416,7 +493,7 @@ them. All of this, with the commands to trust the CA on Windows, macOS and Linux
 
 ### Hardening built in
 
-- **Security check**: the Security page (**Configure > Security**) and `signalith security`
+- **Security check**: the Security page (**Settings > Security**) and `signalith security`
   check how this server is set up and what to fix first. See
   [docs/security.md](docs/security.md).
 - **Encryption in transit**: HTTPS by default, TLS 1.2 or newer, for the UI, API and
@@ -459,6 +536,13 @@ them. All of this, with the commands to trust the CA on Windows, macOS and Linux
   in `opensearch.proxy` or a key in a feed's address cannot be, and is reported. Passwords and
   keys in configured URLs are hidden (`***`) everywhere a URL is shown or logged, and agents get a
   generic error rather than OpenSearch details.
+- **Agent tokens**: each agent group sends with its own token (`sgl_` and 52 more
+  characters), shown once and kept only as a SHA-256 hash in OpenSearch. Revoking one on
+  **Add data** or with `signalith tokens revoke` turns its agents away within seconds on every
+  server. Every event records the token's name and the sender's address
+  (`signalith_token`, `signalith_sender`), and senders can't set those fields. To have a
+  secret scanner find leaked tokens, give it `\bsgl_[a-z2-7]{52}\b`. See
+  [docs/agent-tokens.md](docs/agent-tokens.md).
 - **Memory**: on Linux the server turns off core dumps and keeps other programs from reading its
   memory; the systemd unit also turns off swap for it, hides other processes and limits it to the
   files and system calls it needs. On Windows the service runs as its own account rather than
@@ -492,6 +576,10 @@ restart the service. The Linux service keeps the file in `/var/lib/signalith/loo
 which these commands read from its unit; where they cannot, give it with
 `-file /var/lib/signalith/lookups/settings.yaml`. See [docs/settings.md](docs/settings.md).
 
+On servers that share one OpenSearch, the page of any server changes the settings of
+all of them, and the own settings of any one of them; see
+[More than one server](#more-than-one-server).
+
 Behind a reverse proxy that serves HTTPS, have it send `X-Forwarded-Proto: https` and
 list it under `server.trusted_proxies` (**Trusted reverse proxies** on the Settings
 page), so the sign-in cookie is marked for HTTPS only; the header is ignored from
@@ -512,16 +600,19 @@ are counted for each person's own address, not the proxy's. See
 | `server.trusted_proxies` | none | IPs or CIDRs of reverse proxies whose `X-Forwarded-Proto: https` is believed (HSTS, HTTPS-only cookie, no redirect) |
 | `server.client_header` | none | `x-forwarded-for` or `forwarded`: the header the trusted proxies set to each person's address, for the failed sign-in limits and the log. Only for a proxy that sets it itself; empty counts everyone behind a trusted proxy as one shared address |
 | `server.max_connections` | `10000` | Open connections (and, over HTTPS, requests in progress) allowed at once; one client, an IPv4 address or an IPv6 /64, may hold a tenth of them. Connections from this machine, such as a local reverse proxy, are not limited that way |
-| `server.node_url` | from `listen` and this computer's name | The address other Signalith servers that share this OpenSearch reach this one at, shown in the list of servers. Set in signalith.yaml or `SIGNALITH_NODE_URL` only; in Docker set it, since a container cannot know it |
+| `server.node_url` | from `listen` and this computer's name | The address other Signalith servers that share this OpenSearch reach this one at, shown in the list of servers. Set in signalith.yaml or `SIGNALITH_NODE_URL`, or, once the servers share their settings, on the Settings page (**Address for other servers**); in Docker set it, since a container cannot know it |
 | `server.shared_addresses` | none | IPs or CIDRs that many clients reach Signalith through: a reverse proxy, load balancer or NAT on another machine, or Docker Desktop's port forwarding, where every client seems to come from one address. These are not held to one client's share of connections, requests and ingest memory, only to the totals, and wrong passwords from them count per account, never pausing sign-ins from the whole address. The log names the address when one reaches its share |
 | `opensearch.url` | `http://127.0.0.1:9200` | Event store, `http(s)://host:port` (no query string). A `user:password@` in it is moved to `username` and `password` when loaded and never shown; `signalith secrets encrypt` moves it there in the file, encrypted |
+| `opensearch.urls` | none | Other nodes of the same OpenSearch cluster (same scheme, no password in them; or `SIGNALITH_OPENSEARCH_URLS`, comma-separated). Requests are spread over every address and one that is down is skipped for 30 seconds; see [OpenSearch with several nodes](https://github.com/jrsamsanchez/Signalith/blob/main/docs/opensearch-failover.md) |
 | `opensearch.username`, `opensearch.password` | none | OpenSearch credentials. Sent only over https, or plain http to this machine, unless `allow_insecure_http` is on |
 | `opensearch.ca_file` | none | PEM file with the CA that signed OpenSearch's certificate (for a private CA); system CAs are trusted too. Relative to the config file |
 | `opensearch.cert_file`, `opensearch.key_file` | none | Client certificate and key for certificate sign-in to OpenSearch; reloaded when they change |
+| `opensearch.crl_file` | none | The revocation list OpenSearch checks client certificates against. When the cluster keeps OpenSearch's certificate authority, Signalith writes it, so a removed server's certificate stops working at once ([docs/servers.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/servers.md#ending-a-servers-opensearch-access-at-once)); or `SIGNALITH_OPENSEARCH_CRL_FILE` |
 | `opensearch.tls_skip_verify` | `false` | Skip OpenSearch certificate checks. Lab use only: anyone on the path can read and change traffic; Signalith warns while it is on |
 | `opensearch.proxy` | none | Proxy for OpenSearch traffic (`http://`, `https://` or `socks5://`; or `SIGNALITH_OPENSEARCH_PROXY`). `HTTP_PROXY` and `HTTPS_PROXY` are never used for OpenSearch; when one is set and OpenSearch cannot be reached, the error says so |
 | `opensearch.allow_insecure_http` | `false` | Allow `username`/`password` over plain http to another machine. Off, such a config is refused with an explanation |
 | `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD` |
+| `opensearch.replicas` | `auto` | Extra copies of each new day's events on other OpenSearch nodes: `auto` (one copy once OpenSearch has more than one node, none on one node) or a whole number such as `0`. Days already stored keep theirs; applies after a restart |
 | `search.default_earliest` | `-24h` | Time range when a query sets none |
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |
@@ -532,15 +623,20 @@ are counted for each person's own address, not the proxy's. See
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
-| `ingest.tokens` | one generated | Tokens agents send as `Authorization: Bearer` |
+| `auth.oidc` | off | Single sign-on with an OpenID Connect provider, usually set up under **Settings > Single sign-on**; see [docs/sso.md](docs/sso.md#setting-it-in-signalithyaml) |
+| `ingest.tokens` | none | Shared tokens (legacy) agents send as `Authorization: Bearer`; still accepted. New agents get their own token on **Add data** (see [docs/agent-tokens.md](docs/agent-tokens.md)) |
 | `ingest.max_event_age` | `7d` (or the shortest retention period if shorter) | Events older than this, or more than an hour ahead, are filed under the time they arrived, with their own time in `device_time`. See [Ingest limits](#ingest-limits) |
 | `syslog.udp`, `syslog.tcp` | off (`init` sets `0.0.0.0:514`) | Addresses to receive syslog on; empty turns a listener off. See [Syslog](#syslog) |
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Address for syslog over TLS, such as `0.0.0.0:6514`; uses the web UI's certificate |
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |
 | `detections.dir` | `detections` | Folder for custom and edited detections, relative to the config file |
-| `detections.scheduler` | `true` | Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them. See [More than one server](#more-than-one-server) |
+| `detections.scheduler` | `true` | The older name of `cluster.leader_eligible`, which wins when both are set |
+| `cluster.leader_eligible` | `true` | Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them (**May run background jobs** on the Settings page, or `SIGNALITH_LEADER_ELIGIBLE`). See [More than one server](#more-than-one-server) |
+| `cluster.name` | `Signalith` | The name of the servers that share one OpenSearch, shown on the Servers page; changed on the Settings page once they share their settings |
+| `cluster.opensearch_url` | none | The OpenSearch address a new server of the cluster is given, when it differs from the one the servers use |
 | `detections.max_findings_per_run` | `100` | Cap on findings one run can raise |
+| `detections.catch_up` | `6h` | When detections could not run, for example while every server was stopped, how far back the missed runs are made up once they run again (at most `7d`). Older ones are skipped and shown on the Detections page. `0` turns this off |
 | `lookups.dir` | `lookups` | Folder for `assets.csv` and `identities.csv`, relative to the config file |
 | `intel.feeds` | none | Threat intel feeds kept in this file (read-only on the page); most people add feeds on the **Threat intel** page instead. See [Threat intel](#threat-intel). Nothing is fetched until a feed is added |
 | `intel.feeds[].name`, `.url` | required | Feed name (shown as the indicator source) and its http(s) address |
@@ -553,25 +649,31 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
 | `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
+| `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
 | `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5` |
+| `assistant.investigate` | `false` | Lets analysts use **Investigate with AI** on a finding, which sends the finding's events to the model. See [docs/investigate.md](docs/investigate.md) |
+| `assistant.mask_fields` | none | Fields whose values are replaced with stand-ins before Investigate with AI sends anything; `_raw` leaves out the event text. Passwords, tokens, keys and cookies are always masked |
+| `assistant.request_timeout` | `3m` | How long one answer from the model may take (Test and each Investigate with AI turn), from 30s to 1h. A local model on a CPU without a GPU may need `15m` or more |
+| `assistant.investigate_timeout` | `6m` | How long one Investigate with AI may take in all, from 30s to 2h. With a slow local model, allow about 3 times the answer limit, such as `45m` |
 
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
-`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
-`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_LISTEN`,
+`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own),
+`SIGNALITH_OIDC_CLIENT_SECRET` (also
+`SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
-`SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME` and
-`SIGNALITH_NODE_URL`). Secrets can also be read
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,
+`SIGNALITH_NODE_URL`, and `SIGNALITH_LEADER_ELIGIBLE`, `true` or `false`, for `cluster.leader_eligible`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
-`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE` or
+`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE`, `SIGNALITH_OIDC_CLIENT_SECRET_FILE` or
 `SIGNALITH_ASSISTANT_API_KEY_FILE` to the file's path. Setting both forms of one is an error, except for the
-ingest token, where both tokens are accepted (agents set up on Add data get the file's). A setting set by an
+ingest token, where both are accepted as shared tokens (agents set up on Add data get a token of their own). A setting set by an
 environment variable, or by a file one names, is shown locked on the Settings page. When the admin password
 comes from `SIGNALITH_ADMIN_PASSWORD_FILE`, or from `SIGNALITH_ADMIN_PASSWORD` given to the systemd or Windows
 service, `signalith passwd` keeps the new one in `admin-password-hash` in the state folder, where it replaces
@@ -598,17 +700,29 @@ them runs the background jobs (detections, threat intel downloads, retention and
 index upgrades); the others take over within about 40 seconds if it stops, or within
 seconds when it is stopped on purpose. Two servers never run them at once: the one
 that runs them stops by itself when it cannot confirm, within 20 seconds, that it
-still may. Only servers with `detections.scheduler: true` take part. A server whose
+still may. Only servers with `cluster.leader_eligible` (or its older name
+`detections.scheduler`) on take part. A server whose
 clock is more than 30 seconds off leaves the jobs to one whose clock is right; keep
-clocks in sync with NTP.
+clocks in sync with NTP. A server that takes the jobs over makes up the
+detection runs missed in between, up to `detections.catch_up` back, without raising
+any finding twice, and every server shows the same detection run state (see
+[Schedules and missed runs](docs/detections.md#schedules-and-missed-runs)).
 
-Until shared settings arrive, retention policies, feeds and custom detections are
-still kept in files on each server. A server whose files differ from those of the
-server that runs the jobs does not take them over by itself, and the list of servers
-says why. Copy the files across to fix it. When a retention policy archives, every
-server must set `retention.archive_dir` to the same shared folder (Signalith names it
-with a `.signalith-archive-id` file; leave it there). The Data retention and feed
-settings can be changed only on the server that runs the jobs.
+The servers share the threat intel feeds and the retention policies through
+OpenSearch, in the `<prefix>_config` index (give the OpenSearch user the right to
+create, read and write it too): a change on any server's Threat intel or Data
+retention page applies to all of them at once. The shared settings are signed with a
+**cluster key** that the server running the jobs makes the first time; every other
+server needs it, with `signalith cluster export-key` and `import-key` or a file named
+in `SIGNALITH_CLUSTER_KEY_FILE`, and until it has it, it keeps using its own files
+and never takes the jobs over (see
+[Shared settings and the cluster key](docs/servers.md#shared-settings-and-the-cluster-key)
+and [signalith cluster](docs/cluster-cli.md)). Custom detections are still kept in
+files on each server: a server whose detection files differ from those of the server
+that runs the jobs does not take them over by itself, and the list of servers says
+why. When a retention policy archives, every server must set `retention.archive_dir`
+to the same shared folder (Signalith names it with a `.signalith-archive-id` file;
+leave it there).
 
 Each server keeps its identity in its state folder (`node.id`, and `cluster/lock`
 while it runs), next to its master key (`keys`) and its HTTPS certificate (`tls`).
@@ -628,17 +742,52 @@ why. To give a server a new identity, stop it, delete `node.id` and start it aga
 
 Load balancers and container platforms can ask `GET /readyz` (200
 `{"ready":true}`, or 503 with a one-word `reason`: `starting`, `restarting`, `down`,
-`opensearch`, `identity` or `stopping`) and `GET /livez` (200 while the process
+`opensearch`, `identity`, `degraded`, `gone`, `key_missing` or `stopping`) and `GET /livez` (200 while the process
 runs). Both answer without signing in and say nothing else, over HTTPS and also over
 plain `http://` on the same port, where everything else is sent to HTTPS, so a
 health check works either way.
 
-Until sessions are shared, a web sign-in is kept by the server it was made on: set
-the load balancer to keep each person on one server (sticky sessions).
+The servers also share their users, the built-in admin's password, the directory
+sign-in settings and the sign-in sessions, once every server runs this version: a user
+added on any server's Users page can sign in on all of them, a session made on one
+server works on every server, so the load balancer needs no sticky sessions, and
+`signalith passwd` on any server changes the built-in admin's password everywhere with
+no restart (see [Users on several servers](docs/users.md#users-on-several-servers)).
+Everyone signs in once more when the servers start sharing their users. Until then,
+a web sign-in is kept by the server it was made on: set the load balancer to keep each
+person on one server (sticky sessions). The pages
+still see their own changes when a request reaches another server, and keep working
+while servers of two versions share one address during an upgrade (see
+[Several servers behind one address](docs/servers.md#several-servers-behind-one-address)).
 
 **Upgrading servers that share one OpenSearch:** older versions ignore the shared
 job lease, so upgrade them all together, or first set `detections.scheduler: false`
-on every server but one and turn it back on once all of them run this version.
+on every server but one and turn it back on once all of them run this version. Give
+every server the cluster key once the first one has made it, and upgrade them all:
+an older version keeps using its own feed and retention files, and the users are
+shared only once no server of an older version has run for 24 hours (see
+[Upgrading servers you set up by hand](docs/servers.md#upgrading-servers-you-set-up-by-hand)).
+
+The servers share the **Settings** page too, once every server runs this version.
+Settings for all servers, such as the public address, the sign-out time, trusted
+reverse proxies, the search defaults and the AI assistant, have one value on every
+server, and a change that applies at once reaches every server within a few seconds.
+Each server's own settings (its listen address, HTTPS mode, certificate files and
+syslog addresses) can be changed for any server on any server's page, and are
+checked on that server first. Only the settings a server needs to reach OpenSearch
+stay in its own `settings.yaml`, changed on its own page. Settings that wait for a
+restart are applied with **Restart these servers one at a time**, which restarts each
+server once the one before it serves again; a server that cannot use a value keeps
+its previous one and says why. On these servers a setting for all servers in
+`signalith.yaml` or the environment is applied when it changes, and no longer locks
+the page. `signalith cluster export -settings` and `signalith cluster apply -f` keep
+them as a file, for configuration as code. See
+[Settings on several servers](docs/settings.md#settings-on-several-servers) and
+[signalith cluster apply](docs/cluster-cli.md#apply).
+
+To add a server, click **Add a server** on the Servers page and run the one line it gives
+on the new Linux, Windows or Docker computer: it installs Signalith, checks the computer
+reaches OpenSearch, and joins it ([Adding servers](https://signalith.io/docs/multi-server/)).
 
 See [docs/servers.md](docs/servers.md) for the Servers page, how the jobs move,
 adding a server by hand, and load balancer examples.
@@ -665,7 +814,7 @@ field itself says so).
 sudo signalith secrets status                       # where the key is; how each value is stored
 sudo signalith secrets encrypt                      # encrypt plain values, keeping comments and layout
 sudo signalith secrets set opensearch.password      # asks twice without showing it, or reads a pipe
-sudo signalith secrets set ingest.tokens            # adds a token; press Enter to have one made
+sudo signalith secrets set ingest.tokens            # adds a shared agent token (per-agent ones: signalith tokens create)
 sudo signalith secrets rotate-master                # new master key; everything encrypted again
 sudo signalith secrets rotate-master -prune         # remove the previous key once nothing needs it
 sudo signalith secrets decrypt                      # plain text again, before going back to an older version
@@ -699,6 +848,14 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
+- **Content packs** add community rules, off until you turn them on: 2,478 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud and Google Workspace rules and 1,138
+  Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
+  from Splunk's open source
+  [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
+  both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as
+  signed content updates, without a new Signalith release (from the internet or as an
+  upload). See [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled
   detections, by disabled ones, and gaps.
 
@@ -723,6 +880,28 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+### Investigate with AI
+
+**Investigate with AI** on a finding gathers its events, where its users, hosts and
+addresses show up, threat intel matches and related findings, lets the AI model run a
+few more read-only searches, and writes a short verdict (likely real, likely benign or
+unsure) with a timeline, the evidence behind it and suggested response actions, which a
+person still reviews and runs. **Save to case** keeps the write-up as a case note.
+
+It sends event data to the model, so it is off until an admin turns it on in **Settings
+→ AI assistant**. Analysts see exactly what will be sent before it goes, admins can mask
+fields (replaced with stand-ins such as `masked-user-1`), and a model on your own
+hardware, such as Ollama, keeps everything on site. See
+[docs/investigate.md](docs/investigate.md).
+
+### AI tools (MCP)
+
+`signalith mcp` is a read-only MCP server, so AI tools such as Claude Desktop, Claude
+Code or VS Code can search Signalith and read findings, cases, detections, assets and
+risk while you chat. It has no tool that changes anything, and it signs in as a
+Signalith user (a Viewer account is enough), so that user's role applies. See
+[docs/ai-tools.md](docs/ai-tools.md).
 
 ## Notifications
 
@@ -786,6 +965,29 @@ Context changes three things:
 
 Risk events are stored under the Risk data model (`datamodel=Risk`) in
 `<prefix>-risk-YYYY.MM.DD` indices, which ordinary searches leave out.
+
+## Vulnerability scanning
+
+The **Vulnerabilities** page scans the networks you list with [Nmap](https://nmap.org),
+on a schedule or with **Scan now**, and matches the software it finds to known CVEs from
+the U.S. National Vulnerability Database, marking the ones in CISA's Known Exploited
+Vulnerabilities catalog. Before the first scan, **Scanner setup** checks the server and
+says what is needed, why, and how to fix anything missing. Only product names are sent
+for CVE lookups. Results go to the Vulnerabilities data model and three built-in
+detections, and the hosts join the asset list. The Docker image includes Nmap; on
+Windows and Linux installs, install Nmap from your package manager or nmap.org. See
+[docs/vulnerabilities.md](docs/vulnerabilities.md).
+
+## Compliance
+
+The **Compliance** page maps Signalith's data, detections, configuration checks and
+settings to NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, the HIPAA
+Security Rule and SOC 2. Each control shows evidence, partial or gap, what Signalith
+found, and what to fix; a coverage score per framework sums it up. Admins can note a
+control as handled outside Signalith or not applicable. Each framework exports as CSV
+or as a report to print or save as PDF for an auditor. The mapping is Signalith's own,
+using only control numbers for frameworks whose text is copyrighted. See
+[docs/compliance.md](docs/compliance.md).
 
 ## Threat intel
 
@@ -861,6 +1063,20 @@ the server's scripts folder (`response.scripts_dir`), which no page can change.
 See [docs/response-actions.md](docs/response-actions.md) for each kind of action,
 the AD delegation, example isolate scripts and the API.
 
+## Playbooks
+
+A **playbook** does the first steps when a detection fires: notify a channel, run a
+response action, open a case (or add to the one it opened), set the finding's status
+and owner. Admins build them on the **Playbooks** page, step by step, and the page says
+in one sentence what each does. Disruptive actions (block, disable, isolate) always wait
+for an analyst: they show on the **Approvals** page with exactly what will happen, and run
+only once someone approves, within 24 hours. A rejected, expired or failed step stops the
+playbook. Each playbook runs once per finding, only on the server running the background
+jobs, and everything it does is noted on the finding and the case.
+
+See [docs/playbooks.md](docs/playbooks.md) for the steps, the approval flow, an example
+and the API.
+
 ## Dashboards
 
 The **Dashboards** tab opens on the built-in **Security posture** dashboard, like the
@@ -876,6 +1092,9 @@ to 30 days) and, if you like, auto-refresh. It shows:
 - **Detection health**: how many detections are enabled, which ones failed on their
   last run, which enabled ones matched nothing in 30 days, and which hosts stopped
   sending (quiet for `dashboards.stale_after`).
+
+Built-in **Malware**, **Network** and **Vulnerabilities** dashboards show antivirus
+events, what a network sensor saw, and vulnerability scans.
 
 **Custom dashboards** are panels of queries shown as a single value (optionally with
 the change from the previous period), a table, bars, or a line or area chart. Build
@@ -941,7 +1160,7 @@ space. A server upgraded while its OpenSearch disk is already above 85% trims ol
 days at its first run. To avoid that, set `retention.guard` in signalith.yaml first.
 
 Retention runs every hour on the server that runs the background jobs (see
-[More than one server](#more-than-one-server)); other servers show the page read-only. It never deletes today's data or indices that are not
+[More than one server](#more-than-one-server)); with several servers, the policies are shared and can be changed on any of them. It never deletes today's data or indices that are not
 Signalith daily indices. The page keeps the last 200 actions with the reason for each.
 
 Page settings are saved in `retention.yaml` in `lookups.dir`. Anything set under
@@ -1023,9 +1242,9 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `cmd/signalith` | CLI and server entry point, Windows service |
 | `internal/query` | Query language lexer, parser, canonical printer, builder model |
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
-| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows and Linux, index template |
+| `internal/ingest` | Fluent Bit and OTLP record parsing for Windows, Linux, Wazuh, Zeek and Suricata, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |
@@ -1091,7 +1310,9 @@ visibility to alerts, response actions and signed packages, is on the
 ## Trademarks
 
 Signalith is an independent open-source project. It is not affiliated with,
-endorsed by or sponsored by Splunk or Cisco, and contains no Splunk code.
+endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code.
+Its optional Splunk Security Content pack ships detection rules from Splunk's open
+source security_content project under the Apache License 2.0 (see NOTICE).
 Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC; they are
 named here only to describe what Signalith works like. OpenSearch, Fluent Bit,
 Sigma and MITRE ATT&CK are trademarks of their respective owners.

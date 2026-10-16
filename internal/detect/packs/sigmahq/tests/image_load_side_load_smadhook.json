@@ -1,0 +1,5 @@
+{"rule": "24b6cf51-6122-469e-861a-22974e9c1e5b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\SmadHook64c.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files (x86)\\SMADAV\\SmadavProtect32.exe","ImageLoaded":"C:\\Program Files (x86)\\SMADAV\\ \\SmadHook64c.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

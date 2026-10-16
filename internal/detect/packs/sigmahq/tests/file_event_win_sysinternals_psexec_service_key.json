@@ -1,0 +1,5 @@
+{"rule": "304afd73-55a5-4bb9-8c21-0b1fc84ea9e4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\PSEXEC-.key"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-08-30 15:06:50.993","Image":"System","ProcessGuid":"570E49AA-027C-6A94-EB03-000000000000","ProcessId":"4","RuleName":"technique_id=T1574.010,technique_name=Services File Permissions Weakness","TargetFilename":"C:\\Windows\\PSEXEC-SIGMACATCHVM-3703A8FB.key","User":"AUTORITE NT\\Système","UtcTime":"2026-08-30 15:06:50.993"}}
+]}

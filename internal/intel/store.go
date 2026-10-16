@@ -22,11 +22,22 @@ type Backend interface {
 	Version(ctx context.Context) (string, error)
 }
 
+// SourceLister is a Backend that can list the IDs of a source's
+// indicators as stored, so a download replaces what is really there
+// rather than what this server last loaded.
+type SourceLister interface {
+	SourceIDs(ctx context.Context, source string) ([]string, error)
+}
+
 // Store holds the indicators in memory for fast lookups, backed by a
 // Backend. It is safe for concurrent use.
 type Store struct {
 	Backend Backend
 	Now     func() time.Time
+	// AfterWrite, when set, is called after each write of indicators (one
+	// call per download, upload or change), so other servers that share
+	// the backend can be told to reload.
+	AfterWrite func()
 
 	mu      sync.RWMutex
 	all     map[string]*Indicator // by ID
@@ -34,6 +45,12 @@ type Store struct {
 	nets    []netEntry
 	version string
 	loaded  bool
+	// stale marks a copy changed by this server's own writes since it was
+	// last loaded, which the next Sync reloads.
+	stale bool
+	// wake makes Watch sync now.
+	wakeOnce sync.Once
+	wake     chan struct{}
 }
 
 type netEntry struct {
@@ -94,7 +111,7 @@ func (s *Store) Load(ctx context.Context) error {
 	}
 	s.index(ptrs)
 	s.mu.Lock()
-	s.version, s.loaded = ver, true
+	s.version, s.loaded, s.stale = ver, true, false
 	s.mu.Unlock()
 	return nil
 }
@@ -107,7 +124,7 @@ func (s *Store) Sync(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	s.mu.RLock()
-	same := s.loaded && ver == s.version
+	same := s.loaded && !s.stale && ver == s.version
 	s.mu.RUnlock()
 	if same {
 		return false, nil
@@ -132,9 +149,14 @@ func (s *Store) snapshot() []*Indicator {
 	return out
 }
 
-// afterWrite updates the in-memory copy with what was just written, and
-// remembers the backend version so Sync does not reload our own change.
-func (s *Store) afterWrite(ctx context.Context, put []Indicator, deleted []string) {
+// afterWrite updates the in-memory copy with what was just written, so
+// this server sees its own change at once, and marks the copy stale, so
+// the next Sync reloads everything. It does not adopt the backend's
+// version after the write: another server may have changed indicators
+// between this write and that read, and adopting the version would make
+// Sync skip that change for good. The cost is one extra reload after each
+// of this server's own writes.
+func (s *Store) afterWrite(put []Indicator, deleted []string) {
 	s.mu.RLock()
 	list := make(map[string]*Indicator, len(s.all)+len(put))
 	for id, ind := range s.all {
@@ -153,10 +175,25 @@ func (s *Store) afterWrite(ctx context.Context, put []Indicator, deleted []strin
 		ptrs = append(ptrs, ind)
 	}
 	s.index(ptrs)
-	if ver, err := s.Backend.Version(ctx); err == nil {
-		s.mu.Lock()
-		s.version = ver
-		s.mu.Unlock()
+	s.mu.Lock()
+	s.stale = true
+	s.mu.Unlock()
+	if s.AfterWrite != nil {
+		s.AfterWrite()
+	}
+}
+
+func (s *Store) wakeCh() chan struct{} {
+	s.wakeOnce.Do(func() { s.wake = make(chan struct{}, 1) })
+	return s.wake
+}
+
+// Wake makes Watch check the backend now, as when another server
+// says it changed the indicators. It does not block.
+func (s *Store) Wake() {
+	select {
+	case s.wakeCh() <- struct{}{}:
+	default:
 	}
 }
 
@@ -192,7 +229,7 @@ func (s *Store) Add(ctx context.Context, inds []Indicator) error {
 	if err := s.Backend.Put(ctx, inds); err != nil {
 		return err
 	}
-	s.afterWrite(ctx, inds, nil)
+	s.afterWrite(inds, nil)
 	return nil
 }
 
@@ -215,7 +252,7 @@ func (s *Store) Delete(ctx context.Context, ids []string) error {
 	if err := s.Backend.Delete(ctx, ids); err != nil {
 		return err
 	}
-	s.afterWrite(ctx, nil, ids)
+	s.afterWrite(nil, ids)
 	return nil
 }
 
@@ -234,28 +271,49 @@ func (s *Store) ReplaceSource(ctx context.Context, source string, inds []Indicat
 	for _, ind := range inds {
 		keep[ind.ID] = true
 	}
+	ids, err := s.sourceIDs(ctx, source)
+	if err != nil {
+		return 0, 0, err
+	}
 	var gone []string
-	s.mu.RLock()
 	existing := 0
-	for id, ind := range s.all {
-		if ind.Source != source {
-			continue
-		}
+	for _, id := range ids {
 		if keep[id] {
 			existing++
 		} else {
 			gone = append(gone, id)
 		}
 	}
-	s.mu.RUnlock()
 	if err := s.Backend.Put(ctx, inds); err != nil {
 		return 0, 0, err
 	}
 	if err := s.Backend.Delete(ctx, gone); err != nil {
 		return 0, 0, err
 	}
-	s.afterWrite(ctx, inds, gone)
+	s.afterWrite(inds, gone)
 	return len(inds) - existing, len(gone), nil
+}
+
+// sourceIDs lists the IDs of a source's indicators: as stored, when the
+// backend can say (another server may have written some this one never
+// loaded), else as this server last loaded them.
+func (s *Store) sourceIDs(ctx context.Context, source string) ([]string, error) {
+	if l, ok := s.Backend.(SourceLister); ok {
+		ids, err := l.SourceIDs(ctx, source)
+		if err != nil {
+			return nil, fmt.Errorf("could not list the indicators stored for %s: %w", source, err)
+		}
+		return ids, nil
+	}
+	var ids []string
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for id, ind := range s.all {
+		if ind.Source == source {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // MergeSource adds and updates indicators from a source without removing
@@ -279,7 +337,7 @@ func (s *Store) MergeSource(ctx context.Context, source string, inds []Indicator
 	if err := s.Backend.Put(ctx, inds); err != nil {
 		return 0, err
 	}
-	s.afterWrite(ctx, inds, nil)
+	s.afterWrite(inds, nil)
 	return added, nil
 }
 

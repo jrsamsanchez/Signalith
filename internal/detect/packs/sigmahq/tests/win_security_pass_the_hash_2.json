@@ -1,0 +1,12 @@
+{"rule": "8eef149c-bd26-49f2-9e5a-9b00e3af499b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"KeyLength":"0","LogonProcessName":"NtLmSsp","LogonType":"3","SubjectUserSid":"S-1-0-0"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonProcessName":"seclogo","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"KeyLength":"0","LogonProcessName":"NtLmSsp","LogonType":"3","SubjectUserSid":"S-1-0-0","TargetUserName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonProcessName":"NtLmSsp","LogonType":"3","SubjectUserSid":"S-1-0-0"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"KeyLength":"0","LogonType":"3","SubjectUserSid":"S-1-0-0"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"KeyLength":"0","LogonProcessName":"NtLmSsp","SubjectUserSid":"S-1-0-0"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"KeyLength":"0","LogonProcessName":"NtLmSsp","LogonType":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonProcessName":"seclogo","LogonType":"9","TargetUserName":"ANONYMOUS LOGON"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonProcessName":"seclogo"}}
+]}

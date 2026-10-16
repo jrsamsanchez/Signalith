@@ -1,0 +1,7 @@
+{"rule": "76d6573f-c4ab-4fa1-8390-c036416d4add", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"DAEMON_ABORT","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"DAEMON_ABORU","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"DAEMON_ABORT","data":{"_raw":"type=DAEMON_ABORT msg=audit(06/05/2025 11:03:38.950:6845) : op=set-pid auid=unset pid=61323 uid=root ses=unset subj=unconfined  res=failed"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"DAEMON_ABORT","data":{"_raw":"type=DAEMON_ABORT msg=audit(06/05/2025 11:03:38.701:6845) : op=set-pid auid=unset pid=61318 uid=root ses=unset subj=unconfined  res=failed"}}
+]}

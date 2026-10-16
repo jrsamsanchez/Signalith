@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -45,6 +49,11 @@ import (
 // browser) and account, so signing in to one account never helps guess
 // another. Attempts still being checked count too, so parallel requests
 // cannot all slip in before the first failure is recorded.
+//
+// The servers of a cluster count across servers: each divides Max,
+// MaxPerAddress and MaxPerAccount by the servers that take sign-ins
+// (Divisor), tells the others when a lock trips (OnLock), and refuses
+// what the others locked (External).
 type Limiter struct {
 	Max           int
 	MaxPerAddress int
@@ -59,10 +68,114 @@ type Limiter struct {
 	// successful sign-in from it.
 	KnownFor time.Duration
 	Now      func() time.Time
+	// Divisor, when set, returns how many servers take sign-ins: Max,
+	// MaxPerAddress and MaxPerAccount are each divided by it (rounded up,
+	// and at least 3 unless they are lower), so a guesser spreading tries
+	// over every server gets about as many as one server allows. It is
+	// called outside the limiter's lock.
+	Divisor func() int
+	// OnLock, when set, is called (outside the limiter's lock) when an
+	// address, an address and account, or a known browser is locked
+	// (scope "addr", "addracct" or "browser"), and when strangers' wait
+	// for an account reaches MaxSlow (scope "slow"), with the bucket's
+	// LockKey and when the lock or wait ends.
+	OnLock func(scope, key string, until time.Time)
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
 	known   map[string]time.Time // address and account: last sign-in
+	// external holds the locks other servers reported, by LockKey.
+	external map[string]time.Time
+	// lockSecret keys LockKey (SetLockSecret).
+	lockSecret []byte
+}
+
+// Lock scopes (Limiter.OnLock).
+const (
+	ScopeAddress        = "addr"
+	ScopeAddressAccount = "addracct"
+	ScopeBrowser        = "browser"
+	ScopeSlow           = "slow"
+)
+
+// LockKey is the key a bucket is known by outside the limiter: an HMAC
+// under secret (a key the servers of a cluster share), so neither
+// addresses nor account names can be read back from it, and the same on
+// every server. Without a secret it is a plain digest, which never leaves
+// the server.
+func LockKey(secret []byte, bucket string) string {
+	if len(secret) == 0 {
+		sum := sha256.Sum256([]byte(bucket))
+		return hex.EncodeToString(sum[:])
+	}
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte(bucket))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// SetLockSecret sets the secret LockKey is keyed with.
+func (l *Limiter) SetLockSecret(secret []byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lockSecret = bytes.Clone(secret)
+}
+
+// longestLock is the longest a lock or wait the limiter itself makes
+// lasts: a lock another server reports for longer is cut to it.
+func (l *Limiter) longestLock() time.Duration { return max(l.Lockout, l.MaxSlow) }
+
+// scopeOf returns the lock scope of a bucket key.
+func scopeOf(key string) string {
+	switch key[0] {
+	case 'a':
+		return ScopeAddress
+	case 'p':
+		return ScopeAddressAccount
+	case 'b':
+		return ScopeBrowser
+	}
+	return ScopeSlow
+}
+
+// External replaces the locks other servers reported, by LockKey, with
+// when each ends: Begin refuses an attempt that would count in a locked
+// bucket (ReasonLocked), or in an account's strangers' bucket while it
+// is slowed (ReasonSlowed). A success here does not lift them; they end
+// by time.
+// A lock that would end later than this limiter's own longest lock
+// from now is cut to it, so a forged one cannot lock anyone out for long.
+func (l *Limiter) External(locks map[string]time.Time) {
+	limit := l.Now().Add(l.longestLock())
+	for k, until := range locks {
+		if until.After(limit) {
+			locks[k] = limit
+		}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.external = locks
+}
+
+// limits are the limits of one attempt, after Divisor.
+type limits struct {
+	max, perAddress, perAccount int
+}
+
+func (l *Limiter) limits() limits {
+	n := 1
+	if l.Divisor != nil {
+		n = l.Divisor()
+	}
+	return limits{max: share(l.Max, n), perAddress: share(l.MaxPerAddress, n), perAccount: share(l.MaxPerAccount, n)}
+}
+
+// share is a server's part of a limit base shared by n servers: base/n
+// rounded up, at least 3, never above base.
+func share(base, n int) int {
+	if n <= 1 || base <= 0 {
+		return base
+	}
+	return min(base, max(3, (base+n-1)/n))
 }
 
 type bucket struct {
@@ -177,6 +290,7 @@ type Attempt struct {
 // and spacing.
 func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	account = strings.ToLower(strings.TrimSpace(account))
+	lim := l.limits()
 	now := l.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -190,7 +304,7 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	if !c.Shared {
 		a.address = c.Address
 		if c.Browser == "" {
-			a.slots = append(a.slots, slot{"a\x00" + c.Address, kindLock, l.MaxPerAddress, l.Window})
+			a.slots = append(a.slots, slot{"a\x00" + c.Address, kindLock, lim.perAddress, l.Window})
 		}
 	}
 	switch {
@@ -200,7 +314,7 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 		a.own = "p\x00" + c.Address + "\x00" + account
 	}
 	if a.own != "" {
-		a.slots = append(a.slots, slot{a.own, kindLock, l.Max, l.Window})
+		a.slots = append(a.slots, slot{a.own, kindLock, lim.max, l.Window})
 	}
 	// Known browsers and known addresses each have MaxPerAccount guesses
 	// per SlowWindow; past that they count as strangers.
@@ -211,13 +325,13 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	case !c.Shared && l.knownLocked(c.Address, account, c.Version, now):
 		budget = "n\x00" + account
 	}
-	if b := l.buckets[budget]; budget != "" && b != nil && l.MaxPerAccount > 0 && len(b.recent(now))+b.pending >= l.MaxPerAccount {
+	if b := l.buckets[budget]; budget != "" && b != nil && lim.perAccount > 0 && len(b.recent(now))+b.pending >= lim.perAccount {
 		budget = ""
 	}
 	if budget != "" {
-		a.slots = append(a.slots, slot{budget, kindKnown, l.MaxPerAccount, l.SlowWindow})
+		a.slots = append(a.slots, slot{budget, kindKnown, lim.perAccount, l.SlowWindow})
 	} else {
-		a.slots = append(a.slots, slot{"u\x00" + account, kindSlow, l.MaxPerAccount, l.SlowWindow})
+		a.slots = append(a.slots, slot{"u\x00" + account, kindSlow, lim.perAccount, l.SlowWindow})
 	}
 
 	var refused *Refusal
@@ -227,6 +341,14 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 		}
 	}
 	for _, s := range a.slots {
+		if until, ok := l.external[LockKey(l.lockSecret, s.key)]; ok && until.After(now) && s.limit > 0 {
+			switch s.kind {
+			case kindLock:
+				refuse(until.Sub(now), ReasonLocked)
+			case kindSlow:
+				refuse(until.Sub(now), ReasonSlowed)
+			}
+		}
 		b, ok := l.buckets[s.key]
 		if !ok || s.limit <= 0 {
 			continue
@@ -246,7 +368,7 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 			if b.pending > 0 {
 				// Once slowed, one try at a time.
 				refuse(Busy, ReasonBusy)
-			} else if w := b.failures[n-1].Add(l.slowWait(n)).Sub(now); w > 0 {
+			} else if w := b.failures[n-1].Add(l.slowWait(n, s.limit)).Sub(now); w > 0 {
 				refuse(w, ReasonSlowed)
 			}
 		}
@@ -266,9 +388,9 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 }
 
 // slowWait is how long a stranger waits after the n-th failure counted for
-// an account (n >= MaxPerAccount).
-func (l *Limiter) slowWait(n int) time.Duration {
-	steps := min(max(n-l.MaxPerAccount, 0), 30)
+// an account (n >= limit, MaxPerAccount for the attempt).
+func (l *Limiter) slowWait(n, limit int) time.Duration {
+	steps := min(max(n-limit, 0), 30)
 	w := slowStart << steps
 	if l.MaxSlow > 0 && w > l.MaxSlow {
 		w = l.MaxSlow
@@ -313,8 +435,20 @@ func (a *Attempt) Fail() Failure {
 	}
 	l := a.l
 	now := l.Now()
+	type lock struct {
+		scope, key string
+		until      time.Time
+	}
+	var locks []lock
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	defer func() {
+		l.mu.Unlock()
+		if l.OnLock != nil {
+			for _, k := range locks {
+				l.OnLock(k.scope, k.key, k.until)
+			}
+		}
+	}()
 	if !a.endLocked() {
 		return f
 	}
@@ -334,8 +468,12 @@ func (a *Attempt) Fail() Failure {
 			b.failures = nil
 			f.Locked = true
 			f.AddressLocked = f.AddressLocked || strings.HasPrefix(s.key, "a\x00")
+			locks = append(locks, lock{scopeOf(s.key), LockKey(l.lockSecret, s.key), b.lockedUntil})
 		case s.kind == kindSlow && n >= s.limit:
-			f.Slowed = l.slowWait(n)
+			f.Slowed = l.slowWait(n, s.limit)
+			if l.MaxSlow > 0 && f.Slowed >= l.MaxSlow {
+				locks = append(locks, lock{ScopeSlow, LockKey(l.lockSecret, s.key), now.Add(f.Slowed)})
+			}
 		}
 	}
 	return f

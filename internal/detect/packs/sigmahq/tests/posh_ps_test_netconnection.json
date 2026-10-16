@@ -1,0 +1,6 @@
+{"rule": "adf876b3-f1f8-4aa9-a4e4-a64106feec06", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-ComputerName  -port  Test-NetConnection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-port   443  -ComputerName  Test-NetConnection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"2c0f60e0-a97f-4398-a854-e3169366412d","ScriptBlockText":"Test-NetConnection -ComputerName 192.168.122.157 -Port 5985 -WarningAction SilentlyContinue | Select-Object TcpTestSucceeded"}}
+]}

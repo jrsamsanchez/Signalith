@@ -1,0 +1,19 @@
+{"rule": "7a85eb24-72da-11ec-ac76-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/cat","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/nano x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/vim x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/vi x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/nano y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/vim y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/vi y","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","Image":"/usr/bin/cau","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_config","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_confih","Image":"/usr/bin/cat","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/cat","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_confih","Image":"/usr/bin/nano x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/nano x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_confih","Image":"/usr/bin/vim x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/vim x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x /etc/ssh/sshd_confih","Image":"/usr/bin/vi x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/usr/bin/vi x","ParentProcessId":"4000","ProcessId":"4242","User":"tester"}}
+]}

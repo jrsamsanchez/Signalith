@@ -20,7 +20,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      # cmd/signalith's server tests take close to go test's default 10
+      # minutes on Windows runners, as the race job's do.
+      - run: go test -timeout 20m ./...
       - run: go build -o dist/ ./cmd/signalith
       # install.ps1 needs an elevated Windows with OpenSearch to run, so CI
       # checks the parts it can, with Windows PowerShell and PowerShell 7.
@@ -42,8 +44,9 @@ jobs:
           go-version-file: go.mod
       # The same tests with the data race detector on. It needs cgo, which
       # the Linux runner has. It is slow: internal/api alone takes about 6
-      # minutes, so the 10 minute default limit is raised.
-      - run: go test -race -timeout 20m ./...
+      # minutes on a fast machine and close to 20 on the runner, so the 10
+      # minute default limit is raised.
+      - run: go test -race -timeout 30m ./...
 
   vulncheck:
     runs-on: ubuntu-latest
@@ -59,12 +62,13 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     env:
-      # The Docker quick start as users run it, plus an override that also
+      # The Docker quick start as users run it, built from this code
+      # (docker-compose.build.yml), plus an override that also
       # publishes OpenSearch on this machine for the Go tests, and one that
       # turns off OpenSearch's own loading of its security settings on first
       # start, as when that fails on a slow computer: then the
       # opensearch-security step has to load them.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -148,6 +152,15 @@ jobs:
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
             https://localhost:8080/api/login)
           test "$code" = 401
+      - name: Check Nmap runs in the image for vulnerability scans
+        run: |
+          # The Vulnerabilities page scans with the image's Nmap, as the
+          # unprivileged user, read-only and with no capabilities.
+          $COMPOSE exec -T signalith nmap --version | head -n 1
+          curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            "https://localhost:8080/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
+          jq -c '.report.checks[] | {id, state, detail}' "$RUNNER_TEMP/vulns-setup.json"
+          jq -e '[.report.checks[] | select(.id == "nmap" or .id == "nmap_runs") | .state] == ["ok", "ok"]' "$RUNNER_TEMP/vulns-setup.json"
       - name: Check a new install refuses the old example ingest token
         run: |
           # Older quick starts gave every agent change-this-ingest-token,
@@ -172,6 +185,9 @@ jobs:
           if curl -s -o /dev/null http://localhost:9200/; then echo "OpenSearch answers plain HTTP"; exit 1; fi
       - name: Encrypt a pasted API key the way docs/encryption.md shows
         working-directory: deploy/docker
+        env:
+          # The image built from this code, as in the steps above.
+          COMPOSE_FILE: docker-compose.yml:docker-compose.build.yml
         run: |
           printf 'assistant:\n  provider: anthropic\n  api_key: sk-ant-ci-pasted-0123456789\n' >> signalith.yaml
           owner=$(stat -c %u:%a signalith.yaml)
@@ -198,8 +214,13 @@ jobs:
         run: |
           # The tests use indices of their own; stop the server so it does
           # not work on them at the same time. The cluster tests run in the
-          # cluster job.
+          # cluster job. Signalith stops in seconds: a stop that runs into
+          # Docker's 90-second limit means shutdown waits on something.
+          start=$(date +%s)
           $COMPOSE stop signalith
+          took=$(( $(date +%s) - start ))
+          echo "Signalith stopped in ${took}s"
+          if [ "$took" -gt 30 ]; then $COMPOSE logs --no-color --tail 50 signalith; exit 1; fi
           go test -tags integration -count=1 -v -skip '^TestCluster' ./internal/integration/
       - name: Container logs
         if: failure()
@@ -211,7 +232,7 @@ jobs:
       # The secured OpenSearch of the Docker quick start, published on this
       # machine for the tests: servers that share one OpenSearch need its
       # security on.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -248,6 +269,26 @@ jobs:
         if: failure()
         run: $COMPOSE logs --no-color
 
+  # Every fuzz target for a short while, so a change that makes a parser
+  # crash or hang on odd input is caught before it merges. The nightly
+  # fuzz workflow runs them for longer.
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - run: .github/scripts/fuzz.sh
+        env:
+          FUZZTIME: 10s
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/'
+
   release-build:
     runs-on: ubuntu-latest
     needs: test
@@ -272,3 +313,119 @@ jobs:
   packages:
     needs: test
     uses: ./.github/workflows/packages.yml
+
+  # The cloud test lab (deploy/lab): shellcheck of its scripts, and
+  # Terraform's format and validate. Not a required check.
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Shellcheck the setup and end-to-end test scripts
+        run: shellcheck -s bash deploy/lab/lab-setup.sh deploy/lab/lab-e2e.sh
+      - name: Terraform format and validate
+        working-directory: deploy/lab
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/terraform.zip" https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+          unzip -q "$RUNNER_TEMP/terraform.zip" -d "$RUNNER_TEMP/tf"
+          "$RUNNER_TEMP/tf/terraform" fmt -check -diff
+          "$RUNNER_TEMP/tf/terraform" init -backend=false -input=false
+          "$RUNNER_TEMP/tf/terraform" validate
+
+  # The network sensor install script (deploy/sensor): shellcheck, the
+  # systemd units, the repository keys it pins against what each publisher
+  # serves, and its dry runs on every system it supports. Not a required
+  # check.
+  sensor-script:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Shellcheck the script and its helpers
+        run: shellcheck -s sh deploy/sensor/install.sh deploy/sensor/lib/*.sh .github/scripts/sensor-*.sh
+      - name: Check the systemd units
+        run: |
+          units=$(mktemp -d)
+          cp deploy/sensor/systemd/* "$units/"
+          sed -i 's/@IFACE_UNIT@/sys-subsystem-net-devices-cap0.device/g; s/@IFACE@/cap0/g' "$units"/*
+          # The programs the units start, as stand-ins.
+          for f in /opt/fluent-bit/bin/fluent-bit /opt/zeek/bin/zeekctl /usr/bin/suricata \
+            /usr/lib/signalith-sensor/capture-up.sh /usr/lib/signalith-sensor/status.sh /usr/lib/signalith-sensor/rules-update.sh; do
+            sudo install -D -m 755 /bin/true "$f"
+          done
+          cd "$units"
+          out=$(SYSTEMD_LOG_LEVEL=warning systemd-analyze verify ./*.service ./*.timer 2>&1)
+          echo "$out"
+          test -z "$out"
+      - name: Check the pinned repository keys
+        run: .github/scripts/sensor-keys.sh
+      # Fails while a pin is empty (the required test jobs only log it).
+      - name: Check every repository key is pinned
+        if: always()
+        run: SIGNALITH_SENSOR_KEYS=required go test -run 'TestSensorKeyFingerprintsSet$' ./deploy
+      # The script's own tests, which run it against a fake machine, in
+      # each supported system, with its sh, sed, awk and coreutils.
+      - name: Dry runs on Ubuntu, Debian, Rocky and Alma Linux
+        if: always()
+        run: |
+          CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/deploy.test" ./deploy
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 rockylinux:9 almalinux:9; do
+            echo "== $image"
+            docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/deploy.test:/deploy.test:ro" -w /src/deploy "$image" \
+              /deploy.test -test.v -test.run 'TestSensorScript(Parses|Refuses|DryRun|DryRunOptions|PortChoice)$|TestSensorStatusLine'
+          done
+
+  # A real sensor on this machine: the line the Add data page makes, run
+  # against the Docker quick start, with traffic replayed on a capture
+  # port; then run again, and uninstalled. It installs from the vendors'
+  # repositories, so it needs them up. Not a required check.
+  sensor-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Start the Docker quick start and sign in
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q tcpdump tcpreplay jq
+          $COMPOSE up -d --build
+          for i in $(seq 1 60); do
+            $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+            sleep 3
+          done
+          password=$($COMPOSE exec -T signalith signalith initial-password)
+          curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:8080/api/login > /dev/null
+          for i in $(seq 1 60); do
+            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health |
+              jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
+            sleep 3
+          done
+      - name: Install a sensor, send it traffic, run it again, uninstall
+        env:
+          SIGNALITH: https://localhost:8080
+          SIGNALITH_CA: ${{ runner.temp }}/signalith-ca.pem
+          COOKIES: ${{ runner.temp }}/cookies
+        run: .github/scripts/sensor-install-ci.sh
+      - name: Sensor logs
+        if: failure()
+        run: |
+          sudo journalctl --no-pager -n 200 -u signalith-zeek -u signalith-suricata -u signalith-fluent-bit -u signalith-suricata-update || true
+          echo "== Suricata's own test of the sensor settings and rules"
+          sudo suricata -T -v -c /etc/suricata/signalith-sensor.yaml 2>&1 | tail -n 40 || true
+          sudo suricata-update --etopen --data-dir /var/lib/signalith-sensor/suricata --suricata-conf /etc/suricata/signalith-sensor-test.yaml \
+            --disable-conf /etc/suricata/disable.conf --no-reload --fail -v 2>&1 | grep -v 'Loading distribution' | tail -n 60 || true
+          echo "rc=$?"
+          sudo mkdir -p /tmp/sct && sudo suricata -T -v -l /tmp/sct -c /etc/suricata/signalith-sensor-test.yaml \
+            -S /var/lib/signalith-sensor/suricata/rules/suricata.rules 2>&1 | tail -n 40 || true
+          sudo ls -la /var/lib/signalith-sensor/suricata/rules /etc/suricata || true
+          sudo grep -c 'sid:9900001' /var/lib/signalith-sensor/suricata/rules/suricata.rules || true
+          sudo tail -n 20 /var/log/suricata/signalith/eve.json | cut -c1-300 || true
+          sudo dmesg | tail -n 20 || true
+          $COMPOSE logs --no-color signalith | tail -n 200

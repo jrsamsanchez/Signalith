@@ -1,0 +1,5 @@
+{"rule": "a2edbce1-95c8-4291-8676-0d45146862b3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\SolidPDFCreator.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\SolidPDFCreator.exe","ImageLoaded":"C:\\Program Files\\SolidDocuments\\SolidPDFCreator\\ \\SolidPDFCreator.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

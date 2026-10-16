@@ -1,0 +1,5 @@
+{"rule": "fa277e82-9b78-42dd-b05c-05555c7b6015", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\AppInstaller\\EnableLocalManifestFiles"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\AppInstaller\\EnableLocalManifestFiles"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

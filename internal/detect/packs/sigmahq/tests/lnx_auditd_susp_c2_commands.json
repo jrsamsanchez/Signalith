@@ -1,0 +1,4 @@
+{"rule": "f7158a64-6204-4d6d-868a-6e6378b467e0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"key":"susp_activity"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}}
+]}

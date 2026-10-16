@@ -1,0 +1,7 @@
+{"rule": "46490193-1b22-4c29-bdd6-5bf63907216f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"mshtml,","TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"mshtml,","TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\RunSoftware\\Microsoft\\Windows\\CurrentVersion"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"mshtml, _mshtml_dll_","Image":"\\msiexec.exe","TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Installer\\UserData\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Windows\\CurrentVersion"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"mshtml,"}}
+]}

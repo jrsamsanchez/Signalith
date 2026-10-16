@@ -1,0 +1,5 @@
+{"rule": "435e10e4-992a-4281-96f3-38b11106adde", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x | Select  Get-ADComputer   -Filter *","Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x | Select  Get-ADComputer   -Filter *"}}
+]}

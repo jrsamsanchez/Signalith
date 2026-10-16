@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -69,12 +70,18 @@ func TestEveryRouteHasARole(t *testing.T) {
 			return true
 		})
 	}
+	for _, p := range sensorPublicRoutes {
+		if !slices.Contains(publicRoutes, p) {
+			t.Errorf("%s is not public", p)
+		}
+	}
 	if found < 70 {
 		t.Errorf("found only %d route patterns in the source; is the scan still working?", found)
 	}
 	// A few routes whose role matters most.
 	for pattern, want := range map[string]users.Role{
 		"GET /api/agents/config":     users.Admin,
+		"GET /api/agents":            users.Analyst,
 		"POST /api/users":            users.Admin,
 		"PUT /api/auth/directory":    users.Admin,
 		"PATCH /api/findings/{id}":   users.Analyst,
@@ -88,6 +95,11 @@ func TestEveryRouteHasARole(t *testing.T) {
 		"PUT /api/settings":          users.Admin,
 		"POST /api/settings/restart": users.Admin,
 		"GET /api/settings/export":   users.Admin,
+		"GET /api/cluster/features":  users.Viewer,
+		"GET /api/cluster/upgrade":   users.Admin,
+		"GET /api/sensors":           users.Admin,
+		"GET /api/sensors/tuning":    users.Admin,
+		"PUT /api/sensors/tuning":    users.Admin,
 	} {
 		if classified[pattern] != want {
 			t.Errorf("%s = %s, want %s", pattern, classified[pattern], want)
@@ -153,7 +165,7 @@ func newRoleServer(t *testing.T) (*httptest.Server, *Server) {
 		srv = s
 		s.Users = users.NewMemory()
 		for name, role := range map[string]users.Role{"vera": users.Viewer, "andy": users.Analyst} {
-			if _, err := s.Users.Create(users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -203,7 +215,7 @@ func TestUnclassifiedRoutesAreAdminOnly(t *testing.T) {
 	h, _ := config.HashPassword("s3cret-pass")
 	cfg.Auth.AdminPasswordHash = h
 	s := &Server{Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Users: users.NewMemory()}
-	s.Users.Create(users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
+	s.Users.Create(context.Background(), users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
 	rt := &router{s: s, mux: http.NewServeMux()}
 	rt.HandleFunc("POST /api/new-thing", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	if len(rt.routes) != 1 || !rt.routes[0].Unclassified || rt.routes[0].Role != users.Admin {

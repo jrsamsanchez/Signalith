@@ -1,0 +1,7 @@
+{"rule": "b6188d2f-b3c4-4d2c-a17d-9706e0851af0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\goopdate.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Program Files\\\\goopdate.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\AppData\\Local\\Temp\\GUM.tmp\\Dropbox","ImageLoaded":".tmp\\goopdate.dll\\AppData\\Local\\Temp\\GUM\\goopdate.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":":\\Windows\\SystemTemp\\GUM.tmp\\GoogleUpdate.exe","ImageLoaded":":\\Windows\\SystemTemp\\GUM\\goopdate.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

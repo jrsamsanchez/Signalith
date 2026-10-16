@@ -1,0 +1,11 @@
+{"rule": "8eb3e858-18d3-44a4-a514-52cfa39f154a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x restart x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x service  x x reenable x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x reload x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x restart y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x service  x x reenable y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x reload y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:25.755:44731) : proctitle=systemctl restart atd"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 09:14:50.174:721) : proctitle=systemctl daemon-reload"}}
+]}

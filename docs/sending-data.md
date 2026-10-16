@@ -18,6 +18,14 @@ Bit, save Signalith's CA certificate and the generated configuration, and restar
 The configuration already contains the server address and ingest token, and sends over
 HTTPS, checking the server's certificate with that CA.
 
+The configuration also sends two short headers with every batch: the computer's name
+(`X-Signalith-Agent`, which Fluent Bit fills in itself) and which Signalith version made
+the configuration and which certificate authority it trusts (`X-Signalith-Config`). With
+them, the [Endpoints page](endpoints.md#log-agents) lists each agent once, even when it
+sends to several servers, and says when one needs a new configuration. They are labels
+only: the agent token is what lets an agent in. OpenTelemetry Collector configurations
+send the second header only; Signalith takes a Collector's computer name from its events.
+
 Agents on other machines must send to an address they can reach, such as
 `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that
 page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by
@@ -30,14 +38,21 @@ or detection covers every source of the same kind.
 
 | Source | Data model |
 | --- | --- |
-| Windows Security log: 4624, 4625 logons | Authentication |
+| Windows Security log: 4624, 4625 logons; 4648 explicit credentials; 4768, 4769, 4771 Kerberos; 4776 NTLM credential checks | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
-| Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
-| Sysmon: event 1 process create, event 3 network connection | Endpoint, Network_Traffic |
+| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4732, 4737, 4756 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 1102 log cleared | Change |
+| Windows Security log: 5140, 5145 network share access | Filesystem |
+| Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
+| PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
+| Linux audit log (auditd: audit.log, or its syslog plugin; each program start also joined into one process launch, see [Detections](detections.md#linux-audit-log-auditd)) | Other, sourcetype `linux:audit`; program starts in Endpoint |
+| Apache and Nginx access logs (/var/log/nginx, /var/log/apache2, /var/log/httpd; see [Detections](detections.md#web-server-access-logs)) | Web |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
+| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
+| Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
 | Anything else | Other (searchable by text and fields) |
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
@@ -72,7 +87,10 @@ events.
 Field names that senders choose (JSON keys, syslog structured data, CEF extensions) are
 limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, names of
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
-1,000 new names per daily index each time Signalith starts. Fields Signalith itself
+1,000 new names per daily index each time Signalith starts. With several servers, those
+1,000 are shared among the servers that stored events in the last 10 minutes (at least
+100 each), and no server adds new names to a day whose index already has 2,000 fields
+(see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`

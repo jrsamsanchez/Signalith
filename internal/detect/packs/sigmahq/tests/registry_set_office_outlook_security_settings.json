@@ -1,0 +1,5 @@
+{"rule": "c3cefdf4-6703-4e1c-bad8-bf422fc5015a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Office\\\\Outlook\\Security\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\Microsoft Office\\ \\OUTLOOK.EXE","TargetObject":"\\SOFTWARE\\Microsoft\\Office\\ \\Outlook\\Security\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

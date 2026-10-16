@@ -1,0 +1,6 @@
+{"rule": "1d2ab8ac-1a01-423b-9c39-001510eae8e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\ADHealthAgent","ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\ADHealthAgent","ObjectType":"Key","ProcessName":"Microsoft.Identity.Health.Adfs.PshSurrogate.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\ADHealthAgent"}}
+]}

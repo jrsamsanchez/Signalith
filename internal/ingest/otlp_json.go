@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
+	"net/http"
 	"strings"
 )
 
@@ -65,7 +67,7 @@ type otlpJSONAnyValue struct {
 const maxJSONDepth = 4*MaxDepth + 4
 
 // walkOTLPJSON is walkOTLPProto for an OTLP/JSON request.
-func walkOTLPJSON(body []byte, build bool, fn func(*otlpLog, int) error) error {
+func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *BodyError) error) error {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil
 	}
@@ -85,45 +87,63 @@ func walkOTLPJSON(body []byte, build bool, fn func(*otlpLog, int) error) error {
 		for _, sl := range rl.ScopeLogs {
 			for _, raw := range sl.LogRecords {
 				n++
-				if len(raw) > MaxRecordBytes {
-					return tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(raw), MaxRecordBytes)
+				l, bad := jsonLogRecord(raw, n, resource, sl.Scope.Name, build)
+				if bad != nil {
+					l = nil
 				}
-				if d := depth(raw); d > maxJSONDepth {
-					return badBody("log record %d nests values too deeply", n)
-				}
-				var rec otlpJSONLogRecord
-				if err := json.Unmarshal(raw, &rec); err != nil {
-					return badBody("invalid log record %d: %v", n, err)
-				}
-				var l *otlpLog
-				if build {
-					l = &otlpLog{resource: resource, scope: sl.Scope.Name, sevText: rec.SeverityText, eventName: rec.EventName}
-					l.time = jsonUint(rec.TimeUnixNano)
-					l.observed = jsonUint(rec.ObservedTimeUnixNano)
-					l.sevNum, _ = otlpInt(rec.SeverityNumber)
-					l.traceID = jsonHexID(rec.TraceID)
-					l.spanID = jsonHexID(rec.SpanID)
-				}
-				body, err := jsonAnyValue(rec.Body, 1, build)
-				if err != nil {
-					return err
-				}
-				var attrs map[string]any
-				if build {
-					l.body = body
-					attrs = map[string]any{}
-					l.attrs = attrs
-				}
-				if err := jsonKeyValues(rec.Attributes, attrs, 1, build); err != nil {
-					return err
-				}
-				if err := fn(l, len(raw)); err != nil {
+				if err := fn(l, len(raw), bad); err != nil {
 					return err
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// jsonLogRecord decodes record n of the request, or says why it can't.
+func jsonLogRecord(raw json.RawMessage, n int, resource map[string]any, scope string, build bool) (*otlpLog, *BodyError) {
+	if len(raw) > MaxRecordBytes {
+		return nil, tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(raw), MaxRecordBytes)
+	}
+	if d := depth(raw); d > maxJSONDepth {
+		return nil, badBody("log record %d nests values too deeply", n)
+	}
+	var rec otlpJSONLogRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return nil, badBody("invalid log record %d: %v", n, err)
+	}
+	var l *otlpLog
+	if build {
+		l = &otlpLog{resource: resource, scope: scope, sevText: rec.SeverityText, eventName: rec.EventName}
+		l.time = jsonUint(rec.TimeUnixNano)
+		l.observed = jsonUint(rec.ObservedTimeUnixNano)
+		l.sevNum, _ = otlpInt(rec.SeverityNumber)
+		l.traceID = jsonHexID(rec.TraceID)
+		l.spanID = jsonHexID(rec.SpanID)
+	}
+	body, err := jsonAnyValue(rec.Body, 1, build)
+	if err != nil {
+		return nil, recordError(n, err)
+	}
+	var attrs map[string]any
+	if build {
+		l.body = body
+		attrs = map[string]any{}
+		l.attrs = attrs
+	}
+	if err := jsonKeyValues(rec.Attributes, attrs, 1, build); err != nil {
+		return nil, recordError(n, err)
+	}
+	return l, nil
+}
+
+// recordError names record n in a value's error.
+func recordError(n int, err error) *BodyError {
+	status := http.StatusBadRequest
+	if bad, ok := err.(*BodyError); ok {
+		status = bad.Status
+	}
+	return &BodyError{Status: status, Msg: fmt.Sprintf("log record %d: %v", n, err)}
 }
 
 func jsonKeyValues(kvs []otlpJSONKeyValue, m map[string]any, depth int, build bool) error {

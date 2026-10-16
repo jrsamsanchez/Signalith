@@ -39,7 +39,8 @@ secret (readable only by root, or SYSTEM and Administrators), and `osquery.flags
 points osquery at Signalith. It then restarts osquery. The host appears on the
 **Endpoints** page within a minute.
 
-The script holds an ingest token, so keep it private. osquery always checks Signalith's
+The script holds an [agent token](agent-tokens.md) of its own, made when you copy or
+download it on Add data, so keep it private. osquery always checks Signalith's
 certificate. It checks it against the address it connects to, so use a host name the
 certificate covers; an IP address works only with the certificate Signalith makes itself.
 
@@ -50,7 +51,9 @@ Each host is one row, keyed by its hardware UUID, even when osquery is reinstall
 Analysts and admins can open **Endpoints**:
 
 - **Hosts** lists every host with its status (online when seen in the last three minutes),
-  failing checks, address and osquery version. Open one for its hardware, addresses,
+  failing checks, address and osquery version, plus the log agents sending from each
+  computer (a **Log agent** column, and rows of their own for computers without osquery;
+  see [Log agents](#log-agents)). Open one for its hardware, addresses,
   configuration fetch, osquery's own errors, and every check result with how to fix it.
   Links there open the host's file changes and inventory changes in Search.
 - **Configuration checks** lists every check with how many hosts pass and fail, and which
@@ -82,6 +85,56 @@ Admins also have:
 
 These are the places attackers change to stay on a host or gain rights. Watching large,
 busy folders makes osquery work harder; add only what you need.
+
+## Log agents
+
+The **Hosts** list also shows the log agents (Fluent Bit and OpenTelemetry Collectors)
+that send events to Signalith, from every server that shares this OpenSearch. There is no
+separate list: an agent on a computer that also runs osquery is shown on that host's row,
+matched by computer name (the part before the first dot, ignoring capitals), and an agent
+on a computer without osquery gets a row of its own marked **Log agent only**.
+
+The **Log agent** column says one of:
+
+- **Sending, 2m ago**: events arrived recently.
+- **Silent since 10:42**: nothing for more than an hour (15 minutes for a network sensor
+  the sensor install script built, which sends a status line every 5 minutes). Check that
+  the agent runs and can reach Signalith.
+- **Needs a new configuration**: open the row to see why, in plain words:
+  - it trusts a different certificate authority than this server uses, so its
+    connections fail (this also shows for a computer that keeps refusing this server's
+    certificate, even though none of its events got through);
+  - it sends without encryption (plain HTTP) from another computer (plain HTTP from the
+    Signalith computer itself never crosses the network, so it is fine);
+  - its [agent token](agent-tokens.md) was revoked.
+
+Use the **All / Silent / Needs a new configuration** buttons to narrow the list. Opening
+an agent shows its addresses, the servers it sends to, HTTPS or plain HTTP, its agent
+token, its events in the last hour, and when it was first and last seen. Admins get
+**Get a new configuration**, which opens **Add data** on the agent's system: make the new
+configuration there (it comes with a new agent token) and put it on the computer.
+
+Fluent Bit configurations made on **Add data** from this version on tell Signalith the
+computer's name. An agent set up before that is listed by its address and agent token,
+with a note that a new configuration would show its computer name; it keeps working as it
+is. An OpenTelemetry Collector is named by the computer name on its events; one that
+passes on events from several computers is listed by its address and agent token. A
+configuration made while a new certificate authority is being prepared trusts both, so
+the agent is still fine after the switch. Two
+computers with the same name are shown as one row with both addresses. An agent not heard
+from for 30 days is removed from the list. The computer name an agent sends is only a
+label: it never lets anyone in.
+
+### Network sensors
+
+A network sensor built with **Add data > Network sensor > Set up a new sensor** shows as
+**Network sensor**, with a second line on its row: the Zeek and Suricata versions, how old
+the rules are, the capture port and its link, and the share of packets dropped. A
+**warnings** badge counts what its last status line found wrong. Opening it shows a
+**Network sensor** section with the details and each warning with the command to fix it on
+the sensor. For such a sensor, **Get a new configuration** is not the way to repair it: run
+its line from Add data again, which also gives it a new token. See
+[Network sensor: Status](network-sensor.md#status).
 
 ## Configuration checks
 
@@ -117,7 +170,7 @@ osquery uses its TLS remote API with these routes on Signalith's HTTPS port:
 
 | Route | Use |
 | --- | --- |
-| `POST /api/osquery/enroll` | The host sends the enroll secret (an ingest token) and gets its own node key |
+| `POST /api/osquery/enroll` | The host sends the enroll secret (an [agent token](agent-tokens.md)) and gets its own node key |
 | `POST /api/osquery/config` | The host fetches what to collect, every five minutes |
 | `POST /api/osquery/log` | Results and osquery's own status messages |
 | `POST /api/osquery/distributed/read` | The host asks for live queries, every ten seconds |
@@ -128,5 +181,8 @@ stores only their hash. Hosts and settings are kept in OpenSearch (the `<prefix>
 index), so every Signalith server knows every host, and a host sending to another server
 runs each live query once.
 
-Removing an ingest token does not remove the hosts that enrolled with it; remove them on
-the Endpoints page.
+Revoking the agent token a host enrolled with, or choosing **Stop accepting** on a shared
+token, removes every host enrolled with it, on every server, and their next request is
+refused at once. A host whose shared token was deleted from signalith.yaml or the
+environment is refused too. They enroll again with an active token. See
+[agent-tokens.md](agent-tokens.md#osquery-hosts).

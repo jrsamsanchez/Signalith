@@ -1,0 +1,5 @@
+{"rule": "ab871450-37dc-4a3a-997f-6662aa8ae0f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Microsoft\\Office\\\\SOFTWARE\\\\Common\\Security\\MacroRuntimeScanScope"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Office\\\\SOFTWARE\\\\Common\\Security\\MacroRuntimeScanScope"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}}
+]}

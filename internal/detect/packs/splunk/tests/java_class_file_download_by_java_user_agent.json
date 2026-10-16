@@ -1,0 +1,8 @@
+{"rule": "8281ce42-5c50-11ec-82d2-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"x Java x","url":"x .class x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"x Java y","url":"x .class x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"x Java x","url":"x .class y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x .class x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","http_user_agent":"x Java x","url":"x .class x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","http_user_agent":"x Java x"}}
+]}

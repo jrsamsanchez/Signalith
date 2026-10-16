@@ -1,0 +1,6 @@
+{"rule": "968eef52-9cff-4454-8992-1e74b9cbad6c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4661","data":{"AccessMask":"0x2d","ObjectName":"S-1-5-21- -512","ObjectType":"SAM_USER"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"ObjectName":"S-1-5-21- -512","ObjectType":"SAM_USER"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"AccessMask":"0x2d","ObjectType":"SAM_USER"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4661","data":{"AccessMask":"0x2d","ObjectName":"S-1-5-21- -512"}}
+]}

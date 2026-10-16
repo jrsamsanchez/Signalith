@@ -1,0 +1,5 @@
+{"rule": "77946e79-97f1-45a2-84b4-f37b5c0d8682", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":A","OriginalFileName":"REGINI.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"REGINI.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":":A"}}
+]}

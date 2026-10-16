@@ -89,6 +89,7 @@ var defenderHealth = map[string][2]string{
 	"5004": {"modified", "Real-time protection setting changed"},
 	"5013": {"tamper_blocked", "Tamper protection blocked a change"},
 	"1150": {"status", "Antivirus is running"},
+	"5101": {"outdated", "Antimalware platform expired"},
 }
 
 // defenderMessage reads the "Label: value" lines of a rendered message.
@@ -250,6 +251,10 @@ func parseDefender(eventID, msg string, in []string, ev *Event) {
 	case MalwareHealth:
 		switch eventID {
 		case "5007":
+			// The registry values as they were and are, which rules
+			// search for the setting changed.
+			SetValue(f, "old_value", kv["old value"])
+			SetValue(f, "new_value", kv["new value"])
 			action, sig = defenderConfigChange(f, kv["old value"], kv["new value"])
 		case "5013":
 			SetValue(f, "setting", first(kv, "value", "changed value"))
@@ -341,9 +346,18 @@ func defenderResource(f map[string]any, path string) {
 	}
 }
 
-// setPID reads the number after "pid:" into process_id.
+// setPID reads the number after "pid:" into process_id. It compares in
+// place rather than searching strings.ToLower(s): lowering turns invalid
+// UTF-8 into the longer U+FFFD, so an index into the lowered copy can run
+// past the end of s.
 func setPID(f map[string]any, s string) {
-	i := strings.Index(strings.ToLower(s), "pid:")
+	i := -1
+	for j := 0; j+4 <= len(s); j++ {
+		if strings.EqualFold(s[j:j+4], "pid:") {
+			i = j
+			break
+		}
+	}
 	if i < 0 {
 		return
 	}

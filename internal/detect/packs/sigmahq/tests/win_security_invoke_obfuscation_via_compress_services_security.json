@@ -1,0 +1,4 @@
+{"rule": "7a922f1b-2635-4d6c-91ef-af228b198ad3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"text.encoding]::ascii readtoend system.io.compression.deflatestream new-object"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "2f7979ae-f82b-45af-ac1d-2b10e93b0baa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"System","TargetFilename":"\\Internet Explorer\\iertutil.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Internet Explorer\\iertutil.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"System"}}
+]}

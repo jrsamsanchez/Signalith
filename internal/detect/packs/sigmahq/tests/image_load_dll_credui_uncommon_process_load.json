@@ -1,0 +1,10 @@
+{"rule": "9ae01559-cf7e-4f8e-8e14-4c290a1b4784", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\ImmersiveControlPanel\\SystemSettings.exe","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\System32\\","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Users\\\\AppData\\Local\\Microsoft\\OneDrive\\","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\opera_autoupdate.exe","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\procexp64.exe","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Users\\\\AppData\\Local\\Microsoft\\Teams\\\\Teams.exe","OriginalFileName":"credui.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

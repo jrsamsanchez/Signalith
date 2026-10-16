@@ -1,0 +1,6 @@
+{"rule": "4d78a000-ab52-4564-88a5-7ab5242b20c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"UserManagement","LoggedByService":"Authentication Methods","OperationName":"User registered security info"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"LoggedByService":"Authentication Methods","OperationName":"User registered security info"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"UserManagement","OperationName":"User registered security info"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"UserManagement","LoggedByService":"Authentication Methods"}}
+]}

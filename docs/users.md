@@ -1,13 +1,17 @@
 # Users and sign-in
 
 Everyone who signs in to Signalith has one of three roles. People can sign in in
-three ways:
+four ways:
 
 | Account | Where it lives | Managed on |
 | --- | --- | --- |
 | The **built-in admin** | `auth.admin_user` and `auth.admin_password_hash` in `signalith.yaml` | The server, with `signalith passwd` |
 | **Local users** | `users.json` in the lookups folder | The **Users** page |
 | **Directory users** | Your Active Directory or LDAP server; Signalith keeps a record after their first sign-in | The directory; on the **Users** page you can only disable or delete them |
+| **Single sign-on users** | Your OpenID Connect identity provider (Entra ID, Okta, Google, Keycloak); Signalith keeps a record after their first sign-in | The provider; on the **Users** page you can only disable or delete them. See [sso.md](sso.md) |
+
+Servers that share one OpenSearch keep all of this in OpenSearch instead, once every
+one of them runs this version: see [Users on several servers](#users-on-several-servers).
 
 ## Roles
 
@@ -17,7 +21,7 @@ Each role can do everything the roles above it can.
 | --- | --- | --- |
 | **Viewer** | Managers, auditors, other teams | Run searches and see dashboards, findings, investigations, detections, risk and intel. Cannot change anything. |
 | **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards, use **Ask** and add or remove intel indicators by hand. |
-| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, see the agent setup (it holds the ingest token), manage users and set up directory sign-in, and change server settings. |
+| **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md) and [API tokens](ai-tools.md#api-tokens), manage users and set up directory sign-in, and change server settings. |
 
 By area:
 
@@ -39,7 +43,10 @@ By area:
 | Threat intel: view and look up | Yes | Yes | Yes |
 | Threat intel: add or remove indicators by hand | No | Yes | Yes |
 | Threat intel: add, change, test and refresh feeds, upload files | No | No | Yes |
-| Add data (agent setup and ingest token) | No | No | Yes |
+| Playbooks: see runs, approve or reject steps that wait | No | Yes | Yes |
+| Playbooks: create, edit, delete, turn on and off | No | No | Yes |
+| Add data (agent setup, agent tokens) | No | No | Yes |
+| Agent tokens: list names and use (API only) | No | Yes | Yes |
 | Users and directory sign-in | No | No | Yes |
 | Server settings (Settings page, restart) | No | No | Yes |
 | Change your own password (local users) | Yes | Yes | Yes |
@@ -63,7 +70,8 @@ allow, the page reloads to match the new role and says why.
 The account in `auth.admin_user` (`admin` unless you changed it) always works, even
 when the directory server is down or every other admin has been removed, so you can
 always get back in. It shows on the Users page as **Built-in** and cannot be edited,
-disabled or deleted there. Change its password on the server:
+disabled or deleted there. Change its password on the server (on servers that share
+their users, see [The built-in admin on several servers](#the-built-in-admin-on-several-servers)):
 
 ```sh
 signalith passwd -c /etc/signalith/signalith.yaml
@@ -81,13 +89,13 @@ or directory user can have the built-in admin's name.
 
 ## Managing local users
 
-Admins manage users on the **Users** page.
+Admins manage users on the **Users** page (**Settings > Users**).
 
 **Add a user.** Enter a username, optionally a name and email address, and pick a
 role (Viewer if you don't). Usernames are 1 to 64 lower-case letters, digits, dots,
 dashes, underscores or `@`, starting with a letter or digit; they are not case
 sensitive. Signalith makes up a temporary password and shows it once (or you can
-type one, at least 8 characters). Give it to the person: at their first sign-in they
+type one that follows the [password rules](#password-rules)). Give it to the person: at their first sign-in they
 must choose their own password before they can do anything else.
 
 **Change a user.** Edit their name and email, change their role, disable or enable
@@ -107,14 +115,34 @@ Passwords are stored as bcrypt hashes and never shown again.
 ## Changing your password
 
 Local users change their password from the user menu (**Change password**): enter
-the current password and the new one (at least 8 characters, at most 72 bytes).
+the current password and the new one, which follows the [password rules](#password-rules).
 Every other browser signed in as you is signed out, on every server that shares the
 users file too. Scripts using your old password with HTTP Basic auth stop working at
 once.
 
 Directory users change their password in the directory (for example with
 Ctrl+Alt+Del on Windows). The built-in admin's password is changed with
-`signalith passwd`.
+`signalith passwd`; on servers that share their users, the built-in admin can also
+change it here, from the user menu or **Change password** on its own row of the
+Users page.
+
+### Password rules
+
+A new password, chosen on the Users page, at **Change password**, with
+`signalith passwd` or `signalith init -admin-password`, must be:
+
+- at least 8 characters and at most 72 bytes (bcrypt reads no more);
+- not on a list of about 2,000 commonly used passwords (from
+  [SecLists](https://github.com/danielmiessler/SecLists)), whatever the case;
+- not one character or a short group repeated (`aaaaaaaa`, `abcabcabc`) or a run of
+  characters in order (`12345678`, `abcdefgh`, `87654321`);
+- not containing the username (for usernames of 3 or more characters), and not
+  `signalith` with only digits or symbols added (`Signalith2026!`).
+
+These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
+symbols. Passwords set before these rules are not checked
+again; they keep working until they are changed. Temporary passwords Signalith makes
+up always pass.
 
 ## Signing in
 
@@ -137,6 +165,7 @@ they do not reveal which usernames exist. Other answers are:
 | `password_expired` (403) | Active Directory says the password expired or must be changed |
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
+| `mfa_required`, `mfa_wrong`, `mfa_basic` | See [Two-step sign-in](#two-step-sign-in) |
 
 **Failed sign-in limits.** Wrong passwords are counted so that guessing stays slow,
 but someone guessing your password cannot keep you out:
@@ -154,6 +183,8 @@ limit. Wrong directory passwords count; an unreachable directory does not. Basic
 auth, **Test a user** with a password, and **Change password** share these limits.
 An IPv6 address is counted with the rest of its /64 network, since one computer can
 usually use any address in it.
+Servers that share their users share these limits too (see
+[Failed sign-in limits on several servers](#failed-sign-in-limits-on-several-servers)).
 
 **Browsers you signed in with keep working.** When you sign in, Signalith gives your
 browser a cookie that says it has signed in to that account before. The cookie is
@@ -177,7 +208,8 @@ stays the same.
 else is guessing your password. The cookie needs HTTPS: over plain HTTP no browser
 is remembered. Each server keeps its own key for these cookies, `signin.key` in its
 state folder; deleting it only means every browser signs in once more before it is
-recognized.
+recognized. Servers that share their users use one key instead, made from the cluster
+key, so a browser recognized by one server is recognized by every one.
 
 **Many people behind one address.** When people reach Signalith through one address,
 such as a reverse proxy, a load balancer, a NAT gateway or Docker Desktop's port
@@ -206,10 +238,16 @@ When an address is refused as a whole, the server log says so and names these
 settings.
 
 The web UI keeps you signed in with a session cookie. Sessions end after
-`auth.session_timeout` without activity (12 hours by default), after 7 days with
-**Keep me signed in**, when you sign out, when your password is changed, or when an
+`auth.session_timeout` without activity (**Sign out after** on the Settings page, 1
+hour by default) unless you tick **Keep me signed in**, and always after
+`auth.session_max_age` from sign-in (**Sign in again after**, 24 hours by default,
+from 1 hour to 30 days), with **Keep me signed in** too. The defaults are the NIST SP
+800-63B limits for AAL2, and the Security page flags longer ones. Sessions also end
+when you sign out, when your password is changed, or when an
 admin disables, deletes or resets your account. Servers that share the users file end
-them too, within a second or so.
+them too, within a second or so. Servers that share their users in OpenSearch keep the
+sessions there, so a session works on every server at once (see
+[Sessions on every server](#sessions-on-every-server)).
 
 Scripts and API clients can use HTTP Basic auth with the same username and password.
 Signalith remembers a correct username and password briefly so it does not check
@@ -224,6 +262,98 @@ accounts disabled in the directory are picked up as described in
 says `"must_change_password": true` and the sign-in page asks for a new password.
 Until it is changed, every request other than `GET /api/me` and
 `POST /api/me/password` answers `403` with code `password_change_required`.
+
+## Two-step sign-in
+
+Two-step sign-in asks for a code from an authenticator app on your phone after your
+password, so a stolen password alone cannot sign in. Any app that makes 6-digit codes
+works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
+others. It works for local users, the built-in admin and directory users. Users who
+sign in with single sign-on get their second step from their identity provider, and
+Signalith does not ask again, so require it there: **Require two-step sign-in** does
+not reach them.
+
+**Turn it on.** Open the user menu (your name, top right) and choose **Two-step
+sign-in**, then **Set up**:
+
+1. Scan the QR code with your authenticator app. Without a camera, type the key shown
+   under it into the app instead.
+2. Enter the 6-digit code the app shows, and choose **Turn on**. The QR code works for
+   15 minutes; after that, start again.
+3. Save the 10 recovery codes shown next (**Copy** or **Download**). Each one signs
+   you in once in place of a code from the app, for when you lose your phone. They are
+   not shown again.
+
+Every other browser signed in as you is signed out.
+
+**Signing in** then asks for the code after the password. A code works once, and the
+code just before or after the current one also works, for a phone clock a little off.
+**Use a recovery code instead** takes one of the recovery codes; after one is used,
+the page says how many are left. **Make new recovery codes** in the same menu replaces
+them all.
+
+**Turn it off** from the same menu, with a code from the app or a recovery code.
+
+**Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
+chooses **Reset two-step sign-in** on your row. You then sign in with your password
+alone, and set it up again. Admins cannot reset their own; another admin can. The
+built-in admin can also be reset by another admin.
+
+**Require it.** On the **Settings** page, **Require two-step sign-in**
+(`auth.mfa_required`) is `off` (the default), `admins` (every admin) or `everyone`.
+Someone it applies to who has not set it up is taken straight to setting it up after
+their password, and can do nothing else until they have.
+
+Wrong codes count toward the failed sign-in limits like wrong passwords, so someone
+who knows your password still cannot guess the code. Scripts cannot use HTTP Basic auth
+with an account that has two-step sign-in, or is required to: a script that only reads
+can use an [API token](ai-tools.md#api-tokens), which is never asked for a code; one
+that changes things needs its own account without two-step sign-in.
+
+The app's key is stored encrypted: in `users.json` with the master key, and on servers
+that share their users with the cluster key (re-encrypted when the cluster key is
+rotated). Recovery codes are kept only as hashes keyed with the app's key, so a copy
+of the file without the key that decrypts it gives them away no more than the key
+itself. If the key cannot be decrypted (for example, `users.json` restored next to
+another master key), neither codes from the app nor recovery codes work until an admin
+resets two-step sign-in.
+
+| `code` | When |
+| --- | --- |
+| `mfa_required` (401) | The password was right; send it again with `"code"` |
+| `mfa_wrong` (401) | Wrong code, or one used already |
+| `mfa_basic` (403) | HTTP Basic auth for an account with two-step sign-in, or required to have it |
+| `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
+| `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
+
+## Confirming it's you
+
+Some changes ask for your password again when you have not entered it in the last
+15 minutes, so someone at a computer you left signed in cannot make them:
+
+- adding, changing, disabling or deleting a user, resetting a password or two-step
+  sign-in, saving the directory sign-in settings, and setting up your own two-step
+  sign-in;
+- making an API token, an agent token or a token to add a server, accepting an old
+  shared agent token, approving a new server, and rotating the cluster key;
+- changing retention policies, the default or the disk guard, and running retention
+  now;
+- switching certificate authority, and saving response actions, playbooks or
+  notifications, or removing the detection content pack;
+- saving a setting that affects sign-in, encryption or where data goes: **Sign out
+  after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
+  settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
+  **Trusted reverse proxies**, **Client address header**, **Proxies and gateways**, the
+  PROXY protocol, the OpenSearch connection (`opensearch.*` and
+  `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
+  feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
+  and masked fields, or **Reset all**.
+
+With two-step sign-in on, a code from your app (or a recovery code) works instead of
+the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
+two-step sign-in and making new recovery codes always take a code. Scripts that use
+HTTP Basic auth send the password with every request, so they are never asked.
 
 ## Sign in with Active Directory or LDAP
 
@@ -403,6 +533,10 @@ variable only applies to `auth.ldap` in `signalith.yaml`: settings made on the U
 page keep their own password in `directory.json`, and Signalith logs a warning at
 start-up when the variable is set without `auth.ldap`.
 
+On servers that share their users, `auth.ldap` no longer makes the page read-only:
+the settings in signalith.yaml are applied to the shared ones only when they change
+(see [Directory settings on several servers](#directory-settings-on-several-servers)).
+
 `signalith validate` checks the settings, so run it with the same environment as the
 service. `signalith passwd` works without the variable, so the built-in admin's
 password can always be reset from a shell.
@@ -435,6 +569,13 @@ The keys are the same in `signalith.yaml` and the API.
 | `group_filter` | preset | Filter for `search`, with `{dn}` and/or `{username}` |
 | `admin_groups`, `analyst_groups`, `viewer_groups` | none | Group DNs whose members get each role; the highest wins. Compared the way the directory compares DNs (case and spacing do not matter) |
 | `default_role` | `none` | Role for users in no mapped group: `none` refuses them, `viewer` lets them in as viewers |
+
+## Sign in with single sign-on
+
+People can also sign in with an OpenID Connect identity provider, such as Microsoft Entra ID,
+Okta, Google or Keycloak, from a button on the sign-in page. Their role comes from their groups
+at the provider, at every sign-in, and they show on the Users page with the source
+**Single sign-on**. Set it up on **Settings > Single sign-on**; see [sso.md](sso.md).
 
 ## Troubleshooting
 
@@ -515,11 +656,174 @@ the Users page to stop them at once.
 not have the service's environment. Load the service's environment file first, for
 example `sudo sh -c 'set -a; . /etc/signalith/signalith.env; signalith validate -c /etc/signalith/signalith.yaml'`.
 
+## Users on several servers
+
+Servers that share one OpenSearch as a cluster (see [servers.md](servers.md)) share
+their users too, once every one of them runs this version: the local users, the
+directory users seen so far, their roles and password hashes, the built-in admin's
+password, the directory sign-in settings and the sign-in sessions. A user added,
+changed, disabled or deleted on any server's Users page is the same on every server
+within a couple of seconds, and a session made on one server works on all of them.
+Give the OpenSearch user the right to create, read and write `<prefix>_sessions` too
+(or `<prefix>_*`).
+
+### When the users become shared
+
+- **A new cluster** shares them from the start.
+- **Servers upgraded from an earlier version** share them once every server that ran
+  in the last 24 hours runs this version: a server of an earlier version would not see
+  them. Until then each server keeps its own `users.json`, `directory.json` and
+  sessions, as before, and the Users page and the Servers page say which servers still
+  need the upgrade. A server removed for good stops counting 24 hours after it was last
+  seen. Once the users are shared, a server of an earlier version refuses to start on
+  this OpenSearch and says it needs a newer version.
+- **Where they come from.** The server that founded the cluster brings in its users,
+  its directory settings and the built-in admin's password in use there (an
+  `admin-password-hash` file from `signalith passwd` included), as soon as every
+  server runs this version, whether or not it runs the background jobs. While it is
+  down, the Servers page says the users wait for it. If it has not been seen for 7
+  days, the server that runs the jobs does it instead, and the Servers page names the
+  servers whose users differed from its own. Users that only another server had are not brought in: add them again on
+  the Users page. `users.json` and `directory.json` stay as they were, unused.
+- **Sessions carry over** when the users become shared: a browser signed in to a
+  server stays signed in to it, as long as the shared users have its user as they were
+  there (same source, role and password, enabled). The others, such as a server's own
+  users that were not brought in, or a built-in admin whose password differed, sign in
+  once more. A carried session works on the server that made it, until it ends as any
+  session does (a new password, disabled, signed out, idle, `auth.session_max_age`) or that server
+  stops; signing in again gives a session that works on every server.
+
+What stays per server: `auth.session_timeout` and `auth.session_max_age` (each server
+ends idle and old sessions after its own values) and the Basic auth cache. `auth.admin_user` is taken from the server that
+brought the users in; a server whose `auth.admin_user` differs logs a warning and uses
+the shared name.
+
+**Password hashes in OpenSearch.** Users are kept in the `<prefix>_config` index,
+signed with the cluster key, so a user changed or added in OpenSearch outside
+Signalith is refused. Their bcrypt password hashes are stored as they are, not
+encrypted: encrypting them with the cluster key would lock everyone out after
+`signalith cluster reset-key`. Anyone who can read `<prefix>_config` can read the
+hashes, as anyone who can read Signalith's indices can read your events: give that
+right only to Signalith's own OpenSearch user. The directory's service account
+password is encrypted with the cluster key.
+
+### Sessions on every server
+
+A session cookie made by one server works on every server at once, so a load balancer
+needs no sticky sessions, and when a server stops, the people it served keep working
+on the others. Signing out, a password change or reset, disabling or deleting a user
+ends their sessions on every server within about 2 seconds (at most 15 seconds if a
+server cannot read OpenSearch meanwhile). A user has at most 50 sessions; a 51st ends
+the oldest.
+
+The session cookie is a `__Host-` cookie, which browsers keep for exactly the address
+they used. Through one load balancer address, people sign in once; reaching
+`siem-a.example.com` and `siem-b.example.com` directly takes a sign-in on each.
+
+### The built-in admin on several servers
+
+The built-in admin has one password for every server.
+
+- **`signalith passwd`** on any server of the cluster changes it for every server
+  within a few seconds, with no restart. When OpenSearch cannot be reached, or the
+  users are not shared yet, it changes this server's files as before and says what
+  that does on a member: a password it keeps in `admin-password-hash` in the state
+  folder (the Docker quick start, or a service given the password) is used only while
+  this server keeps its users in its own files, not as the cluster's password and not
+  while OpenSearch is down; one it writes to `auth.admin_password_hash` in
+  signalith.yaml becomes the password of every server the next time this server starts
+  with OpenSearch available, since the file changed. Run it again once OpenSearch
+  answers to change the cluster's password at once.
+- **On the page.** Signed in as the built-in admin, use **Change password** in the user
+  menu, or on the built-in admin's row on the Users page. Other admins cannot change
+  it there.
+- **`signalith passwd -local`** keeps a password on this server only. On a server
+  that was ever a member of a cluster it is kept in `admin-password-local` in its state
+  folder and works only while the shared settings cannot be used (OpenSearch down or
+  refusing writes), within a few seconds and with no restart, so you can always sign in
+  to fix that. It is the only break-glass password: an `admin-password-hash` an earlier
+  `signalith passwd` wrote (as on Docker and service installs) is not used once the
+  users are shared, so a password that leaked before does not come back while
+  OpenSearch is down. Change or delete `admin-password-local` when the person who knew
+  it should no longer have it. On a server that was never a member, `-local` writes
+  `admin-password-hash`, which replaces the configured password at the next restart, as
+  `signalith passwd` does there.
+- **`auth.admin_password_hash`, `SIGNALITH_ADMIN_PASSWORD` and
+  `SIGNALITH_ADMIN_PASSWORD_FILE`** apply only when they change: a server that starts
+  with a changed value sets it as the shared password and logs
+  `auth.admin_password_hash applied from the environment on siem-b`. An unchanged
+  value, such as the Docker quick start's password file, never undoes a later
+  `signalith passwd`.
+
+### Directory settings on several servers
+
+The servers share one set of directory sign-in settings, which an admin can change on
+the Users page of any server, also when they came from `auth.ldap` in signalith.yaml.
+The page says where the settings in use came from: applied from signalith.yaml, saved
+on the page, brought in, or the service account password set from
+`SIGNALITH_LDAP_BIND_PASSWORD`, with the server and the time.
+
+`auth.ldap` and `SIGNALITH_LDAP_BIND_PASSWORD` apply only when they change, like the
+admin password above: an unchanged signalith.yaml never undoes a change made on the
+page, and a server whose file differs without having changed only notes it in its
+heartbeat (`settings_drift`). `SIGNALITH_LDAP_BIND_PASSWORD` is used only on a server
+whose signalith.yaml has `auth.ldap`, and only while the shared settings connect to the
+same servers, as the same bind DN and with the same TLS settings as that file: when
+someone changed them on the page, a new password from the environment is not used with
+them, and the server logs a warning instead.
+
+The service account's password is encrypted with the cluster key for the saved
+servers, bind DN and TLS settings: change any of them and it must be typed again, so
+it can never be sent to a server someone else chose, even by editing OpenSearch.
+
+Signed-in directory users are looked up again every 5 minutes, and right after the
+settings change, by the server that runs the background jobs, for every server. The
+other servers ask the directory only to sign people in.
+
+### Failed sign-in limits on several servers
+
+Each server counts wrong passwords, with the limits divided by the number of servers
+that are up, but never below 3: with two servers, 5 wrong passwords for one account
+from one address pause it, and 15 from one address pause the address. A pause on one
+server applies on every server within seconds. As on one server, an account is never
+locked, only slowed down for strangers, and an address under **Proxies and gateways**
+is never paused as a whole. While OpenSearch cannot be used, each server applies its
+own limits only.
+
+### Changes at the same moment
+
+`GET /api/users` gives each user's version (`etag`), and `GET /api/auth/directory` the
+settings'. A change sent with `If-Match` and that version is refused with `412` when
+someone changed the user or the settings meanwhile; the answer says who, on which
+server and when, and the page says so and shows their change. Without `If-Match`, a
+change applies to the user as they are now, so a change made on another server at the
+same moment is kept. While a server cannot write the shared settings, changes there
+answer `503`.
+
+### When OpenSearch cannot be used
+
+When a server cannot reach OpenSearch, or OpenSearch refuses writes because its disk is
+full:
+
+- Sessions it has already checked keep working for 5 minutes after it last confirmed
+  them with OpenSearch, even one signed out on another server meanwhile.
+- Only admins can sign in, with a session or with HTTP Basic credentials: the
+  built-in admin (with the password this server last read, or the one
+  `signalith passwd -local` set), and local admins when this server's copy of the users
+  is at most 24 hours old. Everyone else gets `503` with the code `degraded`, which does
+  not count as a failed sign-in. Their session works on this server only,
+  for at most an hour, and the log says so. Once OpenSearch takes writes again, it is
+  stored for every server if the user is still an enabled admin whose password did not
+  change meanwhile; otherwise it ends. Directory users and everyone else sign in again
+  once OpenSearch is back.
+- Changes on the Users page answer `503`. Last sign-ins and pauses of addresses are not
+  shared meanwhile.
+
 ## Where user data is stored
 
 | File | Holds | Default place |
 | --- | --- | --- |
-| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
+| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
 | `directory.json` | Directory sign-in settings from the Users page, including the service account's password | Next to `users.json` |
 
 The lookups folder is:
@@ -543,6 +847,9 @@ otherwise it checks for changes about once a second. While a server changes
 `users.json` it keeps a small `users.json.lock` file next to it; leave that file
 alone, it goes away by itself.
 
+On servers that share their users, these files are only what the users were
+brought in from: see [Users on several servers](#users-on-several-servers).
+
 If `users.json` is damaged, Signalith refuses to start and says so. If it becomes
 damaged while Signalith runs, everyone signed in keeps working, but every change on
 the **Users** page fails with a message that says so. Either way, fix the file, or
@@ -559,7 +866,8 @@ the Settings page and restarts are logged the same way; see
 
 | Message | Fields |
 | --- | --- |
-| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic) |
+| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic), `mfa` (`app` or `recovery`, when a code was asked for), `recovery_codes_left` |
+| `password accepted, waiting for the two-step code` | `user`, `client`, `method` |
 | `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
 | `sign-ins from this address are paused …` | `client`, `minutes` |
 | `signed out` | `user`, `client` |
@@ -571,11 +879,31 @@ the Settings page and restarts are logged the same way; see
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
 | `password change refused` | `user`, `client`, `reason`, `locked_out` |
+| `two-step sign-in turned on` | `by`, `user`, `other_sessions_ended` |
+| `two-step sign-in turned off` | `by`, `user` |
+| `two-step sign-in reset` | `by` (the admin), `user` |
+| `new recovery codes made` | `by`, `user` |
+| `recovery code used` | `by`, `user`, `recovery_codes_left` |
+| `two-step code refused` | `user`, `client`, `locked_out` |
+| `password or code entered again` | `by`, `user`, `with` (`password`, `app` or `recovery`) |
+| `recheck refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
 | `directory user lost access` | `by=directory`, `user`, `reason`, `sessions_ended` |
 | `directory user's role changed` | `by=directory`, `user`, `from`, `to` |
+
+Servers that share their users also log these:
+
+| Message | Fields |
+| --- | --- |
+| `kept the sign-in sessions made before the users were shared` | `kept`, `ended`: when this server starts using the shared users (see [When the users become shared](#when-the-users-become-shared)) |
+| `signed in while OpenSearch cannot be written; …` | `user`, `method`, `client`: a session kept on this server only (see [When OpenSearch cannot be used](#when-opensearch-cannot-be-used)) |
+| `wrote through a session made while OpenSearch could not be written` | `user` |
+| `a session made while OpenSearch could not be written ended: …` | `user` |
+| `session.tamper: …` | `session`, `user`, `node`: a session in OpenSearch was changed or made outside Signalith, and is refused |
+| `changed the built-in admin's password for every server of the cluster` | `by`, `user` (from `signalith passwd`) |
+| `auth.admin_password_hash applied from the environment on siem-b`, `auth.ldap applied from signalith.yaml on siem-b` | `setting`, `server` |
 
 `client` is the address the request came from. Behind a reverse proxy listed under
 **Trusted reverse proxies**, with **Client address header** chosen, it is the address
@@ -595,27 +923,60 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
-`POST /api/otlp/v1/logs` (which take an ingest token), and osquery's routes under `/api/osquery/`
-(`POST /api/osquery/enroll` takes an ingest token; the others take the node key a host got when it
-enrolled; see [endpoints.md](endpoints.md)). Requests from a browser that change something must come from the Signalith
+`POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
+password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
+token; the others take the node key a host got when it enrolled; see
+[endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
+`GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
+`POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
+token itself; it counts against the sign-in limits per token and per address, its body is at most
+16 KiB, and every refusal gets the same answer: `403`, with its own text only once the proof
+matched and the token was left unused, such as another version; `500` when the token was used but
+the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
+`GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
+program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)),
+`GET /api/sensor/install.sh` (the network sensor's install script, also public), and the two
+routes that script calls with the sensor's own agent token, `GET /api/sensor/config` (the
+sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the sensor's data
+arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
+minutes); all three take only an active token made for a sensor (see
+[network-sensor.md](network-sensor.md#building-a-new-sensor)).
+The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
+the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
+[sso.md](sso.md#how-it-works)). The `/api/scim/v2` routes, through which the identity provider
+provisions single sign-on users, take the SCIM token instead of a sign-in, and only over HTTPS
+(see [sso.md](sso.md#provisioning-with-scim)). Requests from a browser that change something must come from the Signalith
 page itself.
+
+Every answer carries the server's version in `X-Signalith-Version`. Answers to
+signed-in requests (and to a successful sign-in) also carry `X-Signalith-Config`,
+once the server has read the shared settings. Behind a load balancer, send the
+`X-Signalith-Config` of a change's answer as `X-Signalith-Config-Min` on the next
+request, so a server that has not yet read that change reads it first (see
+[Several servers behind one address](servers.md#several-servers-behind-one-address)).
 
 ### Roles of every route
 
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
-`POST /api/me/password`.
+`POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
+`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
+`POST /api/me/recheck`.
 
-**Viewer:** `GET /api/health`, `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
-`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/findings`, `GET /api/findings/summary`,
+`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`,
+`GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, and the web UI.
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/compliance`,
+`GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
+so an auditor can work with a Viewer account), `GET /api/cluster/features`
+(which features wait until every server runs a newer version; only admins see which servers
+they wait for), and the web UI.
 
 **Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
@@ -625,35 +986,79 @@ page itself.
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
 `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
 `GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
+`GET /api/vulns`, `GET /api/vulns/hosts/{id}` (what [vulnerability scans](vulnerabilities.md) found),
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
-[response actions](response-actions.md)).
+[response actions](response-actions.md)), `GET /api/playbooks/runs`,
+`POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
+(the Approvals page; see [playbooks.md](playbooks.md)), `GET /api/agent-tokens` (the names,
+status and use of the [agent tokens](agent-tokens.md), never a secret), `GET /api/agents` (the
+agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api/investigate`,
+`POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
+([Investigate with AI](investigate.md), once an admin turns it on).
 
-**Admin:** `GET /api/agents/config`, `POST /api/tls/names`, `GET /api/security`,
+**Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
+with a DNS check; see [load-balancers.md](load-balancers.md)),
+`GET /api/sensor/install` (the line that sets up a
+[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
+sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
+`PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
+[network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
+`PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
+`POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
+(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+`POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
+server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`,
+`POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
-`POST /api/detections/{id}/run`, `PUT /api/lookups/{kind}`,
+`POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
 `GET /api/respond/config`, `PUT /api/respond/config`, `POST /api/respond/test`
 (setting up [response actions](response-actions.md)),
+`GET /api/playbooks`, `PUT /api/playbooks` (the Playbooks page; see [playbooks.md](playbooks.md)),
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
-`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), every
+`GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
+`POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
+`PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
+Signalith or not applicable),
+`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
+(restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
+`POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
+[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+`POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
+the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
+`POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
+fingerprint), `GET /api/cluster/opensearch-identity`
+(who each server signs in to OpenSearch as; see
+[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
+`POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
+`DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
+(draining and removing servers, and rotating the cluster key; see
+[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
+page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
+`GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
+(work asked of the server that runs the background jobs, such as a feed download or a retention
+run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
-`/api/retention` route (see [retention.md](retention.md)), every
-`/api/users` and `/api/auth/directory` route below, and every `/api/settings` route
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
+`GET /api/audit/servers` (the [Audit page](audit.md)), every
+`/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
+three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
+[sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
-ingest and the CA certificate, `GET /api/tls/ca.pem`) is admin-only.
+ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the three install
+downloads and the two single sign-on routes) is admin-only.
 
 A refused request:
 
@@ -677,7 +1082,46 @@ A refused request:
 `POST /api/me/password` with `{"current_password": "...", "new_password": "..."}`
 returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `current_password`), `same_password`, `invalid_password` (field `new_password`),
-`builtin` or `directory` (those passwords are changed elsewhere).
+`builtin` or `directory` (those passwords are changed elsewhere). On servers that
+share their users, the built-in admin may change its own password here too
+(`can_change_password` says so), and the answer sets a new session cookie: the
+password change ended every session of the user, this one's too.
+
+### Two-step sign-in
+
+`POST /api/login` with `{"username", "password"}` answers `401` with
+`"code": "mfa_required"` when the account has two-step sign-in; send the same body
+again with `"code": "123456"` (or a recovery code). The reply then has `"mfa": true`,
+and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
+`"mfa"` and `"must_setup_mfa"`.
+
+| Route | Body | Reply |
+| --- | --- | --- |
+| `GET /api/me/mfa` | | `{"on", "required", "possible", "since", "recovery_left"}` |
+| `POST /api/me/mfa/setup` | | `{"secret", "otpauth", "qr_svg", "expires_in"}`: a new key, not used until confirmed |
+| `POST /api/me/mfa/confirm` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}`, and a new session cookie |
+| `POST /api/me/mfa/recovery` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}` |
+| `POST /api/me/mfa/off` | `{"code"}` | `{"mfa": {...}}`; an empty body only drops a setup not confirmed yet |
+| `DELETE /api/users/{username}/mfa` (admin) | | `{"username", "mfa": false}`; `409` for your own account |
+
+A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
+sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
+
+### Confirming it's you
+
+A change that needs the password again (see [Confirming it's you](#confirming-its-you))
+answers `403`:
+
+```json
+{"code": "recheck_required", "with": "password", "minutes": 15,
+ "error": "Enter your password to make this change."}
+```
+
+`with` is `password`, `password_or_code` (two-step sign-in is on) or `sign_in` (the
+account signs in elsewhere, so sign in again). `POST /api/me/recheck` with
+`{"password": "..."}` or `{"code": "123456"}` sets a cookie for this sign-in session
+that lasts 15 minutes; then send the change again. A wrong password answers `400` with
+`"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 
 ### Users (admin)
 
@@ -696,12 +1140,24 @@ returns the same object. Errors are `400` with a `code`: `wrong_password` (field
      "last_sign_in": "2026-10-12T15:35:11Z", "you": false, "actions": ["disable", "delete"]}
   ],
   "roles": [{"id": "viewer", "label": "Viewer", "description": "..."}, ...],
-  "directory": {"enabled": true, "from_config": false}
+  "directory": {"enabled": true, "from_config": false},
+  "shared": false,
+  "shared_pending": null
 }
 ```
 
+Each user also has `etag`, its version for `If-Match`. On servers that share their
+users, `shared` is `true` and `last_sign_in_server` names the server of the last
+sign-in. On a server of a cluster whose users are not shared yet, `shared_pending`
+says why: `{"version": "1.6.0", "servers": [{"name": "siem-b", "version": "1.5.0"}]}`
+lists the servers whose version must be upgraded first, and an empty `servers` means
+the users wait to be brought in (see
+[When the users become shared](#when-the-users-become-shared)).
+
 `actions` lists what the signed-in admin may do to that user: `edit` (name and
-email), `role`, `reset_password`, `disable` or `enable`, and `delete`. A directory
+email), `role`, `reset_password`, `reset_mfa`, `disable` or `enable`, and `delete`; and, on the
+built-in admin's own row when the users are shared, `change_password` (with
+`POST /api/me/password`). A directory
 user the directory no longer lets in has `"role": ""` and `"refused"` saying why, for
 example `"in no group mapped to a role"`.
 
@@ -717,6 +1173,18 @@ the problem (`username`, `name`, `email`, `role`, `password`): `400` for a bad v
 `404` for an unknown user, `409` for a taken name, the built-in admin, a change to
 your own account, the last admin, or a directory user's name, email, role or
 password.
+
+`PUT` and `DELETE /api/users/{username}` and `POST /api/users/{username}/password`
+take an optional `If-Match` header with the user's `etag`. When the user changed
+since, they answer `412`; on servers that share their users the answer says who
+changed it, where and when:
+
+```json
+{"error": "it was changed on siem-b by ann at 2026-10-14T09:12:03Z; reload it", "code": "stale",
+ "changed_by": "ann", "changed_on": "siem-b", "changed_at": "2026-10-14T09:12:03Z"}
+```
+
+While a server cannot write the shared settings, changes answer `503`.
 
 ### Directory sign-in (admin)
 
@@ -742,8 +1210,14 @@ password.
 }
 ```
 
-`from_config` is `true` when the settings come from `signalith.yaml`; `config_file`
-then names the file, and `PUT` answers `409`.
+`from_config` is `true` when the settings come from `signalith.yaml` on a server that
+keeps them in its own files; `config_file` then names the file, and `PUT` answers
+`409`. `etag` is the settings' version for `If-Match` on `PUT` (`412` when they changed
+since). `from` says where the settings in use came from:
+`{"source": "yaml", "node": "siem-a", "at": "..."}`, with `source` `yaml`, `page`,
+`import` (the first server's files, when the servers began sharing users) or `env`
+(the service account password from `SIGNALITH_LDAP_BIND_PASSWORD` changed); `node` and
+`at` are given on servers that share their users, where `shared` is `true`.
 
 `PUT /api/auth/directory` takes the `settings` object (with `bind_password` instead
 of `bind_password_set`; leave it empty to keep the saved one). Settings that need

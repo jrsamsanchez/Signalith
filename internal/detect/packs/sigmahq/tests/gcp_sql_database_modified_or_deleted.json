@@ -1,0 +1,4 @@
+{"rule": "f346bbd5-2c4e-4789-a221-72de7685090d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"cloudsql.instances.create"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

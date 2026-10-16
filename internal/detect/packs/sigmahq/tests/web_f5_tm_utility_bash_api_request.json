@@ -1,0 +1,5 @@
+{"rule": "85254a62-22be-4239-b79c-2ec17e566c37", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"/mgmt/tm/util/bash"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"url":"/mgmt/tm/util/bash"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "e4f93c99-396f-47c8-bb0f-201b1fa69034", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"BinaryWriter 0x52 0x56 0x49 0x45 [IO.FileMode]:: 0x57 0x46 0x41 0xAC [System.Math]::"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

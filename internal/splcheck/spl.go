@@ -1,0 +1,1086 @@
+// Package splcheck reads Splunk security_content detections: the YAML
+// rule, the tstats search over a CIM data model node, and the where clause
+// that selects events, with the project's macros expanded. It evaluates
+// that where clause on an event the way Splunk does, and makes test events
+// from it, so the Splunk content pack can prove each converted rule finds
+// what the original finds (see Verify).
+package splcheck
+
+import (
+	"errors"
+	"fmt"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/query"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Rule is one Splunk security_content detection.
+type Rule struct {
+	Name           string   `yaml:"name"`
+	ID             string   `yaml:"id"`
+	Author         string   `yaml:"author"`
+	Status         string   `yaml:"status"`
+	Type           string   `yaml:"type"` // TTP, Anomaly, Hunting or Correlation
+	Description    string   `yaml:"description"`
+	DataSource     []string `yaml:"data_source"`
+	Search         string   `yaml:"search"`
+	HowToImplement string   `yaml:"how_to_implement"`
+	FalsePositives string   `yaml:"known_false_positives"`
+	References     []string `yaml:"references"`
+	Tags           struct {
+		MitreAttackID  []string `yaml:"mitre_attack_id"`
+		AnalyticStory  []string `yaml:"analytic_story"`
+		SecurityDomain string   `yaml:"security_domain"`
+	} `yaml:"tags"`
+	AnalyticStory []string `yaml:"analytic_story"`
+	// MitreAttackID is where newer rules list their techniques (older
+	// ones use tags.mitre_attack_id).
+	MitreAttackID []string `yaml:"mitre_attack_id"`
+	Finding       struct {
+		Title  string `yaml:"title"`
+		Entity struct {
+			Field string `yaml:"field"`
+			Type  string `yaml:"type"`
+			Score int    `yaml:"score"`
+		} `yaml:"entity"`
+	} `yaml:"finding"`
+	RBA struct {
+		Message     string `yaml:"message"`
+		RiskObjects []struct {
+			Field string `yaml:"field"`
+			Type  string `yaml:"type"`
+			Score int    `yaml:"score"`
+		} `yaml:"risk_objects"`
+	} `yaml:"rba"`
+
+	// Node is the data model node the search reads: Processes,
+	// Filesystem or Registry (from datamodel=Endpoint.<Node>).
+	Node string `yaml:"-"`
+	// Where selects the node's events.
+	Where Expr `yaml:"-"`
+	// Linux is set for a rule over Sysmon for Linux events only.
+	Linux bool `yaml:"-"`
+	// Threshold is set for a rule that counts the events Where selects.
+	Threshold *Threshold `yaml:"-"`
+	// Post is the search's later stages that do more than filter, in
+	// Signalith's search language, to run after the filter ("" for
+	// none); post is the same, parsed.
+	Post string          `yaml:"-"`
+	post []query.Command `yaml:"-"`
+}
+
+// Score is the risk the rule assigns, 0 when it names none.
+func (r *Rule) Score() int {
+	if r.Finding.Entity.Score > 0 {
+		return r.Finding.Entity.Score
+	}
+	best := 0
+	for _, o := range r.RBA.RiskObjects {
+		best = max(best, o.Score)
+	}
+	return best
+}
+
+// Macro is one of security_content's search macros.
+type Macro struct {
+	Name       string   `yaml:"name"`
+	Definition string   `yaml:"definition"`
+	Arguments  []string `yaml:"arguments"`
+}
+
+// ParseMacro reads a macro file.
+func ParseMacro(src []byte) (*Macro, error) {
+	var m Macro
+	if err := yaml.Unmarshal(src, &m); err != nil {
+		return nil, err
+	}
+	if m.Name == "" {
+		return nil, errors.New("macro has no name")
+	}
+	return &m, nil
+}
+
+// Nodes are the data model nodes splcheck reads, with the fields a where
+// clause may name on each (the CIM names, which are also Signalith's).
+var Nodes = map[string][]string{
+	"Processes": {
+		"process", "process_name", "process_path", "original_file_name", "parent_process",
+		"parent_process_name", "parent_process_path", "user", "process_integrity_level",
+		"process_current_directory", "process_id", "parent_process_id",
+	},
+	"Filesystem": {"file_path", "file_name", "action", "process_name", "process_path", "user"},
+	"Registry": {
+		"registry_path", "registry_key_name", "registry_value_name", "registry_value_data", "action",
+		"process_name", "process_path", "user",
+	},
+	// Network_Traffic.All_Traffic, as Sysmon's network connections (3)
+	// fill it.
+	"All_Traffic": {"app", "dest_ip", "dest_port", "src_ip", "src_port", "transport"},
+	// Web, as web servers' access logs fill it.
+	"Web": {
+		"url", "url_length", "uri_path", "uri_query", "http_method", "status", "http_user_agent",
+		"http_user_agent_length", "http_referrer", "src", "dest", "user", "bytes_out", "dest_port",
+	},
+}
+
+// NodeRenames are the node fields Signalith stores under another name:
+// a connection's app is its program's path, and its addresses are dest
+// and src.
+var NodeRenames = map[string]map[string]string{
+	"All_Traffic": {"app": "process_path", "dest_ip": "dest", "src_ip": "src"},
+}
+
+// nodeField is the Signalith field a node's field is stored as.
+func nodeField(node, f string) string {
+	if r, ok := NodeRenames[node][f]; ok {
+		return r
+	}
+	return f
+}
+
+// The stages after the where clause that only reshape the results.
+var (
+	tstatsRe    = regexp.MustCompile(`(?is)^\|\s*tstats\s+(.*?)\s*\bfrom\s+datamodel=(Endpoint|Network_Traffic|Web)(?:\.(\w+))?\s+where\s+(.*?)\s+by\s+([^|]*)$`)
+	harmlessRe  = regexp.MustCompile("^`(drop_dm_object_name|security_content_ctime)\\([^`]*\\)`$")
+	filterRe    = regexp.MustCompile("^`[\\w-]+_filter`$")
+	summariesRe = regexp.MustCompile("`security_content_summariesonly`")
+	commentRe   = regexp.MustCompile("(?s)```.*?```")
+	// where isnotnull(field) after the tstats keeps the rows that have
+	// the field, which is field=* in the where clause.
+	notNullRe = regexp.MustCompile(`(?i)^where\s+isnotnull\((\w+)\)$`)
+)
+
+// Parse reads a detection and its search. Only a tstats search over
+// Endpoint.Processes, Filesystem or Registry whose later stages just
+// rename fields, format times and apply the rule's own (empty) filter
+// macro is understood; anything else is an error that says what.
+func Parse(src []byte, macros map[string]*Macro) (*Rule, error) {
+	return ParseWith(src, macros, ParseOptions{})
+}
+
+// ParseWith is Parse with options.
+func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
+	var r Rule
+	if err := yaml.Unmarshal(src, &r); err != nil {
+		return nil, err
+	}
+	if r.ID == "" || r.Name == "" || r.Search == "" {
+		return nil, errors.New("not a detection: name, id and search are required")
+	}
+	// osquery's results are Linux events too, which Signalith keeps in
+	// another data model; Sysmon for Linux is what the rule reads here.
+	r.Linux = slices.ContainsFunc(r.DataSource, func(s string) bool {
+		return strings.HasPrefix(s, "Sysmon for Linux ")
+	}) && !slices.ContainsFunc(r.DataSource, func(s string) bool {
+		return !strings.HasPrefix(s, "Sysmon for Linux ") && s != "Osquery Results"
+	})
+	// ```text``` is a comment in SPL.
+	stages := pipes(strings.TrimSpace(commentRe.ReplaceAllString(r.Search, " ")))
+	if len(stages) == 0 {
+		return nil, errors.New("empty search")
+	}
+	if m := rawRe.FindStringSubmatch(stages[0]); m != nil {
+		return parseRaw(&r, m[1], m[2], stages[1:], macros)
+	}
+	first := summariesRe.ReplaceAllString("| "+stages[0], "")
+	m := tstatsRe.FindStringSubmatch(first)
+	if opt.Network {
+		if _, nm, ok := sensorNode(first); ok {
+			m = nm
+		} else if m == nil {
+			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
+		}
+	}
+	if m == nil {
+		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
+	}
+	r.Node = m[3]
+	if r.Node == "" && strings.EqualFold(m[2], "Web") {
+		// datamodel=Web is its one node, Web.
+		r.Node = "Web"
+	}
+	fields, ok := Nodes[r.Node]
+	if !opt.Network && IsSensorNode(r.Node) {
+		ok = false
+	}
+	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
+		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
+	}
+	var present []Expr
+	var post []string
+	for i, s := range stages[1:] {
+		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
+			t, err := tstatsThreshold(r.Node, m[1], m[5], limits)
+			if err != nil {
+				return nil, err
+			}
+			r.Threshold = t
+			continue
+		}
+		if nn := notNullRe.FindStringSubmatch(s); nn != nil && slices.Contains(fields, nn[1]) {
+			present = append(present, &Cmp{Field: nodeField(r.Node, nn[1]), Values: []string{"*"}})
+			continue
+		}
+		e, ok, err := regexStage(s, func(f string) (string, error) {
+			if !slices.Contains(fields, f) {
+				return "", fmt.Errorf("field %s has no Signalith mapping", f)
+			}
+			return nodeField(r.Node, f), nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			present = append(present, e)
+			continue
+		}
+		if !harmlessRe.MatchString(s) && !filterRe.MatchString(s) {
+			if r.Threshold != nil {
+				return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+			}
+			// This stage and the ones after it run as written.
+			post = stages[1+i:]
+			break
+		}
+	}
+	if post != nil {
+		group, err := tstatsGroup(m[1], m[5])
+		if err != nil {
+			return nil, err
+		}
+		field := func(f string) (string, bool) {
+			if !slices.Contains(fields, f) {
+				return "", false
+			}
+			return nodeField(r.Node, f), true
+		}
+		if err := r.postCommands(post, field, group); err != nil {
+			return nil, err
+		}
+	}
+	where, err := ParseWhere(m[4], r.Node, macros)
+	if err != nil {
+		return nil, err
+	}
+	if where, err = dropPlatform(where, r.Linux); err != nil {
+		return nil, err
+	}
+	if len(present) > 0 {
+		where = &And{Kids: append([]Expr{where}, present...)}
+	}
+	r.Where = where
+	return &r, nil
+}
+
+// Raw event searches: a source macro, then terms on the event's own
+// fields, which must name the event code (EventCode=10). The code picks
+// the node, and each node's fields map to the Signalith fields they are
+// stored as. The code stays in the clause as signature_id.
+var (
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`\\s+(.*)$")
+	// rawNodes are the nodes of each source by event code.
+	rawNodes = map[string]map[string]string{
+		"powershell": {"4104": "PowerShell"},
+		"sysmon": {
+			"1": "Processes", "3": "NetworkConnection", "7": "ImageLoad", "8": "ProcessAccess", "10": "ProcessAccess",
+			"22": "DnsQuery", "15": "FileStream", "17": "Pipe", "18": "Pipe", "5": "ProcessTerminated", "9": "RawAccessRead",
+			"11": "Filesystem", "23": "Filesystem", "26": "Filesystem", "12": "Registry", "13": "Registry", "14": "Registry",
+		},
+		// Security events the Windows parser reads.
+		"wineventlog_security": {
+			"4624": "Logon", "4625": "Logon", "4698": "TaskCreated", "4663": "ObjectAccess", "5136": "DirectoryChange", "5145": "ShareAccess",
+			"4768": "KerberosTGT", "4769": "KerberosService", "4738": "UserChanged", "4732": "GroupMemberAdded",
+			"4648": "ExplicitLogon", "4776": "NtlmAuth", "4771": "KerberosPreAuth", "4741": "ComputerChanged",
+			"4742": "ComputerChanged", "4781": "AccountRenamed", "4727": "GroupChanged", "4730": "GroupChanged",
+			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
+			"4887": "CertRequest",
+		},
+		// The Service Control Manager's service installed event.
+		"wineventlog_system": {"7045": "ServiceInstalled"},
+		// Linux audit records: every record type is one node, whose
+		// fields are auditd's own (AuditdNode).
+		"linux_auditd": {},
+		// CloudTrail records: one node (CloudTrailNode).
+		"cloudtrail": {},
+		// Entra ID and Azure records: one node (AzureNode).
+		"azure_monitor_aad":      {},
+		"azure_monitor_activity": {},
+		// Microsoft 365 audit records: one node (O365Node).
+		o365Source: {},
+	}
+	// RawFields are the event fields a raw search may name on each node,
+	// with the Signalith field each is stored as.
+	RawFields = map[string]map[string]string{
+		"PowerShell": {"ScriptBlockText": "script_block_text"},
+		"ImageLoad": {
+			"ImageLoaded": "loaded_file_path", "loaded_file_path": "loaded_file_path",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"Signed": "signed", "SignatureStatus": "signature_status", "Signature": "signature",
+			// The loaded file's version information.
+			"OriginalFileName": "loaded_original_file_name", "Description": "loaded_file_description",
+			"Product": "loaded_file_product", "Company": "loaded_file_company",
+		},
+		// Sysmon's process created (1), file created or deleted (11, 23,
+		// 26) and registry (12-14) events, with the add-on's names for
+		// what it derives from them (process_name, file_name).
+		"Processes": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"CommandLine": "process", "process": "process", "OriginalFileName": "original_file_name",
+			"original_file_name": "original_file_name", "Description": "process_description", "Product": "process_product",
+			"Company": "process_company", "FileVersion": "process_file_version", "ParentImage": "parent_process_path",
+			"parent_process_path": "parent_process_path", "parent_process_name": "parent_process_name",
+			"ParentCommandLine": "parent_process", "parent_process": "parent_process", "IntegrityLevel": "process_integrity_level",
+			"CurrentDirectory": "process_current_directory",
+		},
+		// A network connection (3) and a DNS query (22), with the add-on's
+		// names: dest_ip and src_ip are the addresses Signalith keeps as
+		// dest and src.
+		"NetworkConnection": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+			"DestinationIp": "dest", "dest_ip": "dest", "DestinationPort": "dest_port", "dest_port": "dest_port",
+			"DestinationPortName": "dest_port_name", "DestinationHostname": "dest_host",
+			"SourceIp": "src", "src_ip": "src", "SourcePort": "src_port", "src_port": "src_port",
+		},
+		"DnsQuery": {
+			"QueryName": "query", "query": "query", "Image": "process_path", "process_path": "process_path",
+			"process_name": "process_name",
+		},
+		"Filesystem": {
+			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "action": "action",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		// An alternate data stream written (15): its path (file:stream)
+		// and, for small text streams, its contents.
+		"FileStream": {
+			"TargetFilename": "file_path", "file_path": "file_path", "file_name": "file_name", "Contents": "file_contents",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		// A named pipe created (17) or connected to (18); EventType is
+		// CreatePipe or ConnectPipe.
+		"Pipe": {
+			"PipeName": "pipe_name", "pipe_name": "pipe_name", "EventType": "pipe_event_type",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		"Registry": {
+			"TargetObject": "registry_path", "registry_path": "registry_path", "Details": "registry_value_data",
+			"registry_value_data": "registry_value_data", "EventType": "registry_event_type", "action": "action",
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		"ProcessAccess": {
+			"SourceImage": "process_path", "TargetImage": "target_process_path",
+			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": RawUser,
+		},
+		// A successful logon; the add-on names the logon type Logon_Type.
+		"Logon": {
+			"LogonType": "logon_type", "Logon_Type": "logon_type", "TargetUserName": "user",
+			"AuthenticationPackageName": "authentication_method", "LogonProcessName": "logon_process",
+			"IpAddress": "src", "WorkstationName": "src_host", "ProcessName": "process_path",
+		},
+		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
+		"ObjectAccess": {
+			"ObjectName": "object_path", "object_file_path": "object_path", "object_file_name": "object_name",
+			"ObjectType": "object_type", "AccessList": "access_list", "AccessMask": "access_mask",
+			"ProcessName": "process_path", "process_path": "process_path", "process_name": "process_name",
+			// The add-on's names for a file's path and name.
+			"file_path": "file_path", "file_name": "file_name",
+		},
+		"DirectoryChange": {
+			"ObjectDN": "object", "ObjectGUID": "ad_object_guid", "ObjectClass": "ad_object_class",
+			"AttributeLDAPDisplayName": "ad_attribute", "AttributeValue": "ad_value", "OperationType": "ad_operation",
+			"SubjectUserName": "user",
+		},
+		"ShareAccess": {
+			"ShareName": "share_name", "ShareLocalPath": "share_path", "RelativeTargetName": "share_target",
+			"ObjectType": "object_type", "IpAddress": "src", "AccessMask": "access_mask", "AccessList": "access_list",
+			"SubjectUserName": "user",
+		},
+		// Kerberos tickets asked for; the add-on's src_ip is the client
+		// address without its ::ffff: prefix, as Signalith stores src.
+		"KerberosTGT": {
+			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "PreAuthType": "pre_auth_type", "src_ip": "src",
+			"src": "src", "CertThumbprint": "cert_thumbprint", "CertIssuerName": "cert_issuer",
+		},
+		"KerberosService": {
+			"TargetUserName": "user", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "TicketEncryptionType": "ticket_encryption_type", "src_ip": "src",
+		},
+		// A user account changed, and a member added to a local group.
+		"UserChanged": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SamAccountName": "sam_account_name",
+			"UserAccountControl": "user_account_control", "AllowedToDelegateTo": "allowed_to_delegate_to",
+			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "SidHistory": "sid_history",
+		},
+		"GroupMemberAdded": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
+			"SubjectUserName": "user",
+		},
+		// A logon with explicit credentials; the add-on names the account
+		// that acted Caller_User_Name and the one it used Target_User_Name.
+		"ExplicitLogon": {
+			"SubjectUserName": "src_user", "Caller_User_Name": "src_user", "TargetUserName": "user", "Target_User_Name": "user",
+			"TargetServerName": "dest", "TargetInfo": "target_info", "ProcessName": "process_path", "IpAddress": "src",
+			"src_ip": "src",
+		},
+		// An account's password checked for NTLM, and Kerberos
+		// pre-authentication failed.
+		"NtlmAuth": {
+			"TargetUserName": "user", "Workstation": "src_host", "Status": "ntlm_status", "PackageName": "authentication_method",
+		},
+		"KerberosPreAuth": {
+			"TargetUserName": "user", "TargetSid": "user_sid", "ServiceName": "kerberos_service", "TicketOptions": "ticket_options",
+			"Status": "kerberos_status", "PreAuthType": "pre_auth_type", "IpAddress": "src", "src_ip": "src",
+		},
+		// A computer account created or changed, an account renamed, and
+		// a global group created, deleted or changed.
+		"ComputerChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain", "SamAccountName": "sam_account_name", "PrimaryGroupId": "primary_group_id",
+			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "UserAccountControl": "user_account_control",
+			"DnsHostName": "dns_host_name", "ServicePrincipalNames": "service_principal_names",
+			"AllowedToDelegateTo": "allowed_to_delegate_to",
+		},
+		"AccountRenamed": {
+			"OldTargetUserName": "old_object", "NewTargetUserName": "object", "TargetDomainName": "object_domain",
+			"TargetSid": "object_sid", "SubjectUserName": "user", "Caller_User_Name": "user", "SubjectLogonId": "logon_id",
+		},
+		"GroupChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectDomainName": "user_domain",
+		},
+		// A user's local groups or a local group's members listed.
+		"LocalGroupRead": {
+			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SubjectUserSid": "user_sid",
+			"CallerProcessName": "process_path", "CallerProcessId": "process_id",
+		},
+		// A certificate requested and issued by Certificate Services.
+		"CertRequest": {
+			"RequestId": "cert_request_id", "Requester": "cert_requester", "Attributes": "cert_attributes",
+			"Disposition": "cert_disposition", "Subject": "cert_subject",
+		},
+		// A process terminated, and a drive read directly.
+		"ProcessTerminated": {
+			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
+			"ProcessID": "process_id",
+		},
+		"RawAccessRead": {
+			"Device": "device", "Image": "process_path", "process_path": "process_path", "process_name": "process_name",
+		},
+		"ServiceInstalled": {
+			"ServiceName": "service_name", "ImagePath": "service_path", "ServiceType": "service_type",
+			"StartType": "service_start_type", "AccountName": "service_account",
+		},
+	}
+	// XMLKVFields are the fields xmlkv takes from a scheduled task's XML
+	// (TaskCreated), with the Signalith field each is stored as.
+	XMLKVFields = map[string]string{"Command": "task_command", "Arguments": "task_arguments"}
+	xmlkvRe     = regexp.MustCompile(`(?i)^xmlkv\s+(Message|TaskContent)$`)
+	searchRe    = regexp.MustCompile(`(?is)^search\s+(.+)$`)
+	fillnullRe  = regexp.MustCompile(`(?i)^fillnull$`)
+	statsRe     = regexp.MustCompile(`(?is)^stats\s`)
+	tableRe     = regexp.MustCompile(`(?is)^table\s`)
+	renameRe    = regexp.MustCompile(`(?is)^rename\s`)
+	// fillnull with a value, and iplocation after stats, which only adds
+	// columns, on an Azure search.
+	fillnullValueRe = regexp.MustCompile(`(?i)^fillnull(?:\s+value\s*=\s*\S+)?$`)
+	iplocationRe    = regexp.MustCompile(`(?i)^iplocation\s+\w+$`)
+)
+
+// AuditdNode is the node of Linux audit records (the linux_auditd
+// macro). A search names no event code: each record names its type, and
+// every field is stored by auditd's name (ingest.AuditdField).
+const AuditdNode = "Auditd"
+
+// RawUser is an event's own user field (SourceUser), DOMAIN\name as
+// Sysmon writes it; the CIM user field is the name alone (View). Both are
+// stored as user.
+const RawUser = "raw:user"
+
+// eventCode is the stored field of EventCode or EventID.
+const eventCode = "signature_id"
+
+// rawFieldPrefix marks an event field of a raw search before its node,
+// and so the field it is stored as, is known.
+const rawFieldPrefix = "rawfield:"
+
+// resolveRaw replaces a raw search's event fields with the fields the
+// node stores them as.
+func resolveRaw(e Expr, node string) error {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			if err := resolveRaw(k, node); err != nil {
+				return err
+			}
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			if err := resolveRaw(k, node); err != nil {
+				return err
+			}
+		}
+	case *Not:
+		return resolveRaw(x.Kid, node)
+	case *Cmp:
+		if name, ok := strings.CutPrefix(x.Field, rawFieldPrefix); ok && node == CloudTrailNode {
+			f, ok := cloudTrailField(name)
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		} else if ok && node == AuditdNode {
+			f, ok := ingest.AuditdField(name)
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		} else if ok {
+			f, ok := RawFields[node][name]
+			if !ok {
+				return fmt.Errorf("field %s is not a field of %s events", name, node)
+			}
+			x.Field = f
+		}
+	}
+	return nil
+}
+
+// rawSource is the pseudo node a raw search is parsed against before its
+// event code names the node.
+func rawSource(source string) string { return "raw:" + source }
+
+// xmlkvSuffix marks a raw source whose search stage may also name the
+// fields xmlkv extracts.
+const xmlkvSuffix = "+xmlkv"
+
+// parseRaw reads a raw event search of one source. Later, fillnull and
+// stats only count the events and rename only renames the counts.
+// (Without fillnull, Splunk's stats also drops events that miss one of
+// its by fields; Signalith keeps them, so it finds those too.)
+func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
+	orig := *r
+	out, err := parseRawStages(r, source, terms, later, macros)
+	if err == nil || !strings.Contains(err.Error(), laterStage) {
+		return out, err
+	}
+	// The stages from the first that does more than filter run as
+	// written, after the filter the stages before it make.
+	k := filterStages(later, source)
+	if k == len(later) {
+		return nil, err
+	}
+	*r = orig
+	if _, err := parseRawStages(r, source, terms, later[:k], macros); err != nil {
+		return nil, err
+	}
+	cs, cloud := cloudSourceOf(source)
+	field := func(f string) (string, bool) {
+		switch {
+		case cloud:
+			return cs.field(f, nil)
+		case r.Node == AuditdNode:
+			return ingest.AuditdField(f)
+		case r.Node == CloudTrailNode:
+			return cloudTrailField(f)
+		}
+		name, ok := RawFields[r.Node][f]
+		return name, ok
+	}
+	if err := r.postCommands(later[k:], field, ""); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// laterStage begins the error of a search with a stage Signalith does not
+// read.
+const laterStage = "search has a later stage Signalith does not run"
+
+// filterStages is how many of a raw search's later stages, from the
+// first, only filter its events, which the filter Signalith runs does
+// too: regex and where match() stages, and searches after xmlkv or on a
+// cloud record's fields.
+func filterStages(later []string, source string) int {
+	_, cloud := cloudSourceOf(source)
+	xml := false
+	any := func(f string) (string, error) { return f, nil }
+	for i, s := range later {
+		switch {
+		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case xmlkvRe.MatchString(s) && !xml:
+			xml = true
+		case searchRe.MatchString(s) && (xml || cloud):
+		default:
+			if _, ok, err := regexStage(s, any); ok && err == nil {
+				continue
+			}
+			return i
+		}
+	}
+	return len(later)
+}
+
+// parseRawStages is parseRaw with no later stages run as written.
+func parseRawStages(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
+	filled, counted, xml, renamed := false, false, false, false
+	cs, cloud := cloudSourceOf(source)
+	// An Azure or Microsoft 365 search's renames, and its search stages
+	// after them, read by the names before (azureUnrename, o365Unrename).
+	var renames []rename
+	var cloudSearches []Expr
+	var searches []string
+	// A count with limits: the bucket span, the stats stage and the where.
+	var span time.Duration
+	var stats string
+	var limits []Limit
+	var regexes []Expr
+	bits := newBitStages()
+	rawField := func(f string) (string, error) {
+		if cloud {
+			// Resolved now, by the names before the renames so far.
+			name, ok := cs.field(f, renames)
+			if !ok {
+				return "", fmt.Errorf("field %s is not a field of %s events", f, cs.node)
+			}
+			return name, nil
+		}
+		return rawFieldPrefix + f, nil
+	}
+	for _, s := range later {
+		if !counted && !renamed {
+			e, ok, err := bits.stage(s, rawField)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				if e != nil {
+					regexes = append(regexes, e)
+				}
+				continue
+			}
+			e, ok, err = regexStage(s, rawField)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				regexes = append(regexes, e)
+				continue
+			}
+		}
+		switch {
+		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case cloud && renameRe.MatchString(s) && !counted:
+			// Before stats, a later stage may read the new names.
+			rs, err := parseRename(s)
+			if err != nil {
+				return nil, err
+			}
+			// A Microsoft 365 search renames fields one by one; a
+			// pattern (Item.* as *) is read only for Entra ID's
+			// properties.
+			if cs.node == O365Node && slices.ContainsFunc(rs, func(r rename) bool { return strings.Contains(r.from, "*") }) {
+				return nil, fmt.Errorf("rename %s is not supported", firstWords(s))
+			}
+			renames = append(renames, rs...)
+		case cloud && searchRe.MatchString(s) && !counted:
+			e, err := ParseWhere(searchRe.FindStringSubmatch(s)[1], rawSource(source), macros)
+			if err != nil {
+				return nil, err
+			}
+			if err := resolveCloud(e, renames, cs); err != nil {
+				return nil, err
+			}
+			cloudSearches = append(cloudSearches, e)
+		case cloud && fillnullValueRe.MatchString(s) && !counted && !filled:
+			filled = true
+		case cloud && iplocationRe.MatchString(s) && counted:
+		case xmlkvRe.MatchString(s) && !counted && !filled && !xml && !renamed && len(searches) == 0:
+			xml = true
+		case searchRe.MatchString(s) && xml && !counted && !filled:
+			// A search after xmlkv filters on what it extracted.
+			searches = append(searches, searchRe.FindStringSubmatch(s)[1])
+		case fillnullRe.MatchString(s) && !counted && !filled:
+			filled = true
+		case bucketRe.MatchString(s) && !counted && span == 0:
+			b := bucketRe.FindStringSubmatch(s)
+			span = parseSpan(b[1]+b[3], b[2]+b[4])
+		case statsRe.MatchString(s) && !counted:
+			counted = true
+			stats = s
+		case tableRe.MatchString(s) && !counted && !filled:
+			// A table only picks the columns shown: every event the
+			// search finds is a row.
+			counted = true
+		case counted && limits == nil && isLimits(s):
+			limits, _ = parseLimits(s)
+		case evalRe.MatchString(s) && counted:
+			// After stats, eval only reshapes the counted rows (splits a
+			// call trace into lines); no stage after it filters them.
+		case renameRe.MatchString(s) && (counted || !xml && len(searches) == 0):
+			// Before stats, a rename only renames what stats counts by,
+			// as long as no later stage filters on the new names.
+			renamed = true
+		default:
+			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+		}
+	}
+	if bits.unused != "" {
+		return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(bits.unused))
+	}
+	where, err := ParseWhere(terms, rawSource(source), macros)
+	if err != nil {
+		return nil, err
+	}
+	// The event code, named once at the top, picks the node.
+	var top []Expr
+	if a, ok := where.(*And); ok {
+		top = a.Kids
+	} else {
+		top = []Expr{where}
+	}
+	// EventCode=4625 OR EventCode=4624 names the codes once too.
+	for i, k := range top {
+		if c := codes(k); c != nil {
+			top[i] = c
+		}
+	}
+	if a, ok := where.(*And); ok {
+		a.Kids = top
+	} else {
+		where = top[0]
+	}
+	var code *Cmp
+	switch source {
+	case "linux_auditd":
+		r.Node = AuditdNode
+	case "cloudtrail":
+		r.Node = CloudTrailNode
+	}
+	if cloud {
+		r.Node = cs.node
+	}
+	for _, k := range top {
+		if c, ok := k.(*Cmp); ok && c.Field == eventCode {
+			if code != nil || c.Neg {
+				return nil, fmt.Errorf("a %s search must name its event code once", source)
+			}
+			code = c
+		}
+	}
+	if r.Node == AuditdNode || r.Node == CloudTrailNode || cloud {
+		if countField(where, eventCode) != 0 {
+			return nil, fmt.Errorf("a %s search names no event code", source)
+		}
+	} else if code == nil || countField(where, eventCode) != 1 {
+		return nil, fmt.Errorf("a %s search must name its event code (EventCode=...) once, at the top", source)
+	}
+	for _, v := range codeValues(code) {
+		n := rawNodes[source][v]
+		if n == "" || (r.Node != "" && n != r.Node) {
+			return nil, fmt.Errorf("%s event %s is not supported", source, v)
+		}
+		r.Node = n
+	}
+	if cloud {
+		// The search's own terms, which come before any rename.
+		if err := resolveCloud(where, nil, cs); err != nil {
+			return nil, err
+		}
+	}
+	if limits != nil && cloud {
+		// Entra ID's and Microsoft 365's records have what these counts
+		// group by, so fillnull adds no groups.
+		t, err := cloudThreshold(stats, span, limits, renames, cs)
+		if err != nil {
+			return nil, err
+		}
+		r.Threshold = t
+	} else if limits != nil {
+		if filled {
+			return nil, fmt.Errorf("a count after fillnull is not supported")
+		}
+		t, err := rawThreshold(r.Node, stats, span, limits)
+		if err != nil {
+			return nil, err
+		}
+		r.Threshold = t
+	} else if span != 0 {
+		return nil, fmt.Errorf("search has a later stage Signalith does not run: bucket")
+	}
+	if xml && r.Node != "TaskCreated" {
+		return nil, fmt.Errorf("xmlkv on %s events is not supported", r.Node)
+	}
+	for _, s := range searches {
+		e, err := ParseWhere(s, rawSource(source)+xmlkvSuffix, macros)
+		if err != nil {
+			return nil, err
+		}
+		if countField(e, eventCode) != 0 {
+			return nil, fmt.Errorf("a %s search must name its event code once, at the top", source)
+		}
+		top = append(top, e)
+	}
+	top = append(top, regexes...)
+	top = append(top, cloudSearches...)
+	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode && !cloud {
+		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
+	}
+	where = &And{Kids: top}
+	if len(top) == 1 {
+		where = top[0]
+	}
+	if err := resolveRaw(where, r.Node); err != nil {
+		return nil, err
+	}
+	if r.Node == CloudTrailNode {
+		if where, err = cloudTrailSuccess(where); err != nil {
+			return nil, err
+		}
+	}
+	if err := fieldsOf(where, r.Node, xml); err != nil {
+		return nil, err
+	}
+	if cloud {
+		// The records of the macro's sourcetype.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{cs.sourcetype}}, where}}
+	}
+	unescapeXML(where)
+	r.Where = where
+	return r, nil
+}
+
+// codes reads an OR of event codes (EventCode=4625 OR EventCode=4624)
+// as one comparison with each code; nil when e is not one.
+func codes(e Expr) *Cmp {
+	o, ok := e.(*Or)
+	if !ok {
+		return nil
+	}
+	out := &Cmp{Field: eventCode}
+	for _, k := range o.Kids {
+		c, ok := k.(*Cmp)
+		if !ok || c.Field != eventCode || c.Neg || c.Regex {
+			return nil
+		}
+		out.Values = append(out.Values, c.Values...)
+	}
+	return out
+}
+
+// fieldsOf checks that a raw clause names only fields of node, and of
+// xmlkv's when the search runs it.
+func fieldsOf(e Expr, node string, xml bool) error {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			if err := fieldsOf(k, node, xml); err != nil {
+				return err
+			}
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			if err := fieldsOf(k, node, xml); err != nil {
+				return err
+			}
+		}
+	case *Not:
+		return fieldsOf(x.Kid, node, xml)
+	case *Cmp:
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node {
+			return nil
+		}
+		for _, f := range RawFields[node] {
+			if f == x.Field {
+				return nil
+			}
+		}
+		for _, f := range XMLKVFields {
+			if xml && f == x.Field {
+				return nil
+			}
+		}
+		return fmt.Errorf("field %s is not a field of %s events", x.Field, node)
+	}
+	return nil
+}
+
+func countField(e Expr, f string) int {
+	n := 0
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			n += countField(k, f)
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			n += countField(k, f)
+		}
+	case *Not:
+		n = countField(x.Kid, f)
+	case *Cmp:
+		if x.Field == f {
+			n = 1
+		}
+	}
+	return n
+}
+
+func firstWords(s string) string {
+	f := strings.Fields(s)
+	if len(f) > 3 {
+		f = f[:3]
+	}
+	return strings.Join(f, " ")
+}
+
+// xmlFields are the raw fields that hold XML. Splunk keeps the XML
+// escaped (&lt;Hidden&gt;) and Signalith stores it as it is (<Hidden>),
+// so a rule's values are unescaped to match.
+var xmlFields = map[string]bool{"task_content": true}
+
+var xmlUnescape = strings.NewReplacer("&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'", "&amp;", "&")
+
+func unescapeXML(e Expr) {
+	switch x := e.(type) {
+	case *And:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Or:
+		for _, k := range x.Kids {
+			unescapeXML(k)
+		}
+	case *Not:
+		unescapeXML(x.Kid)
+	case *Cmp:
+		if xmlFields[x.Field] {
+			for i, v := range x.Values {
+				x.Values[i] = xmlUnescape.Replace(v)
+			}
+		}
+	}
+}
+
+// pipes splits a search into its stages at the | outside quotes and macro
+// backticks. The leading | of a generating command is dropped.
+func pipes(q string) []string {
+	var out []string
+	var cur strings.Builder
+	quoted, tick, esc := false, false, false
+	for _, ch := range q {
+		switch {
+		case esc:
+			esc = false
+		case ch == '\\' && quoted:
+			esc = true
+		case ch == '"' && !tick:
+			quoted = !quoted
+		case ch == '`' && !quoted:
+			tick = !tick
+		case ch == '|' && !quoted && !tick:
+			if s := strings.TrimSpace(cur.String()); s != "" {
+				out = append(out, s)
+			}
+			cur.Reset()
+			continue
+		}
+		cur.WriteRune(ch)
+	}
+	if s := strings.TrimSpace(cur.String()); s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+// Regular expression stages: `regex field="re"` keeps the events whose
+// field the expression is found in, and `where match(field, "re")`, with
+// several joined by AND or by OR, does the same.
+var (
+	regexStageRe = regexp.MustCompile(`(?s)^regex\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$`)
+	matchCallRe  = regexp.MustCompile(`(?s)^match\(\s*(\w+)\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)\s*`)
+	whereRe      = regexp.MustCompile(`(?is)^where\s+(.*)$`)
+	joinRe       = regexp.MustCompile(`^(?i:(AND|OR))\s+`)
+)
+
+// regexStage reads a regex stage or a where of match() calls, with each
+// field as field names it (a raw field marked for its node to resolve).
+func regexStage(s string, field func(string) (string, error)) (Expr, bool, error) {
+	var kids []Expr
+	join := ""
+	add := func(f, p string) error {
+		name, err := field(f)
+		if err != nil {
+			return err
+		}
+		p = splString(p)
+		if _, err := regexp.Compile(p); err != nil {
+			return fmt.Errorf("regular expression %q: %w", p, err)
+		}
+		kids = append(kids, &Cmp{Field: name, Values: []string{p}, Regex: true})
+		return nil
+	}
+	if m := regexStageRe.FindStringSubmatch(s); m != nil {
+		err := add(m[1], m[2])
+		if err != nil {
+			return nil, true, err
+		}
+		return kids[0], true, nil
+	}
+	w := whereRe.FindStringSubmatch(s)
+	if w == nil {
+		return nil, false, nil
+	}
+	rest := strings.TrimSpace(w[1])
+	for {
+		m := matchCallRe.FindStringSubmatch(rest)
+		if m == nil {
+			return nil, false, nil
+		}
+		if err := add(m[1], m[2]); err != nil {
+			return nil, true, err
+		}
+		rest = rest[len(m[0]):]
+		if rest == "" {
+			break
+		}
+		j := joinRe.FindStringSubmatch(rest)
+		if j == nil || join != "" && !strings.EqualFold(j[1], join) {
+			return nil, false, nil
+		}
+		join = j[1]
+		rest = rest[len(j[0]):]
+	}
+	if len(kids) == 1 {
+		return kids[0], true, nil
+	}
+	if strings.EqualFold(join, "OR") {
+		return &Or{Kids: kids}, true, nil
+	}
+	return &And{Kids: kids}, true, nil
+}
+
+// splString is a quoted SPL string's text: \\ is a backslash and \" a
+// quote; any other backslash is kept.
+func splString(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && (s[i+1] == '\\' || s[i+1] == '"') {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// codeValues are an event code comparison's codes; none for no comparison.
+func codeValues(c *Cmp) []string {
+	if c == nil {
+		return nil
+	}
+	return c.Values
+}

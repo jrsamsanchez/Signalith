@@ -1,0 +1,7 @@
+{"rule": "85adeb13-4fc9-4e68-8a4a-c7cb2c336eb7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\Winsock2\\CatalogChangeListener- -0,"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\demoagent_22"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\wkssvc"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\PGMessagePipe"}}
+]}

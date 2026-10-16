@@ -1,0 +1,53 @@
+id: vulnerabilities
+title: Vulnerabilities
+description: Known vulnerabilities (CVEs) and open ports that the scans on the Vulnerabilities page found, worst first, with the ones attackers are known to use.
+time_range: 7d
+panels:
+  - title: Hosts with known exploited CVEs
+    query: datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats dc(dest) as hosts
+    viz: single
+    width: third
+    compare: true
+  - title: Hosts with critical CVEs
+    query: datamodel=Vulnerabilities category=vulnerability cvss>=9 | stats dc(dest) as hosts
+    viz: single
+    width: third
+    compare: true
+  - title: Different CVEs found
+    query: datamodel=Vulnerabilities category=vulnerability | stats dc(cve) as cves
+    viz: single
+    width: third
+    compare: true
+  - title: Known exploited CVEs to patch first
+    query: datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats dc(cve) as cves, max(cvss) as worst by dest, product, product_version | sort -worst | head 50 | rename dest as host, product as software, product_version as version
+    viz: table
+    width: full
+  - title: Hosts with CVEs found by scans, by severity
+    # Each scan reports every CVE it finds again, so this follows the scans.
+    query: datamodel=Vulnerabilities category=vulnerability | timechart dc(dest) by severity
+    viz: line
+    width: full
+  - title: Top CVEs
+    query: datamodel=Vulnerabilities category=vulnerability | stats dc(dest) as hosts, max(cvss) as cvss by cve, known_exploited | sort -cvss | head 10 | rename known_exploited as exploited
+    viz: table
+    width: half
+  - title: Hosts with the most CVEs
+    query: datamodel=Vulnerabilities category=vulnerability | stats dc(cve) as cves by dest | sort -cves | head 10
+    viz: bar
+    width: half
+  - title: Vulnerable software
+    query: datamodel=Vulnerabilities category=vulnerability | stats dc(dest) as hosts, dc(cve) as cves, max(cvss) as worst by product, product_version | sort -worst | head 10 | rename product as software, product_version as version
+    viz: table
+    width: half
+  - title: Open services
+    query: datamodel=Vulnerabilities category=open_port | stats dc(dest) as hosts by app | sort -hosts | head 10
+    viz: bar
+    width: half
+  - title: Remote access and cleartext services open
+    query: datamodel=Vulnerabilities category=open_port app IN (telnet, ftp, ms-wbt-server, vnc, rlogin, rsh, snmp) | stats dc(dest) as hosts by app, dest_port | sort -hosts | rename app as service, dest_port as port
+    viz: table
+    width: half
+  - title: Hosts found by network
+    query: datamodel=Vulnerabilities category=open_port | stats dc(dest) as hosts by scan_network | sort -hosts
+    viz: bar
+    width: half

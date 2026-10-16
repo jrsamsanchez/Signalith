@@ -1,0 +1,8 @@
+[
+  {
+    "name": "opensearch",
+    "listen": "0.0.0.0:9200",
+    "upstream": "opensearch-upstream:9200",
+    "enabled": true
+  }
+]

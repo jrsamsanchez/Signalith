@@ -59,6 +59,15 @@ func msg5007(oldValue, newValue string) string {
 		" \tNew value: " + newValue + "\n"
 }
 
+func TestDefenderConfigValues(t *testing.T) {
+	_, d := defender(t, "5007", msg5007(`HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\SubmitSamplesConsent = 0x1`,
+		`HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\SubmitSamplesConsent = 0x0`))
+	if d["old_value"] != `HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\SubmitSamplesConsent = 0x1` ||
+		d["new_value"] != `HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\SubmitSamplesConsent = 0x0` {
+		t.Errorf("old_value %v new_value %v", d["old_value"], d["new_value"])
+	}
+}
+
 func TestDefenderThreat(t *testing.T) {
 	ev, d := defender(t, "1116", msg1116)
 	if ev.Model != "Malware" {
@@ -126,6 +135,7 @@ func TestDefenderEveryEventID(t *testing.T) {
 		{"5007", msg5007("", `HKLM\SOFTWARE\Microsoft\Windows Defender\Scan\AvgCPULoadFactor = 0x32`), "health", "modified", "Antivirus setting changed"},
 		{"5013", `Value: HKLM\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection\DisableRealtimeMonitoring = 0x1` + "\n", "health", "tamper_blocked", "Tamper protection blocked a change"},
 		{"1150", "Platform version: 4.18.24090.11\n", "health", "status", "Antivirus is running"},
+		{"5101", "", "health", "outdated", "Antimalware platform expired"},
 		{"1151", "Last AV security intelligence age: 0\n", "health", "status", "Antivirus health report"},
 	} {
 		ev, d := defender(t, c.id, c.msg)
@@ -343,4 +353,23 @@ func TestDefenderMessageLimits(t *testing.T) {
 	// The first occurrence of a label wins.
 	_, d = defender(t, "1116", "Name: First.A\nName: Second.A\n")
 	expect(t, d, map[string]any{"signature": "First.A"})
+}
+
+// Lowering invalid UTF-8 makes the string longer, so an index found in the
+// lowered copy used to slice past the end of the message and panic.
+func TestDefenderPIDAfterInvalidUTF8(t *testing.T) {
+	for _, tc := range []struct {
+		msg  string
+		want any
+	}{
+		{"PAth: weBfile:_||\xc0pid:", nil},
+		{"Path: webfile:_C:\\a.exe|https://x/|\xc0\xc0PID:4242,1\n", int64(4242)},
+	} {
+		f := map[string]any{}
+		setPID(f, tc.msg)
+		if f["process_id"] != tc.want {
+			t.Errorf("setPID(%q) = %v, want %v", tc.msg, f["process_id"], tc.want)
+		}
+		defender(t, "1117", tc.msg)
+	}
 }

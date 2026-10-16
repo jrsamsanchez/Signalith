@@ -1,0 +1,5 @@
+{"rule": "9248c7e1-2bf3-4661-a22c-600a8040b446", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"RUNDLL32.EXE AA:A:","OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"RUNDLL32.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"RUNDLL32.EXE AA:A:"}}
+]}

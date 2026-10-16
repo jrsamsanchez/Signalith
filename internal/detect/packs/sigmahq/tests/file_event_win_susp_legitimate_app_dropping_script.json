@@ -1,0 +1,6 @@
+{"rule": "7d604714-e071-49ff-8726-edeb95a70679", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\AcroRd32.exe","TargetFilename":".proj"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".proj"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\AcroRd32.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2026-05-11 02:44:02.874","Image":"C:\\WINDOWS\\system32\\certutil.exe","ProcessGuid":"0197231E-4272-6A01-3715-000000000D00","ProcessId":"19028","RuleName":"-","TargetFilename":"C:\\Users\\xodih\\AppData\\Local\\Temp\\sigma_regression_1816958539\\certutil_drop.vbs","User":"swachchhanda\\xodih","UtcTime":"2026-05-11 02:44:02.874"}}
+]}

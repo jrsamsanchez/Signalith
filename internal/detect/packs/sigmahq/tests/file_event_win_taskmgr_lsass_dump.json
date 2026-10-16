@@ -1,0 +1,6 @@
+{"rule": "69ca12af-119d-44ed-b50f-a47af0ebc364", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Windows\\system32\\taskmgr.exe","TargetFilename":"\\AppData\\Local\\Temp\\ \\lsass .DMP"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\ \\lsass .DMP"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Windows\\system32\\taskmgr.exe"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:50:20.576","Image":"C:\\Windows\\system32\\taskmgr.exe","ProcessGuid":"5AA13A44-10B3-68FC-4E1E-000000004002","ProcessId":"2956","RuleName":"-","TargetFilename":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\lsass.DMP","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:50:20.576"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "e8314f79-564d-4f79-bc13-fbc0bf2660d8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-Alias -Value (-join("}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

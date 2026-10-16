@@ -484,7 +484,7 @@ func TestOverviewWithBrokenSettings(t *testing.T) {
 	if err := f.m.SetPolicy("endpoint", &Policy{KeepDays: 10}); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeAtomic(f.m.Store.Path, []byte("policies: [")); err != nil {
+	if err := writeAtomic(f.m.Store.(*Store).Path, []byte("policies: [")); err != nil {
 		t.Fatal(err)
 	}
 	ov := f.m.Overview(context.Background())

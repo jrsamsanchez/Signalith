@@ -1,0 +1,4 @@
+{"rule": "08200f85-2678-463e-9c32-88dce2f073d1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Data":"object_name:sysadmin statement:alter server role [sysadmin] add member x","Provider_Name":"MSSQL"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"33205","data":{"Provider_Name":"MSSQL"}}
+]}

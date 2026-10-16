@@ -1,0 +1,5 @@
+{"rule": "8c521530-5169-495d-a199-0a3a881ad24e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-stream add-content"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"c2c267f5-46fb-475d-8307-fa24544a8600","ScriptBlockText":"\u0026 {Add-Content -Path $env:TEMP\\NTFS_ADS.txt -Value 'Write-Host \"Stream Data Executed\"' -Stream 'streamCommand'\n$streamcommand = Get-Content -Path $env:TEMP\\NTFS_ADS.txt -Stream 'streamcommand'\nInvoke-Expression $streamcommand}"}}
+]}

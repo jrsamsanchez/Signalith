@@ -1,0 +1,5 @@
+{"rule": "c5f6a85d-b647-40f7-bbad-c10b66bab038", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Microsoft\\Security Center\\UACDisableNotify"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Security Center\\UACDisableNotify"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

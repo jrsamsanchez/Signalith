@@ -1,0 +1,4 @@
+{"rule": "55c925c1-7195-426b-a136-a9396800e29b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Client-ProjFS -FeatureName -Online Enable-WindowsOptionalFeature"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

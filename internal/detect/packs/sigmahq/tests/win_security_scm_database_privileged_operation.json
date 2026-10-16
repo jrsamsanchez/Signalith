@@ -1,0 +1,7 @@
+{"rule": "dae8171c-5ec6-4396-b210-8466585b53e9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4674","data":{"ObjectName":"servicesactive","ObjectType":"SC_MANAGER OBJECT","PrivilegeList":"SeTakeOwnershipPrivilege"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4674","data":{"ObjectName":"servicesactive","ObjectType":"SC_MANAGER OBJECT","PrivilegeList":"SeTakeOwnershipPrivilege","ProcessName":":\\Windows\\System32\\services.exe","SubjectLogonId":"0x3e4"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4674","data":{"ObjectType":"SC_MANAGER OBJECT","PrivilegeList":"SeTakeOwnershipPrivilege"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4674","data":{"ObjectName":"servicesactive","PrivilegeList":"SeTakeOwnershipPrivilege"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4674","data":{"ObjectName":"servicesactive","ObjectType":"SC_MANAGER OBJECT"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "15904280-565c-4b73-9303-3291f964e7f9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\WINDOWS\\Setup\\Scripts\\ErrorHandler.cmd"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

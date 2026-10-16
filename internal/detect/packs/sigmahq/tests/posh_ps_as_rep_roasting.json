@@ -1,0 +1,5 @@
+{"rule": "96c982fe-3d08-4df4-bed2-eb14e02f21c8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"4194304-FilteruseraccountcontrolGet-ADUser-band"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"d49eb32c-52f6-4988-9d30-b647d47ed791","ScriptBlockText":"\u0026 {Get-ADUser -Filter 'useraccountcontrol -band 4194304' -Properties useraccountcontrol | Format-Table name}"}}
+]}

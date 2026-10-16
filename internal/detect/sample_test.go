@@ -153,7 +153,11 @@ func TestScheduledRunsLeaveSampleOut(t *testing.T) {
 	}
 	holds := true
 	live := &queryRecorder{}
-	s := &Scheduler{Library: lib, Engine: live, Findings: findings.NewMemory(), Allowed: func() bool { return holds }}
+	at := time.Now()
+	s := &Scheduler{Library: lib, Engine: live, Findings: findings.NewMemory(), Allowed: func() bool { return holds },
+		Now: func() time.Time { return at }}
+	s.RunDue(context.Background()) // first sight: the next slot is the first run
+	at = at.Add(10 * time.Minute)
 	s.RunDue(context.Background())
 	if len(live.seen) == 0 {
 		t.Fatal("the schedule ran nothing on the server holding the lease")
@@ -165,7 +169,7 @@ func TestScheduledRunsLeaveSampleOut(t *testing.T) {
 	}
 	holds = false
 	n := len(live.seen)
-	s.Now = func() time.Time { return time.Now().Add(time.Hour) } // due again
+	at = at.Add(time.Hour) // due again
 	s.RunDue(context.Background())
 	if len(live.seen) != n {
 		t.Errorf("a server without the lease ran %d scheduled searches", len(live.seen)-n)

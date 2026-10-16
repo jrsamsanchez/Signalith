@@ -1,0 +1,4 @@
+{"rule": "c830f15d-6f6e-430f-8074-6f73d6807841", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/syslog-ng/syslog-ng.conf"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

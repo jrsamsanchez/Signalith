@@ -1,0 +1,6 @@
+{"rule": "611eab06-a145-4dfa-a295-3ccc5c20f59a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2","SubjectUserName":"$","SubjectUserSid":"S-1-5-18"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"Properties":"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2"}}
+]}

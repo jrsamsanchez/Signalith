@@ -1,0 +1,6 @@
+{"rule": "a49fa4d5-11db-418c-8473-1e014a8dd462", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"comsvcs.dll","SourceImage":"\\rundll32.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"SourceImage":"\\rundll32.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"comsvcs.dll","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"comsvcs.dll","SourceImage":"\\rundll32.exe"}}
+]}

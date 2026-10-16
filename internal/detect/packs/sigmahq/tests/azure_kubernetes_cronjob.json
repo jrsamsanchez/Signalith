@@ -1,0 +1,4 @@
+{"rule": "1c71e254-6655-42c1-b2d6-5e4718d7fc0a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.KUBERNETES/CONNECTEDCLUSTERS/BATCH/JOBS/WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

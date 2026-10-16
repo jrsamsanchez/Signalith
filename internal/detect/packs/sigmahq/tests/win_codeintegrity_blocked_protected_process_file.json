@@ -1,0 +1,3 @@
+{"rule": "5daf11c3-022b-4969-adb9-365e6c078c7c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-CodeIntegrity/Operational","event_id":"3104","data":{}}
+]}

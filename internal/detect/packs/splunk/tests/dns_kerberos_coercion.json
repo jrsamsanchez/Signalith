@@ -1,0 +1,5 @@
+{"rule": "8551252d-b5b6-4b6e-8a82-51460aeb29a3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"53","proto":"udp","qtype_name":"A","query":"x 1UWhRC x x AAAAA x x YBAAAA x","rcode":"0","rcode_name":"NOERROR"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"53","proto":"udp","qtype_name":"A","query":"x 1UWhRC x x AAAAA x x YBAAAA y","rcode":"0","rcode_name":"NOERROR"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:dns","event_id":"","data":{"id.orig_h":"192.0.2.10","id.orig_p":"50123","id.resp_h":"93.184.216.34","id.resp_p":"53","proto":"udp","qtype_name":"A","query":"updates.example.com","rcode":"0","rcode_name":"NOERROR"}}
+]}

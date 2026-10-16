@@ -1,0 +1,6 @@
+{"rule": "18b88d08-d73e-4f21-bc25-4b9892a4fdd0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"eDiscovery search started or exported","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"eDiscovery search started or exported","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"eDiscovery search started or exported","eventSource":"SecurityComplianceCenter"}}
+]}

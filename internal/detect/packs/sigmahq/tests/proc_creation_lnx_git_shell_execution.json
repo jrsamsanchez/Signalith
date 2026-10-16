@@ -1,0 +1,6 @@
+{"rule": "47b3bbd4-1bf7-48cc-84ab-995362aaa75a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"sh 0\u003c\u00261","ParentCommandLine":"help -p x","ParentImage":"/git"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"help -p x","ParentImage":"/git"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"sh 0\u003c\u00261","ParentImage":"/git"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"sh 0\u003c\u00261","ParentCommandLine":"help -p x"}}
+]}

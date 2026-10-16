@@ -1,0 +1,5 @@
+{"rule": "1ea13e8c-03ea-409b-877d-ce5c3d2c1cb3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\MICROSOFT##WID\\tsql\\query"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"Image":"\\AzureADConnect.exe","PipeName":"\\MICROSOFT##WID\\tsql\\query"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}}
+]}

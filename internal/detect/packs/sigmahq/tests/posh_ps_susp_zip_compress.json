@@ -1,0 +1,5 @@
+{"rule": "b7a3c9a3-09ea-4934-8864-6a32cacd98d9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Compress-Archive -Path-DestinationPath:\\Windows\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"c87782fe-207d-4e78-a199-329eb75ae237","ScriptBlockText":"\u0026 {Compress-Archive -Path \"C:\\AtomicRedTeam\\atomics\\T1074.001\\bin\\Folder_to_zip\" -DestinationPath $env:TEMP\\Folder_to_zip.zip -Force}"}}
+]}

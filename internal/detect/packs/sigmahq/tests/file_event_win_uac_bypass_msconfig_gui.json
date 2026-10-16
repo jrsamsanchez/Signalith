@@ -1,0 +1,4 @@
+{"rule": "41bb431f-56d8-4691-bb56-ed34e390906f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\pkgmgr.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

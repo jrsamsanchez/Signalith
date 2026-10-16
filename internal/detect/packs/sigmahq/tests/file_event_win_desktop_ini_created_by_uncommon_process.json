@@ -1,0 +1,8 @@
+{"rule": "81315b50-6b60-4d8f-9928-3466e1022515", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Program Files\\","TargetFilename":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\$WINDOWS.~BT\\NewOS\\ \\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Users\\\\AppData\\Local\\JetBrains\\Toolbox\\bin\\7z.exe","TargetFilename":"\\JetBrains\\apps\\ \\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Users\\ \\AppData\\Local\\Microsoft\\OneDrive\\","TargetFilename":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

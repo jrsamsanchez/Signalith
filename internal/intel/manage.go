@@ -2,6 +2,11 @@ package intel
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -82,6 +87,58 @@ func (e *InputError) Fields() map[string]string {
 
 // ErrReadOnly is returned for changes to a feed from signalith.yaml.
 var ErrReadOnly = errors.New("this feed is set in signalith.yaml, so it can only be changed there; edit the file and restart Signalith")
+
+// ErrFeedStale is a change of a feed that someone else changed since the
+// page read it.
+var ErrFeedStale = errors.New("this feed was changed by someone else since the page read it; reload the page and make the change again")
+
+// specETag is the version of a feed's settings, for a page that changes
+// it only if nobody else did meanwhile. It covers the feed's secrets, so
+// re-entering one changes it, and is therefore keyed (see etagKey): a
+// plain hash would let anyone who sees it test guesses of a password or
+// API key.
+func specETag(key []byte, s FeedSpec) string {
+	s.From = ""
+	b, _ := json.Marshal(s)
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte("sgl-feed-etag-v1\x00"))
+	h.Write(b)
+	return `"f-` + hex.EncodeToString(h.Sum(nil)[:12]) + `"`
+}
+
+// ETagKeyer is a FeedList whose feeds' versions are keyed with a key
+// every server that shares the list has, so a version read from one
+// server holds on another.
+type ETagKeyer interface {
+	ETagKey() []byte
+}
+
+// etagKey is the key of the feeds' versions: the shared list's, or else
+// one made for this process, as only this server reads its own file.
+func (f *Feeds) etagKey() []byte {
+	if k, ok := f.Saved.(ETagKeyer); ok {
+		if b := k.ETagKey(); len(b) > 0 {
+			return b
+		}
+	}
+	f.etagOnce.Do(func() {
+		f.localETag = make([]byte, 32)
+		_, _ = rand.Read(f.localETag)
+	})
+	return f.localETag
+}
+
+// ETag returns the version of a feed added on the page or shared (see
+// specETag); false for a feed in signalith.yaml or none.
+func (f *Feeds) ETag(name string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loadList()
+	if i := specIndex(f.ui, name); i >= 0 {
+		return specETag(f.etagKey(), f.ui[i]), true
+	}
+	return "", false
+}
 
 // InputFor returns an existing feed's settings, without its secrets, for
 // a change or a test to start from.
@@ -221,11 +278,11 @@ func (in *FeedInput) fillFromCatalog() []FeedProblem {
 	return nil
 }
 
-// freeName returns base, or base-2, base-3 and so on when a feed (or one
-// of taken) already has that name; the caller holds f.mu.
-func (f *Feeds) freeName(base string, taken ...string) string {
+// freeName returns base, or base-2, base-3 and so on when a feed of all
+// (or one of taken) already has that name.
+func freeName(all []Feed, base string, taken ...string) string {
 	used := map[string]bool{}
-	for _, fd := range f.all() {
+	for _, fd := range all {
 		used[fd.Name] = true
 	}
 	for _, n := range taken {
@@ -241,9 +298,9 @@ func (f *Feeds) freeName(base string, taken ...string) string {
 	}
 }
 
-// nameProblems checks that a new feed's name is free; the caller holds f.mu.
-func (f *Feeds) nameProblems(name string) []FeedProblem {
-	for _, fd := range f.all() {
+// nameProblems checks that a new feed's name is free among all.
+func nameProblems(all []Feed, name string) []FeedProblem {
+	for _, fd := range all {
 		if fd.Name != name {
 			continue
 		}
@@ -264,13 +321,8 @@ func (f *Feeds) inConfig(name string) bool {
 	return false
 }
 
-func (f *Feeds) uiIndex(name string) int {
-	for i, s := range f.ui {
-		if s.Name == name {
-			return i
-		}
-	}
-	return -1
+func specIndex(list []FeedSpec, name string) int {
+	return slices.IndexFunc(list, func(s FeedSpec) bool { return s.Name == name })
 }
 
 func cloneSpecs(list []FeedSpec) []FeedSpec {
@@ -291,107 +343,144 @@ func withoutKept(list []KeptFeed, name string) []KeptFeed {
 	return out
 }
 
-// writable reports why feeds cannot be changed; the caller holds f.mu.
-func (f *Feeds) writable() error {
-	f.retryFile()
-	return f.fileErr
-}
-
 // changed records a new or changed feed and downloads it when this
 // server runs the schedule; the caller holds f.mu.
 func (f *Feeds) changed(name string, enabled bool) {
 	f.gen[name]++
 	st := f.stateFor(name)
 	st.NextRun = time.Time{}
-	f.saveStatus()
+	f.saveStatus(name)
 	if enabled {
 		f.kick(name)
 	}
 }
 
+// saved returns a feed as it is now, after a change was saved; the
+// caller holds f.mu.
+func (f *Feeds) saved(spec FeedSpec) FeedView {
+	if fd, ok := f.get(spec.Name); ok {
+		return f.view(fd)
+	}
+	return f.view(spec.Feed(SourceUI))
+}
+
+// prime reads the feeds before a change, so the change is told apart
+// from what was there.
+func (f *Feeds) prime() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loadList()
+}
+
+// afterSave takes a change just saved into use; the caller holds f.mu.
+func (f *Feeds) afterSave() {
+	f.listDirty.Store(true)
+	f.loadList()
+}
+
 // AddFeed saves a new feed and downloads it at once (on the server that
 // runs the schedule).
 func (f *Feeds) AddFeed(in FeedInput) (FeedView, error) {
-	var probs []FeedProblem
+	return f.AddFeedAs(context.Background(), "", in)
+}
+
+// AddFeedAs is AddFeed by the user by.
+func (f *Feeds) AddFeedAs(ctx context.Context, by string, in FeedInput) (FeedView, error) {
+	f.prime()
+	var first []FeedProblem
 	// A catalog feed is named after its entry, or after it with a number
 	// when a feed already has that name.
 	pickName := strings.TrimSpace(in.Catalog) != "" && strings.TrimSpace(in.Name) == ""
 	if strings.TrimSpace(in.Catalog) != "" {
-		probs = in.fillFromCatalog()
+		first = in.fillFromCatalog()
 	}
 	if low := strings.ToLower(strings.TrimSpace(in.Kind)); low != KindTAXII && strings.TrimSpace(in.Format) == "" {
 		in.Format = FormatAuto
 	}
+	var spec FeedSpec
+	_, err := f.list().Mutate(ctx, by, func(set *FeedSet) error {
+		all := f.feedsOf(set.UI)
+		in := in
+		if pickName {
+			in.Name = freeName(all, in.Name)
+		}
+		sp, p := in.spec(nil)
+		probs := append(slices.Clone(first), p...)
+		if feedNamePattern.MatchString(sp.Name) {
+			probs = append(probs, nameProblems(all, sp.Name)...)
+		}
+		if len(probs) > 0 {
+			return &InputError{Problems: probs}
+		}
+		set.UI = append(set.UI, sp)
+		set.Kept = withoutKept(set.Kept, sp.Name)
+		spec = sp
+		return nil
+	})
+	if err != nil {
+		return FeedView{}, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.writable(); err != nil {
-		return FeedView{}, err
-	}
-	if pickName {
-		in.Name = f.freeName(in.Name)
-	}
-	spec, p := in.spec(nil)
-	probs = append(probs, p...)
-	if feedNamePattern.MatchString(spec.Name) {
-		probs = append(probs, f.nameProblems(spec.Name)...)
-	}
-	if len(probs) > 0 {
-		return FeedView{}, &InputError{Problems: probs}
-	}
-	ui := append(cloneSpecs(f.ui), spec)
-	kept := withoutKept(f.kept, spec.Name)
-	if err := f.saveFile(ui, kept); err != nil {
-		return FeedView{}, err
-	}
-	f.ui, f.kept = ui, kept
-	delete(f.status, spec.Name)
-	f.changed(spec.Name, spec.IsEnabled())
-	return f.view(spec.Feed(SourceUI)), nil
+	f.afterSave()
+	return f.saved(spec), nil
 }
 
 // UpdateFeed changes a feed added on the page. Start from InputFor so
 // settings the request leaves out stay as they are. A feed that is turned
 // off loses its indicators; any other change downloads it again at once.
 func (f *Feeds) UpdateFeed(ctx context.Context, name string, in FeedInput) (FeedView, error) {
-	f.mu.Lock()
-	if err := f.writable(); err != nil {
-		f.mu.Unlock()
-		return FeedView{}, err
+	return f.UpdateFeedAs(ctx, "", name, in)
+}
+
+// UpdateFeedAs is UpdateFeed by the user by.
+func (f *Feeds) UpdateFeedAs(ctx context.Context, by, name string, in FeedInput) (FeedView, error) {
+	return f.UpdateFeedIf(ctx, by, name, "", in)
+}
+
+// UpdateFeedIf is UpdateFeedAs, refused with ErrFeedStale when etag is
+// set and the feed is no longer the version it names (see ETag).
+func (f *Feeds) UpdateFeedIf(ctx context.Context, by, name, etag string, in FeedInput) (FeedView, error) {
+	f.prime()
+	if f.inConfig(name) {
+		return FeedView{}, ErrReadOnly
 	}
-	i := f.uiIndex(name)
-	if f.inConfig(name) || i < 0 {
-		f.mu.Unlock()
-		if f.inConfig(name) {
-			return FeedView{}, ErrReadOnly
+	var old Feed
+	var spec FeedSpec
+	_, err := f.list().Mutate(ctx, by, func(set *FeedSet) error {
+		i := specIndex(set.UI, name)
+		if i < 0 {
+			return ErrUnknownFeed
 		}
-		return FeedView{}, ErrUnknownFeed
-	}
-	old := f.ui[i].Feed(SourceUI)
-	var probs []FeedProblem
-	if n := strings.TrimSpace(in.Name); n != "" && n != name {
-		probs = append(probs, FeedProblem{Field: "name", Msg: "a feed's name cannot be changed; add a new feed with the new name instead"})
-	}
-	in.Name = name
-	if low := strings.ToLower(strings.TrimSpace(in.Kind)); low != KindTAXII && strings.TrimSpace(in.Format) == "" {
-		in.Format = FormatAuto
-	}
-	spec, p := in.spec(&old)
-	if probs = append(probs, p...); len(probs) > 0 {
-		f.mu.Unlock()
-		return FeedView{}, &InputError{Problems: probs}
-	}
-	ui := cloneSpecs(f.ui)
-	ui[i] = spec
-	if err := f.saveFile(ui, f.kept); err != nil {
-		f.mu.Unlock()
+		if etag != "" && specETag(f.etagKey(), set.UI[i]) != etag {
+			return ErrFeedStale
+		}
+		old = set.UI[i].Feed(SourceUI)
+		var probs []FeedProblem
+		if n := strings.TrimSpace(in.Name); n != "" && n != name {
+			probs = append(probs, FeedProblem{Field: "name", Msg: "a feed's name cannot be changed; add a new feed with the new name instead"})
+		}
+		in := in
+		in.Name = name
+		if low := strings.ToLower(strings.TrimSpace(in.Kind)); low != KindTAXII && strings.TrimSpace(in.Format) == "" {
+			in.Format = FormatAuto
+		}
+		sp, p := in.spec(&old)
+		if probs = append(probs, p...); len(probs) > 0 {
+			return &InputError{Problems: probs}
+		}
+		set.UI[i] = sp
+		spec = sp
+		return nil
+	})
+	if err != nil {
 		return FeedView{}, err
 	}
-	f.ui = ui
-	on := spec.IsEnabled()
-	f.changed(name, on)
-	view := f.view(spec.Feed(SourceUI))
+	f.mu.Lock()
+	f.afterSave()
+	view := f.saved(spec)
 	f.mu.Unlock()
-	if old.Enabled && !on {
+	if old.Enabled && !spec.IsEnabled() {
 		f.storeMu.Lock()
 		_, err := f.Store.DeleteSource(ctx, name)
 		f.storeMu.Unlock()
@@ -408,38 +497,45 @@ func (f *Feeds) UpdateFeed(ctx context.Context, name string, in FeedInput) (Feed
 // indicators go at once; otherwise they stay until they expire (the
 // feed's max_age after its last download).
 func (f *Feeds) RemoveFeed(ctx context.Context, name string, removeIndicators bool) (int, error) {
-	f.mu.Lock()
-	if err := f.writable(); err != nil {
-		f.mu.Unlock()
-		return 0, err
-	}
-	i := f.uiIndex(name)
+	return f.RemoveFeedAs(ctx, "", name, removeIndicators)
+}
+
+// RemoveFeedAs is RemoveFeed by the user by.
+func (f *Feeds) RemoveFeedAs(ctx context.Context, by, name string, removeIndicators bool) (int, error) {
+	return f.RemoveFeedIf(ctx, by, name, "", removeIndicators)
+}
+
+// RemoveFeedIf is RemoveFeedAs, refused with ErrFeedStale when etag is
+// set and the feed is no longer the version it names (see ETag).
+func (f *Feeds) RemoveFeedIf(ctx context.Context, by, name, etag string, removeIndicators bool) (int, error) {
+	f.prime()
 	// A feed in signalith.yaml with the same name owns the indicators and
 	// the status; deleting the duplicate leaves them alone.
 	shadowed := f.inConfig(name)
-	if i < 0 {
-		f.mu.Unlock()
-		if shadowed {
-			return 0, ErrReadOnly
+	_, err := f.list().Mutate(ctx, by, func(set *FeedSet) error {
+		i := specIndex(set.UI, name)
+		if i < 0 {
+			if shadowed {
+				return ErrReadOnly
+			}
+			return ErrUnknownFeed
 		}
-		return 0, ErrUnknownFeed
-	}
-	old := f.ui[i].Feed(SourceUI)
-	ui := append(cloneSpecs(f.ui[:i]), cloneSpecs(f.ui[i+1:])...)
-	kept := withoutKept(f.kept, name)
-	if !removeIndicators && !shadowed {
-		kept = append(kept, KeptFeed{Name: name, Until: f.now().Add(old.MaxAge).UTC()})
-	}
-	if err := f.saveFile(ui, kept); err != nil {
-		f.mu.Unlock()
+		if etag != "" && specETag(f.etagKey(), set.UI[i]) != etag {
+			return ErrFeedStale
+		}
+		old := set.UI[i].Feed(SourceUI)
+		set.UI = slices.Delete(set.UI, i, i+1)
+		set.Kept = withoutKept(set.Kept, name)
+		if !removeIndicators && !shadowed {
+			set.Kept = append(set.Kept, KeptFeed{Name: name, Until: f.now().Add(old.MaxAge).UTC()})
+		}
+		return nil
+	})
+	if err != nil {
 		return 0, err
 	}
-	f.ui, f.kept = ui, kept
-	if !shadowed {
-		f.gen[name]++
-		delete(f.status, name)
-		f.saveStatus()
-	}
+	f.mu.Lock()
+	f.afterSave()
 	f.mu.Unlock()
 	if shadowed || !removeIndicators {
 		return 0, nil
@@ -455,57 +551,70 @@ type CatalogSkip struct {
 	Reason string `json:"reason"`
 }
 
+// errNothingAdded ends a catalog change that adds nothing, without a
+// write.
+var errNothingAdded = errors.New("nothing to add")
+
 // AddCatalog adds catalog feeds with their suggested settings, skipping
 // ones already added and ones that need an API key.
 func (f *Feeds) AddCatalog(req []string) ([]FeedView, []CatalogSkip, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.writable(); err != nil {
-		return nil, nil, err
-	}
-	views := catalogViews(f.all())
-	ui := cloneSpecs(f.ui)
-	kept := f.kept
-	var ids, names []string
-	skipped := []CatalogSkip{}
-	for _, id := range req {
-		i := slices.IndexFunc(views, func(v CatalogView) bool { return v.ID == id })
-		switch {
-		case i < 0:
-			skipped = append(skipped, CatalogSkip{ID: id, Reason: "There is no catalog feed with this ID."})
-			continue
-		case views[i].Added || slices.Contains(ids, id):
-			skipped = append(skipped, CatalogSkip{ID: id, Reason: "Already added."})
-			continue
-		case views[i].NeedsKey:
-			skipped = append(skipped, CatalogSkip{ID: id, Reason: "Needs an API key; add it on its own."})
-			continue
+	return f.AddCatalogAs(context.Background(), "", req)
+}
+
+// AddCatalogAs is AddCatalog by the user by.
+func (f *Feeds) AddCatalogAs(ctx context.Context, by string, req []string) ([]FeedView, []CatalogSkip, error) {
+	f.prime()
+	var names []string
+	var skipped []CatalogSkip
+	_, err := f.list().Mutate(ctx, by, func(set *FeedSet) error {
+		views := catalogViews(f.feedsOf(set.UI))
+		var ids []string
+		names, skipped = nil, []CatalogSkip{}
+		for _, id := range req {
+			i := slices.IndexFunc(views, func(v CatalogView) bool { return v.ID == id })
+			switch {
+			case i < 0:
+				skipped = append(skipped, CatalogSkip{ID: id, Reason: "There is no catalog feed with this ID."})
+				continue
+			case views[i].Added || slices.Contains(ids, id):
+				skipped = append(skipped, CatalogSkip{ID: id, Reason: "Already added."})
+				continue
+			case views[i].NeedsKey:
+				skipped = append(skipped, CatalogSkip{ID: id, Reason: "Needs an API key; add it on its own."})
+				continue
+			}
+			spec := views[i].Spec()
+			all := f.feedsOf(set.UI)
+			spec.Name = freeName(all, spec.Name, names...)
+			spec.Defaults()
+			if p := append(spec.Problems(false), nameProblems(all, spec.Name)...); len(p) > 0 {
+				skipped = append(skipped, CatalogSkip{ID: id, Reason: sentence(p[0].Msg)})
+				continue
+			}
+			set.UI = append(set.UI, spec)
+			set.Kept = withoutKept(set.Kept, spec.Name)
+			ids = append(ids, id)
+			names = append(names, spec.Name)
 		}
-		spec := views[i].Spec()
-		spec.Name = f.freeName(spec.Name, names...)
-		spec.Defaults()
-		if p := append(spec.Problems(false), f.nameProblems(spec.Name)...); len(p) > 0 {
-			skipped = append(skipped, CatalogSkip{ID: id, Reason: sentence(p[0].Msg)})
-			continue
+		if len(names) == 0 {
+			return errNothingAdded
 		}
-		ui = append(ui, spec)
-		kept = withoutKept(kept, spec.Name)
-		ids = append(ids, id)
-		names = append(names, spec.Name)
-	}
-	if len(names) == 0 {
+		return nil
+	})
+	if errors.Is(err, errNothingAdded) {
 		return []FeedView{}, skipped, nil
 	}
-	if err := f.saveFile(ui, kept); err != nil {
+	if err != nil {
 		return nil, nil, err
 	}
-	f.ui, f.kept = ui, kept
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.afterSave()
 	added := make([]FeedView, 0, len(names))
 	for _, n := range names {
-		delete(f.status, n)
-		f.changed(n, true)
-		fd, _ := f.get(n)
-		added = append(added, f.view(fd))
+		if fd, ok := f.get(n); ok {
+			added = append(added, f.view(fd))
+		}
 	}
 	return added, skipped, nil
 }

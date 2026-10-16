@@ -3,7 +3,7 @@
 A **response action** is something Signalith does outside itself when an analyst
 asks: block an IP on the firewall, disable a user in Active Directory, isolate a
 host, or start a workflow in a SOAR. Admins set the actions up on the **Response
-actions** page (under Configure). Analysts run them from a finding or a case with
+actions** page (under Detect & respond). Analysts run them from a finding or a case with
 **Respond**.
 
 Every run goes the same way:

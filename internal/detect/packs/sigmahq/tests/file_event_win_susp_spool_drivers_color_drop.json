@@ -1,0 +1,4 @@
+{"rule": "ce7066a6-508a-42d3-995b-2952c65dc2ce", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\spool\\drivers\\color\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

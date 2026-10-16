@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -32,16 +33,145 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
 // categories are the Sigma log source categories with a Signalith parser,
 // and the folders their rules live in.
 var categories = map[string]string{
-	"process_creation":   "rules/windows/process_creation",
-	"network_connection": "rules/windows/network_connection",
+	"process_creation":     "rules/windows/process_creation",
+	"network_connection":   "rules/windows/network_connection",
+	"file_event":           "rules/windows/file/file_event",
+	"file_delete":          "rules/windows/file/file_delete",
+	"registry_add":         "rules/windows/registry/registry_add",
+	"registry_delete":      "rules/windows/registry/registry_delete",
+	"registry_set":         "rules/windows/registry/registry_set",
+	"registry_event":       "rules/windows/registry/registry_event",
+	"dns_query":            "rules/windows/dns_query",
+	"pipe_created":         "rules/windows/pipe_created",
+	"raw_access_thread":    "rules/windows/raw_access_thread",
+	"create_stream_hash":   "rules/windows/create_stream_hash",
+	"image_load":           "rules/windows/image_load",
+	"driver_load":          "rules/windows/driver_load",
+	"process_access":       "rules/windows/process_access",
+	"create_remote_thread": "rules/windows/create_remote_thread",
+	"ps_script":            "rules/windows/powershell/powershell_script",
+	// Not a Sigma category: Windows System log rules (service: system),
+	// in folders by provider.
+	"system": "rules/windows/builtin/system",
+	// Nor this: Windows Application log rules (service: application), in
+	// folders by provider.
+	"application": "rules/windows/builtin/application",
+	// Nor this: Code Integrity log rules (service:
+	// codeintegrity-operational).
+	"code_integrity": "rules/windows/builtin/code_integrity",
+	// Nor these: rules about the logs the parser reads by name
+	// (service: firewall-as, bits-client, appxdeployment-server, wmi).
+	"firewall_as":           "rules/windows/builtin/firewall_as",
+	"bits_client":           "rules/windows/builtin/bits_client",
+	"appxdeployment_server": "rules/windows/builtin/appxdeployment_server",
+	"wmi":                   "rules/windows/builtin/wmi",
+	// Nor this: Sysmon's own events (service: sysmon), by event ID.
+	"sysmon_service":                       "rules/windows/sysmon",
+	"terminalservices_localsessionmanager": "rules/windows/builtin/terminalservices",
+	"shell_core":                           "rules/windows/builtin/shell_core",
+	"smbclient_security":                   "rules/windows/builtin/smbclient/security",
+	"security_mitigations":                 "rules/windows/builtin/security_mitigations",
+	"dns_client":                           "rules/windows/builtin/dns_client",
+	"taskscheduler":                        "rules/windows/builtin/taskscheduler",
+	"ntlm":                                 "rules/windows/builtin/ntlm",
+	"lsa_server":                           "rules/windows/builtin/lsa_server",
+	"capi2":                                "rules/windows/builtin/capi2",
+	"driver_framework":                     "rules/windows/builtin/driverframeworks",
+	"appmodel_runtime":                     "rules/windows/builtin/appmodel_runtime",
+	"appxpackaging_om":                     "rules/windows/builtin/appxpackaging_om",
+	"certificateservicesclient_lifecycle_system": "rules/windows/builtin/certificate_services_client_lifecycle_system",
+	"openssh":           "rules/windows/builtin/openssh",
+	"dns_server":        "rules/windows/builtin/dns_server",
+	"iis_configuration": "rules/windows/builtin/iis-configuration",
+	// Nor this: Microsoft Defender Antivirus log rules (service:
+	// windefend).
+	"windefend": "rules/windows/builtin/windefend",
+	// Nor this: Windows Security log rules (service: security), each
+	// about one of the Security events sigmacheck.SecurityEvents lists.
+	"security": "rules/windows/builtin/security",
 }
+
+// linuxCategories are the Linux log source categories Sysmon for Linux
+// records, and the folders their rules live in.
+var linuxCategories = map[string]string{
+	"process_creation":   "rules/linux/process_creation",
+	"network_connection": "rules/linux/network_connection",
+	"file_event":         "rules/linux/file_event",
+	// Not a Sigma category: Linux audit records (service: auditd), in
+	// folders by record type.
+	"auditd": "rules/linux/auditd",
+}
+
+// webCategories are the log source categories of web servers' logs, which
+// name no product, and the folders their rules live in.
+var webCategories = map[string]string{
+	"webserver": "rules/web/webserver_generic",
+}
+
+// cloudCategories are the log sources of cloud services, by product, and
+// the folders their rules live in. Not Sigma categories: each is a
+// product's service (product: aws, service: cloudtrail).
+var cloudCategories = map[string][2]string{
+	"cloudtrail":    {"aws", "rules/cloud/aws/cloudtrail"},
+	"signinlogs":    {"azure", "rules/cloud/azure/signin_logs"},
+	"auditlogs":     {"azure", "rules/cloud/azure/audit_logs"},
+	"activitylogs":  {"azure", "rules/cloud/azure/activity_logs"},
+	"riskdetection": {"azure", "rules/cloud/azure/identity_protection"},
+	"pim":           {"azure", "rules/cloud/azure/privileged_identity_management"},
+	// Microsoft 365's rules are in a folder per service, all of them one
+	// audit log.
+	"m365": {"m365", "rules/cloud/m365"},
+	// Google Cloud's audit logs, and Google Workspace's, as Google Cloud
+	// has them when an organization shares them.
+	"gcp.audit":              {"gcp", "rules/cloud/gcp/audit"},
+	"google_workspace.admin": {"gcp", "rules/cloud/gcp/gworkspace/admin"},
+	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
+}
+
+// networkCategories are the network log sources, and the folders their
+// rules live in: Zeek's own logs (product: zeek, one category per
+// service, zeek_dns), and the generic dns, firewall and proxy categories,
+// whose events a network sensor's Zeek logs carry. Their test events are
+// Zeek log lines (sigmacheck.NetworkCases).
+var networkCategories = map[string]string{
+	"zeek":     "rules/network/zeek",
+	"dns":      "rules/network/dns",
+	"firewall": "rules/network/firewall",
+	"proxy":    "rules/web/proxy_generic",
+}
+
+// networkCategory is the category a network rule's test events are made
+// for, or "" when its log source is not the plain one of its folder.
+func networkCategory(ls map[string]string, cat string) string {
+	if cat == "zeek" {
+		if ls["product"] != "zeek" || ls["category"] != "" || ls["service"] == "" {
+			return ""
+		}
+		return sigmacheck.ZeekCategoryPrefix + strings.ToLower(ls["service"])
+	}
+	if ls["category"] != cat || ls["service"] != "" || (ls["product"] != "" && ls["product"] != "zeek") {
+		return ""
+	}
+	return cat
+}
+
+// maxWildcardTerms keeps a rule's searches under
+// OpenSearch's default limit of 1,024 clauses in one search (see
+// search.WildcardFieldTerms and search.Clauses).
+const maxWildcardTerms = 1000
+
+// maxClauses is OpenSearch's limit of clauses in one search, which a
+// rule's whole search must stay within (search.Clauses).
+const maxClauses = 1024
 
 var (
 	sigmaDir = flag.String("sigma", "", "SigmaHQ checkout")
@@ -67,7 +197,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows process and network rules from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -89,13 +219,38 @@ func main() {
 	skipped := map[string][]string{}
 	skip := func(reason, file string) { skipped[reason] = append(skipped[reason], file) }
 	used := map[string]bool{}
-	cats := make([]string, 0, len(categories))
-	for c := range categories {
-		cats = append(cats, c)
+	type source struct{ product, cat, dir string }
+	var sources []source
+	for c, dir := range categories {
+		sources = append(sources, source{"windows", c, dir})
 	}
-	sort.Strings(cats)
-	for _, cat := range cats {
-		files, _ := filepath.Glob(filepath.Join(*sigmaDir, categories[cat], "*.yml"))
+	for c, dir := range linuxCategories {
+		sources = append(sources, source{"linux", c, dir})
+	}
+	for c, dir := range webCategories {
+		sources = append(sources, source{"", c, dir})
+	}
+	for c, pd := range cloudCategories {
+		sources = append(sources, source{pd[0], c, pd[1]})
+	}
+	for c, dir := range networkCategories {
+		sources = append(sources, source{"network", c, dir})
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].dir < sources[j].dir })
+	for _, src := range sources {
+		cat, product := src.cat, src.product
+		bases, cases := sigmacheck.Bases[cat], sigmacheck.Cases
+		if product == "linux" {
+			bases, cases = sigmacheck.LinuxBases[cat], sigmacheck.LinuxCases
+		}
+		if cat == "auditd" {
+			cases = sigmacheck.AuditdCases
+		}
+		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
+		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" || cat == "m365" {
+			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
+			files = append(files, more...)
+		}
 		sort.Strings(files)
 		for _, f := range files {
 			rel, _ := filepath.Rel(*sigmaDir, f)
@@ -119,9 +274,58 @@ func main() {
 				skip("level informational", rel)
 				continue
 			}
-			if rule.Logsource["product"] != "windows" || rule.Logsource["category"] != cat || rule.Logsource["service"] != "" {
-				skip("log source is not plain Windows "+cat, rel)
+			want := map[string]string{"product": product, "category": cat, "service": ""}
+			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
+				want["category"], want["service"] = "", cat
+			}
+			if _, ok := cloudCategories[cat]; ok {
+				want["category"], want["service"] = "", cat
+			}
+			if cat == "m365" {
+				want["service"] = rule.Logsource["service"]
+			}
+			if cat == "code_integrity" {
+				want["category"], want["service"] = "", "codeintegrity-operational"
+			}
+			if cat == "sysmon_service" {
+				want["category"], want["service"] = "", "sysmon"
+			}
+			for service := range ingest.NamedChannelServices {
+				if cat == ingest.NamedChannelCategory(service) {
+					want["category"], want["service"] = "", service
+				}
+			}
+			if product != "network" && (rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"]) {
+				skip("log source is not plain "+product+" "+cat, rel)
 				continue
+			}
+			rcat, rbases := cat, bases
+			if product == "network" {
+				if rcat = networkCategory(rule.Logsource, cat); rcat == "" {
+					skip("log source is not plain "+cat, rel)
+					continue
+				}
+				rbases = sigmacheck.NetworkBase(rcat)
+			}
+			if cat == "system" {
+				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "sysmon_service" {
+				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "security" {
+				ids := rule.EventIDs()
+				rcat = sigmacheck.SecurityCategory(ids...)
+				if ingest.IsNamedSecurityEvents(ids...) {
+					rcat = "security_named"
+				}
+				if _, ok := sigmacheck.SysmonEventID(rcat); !ok || len(ids) == 0 {
+					skip("not about one Security event Signalith reads", rel)
+					continue
+				}
+				rbases = sigmacheck.Bases[rcat]
 			}
 			stem := strings.TrimSuffix(filepath.Base(f), ".yml")
 			id := old[rule.ID]
@@ -139,13 +343,34 @@ func main() {
 			if err != nil {
 				log.Fatalf("%s: converted query does not parse: %v", rel, err)
 			}
-			syn, err := rule.Synthesize(seed(rule.ID), nil, sigmacheck.Bases[cat])
+			if n := search.WildcardFieldTerms(q.Search); n > maxWildcardTerms {
+				skip("too many script text pieces for one OpenSearch search", fmt.Sprintf("%s: about %d", rel, n))
+				continue
+			} else if os.Getenv("PACKGEN_TERMS") != "" && n > 0 {
+				fmt.Fprintln(os.Stderr, "TERMS", n, rel)
+			}
+			if n, err := search.Clauses(q.Search); err != nil || n > maxClauses {
+				skip("too many clauses for one OpenSearch search", clauseNote(rel, n, err))
+				continue
+			}
+			syn, err := rule.Synthesize(seed(rule.ID), nil, rbases)
 			if err != nil {
 				skip("no test events: "+short(err), rel)
 				continue
 			}
-			tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: sigmacheck.Cases(cat, syn, rule.Fields())}
-			tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, cat)...)
+			tf := &sigmacheck.TestFile{Rule: rule.ID}
+			if product == "network" {
+				tf.Cases = sigmacheck.NetworkCases(rule, rcat, syn)
+				if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
+					skip("no test event the rule matches as a sensor logs it", rel)
+					continue
+				}
+			} else {
+				tf.Cases = cases(rcat, syn, rule.Fields())
+			}
+			if product == "windows" {
+				tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, rcat)...)
+			}
 			if errs := sigmacheck.Verify(rule, q.Datamodel, q.Search, tf); len(errs) > 0 {
 				skip("converted detection disagrees with the rule", rel+": "+errs[0].Error())
 				continue
@@ -199,7 +424,27 @@ func short(err error) string {
 
 var prefixes = []struct{ from, to string }{
 	{"proc_creation_win_", "sigma-proc-"},
+	{"proc_creation_lnx_", "sigma-lnx-proc-"},
+	{"net_connection_lnx_", "sigma-lnx-net-"},
+	{"file_event_lnx_", "sigma-lnx-file-"},
+	{"lnx_auditd_", "sigma-lnx-auditd-"},
 	{"net_connection_win_", "sigma-net-"},
+	{"file_event_win_", "sigma-file-"},
+	{"file_delete_win_", "sigma-file-delete-"},
+	{"registry_add_", "sigma-reg-add-"},
+	{"registry_delete_", "sigma-reg-delete-"},
+	{"registry_set_", "sigma-reg-set-"},
+	{"registry_event_", "sigma-reg-"},
+	{"dns_query_win_", "sigma-dns-"},
+	{"image_load_", "sigma-load-"},
+	{"driver_load_win_", "sigma-driver-"},
+	{"proc_access_win_", "sigma-access-"},
+	{"create_remote_thread_win_", "sigma-thread-"},
+	{"posh_ps_", "sigma-ps-"},
+	{"zeek_", "sigma-zeek-"},
+	{"net_dns_", "sigma-net-dns-"},
+	{"net_firewall_", "sigma-firewall-"},
+	{"proxy_", "sigma-proxy-"},
 }
 
 var nonID = regexp.MustCompile(`[^a-z0-9]+`)
@@ -242,7 +487,7 @@ func gitCommit(dir string) string {
 func regression(root, rel string, rule *sigmacheck.Rule, cat string) []sigmacheck.Case {
 	dir := filepath.Join(root, "regression_data", strings.TrimSuffix(rel, ".yml"))
 	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-	sysmonID, _ := sigmacheck.SysmonEventID(cat)
+	sysmonIDs := sigmacheck.SysmonEventIDs(cat)
 	var out []sigmacheck.Case
 	for _, f := range files {
 		data, err := os.ReadFile(f)
@@ -283,7 +528,9 @@ func regression(root, rel string, rule *sigmacheck.Rule, cat string) []sigmachec
 					c.Data[k] = string(b)
 				}
 			}
-			ok := (strings.EqualFold(c.Channel, sigmacheck.SysmonChannel) && id == sysmonID) ||
+			// A log read by name: any of its events the rule matches.
+			named := ingest.IsNamedChannel(c.Channel) && strings.EqualFold(c.Channel, sigmacheck.Channel(cat))
+			ok := named || (strings.EqualFold(c.Channel, sigmacheck.Channel(cat)) && slices.Contains(sysmonIDs, id)) ||
 				(cat == "process_creation" && c.Channel == sigmacheck.SecurityChannel && id == "4688")
 			if !ok {
 				continue
@@ -307,7 +554,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 		n += len(v)
 	}
 	fmt.Fprintf(&b, "# SigmaHQ pack report\n\nGenerated by `go run ./internal/detect/packgen` from SigmaHQ commit `%s` on %s.\n\n", p.Version, p.Date)
-	fmt.Fprintf(&b, "%d rules shipped. %d Windows process and network rules were left out:\n\n", len(p.Rules), n)
+	fmt.Fprintf(&b, "%d rules shipped. %d Windows, Linux and network rules for these log sources were left out:\n\n", len(p.Rules), n)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)
@@ -329,7 +576,29 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 			fmt.Fprintf(&b, "- %s\n", strings.ReplaceAll(f, "|", `\|`))
 		}
 	}
+	b.WriteString(networkReportNote)
 	if err := os.WriteFile(filepath.Join(*outDir, "REPORT.md"), []byte(b.String()), 0o644); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// networkReportNote is about network rules that ship but are unlikely
+// to match what Zeek writes.
+const networkReportNote = `
+## Shipped network rules unlikely to match real Zeek data
+
+These convert faithfully and pass their test events, but Sigma's values are not the
+ones Zeek writes, so they seldom fire on a real sensor's logs (all pack rules are off
+until turned on):
+
+- rules/network/zeek/zeek_smb_converted_win_atsvc_task.yml: the share is the literal ` + "`\\\\*\\IPC$`" + `, while Zeek logs the server's own name.
+- rules/network/zeek/zeek_smb_converted_win_transferring_files_with_credential_data.yml: whole names such as ` + "`\\sam`" + ` and ` + "`\\ntds.dit`" + `, while Zeek's name is the file's path in the share (` + "`Windows\\System32\\config\\SAM`" + `).
+`
+
+// clauseNote is a report line for a rule over the clause limit.
+func clauseNote(rel string, n int, err error) string {
+	if err != nil {
+		return fmt.Sprintf("%s: %v", rel, err)
+	}
+	return fmt.Sprintf("%s: about %d", rel, n)
 }

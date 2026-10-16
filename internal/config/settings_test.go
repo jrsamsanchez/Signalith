@@ -70,6 +70,11 @@ func TestRegistryCoversEveryConfigSetting(t *testing.T) {
 			t.Errorf("%s: ConfirmWhen is for switches with a Confirm text", s.Key)
 		}
 		v, _ := field(&Config{}, s.Key)
+		if v.Kind() == reflect.Pointer {
+			// A setting that may be left unset, such as
+			// cluster.leader_eligible.
+			v = reflect.New(v.Type().Elem()).Elem()
+		}
 		want := map[string]reflect.Kind{TypeNumber: reflect.Int, TypeBool: reflect.Bool, TypeList: reflect.Slice}[s.Type]
 		if want == 0 {
 			want = reflect.String
@@ -83,7 +88,7 @@ func TestRegistryCoversEveryConfigSetting(t *testing.T) {
 			t.Errorf("Excluded has %s, which is not a setting of Config", k)
 		}
 	}
-	if len(Sections) != 9 {
+	if len(Sections) != 12 {
 		t.Errorf("sections: %d", len(Sections))
 	}
 }
@@ -95,10 +100,14 @@ func TestRegistryEnvMatchesTheEnvironment(t *testing.T) {
 	path := writeConfig(t, "")
 	values := map[string]string{
 		"SIGNALITH_OPENSEARCH_URL": "https://os.example:9200", "SIGNALITH_OPENSEARCH_USERNAME": "u",
-		"SIGNALITH_OPENSEARCH_PROXY":    "http://proxy.example:3128",
+		"SIGNALITH_OPENSEARCH_PROXY": "http://proxy.example:3128", "SIGNALITH_OPENSEARCH_CRL_FILE": "/crl/crl.pem", "SIGNALITH_OPENSEARCH_URLS": "https://os2.example:9200",
 		"SIGNALITH_OPENSEARCH_PASSWORD": "p", "SIGNALITH_LISTEN": "0.0.0.0:8081",
 		"SIGNALITH_PUBLIC_URL": "http://siem.example:8081", "SIGNALITH_ASSISTANT_API_KEY": "k",
 		"SIGNALITH_SYSLOG_UDP": "0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP": "0.0.0.0:5514",
+		"SIGNALITH_NVD_API_KEY": "nvd-key", "SIGNALITH_M365_CLIENT_SECRET": "m365-secret", "SIGNALITH_OIDC_CLIENT_SECRET": "oidc-secret", "SIGNALITH_NVD_URL": "https://nvd-mirror.example/rest/json/cves/2.0",
+		"SIGNALITH_KEV_URL": "https://mirror.example/kev.json", "SIGNALITH_EPSS_URL": "/srv/feeds/epss.csv.gz",
+		"SIGNALITH_NODE_URL": "https://10.0.0.5:8081", "SIGNALITH_LEADER_ELIGIBLE": "false",
+		"SIGNALITH_PROXY_PROTOCOL": "true", "SIGNALITH_SYSLOG_PROXY_PROTOCOL": "true",
 	}
 	for k, v := range values {
 		t.Setenv(k, v)
@@ -389,7 +398,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 		"auth.session_timeout":    "Must be a duration of at least 5m",
 		"retention.days":          "Data retention has its own page",
 		"no.such":                 "There is no setting",
-		"opensearch.replicas":     "Enter a whole number",
+		"opensearch.replicas":     "Enter auto, or a whole number",
 		"search.default_earliest": "not a time in the past",
 	} {
 		if !strings.Contains(res.Fields[key], want) {
@@ -756,5 +765,25 @@ func TestAdminPasswordVersion(t *testing.T) {
 	}
 	if c.AdminPasswordVersion() != "hash:"+h {
 		t.Errorf("version after signalith passwd = %q", c.AdminPasswordVersion())
+	}
+}
+
+func TestFeedSource(t *testing.T) {
+	for v, ok := range map[string]bool{
+		"":                                true,
+		DefaultKEVURL:                     true,
+		DefaultEPSSURL:                    true,
+		"/srv/feeds/kev.json":             true,
+		"file:///srv/feeds/epss.csv.gz":   true,
+		`C:\feeds\epss.csv`:               true,
+		"/srv/feeds/kev.txt":              false,
+		"file://feeds/kev.json":           false,
+		"ftp://example.com/kev.json":      false,
+		"https://user:pw@example.com/kev": false,
+		"kev.json":                        false,
+	} {
+		if err := FeedSource(v); (err == nil) != ok {
+			t.Errorf("FeedSource(%q) = %v, want ok %v", v, err, ok)
+		}
 	}
 }

@@ -1,0 +1,6 @@
+{"rule": "4ac1f50b-3bd0-4968-902d-868b4647937e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"0x2","ObjectName":"BCKUPKEY","ObjectType":"SecretObject"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"ObjectName":"BCKUPKEY","ObjectType":"SecretObject"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"0x2","ObjectType":"SecretObject"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4662","data":{"AccessMask":"0x2","ObjectName":"BCKUPKEY"}}
+]}

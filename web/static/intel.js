@@ -171,6 +171,11 @@ async function loadIntel(opts = {}) {
   // Only admins add and change feeds.
   tiState.manage = res.manage !== false && can('admin');
   tiState.fileError = res.file_error || '';
+  // Where the servers share their settings, every server changes the one
+  // feed list, and the server that runs the background jobs downloads.
+  tiState.shared = !!res.shared;
+  // Each feed's version, so a change applies only to the feed as shown.
+  tiState.etags = res.etags || {};
   $('ti-error').classList.add('hidden');
   $('ti-main').classList.remove('hidden');
   $('ti-add-open').disabled = false;
@@ -284,7 +289,10 @@ function renderFeeds() {
   const notes = [];
   if (tiState.fileError && can('admin')) notes.push(riAlert('danger', 'Feeds can’t be changed on this page right now.', el('p', {}, tiState.fileError)));
   const servers = el('a', { href: '#servers', 'data-page': 'servers' }, 'Servers page');
-  if (!tiState.downloads && can('admin') && tiState.runsOn === '') {
+  if (tiState.shared && !tiState.downloads && can('admin') && tiState.runsOn) {
+    notes.push(riAlert('info', `${tiState.runsOn} downloads the feeds.`,
+      el('p', {}, 'Every server shares this list of feeds: a feed added or changed here is downloaded there, and its status shows on every server.')));
+  } else if (!tiState.downloads && can('admin') && tiState.runsOn === '') {
     notes.push(riAlert('danger', 'No server downloads feeds right now.',
       el('p', {}, 'Feeds don’t update until a server runs the background jobs again. The ', servers, ' says why.')));
   } else if (!tiState.downloads && can('admin') && tiState.runsOn) {
@@ -395,7 +403,8 @@ function feedRows(f) {
     icon('chevron-right', 'ti-chev'), el('span', { class: 'ti-dot', 'data-state': state, title: label }),
     el('span', { class: 'ti-feed__name', title: f.name }, f.name), el('span', { class: 'sr-only' }, `, ${label}`));
   const line = el('div', { class: 'ti-feed__line' }, toggle,
-    f.source === 'config' ? el('span', { class: 'badge badge--outline', title: 'Change it in signalith.yaml' }, 'From signalith.yaml') : null);
+    f.source === 'config' ? el('span', { class: 'badge badge--outline', title: 'Change it in signalith.yaml' }, 'From signalith.yaml')
+      : f.from ? el('span', { class: 'badge badge--outline', title: tiCap(f.from) }, /signalith\.yaml/.test(f.from) ? 'signalith.yaml' : 'Imported') : null);
   const origin = cat ? cat.provider : tiHost(f.url) + (f.kind === 'taxii' ? ' · TAXII' : '');
   let sub;
   if (f.problem) sub = el('span', { class: 'ti-feed__sub ti-feed__sub--bad', title: f.problem }, sentence(f.problem));
@@ -444,7 +453,7 @@ function feedUpdated(f, state) {
 function feedMenu(f) {
   const mine = f.source === 'ui' && tiState.manage && !tiState.fileError;
   const items = [];
-  if (can('admin') && f.enabled && !f.problem && (tiState.downloads || f.source === 'config')) items.push({ icon: 'refresh-cw', label: 'Refresh now', run: () => refreshFeed(f) });
+  if (can('admin') && f.enabled && !f.problem && (tiState.downloads || tiState.shared || f.source === 'config')) items.push({ icon: 'refresh-cw', label: 'Refresh now', run: () => refreshFeed(f) });
   if (mine) {
     items.push({ icon: 'pencil', label: 'Edit', run: () => openFeedDialog({ feed: f }) });
     if (!f.problem) items.push({ icon: 'power', label: f.enabled ? 'Turn off' : 'Turn on', run: () => setFeedEnabled(f, !f.enabled) });
@@ -507,7 +516,21 @@ function feedDetails(f, cat) {
     f.description ? el('p', { class: 'ti-detail__desc' }, f.description) : null,
     el('dl', { class: 'ti-kv' }, ...items),
     notes.length ? el('ul', { class: 'ti-detail__notes' }, ...notes.map((n) => el('li', {}, icon('info', 'icon--sm'), el('span', {}, n)))) : null,
-    f.source === 'config' ? el('p', { class: 'ti-detail__src' }, icon('file-code', 'icon--sm'), 'Set in signalith.yaml. Change it there and restart Signalith.') : null);
+    f.source === 'config' ? el('p', { class: 'ti-detail__src' }, icon('file-code', 'icon--sm'), 'Set in signalith.yaml. Change it there and restart Signalith.')
+      : f.from ? el('p', { class: 'ti-detail__src' }, icon('file-code', 'icon--sm'), `${tiCap(f.from)}. A change here applies on every server.`) : null);
+}
+
+const tiCap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : '');
+// tiIfMatch makes a change apply only to the feed as the page shows it.
+const tiIfMatch = (name) => (tiState.etags && tiState.etags[name] ? { 'If-Match': tiState.etags[name] } : undefined);
+// tiStale says that someone changed a feed meanwhile, and shows theirs.
+function tiStale(e, name) {
+  if (e.status !== 412) return false;
+  // The server's message says to reload; the page does that itself.
+  toast(`Someone changed ${name} since you opened the page. The page now shows their change; make yours again if it is still needed.`, null,
+    { tone: 'warning', title: 'Someone else changed this feed' });
+  loadIntel();
+  return true;
 }
 
 async function refreshFeed(f) {
@@ -517,9 +540,26 @@ async function refreshFeed(f) {
     tr.querySelector('.ti-dot').dataset.state = 'run';
     tr.querySelectorAll('.ti-upd, .ti-count__upd').forEach((n) => { n.textContent = 'Downloading…'; n.classList.add('ti-upd--run'); });
   }
+  const say = (text) => tr && tr.querySelectorAll('.ti-upd, .ti-count__upd').forEach((n) => { n.textContent = text; });
   try {
     const r = await api(`api/intel/feeds/${encodeURIComponent(f.name)}/refresh`, {}, 'POST');
-    toast(`Downloaded ${f.name}: ${tiPlural((r.status || {}).count || 0, 'indicator')}.`);
+    if (r.request_id) {
+      // The server that runs the background jobs downloads it: follow
+      // the request, queued there, then downloading, then the result.
+      const on = r.queued_on || 'the server that runs the background jobs';
+      say(`Queued on ${on}`);
+      const req = await followRequest(r.request_id, (q) => say(q.state === 'running' ? 'Downloading…' : q.state === 'queued' ? `Queued on ${on}` : ''));
+      if (!req) toastError(`Couldn’t follow the download of ${f.name}`, new Error('The request is gone. The feed’s status shows how it went.'));
+      else if (req.state === 'failed') toastError(`Couldn’t download ${f.name}`, new Error(req.error || 'The download failed.'));
+      else if (req.state === 'done') {
+        const st = req.result || {};
+        if (st.already_running) toast(`${f.name} is already downloading on ${on}; its status shows here when it is done.`);
+        else if (st.last_error) toastError(`Couldn’t download ${f.name}`, new Error(st.last_error));
+        else toast(`Downloaded ${f.name} on ${on}: ${tiPlural(st.count || 0, 'indicator')}.`);
+      } else toast(`The download of ${f.name} is still waiting on ${on}. Its status shows here when it is done.`);
+    } else {
+      toast(`Downloaded ${f.name}: ${tiPlural((r.status || {}).count || 0, 'indicator')}.`);
+    }
   } catch (e) {
     toastError(`Couldn’t download ${f.name}`, e);
   }
@@ -529,8 +569,9 @@ async function refreshFeed(f) {
 async function setFeedEnabled(f, on) {
   let v;
   try {
-    v = await api('api/intel/feeds/' + encodeURIComponent(f.name), { enabled: on }, 'PUT');
+    v = await api('api/intel/feeds/' + encodeURIComponent(f.name), { enabled: on }, 'PUT', tiIfMatch(f.name));
   } catch (e) {
+    if (tiStale(e, f.name)) return;
     toastError(`Couldn’t turn ${on ? 'on' : 'off'} ${f.name}`, e);
     return;
   }
@@ -570,9 +611,10 @@ function confirmFeedDelete(f) {
     const done = tiBusy(ok, 'Deleting…');
     let r;
     try {
-      r = await api(`api/intel/feeds/${encodeURIComponent(f.name)}?indicators=${drop ? 'remove' : 'keep'}`, undefined, 'DELETE');
+      r = await api(`api/intel/feeds/${encodeURIComponent(f.name)}?indicators=${drop ? 'remove' : 'keep'}`, undefined, 'DELETE', tiIfMatch(f.name));
     } catch (e) {
       done();
+      if (e.status === 412) { d.close(); tiStale(e, f.name); return; }
       body.hidden = false;
       msg.replaceChildren(riAlert('danger', 'Couldn’t delete the feed.', el('p', {}, sentence(e.message))));
       return;
@@ -1182,10 +1224,20 @@ function feedForm(kind, feed) {
     const done = tiBusy(saveBtn, edit ? 'Saving…' : 'Adding…');
     let v;
     try {
-      v = edit ? await api('api/intel/feeds/' + encodeURIComponent(feed.name), body(false), 'PUT') : await api('api/intel/feeds', body(false));
+      v = edit ? await api('api/intel/feeds/' + encodeURIComponent(feed.name), body(false), 'PUT', tiIfMatch(feed.name)) : await api('api/intel/feeds', body(false));
     } catch (e) {
       if (!alive()) return;
       done();
+      if (edit && e.status === 412) {
+        // Someone changed the feed since the page read it: read their
+        // version (and its new ETag), so saving again replaces it.
+        await loadIntel();
+        if (!alive()) return;
+        msg.replaceChildren(riAlert('warning', 'Someone else changed this feed meanwhile.',
+          el('p', {}, 'The page now has their version. Save again to replace it with yours.')));
+        msg.scrollIntoView({ block: 'nearest' });
+        return;
+      }
       showErrors(e, edit ? 'Couldn’t save the feed.' : 'Couldn’t add the feed.');
       return;
     }
@@ -1543,7 +1595,7 @@ $('ti-upload').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const text = await file.text();
-    const resp = await fetch('api/intel/upload', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: text });
+    const resp = await apiRaw('api/intel/upload', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: text });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       msg.replaceChildren(riAlert('danger', riCap(data.error || resp.statusText) + '.', riLineErrors(data.lines)));

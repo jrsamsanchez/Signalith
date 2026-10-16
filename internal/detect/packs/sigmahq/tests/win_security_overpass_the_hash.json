@@ -1,0 +1,6 @@
+{"rule": "192a0330-c20b-4356-90b6-7b7049ae0b87", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonProcessName":"seclogo","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"LogonProcessName":"seclogo","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonType":"9"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Negotiate","LogonProcessName":"seclogo"}}
+]}

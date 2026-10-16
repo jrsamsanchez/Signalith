@@ -1,0 +1,7 @@
+{"rule": "4da5ce1a-f71b-4e71-bb73-c0a3c73f3c3c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x rm  x x -rf  x x --no-preserve-root x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x rm  x x -rf  x x --no-preserve-root y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:42:55.725:93710) : proctitle=rm -rf deleteme --no-preserve-root"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:25.899:44762) : proctitle=rm -rf deleteme --no-preserve-root"}}
+]}

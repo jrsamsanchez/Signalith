@@ -1,0 +1,5 @@
+{"rule": "961e33d1-4f86-4fcf-80ab-930a708b2f82", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"/R .xll","TargetObject":"Software\\Microsoft\\Office\\ \\Excel\\Options"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Office\\ \\Excel\\Options"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"/R .xll"}}
+]}

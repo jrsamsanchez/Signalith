@@ -1,0 +1,10 @@
+{"rule": "c539afac-c12a-46ed-b1bd-5a5567c9f045", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"5986","Initiated":"true","SourceIsIpv6":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"::1","DestinationPort":"5986","Initiated":"true","SourceIp":"127.0.0.1","SourceIsIpv6":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"5986","Initiated":"true","SourceIsIpv6":"false","User":"NETWORK SERVICE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"5986","Image":"C:\\Program Files (x86)\\Avast Software\\Avast\\AvastSvc.exe","Initiated":"true","SourceIsIpv6":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true","SourceIsIpv6":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"5986","SourceIsIpv6":"false"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"5986","Initiated":"true"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"-","DestinationIp":"192.168.122.157","DestinationIsIpv6":"false","DestinationPort":"5985","DestinationPortName":"-","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","Initiated":"true","ProcessGuid":"570E49AA-0606-6A94-BB01-000000001800","ProcessId":"9264","Protocol":"tcp","RuleName":"technique_id=T1059.001,technique_name=PowerShell","SourceHostname":"-","SourceIp":"192.168.122.157","SourceIsIpv6":"false","SourcePort":"62822","SourcePortName":"-","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-30 10:29:27.836"}}
+]}

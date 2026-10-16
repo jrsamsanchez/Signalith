@@ -1,0 +1,6 @@
+{"rule": "ff151c33-45fa-475d-af4f-c2f93571f4fe", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\Microsoft Online\\Reporting\\MonitoringAgent","ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\Microsoft Online\\Reporting\\MonitoringAgent","ObjectType":"Key","ProcessName":"Microsoft.Identity.Health.Adfs.PshSurrogate.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectType":"Key"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\REGISTRY\\MACHINE\\SOFTWARE\\Microsoft\\Microsoft Online\\Reporting\\MonitoringAgent"}}
+]}

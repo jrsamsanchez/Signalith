@@ -1,0 +1,5 @@
+{"rule": "df6ecb8b-7822-4f4b-b412-08f524b4576c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":":\\Windows\\System32\\TSMSISrv.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:38:31.936","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"5AA13A44-0C90-68FC-BF1D-000000004002","ProcessId":"10048","RuleName":"-","TargetFilename":"C:\\Windows\\System32\\WLBSCTRL.dll","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:38:31.936"}}
+]}

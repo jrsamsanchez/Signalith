@@ -1,0 +1,7 @@
+{"rule": "6b0cb0ff-9a7e-4475-a687-43827fdb31d6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"DAEMON_START","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"DAEMON_STARU","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"DAEMON_START","data":{"_raw":"type=DAEMON_START msg=audit(06/05/2025 08:45:27.575:9051) : op=start ver=3.0.7 format=enriched kernel=6.8.0-1029-aws auid=unset pid=313 uid=root ses=unset subj=unconfined  res=success"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"DAEMON_START","data":{"_raw":"type=DAEMON_START msg=audit(06/05/2025 09:37:41.664:5074) : op=start ver=3.0.7 format=enriched kernel=6.8.0-1029-aws auid=unset pid=4756 uid=root ses=unset subj=unconfined  res=success"}}
+]}

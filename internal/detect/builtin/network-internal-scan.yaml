@@ -1,0 +1,29 @@
+id: network-internal-scan
+title: $src$ scanned the internal network ($hosts$ hosts, $ports$ ports)
+name: Internal network scanning
+description: An internal host tried to connect to 20 or more other internal hosts, or 50 or more ports, and most attempts were refused or not answered. An attacker inside the network maps it this way before moving on.
+query: |
+  datamodel=Network_Traffic direction=internal action=failed transport=tcp NOT conn_state IN (SH, SHR)
+  | stats count, dc(dest) as hosts, dc(dest_port) as ports, min(_time) as first_seen by src
+  | where hosts >= 20 OR ports >= 50
+schedule: 10m
+lookback: 15m
+severity: medium
+mitre: [T1046]
+throttle:
+  fields: [src]
+  window: 4h
+risk:
+  score: 40
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, discovery, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Find out whether the source is a vulnerability scanner, a monitoring server or an asset
+  discovery tool; if so, add an exception on src. Otherwise look at what the host ran at
+  the time (datamodel=Endpoint dest=<host>) and which hosts answered: those are what the
+  scanner found. Needs a sensor that sees traffic between internal hosts (a mirror port on
+  the core switch), not only the internet link. Only TCP counts, and not connections
+  where the sensor saw one side only (Zeek's SH and SHR, common on asymmetric mirror
+  ports): unanswered UDP (syslog, SNMP traps, traceroute) would look like a scan.

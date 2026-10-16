@@ -70,6 +70,9 @@ type FeedSpec struct {
 	Enabled *bool `yaml:"enabled,omitempty"`
 	// Catalog is the built-in catalog entry the feed was added from.
 	Catalog string `yaml:"catalog,omitempty"`
+	// From says where a shared feed came from when not from the page,
+	// such as "applied from signalith.yaml on siem-a"; never in a file.
+	From string `yaml:"-"`
 }
 
 // IsEnabled reports whether a feed is on.
@@ -242,6 +245,7 @@ func (s FeedSpec) Feed(source string) Feed {
 		Format: s.Format, Type: s.Type, Column: s.Column, Interval: iv, MaxAge: age,
 		Weight: s.Weight, Description: s.Description, Tags: slices.Clone(s.Tags), Headers: headers,
 		Username: s.Username, Password: s.Password, Enabled: s.IsEnabled(), Source: source, Catalog: s.Catalog,
+		From: s.From,
 	}
 }
 

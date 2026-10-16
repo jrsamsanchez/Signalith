@@ -1,0 +1,5 @@
+{"rule": "6a7ba45c-63d8-473e-9736-2eaabff79964", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteMountTarget","eventSource":"elasticfilesystem.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"elasticfilesystem.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"DeleteMountTarget"}}
+]}

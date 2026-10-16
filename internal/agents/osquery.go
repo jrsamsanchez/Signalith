@@ -88,10 +88,10 @@ func generateOsquery(o Options) (*Agent, error) {
 		return nil, errors.New("osquery only talks to its management server over HTTPS; use an https:// address")
 	}
 	if o.Token == "" {
-		return nil, fmt.Errorf("no ingest token configured; add one under ingest.tokens")
+		return nil, errors.New("no agent token given")
 	}
 	if strings.ContainsAny(o.Token, "\r\n'") {
-		return nil, errors.New("the ingest token has a quote or line break, which a setup script cannot hold; use a token of letters and digits")
+		return nil, errors.New("the agent token has a quote or line break, which a setup script cannot hold; use a token of letters and digits")
 	}
 	platform := o.Platform
 	if platform == "" {

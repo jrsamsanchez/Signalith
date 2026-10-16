@@ -1,0 +1,4 @@
+{"rule": "4c54ba8f-73d2-4d40-8890-d9cf1dca3d30", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"\u0026\u0026setcmd-f/c{2}"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

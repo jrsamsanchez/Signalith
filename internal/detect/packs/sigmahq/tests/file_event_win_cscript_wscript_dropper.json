@@ -1,0 +1,5 @@
+{"rule": "002bdb95-0cf1-46a6-9e08-d38c128a6127", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\wscript.exe","TargetFilename":"\\Temporary Internet .wsf"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Temporary Internet .wsf"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\wscript.exe"}}
+]}

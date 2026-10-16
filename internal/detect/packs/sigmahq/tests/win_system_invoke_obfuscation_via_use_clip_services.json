@@ -1,0 +1,4 @@
+{"rule": "63e3365d-4824-42d8-8b82-e56810fefa0c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"(Clipboard|i","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

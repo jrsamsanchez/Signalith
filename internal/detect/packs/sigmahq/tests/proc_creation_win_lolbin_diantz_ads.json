@@ -1,0 +1,6 @@
+{"rule": "6b369ced-4b1d-48f1-b427-fdc0de0790bd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"diantz.exe .cab :A"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"diantz.exe .cab :A","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

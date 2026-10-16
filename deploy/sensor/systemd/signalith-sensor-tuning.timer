@@ -1,0 +1,11 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+[Unit]
+Description=Signalith sensor: fetch the Suricata rule tuning every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

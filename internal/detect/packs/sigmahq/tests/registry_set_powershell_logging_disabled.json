@@ -1,0 +1,6 @@
+{"rule": "fecfd1a1-cc78-4313-a1ea-2ee2e8ec27a7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\Microsoft\\Windows\\PowerShell\\\\ModuleLogging\\EnableModuleLogging"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\PowerShell\\\\ModuleLogging\\EnableModuleLogging"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"14207D89-4FE2-6904-D207-000000004002","ProcessId":"5612","RuleName":"-","TargetObject":"HKU\\S-1-5-21-1938467512-983293709-721003795-1103\\Software\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging\\EnableScriptBlockLogging","User":"MIDGARDNET\\SwachchhandaP","UtcTime":"2025-10-31 05:57:54.387"}}
+]}

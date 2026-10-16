@@ -1,9 +1,28 @@
 # Dashboards
 
-The **Dashboards** tab has two built-in dashboards, **Security posture** and
-**Malware**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
+The **Dashboards** tab has four built-in dashboards, **Security posture**,
+**Malware**, **Network** and **Vulnerabilities**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
 range, and optionally turn on auto-refresh (every minute, 5 or 15 minutes; it pauses
 while the browser tab is hidden).
+
+## Click a number to see its events
+
+Every number on a dashboard opens **Search** on the events behind it, in one click
+or tap: a single value, a count in a table, a bar, a column (or one colour within
+it), a point on a line chart, or a series in the legend. The search is the panel's
+query up to its `stats`, `top` or `timechart`, plus that row's values (for example
+`dest=web-01`) and the panel's time range; a column or a point narrows it to that
+time bucket. Numbers you can click show a pointer and turn the accent colour on
+hover. A row of a table of events (such as **Malware not removed**) opens that
+event in Search: its values at its exact time.
+
+A filter goes into the search itself when it can, so it runs in OpenSearch. When
+the query makes or changes fields before it summarises them (`eval`, `rex`,
+`dedup`, `head` and so on), the filter is added at the end as `| where`. Columns
+that `eval` or a second `stats` made after the summary don't name event values, so
+those only keep the time range. On **Security posture**, **Events ingested**, the
+**Events by data model** columns, source types and ATT&CK tactics open Search (a
+tactic opens its risk events); the findings numbers open the findings queue.
 
 ## Security posture
 
@@ -23,7 +42,7 @@ length, so "Last 24 hours" compares today with the 24 hours before.
 | Top detections firing | Findings plus risk events per detection; click one to open it |
 | Top risk objects | Users and systems with the most risk; click one to open it on the Risk page |
 | ATT&CK tactics seen | Findings and risk events per ATT&CK tactic, in matrix order |
-| Detection health | Enabled detections, detections whose last run failed, enabled detections with no findings and no risk events in 30 days, and data sources that stopped sending |
+| Detection health | Enabled detections, detections whose last run failed, detections behind schedule, enabled detections with no findings and no risk events in 30 days, and data sources that stopped sending. When missed runs were skipped (older than `detections.catch_up`) in the period or the last day, a line says when, for example "Signalith was not running detections from 02:10 to 09:40; 90 runs of 'Brute force' were skipped". Every server shows the same health |
 | Events by data model, by source type | Event volume over time |
 
 A data source is a host and source type pair. It counts as stopped when it sent
@@ -48,11 +67,30 @@ consoles. It opens on the last 7 days. Until antivirus events arrive it shows a
 **Set up antivirus logs** button (for admins) that opens Add data. See
 [antivirus.md](antivirus.md#the-malware-dashboard) for each panel.
 
+## Network
+
+A built-in panel dashboard for a [network sensor](network-sensor.md) (Zeek,
+Suricata): IDS alerts and the hosts with high ones, connections and data sent to the
+internet, alerts over time by severity, the top signatures, talkers and external
+destinations, DNS lookups and failed lookups, web requests by status and user agent,
+files by type, self-signed certificates, the commonest and rarest TLS client fingerprints
+(JA4, JA3; click one to search every event with it), sign-ins seen on the network, files
+changed on shares, and the sensor's packet loss. It opens on the last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
+(for admins) that opens Add data.
+
+## Vulnerabilities
+
+A built-in panel dashboard for the scans on the [Vulnerabilities page](vulnerabilities.md):
+hosts with known exploited and critical CVEs, the known exploited CVEs to patch first,
+the top CVEs, the most vulnerable hosts and software, open services, remote access and
+cleartext services left open, and the hosts found on each network. It opens on the last
+7 days. Until a scan has run it shows an **Open Vulnerabilities** button.
+
 ## Built-in dashboards are read-only
 
 Built-in dashboards are part of Signalith and change only with it, so they have
 no Settings, Add panel or panel editing, and the panel menu has only **Open in
-Search**. **Download YAML** saves the Malware dashboard's definition, and works
+Search**. **Download YAML** saves a built-in dashboard's definition, and works
 without `dashboards.dir`.
 
 To change one, choose **Make a copy** (analysts and admins, when custom dashboards
@@ -60,7 +98,7 @@ are on). It saves *Malware (copy)* as a custom dashboard with the same panels an
 opens it, ready to edit. **Add to dashboard** on the Search page lists custom
 dashboards only.
 
-The ids `posture` and `malware` belong to the built-in dashboards. A file
+The ids `posture`, `malware`, `network` and `vulnerabilities` belong to the built-in dashboards. A file
 `malware.yaml` in `dashboards.dir` is ignored and listed as a problem: rename the
 file and change its `id` to keep it.
 
@@ -108,6 +146,13 @@ so dashboards you copy in or `git pull` show up without a restart. A file with
 mistakes is listed at the top of the Dashboards page with every problem, and
 `signalith validate` checks every file.
 
+On the servers of a cluster, custom dashboards are shared: a dashboard saved on any
+server is the same everywhere, and every server's dashboards folder holds a copy. A file
+added or changed in a server's folder is shared; removing one changes nothing unless
+`detections.sync` is `mirror`. A save made from a page that read an older version is
+refused with `412`, and the page offers to reload or overwrite. See
+[Shared detections, dashboards and asset lists](servers.md#shared-detections-dashboards-and-asset-lists).
+
 ## Format
 
 ```yaml
@@ -146,7 +191,7 @@ panels:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `id` | from the title | File name without `.yaml`. `posture` and `malware` are reserved for the built-in dashboards |
+| `id` | from the title | File name without `.yaml`. `posture`, `malware`, `network` and `vulnerabilities` are reserved for the built-in dashboards |
 | `title` | required | Shown in the dashboard list |
 | `description` | none | Shown under the title |
 | `time_range` | `24h` | Default time range for panels |
@@ -169,18 +214,18 @@ Every endpoint needs the admin sign-in, like the rest of the API.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/posture?range=24h` | The security posture report (range 1m to 90d) |
-| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
+| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, network and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
 | `POST /api/dashboards` | Create; without `id`, one is made from the title. 409 if the id exists or belongs to a built-in dashboard |
 | `GET /api/dashboards/{id}` | One dashboard as JSON |
 | `GET /api/dashboards/{id}/yaml` | Download its YAML file |
 | `PUT /api/dashboards/{id}` | Replace a dashboard (save edits, reorder panels) |
 | `DELETE /api/dashboards/{id}` | Delete its file |
 | `POST /api/dashboards/{id}/panels` | Append one panel (`{"title", "query", "viz", ...}`) |
-| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, or `error` |
+| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, `drill` (how to find the events behind its numbers), or `error` |
 | `POST /api/panels/run` | Run an unsaved panel: `{"range": "24h", "panel": {...}}` |
 
 Validation errors return 400 with a `problems` list naming each field to fix.
 
-`GET`, `/yaml` and `/run` also work for the built-in `malware` dashboard, without
+`GET`, `/yaml` and `/run` also work for the built-in `malware` and `vulnerabilities` dashboards, without
 `dashboards.dir`. `PUT`, `DELETE` and adding a panel to it return 400: *The Malware
 dashboard is built in and can’t be changed. Make a copy to change it.*

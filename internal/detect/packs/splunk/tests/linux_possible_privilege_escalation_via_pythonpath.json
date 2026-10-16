@@ -1,0 +1,11 @@
+{"rule": "5edda575-409a-4820-a048-5780796a181e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /importlib/__init__.so x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x /importlib/__init__.so y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/lib/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/lib64/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/usr/lib/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/usr/lib64/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/usr/local/lib/ x","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"/usr/local/lib64/ x","User":"tester"}}
+]}

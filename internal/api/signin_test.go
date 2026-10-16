@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -22,7 +24,7 @@ import (
 // without ever being locked out.
 func TestSignInToOneAccountDoesNotResetAnother(t *testing.T) {
 	ts, _ := newUsersServer(t, func(s *Server) {
-		s.Users.Create(users.NewUser{Username: "vera", Role: users.Viewer, Password: "vera-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "vera", Role: users.Viewer, Password: "v-password-one"})
 	})
 	refused := false
 	for round := 0; round < 3 && !refused; round++ {
@@ -36,7 +38,7 @@ func TestSignInToOneAccountDoesNotResetAnother(t *testing.T) {
 				t.Fatalf("guess = %d", code)
 			}
 		}
-		if code, _, _ := login(t, ts, "vera", "vera-password"); code != 200 {
+		if code, _, _ := login(t, ts, "vera", "v-password-one"); code != 200 {
 			t.Fatalf("vera = %d", code)
 		}
 	}
@@ -47,7 +49,7 @@ func TestSignInToOneAccountDoesNotResetAnother(t *testing.T) {
 	if code, _, _ := login(t, ts, "admin", adminPass); code != 429 {
 		t.Errorf("admin while locked = %d", code)
 	}
-	if code, _, _ := login(t, ts, "vera", "vera-password"); code != 200 {
+	if code, _, _ := login(t, ts, "vera", "v-password-one"); code != 200 {
 		t.Errorf("vera after the admin lockout = %d", code)
 	}
 }
@@ -80,25 +82,25 @@ func TestParallelGuessesAreLimited(t *testing.T) {
 // does, so spacing or case in the URL cannot get around them.
 func TestSelfGuardsIgnoreSpacingAndCase(t *testing.T) {
 	ts, s := newUsersServer(t, func(s *Server) {
-		s.Users.Create(users.NewUser{Username: "ann", Role: users.Admin, Password: "ann-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "ann", Role: users.Admin, Password: "a-password-one"})
 	})
 	for _, path := range []string{"/api/users/ann%20", "/api/users/ANN", "/api/users/%20Ann"} {
-		if code, body := doAs(t, ts, "ann", "ann-password", "DELETE", path, ""); code != 409 {
+		if code, body := doAs(t, ts, "ann", "a-password-one", "DELETE", path, ""); code != 409 {
 			t.Errorf("DELETE %s = %d %v", path, code, body)
 		}
-		if code, body := doAs(t, ts, "ann", "ann-password", "POST", path+"/password", `{"password":"new-ann-password"}`); code != 409 {
+		if code, body := doAs(t, ts, "ann", "a-password-one", "POST", path+"/password", `{"password":"new-ann-password"}`); code != 409 {
 			t.Errorf("reset %s = %d %v", path, code, body)
 		}
-		if code, body := doAs(t, ts, "ann", "ann-password", "PUT", path, `{"disabled":true}`); code != 409 {
+		if code, body := doAs(t, ts, "ann", "a-password-one", "PUT", path, `{"disabled":true}`); code != 409 {
 			t.Errorf("disable %s = %d %v", path, code, body)
 		}
 	}
-	if _, ok := s.Users.Get("ann"); !ok || !s.Users.CheckPassword("ann", "ann-password") {
+	if _, ok := s.Users.Get("ann"); !ok || !s.Users.CheckPassword("ann", "a-password-one") {
 		t.Error("ann was deleted or her password changed")
 	}
 	// Other users are still found with odd spacing.
-	s.Users.Create(users.NewUser{Username: "ben", Role: users.Viewer, Password: "ben-password"})
-	if code, body := doAs(t, ts, "ann", "ann-password", "POST", "/api/users/BEN%20/password", ""); code != 200 || body["temporary_password"] == nil {
+	s.Users.Create(context.Background(), users.NewUser{Username: "ben", Role: users.Viewer, Password: "b-password-one"})
+	if code, body := doAs(t, ts, "ann", "a-password-one", "POST", "/api/users/BEN%20/password", ""); code != 200 || body["temporary_password"] == nil {
 		t.Errorf("reset ben = %d %v", code, body)
 	}
 }
@@ -329,7 +331,7 @@ func TestMappingChangeAppliesToSignedInUsers(t *testing.T) {
 // names are local users.
 func TestRefusalTimeDoesNotRevealLocalUsers(t *testing.T) {
 	_, ts, s := startAD(t, func(s *Server) {
-		s.Users.Create(users.NewUser{Username: "localann", Role: users.Viewer, Password: "ann-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "localann", Role: users.Viewer, Password: "a-password-one"})
 	})
 	s.Limiter.MaxPerAddress, s.Limiter.Max, s.Limiter.MaxPerAccount = 1000, 1000, 1000
 	median := func(name string) time.Duration {
@@ -379,7 +381,7 @@ func TestOuterMuxAPIRoutesNeedAdmin(t *testing.T) {
 // admins remove anyone's.
 func TestOnlyTheAuthorOrAnAdminRemovesCaseEntries(t *testing.T) {
 	ts, s := newRoleServer(t)
-	s.Users.Create(users.NewUser{Username: "amy", Role: users.Analyst, Password: "role-password"})
+	s.Users.Create(context.Background(), users.NewUser{Username: "amy", Role: users.Analyst, Password: "role-password"})
 	code, body := doAs(t, ts, "andy", "role-password", "POST", "/api/cases", `{"title":"Phishing"}`)
 	if code != 201 {
 		t.Fatalf("create = %d %v", code, body)
@@ -407,5 +409,21 @@ func TestOnlyTheAuthorOrAnAdminRemovesCaseEntries(t *testing.T) {
 	b, _ := json.Marshal(body)
 	if code != 200 || !strings.Contains(string(b), andys2) || strings.Contains(string(b), `"`+amys+`"`) {
 		t.Errorf("case = %d %s", code, b)
+	}
+}
+
+// While the user records cannot change (the cluster takes them over), a
+// directory refusal still ends the person's sessions.
+func TestRefusalEndsSessionsWhileUsersAreHeld(t *testing.T) {
+	srv, ts, s := startAD(t, nil)
+	code, _, c := login(t, ts, "alice", ldaptest.Password)
+	if code != 200 {
+		t.Fatalf("alice = %d", code)
+	}
+	s.userStore().Hold = func() (func(), error) { return nil, errors.New("the users are moving") }
+	srv.Add(ldaptest.ADITLeads, map[string][]string{"objectClass": {"top", "group"}, "member": {ldaptest.ADBobDN}})
+	login(t, ts, "alice", ldaptest.Password)
+	if code, _, _ := call(t, ts, "GET", "/api/me", "", "", "", c); code != 401 {
+		t.Errorf("alice's old session = %d", code)
 	}
 }

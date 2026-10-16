@@ -1,0 +1,6 @@
+{"rule": "f8c325ea-506e-4105-8ccf-da1492e90115", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"ADD_USER","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"ADD_USES","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"ADD_USER","data":{"_raw":"type=ADD_USER msg=audit(1722950859.266:6994): pid=1788 uid=0 auid=1000 ses=1 subj=unconfined msg='op=adding user id=1002 exe=\"/usr/sbin/useradd\" hostname=ar-linux1 addr=? terminal=pts/1 res=success'\u001dUID=\"root\" AUID=\"ubuntu\" ID=\"unknown(1002)\""}}
+]}

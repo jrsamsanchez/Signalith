@@ -1,0 +1,25 @@
+id: network-new-inbound-service
+title: New service reachable from outside on $dest$ port $dest_port$
+name: New externally reachable service
+description: A host inside the network answered connections from the internet on a port it has not answered on in the last 30 days, such as a forgotten test server, a port forward or a backdoor listener.
+query: |
+  datamodel=Network_Traffic direction=inbound action=allowed transport=tcp
+  | stats count, dc(src) as sources, min(_time) as first_seen by dest, dest_port
+schedule: 1h
+lookback: 1h
+severity: medium
+mitre: [T1133, T1205]
+throttle:
+  fields: [dest, dest_port]
+  window: 30d
+risk:
+  score: 30
+  objects:
+    - {field: dest, type: system}
+enabled: false
+tags: [network, initial-access, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Off by default. "Not seen before" is the 30-day throttle: each host and port raises one
+  finding, then stays quiet for 30 days. So the first runs after turning it on list every
+  service already open to the internet (treat them as an inventory and close what should
+  not be open), and later runs raise only new ones. Needs a sensor on the internet link.

@@ -2,6 +2,7 @@ package detect
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -35,13 +37,28 @@ type Library struct {
 	pack    map[string]*Detection
 	custom  map[string]*Detection
 	state   map[string]*State
+	// backend, when set, keeps the custom detections and the state of the
+	// shipped ones instead of Dir (see UseBackend); meta is who changed
+	// each last, as it says.
+	backend Backend
+	meta    map[string]Stored
+	// Hold, when set, is taken around each change saved in Dir: release
+	// is called once it is saved, and an error refuses the change (while
+	// the detections move into a cluster's shared settings).
+	Hold func() (release func(), err error)
+	// wmu lets one change run at a time.
+	wmu sync.Mutex
 }
 
 // State is what an admin chose for a built-in or pack detection without
 // editing it.
 type State struct {
 	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Exceptions tune the detection (see Exception).
+	Exceptions []Exception `yaml:"exceptions,omitempty" json:"exceptions,omitempty"`
 }
+
+func (st *State) empty() bool { return st.Enabled == nil && len(st.Exceptions) == 0 }
 
 // StateDir is the folder under the detections folder that holds State
 // files.
@@ -166,8 +183,10 @@ func NewLibrary(dir string) (*Library, []error, error) {
 				err = nil
 			}
 		}
-		if err == nil && l.builtin[id] == nil && l.pack[id] == nil {
-			err = fmt.Errorf("no built-in or pack detection has id %q", id)
+		// A choice for a pack rule that a content update dropped is kept:
+		// it applies again if the rule comes back.
+		if p := exceptionProblems(st.Exceptions); err == nil && len(p) > 0 {
+			err = &ValidationError{ID: id, Problems: p}
 		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s: %w", f, err))
@@ -176,6 +195,27 @@ func NewLibrary(dir string) (*Library, []error, error) {
 		l.state[id] = &st
 	}
 	return l, problems, nil
+}
+
+// ReloadPacks takes the content packs now in use (Packs), after a content
+// update was installed or removed. Choices made for pack rules carry over
+// by ID.
+func (l *Library) ReloadPacks() error {
+	_, pds, err := Packs()
+	if err != nil {
+		return err
+	}
+	pack := make(map[string]*Detection, len(pds))
+	for _, d := range pds {
+		if _, dup := l.builtin[d.ID]; dup {
+			return fmt.Errorf("pack detection %s has a built-in's id", d.ID)
+		}
+		pack[d.ID] = d
+	}
+	l.mu.Lock()
+	l.pack = pack
+	l.mu.Unlock()
+	return nil
 }
 
 // shipped returns the built-in or pack detection with an id, or nil.
@@ -201,8 +241,11 @@ func (l *Library) resolve(id string) *Detection {
 		if _, ok := l.pack[id]; ok {
 			c.Source = "pack"
 		}
-		if st := l.state[id]; st != nil && st.Enabled != nil {
-			c.Enabled = *st.Enabled
+		if st := l.state[id]; st != nil {
+			if st.Enabled != nil {
+				c.Enabled = *st.Enabled
+			}
+			c.Exceptions = st.Exceptions
 		}
 		return &c
 	}
@@ -246,24 +289,41 @@ func (l *Library) Get(id string) (*Detection, error) {
 // when the override is deleted; but saving it unchanged apart from being
 // on or off only records that choice (see State).
 func (l *Library) Put(d *Detection) error {
+	return l.PutIf(context.Background(), "", d, "")
+}
+
+// PutIf is Put by the user by, for a page that read the detection at
+// etag (see ETag): a change made since gives a *StaleError. An empty etag
+// saves over whatever is there.
+func (l *Library) PutIf(ctx context.Context, by string, d *Detection, etag string) error {
 	c := *d
 	c.Source = ""
 	c.Defaults()
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if base := l.shipped(c.ID); base != nil && l.custom[c.ID] == nil && sameApartFromEnabled(base, &c) {
-		return l.setEnabled(c.ID, c.Enabled)
-	}
-	return l.saveCustom(&c)
+	return l.apply(ctx, by, []string{c.ID}, etag, func(id string, cust *Detection, st *State) (*Detection, *State, error) {
+		if base := l.shipped(id); base != nil && cust == nil && sameApartFromTuning(base, &c) {
+			next := copyState(st)
+			next.Exceptions = c.Exceptions
+			next.Enabled = nil
+			if c.Enabled != base.Enabled {
+				next.Enabled = &c.Enabled
+			}
+			return nil, next, nil
+		}
+		saved := c
+		return &saved, st, nil
+	})
 }
 
-func sameApartFromEnabled(base, d *Detection) bool {
+// sameApartFromTuning reports whether d is the shipped detection apart
+// from being on or off and its exceptions, which State records.
+func sameApartFromTuning(base, d *Detection) bool {
 	a, b := *base, *d
 	a.Source, b.Source = "", ""
 	a.Enabled, b.Enabled = false, false
+	a.Exceptions, b.Exceptions = nil, nil
 	ya, err1 := Encode(&a)
 	yb, err2 := Encode(&b)
 	return err1 == nil && err2 == nil && bytes.Equal(ya, yb)
@@ -273,47 +333,209 @@ func sameApartFromEnabled(base, d *Detection) bool {
 // is saved with the change; a built-in or pack detection records only the
 // choice. It stops at the first unknown ID, changing none.
 func (l *Library) SetEnabled(ids []string, on bool) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	return l.SetEnabledBy(context.Background(), "", ids, on)
+}
+
+// SetEnabledBy is SetEnabled by the user by.
+func (l *Library) SetEnabledBy(ctx context.Context, by string, ids []string, on bool) error {
+	l.mu.RLock()
 	for _, id := range ids {
 		if l.custom[id] == nil && l.shipped(id) == nil {
+			l.mu.RUnlock()
 			return fmt.Errorf("%w: %s", ErrNotFound, id)
 		}
 	}
-	for _, id := range ids {
-		if d := l.custom[id]; d != nil {
-			if d.Enabled == on {
-				continue
-			}
-			c := *d
+	l.mu.RUnlock()
+	return l.apply(ctx, by, ids, "", func(id string, cust *Detection, st *State) (*Detection, *State, error) {
+		if cust != nil {
+			c := *cust
 			c.Enabled = on
-			if err := l.saveCustom(&c); err != nil {
-				return err
+			return &c, st, nil
+		}
+		base := l.shipped(id)
+		if base == nil {
+			// Deleted on another server meanwhile.
+			return nil, st, nil
+		}
+		next := copyState(st)
+		next.Enabled = nil
+		if on != base.Enabled {
+			next.Enabled = &on
+		}
+		return nil, next, nil
+	})
+}
+
+// UpdateExceptions changes a detection's exceptions with fn, which gets a
+// copy of the current ones, and saves the result: in the detection's file
+// for a custom detection or override, and as State for a built-in or pack
+// detection. It returns the detection as saved.
+func (l *Library) UpdateExceptions(id string, fn func([]Exception) ([]Exception, error)) (*Detection, error) {
+	return l.UpdateExceptionsIf(context.Background(), "", id, "", fn)
+}
+
+// UpdateExceptionsIf is UpdateExceptions by the user by, for a page that
+// read the detection at etag ("" for any version).
+func (l *Library) UpdateExceptionsIf(ctx context.Context, by, id, etag string, fn func([]Exception) ([]Exception, error)) (*Detection, error) {
+	err := l.apply(ctx, by, []string{id}, etag, func(id string, cust *Detection, st *State) (*Detection, *State, error) {
+		var cur []Exception
+		switch {
+		case cust != nil:
+			cur = cust.Exceptions
+		case l.shipped(id) != nil:
+			if st != nil {
+				cur = st.Exceptions
 			}
+		default:
+			return nil, nil, ErrNotFound
+		}
+		next, err := fn(slices.Clone(cur))
+		if err != nil {
+			return nil, nil, err
+		}
+		if p := exceptionProblems(next); len(p) > 0 {
+			return nil, nil, &ValidationError{ID: id, Problems: p}
+		}
+		if cust != nil {
+			c := *cust
+			c.Exceptions = next
+			return &c, st, nil
+		}
+		ns := copyState(st)
+		ns.Exceptions = next
+		return nil, ns, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return l.Get(id)
+}
+
+// copyState returns a copy of st to change; nil gives an empty State.
+func copyState(st *State) *State {
+	out := &State{}
+	if st != nil {
+		*out = *st
+		out.Exceptions = slices.Clone(st.Exceptions)
+	}
+	return out
+}
+
+// Delete removes a custom detection or reverts an override to the
+// built-in. Built-ins cannot be deleted; disable them instead.
+func (l *Library) Delete(id string) error {
+	return l.DeleteIf(context.Background(), "", id, "")
+}
+
+// DeleteIf is Delete by the user by, for a page that read the detection
+// at etag ("" for any version).
+func (l *Library) DeleteIf(ctx context.Context, by, id, etag string) error {
+	return l.apply(ctx, by, []string{id}, etag, func(id string, cust *Detection, st *State) (*Detection, *State, error) {
+		if cust == nil {
+			if _, ok := l.builtin[id]; ok {
+				return nil, nil, errors.New("built-in detections cannot be deleted; disable it instead")
+			}
+			if _, ok := l.pack[id]; ok {
+				return nil, nil, errors.New("content pack detections cannot be deleted; disable it instead")
+			}
+			return nil, nil, ErrNotFound
+		}
+		return nil, st, nil
+	})
+}
+
+// edit works out, for one detection, the custom detection (or override)
+// and the state it should have from the ones it has now (copies; nil for
+// none). It may return an error to change nothing.
+type edit func(id string, cust *Detection, st *State) (*Detection, *State, error)
+
+// apply makes the change fn says to each of ids, by the user by. With
+// etag (one id only), a detection changed since a page read it at etag
+// is not changed: a *StaleError. Without a backend the files in Dir are
+// written while l.mu is held, so a change is made to the library as it
+// is; with one, the backend applies it to its latest copy of each
+// detection.
+func (l *Library) apply(ctx context.Context, by string, ids []string, etag string, fn edit) error {
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	if b := l.backendOf(); b != nil {
+		err := b.Change(ctx, by, ids, func(id string, cur Stored) (Stored, bool, error) {
+			if etag != "" && ETag(cur.Custom, cur.State) != etag {
+				return Stored{}, false, &StaleError{By: cur.By, Node: cur.Node, At: cur.At}
+			}
+			l.mu.RLock()
+			c, st, err := fn(id, cur.Custom, cur.State)
+			l.mu.RUnlock()
+			if err != nil {
+				return Stored{}, false, err
+			}
+			if st != nil && st.empty() {
+				st = nil
+			}
+			next := Stored{Custom: c, State: st}
+			return next, ETag(c, st) != ETag(cur.Custom, cur.State), nil
+		})
+		l.reload()
+		return err
+	}
+	if l.Hold != nil {
+		release, err := l.Hold()
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, id := range ids {
+		cust, st := l.custom[id], l.state[id]
+		if etag != "" && ETag(cust, st) != etag {
+			return &StaleError{}
+		}
+		var cc *Detection
+		if cust != nil {
+			c := *cust
+			cc = &c
+		}
+		c, ns, err := fn(id, cc, copyStateOrNil(st))
+		if err != nil {
+			return err
+		}
+		if ETag(c, ns) == ETag(cust, st) {
 			continue
 		}
-		if err := l.setEnabled(id, on); err != nil {
-			return err
+		if ETag(c, nil) != ETag(cust, nil) {
+			if c == nil {
+				if err := l.removeCustom(id); err != nil {
+					return err
+				}
+			} else if err := l.saveCustom(c); err != nil {
+				return err
+			}
+		}
+		if ns == nil {
+			ns = &State{}
+		}
+		if ETag(nil, ns) != ETag(nil, st) {
+			if err := l.writeState(id, ns); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// setEnabled records the on or off choice for a shipped detection; a
-// choice equal to the shipped default removes the record. l.mu is held.
-func (l *Library) setEnabled(id string, on bool) error {
-	base := l.shipped(id)
-	st := &State{}
-	if prev := l.state[id]; prev != nil {
-		c := *prev
-		st = &c
+func copyStateOrNil(st *State) *State {
+	if st == nil {
+		return nil
 	}
-	if on == base.Enabled {
-		st.Enabled = nil
-	} else {
-		st.Enabled = &on
-	}
-	empty := *st == State{}
+	return copyState(st)
+}
+
+// writeState saves a shipped detection's state, removing the file when it
+// holds nothing; l.mu is held.
+func (l *Library) writeState(id string, st *State) error {
+	empty := st.empty()
 	if l.Dir != "" {
 		name := filepath.Join(l.Dir, StateDir, id+".yaml")
 		if empty {
@@ -359,20 +581,8 @@ func (l *Library) saveCustom(c *Detection) error {
 	return nil
 }
 
-// Delete removes a custom detection or reverts an override to the
-// built-in. Built-ins cannot be deleted; disable them instead.
-func (l *Library) Delete(id string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if _, ok := l.custom[id]; !ok {
-		if _, ok := l.builtin[id]; ok {
-			return errors.New("built-in detections cannot be deleted; disable it instead")
-		}
-		if _, ok := l.pack[id]; ok {
-			return errors.New("content pack detections cannot be deleted; disable it instead")
-		}
-		return ErrNotFound
-	}
+// removeCustom removes a custom detection's file; l.mu is held.
+func (l *Library) removeCustom(id string) error {
 	if l.Dir != "" {
 		if err := os.Remove(filepath.Join(l.Dir, id+".yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

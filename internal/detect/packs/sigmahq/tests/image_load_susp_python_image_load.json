@@ -1,0 +1,5 @@
+{"rule": "cbb56d62-4060-40f7-9466-d8aaf3123f83", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Description":"Python Core","Image":"D:\\apps\\launcher\\launcher.exe","ImageLoaded":"D:\\apps\\launcher\\plugin.dll","ProcessId":"4242","Signature":"Example Software Vendor","SignatureStatus":"Valid","Signed":"true","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Description":"Python Core","Image":"Python","ImageLoaded":"D:\\apps\\launcher\\plugin.dll","ProcessId":"4242","Signature":"Example Software Vendor","SignatureStatus":"Valid","Signed":"true","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"D:\\apps\\launcher\\launcher.exe","ImageLoaded":"D:\\apps\\launcher\\plugin.dll","ProcessId":"4242","Signature":"Example Software Vendor","SignatureStatus":"Valid","Signed":"true","User":"CORP\\tester"}}
+]}

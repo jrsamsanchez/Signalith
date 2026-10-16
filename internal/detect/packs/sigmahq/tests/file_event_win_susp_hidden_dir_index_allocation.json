@@ -1,0 +1,4 @@
+{"rule": "a8f866e1-bdd4-425e-a27a-37619238d9c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"::$index_allocation"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

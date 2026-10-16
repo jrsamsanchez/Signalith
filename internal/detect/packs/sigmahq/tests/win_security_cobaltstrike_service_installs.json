@@ -1,0 +1,7 @@
+{"rule": "d7a95147-145f-4678-b85d-d1ff4a3bb3f6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":".exeADMIN$"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"startpowershell%COMSPEC%"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"powershell -nop -w hidden -encodedcommand"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"lFWCAoTmV3LU9iamVjdCBOZXQuV2ViY2xpZW50KS5Eb3dubG9hZFN0cmluZygnaHR0cDovLzEyNy4wLjAuMT"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

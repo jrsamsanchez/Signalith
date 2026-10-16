@@ -1,0 +1,5 @@
+{"rule": "707e097c-e20f-4f67-8807-1f72ff4500d6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Desktop\\","TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"\\Desktop\\"}}
+]}

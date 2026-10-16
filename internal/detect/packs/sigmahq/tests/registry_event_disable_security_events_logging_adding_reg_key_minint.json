@@ -1,0 +1,4 @@
+{"rule": "919f2ef0-be2d-4a7a-b635-eb2b41fde044", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"NewName":"HKLM\\SYSTEM\\CurrentControlSet\\Control\\MiniNt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

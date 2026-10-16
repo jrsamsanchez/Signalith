@@ -12,15 +12,22 @@ Open **Add data**, pick **OpenTelemetry**, and choose where the Collector runs:
 
 - **Linux**: reads `/var/log/auth.log` or `/var/log/secure`, or the systemd journal,
   like the Fluent Bit agent.
-- **Windows**: reads the Security event log, and Sysmon when **Include Sysmon** is on.
+- **Windows**: reads the Security event log, Sysmon when **Include Sysmon** is on, and
+  PowerShell script blocks when **Include PowerShell** is on.
 
 Either way the Collector also listens on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318`
 (HTTP) for apps on that host that export OTLP logs, and passes those on too.
 
+To read AWS CloudTrail with a Collector, choose **AWS CloudTrail** instead (see
+[AWS CloudTrail](aws-cloudtrail.md)), for Microsoft Entra ID and Azure logs, **Entra ID
+and Azure** (see [Entra ID and Azure](azure.md)), and for Google Cloud's audit logs,
+**Google Cloud** (see [Google Cloud](google-cloud.md)).
+
 The page gives the steps and a complete `config.yaml` for the
 [Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)
 distribution (`otelcol-contrib`, 0.100 or later): it already holds this server's
-address, the ingest token and, over HTTPS, Signalith's CA certificate to check the
+address, an [agent token](agent-tokens.md) of its own (made when you copy or download
+the configuration) and, over HTTPS, Signalith's CA certificate to check the
 server with. It keeps unsent logs and its place in each log on disk, so a restart or
 an outage of Signalith neither loses nor repeats events.
 
@@ -35,7 +42,7 @@ Any OTLP/HTTP sender works. Point it at:
 | Setting | Value |
 | --- | --- |
 | Logs endpoint | `https://<server>:8080/api/otlp/v1/logs` (or endpoint `https://<server>:8080/api/otlp`, to which the exporter adds `/v1/logs`) |
-| Header | `Authorization: Bearer <ingest token>` |
+| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)) |
 | Encoding | protobuf (`application/x-protobuf`, the Collector's default) or JSON (`application/json`) |
 | Compression | gzip (the Collector's default) or none |
 | CA | Signalith's CA certificate (`/api/tls/ca.pem`), unless the server has a certificate your systems trust |
@@ -60,8 +67,9 @@ agent collects them:
 
 | Receiver | Becomes |
 | --- | --- |
-| `windowseventlog` (Security log 4624, 4625, 4688, 4720, 4726, 4728, 4732, 4756; Sysmon 1 and 3) | Authentication, Endpoint, Change, Network_Traffic |
+| `windowseventlog` (Security log 4624, 4625, 4648, 4656, 4657, 4661, 4662, 4663, 4688, 4697, 4698, 4706, 4719, 4720, 4726, 4728, 4732, 4738, 4756, 4768, 4769, 4794, 5136, 5145, 5156, 5157; System 7045; Sysmon 1, 3, 6, 7, 8, 10, 11, 12, 13, 14, 15, 17, 18, 22, 23, 26; PowerShell 4104) | Authentication, Endpoint, Change, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution, Script |
 | `filelog` on `auth.log` or `secure` (or any syslog-format file) | Authentication and Change for sshd, sudo, su and account changes |
+| `filelog` on a web server's access log (a file whose name has `access` in it; `include_file_path: true`) | Web, as the agent's (see [Web server access logs](detections.md#web-server-access-logs)) |
 | `journald` | as the agent's journal input |
 | `syslog` | as Signalith's own syslog receiver |
 
@@ -96,9 +104,11 @@ than an hour ahead is filed under the time it arrived (see [Ingest limits](sendi
 
 The same limits as agent batches apply: up to 16 MB per request (also after gzip is
 undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. A
-request over a limit or that does not decode is refused with 4xx and a message saying
-why, and nothing from it is stored; the Collector logs the message and drops the batch,
-so keep batches small (the generated config's batch processor sends at most 5,000
+record over the size or nesting limit, or one that does not decode, is turned away on
+its own: the rest of the batch is stored, and the record is counted in the answer's
+partial success with a message saying why. A request over a limit or that does not
+decode as a whole is refused with 4xx and a message saying why, and nothing from it is
+stored; the Collector logs the message and drops the batch, so keep batches small (the generated config's batch processor sends at most 5,000
 records). When Signalith is busy or OpenSearch is down the answer is 503 with
 `Retry-After`, and the Collector keeps the batch and sends it again. Records OpenSearch
 turns away are counted in the answer's partial success.

@@ -1,0 +1,5 @@
+{"rule": "cfec9d29-64ec-4a0f-9ffe-0fdb856d5446", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke- clone x","Image":"/git"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/git"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"Invoke- clone x"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "4c4af3cd-2115-479c-8193-6b8bfce9001c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"New-Object System.Net.NetworkInformation.Ping .Send("}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

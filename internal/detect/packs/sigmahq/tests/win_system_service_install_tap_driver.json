@@ -1,0 +1,4 @@
+{"rule": "8e4cf0e5-aa5d-4dc3-beff-dc26917744a9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"tap0901","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

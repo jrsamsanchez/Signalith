@@ -1,0 +1,4 @@
+{"rule": "ee4c5d06-3abc-48cc-8885-77f1c20f4451", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\ShellChromeAPI.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

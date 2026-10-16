@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -73,11 +74,14 @@ func (s *Server) handleIntelOverview(w http.ResponseWriter, r *http.Request) {
 		"downloads": s.downloads(),
 		"types":     intel.Types,
 		// manage says whether feeds can be added and changed on the page:
-		// only on the server that downloads them.
-		"manage": s.Feeds != nil && s.downloads(),
+		// on every member of the cluster, where they are shared, and
+		// otherwise only on the server that downloads them.
+		"manage": s.Feeds != nil && s.manageFeeds(),
+		"shared": s.sharedContent(),
 	}
 	if s.Feeds != nil {
 		feeds = s.feedsFor(r)
+		s.addFeedETags(r, feeds, out)
 		// A broken feeds file blocks changes on the page until it is fixed.
 		if err := s.Feeds.Load(); err != nil {
 			out["file_error"] = err.Error()
@@ -94,6 +98,14 @@ func (s *Server) handleIntelOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// manageFeeds reports whether feeds can be added and changed here.
+func (s *Server) manageFeeds() bool {
+	if s.sharedContent() {
+		return true
+	}
+	return s.downloads()
+}
+
 func (s *Server) handleIntelRefresh(w http.ResponseWriter, r *http.Request) {
 	if !s.intelOK(w) {
 		return
@@ -103,10 +115,20 @@ func (s *Server) handleIntelRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+	if s.sharedContent() && !s.leads() {
+		// The feeds are shared: the server that runs the background jobs
+		// downloads it, and the page follows the request.
+		if _, ok := s.Feeds.Get(name); !ok {
+			writeError(w, http.StatusNotFound, intel.ErrUnknownFeed)
+			return
+		}
+		s.submit(w, r, clustercfg.RequestFeedRefresh, clustercfg.FeedRefreshArgs{Feed: name}, map[string]any{"feed": name})
+		return
+	}
 	// A feed added on the page is only kept by the server that runs the
 	// schedule; indicators another server downloads for it would be
 	// removed when that server starts.
-	if fd, ok := s.Feeds.Get(name); ok && fd.Source == intel.SourceUI {
+	if fd, ok := s.Feeds.Get(name); ok && fd.Source == intel.SourceUI && !s.sharedContent() {
 		if err := s.noDownloads(); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
@@ -283,10 +305,14 @@ func (s *Server) feedsOK(w http.ResponseWriter) bool {
 }
 
 // feedsWritable also refuses changes on a server that does not download
-// feeds.
+// feeds, or, where they are shared, while the shared settings cannot be
+// changed here.
 func (s *Server) feedsWritable(w http.ResponseWriter) bool {
 	if !s.feedsOK(w) {
 		return false
+	}
+	if s.sharedContent() {
+		return s.sharedWritable(w)
 	}
 	if err := s.noDownloads(); err != nil {
 		writeError(w, http.StatusConflict, err)
@@ -299,6 +325,9 @@ func (s *Server) feedsWritable(w http.ResponseWriter) bool {
 func writeFeedError(w http.ResponseWriter, err error) {
 	var ie *intel.InputError
 	var fe *intel.FileError
+	if sharedError(w, err) {
+		return
+	}
 	switch {
 	case errors.As(err, &ie):
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": ie.Error(), "problems": ie.Messages(), "fields": ie.Fields()})
@@ -321,18 +350,39 @@ func (s *Server) handleIntelFeeds(w http.ResponseWriter, r *http.Request) {
 	if !s.feedsOK(w) {
 		return
 	}
+	feeds := s.feedsFor(r)
 	out := map[string]any{
-		"feeds":      s.feedsFor(r),
+		"feeds":      feeds,
 		"downloads":  s.downloads(),
-		"manage":     s.downloads(),
+		"manage":     s.manageFeeds(),
+		"shared":     s.sharedContent(),
 		"feeds_file": s.Feeds.File,
 		"formats":    append(append([]string{}, intel.Formats...), intel.FormatAuto),
 		"types":      intel.FeedTypes,
 	}
+	if s.sharedContent() {
+		out["feeds_file"] = ""
+	}
+	s.addFeedETags(r, feeds, out)
 	if err := s.Feeds.Load(); err != nil {
 		out["file_error"] = err.Error()
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// addFeedETags adds each feed's version to out, for If-Match on a change:
+// a hash of its settings, secrets included, so only admins get it.
+func (s *Server) addFeedETags(r *http.Request, feeds []intel.FeedView, out map[string]any) {
+	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
+		return
+	}
+	etags := map[string]string{}
+	for _, f := range feeds {
+		if tag, ok := s.Feeds.ETag(f.Name); ok {
+			etags[f.Name] = tag
+		}
+	}
+	out["etags"] = etags
 }
 
 func (s *Server) handleIntelFeedAdd(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +394,7 @@ func (s *Server) handleIntelFeedAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	v, err := s.Feeds.AddFeed(in)
+	v, err := s.Feeds.AddFeedAs(r.Context(), userOf(r), in)
 	if err != nil {
 		writeFeedError(w, err)
 		return
@@ -369,10 +419,13 @@ func (s *Server) handleIntelFeedUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	v, err := s.Feeds.UpdateFeed(r.Context(), name, in)
+	v, err := s.Feeds.UpdateFeedIf(r.Context(), userOf(r), name, r.Header.Get("If-Match"), in)
 	if err != nil {
 		writeFeedError(w, err)
 		return
+	}
+	if tag, ok := s.Feeds.ETag(name); ok {
+		w.Header().Set("ETag", tag)
 	}
 	s.Log.Info("threat intel feed changed", "feed", name, "url", intel.RedactURL(v.URL), "enabled", v.Enabled, "by", userOf(r))
 	writeJSON(w, http.StatusOK, v)
@@ -392,7 +445,7 @@ func (s *Server) handleIntelFeedDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	n, err := s.Feeds.RemoveFeed(ctx, name, mode != "keep")
+	n, err := s.Feeds.RemoveFeedIf(ctx, userOf(r), name, r.Header.Get("If-Match"), mode != "keep")
 	if err != nil {
 		writeFeedError(w, err)
 		return
@@ -507,7 +560,7 @@ func (s *Server) handleIntelCatalogAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("ids lists the catalog feeds to add"))
 		return
 	}
-	added, skipped, err := s.Feeds.AddCatalog(req.IDs)
+	added, skipped, err := s.Feeds.AddCatalogAs(r.Context(), userOf(r), req.IDs)
 	if err != nil {
 		writeFeedError(w, err)
 		return

@@ -1,0 +1,14 @@
+{"rule": "818f7b24-0fba-4c49-a073-8b755573b9c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/bin/uname","ParentImage":"/node"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/hostname","ParentCommandLine":"/bin/java tomcat"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/netstat","ParentCommandLine":"/bin/javawebsphere"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ip neigh show","Image":"/bin/uname","ParentImage":"/node"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentImage":"/node"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/bin/uname"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ip neigh show","Image":"/hostname","ParentCommandLine":"/bin/java tomcat","ParentImage":"/node"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"/bin/java tomcat"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/hostname"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ip neigh show","Image":"/netstat","ParentCommandLine":"websphere/bin/java","ParentImage":"/node"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"/bin/javawebsphere"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/netstat"}}
+]}

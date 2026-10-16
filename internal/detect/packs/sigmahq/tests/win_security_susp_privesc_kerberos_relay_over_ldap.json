@@ -1,0 +1,8 @@
+{"rule": "749c9f5e-b353-4b90-a9c1-05243357ca4b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Kerberos","IpAddress":"127.0.0.1","LogonType":"3","TargetUserSid":"S-1-5-21- -500"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Kerberos","IpAddress":"127.0.0.1","IpPort":"0","LogonType":"3","TargetUserSid":"S-1-5-21--500"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"IpAddress":"127.0.0.1","LogonType":"3","TargetUserSid":"S-1-5-21- -500"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Kerberos","LogonType":"3","TargetUserSid":"S-1-5-21- -500"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Kerberos","IpAddress":"127.0.0.1","TargetUserSid":"S-1-5-21- -500"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{"AuthenticationPackageName":"Kerberos","IpAddress":"127.0.0.1","LogonType":"3"}}
+]}

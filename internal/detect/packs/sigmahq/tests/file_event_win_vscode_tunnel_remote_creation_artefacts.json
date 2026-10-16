@@ -1,0 +1,5 @@
+{"rule": "56e05d41-ce99-4ecd-912d-93f019ee0b71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\servers\\Stable-\\server\\node.exe","TargetFilename":"\\.vscode-server\\data\\User\\History\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\.vscode-server\\data\\User\\History\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\servers\\Stable-\\server\\node.exe"}}
+]}

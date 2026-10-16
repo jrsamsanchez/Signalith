@@ -1,0 +1,12 @@
+{"rule": "4fc0deee-0057-4998-ab31-d24e46e0aba4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\wmsgapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Program Files\\WindowsApps\\Microsoft.DirectXRuntime_ \\d3dx9_43.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\System32\\\\wmsgapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Windows\\ImmersiveControlPanel\\SystemSettings.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\WinSxS\\arm64 \\wuaucltcore.exe","ImageLoaded":"C:\\Windows\\Temp\\ \\wmsgapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"C:\\Packages\\Plugins\\Microsoft.GuestConfiguration.ConfigurationforWindows\\ \\wmsgapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files (x86)\\CheckPoint\\\\SmartConsole.exe","ImageLoaded":"C:\\Program Files\\CheckPoint\\\\PolicyManager.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files\\WindowsApps\\DellInc.DellSupportAssistforPCs","ImageLoaded":"C:\\Program Files\\WindowsApps\\DellInc.DellSupportAssistforPCs\\wmsgapi.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files\\Common Files\\microsoft shared\\ClickToRun\\OfficeClickToRun.exe","ImageLoaded":"C:\\Program Files\\Common Files\\microsoft shared\\ClickToRun\\AppVPolicy.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

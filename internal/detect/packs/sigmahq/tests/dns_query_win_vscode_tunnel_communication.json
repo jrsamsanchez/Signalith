@@ -1,0 +1,4 @@
+{"rule": "b3e6418f-7c7a-4fad-993a-93b65027a9f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":".tunnels.api.visualstudio.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

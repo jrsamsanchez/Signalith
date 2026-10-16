@@ -1,0 +1,4 @@
+{"rule": "1908fcc1-1b92-4272-8214-0fbaf2fa5163", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"iphlpapi.dll\\AppData\\Local\\Microsoft"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

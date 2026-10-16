@@ -1,0 +1,30 @@
+# S4, CI size: the server that runs the background jobs stalls for a
+# minute (SIGSTOP), then, once it has given way, the new one is killed
+# (kill -9). Another server takes over within 45 s each time, never two at
+# once, and agents that move to a working server lose nothing.
+# {server} is the server's name, which the laptop cluster also uses as
+# the container's name.
+name: s4-small
+description: Stall the leader, then kill the new one, under light ingest.
+targets: [https://localhost:8441, https://localhost:8442]
+ca_files: [loadtest/compose/out/siem-a-ca.pem, loadtest/compose/out/siem-b-ca.pem]
+credentials:
+  admin_file: loadtest/compose/out/admin.txt
+  token_file: loadtest/compose/out/token.txt
+opensearch:
+  url: https://localhost:9200
+  ca: loadtest/compose/out/opensearch-ca.pem
+  cert: loadtest/compose/out/opensearch-client.pem
+  key: loadtest/compose/out/opensearch-client-key.pem
+phases:
+  - {name: warm, for: 20s, agents: {n: 10, rate: 200, switch_on_error: true}}
+  - {name: chaos, for: 160s, agents: {n: 10, rate: 200, switch_on_error: true}}
+faults:
+  - {at: 30s, kind: stop, target: leader, for: 60s, cmd: "docker kill --signal STOP {server}", undo: "docker kill --signal CONT {server}"}
+  - {at: 120s, kind: kill9, target: leader, cmd: "docker kill --signal KILL {server}"}
+criteria:
+  - {name: takeover_seconds, max: 45}
+  - {name: leaders_at_once, max: 1}
+  - {name: events_lost, max: 0}
+  - {name: events_duplicated, max: 0}
+  - {name: events_undelivered, max: 0}

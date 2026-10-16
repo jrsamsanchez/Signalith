@@ -982,3 +982,38 @@ func TestRefusedCertificate(t *testing.T) {
 		}
 	}
 }
+
+// Servers that store events share each day's budget of vendor field names:
+// each gets an equal part, at least 100, and a sender never more than the
+// server's part.
+func TestNameBudgetIsSharedByServers(t *testing.T) {
+	for _, c := range []struct{ servers, perIndex, perSender int }{
+		{1, 600, 150}, {4, 150, 150}, {10, 100, 100}, {0, 600, 150},
+	} {
+		b := newNameBudget(maxExtraNamesPerIndex, maxExtraNamesPerSender)
+		b.servers = func() int { return c.servers }
+		if pi, ps := b.shares(); pi != c.perIndex || ps != c.perSender {
+			t.Errorf("%d servers: %d per index, %d per sender; want %d and %d", c.servers, pi, ps, c.perIndex, c.perSender)
+		}
+		// One sender with many names stops at its share.
+		now := time.Now()
+		fields := map[string]any{}
+		for i := range 1000 {
+			fields[fmt.Sprintf("cef_x%04d", i)] = 1
+		}
+		e := ingest.Event{Model: "Other", Time: now, Fields: fields}
+		b.limit(e, netip.MustParseAddr("192.0.2.9"), now, DefaultMaxAge)
+		if len(e.Fields) != c.perSender {
+			t.Errorf("%d servers: one sender kept %d names", c.servers, len(e.Fields))
+		}
+	}
+	// Without Servers the receiver keeps the whole budget.
+	r := New(Config{}, nil, nil)
+	if pi, ps := r.names.shares(); pi != maxExtraNamesPerIndex || ps != maxExtraNamesPerSender {
+		t.Errorf("alone: %d %d", pi, ps)
+	}
+	r = New(Config{Servers: func() int { return 4 }}, nil, nil)
+	if pi, _ := r.names.shares(); pi != 150 {
+		t.Errorf("from Config: %d", pi)
+	}
+}

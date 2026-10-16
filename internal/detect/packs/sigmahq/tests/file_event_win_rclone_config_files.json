@@ -1,0 +1,4 @@
+{"rule": "34986307-b7f4-49be-92f3-e7a4d01ac5db", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\.config\\rclone\\ :\\Users\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

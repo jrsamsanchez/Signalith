@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -41,6 +43,9 @@ type Feed struct {
 	// Source is SourceConfig or SourceUI; "" counts as SourceConfig.
 	Source  string
 	Catalog string
+	// From says where a shared feed's settings came from, such as
+	// "signalith.yaml on siem-a", when not from the page.
+	From string
 	// Problem says why a feed from the feeds file cannot run, such as a
 	// name that signalith.yaml now uses too.
 	Problem string
@@ -111,6 +116,7 @@ type FeedView struct {
 	Password    SecretView   `json:"password"`
 	HasHeaders  bool         `json:"has_headers,omitempty"`
 	Problem     string       `json:"problem,omitempty"`
+	From        string       `json:"from,omitempty"`
 	Indicators  int          `json:"indicators"` // stored now
 	Status      FeedStatus   `json:"status"`
 }
@@ -123,8 +129,10 @@ type Feeds struct {
 	// cannot change. Set it before use and do not change it afterwards.
 	List []Feed
 	// File keeps the feeds added on the Threat intel page; "" keeps them
-	// in memory only.
-	File string
+	// in memory only. Saved, when set, keeps them instead (the shared
+	// feed list of servers that share one OpenSearch).
+	File  string
+	Saved FeedList
 	// HTTP downloads feeds; nil uses a client that honors HTTPS_PROXY,
 	// HTTP_PROXY and NO_PROXY and refuses blocked addresses (see CheckAddr).
 	HTTP *http.Client
@@ -136,9 +144,11 @@ type Feeds struct {
 	// MaxBytes caps one download; 0 is MaxDownload.
 	MaxBytes int64
 	// StatusFile keeps feed status across restarts; "" keeps it in memory.
-	StatusFile string
-	Log        *slog.Logger
-	Now        func() time.Time
+	// StatusStore, when set, keeps it instead.
+	StatusFile  string
+	StatusStore StatusStore
+	Log         *slog.Logger
+	Now         func() time.Time
 	// Tick is how often due feeds are checked (default 30s).
 	Tick time.Duration
 	// Allowed, when set, says whether this server may still run the feed
@@ -154,6 +164,16 @@ type Feeds struct {
 	kept     []KeptFeed
 	fileRead bool
 	fileErr  error
+	// listOnce subscribes to the feed list's changes, which set
+	// listDirty and wake the downloader.
+	listOnce   sync.Once
+	listDirty  atomic.Bool
+	wake       chan struct{}
+	statusOnce sync.Once
+	statusSt   StatusStore
+	// localETag keys the feeds' versions when the list is not shared.
+	etagOnce  sync.Once
+	localETag []byte
 	// gen changes whenever a feed's settings do, so a download that was
 	// running meanwhile throws its result away.
 	gen    map[string]int
@@ -238,50 +258,98 @@ func (f *Feeds) Load() error {
 	return f.fileErr
 }
 
+// list returns where the feeds added on the page are kept.
+func (f *Feeds) list() FeedList {
+	f.listOnce.Do(func() {
+		if f.Saved == nil {
+			f.Saved = &FileList{Path: f.File, Now: f.Now, Log: f.Log}
+		}
+		f.wake = make(chan struct{}, 1)
+		f.Saved.OnChange(func() {
+			f.listDirty.Store(true)
+			select {
+			case f.wake <- struct{}{}:
+			default:
+			}
+		})
+	})
+	return f.Saved
+}
+
+// statusStore returns where the feeds' status is kept.
+func (f *Feeds) statusStore() StatusStore {
+	f.statusOnce.Do(func() {
+		f.statusSt = f.StatusStore
+		if f.statusSt == nil {
+			f.statusSt = &StatusFile{Path: f.StatusFile, Log: f.Log}
+		}
+	})
+	return f.statusSt
+}
+
+// loadStatus reads the saved status once; the caller holds f.mu.
 func (f *Feeds) loadStatus() {
 	if f.loaded {
 		return
 	}
 	f.loaded = true
-	if f.status == nil {
-		f.status = map[string]*FeedStatus{}
-	}
-	if f.StatusFile == "" {
-		return
-	}
-	data, err := os.ReadFile(f.StatusFile)
-	if err != nil {
-		return
-	}
-	var saved map[string]*FeedStatus
-	if json.Unmarshal(data, &saved) == nil {
-		for name, st := range saved {
-			st.Running = false
-			f.status[name] = st
-		}
+	f.status = map[string]*FeedStatus{}
+	for name, st := range f.statusStore().Load() {
+		st.Running = false
+		f.status[name] = st
 	}
 }
 
-// saveStatus writes the status file; the caller holds f.mu.
-func (f *Feeds) saveStatus() {
-	if f.StatusFile == "" {
+// refreshStatus reads the status again, on a server that does not download
+// feeds, when the server that does keeps it where every server reads it;
+// the caller holds f.mu.
+func (f *Feeds) refreshStatus() {
+	if f.runCtx != nil {
 		return
 	}
-	data, err := json.MarshalIndent(f.status, "", "  ")
+	if l, ok := f.statusStore().(liveStatus); ok && l.Live() {
+		f.loaded = false
+		f.loadStatus()
+	}
+}
+
+// saveStatus keeps one feed's status; the caller holds f.mu.
+func (f *Feeds) saveStatus(name string) {
+	var st *FeedStatus
+	if cur, ok := f.status[name]; ok {
+		c := *cur
+		st = &c
+	}
+	f.statusStore().Save(name, st)
+}
+
+// replaceFile writes data to path through a temporary file of its own
+// (a unique name, so two servers or two requests writing the same file
+// never write into each other's), then renames it over path. The
+// temporary file is removed on any failure. os.Rename replaces an
+// existing file on Windows too.
+func replaceFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
-		return
+		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(f.StatusFile), 0o750); err != nil {
-		f.log().Warn("could not save threat intel feed status", "file", f.StatusFile, "err", err)
-		return
+	name := tmp.Name()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
 	}
-	tmp := f.StatusFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err == nil {
-		err = os.Rename(tmp, f.StatusFile)
-		if err != nil {
-			f.log().Warn("could not save threat intel feed status", "file", f.StatusFile, "err", err)
-		}
+	if err == nil {
+		// CreateTemp makes the file readable by its owner only; on Windows
+		// Chmod only sets or clears read-only, which is fine.
+		err = os.Chmod(name, 0o640)
 	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 // stateFor returns a feed's status; the caller holds f.mu.
@@ -298,8 +366,79 @@ func (f *Feeds) stateFor(name string) *FeedStatus {
 // all returns every feed: those from signalith.yaml, then those added on
 // the page. The caller holds f.mu.
 func (f *Feeds) all() []Feed {
-	f.loadFile()
-	out := make([]Feed, 0, len(f.List)+len(f.ui))
+	f.loadList()
+	return f.feedsOf(f.ui)
+}
+
+// loadList reads the feeds added on the page when they changed, and
+// applies the changes: a feed added or changed downloads again, one
+// removed loses its status. The caller holds f.mu.
+func (f *Feeds) loadList() {
+	if f.gen == nil {
+		f.gen = map[string]int{}
+	}
+	l := f.list()
+	if f.fileRead && !f.listDirty.Load() {
+		return
+	}
+	f.listDirty.Store(false)
+	first := !f.fileRead
+	f.fileRead = true
+	set, err := l.Load()
+	if err != nil {
+		f.fileErr = err
+		return
+	}
+	f.fileErr = nil
+	if !first {
+		f.applyChanges(f.ui, set.UI)
+	}
+	f.ui, f.kept = set.UI, set.Kept
+}
+
+// retryFile reads the feeds file again if it could not be read before, so
+// a fixed file takes effect without a restart; the caller holds f.mu.
+func (f *Feeds) retryFile() {
+	if f.fileRead && f.fileErr != nil {
+		f.listDirty.Store(true)
+	}
+	f.loadList()
+}
+
+// applyChanges handles the feeds that changed between two lists, made
+// here or on another server; the caller holds f.mu.
+func (f *Feeds) applyChanges(old, cur []FeedSpec) {
+	before := map[string]FeedSpec{}
+	for _, s := range old {
+		before[s.Name] = s
+	}
+	now := map[string]bool{}
+	for _, s := range cur {
+		now[s.Name] = true
+		prev, had := before[s.Name]
+		switch {
+		case !had:
+			delete(f.status, s.Name)
+			f.changed(s.Name, s.IsEnabled())
+		case !reflect.DeepEqual(prev.clone(), s.clone()):
+			f.changed(s.Name, s.IsEnabled())
+		}
+	}
+	for name := range before {
+		if now[name] || f.inConfig(name) {
+			continue
+		}
+		// A feed in signalith.yaml with the same name owns the status.
+		f.gen[name]++
+		delete(f.status, name)
+		f.saveStatus(name)
+	}
+}
+
+// feedsOf returns the feeds from signalith.yaml, then ui. It reads only
+// f.List, which does not change, so the caller need not hold f.mu.
+func (f *Feeds) feedsOf(ui []FeedSpec) []Feed {
+	out := make([]Feed, 0, len(f.List)+len(ui))
 	inConfig := map[string]bool{}
 	for _, fd := range f.List {
 		if fd.Source == "" {
@@ -312,7 +451,7 @@ func (f *Feeds) all() []Feed {
 		out = append(out, fd)
 	}
 	seen := map[string]bool{}
-	for _, s := range f.ui {
+	for _, s := range ui {
 		s.Defaults()
 		var probs []string
 		switch {
@@ -364,6 +503,7 @@ func (f *Feeds) Len() int {
 func (f *Feeds) Status() []FeedView {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.refreshStatus()
 	list := f.all()
 	out := make([]FeedView, 0, len(list))
 	for _, fd := range list {
@@ -376,6 +516,7 @@ func (f *Feeds) Status() []FeedView {
 func (f *Feeds) View(name string) (FeedView, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.refreshStatus()
 	fd, ok := f.get(name)
 	if !ok {
 		return FeedView{}, false
@@ -394,7 +535,7 @@ func (f *Feeds) view(fd Feed) FeedView {
 		Format: fd.Format, Type: fd.Type, Column: fd.Column, Interval: fmtDuration(fd.Interval), MaxAge: fmtDuration(fd.MaxAge),
 		Weight: fd.Weight, Description: fd.Description, Tags: fd.Tags, Enabled: fd.Enabled, Catalog: fd.Catalog,
 		Headers: []HeaderView{}, Username: fd.Username, Password: SecretView{Set: fd.Password != ""},
-		HasHeaders: len(fd.Headers) > 0, Problem: fd.Problem,
+		HasHeaders: len(fd.Headers) > 0, Problem: fd.Problem, From: fd.From,
 	}
 	if v.Source == "" {
 		v.Source = SourceConfig
@@ -445,6 +586,10 @@ func (f *Feeds) Start(ctx context.Context) {
 	}
 	f.mu.Lock()
 	f.runCtx = ctx
+	// The schedule goes on from where the server that ran it before left
+	// it (the shared status), rather than downloading everything at once.
+	f.loaded = false
+	f.loadStatus()
 	var keep []string
 	for _, fd := range f.all() {
 		if fd.Enabled {
@@ -460,6 +605,7 @@ func (f *Feeds) Start(ctx context.Context) {
 	// Without the feeds file, its feeds' indicators cannot be told apart
 	// from those of deleted feeds, so nothing is removed.
 	fileOK := f.fileErr == nil
+	wake := f.wake
 	f.mu.Unlock()
 	defer func() {
 		f.mu.Lock()
@@ -500,6 +646,8 @@ func (f *Feeds) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-wake:
+			// The feeds changed, maybe on another server: pick them up.
 		}
 	}
 }
@@ -661,7 +809,7 @@ func (f *Feeds) Refresh(ctx context.Context, name string) (FeedStatus, error) {
 	if err != nil {
 		st.LastError = err.Error()
 		st.NextRun = start.Add(min(fd.Interval, RetryAfterFailure))
-		f.saveStatus()
+		f.saveStatus(name)
 		return *st, err
 	}
 	res := got.Result
@@ -674,7 +822,7 @@ func (f *Feeds) Refresh(ctx context.Context, name string) (FeedStatus, error) {
 	if fd.Format == FormatAuto {
 		st.Format, st.Column = res.Format, res.Column
 	}
-	f.saveStatus()
+	f.saveStatus(name)
 	f.log().Info("threat intel feed downloaded", "feed", name, "indicators", st.Count, "added", added, "removed", removed, "skipped", res.Skipped)
 	return *st, nil
 }
@@ -806,6 +954,7 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, log *slog.Logger
 	}
 	t := time.NewTicker(every)
 	defer t.Stop()
+	wake := s.wakeCh()
 	for {
 		if reloaded, err := s.Sync(ctx); err != nil {
 			if log != nil {
@@ -818,6 +967,7 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, log *slog.Logger
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-wake:
 		}
 	}
 }

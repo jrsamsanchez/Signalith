@@ -1,0 +1,4 @@
+{"rule": "4d0083b3-580b-40da-9bba-626c19fe4033", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\coerced\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}}
+]}

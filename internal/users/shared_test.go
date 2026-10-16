@@ -1,6 +1,7 @@
 package users
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ func sharedStores(t *testing.T, names ...string) (a, b *Store, path string) {
 		if n == "boss" || n == "boss2" {
 			role = Admin
 		}
-		if _, err := a.Create(newUser(n, role)); err != nil {
+		if _, err := a.Create(context.Background(), newUser(n, role)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,12 +57,12 @@ func TestDisableSticksAcrossSharedFile(t *testing.T) {
 		t.Fatal("mallory starts enabled")
 	}
 	off := true
-	if _, err := a.Update("mallory", Change{Disabled: &off}); err != nil {
+	if _, err := a.Update(context.Background(), "mallory", Change{Disabled: &off}); err != nil {
 		t.Fatal(err)
 	}
-	b.RecordSignIn("mallory")
+	b.RecordSignIn(context.Background(), "mallory")
 	name := "Carol C"
-	if _, err := b.Update("carol", Change{Name: &name}); err != nil {
+	if _, err := b.Update(context.Background(), "carol", Change{Name: &name}); err != nil {
 		t.Fatal(err)
 	}
 	if u, _ := b.Get("mallory"); !u.Disabled {
@@ -84,19 +85,19 @@ func TestDeleteSticksAcrossSharedFile(t *testing.T) {
 	if !b.CheckPassword("mallory", "temporary-pass") {
 		t.Fatal("mallory's password should work at first")
 	}
-	if _, err := a.Delete("mallory"); err != nil {
+	if _, err := a.Delete(context.Background(), "mallory"); err != nil {
 		t.Fatal(err)
 	}
-	b.RecordSignIn("mallory")
-	b.RecordSignIn("carol")
-	b.RecordBuiltinSignIn()
-	if _, err := b.SetPassword("carol", "another-password", false); err != nil {
+	b.RecordSignIn(context.Background(), "mallory")
+	b.RecordSignIn(context.Background(), "carol")
+	b.RecordBuiltinSignIn(context.Background())
+	if _, err := b.SetPassword(context.Background(), "carol", "another-password", false); err != nil {
 		t.Fatal(err)
 	}
 	if b.CheckPassword("mallory", "temporary-pass") {
 		t.Error("the other server still accepts the deleted user's password")
 	}
-	if _, err := b.Update("mallory", Change{}); !errors.Is(err, ErrNotFound) {
+	if _, err := b.Update(context.Background(), "mallory", Change{}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("updating the deleted user on the other server = %v, want ErrNotFound", err)
 	}
 	after := reopen(t, path)
@@ -116,22 +117,22 @@ func TestDeleteSticksAcrossSharedFile(t *testing.T) {
 // (at least one enabled admin, unique names) see the other server's.
 func TestChangesFromBothServersAreKept(t *testing.T) {
 	a, b, path := sharedStores(t, "boss", "boss2")
-	if _, err := a.Create(newUser("dave", Viewer)); err != nil {
+	if _, err := a.Create(context.Background(), newUser("dave", Viewer)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Create(newUser("erin", Analyst)); err != nil {
+	if _, err := b.Create(context.Background(), newUser("erin", Analyst)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Create(newUser("dave", Viewer)); !errors.Is(err, ErrExists) {
+	if _, err := b.Create(context.Background(), newUser("dave", Viewer)); !errors.Is(err, ErrExists) {
 		t.Errorf("the name the other server just took = %v, want ErrExists", err)
 	}
 	// With no built-in admin, one of the two admins must stay enabled:
 	// the second server sees the first one's disable.
 	off := true
-	if _, err := a.Update("boss", Change{Disabled: &off}); err != nil {
+	if _, err := a.Update(context.Background(), "boss", Change{Disabled: &off}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Update("boss2", Change{Disabled: &off}); !errors.Is(err, ErrLastAdmin) {
+	if _, err := b.Update(context.Background(), "boss2", Change{Disabled: &off}); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("disabling the last enabled admin on the other server = %v, want ErrLastAdmin", err)
 	}
 	after := reopen(t, path)
@@ -156,10 +157,10 @@ func TestDamagedSharedFileIsNotOverwritten(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Create(newUser("dave", Viewer)); err == nil {
+	if _, err := b.Create(context.Background(), newUser("dave", Viewer)); err == nil {
 		t.Error("a write over a damaged file was allowed")
 	}
-	b.RecordSignIn("carol")
+	b.RecordSignIn(context.Background(), "carol")
 	if got, _ := os.ReadFile(path); string(got) != "{not json" {
 		t.Errorf("the damaged file was replaced: %s", got)
 	}
@@ -174,14 +175,14 @@ func TestReadsLookForChangesAtMostOncePerInterval(t *testing.T) {
 	a, b, _ := sharedStores(t, "boss", "carol")
 	b.recheck = time.Hour
 	b.checked, b.checkedOK = time.Now(), true
-	if _, err := a.Delete("carol"); err != nil {
+	if _, err := a.Delete(context.Background(), "carol"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := b.Get("carol"); !ok {
 		t.Error("a read within the interval read the file again")
 	}
 	// A write always works on the file as it is now.
-	if _, err := b.Update("carol", Change{}); !errors.Is(err, ErrNotFound) {
+	if _, err := b.Update(context.Background(), "carol", Change{}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("update = %v, want ErrNotFound", err)
 	}
 	if _, ok := b.Get("carol"); ok {
@@ -197,7 +198,7 @@ func TestConcurrentWritesOnOneServer(t *testing.T) {
 	var names []string
 	for i := range 8 {
 		n := fmt.Sprintf("user%d", i)
-		if _, err := a.Create(newUser(n, Viewer)); err != nil {
+		if _, err := a.Create(context.Background(), newUser(n, Viewer)); err != nil {
 			t.Fatal(err)
 		}
 		names = append(names, n)
@@ -207,13 +208,13 @@ func TestConcurrentWritesOnOneServer(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			b.RecordSignIn(n)
+			b.RecordSignIn(context.Background(), n)
 			_, _ = b.Get(n)
 		}()
 		go func() {
 			defer wg.Done()
 			name := fmt.Sprintf("Person %d", i)
-			if _, err := b.Update(n, Change{Name: &name}); err != nil {
+			if _, err := b.Update(context.Background(), n, Change{Name: &name}); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -239,7 +240,7 @@ func TestMissingSharedFileKeepsUsers(t *testing.T) {
 	if _, ok := b.Get("carol"); !ok {
 		t.Fatal("carol vanished with the file")
 	}
-	if _, err := b.Create(newUser("dave", Viewer)); err != nil {
+	if _, err := b.Create(context.Background(), newUser("dave", Viewer)); err != nil {
 		t.Fatal(err)
 	}
 	after := reopen(t, path)
@@ -258,7 +259,7 @@ func TestTwoServersWritingAtOnceLoseNothing(t *testing.T) {
 	var names []string
 	for i := range 6 {
 		n := fmt.Sprintf("user%d", i)
-		if _, err := a.Create(newUser(n, Viewer)); err != nil {
+		if _, err := a.Create(context.Background(), newUser(n, Viewer)); err != nil {
 			t.Fatal(err)
 		}
 		names = append(names, n)
@@ -269,20 +270,20 @@ func TestTwoServersWritingAtOnceLoseNothing(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			name := fmt.Sprintf("Person %d", i)
-			if _, err := a.Update(n, Change{Name: &name}); err != nil {
+			if _, err := a.Update(context.Background(), n, Change{Name: &name}); err != nil {
 				t.Error(err)
 			}
 		}()
 		go func() {
 			defer wg.Done()
 			email := fmt.Sprintf("p%d@example.com", i)
-			if _, err := b.Update(n, Change{Email: &email}); err != nil {
+			if _, err := b.Update(context.Background(), n, Change{Email: &email}); err != nil {
 				t.Error(err)
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			b.RecordSignIn(n)
+			b.RecordSignIn(context.Background(), n)
 		}()
 	}
 	wg.Wait()
@@ -309,7 +310,7 @@ func TestLockFileLeftBehindIsTakenOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	off := true
-	if _, err := a.Update("carol", Change{Disabled: &off}); err != nil {
+	if _, err := a.Update(context.Background(), "carol", Change{Disabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	if u, _ := reopen(t, path).Get("carol"); !u.Disabled {
@@ -331,7 +332,7 @@ func TestBusyLockRefusesTheChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	off := true
-	if _, err := a.Update("carol", Change{Disabled: &off}); !errors.Is(err, ErrBusy) {
+	if _, err := a.Update(context.Background(), "carol", Change{Disabled: &off}); !errors.Is(err, ErrBusy) {
 		t.Fatalf("update = %v, want ErrBusy", err)
 	}
 	if u, _ := reopen(t, path).Get("carol"); u.Disabled {
@@ -410,7 +411,7 @@ func TestSlowReadIsNotAppliedOverANewerChange(t *testing.T) {
 	}()
 	<-stuck
 	off := true
-	if _, err := b.Update("carol", Change{Disabled: &off}); err != nil {
+	if _, err := b.Update(context.Background(), "carol", Change{Disabled: &off}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)

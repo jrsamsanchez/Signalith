@@ -1,0 +1,5 @@
+{"rule": "f10ed525-97fe-4fed-be7c-2feecca941b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\CLSID\\{52A2AAAE-085D-4187-97EA-8C30DB990436}\\InprocServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\System32\\hhctrl.ocx","TargetObject":"\\CLSID\\{52A2AAAE-085D-4187-97EA-8C30DB990436}\\InprocServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

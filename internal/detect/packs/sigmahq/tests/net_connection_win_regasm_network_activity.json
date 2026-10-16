@@ -1,0 +1,6 @@
+{"rule": "0531e43a-d77d-47c2-b89f-5fe50321c805", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\regasm.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"fe80::1","Image":"\\regasm.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\regasm.exe"}}
+]}

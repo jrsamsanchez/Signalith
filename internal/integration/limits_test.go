@@ -111,7 +111,7 @@ func TestIngestLimitsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(m) > 2000 {
+	if len(m) > 2400 {
 		t.Errorf("mapping has %d fields", len(m))
 	}
 	for name, want := range map[string]string{

@@ -1,0 +1,5 @@
+{"rule": "48ea844d-19b1-4642-944e-fe39c2cc1fec", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\DllHost.exe","TargetFilename":"C:\\Windows\\System32\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\DllHost.exe"}}
+]}

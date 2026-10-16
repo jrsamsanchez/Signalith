@@ -1,0 +1,4 @@
+{"rule": "3a9fa2ec-30bc-4ebd-b49e-7c9cff225502", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft.VSCode_profile.ps1"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

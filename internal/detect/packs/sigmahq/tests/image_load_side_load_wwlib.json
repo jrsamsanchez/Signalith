@@ -1,0 +1,5 @@
+{"rule": "e2e01011-5910-4267-9c3b-4149ed5479cf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\wwlib.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Program Files (x86)\\Microsoft Office\\ \\winword.exe","ImageLoaded":"C:\\Program Files\\Microsoft Office\\\\wwlib.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{}}
+]}

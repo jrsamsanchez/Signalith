@@ -23,8 +23,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 32 {
-		t.Fatalf("%d built-in detections, want 32", len(ds))
+	if len(ds) != 51 {
+		t.Fatalf("%d built-in detections, want 51", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -36,7 +36,13 @@ func TestBuiltinsCompile(t *testing.T) {
 		if _, err := eng.Compile(q); err != nil {
 			t.Errorf("%s: compile: %v", d.ID, err)
 		}
-		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") {
+		// Risk incidents, intel matches, exposures a vulnerability scan
+		// found (such as an open Telnet port), IDS alerts (each rule
+		// names its own technique, in the event's mitre field) and the
+		// health of a data source (a sensor dropping packets) need not
+		// name a technique.
+		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") &&
+			!slices.Contains(d.Tags, "intrusion-detection") && !slices.Contains(d.Tags, "health") {
 			t.Errorf("%s has no ATT&CK mapping", d.ID)
 		}
 		// A transforming query only returns the columns it names, so
@@ -188,7 +194,7 @@ func TestSchedulerRaisesAndThrottles(t *testing.T) {
 	s := &Scheduler{Library: lib, Engine: run, Findings: store, Now: func() time.Time { return now }}
 	d, _ := lib.Get("auth-brute-force")
 
-	res, err := s.Run(context.Background(), d)
+	res, err := s.RunManual(context.Background(), d, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,18 +217,18 @@ func TestSchedulerRaisesAndThrottles(t *testing.T) {
 
 	// Five minutes later the same sources are throttled (window 1h).
 	now = now.Add(5 * time.Minute)
-	res, _ = s.Run(context.Background(), d)
+	res, _ = s.RunManual(context.Background(), d, "")
 	if len(res.Findings) != 0 || res.Throttled != 2 {
 		t.Fatalf("second run = %+v", res)
 	}
 	// After the throttle window they fire again.
 	now = now.Add(time.Hour)
-	res, _ = s.Run(context.Background(), d)
+	res, _ = s.RunManual(context.Background(), d, "")
 	if len(res.Findings) != 2 {
 		t.Fatalf("third run = %+v", res)
 	}
-	st := s.Status()["auth-brute-force"]
-	if st.LastFindings != 2 || !st.NextRun.Equal(now.Add(5*time.Minute)) {
+	// "Run now" leaves the schedule alone, and is recorded on its own.
+	if st := s.Status()["auth-brute-force"]; !st.LastRun.IsZero() || !st.NextRun.IsZero() || st.Manual == nil || st.Manual.Findings != 2 {
 		t.Errorf("state = %+v", st)
 	}
 }
@@ -230,22 +236,31 @@ func TestSchedulerRaisesAndThrottles(t *testing.T) {
 func TestRunDueRespectsScheduleAndEnabled(t *testing.T) {
 	lib, _, _ := NewLibrary("")
 	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
-	s := &Scheduler{Library: lib, Engine: &fakeRunner{}, Findings: findings.NewMemory(), Now: func() time.Time { return now }}
+	var mu sync.Mutex
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	step := func(d time.Duration) { mu.Lock(); now = now.Add(d); mu.Unlock() }
+	s := (&Scheduler{Library: lib, Engine: &fakeRunner{}, Findings: findings.NewMemory(), Now: clock}).AsNew()
+	// At first sight a detection waits for its next slot.
+	s.RunDue(context.Background())
+	if st := s.Status()["auth-brute-force"]; !st.LastRun.IsZero() || st.NextRun.IsZero() {
+		t.Fatalf("ran at first sight: %+v", st)
+	}
+	step(5 * time.Minute)
 	s.RunDue(context.Background())
 	st := s.Status()
-	if _, ran := st["change-account-deleted"]; ran {
+	if st := st["change-account-deleted"]; !st.LastRun.IsZero() {
 		t.Error("disabled detection ran")
 	}
 	first := st["auth-brute-force"].LastRun
 	if first.IsZero() {
 		t.Fatal("enabled detection did not run")
 	}
-	now = now.Add(time.Minute)
+	step(time.Second)
 	s.RunDue(context.Background())
 	if !s.Status()["auth-brute-force"].LastRun.Equal(first) {
 		t.Error("ran again before its schedule")
 	}
-	now = now.Add(5 * time.Minute)
+	step(5 * time.Minute)
 	s.RunDue(context.Background())
 	if s.Status()["auth-brute-force"].LastRun.Equal(first) {
 		t.Error("did not run when due")
@@ -260,7 +275,7 @@ func TestRunCapsFindings(t *testing.T) {
 	}
 	s := &Scheduler{Library: lib, Engine: &fakeRunner{rows: rows}, Findings: findings.NewMemory(), MaxFindingsPerRun: 3}
 	d, _ := lib.Get("auth-brute-force")
-	res, err := s.Run(context.Background(), d)
+	res, err := s.RunManual(context.Background(), d, "")
 	if err != nil || len(res.Findings) != 3 || !res.Capped {
 		t.Fatalf("res = %+v, %v", res, err)
 	}
@@ -356,9 +371,33 @@ func TestConvertSigma(t *testing.T) {
 	}
 }
 
+func TestConvertSigmaRegex(t *testing.T) {
+	for rule, want := range map[string]string{
+		// |re keeps its pattern; |i makes it ignore case.
+		"title: R\nlogsource:\n  category: process_creation\ndetection:\n  sel:\n    CommandLine|re|i: 'curl .*://[0-9]{1,3}\\.'\n  condition: sel\n": `datamodel=Endpoint process=~"(?i)curl .*://[0-9]{1,3}\\."`,
+		// An escaped * is the character itself, searched as a pattern.
+		"title: S\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 5145\n    ShareName: '\\\\\\*\\IPC$'\n  condition: sel\n": `share_name=~`,
+	} {
+		res, err := ConvertSigma([]byte(rule))
+		if err != nil {
+			t.Fatalf("%v\n%s", err, rule)
+		}
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query = %s, want %s", res.Detection.Query, want)
+		}
+		q, err := query.Parse(res.Detection.Query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&search.Engine{}).Compile(q); err != nil {
+			t.Errorf("compile: %v", err)
+		}
+	}
+}
+
 func TestConvertSigmaUnsupported(t *testing.T) {
 	for name, rule := range map[string]string{
-		"regex":       "title: x\ndetection:\n  sel:\n    CommandLine|re: 'a.*b'\n  condition: sel\n",
+		"regex":       "title: x\ndetection:\n  sel:\n    CommandLine|re: '\\bab'\n  condition: sel\n",
 		"aggregation": "title: x\ndetection:\n  sel:\n    EventID: 4625\n  condition: sel | count() by IpAddress > 10\n",
 		"unknown sel": "title: x\ndetection:\n  sel:\n    EventID: 4625\n  condition: other\n",
 		"not sigma":   "hello: world\n",
@@ -380,23 +419,45 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 	}
 }
 
+// A Sigma field searched as-is must be one word of the query language:
+// FuzzConvertSigma found "a b" stored as the term a and the field b.
+func TestConvertSigmaFieldNameNotAWord(t *testing.T) {
+	for _, field := range []string{"a b", `a"b`, "a=b", "AND", "a(b)"} {
+		rule := "title: x\ndetection:\n  sel:\n    '" + field + "': 1\n  condition: sel\n"
+		if res, err := ConvertSigma([]byte(rule)); err == nil {
+			t.Errorf("field %q converted to %s", field, res.Detection.Query)
+		}
+	}
+	if _, err := ConvertSigma([]byte("title: x\ndetection:\n  sel:\n    My_Field-1.x: 1\n  condition: sel\n")); err != nil {
+		t.Errorf("a one-word field: %v", err)
+	}
+}
+
 func TestCoverage(t *testing.T) {
 	ds := []*Detection{
 		{ID: "a", MITRE: []string{"T1110.003"}, Enabled: true},
 		{ID: "b", MITRE: []string{"T1110"}, Enabled: false},
 		{ID: "c", MITRE: []string{"T1490"}, Enabled: false},
 		{ID: "d", MITRE: []string{"T9999"}, Enabled: true},
+		{ID: "e", MITRE: []string{"T9998"}, Enabled: false},
+		// Retired in ATT&CK 19: T1574.002 DLL Side-Loading is T1574.001
+		// DLL.
+		{ID: "f", MITRE: []string{"T1574.002"}, Enabled: true},
 	}
 	cov := ComputeCoverage(ds)
-	if cov.Summary.Enabled != 1 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
+	if cov.Summary.Enabled != 2 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
 		t.Errorf("summary = %+v", cov.Summary)
 	}
-	if cov.Unknown["T9999"] != "d" {
+	// A detection that is off is not worth a warning.
+	if cov.Unknown["T9999"] != "d" || len(cov.Unknown) != 1 {
 		t.Errorf("unknown = %v", cov.Unknown)
 	}
 	var found bool
 	for _, tac := range cov.Tactics {
 		for _, te := range tac.Techniques {
+			if te.ID == "T1574" && (len(te.Enabled) != 1 || te.Subs[0] != "T1574.001") {
+				t.Errorf("T1574 = %+v", te)
+			}
 			if te.ID == "T1110" {
 				found = true
 				if tac.Short != "credential-access" || len(te.Enabled) != 1 || len(te.Disabled) != 1 || te.Subs[0] != "T1110.003" {
@@ -430,27 +491,35 @@ func TestSchedulerAsksAllowed(t *testing.T) {
 	store := findings.NewMemory()
 	var allowed atomic.Bool
 	runner := &losingRunner{fakeRunner: fakeRunner{rows: []search.Row{{"src": "203.0.113.9", "dest": "web1"}}}, lose: func() { allowed.Store(false) }}
-	s := &Scheduler{Library: lib, Engine: runner, Findings: store, Now: func() time.Time { return now }, Allowed: allowed.Load}
+	var mu sync.Mutex
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	s := &Scheduler{Library: lib, Engine: runner, Findings: store, Now: clock, Allowed: allowed.Load}
 	s.RunDue(context.Background())
 	if len(s.Status()) != 0 {
 		t.Fatalf("ran while not allowed: %+v", s.Status())
 	}
 	allowed.Store(true)
+	s.RunDue(context.Background()) // first sight: no run
+	before := s.Status()
+	mu.Lock()
+	now = now.Add(time.Hour)
+	mu.Unlock()
 	s.RunDue(context.Background())
-	failed := 0
-	for _, st := range s.Status() {
-		if strings.Contains(st.LastError, "no longer runs the background jobs") {
-			failed++
+	// The run that lost the role wrote nothing, so its slot is run again
+	// by the server that has the role now.
+	for id, st := range s.Status() {
+		if !st.LastRun.IsZero() || !st.LastSlot.Equal(before[id].LastSlot) {
+			t.Errorf("%s: state %+v", id, st)
 		}
 	}
-	if failed == 0 {
-		t.Fatalf("state %+v", s.Status())
+	if len(runner.fakeRunner.rows) == 0 || runner.last == nil {
+		t.Fatal("nothing ran")
 	}
 	if list, _, _ := store.Search(context.Background(), findings.Filter{}); len(list) != 0 {
 		t.Fatalf("%d findings written after the role was lost", len(list))
 	}
 	d, _ := lib.Get("auth-brute-force")
-	if res, err := s.Run(context.Background(), d); err != nil || len(res.Findings) != 1 {
+	if res, err := s.RunManual(context.Background(), d, ""); err != nil || len(res.Findings) != 1 {
 		t.Fatalf("a run by hand: %+v %v", res, err)
 	}
 }
@@ -572,6 +641,116 @@ func TestConvertSigmaAntivirus(t *testing.T) {
 	}
 }
 
+func TestConvertSigmaServiceInstall(t *testing.T) {
+	rule := "title: PsExec service installed\nlogsource:\n  product: windows\n  service: system\ndetection:\n  sel:\n    Provider_Name: 'Service Control Manager'\n    EventID: 7045\n    ServiceName: PSEXESVC\n    ImagePath|endswith: '\\PSEXESVC.exe'\n  condition: sel\nlevel: medium\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := res.Detection.Query
+	for _, want := range []string{"datamodel=Change", "signature_id IN (7045)", `provider="Service Control Manager"`, "service_name=PSEXESVC", `service_path=*\PSEXESVC.exe`} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %s: %s", want, q)
+		}
+	}
+	// Other System log events have their own data, not a service
+	// install's.
+	other := strings.ReplaceAll(rule, "7045", "7036")
+	if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a 7036 rule about a service install's data converted strictly")
+	}
+	stopped := "title: Defender stopped\nlogsource:\n  product: windows\n  service: system\ndetection:\n  sel:\n    Provider_Name: 'Service Control Manager'\n    EventID: 7036\n    param1: 'Windows Defender Antivirus Service'\n    param2: stopped\n  condition: sel\nlevel: medium\n"
+	res, err = ConvertSigmaWith([]byte(stopped), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = res.Detection.Query
+	for _, want := range []string{"datamodel=Other", "sourcetype=WinEventLog:System", "signature_id=7036", `system_param1="Windows Defender Antivirus Service"`, "system_param2=stopped"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %s: %s", want, q)
+		}
+	}
+}
+
+// Google Workspace's rules read the Reports API's names for an event
+// (eventName) and its parameters (new_value), and its sign-in rules the
+// event's name in the log entry's metadata.
+func TestConvertSigmaWorkspace(t *testing.T) {
+	admin := "title: MFA disabled\nlogsource:\n  product: gcp\n  service: google_workspace.admin\ndetection:\n  sel:\n    eventService: admin.googleapis.com\n    eventName: ENFORCE_STRONG_AUTHENTICATION\n    new_value: 'false'\n  condition: sel\nlevel: medium\n"
+	login := "title: Suspicious login\nlogsource:\n  product: gcp\n  service: google_workspace.login\ndetection:\n  sel:\n    protoPayload.serviceName: login.googleapis.com\n    protoPayload.metadata.event.eventName: suspicious_login\n  condition: sel\nlevel: medium\n"
+	for rule, wants := range map[string][]string{
+		admin: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=admin.googleapis.com",
+			"event_name=ENFORCE_STRONG_AUTHENTICATION", "event_parameters.new_value=false"},
+		login: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=login.googleapis.com", "event_name=suspicious_login"},
+	} {
+		res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(res.Detection.Query, want) {
+				t.Errorf("query missing %s: %s", want, res.Detection.Query)
+			}
+		}
+	}
+}
+
+func TestConvertSigmaSecurityLog(t *testing.T) {
+	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
+	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"datamodel=Authentication", "signature_id IN (4624)", "logon_type=10", "logon_process=User32"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	// An object access may be a file's or a registry key's.
+	access := strings.NewReplacer("4624", "4663", "LogonType: 10", "ObjectType: Key", "LogonProcessName: User32", "AccessList|contains: '%%4417'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(access), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; strings.Contains(q, "datamodel=") || !strings.Contains(q, "object_type=Key") {
+		t.Errorf("object access query = %s", q)
+	}
+	// A share access is searched by its access names as well as codes.
+	share := strings.NewReplacer("4624", "5145", "LogonType: 10", "RelativeTargetName: svcctl", "LogonProcessName: User32", "AccessList|contains: 'WriteData'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(share), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; !strings.Contains(q, "datamodel=Filesystem") || !strings.Contains(q, "access_names=*WriteData*") || !strings.Contains(q, "share_target=svcctl") {
+		t.Errorf("share access query = %s", q)
+	}
+	// A Kerberos service ticket is an authentication, searched by its own
+	// fields.
+	ticket := strings.NewReplacer("4624", "4769", "LogonType: 10", "TicketEncryptionType: '0x17'", "LogonProcessName: User32", "ServiceName|endswith: '$'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(ticket), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; !strings.Contains(q, "datamodel=Authentication") || !strings.Contains(q, "ticket_encryption_type=0x17") || !strings.Contains(q, "kerberos_service=*$") {
+		t.Errorf("kerberos query = %s", q)
+	}
+	// A handle request and the access made with it convert together.
+	both := strings.NewReplacer("EventID: 4624", "EventID: [4656, 4663]", "LogonType: 10", "ObjectType: Key", "LogonProcessName: User32", "ObjectName|endswith: '\\SAM'").Replace(logon)
+	res, err = ConvertSigmaWith([]byte(both), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := res.Detection.Query; !strings.Contains(q, "signature_id IN (4656, 4663)") || !strings.Contains(q, "object_path=*\\SAM") {
+		t.Errorf("handle and access query = %s", q)
+	}
+	// A rule about two events, or one Signalith does not read, is refused.
+	for _, other := range []string{strings.Replace(logon, "EventID: 4624", "EventID: [4624, 4625]", 1), strings.Replace(logon, "4624", "4776", 1)} {
+		if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {
+			t.Errorf("converted strictly: %s", other)
+		}
+	}
+}
+
 func mustParse(t *testing.T, s string) *query.Query {
 	t.Helper()
 	q, err := query.Parse(s)
@@ -579,4 +758,164 @@ func mustParse(t *testing.T, s string) *query.Query {
 		t.Fatalf("%s: %v", s, err)
 	}
 	return q
+}
+
+func TestBaseTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"Encoded PowerShell command on $dest$":                                       "Encoded PowerShell command",
+		"Brute force against $dest$ from $src$":                                      "Brute force",
+		"Malware found on $dest$ ($signature$)":                                      "Malware found",
+		"Account $object$ created on $dest$":                                         "Account created",
+		"Threat intel match on $threat_match_field$ $threat_match_value$ ($source$)": "Threat intel match",
+		"Scheduled task created on $dest$ by $user$":                                 "Scheduled task created",
+		"$user$ logged on with $method$":                                             "Logged on",
+		"$dest$":                                                                     "dest",
+		"No tokens at all":                                                           "No tokens at all",
+		"éclair eaten on $dest$":                                                     "Éclair eaten",
+	} {
+		if got := BaseTitle(in); got != want {
+			t.Errorf("BaseTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+	d := &Detection{Title: "$a$ did $b$", Name: "Something done"}
+	if d.BaseTitle() != "Something done" {
+		t.Errorf("name not used: %q", d.BaseTitle())
+	}
+}
+
+// Every built-in detection has a clean name for views that count it
+// across hosts: no $field$ tokens, and more than one word, so a title
+// that starts with a token and reads badly without it gets a name.
+func TestBuiltinBaseTitles(t *testing.T) {
+	lib, _, err := NewLibrary("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, d := range lib.List() {
+		if d.Source != "builtin" {
+			continue
+		}
+		b := d.BaseTitle()
+		if strings.Contains(b, "$") || len(strings.Fields(b)) < 2 {
+			t.Errorf("%s: base title %q", d.ID, b)
+		}
+		if other, dup := seen[b]; dup {
+			t.Errorf("%s and %s share the base title %q", d.ID, other, b)
+		}
+		seen[b] = d.ID
+	}
+	bad := &Detection{ID: "abc", Title: "x", Name: "on $dest$", Query: "*", Schedule: "5m", Lookback: "5m", Severity: "low"}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "name must not use") {
+		t.Errorf("token in name: %v", err)
+	}
+}
+
+// Sysmon log sources other than process creation map onto their own data
+// models, only see their own event IDs, and map fields by log source.
+func TestConvertSigmaSysmonLogSources(t *testing.T) {
+	r, err := ConvertSigmaWith([]byte(`title: Run key
+logsource: {product: windows, category: registry_set}
+detection:
+  sel:
+    TargetObject|contains: '\CurrentVersion\Run\'
+    Image|endswith: '\powershell.exe'
+    Details|startswith: 'C:\Users\'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Registry (sourcetype=WinEventLog:* AND signature_id IN (13)) (registry_value_data=C:\Users\* AND process_name=powershell.exe AND registry_path=*\CurrentVersion\Run\*)`
+	if r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
+	r, err = ConvertSigmaWith([]byte(`title: LSASS access
+logsource: {product: windows, category: process_access}
+detection:
+  sel:
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess: '0x1410'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := r.Detection.Query; !strings.Contains(q, "datamodel=Endpoint") || !strings.Contains(q, "signature_id IN (10)") || !strings.Contains(q, "target_process_name=lsass.exe") {
+		t.Errorf("query = %s", q)
+	}
+	r, err = ConvertSigmaWith([]byte(`title: Mimikatz in a script
+logsource: {product: windows, category: ps_script, definition: 'Script Block Logging must be enabled'}
+detection:
+  sel:
+    ScriptBlockText|contains: 'Invoke-Mimikatz'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `datamodel=Script (sourcetype=WinEventLog:* AND signature_id IN (4104)) script_block_text=*Invoke-Mimikatz*`; r.Detection.Query != want {
+		t.Errorf("query = %s\nwant    %s", r.Detection.Query, want)
+	}
+	// In image_load, Description is the DLL's, not the process's.
+	r, err = ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, category: image_load}
+detection:
+  sel:
+    Description: 'x'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil || !strings.Contains(r.Detection.Query, "loaded_file_description=x") {
+		t.Errorf("image_load Description = %v %+v", err, r)
+	}
+	// Sysmon records no command line there: no mapping.
+	if _, err := ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, category: image_load}
+detection:
+  sel:
+    CommandLine: 'x'
+  condition: sel
+`), SigmaOptions{Strict: true}); err == nil || !strings.Contains(err.Error(), "CommandLine has no Signalith mapping in image_load") {
+		t.Errorf("err = %v", err)
+	}
+	// In a successful logon, the Subject is the account that asked for it.
+	r, err = ConvertSigmaWith([]byte(`title: x
+logsource: {product: windows, service: security}
+detection:
+  sel:
+    EventID: 4624
+    SubjectUserSid: 'S-1-0-0'
+    KeyLength: 0
+    ImpersonationLevel: '%%1833'
+  condition: sel
+`), SigmaOptions{Strict: true})
+	if err != nil || !strings.Contains(r.Detection.Query, "src_user_sid=S-1-0-0") || !strings.Contains(r.Detection.Query, "key_length=0") ||
+		!strings.Contains(r.Detection.Query, "impersonation_level=") {
+		t.Errorf("4624 = %v %+v", err, r)
+	}
+}
+
+// A web server log rule searches the Web data model by the W3C field
+// names, and its keywords in what the client chose: the request's target,
+// user agent and referrer.
+func TestConvertSigmaWebserver(t *testing.T) {
+	res, err := ConvertSigmaWith([]byte(`title: Web shell
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-method: GET
+        sc-status: 200
+    keywords:
+        - '=whoami'
+    condition: selection and keywords
+level: high
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Web (http_method=GET AND status=200) (url="*=whoami*" OR http_user_agent="*=whoami*" OR http_referrer="*=whoami*")`
+	if res.Detection.Query != want || len(res.Warnings) > 0 {
+		t.Errorf("query = %s, warnings %v", res.Detection.Query, res.Warnings)
+	}
 }

@@ -67,10 +67,87 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 	if saved.PageErr != nil && !e.ResetAll {
 		return nil, fmt.Errorf("%w: %v. Reset all settings to start the file again, or fix it on the server", ErrPageFile, saved.PageErr)
 	}
-	before := saved.Config
 	page := saved.Page.Clone()
+	d := &pageEdits{page: page, make: func(p *PageSettings) (*Config, error) { return build(path, p) }}
+	res, err := checkEdit(saved.Config, e, d, func(key string) string {
+		if s, ok := Lookup(key); ok && !s.OnPage(false) {
+			return "This setting is on the Settings page once this server shares its settings with the other servers of its OpenSearch. Until then, set it in signalith.yaml."
+		}
+		return ""
+	}, false)
+	if err != nil {
+		return nil, err
+	}
+	res.Page = d.page
+	return res, nil
+}
+
+// edits is where the settings an edit changes are kept, as saved: the
+// page's file, or a shared layer.
+type edits interface {
+	// refused reports whether a change of key was set aside, and
+	// dropRefused takes that change away.
+	refused(key string) bool
+	dropRefused(key string)
+	set(key string, v any, by string, at time.Time) error
+	// setSecret records a password or key; "" means none.
+	setSecret(key, secret, sentTo, by string, at time.Time) error
+	// remove takes key off, so the value it would have without the edits
+	// applies again.
+	remove(key string)
+	// retry uses a change set aside again, and reports whether there was
+	// one.
+	retry(key string) bool
+	// clear takes every setting off.
+	clear()
+	// build returns the configuration the settings give, explicitMode as
+	// in PageSettings.
+	build(explicitMode bool) (*Config, error)
+}
+
+// pageEdits are edits kept as PageSettings: the page's file, or this
+// server's own settings in a shared layer.
+type pageEdits struct {
+	page *PageSettings
+	// make builds the configuration with page.
+	make func(page *PageSettings) (*Config, error)
+}
+
+func (d *pageEdits) refused(key string) bool {
+	e := d.page.Settings[key]
+	return e != nil && e.Refused != ""
+}
+func (d *pageEdits) dropRefused(key string) { d.page.Remove(key) }
+func (d *pageEdits) set(key string, v any, by string, at time.Time) error {
+	return d.page.Set(key, v, by, at)
+}
+func (d *pageEdits) setSecret(key, secret, sentTo, by string, at time.Time) error {
+	// Encrypted with the master key; a key is made if there is none yet.
+	return d.page.SetSecret(key, secret, sentTo, by, at)
+}
+func (d *pageEdits) remove(key string) { d.page.Remove(key) }
+func (d *pageEdits) retry(key string) bool {
+	e := d.page.Settings[key]
+	if e == nil || e.Refused == "" {
+		return false
+	}
+	e.Refused, e.RefusedAt, e.CheckedAt = "", time.Time{}, time.Time{}
+	return true
+}
+func (d *pageEdits) clear() { d.page.Settings = map[string]*PageEntry{} }
+func (d *pageEdits) build(explicitMode bool) (*Config, error) {
+	d.page.explicitMode = explicitMode
+	defer func() { d.page.explicitMode = false }()
+	return d.make(d.page)
+}
+
+// checkEdit applies an edit to d and checks the configuration it gives;
+// before is the configuration as saved. elsewhere says why a key cannot
+// be changed with d, or "". shared is whether the page is that of a
+// server whose settings are shared, for the settings it shows.
+func checkEdit(before *Config, e Edit, d edits, elsewhere func(string) string, shared bool) (*EditResult, error) {
 	if e.ResetAll {
-		page = &PageSettings{}
+		d.clear()
 	}
 	if e.At.IsZero() {
 		e.At = time.Now()
@@ -78,6 +155,17 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 	res := &EditResult{Before: before, Fields: map[string]string{}}
 	touched := map[string]bool{}
 	typed := map[string]string{}
+	known := func(key string) bool {
+		if _, ok := Lookup(key); !ok {
+			res.Fields[key] = notOnPage(key)
+			return false
+		}
+		if why := elsewhere(key); why != "" {
+			res.Fields[key] = why
+			return false
+		}
+		return true
+	}
 	locked := func(key string) bool {
 		if env := before.layers.env[key]; env != "" {
 			res.Fields[key] = LockedReason(env)
@@ -86,14 +174,10 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 		return false
 	}
 	for _, key := range sortedKeys(e.Values) {
-		s, ok := Lookup(key)
-		if !ok {
-			res.Fields[key] = notOnPage(key)
+		if !known(key) || locked(key) {
 			continue
 		}
-		if locked(key) {
-			continue
-		}
+		s, _ := Lookup(key)
 		v, err := ParseValue(s, e.Values[key])
 		if err == nil && s.check != nil {
 			err = s.check(v)
@@ -103,9 +187,9 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 			continue
 		}
 		touched[key] = true
-		if e := page.Settings[key]; e != nil && e.Refused != "" {
+		if d.refused(key) {
 			// A change set aside by a restart is replaced by this one.
-			page.Remove(key)
+			d.dropRefused(key)
 		}
 		if s.Type == TypeSecret {
 			if v.(string) != "" {
@@ -116,43 +200,41 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 		if reflect.DeepEqual(before.Value(key), v) {
 			continue
 		}
-		if err := page.Set(key, v, e.By, e.At); err != nil {
+		if err := d.set(key, v, e.By, e.At); err != nil {
 			return nil, err
 		}
 	}
 	for _, key := range e.Clear {
-		s, ok := Lookup(key)
+		if !known(key) {
+			continue
+		}
+		s, _ := Lookup(key)
 		switch {
-		case !ok:
-			res.Fields[key] = notOnPage(key)
 		case s.Type != TypeSecret:
 			res.Fields[key] = "Only passwords and keys can be cleared; use Reset instead."
 		case locked(key):
 		default:
 			touched[key] = true
 			delete(typed, key)
-			if err := page.SetSecret(key, "", "", e.By, e.At); err != nil {
+			if err := d.setSecret(key, "", "", e.By, e.At); err != nil {
 				return nil, err
 			}
 		}
 	}
 	for _, key := range e.Reset {
-		if _, ok := Lookup(key); !ok {
-			res.Fields[key] = notOnPage(key)
+		if !known(key) {
 			continue
 		}
 		touched[key] = true
 		delete(typed, key)
-		page.Remove(key)
+		d.remove(key)
 	}
 	for _, key := range e.Retry {
-		if _, ok := Lookup(key); !ok {
-			res.Fields[key] = notOnPage(key)
+		if !known(key) {
 			continue
 		}
-		if en := page.Settings[key]; en != nil && en.Refused != "" {
+		if d.retry(key) {
 			touched[key] = true
-			en.Refused, en.RefusedAt, en.CheckedAt = "", time.Time{}, time.Time{}
 		}
 	}
 	if e.ResetAll {
@@ -163,15 +245,13 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 	// A secret typed now may be sent to the address the edited settings
 	// point at, and only there.
 	if len(typed) > 0 {
-		c, err := build(path, page)
+		c, err := d.build(false)
 		if err != nil {
 			return nil, err
 		}
 		for _, key := range sortedKeys(typed) {
 			s, _ := Lookup(key)
-			// Encrypted with the master key; a key is made if there is
-			// none yet.
-			if err := page.SetSecret(key, typed[key], s.SentTo(c), e.By, e.At); err != nil {
+			if err := d.setSecret(key, typed[key], s.SentTo(c), e.By, e.At); err != nil {
 				return nil, err
 			}
 		}
@@ -181,13 +261,11 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 	// existed are read as files mode without it.
 	_, cert := e.Values["server.tls_cert"]
 	_, key := e.Values["server.tls_key"]
-	page.explicitMode = cert || key
-	after, err := build(path, page)
+	after, err := d.build(cert || key)
 	if err != nil {
 		return nil, err
 	}
-	page.explicitMode = false
-	res.Page, res.Config = page, after
+	res.Config = after
 	fields, rest := FieldProblems(after, problemsOf(after))
 	for _, k := range sortedKeys(fields) {
 		res.setField(k, fields[k])
@@ -224,6 +302,9 @@ func CheckEdit(path string, e Edit) (*EditResult, error) {
 		res.setField(m.Key, fmt.Sprintf("Enter the %s again, or reset it: the saved one is only sent to %s.", what, orNone(m.Bound)))
 	}
 	for _, s := range Registry {
+		if !s.OnPage(shared) {
+			continue
+		}
 		// A secret typed again counts as a change even when it is the same.
 		if !SameValue(before, after, s.Key) || typed[s.Key] != "" {
 			res.Changed = append(res.Changed, s.Key)

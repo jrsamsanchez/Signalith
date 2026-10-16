@@ -59,6 +59,10 @@ func (r *Risk) problems() []string {
 
 // RiskEvent is one unit of risk attributed to one object.
 type RiskEvent struct {
+	// ID, when set, is the stored event's ID: a scheduled run gives each
+	// event one from its slot (RiskEventID), so a slot run again writes
+	// nothing twice.
+	ID          string
 	Time        time.Time
 	Object      string
 	ObjectType  string
@@ -147,7 +151,9 @@ func lookupAs(a *assets.Store, objType, value string) (*assets.Context, bool) {
 	return a.Lookup("dest", value)
 }
 
-// RiskEvents builds the risk events for one result row.
+// RiskEvents builds the risk events for one result row, at time now
+// (a scheduled run's slot end, so the daily index is the same for every
+// run of the slot).
 func RiskEvents(d *Detection, row map[string]any, key string, a *assets.Store, now time.Time) []RiskEvent {
 	if d.Risk == nil {
 		return nil

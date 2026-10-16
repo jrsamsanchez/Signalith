@@ -1,0 +1,7 @@
+{"rule": "35c50572-a70b-452f-afa9-bebdf3c3ce36", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"LD_PRELOAD","a2":"x","argc":"3"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"LD_PRELOAD","a2":"y","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 10:00:26.770:45054) : argc=3 a0=sudo a1=LD_PRELOAD=./myfopen.so a2=./prog"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 13:06:23.771:103922) : argc=3 a0=sudo a1=LD_PRELOAD=./myfopen.so a2=./prog"}}
+]}

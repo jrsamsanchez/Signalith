@@ -7,7 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
+	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 const enrollBody = `{"enroll_secret":%q,"host_identifier":"4C4C4544-0000","host_details":{
@@ -143,3 +147,64 @@ func TestOsqueryWithoutEndpoints(t *testing.T) {
 }
 
 func nowUnix() int64 { return time.Now().Unix() }
+
+// TestOsqueryAgentTokens: hosts enroll with an agent token, their events
+// record it, and revoking it removes them and refuses them at once.
+func TestOsqueryAgentTokens(t *testing.T) {
+	fake := ostest.New(t)
+	st := endpoint.NewStore(endpoint.NewMemoryDocs(), "signalith")
+	ts, fos := newTestServerWith(t, func(s *Server) {
+		s.Endpoints = st
+		s.Tokens = &agenttokens.Registry{Client: store.New(store.Config{URL: fake.URL}), Prefix: "tt"}
+		s.Tokens.OnRevoke(st.RevokeToken)
+	})
+	call := func(method, path, body string, auth bool) (int, map[string]any) {
+		return do(t, ts, method, path, body, auth)
+	}
+	id, secret := createToken(t, ts, "osquery hosts")
+	code, body := call("POST", "/api/osquery/enroll", fmt.Sprintf(enrollBody, secret), false)
+	key, _ := body["node_key"].(string)
+	if code != 200 || key == "" {
+		t.Fatalf("enroll = %d %v", code, body)
+	}
+	logBody := `{"node_key":"` + key + `","log_type":"result","data":[{"name":"signalith_software","unixTime":` +
+		fmt.Sprint(nowUnix()) + `,"diffResults":{"added":[{"name":"openssl","version":"3.0.2"}],"removed":[]}}]}`
+	if code, body := call("POST", "/api/osquery/log", logBody, false); code != 200 {
+		t.Fatalf("log = %d %v", code, body)
+	}
+	doc := fos.bulk[len(fos.bulk)-1].Doc
+	if doc[ingest.IntakeField] != "osquery" || doc[ingest.TokenField] != "osquery hosts" || doc[ingest.TokenIDField] != id || doc[ingest.SenderField] != "127.0.0.1" {
+		t.Errorf("doc = %v", doc)
+	}
+	code, body = call("POST", "/api/agent-tokens/"+id+"/revoke", `{}`, true)
+	if code != 200 || body["hosts_removed"] != float64(1) {
+		t.Fatalf("revoke = %d %v", code, body)
+	}
+	if code, body := call("POST", "/api/osquery/config", `{"node_key":"`+key+`"}`, false); code != 401 || body["node_invalid"] != true {
+		t.Errorf("after revoke = %d %v", code, body)
+	}
+	if code, body := call("POST", "/api/osquery/enroll", fmt.Sprintf(enrollBody, secret), false); code != 401 || !strings.Contains(fmt.Sprint(body["error"]), "not an active agent token") {
+		t.Errorf("enroll after revoke = %d %v", code, body)
+	}
+}
+
+// TestOsqueryRevokedTokenRefusedWithoutRemoval: even when its host was
+// not removed (another server's cache), a revoked token's host is refused.
+func TestOsqueryRevokedTokenRefusedWithoutRemoval(t *testing.T) {
+	fake := ostest.New(t)
+	st := endpoint.NewStore(endpoint.NewMemoryDocs(), "signalith")
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Endpoints = st
+		s.Tokens = &agenttokens.Registry{Client: store.New(store.Config{URL: fake.URL}), Prefix: "tt"}
+	})
+	id, secret := createToken(t, ts, "osquery hosts")
+	_, body := do(t, ts, "POST", "/api/osquery/enroll", fmt.Sprintf(enrollBody, secret), false)
+	key := body["node_key"].(string)
+	if code, _ := do(t, ts, "POST", "/api/agent-tokens/"+id+"/revoke", `{}`, true); code != 200 {
+		t.Fatal("revoke")
+	}
+	code, body := do(t, ts, "POST", "/api/osquery/config", `{"node_key":"`+key+`"}`, false)
+	if code != 401 || body["node_invalid"] != true || !strings.Contains(fmt.Sprint(body["error"]), "revoked") {
+		t.Errorf("after revoke = %d %v", code, body)
+	}
+}

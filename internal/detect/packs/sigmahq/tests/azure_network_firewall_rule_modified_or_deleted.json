@@ -1,0 +1,4 @@
+{"rule": "2a7d64cf-81fa-4daf-ab1b-ab80b789c067", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/FIREWALLPOLICIES/RULECOLLECTIONGROUPS/DELETE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

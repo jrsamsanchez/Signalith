@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -18,7 +19,7 @@ const keywordIgnoreAbove = 8191
 // Event.Document) matches a filter expression. It evaluates the same
 // OpenSearch query compileExpr builds, clause by clause, so it agrees with
 // a real search for keyword and numeric fields: case-insensitive terms and
-// wildcards, exists, IPv4 ranges, and number terms. Free text against the
+// wildcards, exists, IP ranges, and number terms. Free text against the
 // raw message is approximated as a case-insensitive substring match,
 // since OpenSearch analyzes that field. The detection content checks use
 // it to prove each shipped rule fires on its test events without a
@@ -64,6 +65,12 @@ func evalDSL(q map[string]any, doc map[string]any) (bool, error) {
 			text, _ := doc[field].(string)
 			pat := unescapeQueryString(fmt.Sprint(b["query"]))
 			return globMatch("*"+strings.Trim(pat, "*")+"*", text), nil
+		case "regexp":
+			for field, spec := range b {
+				s, _ := spec.(map[string]any)
+				return evalRegexp(field, fmt.Sprint(s["value"]), doc)
+			}
+			return false, nil
 		case "range":
 			for field, spec := range b {
 				s, _ := spec.(map[string]any)
@@ -113,19 +120,54 @@ func evalBool(b map[string]any, doc map[string]any) (bool, error) {
 }
 
 // indexedValue returns a field's value as OpenSearch indexed it: absent
-// when missing, and absent for a keyword longer than ignore_above.
+// when missing, and absent for a keyword longer than ignore_above (a
+// wildcard field indexes any length).
 func indexedValue(doc map[string]any, field string) (any, bool) {
 	v, ok := doc[field]
 	if !ok || v == nil {
 		return nil, false
 	}
-	if s, isStr := v.(string); isStr && field != StoredRawField && utf8.RuneCountInString(s) > keywordIgnoreAbove {
+	if s, isStr := v.(string); isStr && field != StoredRawField && !WildcardFields[field] && utf8.RuneCountInString(s) > keywordIgnoreAbove {
 		return nil, false
 	}
 	return v, true
 }
 
+// listElements returns the elements of a list field's value (a DNS
+// lookup's answers), which OpenSearch indexes each on its own.
+func listElements(v any) ([]any, bool) {
+	switch l := v.(type) {
+	case []string:
+		out := make([]any, len(l))
+		for i, s := range l {
+			out[i] = s
+		}
+		return out, true
+	case []any:
+		return l, true
+	}
+	return nil, false
+}
+
+// anyElement evaluates a leaf on each element of a list field: it matches
+// when one element does, as in OpenSearch.
+func anyElement(field string, doc map[string]any, eval func(map[string]any) (bool, error)) (bool, error) {
+	elems, _ := listElements(doc[field])
+	one := maps.Clone(doc)
+	for _, e := range elems {
+		one[field] = e
+		m, err := eval(one)
+		if err != nil || m {
+			return m, err
+		}
+	}
+	return false, nil
+}
+
 func evalLeaf(kind, field string, spec map[string]any, doc map[string]any) (bool, error) {
+	if _, isList := listElements(doc[field]); isList {
+		return anyElement(field, doc, func(d map[string]any) (bool, error) { return evalLeaf(kind, field, spec, d) })
+	}
 	v, ok := indexedValue(doc, field)
 	if !ok {
 		return false, nil
@@ -164,7 +206,37 @@ func evalLeaf(kind, field string, spec map[string]any, doc map[string]any) (bool
 	return false, nil
 }
 
+// evalRegexp evaluates a regexp query: the pattern matches a string
+// field's whole value, lowercased for a wildcard field, which the index
+// lowercases (ingest.IndexTemplate). OpenSearch refuses it on a numeric
+// or boolean field.
+func evalRegexp(field, pattern string, doc map[string]any) (bool, error) {
+	if _, isList := listElements(doc[field]); isList {
+		return anyElement(field, doc, func(d map[string]any) (bool, error) { return evalRegexp(field, pattern, d) })
+	}
+	v, ok := indexedValue(doc, field)
+	if !ok {
+		return false, nil
+	}
+	s, isStr := v.(string)
+	if !isStr {
+		return false, fmt.Errorf("regexp query on non-text field %s", field)
+	}
+	if WildcardFields[field] {
+		s = strings.ToLower(s)
+	}
+	re, err := luceneRegexp(pattern)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(s), nil
+}
+
 func evalRange(field string, spec map[string]any, doc map[string]any) bool {
+	if _, isList := listElements(doc[field]); isList {
+		m, _ := anyElement(field, doc, func(d map[string]any) (bool, error) { return evalRange(field, spec, d), nil })
+		return m
+	}
 	v, ok := indexedValue(doc, field)
 	if !ok {
 		return false

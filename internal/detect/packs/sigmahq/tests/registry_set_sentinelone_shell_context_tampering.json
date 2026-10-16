@@ -1,0 +1,6 @@
+{"rule": "6c304b02-06e6-402d-8be4-d5833cdf8198", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\shell\\SentinelOneScan\\command\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Program Files\\SentinelOne\\","TargetObject":"\\shell\\SentinelOneScan\\command\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Program Files\\SentinelOne\\Sentinel Agent \\SentinelScanFromContextMenu.exe","TargetObject":"\\shell\\SentinelOneScan\\command\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

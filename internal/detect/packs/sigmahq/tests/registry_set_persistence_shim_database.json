@@ -1,0 +1,6 @@
+{"rule": "dfb5b4e8-91d0-4291-b40a-e3b0d3942c45", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","TargetObject":"\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Custom\\","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","TargetObject":"\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Custom\\","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","TargetObject":"\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Custom\\","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"D:\\apps\\launcher\\launcher.exe","ProcessId":"4242","User":"CORP\\tester"}}
+]}

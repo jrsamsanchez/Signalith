@@ -85,18 +85,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		if res.Kind == "events" {
 			res.Kind = "table"
 		}
+	case *query.Transaction:
+		return transaction(ctx, res, c)
 	case *query.Rename:
 		for _, p := range c.Pairs {
-			for i, col := range res.Columns {
-				if col == p[0] {
-					res.Columns[i] = p[1]
-				}
-			}
-			for _, r := range res.Rows {
-				if v, ok := r[p[0]]; ok {
-					delete(r, p[0])
-					r[p[1]] = v
-				}
+			if err := applyRename(ctx, res, p); err != nil {
+				return err
 			}
 		}
 	case *query.Stats:
@@ -120,17 +114,73 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			}
 			g, exists := groups[k]
 			if !exists {
-				g = Row{"count": int64(0)}
+				g = Row{topCount: int64(0)}
 				for _, f := range keys {
 					g[f] = r[f]
 				}
 				groups[k] = g
 				counted = append(counted, g)
 			}
-			g["count"] = g["count"].(int64) + 1
+			g[topCount] = g[topCount].(int64) + 1
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
+	case *query.Eval:
+		return applyEval(ctx, res, c)
+	case *query.Rex:
+		return applyRex(ctx, res, c)
+	case *query.Dedup:
+		return applyDedup(ctx, res, c)
+	case *query.Fillnull:
+		applyFillnull(res, c)
+	case *query.EventStats:
+		return applyEventStats(ctx, res, c)
+	case *query.StreamStats:
+		return applyStreamStats(ctx, res, c)
+	case *query.Bin:
+		return applyBin(ctx, res, c)
+	case *query.Regex:
+		return applyRegex(ctx, res, c)
+	case *query.FieldsRemove:
+		applyFieldsRemove(res, c)
+	case *query.Chart:
+		for _, cc := range chartCommands(c) {
+			if err := applyCommand(ctx, res, cc); err != nil {
+				return err
+			}
+		}
+	case *query.XYSeries:
+		return applyXYSeries(ctx, res, c)
+	case *query.Untable:
+		return applyUntable(ctx, res, c)
+	case *query.Spath:
+		return applySpath(ctx, res, c)
+	case *query.FromJSON:
+		return applyFromJSON(ctx, res, c)
+	case *query.NoMV:
+		return applyNoMV(ctx, res, c)
+	case *query.MVCombine:
+		return applyMVCombine(ctx, res, c)
+	case *query.StrCat:
+		return applyStrCat(ctx, res, c)
+	case *query.RangeMap:
+		return applyRangeMap(ctx, res, c)
+	case *query.ForEach:
+		return applyForEach(ctx, res, c)
+	case *query.MVExpand:
+		return applyMVExpand(ctx, res, c)
+	case *query.MakeMV:
+		return applyMakeMV(ctx, res, c)
+	case *query.Reverse:
+		applyReverse(res)
+	case *query.Tail:
+		applyTail(res, c)
+	case *query.Uniq:
+		return applyUniq(ctx, res)
+	case *query.Convert:
+		return applyConvert(ctx, res, c)
+	case *query.AddTotals:
+		return applyAddTotals(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:
@@ -139,8 +189,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	return nil
 }
 
+// topCount holds a value's count in the rows topRows takes; a name no
+// field can have, so it never clashes with one of top's fields.
+const topCount = "\x00count"
+
 // topRows turns per-value counts into a top table with percentages,
-// limited per by-group.
+// limited per by-group, with an other row for the rest when asked.
 func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 	groupTotals := map[string]int64{}
 	byGroup := map[string][]Row{}
@@ -151,25 +205,66 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 			order = append(order, k)
 		}
 		byGroup[k] = append(byGroup[k], r)
-		n, _ := r["count"].(int64)
-		groupTotals[k] += n
+		groupTotals[k] += topN(r)
 	}
+	countCol, percentCol := top.CountColumn(), top.PercentColumn()
 	var out []Row
 	for _, k := range order {
 		g := byGroup[k]
-		sort.SliceStable(g, func(i, j int) bool { return g[i]["count"].(int64) > g[j]["count"].(int64) })
+		sort.SliceStable(g, func(i, j int) bool {
+			if top.Rare {
+				return topN(g[i]) < topN(g[j])
+			}
+			return topN(g[i]) > topN(g[j])
+		})
+		var rest int64
 		if top.Limit > 0 && len(g) > top.Limit {
+			for _, r := range g[top.Limit:] {
+				rest += topN(r)
+			}
 			g = g[:top.Limit]
 		}
+		if top.UseOther && rest > 0 {
+			other := Row{topCount: rest}
+			for _, f := range top.By {
+				other[f] = g[0][f]
+			}
+			for _, f := range top.Fields {
+				other[f] = top.Other()
+			}
+			g = append(g, other)
+		}
 		for _, r := range g {
-			if t := groupTotals[k]; t > 0 {
-				r["percent"] = math.Round(float64(r["count"].(int64))*10000/float64(t)) / 100
+			n := topN(r)
+			delete(r, topCount)
+			if !top.NoCount {
+				r[countCol] = n
+			}
+			if t := groupTotals[k]; t > 0 && !top.NoPercent {
+				r[percentCol] = math.Round(float64(n)*10000/float64(t)) / 100
 			}
 			out = append(out, r)
 		}
 	}
-	cols := append(append(append([]string{}, top.By...), top.Fields...), "count", "percent")
+	cols := append(append([]string{}, top.By...), top.Fields...)
+	if !top.NoCount {
+		cols = append(cols, countCol)
+	}
+	if !top.NoPercent {
+		cols = append(cols, percentCol)
+	}
 	return out, cols
+}
+
+// topN is a row's count in topRows.
+func topN(r Row) int64 {
+	switch n := r[topCount].(type) {
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	}
+	return 0
 }
 
 func groupKey(r Row, fields []string) (string, bool) {
@@ -183,14 +278,6 @@ func groupKey(r Row, fields []string) (string, bool) {
 		b.WriteByte(0)
 	}
 	return b.String(), true
-}
-
-type aggState struct {
-	count    int64
-	sum      float64
-	numeric  int64
-	min, max float64
-	distinct map[string]bool
 }
 
 // goStats aggregates rows in memory, for stats after another transform.
@@ -216,7 +303,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 				g.keys[f] = r[f]
 			}
 			for range st.Aggs {
-				g.states = append(g.states, &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]bool{}})
+				g.states = append(g.states, newAggState())
 			}
 			groups[k] = g
 			order = append(order, k)
@@ -231,14 +318,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			if !ok || v == nil {
 				continue
 			}
-			s.count++
-			s.distinct[fmt.Sprint(v)] = true
-			if f, ok := asFloat(v); ok {
-				s.numeric++
-				s.sum += f
-				s.min = math.Min(s.min, f)
-				s.max = math.Max(s.max, f)
-			}
+			s.add(a, v, r)
 		}
 	}
 	sort.Strings(order)
@@ -250,29 +330,7 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 			row[f] = v
 		}
 		for i, a := range st.Aggs {
-			s := g.states[i]
-			var v any
-			switch a.Func {
-			case "count":
-				v = s.count
-			case "dc":
-				v = int64(len(s.distinct))
-			case "sum":
-				v = toNumber(s.sum)
-			case "avg":
-				if s.numeric > 0 {
-					v = s.sum / float64(s.numeric)
-				}
-			case "min":
-				if s.numeric > 0 {
-					v = toNumber(s.min)
-				}
-			case "max":
-				if s.numeric > 0 {
-					v = toNumber(s.max)
-				}
-			}
-			row[a.Column()] = v
+			row[a.Column()] = g.states[i].result(a)
 		}
 		out = append(out, row)
 	}
@@ -331,18 +389,41 @@ func compareValues(a, b any) int {
 	return strings.Compare(strings.ToLower(fmt.Sprint(a)), strings.ToLower(fmt.Sprint(b)))
 }
 
+// regex reports whether a where clause's regular expression is found in
+// s; a pattern that does not compile fails the search.
+func (m *matcher) regex(pattern, s string) bool {
+	re, ok := m.regexes[pattern]
+	if !ok {
+		var err error
+		if re, err = ParseRegex(pattern); err != nil {
+			if m.err == nil {
+				m.err = err
+			}
+			return false
+		}
+		if m.regexes == nil {
+			m.regexes = map[string]*Regex{}
+		}
+		m.regexes[pattern] = re
+	}
+	return re.MatchString(s)
+}
+
 // matcher evaluates where expressions over rows. Each wildcard pattern is
 // compiled once and kept for the rows that follow, rather than once per
 // row.
 type matcher struct {
-	globs map[string]glob
-	lower map[string]string
+	globs   map[string]glob
+	lower   map[string]string
+	regexes map[string]*Regex
 
 	// ctx is checked every checkWork characters of wildcard matching;
 	// once it ends, err holds its error and every match fails.
 	ctx  context.Context
 	work int
 	err  error
+
+	ev *evaluator // for conditions written as expressions
 }
 
 func (m *matcher) eval(e query.Expr, r Row) bool {
@@ -363,6 +444,15 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		return false
 	case *query.Not:
 		return !m.eval(e.Child, r)
+	case *query.Cond:
+		if m.ev == nil {
+			m.ev = evaluatorFor(m.ctx)
+		}
+		ok := truth(m.ev.safeEval(e.X, r))
+		if m.ev.err != nil && m.err == nil {
+			m.err = m.ev.err
+		}
+		return ok
 	case *query.In:
 		for _, v := range e.Values {
 			if m.equals(r[e.Field], v) {
@@ -380,6 +470,8 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 			return m.equals(v, e.Value)
 		case "!=":
 			return !m.equals(v, e.Value)
+		case "=~":
+			return m.regex(e.Value, fmt.Sprint(v))
 		}
 		cmp := compareValues(v, e.Value)
 		switch e.Op {

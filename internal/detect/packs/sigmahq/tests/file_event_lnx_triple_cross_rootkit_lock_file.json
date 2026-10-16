@@ -1,0 +1,4 @@
+{"rule": "c0239255-822c-4630-b7f1-35362bcb8f44", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/tmp/rootlog"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{}}
+]}

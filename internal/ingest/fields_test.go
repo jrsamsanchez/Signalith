@@ -2,10 +2,14 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,6 +43,16 @@ func TestValidFieldName(t *testing.T) {
 		"a\x00b":                     false,
 		"a.-b":                       false,
 		"\xff":                       false,
+		"a{}.b":                      true, // a list's values, as Splunk names them
+		"a{}{}":                      true,
+		"a.b{}":                      true,
+		"{}":                         false,
+		"a.{}":                       false,
+		"a{}b":                       false,
+		"a{b}":                       false,
+		"a}":                         false,
+		"}a":                         false,
+		"a{":                         false,
 	} {
 		if got := validFieldName(name); got != want {
 			t.Errorf("validFieldName(%.40q) = %v, want %v", name, got, want)
@@ -231,7 +245,7 @@ func TestRejectedEventsAreRetriedWithKnownFields(t *testing.T) {
 }
 
 func TestIndexTemplate(t *testing.T) {
-	tpl := IndexTemplate("sig", 0)
+	tpl := IndexTemplate("sig", map[string]any{"number_of_replicas": 0})
 	inner := tpl["template"].(map[string]any)
 	mapping := inner["settings"].(map[string]any)["mapping"].(map[string]any)
 	limit := mapping["total_fields"].(map[string]any)["limit"].(int)
@@ -249,6 +263,7 @@ func TestIndexTemplate(t *testing.T) {
 	for name, want := range map[string]string{
 		"@timestamp": "date", "message": "text", "user": "keyword", "src": "keyword",
 		"src_port": "long", "bytes": "long", "risk_score": "double", "device_time": "keyword", "dropped_fields": "long",
+		"script_block_text": "wildcard", "cvss": "double",
 	} {
 		p, _ := props[name].(map[string]any)
 		if p == nil || p["type"] != want {
@@ -262,7 +277,7 @@ func TestIndexTemplate(t *testing.T) {
 // template and exempt from the budget.
 func TestParsersEmitKnownFields(t *testing.T) {
 	fset := token.NewFileSet()
-	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go"} {
+	for _, file := range []string{"windows.go", "linux.go", "ingest.go", "defender.go", "clamav.go", "malware.go", "zeek.go", "suricata.go", "netsensor.go", "sensorstatus.go"} {
 		f, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -301,5 +316,65 @@ func TestParsersEmitKnownFields(t *testing.T) {
 			}
 			return true
 		})
+	}
+}
+
+// OpenSearch before 2.15 refuses the wildcard type; the template then maps
+// those fields as keywords.
+func TestPutIndexTemplateWithoutWildcard(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"type":"resource_not_found_exception","reason":"index template matching [sig] not found"},"status":404}`)
+			return
+		}
+		var tmpl map[string]any
+		json.NewDecoder(r.Body).Decode(&tmpl)
+		props := tmpl["template"].(map[string]any)["mappings"].(map[string]any)["properties"].(map[string]any)
+		typ := props["script_block_text"].(map[string]any)["type"].(string)
+		got = append(got, typ)
+		if typ == "wildcard" {
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error":{"type":"mapper_parsing_exception","reason":"No handler for type [wildcard] declared on field [script_block_text]"},"status":400}`)
+			return
+		}
+		io.WriteString(w, `{"acknowledged":true}`)
+	}))
+	defer srv.Close()
+	cl := store.New(store.Config{URL: srv.URL})
+	if err := PutIndexTemplate(context.Background(), cl, "sig", map[string]any{"number_of_replicas": 0}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "wildcard,keyword" {
+		t.Errorf("tried %v", got)
+	}
+}
+
+// Every field the network sensor parsers emit is known, so sensor data
+// never uses a day's field budget, except the zeek_* fields of Zeek logs
+// without a mapping of their own.
+func TestSensorFieldsAreKnown(t *testing.T) {
+	if knownFields["duration"] != "double" || knownFields["capture_loss_percent"] != "double" || knownFields["drop_percent"] != "double" {
+		t.Error("duration, capture_loss_percent and drop_percent must be doubles")
+	}
+	var evs []Event
+	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats"} {
+		for _, line := range sensorLines(t, "zeek", log+".json") {
+			evs = append(evs, Normalize("zeek."+log, map[string]any{"log": line, "hostname": "nsm-01"}, now))
+		}
+	}
+	for _, line := range sensorLines(t, "suricata", "eve.json") {
+		evs = append(evs, Normalize("suricata.eve", map[string]any{"log": line, "hostname": "nsm-01"}, now))
+	}
+	for _, line := range sensorLines(t, "sensor", "status.json") {
+		evs = append(evs, Normalize(SensorStatusTag, map[string]any{"log": line, "hostname": "nsm-01"}, now))
+	}
+	for _, ev := range evs {
+		for k := range ev.Document() {
+			if !KnownField(k) {
+				t.Errorf("%v: field %q is not in knownFields", ev.Fields["sourcetype"], k)
+			}
+		}
 	}
 }

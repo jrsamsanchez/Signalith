@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"gopkg.in/yaml.v3"
 )
@@ -97,7 +99,7 @@ func newSettingsServer(t *testing.T, extra string, change func(*Server)) (*httpt
 		s.Engine.Opt.DefaultEarliest, s.Engine.Opt.MaxEvents = cfg.Search.DefaultEarliest, cfg.Search.MaxEvents
 		s.Log = slog.New(slog.NewTextHandler(logs, nil))
 		s.Users = users.NewMemory()
-		s.Users.Create(users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
+		s.Users.Create(context.Background(), users.NewUser{Username: "andy", Role: users.Analyst, Password: "role-password"})
 		srv = s
 		if change != nil {
 			change(s)
@@ -124,7 +126,7 @@ func TestSettingsRoutesAreAdminOnly(t *testing.T) {
 	ts, _, _ := newSettingsServer(t, "", nil)
 	for _, rt := range []struct{ method, path string }{
 		{"GET", "/api/settings"}, {"PUT", "/api/settings"}, {"POST", "/api/settings/test/opensearch"},
-		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
+		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/test/m365"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
 		{"GET", "/api/settings/export"},
 	} {
 		if code, out := doAs(t, ts, "andy", "role-password", rt.method, rt.path, "{}"); code != 403 || out["code"] != "forbidden" {
@@ -158,7 +160,7 @@ func TestGetSettings(t *testing.T) {
 	if strings.Contains(raw, "hunter2-secret") {
 		t.Fatal("GET /api/settings returned a secret")
 	}
-	if n := len(view["sections"].([]any)); n != 9 {
+	if n := len(view["sections"].([]any)); n != 11 {
 		t.Errorf("sections %d", n)
 	}
 	pw := field(t, view, "opensearch.password")
@@ -180,7 +182,7 @@ func TestGetSettings(t *testing.T) {
 		t.Errorf("skip verify %v", f)
 	}
 	about := view["about"].(map[string]any)
-	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 10 {
+	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 11 {
 		t.Errorf("about %v", about)
 	}
 	restart := view["restart"].(map[string]any)
@@ -218,9 +220,9 @@ func TestSaveSettings(t *testing.T) {
 	if got := out["applied"].([]any); len(got) != 5 || len(out["after_restart"].([]any)) != 0 {
 		t.Errorf("applied %v after restart %v", got, out["after_restart"])
 	}
-	if srv.sessions().Idle != 30*time.Minute || srv.Engine.Opt.MaxEvents != 1234 || srv.Engine.Opt.DefaultEarliest != "-7d" ||
+	if srv.Sessions.Idle != 30*time.Minute || srv.Engine.Opt.MaxEvents != 1234 || srv.Engine.Opt.DefaultEarliest != "-7d" ||
 		srv.Scheduler.MaxFindingsPerRun != 7 || srv.conf().Server.PublicURL != "https://siem.example.com:8443" {
-		t.Errorf("not live: idle %v engine %+v cap %d url %s", srv.sessions().Idle, srv.Engine.Opt, srv.Scheduler.MaxFindingsPerRun, srv.conf().Server.PublicURL)
+		t.Errorf("not live: idle %v engine %+v cap %d url %s", srv.Sessions.Idle, srv.Engine.Opt, srv.Scheduler.MaxFindingsPerRun, srv.conf().Server.PublicURL)
 	}
 	// The agent setup uses the new public address right away.
 	if code, cfg := do(t, ts, "GET", "/api/agents/config?os=linux", "", true); code != 200 || !strings.Contains(cfg["config"].(string), "siem.example.com") {
@@ -263,8 +265,8 @@ func TestSaveSettings(t *testing.T) {
 	}
 	// Reset goes back to signalith.yaml.
 	code, out = put(`{"reset":["server.listen","auth.session_timeout"]}`)
-	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.sessions().Idle != 12*time.Hour {
-		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.sessions().Idle)
+	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != config.DefaultSessionIdle {
+		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.Sessions.Idle)
 	}
 	// The listen address is back to the one in use, so it needs no restart.
 	if got := out["after_restart"].([]any); len(got) != 0 || out["applied"].([]any)[0] != "auth.session_timeout" {
@@ -412,6 +414,61 @@ func TestTestAssistant(t *testing.T) {
 	body = strings.Replace(body, "good-key", "bad-key", 1)
 	if code, out := test(body); code != 200 || out["ok"] != false || !strings.Contains(out["message"].(string), "refused the API key") {
 		t.Errorf("bad key %d %v", code, out)
+	}
+}
+
+func TestTestAssistantUnknownModel(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		w.Write([]byte(`{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"}}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.model":"claude-nope","assistant.api_key":"k"}}`
+	code, out, _ := call(t, ts, "POST", "/api/settings/test/assistant", body, "admin", "s3cret-pass", nil)
+	if code != 200 || out["ok"] != false || out["field"] != "assistant.model" || !strings.Contains(out["message"].(string), "Unknown model") {
+		t.Errorf("unknown model %d %v", code, out)
+	}
+}
+
+func TestAssistantModels(t *testing.T) {
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/v1/models" || r.Header.Get("x-api-key") != "good-key" {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"error":{"message":"invalid x-api-key"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"claude-opus-5-5","display_name":"Claude Opus 5.5"}]}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	list := func(body string) map[string]any {
+		t.Helper()
+		code, out, _ := call(t, ts, "POST", "/api/settings/assistant/models", body, "admin", "s3cret-pass", nil)
+		if code != 200 {
+			t.Fatalf("%d %v", code, out)
+		}
+		return out
+	}
+	// No key: the models Signalith knows of.
+	out := list(`{"values":{"assistant.provider":"anthropic"}}`)
+	if out["live"] != false || len(out["models"].([]any)) == 0 || out["message"] == "" {
+		t.Errorf("no key %v", out)
+	}
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.api_key":"good-key"}}`
+	out = list(body)
+	if out["live"] != true || len(out["models"].([]any)) != 1 || strings.Contains(mustJSON(out), "good-key") {
+		t.Errorf("live %v", out)
+	}
+	list(body)
+	if calls != 1 {
+		t.Errorf("the list was read %d times, want once", calls)
+	}
+	out = list(strings.Replace(body, "good-key", "bad-key", 1))
+	if out["live"] != false || !strings.Contains(out["message"].(string), "refused the API key") {
+		t.Errorf("bad key %v", out)
 	}
 }
 
@@ -573,9 +630,13 @@ func TestApplyLiveComparesTwoConfigs(t *testing.T) {
 	next.Search.MaxEvents = 777
 	next.Server.Listen = "0.0.0.0:9999" // waits for a restart
 	next.Detections.MaxFindingsPerRun = 9
+	next.Detections.CatchUp = "0"
 	applied := srv.applyLive(old, &next)
-	if strings.Join(applied, ",") != "search.max_events,detections.max_findings_per_run" {
+	if strings.Join(applied, ",") != "search.max_events,detections.max_findings_per_run,detections.catch_up" {
 		t.Errorf("applied %v", applied)
+	}
+	if srv.Scheduler.CatchUpLimit() != 0 {
+		t.Errorf("catching up still goes back %v", srv.Scheduler.CatchUpLimit())
 	}
 	if srv.conf().Search.MaxEvents != 777 || srv.Engine.Opt.MaxEvents != 777 || srv.Scheduler.MaxFindingsPerRun != 9 {
 		t.Errorf("not live: %d %d %d", srv.conf().Search.MaxEvents, srv.Engine.Opt.MaxEvents, srv.Scheduler.MaxFindingsPerRun)
@@ -586,6 +647,52 @@ func TestApplyLiveComparesTwoConfigs(t *testing.T) {
 	// Nothing changed: nothing applies.
 	if applied := srv.applyLive(&next, &next); applied != nil {
 		t.Errorf("no change applied %v", applied)
+	}
+}
+
+// eventAge records what the server passes to EventAge.
+type eventAge struct{ got []string }
+
+func (e *eventAge) Use(c *config.Config) { e.got = append(e.got, c.Ingest.MaxEventAge) }
+
+// TestMaxEventAgeAppliesAtOnce: ingest.max_event_age is put into use
+// without a restart, through EventAge.
+func TestMaxEventAgeAppliesAtOnce(t *testing.T) {
+	ages := &eventAge{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.EventAge = ages })
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.max_event_age":"30d"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 {
+		t.Fatalf("save %d %v", code, out)
+	}
+	if srv.conf().Ingest.MaxEventAge != "30d" || strings.Join(ages.got, ",") != "30d" {
+		t.Errorf("not applied: %q %v", srv.conf().Ingest.MaxEventAge, ages.got)
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+}
+
+// TestURLQueryAppliesAtOnce: ingest.url_query reaches the pipeline
+// without a restart, and a value it does not know is refused.
+func TestURLQueryAppliesAtOnce(t *testing.T) {
+	pipe := &ingest.Pipeline{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.Pipeline = pipe })
+	if pipe.URLQuery() != ingest.URLQueryKeep {
+		t.Fatalf("starts as %s", pipe.URLQuery())
+	}
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"redact"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 || srv.conf().Ingest.URLQuery != "redact" || pipe.URLQuery() != ingest.URLQueryRedact {
+		t.Fatalf("save %d %v: %q %s", code, out, srv.conf().Ingest.URLQuery, pipe.URLQuery())
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+	if code, _, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"scramble"}}`, "admin", "s3cret-pass", nil); code == 200 {
+		t.Error("unknown mode saved")
+	}
+	call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"drop"}}`, "admin", "s3cret-pass", nil)
+	if pipe.URLQuery() != ingest.URLQueryDrop {
+		t.Errorf("drop: %s", pipe.URLQuery())
 	}
 }
 

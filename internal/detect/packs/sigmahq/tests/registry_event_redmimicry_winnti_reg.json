@@ -1,0 +1,4 @@
+{"rule": "5b175490-b652-4b02-b1de-5b5b4083c5f8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"HKLM\\SOFTWARE\\Microsoft\\HTMLHelp\\data"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

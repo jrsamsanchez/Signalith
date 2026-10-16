@@ -1,0 +1,4 @@
+{"rule": "1a0a2ff1-611b-4dac-8216-8a7b47c618a6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"(Clipboard|i"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

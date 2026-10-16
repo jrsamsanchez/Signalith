@@ -1,0 +1,4 @@
+{"rule": "ae2bdd58-0681-48ac-be7f-58ab4e593458", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-ControlledFolderAccessProtectedFolders  Remove-MpPreference"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

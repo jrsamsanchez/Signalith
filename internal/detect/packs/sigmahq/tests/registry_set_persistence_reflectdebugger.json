@@ -1,0 +1,4 @@
+{"rule": "0cf2e1c6-8d10-4273-8059-738778f981ad", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Microsoft\\Windows\\Windows Error Reporting\\Hangs\\ReflectDebugger"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

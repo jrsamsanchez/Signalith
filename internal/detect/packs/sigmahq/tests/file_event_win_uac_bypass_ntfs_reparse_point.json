@@ -1,0 +1,4 @@
+{"rule": "7fff6773-2baa-46de-a24a-b6eec1aba2d1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Users\\\\AppData\\Local\\Temp\\api-ms-win-core-kernel32-legacy-l1.DLL"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

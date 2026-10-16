@@ -1,0 +1,6 @@
+{"rule": "586a8d6b-6bfe-4ad9-9d78-888cd2fe50c3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","RelativeTargetName":"svcctl","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"svcctl","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"WriteData","RelativeTargetName":"svcctl"}}
+]}

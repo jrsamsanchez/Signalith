@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -527,10 +528,49 @@ func TestBlameLeavesOutUnreadablePageSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(blame(errors.New("no start"), c), ","); got != "opensearch.index_prefix" {
+	if got := strings.Join(blame(errors.New("no start"), c, nil), ","); got != "opensearch.index_prefix" {
 		t.Errorf("blame = %s", got)
 	}
-	if got := blame(keyed(errors.New("refused"), "opensearch.password"), c); len(got) != 1 || got[0] != "opensearch.index_prefix" {
+	if got := blame(keyed(errors.New("refused"), "opensearch.password"), c, nil); len(got) != 1 || got[0] != "opensearch.index_prefix" {
 		t.Errorf("blame for the password = %v", got)
+	}
+}
+
+// Once settings are shared, a start that fails blames only the shared
+// values that changed since the configuration in use (prev), never one
+// merely because it differs from signalith.yaml, which does not set it;
+// with no configuration known before (a start), only one the error names.
+func TestBlameSharedValues(t *testing.T) {
+	t.Setenv("SIGNALITH_SETTINGS_FILE", "")
+	dir := t.TempDir()
+	h, _ := config.HashPassword("s3cret-pass")
+	path := filepath.Join(dir, "signalith.yaml")
+	os.WriteFile(path, []byte("syslog:\n  udp: 0.0.0.0:5514\nauth:\n  admin_password_hash: "+h+"\n"), 0o600)
+	raw := func(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+	layer := func(maxEvents int) *config.Shared {
+		return &config.Shared{Self: "siem-a", Server: map[string]*config.PageEntry{}, Cluster: map[string]config.SharedValue{
+			"search.max_events":    {Value: raw(maxEvents), Rev: 1},
+			"auth.session_timeout": {Value: raw("12h"), Rev: 1},
+		}}
+	}
+	prev, err := config.LoadShared(path, layer(1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.LoadShared(path, layer(500))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := blame(errors.New("boom"), c, nil); len(got) != 0 {
+		t.Errorf("blame at a start = %v", got)
+	}
+	if got := blame(keyed(errors.New("boom"), "syslog.udp"), c, nil); len(got) != 0 {
+		t.Errorf("blame for a setting of signalith.yaml = %v", got)
+	}
+	if got := strings.Join(blame(errors.New("boom"), c, prev), ","); got != "search.max_events" {
+		t.Errorf("blame at a restart = %s", got)
+	}
+	if got := strings.Join(blame(keyed(errors.New("boom"), "auth.session_timeout"), c, prev), ","); got != "auth.session_timeout" {
+		t.Errorf("blame for a named shared setting = %s", got)
 	}
 }

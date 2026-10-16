@@ -26,6 +26,22 @@ full text is in internal/detect/packs/sigmahq/LICENSE.Detection.Rules.md.
 Findings raised by these rules credit the rule's author and source, as the
 DRL requires.
 
+The Splunk Security Content pack (internal/detect/packs/splunk) contains
+detection rules and search macros from Splunk security_content
+(https://github.com/splunk/security_content), Copyright Splunk Inc., unchanged,
+by the authors named in each rule. They are licensed under the Apache License,
+Version 2.0, whose full text is in internal/detect/packs/splunk/LICENSE.
+Signalith converts them to its own detections when it starts. Signalith is not
+affiliated with or endorsed by Splunk.
+
+Network sensor: the sensor install script (deploy/sensor/install.sh) and its
+Docker Compose file install or pull Zeek (BSD 3-Clause License), Suricata and
+suricata-update (GNU General Public License version 2) and Fluent Bit (Apache
+License 2.0) from their publishers' signed package repositories or images, on
+the sensor, and suricata-update downloads the Emerging Threats Open rules
+(Proofpoint, Inc.; the licence text is the LICENSE file in each ruleset
+download) there. Signalith does not include, link or redistribute any of them.
+
 The endpoint configuration checks in internal/endpoint/checks are based on
 rules from the SCAP Security Guide (ComplianceAsCode project,
 https://github.com/ComplianceAsCode/content). Signalith uses the SSG rule
@@ -57,3 +73,10 @@ Security Guide is licensed under the BSD 3-Clause License:
   ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The list of common passwords that new passwords are checked against
+(internal/users/common-passwords.txt) is taken from SecLists
+(https://github.com/danielmiessler/SecLists), file
+Passwords/Common-Credentials/10k-most-common.txt, Copyright (c) 2018 Daniel
+Miessler, licensed under the MIT License. Signalith keeps only the entries of
+8 or more characters, in lower case.

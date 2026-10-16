@@ -150,9 +150,9 @@ func (s *Server) PlainHandler(secure http.Handler) http.Handler {
 				h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), plaintextKey{}, true)))
 				return
 			}
-			if !s.validToken(r) && !s.oldTokenAgent(r) {
+			if !s.tokenAccepted(r) && !s.oldTokenAgent(r) {
 				s.Pipeline.NoteRefused(clientaddr.Parse(r.RemoteAddr), ingest.RefusedToken)
-				plainRefusal(w, r, http.StatusUnauthorized, "missing or invalid ingest token")
+				plainRefusal(w, r, http.StatusUnauthorized, "missing or invalid agent token")
 				return
 			}
 			s.Pipeline.NoteRefused(clientaddr.Parse(r.RemoteAddr), ingest.RefusedPlaintext)

@@ -1,0 +1,15 @@
+{"rule": "3f3f3506-1895-401b-9cc3-e86b16e630d0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":":\\Windows\\WinSxS\\","TargetImage":":\\Windows\\SysWOW64\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","Provider_Name":"Microsoft-Windows-Kernel-Audit-API-Calls"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":"vcredist_x64.exe","TargetImage":"vcredist_x64.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":":\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\ \\AcroCEF.exe","TargetImage":":\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\\\AcroCEF.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":"AmazonSSMAgentSetup.exe","TargetImage":"AmazonSSMAgentSetup.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":":\\Windows\\Explorer.EXE","TargetImage":":\\Program Files\\Cylance\\Desktop\\CylanceUI.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","TargetImage":"\\AppData\\Local\\Discord\\ \\Discord.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","TargetImage":"\\Evernote\\Evernote.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":"\\AppData\\Local\\Microsoft\\Teams\\current\\Teams.exe","TargetImage":"\\AppData\\Local\\Microsoft\\Teams\\current\\Teams.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":"setup64.exe","TargetImage":":\\Windows\\system32\\systeminfo.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","SourceImage":"\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe","TargetImage":"\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"UNKNOWN","GrantedAccess":"0x1000","SourceImage":"\\AppData\\Local\\yammerdesktop\\app-\\Yammer.exe","TargetImage":"\\AppData\\Local\\yammerdesktop\\app-\\Yammer.exe"}}
+]}

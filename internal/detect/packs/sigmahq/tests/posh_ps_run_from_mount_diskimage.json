@@ -1,0 +1,4 @@
+{"rule": "902cedee-0398-4e3a-8183-6f3a89773a96", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".DriveLetter ):\\ invoke-item  -ImagePath  Get-Volume Mount-DiskImage x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

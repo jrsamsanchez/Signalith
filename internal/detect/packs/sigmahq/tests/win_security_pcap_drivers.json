@@ -1,0 +1,4 @@
+{"rule": "7b687634-ab20-11ea-bb37-0242ac130002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"npcap"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

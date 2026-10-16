@@ -1,0 +1,5 @@
+{"rule": "1c563233-030e-4a07-af8c-ee0490a66d3a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-root $-psprovider New-PSDrivefilesystem\\\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"071204de-3ce8-492a-be62-626aabb6c765","ScriptBlockText":"\u0026 {New-PSDrive -name g -psprovider filesystem -root \\\\Target\\C$}"}}
+]}

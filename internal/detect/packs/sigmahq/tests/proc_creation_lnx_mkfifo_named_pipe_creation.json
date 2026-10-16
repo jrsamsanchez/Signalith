@@ -1,0 +1,4 @@
+{"rule": "9d779ce8-5256-4b13-8b6f-b91c602b43f4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/mkfifo"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

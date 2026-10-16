@@ -170,13 +170,16 @@ func checkCertificate(f *Facts) *Check {
 			" and hasn't renewed itself. The server log says why.", restart})
 	}
 	if auto && len(t.Outside) > 0 {
+		// They are already among the names it should cover (Outside
+		// lists only those), so only a new certificate authority is
+		// needed.
+		fix := &Fix{Steps: []string{"Make a new certificate authority that includes them, and switch to it. The one in use keeps working meanwhile."},
+			Action: "ca.prepare", Docs: doc(docHTTPSNames)}
+		if t.ClusterCA {
+			fix = clusterCAFix("Until then, have people and agents use a name the certificate covers.", docHTTPSNames)
+		}
 		probs = append(probs, problem{Attention, "The certificate leaves out " + shorten(t.Outside, 5) +
-			", which people or agents may use to reach this server.", &Fix{
-			// They are already among the names it should cover (Outside
-			// lists only those), so only a new certificate authority is
-			// needed.
-			Steps:  []string{"Make a new certificate authority that includes them, and switch to it. The one in use keeps working meanwhile."},
-			Action: "ca.prepare", Docs: doc(docHTTPSNames)}})
+			", which people or agents may use to reach this server.", fix})
 	}
 	if !auto && t.PublicHost != "" && !t.CoversPublicHost {
 		probs = append(probs, problem{Attention, "Your certificate doesn't cover " + t.PublicHost + ", the address agents are set up with.", &Fix{
@@ -206,10 +209,15 @@ func checkCertificate(f *Facts) *Check {
 		probs = append(probs, problem{Attention, "Your certificate uses " + joinAnd(weak) + ", which is too weak to trust today.", replace})
 	}
 	if auto && t.CA != nil && daysLeft(f.Now, t.CA.NotAfter) <= 180 {
-		probs = append(probs, problem{Attention, "Signalith's certificate authority expires on " + day(t.CA.NotAfter) +
-			". Make a new one and switch to it before then.", &Fix{
-			Steps:  []string{"Make a new certificate authority. The one in use keeps working meanwhile.", "Give it to browsers and agents, then switch."},
-			Action: "ca.prepare", Docs: doc(docHTTPSSwitch)}})
+		if t.ClusterCA {
+			probs = append(probs, problem{Attention, "The certificate authority all servers share expires on " + day(t.CA.NotAfter) + ".",
+				clusterCAFix("", docHTTPSSwitch)})
+		} else {
+			probs = append(probs, problem{Attention, "Signalith's certificate authority expires on " + day(t.CA.NotAfter) +
+				". Make a new one and switch to it before then.", &Fix{
+				Steps:  []string{"Make a new certificate authority. The one in use keeps working meanwhile.", "Give it to browsers and agents, then switch."},
+				Action: "ca.prepare", Docs: doc(docHTTPSSwitch)}})
+		}
 	}
 	if c := worst(probs); c != nil {
 		return c
@@ -234,6 +242,9 @@ func checkCAScope(f *Facts) *Check {
 		Action: "ca.prepare", Docs: doc(docHTTPSSwitch)}
 	panel := &Fix{Steps: []string{"Continue under Switching certificate authority, at the top of the Security page."},
 		Action: "ca.panel", Docs: doc(docHTTPSSwitch)}
+	if t.ClusterCA {
+		prepare = clusterCAFix("", docHTTPSSwitch)
+	}
 	setting := t.ScopeSetup
 	if setting == "" {
 		setting = tlsauto.ScopeStandard
@@ -263,6 +274,8 @@ func checkCAScope(f *Facts) *Check {
 	case t.CA.AnyUse:
 		c = &Check{State: Attention, Line: "Signalith's certificate authority was made by an older version and isn't limited to websites. " +
 			"If its key were stolen, it could sign programs or email that computers trusting it would accept.", Fix: prepare}
+	case t.CA.Scope != setting && t.ClusterCA:
+		c = &Check{State: Attention, Line: "You chose a " + setting + " certificate authority, but the one all servers share is " + t.CA.Scope + ".", Fix: prepare}
 	case t.CA.Scope != setting:
 		c = &Check{State: Attention, Line: "You chose a " + setting + " certificate authority, but the one in use is " + t.CA.Scope +
 			". Make the new one and switch when you're ready.", Fix: prepare}
@@ -285,10 +298,24 @@ func checkCAScope(f *Facts) *Check {
 		}
 		c.Details = append(c.Details, "It was made by an earlier version. A new one covers each of this server's names exactly.")
 	}
-	if f.Runtime != nil && f.Runtime.ClusterServer != "" {
+	switch {
+	case t.ClusterCA:
+		c.Details = append(c.Details, "All the cluster's servers share this certificate authority, and its key is kept sealed in the shared settings, not on this server's disk.")
+	case f.Runtime != nil && f.Runtime.ClusterServer != "":
 		c.Details = append(c.Details, "Each server has its own certificate authority. This is "+f.Runtime.ClusterServer+"'s.")
 	}
 	return c
+}
+
+// clusterCAFix is the fix of a problem with the certificate authority all
+// the cluster's servers share, which cannot be changed yet: then, if
+// given, what to do meanwhile.
+func clusterCAFix(then string, docs DocLink) *Fix {
+	steps := []string{"This server uses the certificate authority all the cluster's servers share. It can't be changed yet; that comes in a later version."}
+	if then != "" {
+		steps = append(steps, then)
+	}
+	return &Fix{Steps: steps, Docs: doc(docs)}
 }
 
 // scopeTip explains standard and strict, the one place the page does.
@@ -302,6 +329,15 @@ func scopeTip(f *Facts, inUse string) *Fix {
 	names := "this server's own names and addresses"
 	if l := f.TLS.WouldCover[tlsauto.ScopeStrict]; len(l) > 0 {
 		names = shorten(ownNamesFirst(l), 3)
+	}
+	if f.TLS.ClusterCA {
+		return &Fix{Label: "Standard or strict?", Steps: []string{
+			"Computers that trust Signalith's certificate authority accept any certificate it makes. Both choices keep it from ever vouching for public websites.",
+			"Standard" + mark(tlsauto.ScopeStandard) + ". It can also vouch for private network names and addresses, such as intranet.corp or 192.168.1.5. " +
+				"If someone stole its key, they could pose as other private sites to computers that trust it. In a cluster the key is kept sealed with the cluster key, not on a server's disk.",
+			"Strict" + mark(tlsauto.ScopeStrict) + ". It can vouch only for the names it was made with.",
+			"All the cluster's servers share this certificate authority. Changing it comes in a later version.",
+		}, Docs: doc(docHTTPSReach)}
 	}
 	return &Fix{Label: "Standard or strict?", Steps: []string{
 		"Computers that trust Signalith's certificate authority accept any certificate it makes. Both choices keep it from ever vouching for public websites.",

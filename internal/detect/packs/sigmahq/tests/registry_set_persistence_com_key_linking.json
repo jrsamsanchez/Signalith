@@ -1,0 +1,6 @@
+{"rule": "9b0f8a61-91b2-464f-aceb-0527e0a45020", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\TreatAsHKU\\Classes\\CLSID\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\WINDOWS\\system32\\svchost.exe","TargetObject":"HKU\\Classes\\CLSID\\\\TreatAs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"{00000001-0000-0000-0000-0000FEEDACDC}","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-62E7-68FD-C13E-000000004002","ProcessId":"8536","RuleName":"-","TargetObject":"HKU\\S-1-5-21-3960063115-309473240-3247002503-500_Classes\\CLSID\\{97D47D56-3777-49FB-8E8F-90D7E30E1A1E}\\TreatAs\\(Default)","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-25 23:53:11.114"}}
+]}

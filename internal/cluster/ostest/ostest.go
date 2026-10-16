@@ -7,7 +7,11 @@
 //   - GET /, /_cluster/health and /_nodes/_local/stats/os (with the time of
 //     its own clock);
 //   - PUT, HEAD and DELETE of an index, and PUT /<index>/_mapping;
-//   - PUT /_index_template/<name>;
+//   - PUT and GET /_index_template/<name> (GET answers the template as it
+//     was put, which real OpenSearch words its own way);
+//   - PUT /<index>/_settings (recorded, see Settings) and GET
+//     /<index>/_settings (as created, with those changes, and the
+//     index's uuid and creation_date, new each time it is created);
 //   - GET, PUT and DELETE /<index>/_doc/<id>, PUT /<index>/_create/<id>,
 //     POST /<index>/_update/<id> (each with if_seq_no and if_primary_term);
 //   - POST /_mget;
@@ -16,8 +20,10 @@
 //     seq_no_primary_term, _source and max aggregations;
 //   - POST /<pattern>/_delete_by_query and _update_by_query (recorded,
 //     only deletes change anything);
-//   - POST /_bulk with create and index actions;
+//   - POST /_bulk with create, index and delete actions;
 //   - GET /<pattern>/_count (every document, whatever the query);
+//   - GET /_cat/indices/<pattern> (the names, as format=json lists them;
+//     an exact name that is not there is not found, as in OpenSearch);
 //   - GET /_nodes/_local/settings (path.home and path.data, see Paths);
 //   - GET /_plugins/_security/authinfo, once Secure turns sign-in on
 //     (before that, as without the security plugin, it is not found).
@@ -31,6 +37,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -73,11 +80,15 @@ type Server struct {
 	mu          sync.Mutex
 	indices     map[string]*index
 	templates   map[string]json.RawMessage
+	settings    map[string][]json.RawMessage
 	primaryTerm int64
 	blocked     bool
 	fault       func(method, path string) *Fault
+	refreshWait time.Duration
 	requests    []string
 	autoID      int
+	// uuids counts the indices made, for their uuids.
+	uuids int
 	// security, when set, is the account every request must sign in as
 	// (see Secure).
 	security *Account
@@ -117,6 +128,7 @@ type index struct {
 	docs    map[string]*doc
 	seq     int64
 	created time.Time
+	uuid    string
 }
 
 type doc struct {
@@ -128,7 +140,7 @@ type doc struct {
 
 // New starts a fake OpenSearch. It stops when the test ends.
 func New(t interface{ Cleanup(func()) }) *Server {
-	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, primaryTerm: 1}
+	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, settings: map[string][]json.RawMessage{}, primaryTerm: 1}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(s.Close)
 	return s
@@ -137,7 +149,7 @@ func New(t interface{ Cleanup(func()) }) *Server {
 // NewHandler returns a fake OpenSearch that is not started, for a server
 // of one's own (a demo, say). Its Server field is nil.
 func NewHandler() (*Server, http.Handler) {
-	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, primaryTerm: 1}
+	s := &Server{indices: map[string]*index{}, templates: map[string]json.RawMessage{}, settings: map[string][]json.RawMessage{}, primaryTerm: 1}
 	return s, http.HandlerFunc(s.serve)
 }
 
@@ -182,6 +194,15 @@ func (s *Server) Block(on bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blocked = on
+}
+
+// SetRefreshWait makes every request with refresh=wait_for answer only d
+// after it is done, as OpenSearch answers one at its next refresh (up to a
+// second later, by default); 0, the default, answers at once.
+func (s *Server) SetRefreshWait(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshWait = d
 }
 
 // SetFault sets a function that may answer a request with a Fault; nil
@@ -233,6 +254,21 @@ func (s *Server) Templates() []string {
 	return out
 }
 
+// Template returns an index template as it was put, or nil.
+func (s *Server) Template(name string) json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.templates[name]
+}
+
+// Settings returns the bodies of the settings changes made to an index
+// that exists, in order.
+func (s *Server) Settings(indexName string) []json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]json.RawMessage(nil), s.settings[indexName]...)
+}
+
 // Requests returns the requests made, as "METHOD /path?query", and
 // forgets them.
 func (s *Server) Requests() []string {
@@ -260,6 +296,22 @@ func (s *Server) Put(indexName, id string, source map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.put(s.ensure(indexName), id, clone(source))
+}
+
+// Reserialize writes a document's source again with one more field, as
+// an _update that adds an unsigned field does: OpenSearch parses the
+// source and writes it out in its own way, with a new _seq_no. Nothing
+// happens when the document does not exist.
+func (s *Server) Reserialize(indexName, id, field string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ix := s.indices[indexName]
+	if ix == nil || ix.docs[id] == nil {
+		return
+	}
+	src := clone(ix.docs[id].source)
+	src[field] = value
+	s.put(ix, id, clone(src))
 }
 
 // Delete deletes a document directly.
@@ -306,7 +358,9 @@ func (s *Server) now() time.Time {
 func (s *Server) ensure(name string) *index {
 	ix := s.indices[name]
 	if ix == nil {
-		ix = &index{name: name, docs: map[string]*doc{}, seq: -1, created: s.now(), body: s.templateFor(name)}
+		s.uuids++
+		ix = &index{name: name, docs: map[string]*doc{}, seq: -1, created: s.now(), body: s.templateFor(name),
+			uuid: fmt.Sprintf("ostest-%s-%d", name, s.uuids)}
 		s.indices[name] = ix
 	}
 	return ix
@@ -336,6 +390,40 @@ func (s *Server) templateFor(name string) json.RawMessage {
 	return best
 }
 
+// indexSettings returns an index's settings as GET /<index>/_settings
+// words them (values as text): those it was created with, then each
+// change. number_of_replicas is 1 unless set, as in OpenSearch, and 0
+// under auto_expand_replicas, as on a single node.
+func indexSettings(created json.RawMessage, changes []json.RawMessage) map[string]any {
+	out := map[string]any{}
+	apply := func(m map[string]any) {
+		if in, ok := m["index"].(map[string]any); ok {
+			m = in
+		}
+		for k, v := range m {
+			out[strings.TrimPrefix(k, "index.")] = fmt.Sprint(v)
+		}
+	}
+	var body struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if json.Unmarshal(created, &body) == nil && body.Settings != nil {
+		apply(body.Settings)
+	}
+	for _, c := range changes {
+		var m map[string]any
+		if json.Unmarshal(c, &m) == nil {
+			apply(m)
+		}
+	}
+	if auto, ok := out["auto_expand_replicas"]; ok && auto != "false" {
+		out["number_of_replicas"] = "0"
+	} else if _, ok := out["number_of_replicas"]; !ok {
+		out["number_of_replicas"] = "1"
+	}
+	return out
+}
+
 // put writes a document; the caller holds s.mu.
 func (s *Server) put(ix *index, id string, src map[string]any) *doc {
 	ix.seq++
@@ -354,7 +442,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.RequestURI())
-	fault, sec := s.fault, s.security
+	fault, sec, wait := s.fault, s.security, s.refreshWait
 	s.mu.Unlock()
 	if sec != nil {
 		if u, pw, ok := r.BasicAuth(); !ok || u != sec.User || pw != sec.Password {
@@ -382,6 +470,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, f.Status, f.Type, "injected by the test")
 			return
 		}
+	}
+	if wait > 0 && r.URL.Query().Get("refresh") == "wait_for" {
+		rec := httptest.NewRecorder()
+		s.handle(rec, r, p, body)
+		time.Sleep(wait)
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
 	}
 	s.handle(w, r, p, body)
 }
@@ -441,6 +538,59 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		s.templates[parts[1]] = body
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]any{"acknowledged": true})
+	case len(parts) == 2 && parts[0] == "_index_template" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		raw := s.templates[parts[1]]
+		s.mu.Unlock()
+		if raw == nil {
+			writeError(w, 404, "resource_not_found_exception", "index template matching ["+parts[1]+"] not found")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"index_templates": []any{map[string]any{"name": parts[1], "index_template": raw}}})
+	case len(parts) == 2 && parts[1] == "_settings" && r.Method == http.MethodPut:
+		s.mu.Lock()
+		blocked, exists := s.blocked, s.indices[parts[0]] != nil
+		if !blocked && exists {
+			s.settings[parts[0]] = append(s.settings[parts[0]], append(json.RawMessage(nil), body...))
+		}
+		s.mu.Unlock()
+		switch {
+		case blocked:
+			s.blockedError(w, parts[0])
+		case !exists:
+			writeError(w, 404, "index_not_found_exception", "no such index ["+parts[0]+"]")
+		default:
+			writeJSON(w, 200, map[string]any{"acknowledged": true})
+		}
+	case len(parts) == 2 && parts[1] == "_settings" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		ix := s.indices[parts[0]]
+		var flat map[string]any
+		if ix != nil {
+			flat = indexSettings(ix.body, s.settings[parts[0]])
+			flat["uuid"] = ix.uuid
+			flat["creation_date"] = strconv.FormatInt(ix.created.UnixMilli(), 10)
+		}
+		s.mu.Unlock()
+		if ix == nil {
+			writeError(w, 404, "index_not_found_exception", "no such index ["+parts[0]+"]")
+			return
+		}
+		writeJSON(w, 200, map[string]any{parts[0]: map[string]any{"settings": map[string]any{"index": flat}}})
+	case strings.HasPrefix(p, "/_cat/indices/"):
+		// The index names that match, as format=json lists them.
+		pattern := strings.TrimPrefix(p, "/_cat/indices/")
+		s.mu.Lock()
+		out := []any{}
+		for _, ix := range s.match(pattern) {
+			out = append(out, map[string]any{"index": ix.name})
+		}
+		s.mu.Unlock()
+		if len(out) == 0 && !strings.ContainsAny(pattern, "*,") {
+			writeError(w, 404, "index_not_found_exception", "no such index ["+pattern+"]")
+			return
+		}
+		writeJSON(w, 200, out)
 	case strings.HasPrefix(p, "/_cat/"):
 		writeJSON(w, 200, []any{})
 	case p == "/_plugins/_security/authinfo":
@@ -878,6 +1028,23 @@ func (s *Server) bulk(w http.ResponseWriter, body []byte) {
 		if err := json.Unmarshal(line, &action); err != nil {
 			writeError(w, 400, "parse_exception", err.Error())
 			return
+		}
+		if meta, ok := action["delete"]; ok && len(action) == 1 {
+			// A delete has no source line.
+			res := map[string]any{"_index": meta.Index, "_id": meta.ID, "status": 200, "result": "deleted"}
+			ix := s.indices[meta.Index]
+			switch {
+			case s.blocked:
+				res["status"], res["error"] = 429, map[string]any{"type": "cluster_block_exception", "reason": "disk usage exceeded flood-stage watermark"}
+				errs = true
+			case ix == nil || ix.docs[meta.ID] == nil:
+				res["status"], res["result"] = 404, "not_found"
+			default:
+				ix.seq++
+				delete(ix.docs, meta.ID)
+			}
+			items = append(items, map[string]any{"delete": res})
+			continue
 		}
 		if !sc.Scan() {
 			break

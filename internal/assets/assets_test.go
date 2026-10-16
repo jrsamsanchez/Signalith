@@ -3,6 +3,7 @@ package assets
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -159,6 +160,29 @@ func TestCSVDownloadIsSafeInSpreadsheets(t *testing.T) {
 	}
 }
 
+// TestDownloadKeepsQuotedValues: a value that itself starts with a quote
+// before a formula character, and one holding a lone carriage return,
+// read back the same from the download (both found by fuzzing).
+func TestDownloadKeepsQuotedValues(t *testing.T) {
+	for in, want := range map[string]string{
+		"host,owner\nweb1,\"\t'=x\"\n":    "'=x",
+		"host,owner\nweb1,\"a\r\r\nb\"\n": "a\nb",
+		"host,owner\nweb1,''=x\n":         "'=x",
+	} {
+		as, err := ParseAssets([]byte(in))
+		if err != nil || len(as) != 1 || as[0].Owner != want {
+			t.Fatalf("%q: %+v %v, want owner %q", in, as, err, want)
+		}
+		again, err := ParseAssets(MarshalAssets(as))
+		if err != nil || len(again) != 1 || again[0].Owner != want {
+			t.Errorf("%q: download read back as %+v %v", in, again, err)
+		}
+	}
+	if got := SafeCell("'=x"); got != "''=x" || unquoteCell(got) != "'=x" {
+		t.Errorf("SafeCell('=x) = %q", got)
+	}
+}
+
 // A damaged list must not keep the server from starting: OpenStore gives
 // empty lists and the error, and picks the file up once it is fixed.
 func TestOpenStoreWithADamagedList(t *testing.T) {
@@ -255,5 +279,52 @@ func TestOverlay(t *testing.T) {
 	}
 	if a, _ := s.Asset("DC01"); a == nil || a.BUnit != "IT" {
 		t.Errorf("the user's last good list was lost: %+v", a)
+	}
+}
+
+// TestConcurrentWritesDoNotMix: two writers saving the same list at once
+// (two servers sharing the folder, or two requests) leave one complete
+// version and no temporary file behind.
+func TestConcurrentWritesDoNotMix(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{Dir: dir}
+	a, b := strings.Repeat("a,1\n", 50000), strings.Repeat("b,2\n", 40000)
+	done := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		data := a
+		if i%2 == 1 {
+			data = b
+		}
+		go func() {
+			_, err := s.write("assets.csv", []byte(data))
+			done <- err
+		}()
+	}
+	ok := 0
+	for i := 0; i < 20; i++ {
+		err := <-done
+		switch {
+		case err == nil:
+			ok++
+		case runtime.GOOS != "windows":
+			// Windows may refuse to rename over a file another rename is
+			// replacing at that instant; the writer then reports an error.
+			t.Fatal(err)
+		}
+	}
+	if ok == 0 {
+		t.Fatal("no write succeeded")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "assets.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != a && string(got) != b {
+		t.Errorf("the file mixes the two writes (%d bytes)", len(got))
+	}
+	left, _ := filepath.Glob(filepath.Join(dir, "*.tmp"))
+	hidden, _ := filepath.Glob(filepath.Join(dir, ".*.tmp"))
+	if len(left)+len(hidden) > 0 {
+		t.Errorf("temporary files left behind: %v %v", left, hidden)
 	}
 }

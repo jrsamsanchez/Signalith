@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -44,6 +47,8 @@ type Engine struct {
 	Assets *assets.Store
 	// Intel backs the intel and threatmatch commands; nil makes them errors.
 	Intel *intel.Store
+	// Lookups backs the lookup command; nil makes it an error.
+	Lookups *lookuptables.Store
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -171,6 +176,9 @@ type Result struct {
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
 	TookMS    int64    `json:"took_ms"`
+	// Drill finds the events behind the numbers in a summary; the search
+	// API sets it.
+	Drill *query.Drill `json:"drill,omitempty"`
 }
 
 // Plan is the OpenSearch request a query compiles to, for "show the
@@ -178,7 +186,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
 
 	transform query.Command
 	post      []query.Command
@@ -243,8 +251,51 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	p, err := e.compile(q)
+	if err != nil {
+		return nil, err
+	}
+	// A subsearch that does not compile fails the search before it runs.
+	if err := e.compileSubsearches(p.post, q); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
+		var sub *query.Query
+		switch c := c.(type) {
+		case *query.Join:
+			sub = c.Sub
+		case *query.Append:
+			sub = c.Sub
+		case *query.AppendPipe:
+			if err := e.compileSubsearches(c.Commands, q); err != nil {
+				return err
+			}
+		}
+		if sub != nil {
+			if _, err := e.Compile(subsearch(sub, q)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
+	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.InputLookup); ok {
+			// The rows come from a lookup table, not from OpenSearch.
+			return &Plan{Mode: "inputlookup", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.MakeResults); ok {
+			return &Plan{Mode: "makeresults", transform: c, post: cmds[1:]}, nil
+		}
+	}
 
 	// where commands before any transforming command filter raw events, so
 	// they run inside OpenSearch.
@@ -256,6 +307,9 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 		w, ok := cmds[0].(*query.Where)
 		if !ok {
 			break
+		}
+		if _, expr := w.Expr.(*query.Cond); expr {
+			break // runs in the server, over the events OpenSearch returns
 		}
 		filters = append(filters, w.Expr)
 		cmds = cmds[1:]
@@ -320,6 +374,10 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 	p.Body = body
 
 	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.Chart); ok {
+			// chart is stats, which runs in OpenSearch, then a pivot.
+			cmds = append(chartCommands(c), cmds[1:]...)
+		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
 			p.Mode, p.transform, p.post = "stats", c, cmds[1:]
@@ -370,7 +428,7 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
-				by := map[string]any{"terms": map[string]any{"field": c.By, "size": 10}}
+				by := map[string]any{"terms": map[string]any{"field": storedField(c.By), "size": 10}}
 				if len(sub) > 0 {
 					by["aggs"] = sub
 				}
@@ -402,7 +460,8 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
+			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine:
 			return true
 		}
 	}
@@ -414,7 +473,9 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
+			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
+			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach:
 			continue
 		}
 		return 0, false
@@ -425,24 +486,13 @@ func leadingHead(cmds []query.Command) (int, bool) {
 func metricAggs(aggs []query.Agg) (map[string]any, error) {
 	out := map[string]any{}
 	for i, a := range aggs {
-		if a.Field == "_time" {
-			a.Field = TimeField
+		m, err := metricAgg(a)
+		if err != nil {
+			return nil, err
 		}
-		var m map[string]any
-		switch a.Func {
-		case "count":
-			if a.Field == "" {
-				continue // doc_count
-			}
-			m = map[string]any{"value_count": map[string]any{"field": a.Field}}
-		case "dc":
-			m = map[string]any{"cardinality": map[string]any{"field": a.Field}}
-		case "sum", "avg", "min", "max":
-			m = map[string]any{a.Func: map[string]any{"field": a.Field}}
-		default:
-			return nil, fmt.Errorf("unsupported function %q", a.Func)
+		if m != nil {
+			out[fmt.Sprintf("m%d", i)] = m
 		}
-		out[fmt.Sprintf("m%d", i)] = m
 	}
 	return out, nil
 }
@@ -450,7 +500,7 @@ func metricAggs(aggs []query.Agg) (map[string]any, error) {
 func compositeAgg(by []string, aggs []query.Agg, maxBuckets int) (map[string]any, error) {
 	var sources []any
 	for i, f := range by {
-		sources = append(sources, map[string]any{fmt.Sprintf("k%d", i): map[string]any{"terms": map[string]any{"field": f}}})
+		sources = append(sources, map[string]any{fmt.Sprintf("k%d", i): map[string]any{"terms": map[string]any{"field": storedField(f)}}})
 	}
 	size := min(maxBuckets, 10000)
 	comp := map[string]any{"composite": map[string]any{"size": size, "sources": sources}}
@@ -476,7 +526,24 @@ func (e *Engine) Run(ctx context.Context, src string) (*Result, error) {
 // Execute runs a parsed query. It waits for a turn when MaxSearches are
 // running (ErrBusy after QueueWait), and stops when ctx ends, including
 // during the commands that run over results in memory.
-func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
+func (e *Engine) Execute(ctx context.Context, q *query.Query) (res *Result, err error) {
+	// A bug in a command must fail this search, not the process: the
+	// detection scheduler runs searches outside any HTTP handler, so a
+	// panic there would stop the server, and again at every run.
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("a search stopped on an internal error", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			res, err = nil, ErrInternal
+		}
+	}()
+	return e.execute(ctx, q)
+}
+
+// ErrInternal is a search that stopped on a bug in Signalith rather than
+// in the query; the details are in the server log.
+var ErrInternal = errors.New("the search stopped on an internal error; the details are in the server log")
+
+func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	start := time.Now()
 	p, err := e.Compile(q)
 	if err != nil {
@@ -487,32 +554,93 @@ func (e *Engine) Execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.fetch(ctx, p)
+	res, err := e.run(withEvaluator(ctx), q, p)
+	if err != nil {
+		return nil, err
+	}
+	res.TookMS = time.Since(start).Milliseconds()
+	return res, nil
+}
+
+// run gets a compiled query's rows and runs its commands over them. A
+// join's subsearch runs here too, within the search's slot and limits.
+func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, error) {
+	var res *Result
+	var err error
+	switch c := p.transform.(type) {
+	case *query.InputLookup:
+		res, err = e.inputLookup(c)
+	case *query.MakeResults:
+		res = makeResults(c)
+	default:
+		res, err = e.fetch(ctx, p)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	for _, c := range p.post {
+	if len(p.post) == 0 {
+		return res, nil
+	}
+	before := resultBytes(res)
+	if err := e.post(ctx, res, p.post, q); err != nil {
+		return nil, err
+	}
+	// Commands such as rex and fillnull can put one value in many fields
+	// without building anything, but each copy is written out with the
+	// result.
+	if grown := resultBytes(res) - before; grown > maxResultGrowth {
+		return nil, &QueryError{Msg: fmt.Sprintf("the search's commands add more than %d MB to its results; narrow the search first", maxResultGrowth>>20)}
+	}
+	return res, nil
+}
+
+// maxResultGrowth caps how much a search's commands may add to the rows
+// they were given, measured as written out.
+const maxResultGrowth = maxEvalTotal
+
+// resultBytes is about how many bytes res's rows take once written out.
+func resultBytes(res *Result) int {
+	n := 0
+	for _, r := range res.Rows {
+		for f, v := range r {
+			n += len(f) + valueSize(v)
+		}
+	}
+	return n
+}
+
+// post runs commands over rows held in memory; q is the query they belong
+// to, whose time range subsearches inherit.
+func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q *query.Query) error {
+	for _, c := range cmds {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		var err error
 		switch c := c.(type) {
 		case *query.Enrich:
 			err = e.enrich(res, c)
+		case *query.Lookup:
+			err = e.lookup(ctx, res, c)
+		case *query.Join:
+			err = e.join(ctx, res, c, q)
+		case *query.Append:
+			err = e.appendSearch(ctx, res, c, q)
+		case *query.AppendPipe:
+			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	res.TookMS = time.Since(start).Milliseconds()
-	return res, nil
+	return nil
 }
 
 func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
@@ -538,7 +666,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = res.Matched
 				} else {
-					row[a.Column()] = metricValue(aggs, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, aggs, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = []Row{row}
@@ -555,7 +683,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = toNumber(b["doc_count"])
 				} else {
-					row[a.Column()] = metricValue(b, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, b, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = append(res.Rows, row)
@@ -572,7 +700,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		var rows []Row
 		for _, b := range buckets {
 			row := bucketKeys(b, keys)
-			row["count"] = toNumber(b["doc_count"])
+			row[topCount] = toNumber(b["doc_count"])
 			rows = append(rows, row)
 		}
 		res.Kind = "table"
@@ -724,6 +852,9 @@ func eventRows(resp map[string]any) ([]Row, []string) {
 			row[RawField] = m
 			delete(row, StoredRawField)
 		}
+		if ix, ok := hm[indexMeta].(string); ok && ix != "" {
+			row[IndexField] = ix
+		}
 		for k := range row {
 			seen[k] = true
 		}
@@ -774,7 +905,7 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = toNumber(bm["doc_count"])
 				} else {
-					row[a.Column()] = metricValue(bm, fmt.Sprintf("m%d", i))
+					row[a.Column()] = aggValue(a, bm, fmt.Sprintf("m%d", i))
 				}
 			}
 			rows = append(rows, row)
@@ -796,7 +927,7 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 			if a.Func == "count" && a.Field == "" {
 				val = toNumber(vm["doc_count"])
 			} else {
-				val = metricValue(vm, "m0")
+				val = aggValue(a, vm, "m0")
 			}
 			row[name] = val
 			if f, ok := asFloat(val); ok {

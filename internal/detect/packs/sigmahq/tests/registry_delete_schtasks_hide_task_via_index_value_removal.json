@@ -1,0 +1,5 @@
+{"rule": "526cc8bc-1cdc-48ad-8b26-f19bff969cec", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"TargetObject":"Index \\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Schedule\\TaskCache\\Tree\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-1377-68FC-A61E-000000004002","ProcessId":"5160","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Schedule\\TaskCache\\Tree\\MaliciousTask\\Index","User":"NT AUTHORITY\\SYSTEM","UtcTime":"2025-10-25 00:01:59.330"}}
+]}

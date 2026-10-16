@@ -1,0 +1,4 @@
+{"rule": "571498c8-908e-40b4-910b-d2369159a3da", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5379","data":{"TargetName":"Microsoft_Windows_Shell_ZipFolder:filename\\Temporary Internet Files\\Content.Outlook"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5379","data":{}}
+]}

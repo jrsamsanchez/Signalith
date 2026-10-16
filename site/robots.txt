@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://signalith.io/sitemap.xml
+Sitemap: https://signalith.io/docs/sitemap.xml

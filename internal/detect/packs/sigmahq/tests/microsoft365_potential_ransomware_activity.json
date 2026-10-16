@@ -1,0 +1,6 @@
+{"rule": "bd132164-884a-48f1-aa2d-c6d646b04c69", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Potential ransomware activity","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Potential ransomware activity","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Potential ransomware activity","eventSource":"SecurityComplianceCenter"}}
+]}

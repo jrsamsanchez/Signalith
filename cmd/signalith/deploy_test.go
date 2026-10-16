@@ -1,15 +1,18 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,6 +48,7 @@ type composeService struct {
 	Ulimits     map[string]any    `yaml:"ulimits"`
 	DependsOn   map[string]dep    `yaml:"depends_on"`
 	Healthcheck map[string]any    `yaml:"healthcheck"`
+	Image       string            `yaml:"image"`
 	Build       map[string]string `yaml:"build"`
 	PullPolicy  string            `yaml:"pull_policy"`
 	Hostname    string            `yaml:"hostname"`
@@ -99,8 +103,35 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Contains(setup.Volumes, "opensearch-certs:"+osDir) || !slices.Contains(setup.Volumes, "signalith-secrets:"+sigDir) {
 		t.Errorf("setup volumes %v", setup.Volumes)
 	}
-	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" || setup.PullPolicy != "build" {
-		t.Errorf("setup: user %q restart %q network %q pull %q", setup.User, setup.Restart, setup.NetworkMode, setup.PullPolicy)
+	// The CA's key has a volume of its own that only setup mounts, and
+	// setup can hand it over in Signalith's state folder and ask for the
+	// security settings to load again.
+	if _, ok := vols["opensearch-ca"]; !ok {
+		t.Error("volume opensearch-ca is not declared")
+	}
+	for flag, vol := range map[string]string{"-ca-dir": "opensearch-ca", "-state-dir": "signalith-data", "-loaded-dir": "opensearch-security-loaded"} {
+		dir := flagValue(setup.Command, flag)
+		if dir == "" || !slices.Contains(setup.Volumes, vol+":"+dir) {
+			t.Errorf("setup: %s %q, volumes %v", flag, dir, setup.Volumes)
+		}
+	}
+	// Runs by hand replace the command, so the same folders come from
+	// the environment too.
+	for flag, env := range map[string]string{"-opensearch-dir": "SIGNALITH_SETUP_OPENSEARCH_DIR", "-signalith-dir": "SIGNALITH_SETUP_SIGNALITH_DIR",
+		"-ca-dir": "SIGNALITH_SETUP_CA_DIR", "-state-dir": "SIGNALITH_SETUP_STATE_DIR", "-loaded-dir": "SIGNALITH_SETUP_LOADED_DIR"} {
+		if !slices.Contains(setup.Environment, env+"="+flagValue(setup.Command, flag)) {
+			t.Errorf("setup environment %v lacks %s for %s", setup.Environment, env, flag)
+		}
+	}
+	for name, s := range svc {
+		for _, v := range s.Volumes {
+			if strings.HasPrefix(v, "opensearch-ca:") && name != "setup" {
+				t.Errorf("%s mounts the CA's key: %s", name, v)
+			}
+		}
+	}
+	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" {
+		t.Errorf("setup: user %q restart %q network %q", setup.User, setup.Restart, setup.NetworkMode)
 	}
 	// bootstrap-docker needs to change owners (CHOWN), write in folders
 	// it gave away (DAC_OVERRIDE) and set modes on files it gave away
@@ -108,8 +139,33 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Equal(setup.CapDrop, []string{"ALL"}) || !slices.Equal(setup.CapAdd, []string{"CHOWN", "DAC_OVERRIDE", "FOWNER"}) {
 		t.Errorf("setup capabilities: drop %v add %v", setup.CapDrop, setup.CapAdd)
 	}
-	if len(setup.Build) == 0 || !maps.Equal(setup.Build, svc["signalith"].Build) {
-		t.Errorf("setup builds %v, signalith %v", setup.Build, svc["signalith"].Build)
+	// setup and signalith run the same image: the one GitHub built, fetched
+	// again on every `up`, or with docker-compose.build.yml the one built
+	// from the checked-out code on every `up`.
+	const image = "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}"
+	for _, name := range []string{"setup", "signalith"} {
+		if s := svc[name]; s.Image != image || s.PullPolicy != "always" || len(s.Build) != 0 {
+			t.Errorf("%s: image %q pull %q build %v", name, s.Image, s.PullPolicy, s.Build)
+		}
+	}
+	rawBuild, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.build.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var build struct {
+		Services map[string]composeService `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(rawBuild, &build); err != nil {
+		t.Fatalf("docker-compose.build.yml: %v", err)
+	}
+	if len(build.Services) != 2 {
+		t.Errorf("docker-compose.build.yml changes %d services, want setup and signalith", len(build.Services))
+	}
+	for _, name := range []string{"setup", "signalith"} {
+		b := build.Services[name]
+		if b.Image != "signalith:local" || b.PullPolicy != "build" || b.Build["context"] != "../.." || b.Build["dockerfile"] != "deploy/docker/Dockerfile" {
+			t.Errorf("docker-compose.build.yml %s: image %q pull %q build %v", name, b.Image, b.PullPolicy, b.Build)
+		}
 	}
 
 	// OpenSearch: our settings and security files, the certificates
@@ -183,7 +239,9 @@ func TestDockerCompose(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dockerDir, "opensearch", "load-security.sh")); err != nil {
 		t.Error(err)
 	}
-	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
+	// /tmp:exec: OpenSearch 3's securityadmin.sh loads a native library it
+	// unpacks there (Docker mounts a tmpfs noexec otherwise).
+	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp:exec") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
 		len(l.CapAdd) != 0 || !slices.Contains(l.SecurityOpt, "no-new-privileges:true") || len(l.Ports) != 0 {
 		t.Errorf("opensearch-security: user %q restart %q read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ports %v",
 			l.User, l.Restart, l.ReadOnly, l.Tmpfs, l.CapDrop, l.CapAdd, l.SecurityOpt, l.Ports)
@@ -233,7 +291,7 @@ func TestDockerCompose(t *testing.T) {
 	}
 	// A fixed host name for the certificate and its CA, not the
 	// container's ID.
-	if s.Hostname != "signalith" {
+	if s.Hostname != "${SIGNALITH_NODE_NAME:-signalith}" {
 		t.Errorf("signalith hostname %q", s.Hostname)
 	}
 }
@@ -492,7 +550,8 @@ func dockerUpgrade(t *testing.T, path string, setup time.Time) {
 		t.Errorf("the new token over HTTPS: %d", code)
 	}
 	// Put back in the environment, the old token is not handed to new
-	// agents.
+	// agents, and neither is the shared one: they get a placeholder the
+	// Add data page fills with a token of their own.
 	c.Ingest.Tokens = append(c.Ingest.Tokens, "change-this-ingest-token")
 	slices.Reverse(c.Ingest.Tokens)
 	h, _ := config.HashPassword("an admin password")
@@ -505,7 +564,8 @@ func dockerUpgrade(t *testing.T, path string, setup time.Time) {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || strings.Contains(string(b), "change-this-ingest-token") || !strings.Contains(string(b), c.Ingest.Tokens[1]) {
+	if resp.StatusCode != 200 || strings.Contains(string(b), "change-this-ingest-token") || strings.Contains(string(b), c.Ingest.Tokens[1]) ||
+		!strings.Contains(string(b), "Bearer @@AGENT_TOKEN@@") {
 		t.Errorf("agent config: %d %s", resp.StatusCode, b)
 	}
 
@@ -562,4 +622,125 @@ func anyStrings(v any) []string {
 		}
 	}
 	return out
+}
+
+// Every OpenSearch node of the three-node overlay checks client
+// certificates against the revocation list, as the quick start's single
+// node does: a node that skipped it would still let a revoked server in.
+func TestComposeEveryOpenSearchNodeChecksTheCRL(t *testing.T) {
+	type node struct {
+		Image      string   `yaml:"image"`
+		Entrypoint []string `yaml:"entrypoint"`
+		Volumes    []string `yaml:"volumes"`
+	}
+	read := func(name string) map[string]node {
+		raw, err := os.ReadFile(filepath.Join(dockerDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct {
+			Services map[string]node `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return f.Services
+	}
+	base := read("docker-compose.yml")
+	overlay := read("docker-compose.opensearch3.yml")
+	const mount = "opensearch-crl:/usr/share/opensearch/config/crl:ro"
+	want := base["opensearch"].Entrypoint
+	if !slices.Contains(base["opensearch"].Volumes, mount) || !strings.Contains(strings.Join(want, " "), "plugins.security.ssl.http.crl.validate=true") {
+		t.Fatalf("docker-compose.yml opensearch does not check the revocation list: %v %v", want, base["opensearch"].Volumes)
+	}
+	nodes := 0
+	for name, o := range overlay {
+		b := base[name]
+		image := cmp.Or(o.Image, b.Image)
+		if !strings.HasPrefix(image, "opensearchproject/opensearch:") {
+			continue
+		}
+		nodes++
+		e := o.Entrypoint
+		if e == nil {
+			e = b.Entrypoint
+		}
+		if !slices.Equal(e, want) {
+			t.Errorf("%s does not start with the revocation list check: %v", name, e)
+		}
+		if !slices.Contains(o.Volumes, mount) && !slices.Contains(b.Volumes, mount) {
+			t.Errorf("%s does not mount the revocation list (%s)", name, mount)
+		}
+	}
+	if nodes != 3 {
+		t.Errorf("docker-compose.opensearch3.yml has %d OpenSearch nodes, want 3", nodes)
+	}
+}
+
+// The OpenSearch entrypoint checks certificates against the revocation
+// list when there is one, and once setup has made one, does not start
+// without it.
+func TestComposeOpenSearchEntrypointNeedsTheCRL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the entrypoint with sh")
+	}
+	var ep struct {
+		Services map[string]struct {
+			Entrypoint []string `yaml:"entrypoint"`
+		} `yaml:"services"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(raw, &ep); err != nil {
+		t.Fatal(err)
+	}
+	args := ep.Services["opensearch"].Entrypoint
+	if len(args) != 4 || args[0] != "sh" || args[1] != "-c" {
+		t.Fatalf("entrypoint %q", args)
+	}
+	// Compose turns $$ into $.
+	script := strings.ReplaceAll(args[2], "$$", "$")
+	run := func(t *testing.T, files map[string]string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "config", "crl"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, "config", "crl", name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// awk, not sh, which drops variables with dots in their names.
+		stub := "#!/usr/bin/awk -f\nBEGIN { print \"started \" ARGV[1] \" validate=\" ENVIRON[\"plugins.security.ssl.http.crl.validate\"]; exit }\n"
+		if err := os.WriteFile(filepath.Join(dir, "opensearch-docker-entrypoint.sh"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", script, args[3], "opensearch")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	t.Run("with the list", func(t *testing.T) {
+		out, err := run(t, map[string]string{"crl.pem": "list", "crl-required": "x"})
+		if err != nil || !strings.Contains(out, "started opensearch validate=true") {
+			t.Errorf("%v: %s", err, out)
+		}
+	})
+	t.Run("before setup made one", func(t *testing.T) {
+		out, err := run(t, nil)
+		if err != nil || !strings.Contains(out, "started opensearch validate=\n") {
+			t.Errorf("%v: %q", err, out)
+		}
+	})
+	for _, files := range []map[string]string{{"crl-required": "x"}, {"crl-required": "x", "crl.pem": ""}} {
+		t.Run(fmt.Sprintf("list gone %v", files), func(t *testing.T) {
+			out, err := run(t, files)
+			if err == nil || strings.Contains(out, "started") || !strings.Contains(out, "does not start without its revocation list") {
+				t.Errorf("%v: %s", err, out)
+			}
+		})
+	}
 }

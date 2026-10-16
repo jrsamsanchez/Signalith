@@ -1,0 +1,4 @@
+{"rule": "48a45d45-8112-416b-8a67-46e03a4b2107", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"-Identity  -Members  Remove-ADGroupMember"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

@@ -13,6 +13,8 @@ clear reason is the easiest kind to review and merge.
   report it privately through
   [GitHub security advisories](https://github.com/jrsamsanchez/Signalith/security/advisories/new).
 
+Everyone taking part is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
+
 ## Build
 
 Signalith is one Go program with the web UI embedded (`web/static`, plain JavaScript,
@@ -68,6 +70,22 @@ and stop them with `kill -9` and `SIGSTOP`, so they run on Linux only; without
 Tests must pass on Windows too. Git on Windows may check text files out with CRLF line
 endings, so a test that reads a file from the repository (such as a doc) should not
 compare it byte for byte.
+
+### Fuzz tests
+
+The code that reads untrusted input (the syslog, CEF and LEEF parsers, the ingest and
+OTLP bodies, Windows and auditd events, the search language, the Sigma and Splunk rule
+loaders, the CSV lists and the intake endpoints) has Go fuzz tests (`func Fuzz...`). CI
+runs each one for 10 seconds, and a nightly workflow for 5 minutes each. To run one
+yourself, or all of them:
+
+```sh
+go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=1m ./internal/syslog
+FUZZTIME=30s .github/scripts/fuzz.sh
+```
+
+When a fuzz test fails, Go saves the input under the package's `testdata/fuzz/<target>/`.
+Commit that file with the fix, so plain `go test` checks it from then on.
 
 ### Completeness tests
 
@@ -129,7 +147,7 @@ keep their headings and lists in shape.
 - Branch from `main` and keep one topic per pull request.
 - Write commit messages that say what changed and why, with a short first line.
 - Say in the pull request what you changed, why, and how you tested it; include a
-  screenshot for UI changes.
+  screenshot for UI changes. The pull request template has a place for each.
 - CI must be green before a merge. Pull requests are usually squash-merged.
 - Never commit passwords, tokens, keys or real log data, even in tests; use made-up
   values such as `example.com` addresses and the documentation IP ranges.

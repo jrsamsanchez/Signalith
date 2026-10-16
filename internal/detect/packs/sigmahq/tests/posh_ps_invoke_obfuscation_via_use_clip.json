@@ -1,0 +1,4 @@
+{"rule": "db92dd33-a3ad-49cf-8c2c-608c3e30ace0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"ECHOCLIPx\u0026\u0026INV`OKE`"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

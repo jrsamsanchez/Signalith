@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/httpserver"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/proxyproto"
 )
 
 // Defaults for the limits in Config.
@@ -44,12 +45,17 @@ const (
 	// maxSenders is how many recent senders the stats keep.
 	maxSenders = 50
 	// maxExtraNamesPerIndex caps the distinct cef_* and sd_* field names
-	// one daily index gets per run, and maxExtraNamesPerSender one
-	// sender's share of that, so one device cannot use up the budget of
-	// the others. Together with the data model fields this stays well
-	// under the 2000 fields the index template allows.
+	// one daily index gets per run, for all servers together, and
+	// maxExtraNamesPerSender one sender's share of that, so one device
+	// cannot use up the budget of the others. Each server that stored
+	// events in the last 10 minutes gets an equal share of the index's
+	// budget, at least minExtraNamesPerServer (see Config.Servers).
+	// Together with the data model fields this stays well under the 2000
+	// fields the index template allows; the ingest pipeline's own budget
+	// and mapping guard apply after these.
 	maxExtraNamesPerIndex  = 600
 	maxExtraNamesPerSender = 150
+	minExtraNamesPerServer = 100
 	// evictAfter is how long a TCP connection must have been quiet before
 	// it is closed to make room for a new one when the limit is reached.
 	evictAfter       = 30 * time.Second
@@ -80,6 +86,11 @@ type Config struct {
 	OnTLSName func(name string)
 	// Allow lists the senders that may send; empty allows any sender.
 	Allow []netip.Prefix
+	// Proxy, when set, reads a PROXY protocol header from the trusted
+	// load balancers on the TCP and TLS listeners (before TLS), so Allow,
+	// the per-sender limits and each event's host see the device. Nil
+	// reads none.
+	Proxy *proxyproto.Config
 	// PublicPort is the port senders use for UDP and TCP when something
 	// forwards it to the one listened on (Docker publishing 514 as 5514).
 	// It is only reported, as Listener.Port; zero means the listen port.
@@ -88,6 +99,10 @@ type Config struct {
 	// syslog indices are created after the index template is in place and
 	// get the right field types. Messages wait in the queue meanwhile.
 	Ready <-chan struct{}
+
+	// Servers returns how many servers share each day's field-name budget
+	// (see cluster.Node.IndexingServers); nil is this server alone.
+	Servers func() int
 
 	// MaxAge is how old a message's own timestamp may be and still be the
 	// event time (zero: DefaultMaxAge). Older ones use the receive time
@@ -128,9 +143,12 @@ type Receiver struct {
 
 	queue       chan queued
 	queuedBytes atomic.Int64
+	// maxAge is cfg.MaxAge, which SetMaxAge changes while it runs.
+	maxAge atomic.Int64
 
 	udp       *net.UDPConn
 	lns       []net.Listener
+	proxyLns  []*proxyproto.Listener
 	listeners []Listener
 	tlsConf   *tls.Config
 
@@ -196,6 +214,9 @@ type Rejections struct {
 	BadFraming         int64 `json:"bad_framing"`          // TCP stream with an impossible octet count
 	TooManyConnections int64 `json:"too_many_connections"` // TCP connection over the limit
 	TooManyFromSender  int64 `json:"too_many_from_sender"` // TCP connection over the per-sender limit
+	// ProxyUntrusted counts TCP and TLS connections closed because a
+	// peer that is not a trusted proxy sent a PROXY header.
+	ProxyUntrusted int64 `json:"proxy_untrusted,omitempty"`
 }
 
 // Stats is what the receiver has done since start, for the health page.
@@ -262,7 +283,7 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	drain, drainCancel := context.WithCancel(context.Background())
-	return &Receiver{
+	r := &Receiver{
 		cfg:         cfg,
 		sink:        sink,
 		log:         log,
@@ -279,6 +300,9 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 		names:       newNameBudget(maxExtraNamesPerIndex, maxExtraNamesPerSender),
 		warned:      map[string]time.Time{},
 	}
+	r.names.servers = cfg.Servers
+	r.maxAge.Store(int64(cfg.MaxAge))
+	return r
 }
 
 // Start opens every configured listener and starts receiving. It returns
@@ -315,6 +339,11 @@ func (r *Receiver) Start(ctx context.Context) error {
 		if err != nil {
 			r.closeListeners()
 			return bindError(l.setting, "tcp", l.addr, err)
+		}
+		if r.cfg.Proxy != nil {
+			pl := proxyproto.Wrap(ln, *r.cfg.Proxy)
+			r.proxyLns = append(r.proxyLns, pl)
+			ln = pl
 		}
 		r.lns = append(r.lns, ln)
 		protos = append(protos, l.proto)
@@ -481,27 +510,44 @@ func (r *Receiver) accept(ctx context.Context, ln net.Listener, proto string) {
 			continue
 		}
 		delay = 0
-		from := remoteAddr(c)
-		if !r.allowed(from) {
-			r.rejectSender(from)
-			c.Close()
-			continue
-		}
-		cs := newConnState(from)
-		switch r.track(c, cs) {
-		case trackOK:
+		if r.cfg.Proxy != nil {
+			// The sender is known once the load balancer's header is
+			// read, which may take a moment: read it on the
+			// connection's own goroutine so others are not held up.
 			r.readers.Add(1)
-			go r.serveConn(ctx, c, cs, proto)
+			go func() {
+				defer r.readers.Done()
+				r.admit(ctx, c, proto)
+			}()
 			continue
-		case trackSenderFull:
-			r.tooManyFromSender.Add(1)
-			r.warn("sender-connections", "syslog connection refused: this sender has too many open connections", "limit", r.cfg.MaxConnectionsPerSender, "sender", from.String())
-		case trackFull:
-			r.tooMany.Add(1)
-			r.warn("connections", "syslog connection refused: too many open connections", "limit", r.cfg.MaxConnections, "sender", from.String())
 		}
-		c.Close()
+		r.admit(ctx, c, proto)
 	}
+}
+
+// admit checks a new connection's sender against syslog.allow and the
+// connection limits, and serves it or closes it.
+func (r *Receiver) admit(ctx context.Context, c net.Conn, proto string) {
+	from := remoteAddr(c)
+	if !r.allowed(from) {
+		r.rejectSender(from)
+		c.Close()
+		return
+	}
+	cs := newConnState(from)
+	switch r.track(c, cs) {
+	case trackOK:
+		r.readers.Add(1)
+		go r.serveConn(ctx, c, cs, proto)
+		return
+	case trackSenderFull:
+		r.tooManyFromSender.Add(1)
+		r.warn("sender-connections", "syslog connection refused: this sender has too many open connections", "limit", r.cfg.MaxConnectionsPerSender, "sender", from.String())
+	case trackFull:
+		r.tooMany.Add(1)
+		r.warn("connections", "syslog connection refused: too many open connections", "limit", r.cfg.MaxConnections, "sender", from.String())
+	}
+	c.Close()
 }
 
 func remoteAddr(c net.Conn) netip.Addr {
@@ -702,17 +748,35 @@ func (r *Receiver) rejectSender(a netip.Addr) {
 	r.warn("allow", "dropped syslog from a sender outside syslog.allow (logged once a minute)", "sender", a.String(), "dropped_so_far", r.notAllowed.Load())
 }
 
+// SetMaxAge changes how old a message's own timestamp may be and still be
+// the event time, while the receiver runs, as when the shared retention
+// policies change; zero or less is ignored.
+func (r *Receiver) SetMaxAge(d time.Duration) {
+	if d > 0 {
+		r.maxAge.Store(int64(d))
+	}
+}
+
 // handle parses one message and queues its event. wait says whether to
 // wait for room in the queue (TCP) or drop the message when it is full
 // (UDP).
 func (r *Receiver) handle(ctx context.Context, data []byte, from netip.Addr, proto string, wait bool) {
+	// A message that stops the parser is dropped rather than crashing the
+	// server: handle runs on its own goroutine, where a panic is fatal.
+	defer func() {
+		if p := recover(); p != nil {
+			r.dropped.Add(1)
+			r.warn("parse", "dropped a syslog message that stopped the parser (logged once a minute)", "sender", from.String(), "panic", fmt.Sprint(p))
+		}
+	}()
 	now := r.now()
 	m := Parse(data, now)
 	if m.Raw == "" {
 		return
 	}
-	ev := m.Event(from, now, r.cfg.MaxAge)
-	r.names.limit(ev, from, now, r.cfg.MaxAge)
+	maxAge := time.Duration(r.maxAge.Load())
+	ev := m.Event(from, now, maxAge)
+	r.names.limit(ev, from, now, maxAge)
 	r.received.Add(1)
 	r.lastMessage.Store(now.UnixNano())
 	r.senders.seen(from, m.Hostname, proto, now)
@@ -891,7 +955,10 @@ func (r *Receiver) Stats() Stats {
 		s.LastNotAllowed = r.lastNotAllowed.String()
 	}
 	r.rejMu.Unlock()
-	s.Rejected = s.RejectedBy.NotAllowed + s.RejectedBy.TooLarge + s.RejectedBy.BadFraming + s.RejectedBy.TooManyConnections + s.RejectedBy.TooManyFromSender
+	for _, pl := range r.proxyLns {
+		s.RejectedBy.ProxyUntrusted += pl.Untrusted()
+	}
+	s.Rejected = s.RejectedBy.ProxyUntrusted + s.RejectedBy.NotAllowed + s.RejectedBy.TooLarge + s.RejectedBy.BadFraming + s.RejectedBy.TooManyConnections + s.RejectedBy.TooManyFromSender
 	if ns := r.lastMessage.Load(); ns > 0 {
 		s.LastMessage = time.Unix(0, ns).UTC()
 	}
@@ -899,6 +966,18 @@ func (r *Receiver) Stats() Stats {
 	s.Connections = len(r.conns)
 	r.mu.Unlock()
 	return s
+}
+
+// Traffic is how many messages this receiver took in and when the last
+// came, read without locks so a heartbeat never waits on the receiver.
+func (r *Receiver) Traffic() (received int64, last time.Time) {
+	if r == nil {
+		return 0, time.Time{}
+	}
+	if ns := r.lastMessage.Load(); ns > 0 {
+		last = time.Unix(0, ns).UTC()
+	}
+	return r.received.Load(), last
 }
 
 // senderTable keeps the most recent senders, evicting the one heard from
@@ -961,7 +1040,24 @@ type nameBudget struct {
 	mu        sync.Mutex
 	perIndex  int
 	perSender int
-	indices   map[string]*indexNames // by model and day
+	// servers is how many servers share the budget; nil is one.
+	servers func() int
+	indices map[string]*indexNames // by model and day
+}
+
+// shares returns this server's share of the per-index budget, and the most
+// one sender may take of it: an equal part for each server, at least
+// minExtraNamesPerServer, and a sender never more than the index's share.
+func (b *nameBudget) shares() (perIndex, perSender int) {
+	n := 1
+	if b.servers != nil {
+		n = b.servers()
+	}
+	if n <= 1 {
+		return b.perIndex, b.perSender
+	}
+	perIndex = max(minExtraNamesPerServer, b.perIndex/n)
+	return perIndex, min(b.perSender, perIndex)
 }
 
 type indexNames struct {
@@ -978,6 +1074,7 @@ func (b *nameBudget) limit(ev ingest.Event, from netip.Addr, now time.Time, maxA
 	day := ev.Time.UTC().Format("2006.01.02")
 	key := ev.Model + "/" + day
 	sender := clientaddr.Key(from)
+	perIndex, perSender := b.shares()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ix := b.indices[key]
@@ -991,7 +1088,7 @@ func (b *nameBudget) limit(ev ingest.Event, from netip.Addr, now time.Time, maxA
 		if _, ok := ix.names[k]; ok {
 			continue
 		}
-		if len(ix.names) >= b.perIndex || ix.senders[sender] >= b.perSender {
+		if len(ix.names) >= perIndex || ix.senders[sender] >= perSender {
 			delete(ev.Fields, k)
 			continue
 		}

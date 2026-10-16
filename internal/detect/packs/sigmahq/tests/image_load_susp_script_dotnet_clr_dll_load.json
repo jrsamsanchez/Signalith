@@ -1,0 +1,5 @@
+{"rule": "4508a70e-97ef-4300-b62b-ff27992990ea", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\mshta.exe","ImageLoaded":"\\mscoree.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\mscoree.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\mshta.exe"}}
+]}

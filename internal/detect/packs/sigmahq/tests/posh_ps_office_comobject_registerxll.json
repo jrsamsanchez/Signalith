@@ -1,0 +1,5 @@
+{"rule": "36fbec91-fa1b-4d5d-8df1-8d8edcb632ad", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":".RegisterXLLnew-object .application-ComObject x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"1655a6e6-4b4e-4770-be5b-86fb854ecec6","ScriptBlockText":"\u0026 {$excelApp = New-Object -COMObject \"Excel.Application\"\nif(-not $excelApp.path.contains(\"Program Files (x86)\")){\n Write-Host \"64-bit Office\"\n $excelApp.RegisterXLL(\"C:\\AtomicRedTeam\\atomics\\T1137.006\\bin\\Addins\\excelxll_x64.xll\")\n}\nelse{\n Write-Host \"32-bit Office\"\n $excelApp.RegisterXLL(\"C:\\AtomicRedTeam\\atomics\\T1137.006\\bin\\Addins\\excelxll_x86.xll\")\n}}"}}
+]}

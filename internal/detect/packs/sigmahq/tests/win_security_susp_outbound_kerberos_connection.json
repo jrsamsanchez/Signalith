@@ -1,0 +1,8 @@
+{"rule": "eca91c7c-9214-47b9-b4c5-cb1d7e4f2350", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5156","data":{"DestPort":"88"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"Application":"C: \\Windows\\System32\\lsass.exe","DestPort":"88"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"Application":"\\device\\harddiskvolume \\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe","DestPort":"88"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"Application":"\\device\\harddiskvolume \\Program Files (x86)\\Mozilla Firefox\\firefox.exe","DestPort":"88"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{"Application":"\\tomcat\\bin\\tomcat8.exe","DestPort":"88"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5156","data":{}}
+]}

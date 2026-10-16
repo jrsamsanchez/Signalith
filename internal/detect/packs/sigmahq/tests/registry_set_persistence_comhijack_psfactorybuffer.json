@@ -1,0 +1,5 @@
+{"rule": "243380fa-11eb-4141-af92-e14925e77c1b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\CLSID\\{c90250f3-4d7d-4991-9b69-a5c5bc1c2ae6}\\InProcServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%windir%\\System32\\ActXPrxy.dll","TargetObject":"\\CLSID\\{c90250f3-4d7d-4991-9b69-a5c5bc1c2ae6}\\InProcServer32\\(Default)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

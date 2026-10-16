@@ -1,0 +1,6 @@
+{"rule": "9577edbb-851f-4243-8c91-1d5b50c1a39b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\Configuration"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","Image":"C:\\Windows\\system32\\atbroker.exe","TargetObject":"\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\Configuration Software\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\Configuration"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Image":"C:\\Windows\\Installer\\MSI","TargetObject":"Software\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\Configuration Software\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\ATs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

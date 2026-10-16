@@ -1,0 +1,4 @@
+{"rule": "cacef8fc-9d3d-41f7-956d-455c6e881bc5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"function Get-VMRemoteFXPhysicalVideoAdapter {"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

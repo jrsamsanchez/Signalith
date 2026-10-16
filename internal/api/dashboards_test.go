@@ -13,7 +13,8 @@ func TestDashboardsAPI(t *testing.T) {
 
 	code, out := do(t, ts, "GET", "/api/dashboards", "", true)
 	list := out["dashboards"].([]any)
-	if code != 200 || len(list) != 2 || list[0].(map[string]any)["id"] != "posture" || list[1].(map[string]any)["id"] != "malware" {
+	if code != 200 || len(list) != 4 || list[0].(map[string]any)["id"] != "posture" || list[1].(map[string]any)["id"] != "malware" ||
+		list[2].(map[string]any)["id"] != "network" || list[3].(map[string]any)["id"] != "vulnerabilities" {
 		t.Fatalf("empty list = %d %v", code, out)
 	}
 
@@ -107,7 +108,7 @@ func TestDashboardsAPI(t *testing.T) {
 	}
 
 	code, out = do(t, ts, "GET", "/api/dashboards", "", true)
-	if code != 200 || len(out["dashboards"].([]any)) != 3 {
+	if code != 200 || len(out["dashboards"].([]any)) != 5 {
 		t.Errorf("list = %v", out)
 	}
 	if code, _ := do(t, ts, "DELETE", "/api/dashboards/posture", "", true); code != 400 {
@@ -124,7 +125,7 @@ func TestDashboardsAPI(t *testing.T) {
 func TestDashboardsOff(t *testing.T) {
 	ts, _ := newTestServerWith(t, func(s *Server) { s.Dashboards = nil })
 	code, out := do(t, ts, "GET", "/api/dashboards", "", true)
-	if code != 200 || len(out["dashboards"].([]any)) != 2 || out["error"] == nil {
+	if code != 200 || len(out["dashboards"].([]any)) != 4 || out["error"] == nil {
 		t.Errorf("list = %d %v", code, out)
 	}
 	if code, _ := do(t, ts, "POST", "/api/dashboards", `{"title":"x"}`, true); code != 503 {

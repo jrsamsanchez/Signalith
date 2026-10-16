@@ -1,0 +1,15 @@
+{"rule": "a18dd26b-6450-46de-8c91-9659150cf088", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x401","SourceImage":"\\explorer.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","SourceImage":":\\Program Files (x86)\\","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","SourceImage":":\\ProgramData\\Microsoft\\Windows Defender\\\\MsMpEng.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"}\\mpengine.dll+|x:\\ProgramData\\Microsoft\\Windows Defender\\Definition Updates\\{","GrantedAccess":"0x1418","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"CallTrace":"|c:\\program files\\windows defender\\MpClient.dll","GrantedAccess":"0x1418","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","SourceImage":":\\ProgramData\\MALWAREBYTES\\MBAMSERVICE\\ctlrupdate\\mbupdatr.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x40","SourceImage":"\\MBAMInstallerService.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x40","SourceImage":"\\aurora-agent-64.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","SourceImage":"\\SteamLibrary\\steamapps\\","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x40","SourceImage":"\\handle64.exe","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x40","SourceImage":"\\PROCEXP64.EXE","TargetImage":"\\lsass.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0x1418","SourceImage":":\\ProgramData\\VMware\\VMware Tools\\\\vmtoolsd.exe","TargetImage":"\\lsass.exe"}}
+]}

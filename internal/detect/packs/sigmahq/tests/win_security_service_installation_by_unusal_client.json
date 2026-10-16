@@ -1,0 +1,4 @@
+{"rule": "c4e92a97-a9ff-4392-9d2d-7a4c642768ca", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ParentProcessId":"0"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

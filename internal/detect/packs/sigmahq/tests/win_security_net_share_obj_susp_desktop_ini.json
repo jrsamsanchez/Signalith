@@ -1,0 +1,6 @@
+{"rule": "35bc7e28-ee6b-492f-ab04-da58fcf6402e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"AddSubdirectory","ObjectType":"File","RelativeTargetName":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"ObjectType":"File","RelativeTargetName":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"AddSubdirectory","RelativeTargetName":"\\desktop.ini"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"AccessList":"AddSubdirectory","ObjectType":"File"}}
+]}

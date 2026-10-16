@@ -17,8 +17,20 @@ published and you are credited unless you ask not to be.
 
 ## Supported versions
 
-Signalith has no numbered releases yet: fixes go to the `main` branch.
-Update by pulling `main` (see the [README](README.md)).
+Security fixes go to the `main` branch and to the latest release: the newest
+minor version (0.2 now, starting with v0.2.0), as a new patch release. Older
+releases, such as 0.1, are not patched, so please upgrade to the latest release
+to get a fix.
+
+| Version          | Gets security fixes |
+| ---------------- | ------------------- |
+| `main`           | Yes                 |
+| 0.2.x (latest)   | Yes                 |
+| 0.1.x and older  | No                  |
+
+Each release's files and container image are signed, and you can check that
+what you downloaded is what GitHub Actions built: see
+[Check a download](docs/install-packages.md#check-a-download).
 
 ## What is in scope
 

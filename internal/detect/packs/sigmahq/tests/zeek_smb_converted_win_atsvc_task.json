@@ -1,0 +1,5 @@
+{"rule": "dde85b37-40cd-4a94-b00c-0b8794f956b5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"atsvc","path":"\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"path":"\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:smb_files","event_id":"","data":{"name":"atsvc"}}
+]}

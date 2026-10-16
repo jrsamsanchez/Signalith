@@ -23,7 +23,7 @@ func TestThreatActivityScalesRiskByWeight(t *testing.T) {
 	run := &fakeRunner{rows: []search.Row{row("oracle"), row("root")}}
 	rs := &memRisk{}
 	s := &Scheduler{Library: lib, Engine: run, Findings: findings.NewMemory(), Risk: rs, Now: func() time.Time { return now }}
-	res, err := s.Run(context.Background(), d)
+	res, err := s.RunManual(context.Background(), d, "")
 	if err != nil {
 		t.Fatal(err)
 	}

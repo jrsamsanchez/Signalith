@@ -276,6 +276,7 @@
         const sub = [];
         if (x.summary > 1) sub.push(`in a summary of ${x.summary}`);
         if (x.rule_name) sub.push(`rule ${x.rule_name}`);
+        if (x.playbook) sub.push(`playbook ${x.playbook}`);
         return el('tr', {},
           el('td', { class: 'nt-c-finding' },
             el('div', { class: 'nt-del__title' }, x.kind === 'test' ? el('span', { class: 'badge badge--outline' }, 'Test') : x.urgency ? sevBadge(x.urgency) : null,

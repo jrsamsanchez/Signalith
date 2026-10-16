@@ -18,6 +18,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 // eventually waits up to 20 seconds for ok.
@@ -39,14 +40,16 @@ func TestRestartKeepsTheJobLease(t *testing.T) {
 	node := rs.r.node
 	eventually(t, "this server runs the jobs", node.RunsJobs)
 	epoch := node.Lease().Epoch()
-	eventually(t, "the detection scheduler starts", func() bool {
-		return strings.Count(rs.logs.String(), `msg="detection scheduler started"`) == 1
+	// The server founds the cluster and restarts its components in place
+	// to take their content from it: the jobs start a second time.
+	eventually(t, "the detection scheduler starts with the shared settings", func() bool {
+		return rs.r.sharedContent.on.Load() && strings.Count(rs.logs.String(), `msg="detection scheduler started"`) == 2
 	})
 	if _, res := rs.restart(); !res.OK {
 		t.Fatalf("restart %+v\n%s", res, rs.logs.String())
 	}
 	eventually(t, "the jobs start again", func() bool {
-		return strings.Count(rs.logs.String(), `msg="detection scheduler started"`) == 2
+		return strings.Count(rs.logs.String(), `msg="detection scheduler started"`) == 3
 	})
 	if !node.RunsJobs() || node.Lease().Epoch() != epoch || rs.r.node != node {
 		t.Errorf("after the restart: runs %v epoch %d (was %d)", node.RunsJobs(), node.Lease().Epoch(), epoch)
@@ -117,6 +120,10 @@ func TestSchedulerTurnedOffStartsNoJob(t *testing.T) {
 	t.Cleanup(func() { jobStarting = nil })
 	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
 	node := rs.r.node
+	// The founding of the cluster, and the restarts that switch to the
+	// shared settings, end before the settings are changed: this test is
+	// about the jobs, not about a change made during that switch.
+	rs.settingsShared()
 	eventually(t, "this server runs the jobs", node.RunsJobs)
 	eventually(t, "the jobs start", func() bool {
 		mu.Lock()
@@ -176,6 +183,14 @@ func TestDownServerSaysSoInItsHeartbeat(t *testing.T) {
 	}
 	eventually(t, "this server runs the jobs", node.RunsJobs)
 	eventually(t, "the heartbeat lists the syslog listener", func() bool { return listed(heartbeat()) == syslogAddr })
+	// The server founds the cluster and restarts its components in place
+	// by itself; that restart is over before the next one is made to fail,
+	// or it would be the one that fails and the server would be down
+	// before the restart below is asked for.
+	eventually(t, "the components take the shared content", func() bool {
+		ct := rs.r.sharedContent
+		return ct.on.Load() && ct.users.on.Load() == rs.r.shared.SharedUsers() && !rs.r.RestartStatus().InProgress
+	})
 	broken.Store(true)
 	if _, res := rs.restart(); res.OK {
 		t.Fatalf("restart worked: %+v", res)
@@ -314,5 +329,73 @@ func TestDetectionsFingerprintIgnoresLineEnds(t *testing.T) {
 	}
 	if detectionsFingerprint(unix) == detectionsFingerprint(win) {
 		t.Error("a changed rule has the same fingerprint")
+	}
+}
+
+// U26: the server that runs the background jobs founds the cluster; an
+// in-process restart keeps the shared settings' runtime, its watcher (not
+// started twice) and cache.enc, and the server stays a member.
+func TestRestartKeepsTheSharedSettings(t *testing.T) {
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	rt := rs.r.shared
+	eventually(t, "the server founds the cluster", func() bool { m, _ := rt.Mode(); return m == shared.ModeMember })
+	id := rt.Status().ClusterID
+	cache := shared.CachePath(rs.dir)
+	eventually(t, "cache.enc is written", func() bool { _, err := os.Stat(cache); return err == nil })
+	if _, res := rs.restart(); !res.OK {
+		t.Fatalf("restart %+v\n%s", res, rs.logs.String())
+	}
+	if rs.r.shared != rt {
+		t.Fatal("the restart made a new runtime")
+	}
+	if m, why := rt.Mode(); m != shared.ModeMember || rt.Status().ClusterID != id {
+		t.Errorf("after the restart: %s (%s), cluster %s (was %s)", m, why, rt.Status().ClusterID, id)
+	}
+	if _, err := os.Stat(cache); err != nil {
+		t.Errorf("cache.enc after the restart: %v", err)
+	}
+	l := rs.logs.String()
+	if n := strings.Count(l, `msg="shared settings watcher started"`); n != 1 {
+		t.Errorf("the watcher started %d times", n)
+	}
+	if n := strings.Count(l, `msg="founded the cluster`); n != 1 {
+		t.Errorf("founded %d times:\n%s", n, l)
+	}
+	node := rs.r.node
+	eventually(t, "the heartbeat says member", func() bool {
+		hb := rs.os.Source("signalith_runtime", "node:"+node.ID())
+		return hb["mode"] == string(shared.ModeMember) && hb["cluster_kid"] == rt.Status().ClusterKID
+	})
+	resp, err := http.Get("http://" + rs.addr + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("/readyz = %d", resp.StatusCode)
+	}
+	if !node.RunsJobs() {
+		t.Error("the member does not run the jobs")
+	}
+}
+
+// A member whose components still take their content from its own files
+// (the restart in place that switches them has not run yet) does not say
+// it is a member in its heartbeat: its API would still refuse what a
+// member allows, such as a feed added on a server that does not run the
+// background jobs.
+func TestHeartbeatSaysMemberOnceTheComponentsSwitched(t *testing.T) {
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	rt := rs.r.shared
+	eventually(t, "the components take the shared content", func() bool {
+		m, _ := rt.Mode()
+		return m == shared.ModeMember && rs.r.sharedContent.on.Load()
+	})
+	if got := sharedStatus(rt, rs.r.sharedContent).Mode; got != string(shared.ModeMember) {
+		t.Errorf("switched: %q, want member", got)
+	}
+	// The same runtime, with components that have not switched yet.
+	if got := sharedStatus(rt, &sharedContent{}).Mode; got != string(shared.ModeStarting) {
+		t.Errorf("not switched yet: %q, want starting", got)
 	}
 }

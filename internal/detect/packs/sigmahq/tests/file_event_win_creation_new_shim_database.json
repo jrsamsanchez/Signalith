@@ -1,0 +1,5 @@
+{"rule": "ee63c85c-6d51-4d12-ad09-04e25877a947", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":":\\Windows\\apppatch\\CustomSDB\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:39:53.699","Image":"C:\\Windows\\explorer.exe","ProcessGuid":"5AA13A44-D070-68FB-1A18-000000004002","ProcessId":"7680","RuleName":"-","TargetFilename":"C:\\Windows\\apppatch\\CustomSDB\\my_custom.sdb","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:39:53.699"}}
+]}

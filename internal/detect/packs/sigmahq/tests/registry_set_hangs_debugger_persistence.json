@@ -1,0 +1,4 @@
+{"rule": "833ef470-fa01-4631-a79b-6f291c9ac498", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\Hangs\\Debugger"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

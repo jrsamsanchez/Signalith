@@ -1,0 +1,11 @@
+{"rule": "a1a144b7-5c9b-4853-a559-2172be8d4a03", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"TargetImage":"\\write.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\csrss.exe","TargetImage":"\\write.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\OpenWith.exe","TargetImage":"C:\\Windows\\System32\\notepad.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Windows\\System32\\AtBroker.exe","TargetImage":"C:\\Windows\\System32\\Sethc.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"StartFunction":"EtwpNotificationThread","TargetImage":"\\write.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"unknown process","TargetImage":"\\write.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe","StartFunction":"GetCommandLineW","TargetImage":"C:\\Windows\\System32\\notepad.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{"SourceImage":"C:\\Program Files\\Xerox\\XeroxPrintExperience\\CommonFiles\\XeroxPrintJobEventManagerService.exe","StartFunction":"LoadLibraryW","TargetImage":"C:\\Windows\\System32\\spoolsv.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"8","data":{}}
+]}

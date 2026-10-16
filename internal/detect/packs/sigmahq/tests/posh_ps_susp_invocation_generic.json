@@ -1,0 +1,4 @@
+{"rule": "ed965133-513f-41d9-a441-e38076a0798f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"x -w 1  -noni  -ec x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

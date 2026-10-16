@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"math/rand"
 	"net/netip"
+	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Synthesis makes events from a rule: positives the rule matches, and
@@ -83,7 +86,7 @@ func andTerms(kids []node, neg bool) [][]lit {
 
 // constraint is one requirement on a field's value.
 type constraint struct {
-	how     string // equals, contains, startswith, endswith, cidr, null, exists, absent
+	how     string // equals, contains, startswith, endswith, re, cidr, null, exists, absent
 	pattern string
 }
 
@@ -123,7 +126,7 @@ func pick(rng *rand.Rand, s *selection, into constraints) error {
 				return err
 			}
 			if how == "re" {
-				return errors.New("regular expression")
+				pats = []string{reFlags(fc.mods) + pats[0]}
 			}
 			into[fc.field] = append(into[fc.field], constraint{how: how, pattern: pats[rng.Intn(len(pats))]})
 		}
@@ -165,7 +168,7 @@ func build(rng *rand.Rand, cs constraints) (map[string]string, bool) {
 	}
 	sort.Strings(fields)
 	for _, f := range fields {
-		var eq, starts, ends, mids []string
+		var eq, starts, ends, mids, res []string
 		missing, present := false, false
 		for _, c := range cs[f] {
 			switch c.how {
@@ -181,6 +184,8 @@ func build(rng *rand.Rand, cs constraints) (map[string]string, bool) {
 				ends = append(ends, c.pattern)
 			case "contains":
 				mids = append(mids, c.pattern)
+			case "re":
+				res = append(res, c.pattern)
 			case "cidr":
 				pfx, err := netip.ParsePrefix(c.pattern)
 				if err != nil {
@@ -194,7 +199,7 @@ func build(rng *rand.Rand, cs constraints) (map[string]string, bool) {
 			}
 		}
 		if missing {
-			if present || len(eq)+len(starts)+len(ends)+len(mids) > 0 {
+			if present || len(eq)+len(starts)+len(ends)+len(mids)+len(res) > 0 {
 				// A field that must be missing and set: only an empty
 				// pattern can do both.
 				if len(eq) == 1 && eq[0] == "" && len(starts)+len(ends)+len(mids) == 0 {
@@ -202,6 +207,17 @@ func build(rng *rand.Rand, cs constraints) (map[string]string, bool) {
 				}
 				return nil, false
 			}
+			continue
+		}
+		if len(res) > 0 {
+			// A regular expression: the value the other constraints make,
+			// if it matches, or else one made from the expression that
+			// meets the rest.
+			v, ok := withRegexes(rng, cs[f], res, eq, starts, ends, mids)
+			if !ok {
+				return nil, false
+			}
+			out[f] = v
 			continue
 		}
 		if len(eq) > 0 {
@@ -414,4 +430,166 @@ func String(ev map[string]string) string {
 		fmt.Fprintf(&b, "%s=%q ", k, ev[k])
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// reFlags is the inline flags of a regular expression's |i, |m and |s
+// modifiers.
+func reFlags(mods []string) string {
+	flags := ""
+	for _, m := range mods {
+		if m == "i" || m == "m" || m == "s" {
+			flags += m
+		}
+	}
+	if flags == "" {
+		return ""
+	}
+	return "(?" + flags + ")"
+}
+
+// withRegexes makes a value for a field with regular expression
+// constraints (res) and possibly others: the others' value when every
+// expression matches it, or an expression's example that meets them all.
+func withRegexes(rng *rand.Rand, cs []constraint, res, eq, starts, ends, mids []string) (string, bool) {
+	ok := func(v string) bool {
+		for _, c := range cs {
+			switch c.how {
+			case "re":
+				re, err := regexp.Compile(c.pattern)
+				if err != nil || !re.MatchString(v) {
+					return false
+				}
+			case "equals", "contains", "startswith", "endswith":
+				if !wildcard(c.how, c.pattern, v) {
+					return false
+				}
+			case "cidr":
+				return false
+			}
+		}
+		return true
+	}
+	var tries []string
+	if len(eq) > 0 {
+		tries = append(tries, instantiateCase(eq[0]))
+	} else if len(starts)+len(ends)+len(mids) > 0 {
+		var parts []string
+		for _, s := range append(append(append([]string{}, starts...), mids...), ends...) {
+			parts = append(parts, instantiateCase(s))
+		}
+		tries = append(tries, strings.Join(parts, " "))
+	}
+	for _, p := range res {
+		for i := 0; i < 4; i++ {
+			if s, err := RegexExample(rng, p); err == nil {
+				tries = append(tries, s)
+			}
+		}
+	}
+	// The other constraints' parts with an example of every expression
+	// among them, for an expression found anywhere in the value.
+	if len(eq) == 0 {
+		for i := 0; i < 8; i++ {
+			var parts []string
+			for _, s := range starts {
+				parts = append(parts, instantiateCase(s))
+			}
+			for _, s := range mids {
+				parts = append(parts, instantiateCase(s))
+			}
+			for _, p := range res {
+				if s, err := RegexExample(rng, p); err == nil {
+					parts = append(parts, s)
+				}
+			}
+			for _, s := range ends {
+				parts = append(parts, instantiateCase(s))
+			}
+			sep := " "
+			if i%2 == 1 {
+				sep = ""
+			}
+			tries = append(tries, strings.Join(parts, sep))
+		}
+	}
+	for _, v := range tries {
+		if v != "" && strings.TrimSpace(v) == v && ok(v) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// RegexExample makes a string the regular expression matches: each
+// repetition its fewest times (at least once when it may be more), each
+// alternation one branch at random, each class one of its characters.
+func RegexExample(rng *rand.Rand, pattern string) (string, error) {
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	var walk func(re *syntax.Regexp) error
+	walk = func(re *syntax.Regexp) error {
+		switch re.Op {
+		case syntax.OpLiteral:
+			b.WriteString(string(re.Rune))
+		case syntax.OpCharClass:
+			b.WriteRune(classRune(re.Rune))
+		case syntax.OpAnyChar, syntax.OpAnyCharNotNL:
+			b.WriteByte('x')
+		case syntax.OpCapture:
+			return walk(re.Sub[0])
+		case syntax.OpStar, syntax.OpQuest:
+			if rng.Intn(2) == 0 {
+				return walk(re.Sub[0])
+			}
+		case syntax.OpPlus:
+			return walk(re.Sub[0])
+		case syntax.OpRepeat:
+			n := re.Min
+			if n == 0 && re.Max != 0 && rng.Intn(2) == 0 {
+				n = 1
+			}
+			for i := 0; i < n; i++ {
+				if err := walk(re.Sub[0]); err != nil {
+					return err
+				}
+			}
+		case syntax.OpConcat:
+			for _, s := range re.Sub {
+				if err := walk(s); err != nil {
+					return err
+				}
+			}
+		case syntax.OpAlternate:
+			return walk(re.Sub[rng.Intn(len(re.Sub))])
+		case syntax.OpEmptyMatch, syntax.OpBeginText, syntax.OpEndText, syntax.OpBeginLine, syntax.OpEndLine:
+		default:
+			return fmt.Errorf("cannot make an example of %v", re)
+		}
+		return nil
+	}
+	if err := walk(re); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// classRune picks a printable character of a class (lo, hi pairs),
+// preferring a letter or digit, then other printing characters, then a
+// space.
+func classRune(ranges []rune) rune {
+	isPrint := func(r rune) bool { return unicode.IsPrint(r) && r != ' ' }
+	isSpace := func(r rune) bool { return r == ' ' }
+	for _, want := range []func(rune) bool{unicode.IsLetter, unicode.IsDigit, isPrint, isSpace} {
+		for i := 0; i+1 < len(ranges); i += 2 {
+			for r := ranges[i]; r <= ranges[i+1] && r < ranges[i]+128; r++ {
+				if r < 0x80 && want(r) {
+					return r
+				}
+			}
+		}
+	}
+	return ranges[0]
 }

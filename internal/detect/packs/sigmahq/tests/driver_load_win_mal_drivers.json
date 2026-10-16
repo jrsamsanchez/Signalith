@@ -1,0 +1,4 @@
+{"rule": "05296024-fe8a-4baf-8f3d-9a5f5624ceb2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"Hashes":"SHA1=86f34eaea117f629297218a4d196b5729e72d7b9"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

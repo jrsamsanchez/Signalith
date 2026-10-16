@@ -15,6 +15,11 @@ import (
 // is neither this one nor root. A command run as root may use the
 // service's key, which belongs to the service.
 func keyFileWarning(path string, st os.FileInfo) string {
+	return fileWarning("The master key", path, st)
+}
+
+// fileWarning is keyFileWarning for any key file; what names it.
+func fileWarning(what, path string, st os.FileInfo) string {
 	var w []string
 	if perm := st.Mode().Perm(); perm&0o077 != 0 {
 		w = append(w, fmt.Sprintf("other accounts on this computer can read or change it (mode %04o); make it private with: chmod 600 %s", perm, path))
@@ -27,7 +32,7 @@ func keyFileWarning(path string, st os.FileInfo) string {
 	if len(w) == 0 {
 		return ""
 	}
-	return "The master key " + path + " is not private: " + strings.Join(w, "; and ")
+	return what + " " + path + " is not private: " + strings.Join(w, "; and ")
 }
 
 // accessHint says how to let Signalith read a key file it may not.

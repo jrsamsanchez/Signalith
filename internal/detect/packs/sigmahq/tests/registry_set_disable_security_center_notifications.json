@@ -1,0 +1,6 @@
+{"rule": "3ae1a046-f7db-439d-b7ce-b8b366b81fa6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"Windows\\CurrentVersion\\ImmersiveShell\\UseActionCenterExperience"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Windows\\CurrentVersion\\ImmersiveShell\\UseActionCenterExperience"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-6BA8-68FE-2F57-000000004002","ProcessId":"7476","RuleName":"-","TargetObject":"HKLM\\SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\ImmersiveShell\\UseActionCenterExperience","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 18:42:48.434"}}
+]}

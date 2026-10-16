@@ -1,0 +1,9 @@
+{"rule": "f6de9536-0441-4b3f-a646-f4e00f300ffd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"8xxx"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"Fxxxx"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"Fxx"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"8xxx","OldUacValue":"Fxxx"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4738","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"Fxxxx","OldUacValue":"5xxxx"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4738","data":{"NewUacValue":"Fxx","OldUacValue":"Fxx"}}
+]}

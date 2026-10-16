@@ -1,0 +1,8 @@
+{"rule": "75bf09fa-1dd7-4d18-9af9-dd9e492562eb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Local\\Microsoft\\Windows\\SchCache\\.sch"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\SentinelOne\\Sentinel Agent","TargetFilename":"\\Local\\Microsoft\\Windows\\SchCache\\.sch"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\\\Microsoft Office\\OUTLOOK.EXE","TargetFilename":"\\Local\\Microsoft\\Windows\\SchCache\\.sch"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Citrix\\Receiver StoreFront\\Services\\DefaultDomainServices\\Citrix.DeliveryServices.DomainServices.ServiceHost.exe","TargetFilename":"\\Local\\Microsoft\\Windows\\SchCache\\ .sch"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\LANDesk\\LDCLient\\ldapwhoami.exe","TargetFilename":"\\Local\\Microsoft\\Windows\\SchCache\\ .sch"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

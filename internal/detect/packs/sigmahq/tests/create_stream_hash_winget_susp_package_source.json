@@ -1,0 +1,5 @@
+{"rule": "a3f5c081-e75b-43a0-9f5b-51f26fe5dba2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Contents":"[ZoneTransfer]  ZoneId=3 ://1","TargetFilename":"\\AppData\\Local\\Temp\\WinGet\\ :Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"TargetFilename":"\\AppData\\Local\\Temp\\WinGet\\ :Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Contents":"[ZoneTransfer]  ZoneId=3 ://1"}}
+]}

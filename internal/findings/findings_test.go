@@ -96,7 +96,7 @@ func TestOpenSearchRequests(t *testing.T) {
 	}
 	f := &Finding{ID: "x1", Entities: map[string]any{"user": "bob", "src": "10.0.0.1"}}
 	s.Create(context.Background(), f)
-	if d.method != "PUT" || d.path != "/signalith_findings/_doc/x1?refresh=wait_for" {
+	if d.method != "PUT" || d.path != "/signalith_findings/_create/x1?refresh=wait_for" {
 		t.Errorf("%s %s", d.method, d.path)
 	}
 	b, _ := json.Marshal(d.body)

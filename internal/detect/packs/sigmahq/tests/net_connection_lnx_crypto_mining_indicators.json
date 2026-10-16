@@ -1,0 +1,4 @@
+{"rule": "a46c93b7-55ed-4d27-a41b-c259456c4746", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"xmrpool.eu"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"3","data":{}}
+]}

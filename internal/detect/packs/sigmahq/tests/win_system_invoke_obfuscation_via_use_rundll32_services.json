@@ -1,0 +1,4 @@
+{"rule": "641a4bfb-c017-44f7-800c-2aee0184ce9b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"shellexec_rundllvaluerundll32shell32.dll\u0026\u0026","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "5dfc1465-8f65-4fde-8eb5-6194380c6a62", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue","TargetObject":"\\Microsoft\\Windows\\WindowsAI\\DisableAIDataAnalysis"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"TargetObject":"\\Microsoft\\Windows\\WindowsAI\\DisableAIDataAnalysis"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"12","data":{"EventType":"DeleteValue"}}
+]}

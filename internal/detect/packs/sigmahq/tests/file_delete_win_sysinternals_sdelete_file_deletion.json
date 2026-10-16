@@ -1,0 +1,5 @@
+{"rule": "6ddab845-b1b8-49c2-bbf7-1a11967f64bc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":".AAA"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":"\\Wireshark\\radius\\dictionary.alcatel-lucent.aaa"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{}}
+]}

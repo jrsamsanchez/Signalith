@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 )
@@ -27,6 +28,11 @@ const (
 	// KindManaged is threat intel, which expires through each feed's
 	// max_age and is not managed here.
 	KindManaged = "managed"
+	// KindMonthly are monthly indices named <prefix>_<category>-YYYY.MM,
+	// such as the audit records of servers that share one OpenSearch.
+	// Only keep_days and archive apply: a month goes once its last day is
+	// older than keep_days, and the current month is never touched.
+	KindMonthly = "monthly"
 )
 
 // IDs of the categories that are not data models.
@@ -34,7 +40,13 @@ const (
 	Findings = "findings"
 	Cases    = "cases"
 	Intel    = "intel"
+	// Audit is the audit records of servers that share one OpenSearch.
+	Audit = "audit"
 )
+
+// DefaultAuditKeepDays is how long audit records are kept when the audit
+// category has no policy of its own.
+const DefaultAuditKeepDays = 400
 
 // Category is one kind of data a policy applies to.
 type Category struct {
@@ -68,6 +80,8 @@ func Categories() []Category {
 			Description: "Alerts raised by detections; only resolved and closed findings are ever deleted"},
 		Category{ID: Cases, Name: "Investigations", Kind: KindRecords,
 			Description: "Cases; only resolved and closed cases are ever deleted"},
+		Category{ID: Audit, Name: "Audit records", Kind: KindMonthly,
+			Description: "Who changed what, on every server; kept by month"},
 		Category{ID: Intel, Name: "Threat intel", Kind: KindManaged,
 			Description: "Indicators expire through each feed's max_age setting"},
 	)
@@ -139,13 +153,17 @@ func (p Policy) Problems(kind string) []string {
 	case p.KeepDays > MaxKeepDays:
 		out = append(out, fmt.Sprintf("keep_days must be at most %d (0 keeps data forever)", MaxKeepDays))
 	}
-	if kind == KindRecords {
+	if kind == KindRecords || kind == KindMonthly {
+		what := "findings and investigations, which only use keep_days"
+		if kind == KindMonthly {
+			what = "audit records, which only use keep_days and archive"
+		}
 		for _, f := range []struct {
 			name string
 			set  bool
-		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive}} {
+		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive && kind == KindRecords}} {
 			if f.set {
-				out = append(out, f.name+" does not apply to findings and investigations, which only use keep_days")
+				out = append(out, f.name+" does not apply to "+what)
 			}
 		}
 		return out
@@ -245,7 +263,7 @@ func (c Config) Problems() []string {
 		switch {
 		case !ok:
 			out = append(out, fmt.Sprintf("retention.policies.%s: unknown category; use one of %s",
-				id, strings.Join(categoryIDs(KindEvents, KindRecords), ", ")))
+				id, strings.Join(categoryIDs(KindEvents, KindRecords, KindMonthly), ", ")))
 		case cat.Kind == KindManaged:
 			out = append(out, "retention.policies.intel: threat intel indicators expire through each feed's max_age setting")
 		default:
@@ -263,15 +281,51 @@ func (c Config) Problems() []string {
 }
 
 // Saved is what the Data retention page saved, in retention.yaml next to
-// the asset and identity lists.
+// the asset and identity lists, or, when servers share their settings,
+// the shared retention policies.
 type Saved struct {
+	// Days is retention.days, which only the shared policies carry: a
+	// server with its own files reads it from signalith.yaml.
+	Days     *int              `yaml:"-"`
 	Default  *Policy           `yaml:"default,omitempty"`
 	Policies map[string]Policy `yaml:"policies,omitempty"`
 	Guard    *Guard            `yaml:"guard,omitempty"`
+	// From says, for a shared setting applied from a server's
+	// signalith.yaml, which one and when: by "days", "default", "guard"
+	// or "policies.<category>".
+	From map[string]Provenance `yaml:"-"`
+}
+
+// Provenance is where a shared setting's value came from, when not from
+// the page: Source is yaml (a server's signalith.yaml) or import (the
+// files of the server that founded the cluster).
+type Provenance struct {
+	Source string `json:"source"`
+	Node   string `json:"node,omitempty"`
+	At     string `json:"at,omitempty"`
+}
+
+// Note says where the value came from, for the page.
+func (p Provenance) Note() string {
+	what := "Applied from signalith.yaml"
+	if p.Source == "import" {
+		what = "Imported from the files"
+	}
+	if p.Node != "" {
+		what += " on " + p.Node
+	}
+	if t, err := time.Parse(time.RFC3339Nano, p.At); err == nil {
+		what += ", " + t.UTC().Format(time.DateOnly)
+	}
+	return what
 }
 
 func (s Saved) clone() Saved {
-	out := Saved{Policies: maps.Clone(s.Policies)}
+	out := Saved{Policies: maps.Clone(s.Policies), From: maps.Clone(s.From)}
+	if s.Days != nil {
+		d := *s.Days
+		out.Days = &d
+	}
 	if s.Default != nil {
 		d := *s.Default
 		out.Default = &d
@@ -290,6 +344,9 @@ func (s Saved) clone() Saved {
 // problems checks saved settings the way the page's API does.
 func (s Saved) problems() []string {
 	var out []string
+	if s.Days != nil && (*s.Days < 0 || *s.Days > MaxKeepDays) {
+		out = append(out, fmt.Sprintf("days must be between 0 and %d (0 keeps data forever)", MaxKeepDays))
+	}
 	if s.Default != nil {
 		for _, p := range s.Default.Problems(KindEvents) {
 			out = append(out, "default."+p)
@@ -343,6 +400,9 @@ type Settings struct {
 	Sources     map[string]string
 	Guard       Guard
 	GuardSource string
+	// From says where shared settings applied from a signalith.yaml came
+	// from (see Saved.From).
+	From map[string]Provenance
 }
 
 // Effective merges signalith.yaml with the page's saved settings.
@@ -354,6 +414,12 @@ func Effective(cfg Config, saved Saved) Settings {
 		Sources:       map[string]string{},
 		Guard:         Guard{}.Normalized(),
 		GuardSource:   SourceBuiltin,
+		From:          maps.Clone(saved.From),
+	}
+	if saved.Days != nil {
+		// Shared policies carry retention.days; signalith.yaml no longer
+		// sets it directly (it is applied when it changes).
+		s.Default.KeepDays = *saved.Days
 	}
 	switch {
 	case cfg.Default != nil:
@@ -389,8 +455,11 @@ func (s Settings) For(id string) (Policy, string) {
 	if p, ok := s.Policies[id]; ok {
 		return p, s.Sources[id]
 	}
-	if cat.Kind == KindRecords {
+	switch cat.Kind {
+	case KindRecords:
 		return Policy{}, SourceDefault
+	case KindMonthly:
+		return Policy{KeepDays: DefaultAuditKeepDays}, SourceDefault
 	}
 	return s.Default, SourceDefault
 }
@@ -414,6 +483,7 @@ func (s Settings) clone() Settings {
 	out := s
 	out.Policies = maps.Clone(s.Policies)
 	out.Sources = maps.Clone(s.Sources)
+	out.From = maps.Clone(s.From)
 	return out
 }
 

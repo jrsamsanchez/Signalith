@@ -1,0 +1,9 @@
+{"rule": "7195a772-4b3f-43a4-a210-6a003d65caa1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Mozilla/2.0 x"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"x (compatible;MSIE x"}},
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Erbium-UA-4ce7c27cb4be9d32e333bf032c88235a"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Mozilla/2.0 x","cs-host":".acrobat.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"x (compatible;MSIE x","cs-host":".adobe.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Erbium-UA-4ce7c27cb4be9d32e333bf032c88235a","cs-host":".adobe.io"}}
+]}

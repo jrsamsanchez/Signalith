@@ -1,0 +1,11 @@
+{"rule": "a10a2c40-2c4d-49f8-b557-1a946bc55d9d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Office\\Program Files\\STARTUP"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Excel\\XLSTART"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Program Files\\STARTUP\\Office.mdw"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Microsoft Office\\ \\winword.exe","TargetFilename":"\\Office\\Program Files\\STARTUP"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\\\OfficeClickToRun.exe","TargetFilename":"\\STARTUP\\Program Files\\Office"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Microsoft\\Excel\\XLSTART .xlt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Microsoft Office\\\\excel.exe","TargetFilename":"\\Microsoft\\Excel\\XLSTART"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":":\\Program Files\\Common Files\\Microsoft Shared\\ClickToRun\\ \\OfficeClickToRun.exe","TargetFilename":"\\Microsoft\\Excel\\XLSTART"}}
+]}

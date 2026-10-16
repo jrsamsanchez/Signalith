@@ -1,0 +1,4 @@
+{"rule": "b64a026b-8deb-4c1d-92fd-98893209dff1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"Software\\Wow6432Node\\Google\\Chrome\\Extensions jajilbjjinjmgcibalaakngmkilboobh update_url"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

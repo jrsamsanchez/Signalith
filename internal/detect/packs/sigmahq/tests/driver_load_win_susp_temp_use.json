@@ -1,0 +1,4 @@
+{"rule": "2c4523d5-d481-4ed0-8ec3-7fbf0cb41a75", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"ImageLoaded":"\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

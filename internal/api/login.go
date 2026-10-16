@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"errors"
+	"html"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -23,14 +25,19 @@ const (
 
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public.
-var publicRoutes = append([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes...)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, ssoPublicRoutes, scimPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
 func (s *Server) routeLogin(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/login", s.handleLogin)
+	// A successful sign-in says how far this server has read the shared
+	// settings, as a signed-in answer does.
+	mux.Handle("POST /api/login", s.configToken(true, http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
+	s.routeJoinPublic(mux)
+	mux.HandleFunc(ssoStartRoute, s.handleSSOStart)
+	mux.HandleFunc(ssoCallbackRoute, s.handleSSOCallback)
 	if s.UI != nil {
 		mux.HandleFunc("GET /login", s.handleLoginPage)
 		// Stylesheets, fonts, the logo and the sign-in script are public so
@@ -38,6 +45,10 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 		// Only the assets folder, never the app's own pages and scripts.
 		if assets, err := fs.Sub(s.UI, "assets"); err == nil {
 			mux.Handle("GET /assets/", http.StripPrefix("/assets", staticFiles(assets, false)))
+			if v := versionSegment(s.Version); v != "" {
+				prefix := "/v/" + v + "/assets"
+				mux.Handle("GET "+prefix+"/", versionedFiles(s.Version, false, http.StripPrefix(prefix, staticFiles(assets, false))))
+			}
 		}
 		mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/assets/favicon.svg", http.StatusMovedPermanently)
@@ -48,10 +59,14 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 // sessions sets up everything sign-in needs on first use: sessions, the
 // failed sign-in limit, and in-memory users and directory settings when
 // none were given.
-func (s *Server) sessions() *auth.Sessions {
+func (s *Server) sessions() SessionStore {
 	s.authOnce.Do(func() {
-		if s.Sessions == nil {
-			s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+		if s.SessionStore == nil {
+			if s.Sessions == nil {
+				s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+				s.Sessions.MaxAge = s.conf().SessionMaxAge()
+			}
+			s.SessionStore = MemorySessions(s.Sessions)
 		}
 		if s.Limiter == nil {
 			s.Limiter = auth.NewLimiter()
@@ -69,7 +84,7 @@ func (s *Server) sessions() *auth.Sessions {
 			s.Directory, _ = users.OpenDirectory("", nil)
 		}
 	})
-	return s.Sessions
+	return s.SessionStore
 }
 
 func (s *Server) limiter() *auth.Limiter {
@@ -156,32 +171,51 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// Code is the two-step code, sent with the password again once
+		// the first answer asked for it.
+		Code     string `json:"code"`
 		Remember bool   `json:"remember"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, err := s.signIn(r, req.Username, req.Password, "session")
+	p, err := s.signIn(r, req.Username, req.Password, req.Code, "session")
 	if err != nil {
 		writeSignInError(w, err)
 		return
 	}
-	token := s.sessions().Create(p.Username, req.Remember)
-	if p.Source == users.SourceLocal {
-		s.sessions().SetVersion(token, s.passwordStamp(p.Username))
+	token, err := s.startSession(r, p, req.Remember)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
 	}
-	c := &http.Cookie{Name: s.cookieName(r), Value: token, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)}
-	if req.Remember {
-		c.MaxAge = int(s.sessions().MaxAge.Seconds())
-	}
-	http.SetCookie(w, c)
+	s.setSessionCookie(w, r, token, req.Remember)
 	// From now on this browser can sign in to the account even while
 	// someone elsewhere is guessing its password.
 	s.rememberBrowser(w, r, req.Username, p.Username)
 	p.Method = "session"
-	writeJSON(w, http.StatusOK, meView(p))
+	s.noteMFA(p)
+	me := meView(p)
+	if p.codeUsed != nil && p.codeUsed.Kind == users.CodeRecovery {
+		// The page says how many are left.
+		me["recovery_codes_left"] = p.codeUsed.Left
+	}
+	writeJSON(w, http.StatusOK, me)
+}
+
+// startSession starts a session for p, signing in from r: with shared
+// users, in the user's session epoch as it is now, so a password changed
+// or an account disabled since ends it.
+func (s *Server) startSession(r *http.Request, p *principal, remember bool) (string, error) {
+	n := auth.NewSession{User: p.Username, Remember: remember, Method: p.Source, Epoch: p.epoch}
+	if a := s.client(r).Addr; a.IsValid() {
+		n.Client = a.String()
+	}
+	if p.Source == users.SourceLocal && s.SharedUsers == nil {
+		n.Version = s.passwordStamp(p.Username)
+	}
+	return s.sessions().Create(r.Context(), n)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -190,29 +224,31 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		if ss, ok := s.sessions().Lookup(c.Value); ok {
+		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
 			s.Log.Info("signed out", append([]any{"audit", true, "user", ss.User}, s.client(r).logAttrs()...)...)
 		}
-		s.sessions().Delete(c.Value)
+		s.sessions().Delete(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	for _, name := range []string{s.cookieName(r), s.recheckCookieName(r)} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // handleLoginPage serves the sign-in page, or sends a signed-in browser
-// to the app. A user who must choose a new password stays here, where the
-// page asks for it.
+// to the app. A user who must choose a new password or set up two-step
+// sign-in stays here, where the page asks for it.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		if ss, ok := s.sessions().Lookup(c.Value); ok {
-			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword {
+		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
+			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword && !p.MustSetupMFA {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return
 			}
 		}
 	}
-	page, err := fs.ReadFile(s.UI, "login.html")
+	page, err := s.page("login.html")
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -227,6 +263,13 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// offers the new one, hidden otherwise.
 		page = bytes.Replace(page, []byte(`id="ca-next" hidden`), []byte(`id="ca-next"`), 1)
 	}
+	if c := s.conf(); c.OIDCOn() {
+		// The single sign-on button, with its label, hidden otherwise.
+		page = bytes.Replace(page, []byte(`id="sso" hidden`), []byte(`id="sso"`), 1)
+		page = bytes.Replace(page, []byte(`<span id="sso-label">Sign in with single sign-on</span>`),
+			[]byte(`<span id="sso-label">`+html.EscapeString(c.OIDCSettings().ButtonLabel)+`</span>`), 1)
+	}
+	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(page)

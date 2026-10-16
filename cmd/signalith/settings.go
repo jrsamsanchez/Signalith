@@ -95,13 +95,16 @@ func printable(s string) string {
 // setting here, then restart Signalith.
 func cmdSettings(args []string) error {
 	const use = "usage: signalith settings list [-c file] [-file settings.yaml]\n" +
-		"       signalith settings reset [-c file] [-file settings.yaml] [key...]   (no key: every change made on the page)"
+		"       signalith settings reset [-c file] [-file settings.yaml] [key...]   (no key: every change made on the page)\n" +
+		"       signalith settings reset -local [-c file] key...   (a member of a cluster: set settings aside on this server while OpenSearch cannot be reached)"
 	if len(args) == 0 || (args[0] != "list" && args[0] != "reset") {
 		return errors.New(use)
 	}
 	fs := flag.NewFlagSet("settings "+args[0], flag.ExitOnError)
 	path := configFlag(fs)
 	fileFlag := settingsFileFlag(fs)
+	local := fs.Bool("local", false, "on a member of a cluster that shares its settings: set the settings named aside on this server only, "+
+		"for its next start, without OpenSearch")
 	fs.Parse(args[1:])
 	if err := useSettingsFile(*fileFlag); err != nil {
 		return err
@@ -114,6 +117,18 @@ func cmdSettings(args []string) error {
 		return err
 	}
 	keys := fs.Args()
+	if args[0] == "reset" {
+		// On a member whose settings are shared, they are reset in the
+		// shared settings; settings.yaml keeps only those needed to reach
+		// OpenSearch.
+		if *local {
+			if keys, err = settingsResetLocal(*path, keys); err != nil || len(keys) == 0 {
+				return err
+			}
+		} else if done, err := settingsResetShared(*path, keys); done || err != nil {
+			return err
+		}
+	}
 	_, statErr := os.Stat(file)
 	missing := errors.Is(statErr, os.ErrNotExist)
 	note := ""

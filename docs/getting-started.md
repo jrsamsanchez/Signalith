@@ -6,7 +6,7 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 # Getting started
 
-Signalith needs two things: **OpenSearch 2.x**, where events are stored, and the
+Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
 runs both for you; on Linux and Windows you install OpenSearch first and then Signalith
 next to it.
@@ -54,9 +54,20 @@ docker compose -f deploy/docker/docker-compose.yml restart signalith
 
 Settings changed on the **Settings** page are kept in the `signalith-data` volume, so
 they survive updates. To update, run `git pull` and then the `up` command again; it
-rebuilds Signalith from the new code. After a reboot everything starts again by itself
+downloads the Signalith image built from the newest code. To run a release instead, or to
+build the image from your own checkout, see
+[Running a release, or building the image yourself](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#running-a-release-or-building-the-image-yourself). After a reboot everything starts again by itself
 once Docker is running (in Docker Desktop, turn on *Start Docker Desktop when you sign
 in*).
+
+If an update stays at `Container docker-signalith-1 Stopping` for more than about two
+minutes, Docker itself is stuck, not Signalith, which stops in seconds. On Windows, quit
+Docker Desktop, run `wsl --shutdown` in PowerShell, start Docker Desktop again and run the
+`up` command again. Your data is kept. If `wsl --shutdown` hangs too, restart the
+computer, or run `taskkill /F /IM wslservice.exe` in PowerShell as administrator. It
+happens most when the computer is short of memory; the README's
+[Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#docker-evaluation)
+shows how to give WSL a fixed share of memory in `.wslconfig`.
 
 !!! note "Coming from an older quick start?"
     Earlier versions served plain HTTP and took the admin password from
@@ -66,7 +77,7 @@ in*).
 
 ## Try it with sample data
 
-No logs to hand? On the **Add data** page (under Configure, admins only), **Load sample
+No logs to hand? On the **Add data** page (under Data, admins only), **Load sample
 data** fills Signalith with a week of made-up activity for a fictional company, with a
 handful of attacks hidden in it, so detections fire, the triage queue fills, risk builds
 up, threat intel matches and the dashboards light up. Everything is fictional and kept
@@ -80,7 +91,7 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
 
 ## Linux
 
-1. Install OpenSearch 2.x
+1. Install OpenSearch 2.x or 3.x
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
 
@@ -122,7 +133,7 @@ Older versions cannot read encrypted values: before going back to one, run
 
 ## Windows
 
-1. Install OpenSearch 2.x for Windows
+1. Install OpenSearch 2.x or 3.x for Windows
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
 2. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:

@@ -1,0 +1,6 @@
+{"rule": "a2863fbc-d5cb-48d5-83fb-d976d4b1743b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","TargetObject":"\\UserAuthentication"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\UserAuthentication"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000000)","EventType":"SetValue","Image":"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","ProcessGuid":"570E49AA-32FA-6A94-740B-000000001800","ProcessId":"2292","RuleName":"technique_id=T1112,technique_name=Modify Registry","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\Terminal Server\\fDenyTSConnections","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-30 13:41:16.513"}}
+]}

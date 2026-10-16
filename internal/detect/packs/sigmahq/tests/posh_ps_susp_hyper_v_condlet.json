@@ -1,0 +1,5 @@
+{"rule": "42d36aa1-3240-4db0-8257-e0118dcdd9cd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Start-VM"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"6003e89a-6f39-4365-8490-1480c6c96236","ScriptBlockText":"\u0026 {Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -ParticipateInCEIP:$false -Confirm:$false \nConnect-VIServer -Server atomic.local -User root -Password pass\nGet-VMHostService -VMHost atomic.local | Where-Object {$_.Key -eq \"TSM-SSH\" } | Start-VMHostService -Confirm:$false}"}}
+]}

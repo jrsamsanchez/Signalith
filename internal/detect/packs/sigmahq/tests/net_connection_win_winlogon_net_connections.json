@@ -1,0 +1,6 @@
+{"rule": "7610a4ea-c06d-495f-a2ac-0a696abcfd3b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\winlogon.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationIp":"10.0.0.1","Image":"\\winlogon.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Image":"\\winlogon.exe"}}
+]}

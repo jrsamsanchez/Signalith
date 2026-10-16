@@ -31,7 +31,7 @@ func runtimeMappings() map[string]any {
 		"dynamic": "false",
 		"properties": map[string]any{
 			"kind": kw, "node": kw, "node_id": kw, "state": kw, "target": kw, "detection_id": kw,
-			"group_key": kw, "user": kw, "agent": kw,
+			"group_key": kw, "user": kw, "agent": kw, "name": kw,
 			"epoch": long, "lease_epoch": long,
 			"until": date, "at": date, "last_seen": date, "expires_at": date, "heartbeat_at": date,
 			"body": map[string]any{"type": "object", "enabled": false},
@@ -97,10 +97,20 @@ const (
 	// FeatureSampleData: the background jobs leave the one-click sample
 	// data out (the scheduled detections and the threat intel feeds).
 	FeatureSampleData = "sample_data"
+	// FeatureIndexedAt: the heartbeat says when the server last stored an
+	// event (IndexedAt), so one without it has stored none.
+	FeatureIndexedAt = "indexed_at"
+	// FeatureDrain: the server runs drain, resume and the other requests
+	// of adding and removing servers, so the Servers page offers them.
+	FeatureDrain = "drain"
+	// FeatureYieldNewer: the server running the background jobs hands
+	// them to a server that runs a newer version once it is ready (see
+	// maybeYield), so upgrade-check need not ask for the leader last.
+	FeatureYieldNewer = "yield_newer"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData}
+var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain, FeatureYieldNewer}
 
 // Server states in heartbeats.
 const (
@@ -127,7 +137,15 @@ const (
 	// page, while OpenSearch answers but turns it away (OSInfo.Problem
 	// says how).
 	StateRefused = "refused"
+	// StateDraining is a server an admin drained: it tells load
+	// balancers it wants no traffic (/readyz answers 503), gave the
+	// background jobs up and takes none until it is resumed.
+	StateDraining = "draining"
 )
+
+// RoleScanner is the role of a server that only scans the networks picked
+// for it, and never runs the background jobs (cluster.role).
+const RoleScanner = "scanner"
 
 // Heartbeat is a server's document in the runtime index, node:<node_id>,
 // rewritten every 10 seconds.
@@ -149,6 +167,9 @@ type Heartbeat struct {
 	NodeURL       string `json:"node_url,omitempty"`
 	Listen        string `json:"listen,omitempty"`
 	Syslog        Syslog `json:"syslog"`
+	// Role is what the server is for: "" a cluster server, RoleScanner a
+	// scanner, which only scans its network zone (cluster.role).
+	Role string `json:"role,omitempty"`
 	// LeaderEligible is true when this server may run the background
 	// jobs, and NotEligible says why not otherwise.
 	LeaderEligible bool   `json:"leader_eligible"`
@@ -177,6 +198,164 @@ type Heartbeat struct {
 	// Features lists what this server's version can do that an older one
 	// cannot, where another server must know it (see FeatureSampleData).
 	Features []string `json:"features,omitempty"`
+	// IndexedAt is the last time this server stored an event; nil before
+	// the first, and from versions before it was kept, which do not list
+	// FeatureIndexedAt (see Node.IndexingServers).
+	IndexedAt *time.Time `json:"indexed_at,omitempty"`
+	// Mode is how the server uses the shared configuration (shared.Mode),
+	// "" from versions before it; ClusterKID the cluster key it signs
+	// with; ConfigSeq how far it has read the config index; MaxRev the
+	// highest revision of a shared document it applied (accept-restore
+	// goes above every server's).
+	Mode       string `json:"mode,omitempty"`
+	ClusterKID string `json:"cluster_kid,omitempty"`
+	ConfigSeq  int64  `json:"config_seq,omitempty"`
+	MaxRev     int64  `json:"max_rev,omitempty"`
+	// NeedsUpgrade lists the shared documents a newer version wrote, and
+	// Tamper those changed in OpenSearch outside Signalith: the server
+	// keeps its last good copy of each.
+	NeedsUpgrade []string `json:"needs_upgrade,omitempty"`
+	Tamper       []string `json:"tamper,omitempty"`
+	// SettingsDrift lists, per source, the shared settings whose value in
+	// the server's file or environment differs from the one in use.
+	SettingsDrift map[string][]string `json:"settings_drift,omitempty"`
+	// LevelMin and LevelMax are the levels of the stored formats the
+	// server's version reads.
+	LevelMin int `json:"level_min,omitempty"`
+	LevelMax int `json:"level_max,omitempty"`
+	// RestartNeeded lists the settings whose value the server would use
+	// differs from the one it runs: they apply at its next restart.
+	// SettingsRefused lists the shared settings it could not use, so it
+	// keeps its own value of each.
+	RestartNeeded   []string `json:"restart_needed,omitempty"`
+	SettingsRefused []string `json:"settings_refused,omitempty"`
+	// SettingsRev is how far the server has applied the shared settings
+	// and its own settings (its nodecfg), nil from versions before they
+	// were shared.
+	SettingsRev *SettingsRev `json:"settings_rev,omitempty"`
+	// Restart is the server's restart run by request, nil when it has run
+	// none and runs none now.
+	Restart *RestartStatus `json:"restart,omitempty"`
+	// Traffic is what the server received from agents and syslog, nil
+	// from versions before it was kept (see Traffic).
+	Traffic *Traffic `json:"traffic,omitempty"`
+	// TLS is the certificate authority the server's HTTPS certificate
+	// comes from, nil from versions before it was reported.
+	TLS *TLSStatus `json:"tls_ca,omitempty"`
+	// KeyIDs are the ids of the cluster keys the server has and accepts,
+	// so a key rotation knows who picked the new key up; nil from
+	// versions before rotations.
+	KeyIDs []string `json:"key_ids,omitempty"`
+	// OSIdentity is who the server signs in to OpenSearch as, nil from
+	// versions before it was reported.
+	OSIdentity *OSIdentityStatus `json:"os_identity,omitempty"`
+	// Upgrade is what the server says of rolling upgrades, nil when it
+	// has nothing to say or its version predates it.
+	Upgrade *UpgradeStatus `json:"upgrade,omitempty"`
+}
+
+// UpgradeStatus is what a server's heartbeat says of rolling upgrades.
+type UpgradeStatus struct {
+	// Busy names a step of the background jobs that must not be cut
+	// short, such as "retention run", while one runs.
+	Busy string `json:"busy,omitempty"`
+	// YieldedTo is the server this one last handed the background jobs
+	// to because it runs a newer version, at YieldedAt.
+	YieldedTo string     `json:"yielded_to,omitempty"`
+	YieldedAt *time.Time `json:"yielded_at,omitempty"`
+}
+
+// OSIdentityStatus is who a server signs in to OpenSearch as, as its
+// heartbeat carries it (internal/clusterpki).
+type OSIdentityStatus struct {
+	// CN is its client certificate's common name and NotAfter when that
+	// expires; User the user name it signs in with instead, if any.
+	CN       string     `json:"cn,omitempty"`
+	NotAfter *time.Time `json:"not_after,omitempty"`
+	User     string     `json:"user,omitempty"`
+	// Managed is true when the certificate is its own, issued by the
+	// cluster; Shared when it signs in as other servers may (the shared
+	// CN=signalith certificate, or a user name and password).
+	Managed bool `json:"managed,omitempty"`
+	Shared  bool `json:"shared,omitempty"`
+	// CASHA256 is the fingerprint of the OpenSearch certificate authority
+	// the cluster keeps, "" when it keeps none.
+	CASHA256 string `json:"ca_sha256,omitempty"`
+	// Problem says why it could not hand over the certificate authority
+	// or get, or renew, its own certificate, "" when nothing went wrong.
+	Problem string `json:"problem,omitempty"`
+	// CRL is the revocation list OpenSearch checks client certificates
+	// against (opensearch.crl_file), nil when none is set.
+	CRL *CRLStatus `json:"crl,omitempty"`
+}
+
+// CRLStatus is the revocation list a server keeps for OpenSearch.
+type CRLStatus struct {
+	File string `json:"file"`
+	// Revoked is how many certificates it names, and NextUpdate when it
+	// expires.
+	Revoked    int        `json:"revoked"`
+	NextUpdate *time.Time `json:"next_update,omitempty"`
+	// Problem says what is wrong with it: OpenSearch refuses every
+	// certificate sign-in while the list it checks is missing or expired.
+	Problem string `json:"problem,omitempty"`
+}
+
+// TLSStatus is the certificate authority a server's HTTPS certificate
+// comes from and the names it covers, as its heartbeat carries it, for
+// the choice of the cluster's one certificate authority.
+type TLSStatus struct {
+	// Mode is the server's server.tls.mode: auto (Signalith's own
+	// certificate authority) or files (the admin's certificate).
+	Mode string `json:"mode"`
+	// CASHA256 is the fingerprint of the certificate authority in use and
+	// CACertPEM the certificate itself (its name constraints say which
+	// servers it can vouch for); both empty when the certificate chains
+	// to a public certificate authority.
+	CASHA256  string `json:"ca_sha256,omitempty"`
+	CACertPEM string `json:"ca_cert_pem,omitempty"`
+	// Cluster is true when it is the cluster's certificate authority.
+	Cluster bool `json:"cluster,omitempty"`
+	// Names are the names the certificate covers, and Outside those it
+	// should but the certificate authority may not sign.
+	Names   []string `json:"names,omitempty"`
+	Outside []string `json:"outside,omitempty"`
+	// CoversShared is true when the certificate covers the cluster's
+	// shared address (or there is none).
+	CoversShared bool `json:"covers_shared"`
+	// ChangePending is true while a change of the server's own certificate
+	// authority is prepared or the previous one is kept: it takes the
+	// cluster's only once that is finished or cancelled. AdoptError says
+	// why it has not taken the cluster's, "" when it has or there is none.
+	ChangePending bool   `json:"change_pending,omitempty"`
+	AdoptError    string `json:"adopt_error,omitempty"`
+	// LeafExpires is when the certificate expires.
+	LeafExpires *time.Time `json:"leaf_expires,omitempty"`
+}
+
+// SettingsRev is the revisions of the settings document and of a server's
+// nodecfg document that the server applied.
+type SettingsRev struct {
+	Settings int64 `json:"settings"`
+	NodeCfg  int64 `json:"nodecfg"`
+}
+
+// RestartStatus is a server's restart run by request: Busy while one runs,
+// and how the last one ended.
+type RestartStatus struct {
+	Busy bool           `json:"busy"`
+	Last *RestartResult `json:"last,omitempty"`
+}
+
+// RestartResult is how a restart ended: OK when the server serves with the
+// new settings, else Error, and RolledBack when it went back to the ones
+// it ran before; Keys are the settings it was for.
+type RestartResult struct {
+	At         time.Time `json:"at"`
+	OK         bool      `json:"ok"`
+	Error      string    `json:"error,omitempty"`
+	RolledBack bool      `json:"rolled_back,omitempty"`
+	Keys       []string  `json:"keys,omitempty"`
 }
 
 // SecuritySummary is a server's last security check, as its heartbeat
@@ -244,9 +423,16 @@ type Fingerprints struct {
 	// Notify is the notification channels and rules; "" when a server
 	// has none.
 	Notify string `json:"notify,omitempty"`
+	// Playbooks is the playbooks; "" when a server has none.
+	Playbooks string `json:"playbooks,omitempty"`
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
+	// Users is the users and the directory sign-in settings in the
+	// server's own files. The background jobs do not use them, so it is
+	// not part of Combined or Differ: it names the servers whose users a
+	// late import of the users leaves out (shared.LateImport).
+	Users string `json:"users,omitempty"`
 	// Unknown is true when they could not be worked out in time: the
 	// archive folder's share may not answer.
 	Unknown bool `json:"-"`
@@ -265,25 +451,52 @@ func (f Fingerprints) Combined() string {
 		h.Write([]byte("notify:" + f.Notify))
 		h.Write([]byte{0})
 	}
+	if f.Playbooks != "" {
+		h.Write([]byte("playbooks:" + f.Playbooks))
+		h.Write([]byte{0})
+	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+}
+
+// SharedPrefix starts the fingerprint of the parts a member of the
+// cluster takes from the shared settings rather than its files:
+// "shared:<cluster id>". Two members of one cluster always match on
+// them; a server that keeps them in its own files (an older version, or
+// one not part of the cluster yet) never matches a member.
+const SharedPrefix = "shared:"
+
+// SharedFingerprint is the fingerprint of the shared parts of a member
+// of the cluster clusterID.
+func SharedFingerprint(clusterID string) string { return SharedPrefix + clusterID }
+
+// differWords names a part that differs, saying so when one of the two
+// servers keeps it in its own files and the other shares it.
+func differWords(what, a, b string) string {
+	if strings.HasPrefix(a, SharedPrefix) != strings.HasPrefix(b, SharedPrefix) {
+		return what + " (one server keeps them in its own files: an older version, or not part of the cluster yet)"
+	}
+	return what
 }
 
 // Differ lists the parts that differ between f and o, in words: "retention
 // policies", "threat intel feeds", "detections folder", "notification
-// channels", "archive folder".
+// channels", "playbooks", "archive folder".
 func (f Fingerprints) Differ(o Fingerprints) []string {
 	var out []string
 	if f.Retention != o.Retention {
-		out = append(out, "retention policies")
+		out = append(out, differWords("retention policies", f.Retention, o.Retention))
 	}
 	if f.Feeds != o.Feeds {
-		out = append(out, "threat intel feeds")
+		out = append(out, differWords("threat intel feeds", f.Feeds, o.Feeds))
 	}
 	if f.Detections != o.Detections {
 		out = append(out, "detections folder")
 	}
 	if f.Notify != o.Notify {
 		out = append(out, "notification channels")
+	}
+	if f.Playbooks != o.Playbooks {
+		out = append(out, "playbooks")
 	}
 	if f.Archives != o.Archives {
 		out = append(out, "archive folder")

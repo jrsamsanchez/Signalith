@@ -1,0 +1,32 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+# Fetches the Suricata rule tuning set on Signalith (Settings > Network
+# sensors) with the sensor's token and, only when it changed, has
+# suricata-update rebuild and test the rules with it; a failed test keeps
+# the tuning in use. It runs as root and writes only root's folders.
+[Unit]
+Description=Signalith sensor: fetch the Suricata rule tuning
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# A rules update that hangs (a rule pattern that never ends) is stopped,
+# so it cannot hold the rules lock and stop every later update; each
+# suricata-update run is limited to 15 minutes by the script itself.
+TimeoutStartSec=1h
+ExecStart=/usr/lib/signalith-sensor/rules-update.sh tuning
+# The sensor's token, to fetch the tuning (only root reads the file).
+EnvironmentFile=/etc/signalith-sensor/token.env
+# With --docker, the docker command keeps its settings here.
+Environment=DOCKER_CONFIG=/var/lib/signalith-sensor/docker
+NoNewPrivileges=yes
+ProtectSystem=strict
+# The rules and the tuning are readable by all: the suricata user reads
+# them.
+UMask=0022
+ReadWritePaths=/var/lib/signalith-sensor -/run/suricata -/run/docker.sock
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

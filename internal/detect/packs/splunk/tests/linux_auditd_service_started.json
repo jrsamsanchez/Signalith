@@ -1,0 +1,9 @@
+{"rule": "b5eed06d-5c97-4092-a3a1-fa4b7e77c71a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x  start x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x service  x x  enable x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x systemctl  x x  start y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x service  x x  enable y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:25.807:44757) : proctitle=systemctl start atd"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 13:06:22.957:103637) : proctitle=systemctl start atd"}}
+]}

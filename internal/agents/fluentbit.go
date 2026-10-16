@@ -9,22 +9,45 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 )
 
+// WebAccessLogs are the access logs of Apache (Debian and Red Hat
+// layouts, virtual hosts included) and Nginx that the Linux agents read.
+var WebAccessLogs = []string{"/var/log/nginx/*access*.log", "/var/log/apache2/*access*.log", "/var/log/httpd/*access_log"}
+
+// AuditLogPath is where auditd writes the Linux audit log.
+const AuditLogPath = "/var/log/audit/audit.log"
+
+// auditdStep says how to have auditd record the programs that run, which
+// the audit log rules of the detection packs read.
+const auditdStep = "Optional, for the Linux audit log rules: install auditd (sudo apt install auditd, or sudo dnf install audit) and have it record every program run, for example with sudo auditctl -a always,exit -F arch=b64 -S execve -k exec (add the same line to /etc/audit/rules.d/signalith.rules to keep it after a restart)"
+
+// TokenPlaceholder stands for the agent token in a configuration made for
+// the Add data page, which puts a new token in its place when the
+// configuration is copied or downloaded (see internal/agenttokens). It
+// needs no quoting in any of the configurations or scripts.
+const TokenPlaceholder = "@@AGENT_TOKEN@@"
+
 // Options select what an agent collects.
 type Options struct {
-	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector) or "osquery"
+	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail), "azure" (a Collector reading Entra ID's and Azure's event hub), "gcp" (a Collector reading Google Cloud's audit logs from Pub/Sub) or "osquery"
 	ServerURL string // Signalith public URL
-	Token     string // ingest token
+	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
-	// "journal" (systemd journal, for distros without rsyslog) or "wazuh"
-	// (tail a Wazuh manager's alerts.json; Fluent Bit only).
+	// "journal" (systemd journal, for distros without rsyslog), "wazuh"
+	// (tail a Wazuh manager's alerts.json; Fluent Bit only) or "sensor"
+	// (tail Zeek's logs and Suricata's eve.json on a network sensor).
 	LinuxSource string
-	// Sysmon adds the Sysmon operational channel on Windows.
+	// Sysmon adds the Sysmon operational channel on Windows, and Sysmon
+	// for Linux's events (from the systemd journal) on Linux.
 	Sysmon bool
+	// PowerShell adds Windows PowerShell's operational channel, where
+	// script block logging writes the scripts that run (event 4104).
+	PowerShell bool
 	// CollectorOS is where the OpenTelemetry Collector runs, for OS
 	// "otel": "linux" (the default) or "windows".
 	CollectorOS string
@@ -48,11 +71,225 @@ type Options struct {
 	// any other CA, an agent that reaches the server by IP address checks
 	// the certificate against the first one it can use (see VerifyName).
 	CertNames []string
+	// Version is the Signalith version that made the configuration, and
+	// CAPin the first 16 hex digits (lower case) of the SHA-256 of the
+	// certificate authority it pins, "" when it pins none. NextCAPin is
+	// the one prepared to replace it, when CA has both. The agent sends
+	// them with every batch (X-Signalith-Config), so the Endpoints page
+	// can tell which agents need a new configuration.
+	Version   string
+	CAPin     string
+	NextCAPin string
+	// Recycle, when above zero, closes each kept-alive connection to the
+	// server after that many batches (Fluent Bit's
+	// net.keepalive_max_recycle), so agents behind a load balancer spread
+	// over the servers again after one comes back. Set only with several
+	// servers; zero leaves the configuration as before.
+	Recycle int
+	// For LinuxSource "sensor": which tools run on the host and where
+	// they write (SensorZeekDir and SensorEVEPath when empty). At least
+	// one of Zeek and Suricata.
+	Zeek, Suricata   bool
+	ZeekDir, EVEPath string
+	// SuricataProtocols also sends Suricata's dns, http, tls and flow
+	// events when Zeek runs too (off: Zeek covers them, and sending both
+	// would count each connection twice).
+	SuricataProtocols bool
+	// For OS "aws" (an OpenTelemetry Collector that reads AWS CloudTrail):
+	// the S3 bucket CloudTrail writes to and the URL of the SQS queue S3
+	// tells about each new file. Examples stand in for them until given.
+	AWSBucket, AWSQueueURL string
+	// For OS "gcp" (an OpenTelemetry Collector that reads Google Cloud's
+	// audit logs): the project and the Pub/Sub subscription a log sink's
+	// topic feeds. Examples stand in for them until given.
+	GCPProject, GCPSubscription string
+	// SensorLayout is how a sensor built by the sensor install script
+	// (deploy/sensor/install.sh) lays out its files: SensorPackages or
+	// SensorDocker. "" is a box the admin set up (Add data's "I already
+	// run Zeek or Suricata"), whose agent is Fluent Bit's own package.
+	// With a layout the script is the steps, so the Agent has none.
+	SensorLayout string
+	// Heartbeat also sends the sensor's status line, written every 5
+	// minutes by the install script's timer (tag SensorStatusTag).
+	Heartbeat bool
+}
+
+// Sensor layouts (Options.SensorLayout).
+const (
+	SensorPackages = "packages"
+	SensorDocker   = "docker"
+)
+
+// EnvToken is the agent token as the sensor install script's Fluent Bit
+// reads it: from its systemd EnvironmentFile (or Docker's env_file), so
+// the configuration itself holds no secret.
+const EnvToken = "${SIGNALITH_TOKEN}"
+
+// SensorStatusTag is the tag of a sensor's status line (its heartbeat).
+const SensorStatusTag = "sensor.status"
+
+// sensorFiles are where a sensor keeps what Fluent Bit reads and writes.
+type sensorFiles struct {
+	ca, storage, db, zeekDir, eve, status string
+}
+
+// layoutFiles returns the files of a sensor layout: the install script's
+// (packages), the same inside the Fluent Bit container (docker), or
+// Fluent Bit's own package's on a box the admin set up ("").
+func layoutFiles(layout string) sensorFiles {
+	switch layout {
+	case SensorPackages:
+		// Suricata writes in a folder of its own there, which only the
+		// script's log rotation handles (the package's own rotates
+		// /var/log/suricata/*.json).
+		return sensorFiles{ca: "/etc/signalith-sensor/ca.pem", storage: "/var/lib/signalith-sensor/agent/buffer", db: "/var/lib/signalith-sensor/agent",
+			zeekDir: SensorZeekDir, eve: "/var/log/suricata/signalith/eve.json", status: "/var/log/signalith-sensor/status.json"}
+	case SensorDocker:
+		return sensorFiles{ca: "/config/ca.pem", storage: "/buffer/signalith-buffer", db: "/buffer",
+			zeekDir: "/logs/zeek/current", eve: "/logs/suricata/eve.json", status: "/logs/status/status.json"}
+	}
+	return sensorFiles{ca: LinuxCAPath, storage: "/var/lib/fluent-bit/signalith-buffer", db: "/var/lib/fluent-bit",
+		zeekDir: SensorZeekDir, eve: SensorEVEPath, status: "/var/log/signalith-sensor/status.json"}
+}
+
+// SensorZeekDir and SensorEVEPath are where Zeek's packages and Suricata
+// write by default.
+const (
+	SensorZeekDir = "/opt/zeek/logs/current"
+	SensorEVEPath = "/var/log/suricata/eve.json"
+)
+
+// FieldError is an option that cannot go into a configuration; Field
+// names the query value it came from, so the page can show it there.
+type FieldError struct {
+	Field string
+	Err   error
+}
+
+func (e *FieldError) Error() string { return e.Err.Error() }
+func (e *FieldError) Unwrap() error { return e.Err }
+
+// maxSensorPath is the longest folder or file path written into a sensor
+// configuration.
+const maxSensorPath = 200
+
+// sensorPath checks a folder or file path written into the config:
+// absolute (a Linux path, whatever system Signalith runs on), only
+// letters, digits and . _ / -, no "..", at most maxSensorPath bytes. It is
+// strict because the path is written into a config file as it is.
+func sensorPath(p string) error {
+	switch {
+	case p == "":
+		return errors.New("the path is empty")
+	case len(p) > maxSensorPath:
+		return fmt.Errorf("the path is longer than %d characters", maxSensorPath)
+	case !strings.HasPrefix(p, "/"):
+		return errors.New("use a full path that starts with /, such as " + SensorZeekDir)
+	case strings.Contains(p, ".."):
+		return errors.New("the path must not contain ..")
+	}
+	for _, c := range p {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '/' || c == '-') {
+			return fmt.Errorf("the path may only contain letters, digits and . _ / - (not %q)", c)
+		}
+	}
+	return nil
+}
+
+// sensorOptions checks the sensor options and fills in the default paths.
+func sensorOptions(o *Options) error {
+	if !o.Zeek && !o.Suricata {
+		return &FieldError{Field: "tools", Err: errors.New("pick Zeek, Suricata or both: the tools that run on the sensor")}
+	}
+	switch o.SensorLayout {
+	case "", SensorPackages, SensorDocker:
+	default:
+		return &FieldError{Field: "layout", Err: fmt.Errorf("unknown sensor layout %q; use packages or docker", o.SensorLayout)}
+	}
+	files := layoutFiles(o.SensorLayout)
+	if o.ZeekDir == "" {
+		o.ZeekDir = files.zeekDir
+	}
+	if o.EVEPath == "" {
+		o.EVEPath = files.eve
+	}
+	o.ZeekDir = strings.TrimSuffix(o.ZeekDir, "/")
+	if o.Zeek {
+		if err := sensorPath(o.ZeekDir); err != nil {
+			return &FieldError{Field: "zeek_dir", Err: fmt.Errorf("Zeek logs folder: %w", err)}
+		}
+	}
+	if o.Suricata {
+		if err := sensorPath(o.EVEPath); err != nil {
+			return &FieldError{Field: "eve_path", Err: fmt.Errorf("Suricata EVE file: %w", err)}
+		}
+	}
+	return nil
+}
+
+// sensorInput is a tail input for a network sensor's JSON log: each line
+// is sent as it is and Signalith decodes it, so no parsers file is
+// needed. Lines up to 500 KB are read and longer ones skipped: each line
+// travels as a JSON string, where escaping can double its size, and
+// Signalith refuses a whole request holding a record over 1 MB, which
+// Fluent Bit would then retry for ever.
+func sensorInput(tag, path, db string, extra ...[2]string) string {
+	kv := [][2]string{{"Name", "tail"}, {"Tag", tag}, {"Path", path}}
+	kv = append(kv, extra...)
+	kv = append(kv, [][2]string{
+		{"DB", db},
+		{"Refresh_Interval", "10"},
+		{"Rotate_Wait", "30"},
+		{"Buffer_Chunk_Size", "64k"},
+		{"Buffer_Max_Size", "500k"},
+		{"Skip_Long_Lines", "On"},
+		{"Mem_Buf_Limit", "50MB"},
+		{"storage.type", "filesystem"},
+	}...)
+	return section("INPUT", kv)
+}
+
+// zeekSite is where a Zeek installed above the folder its logs are in
+// keeps local.zeek and zeekctl, and true; or how to find them, and false,
+// when the logs are elsewhere. zeekctl is in Zeek's own bin folder, which
+// is on neither PATH nor sudo's search path.
+func zeekSite(logDir string) (site, zeekctl string, ok bool) {
+	if base, ok := strings.CutSuffix(logDir, "/logs/current"); ok && base != "" {
+		return base + "/share/zeek/site/local.zeek", base + "/bin/zeekctl", true
+	}
+	return "share/zeek/site/local.zeek in Zeek's install folder (such as /opt/zeek)", "bin/zeekctl in Zeek's install folder (such as /opt/zeek/bin/zeekctl)", false
+}
+
+// securityOnion reports whether a log path is Security Onion's (/nsm/...),
+// whose Zeek and Suricata run in containers it manages and already write
+// JSON with Community ID.
+func securityOnion(path string) bool {
+	return strings.HasPrefix(path, "/nsm/")
+}
+
+// ConfigHeader is the value of the X-Signalith-Config header for a
+// configuration made by version that pins the CAs pins (none, or "" for
+// none): "ca=<pin>,<pin>;v=<version>", or "v=<version>" alone.
+func ConfigHeader(version string, pins ...string) string {
+	if version == "" {
+		version = "dev"
+	}
+	pins = slices.DeleteFunc(slices.Clone(pins), func(p string) bool { return p == "" })
+	if len(pins) == 0 {
+		return "v=" + version
+	}
+	return "ca=" + strings.Join(pins, ",") + ";v=" + version
 }
 
 // ErrNoNameToCheck is returned when an agent would reach the server by IP
 // address with nothing to tie the certificate to this server.
 var ErrNoNameToCheck = errors.New("agents can't check that the certificate belongs to this server")
+
+// fluentBitLinuxInstall says where to install Fluent Bit on Linux from:
+// its packages are signed, while piping a script from a moving branch
+// into a root shell runs whatever that branch holds at the time.
+const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/linux " +
+	"(they add packages.fluentbit.io with its signing key, then install the fluent-bit package)"
 
 // Where the agent keeps the CA certificate it checks the server with.
 const (
@@ -171,17 +408,28 @@ func IsLoopback(u *url.URL) bool {
 // Generate returns a Fluent Bit config and install steps.
 func Generate(o Options) (*Agent, error) {
 	switch o.OS {
-	case "otel":
+	case "otel", "aws", "azure", "gcp":
 		return generateOTel(o)
 	case "osquery":
 		return generateOsquery(o)
+	}
+	sensor := o.OS == "linux" && o.LinuxSource == "sensor"
+	if sensor {
+		if err := sensorOptions(&o); err != nil {
+			return nil, err
+		}
 	}
 	u, err := ParseServerURL(o.ServerURL)
 	if err != nil {
 		return nil, fmt.Errorf("server address %q: %w", o.ServerURL, err)
 	}
 	if o.Token == "" {
-		return nil, fmt.Errorf("no ingest token configured; add one under ingest.tokens")
+		return nil, errors.New("no agent token given")
+	}
+	// The one variable a configuration may read its token from; anything
+	// else with a $ would be read by Fluent Bit as another variable.
+	if strings.Contains(o.Token, "$") && o.Token != EnvToken || strings.ContainsFunc(o.Token, unicode.IsSpace) {
+		return nil, fmt.Errorf("the agent token must be a token or %s", EnvToken)
 	}
 	host := u.Hostname()
 	port := u.Port()
@@ -218,15 +466,78 @@ func Generate(o Options) (*Agent, error) {
 		a.ConfigPath = "/etc/fluent-bit/fluent-bit.conf"
 		if o.LinuxSource == "wazuh" {
 			b.WriteString("# Signalith agent for a Wazuh manager: sends its alerts. Generated by Signalith.\n")
+		} else if sensor {
+			b.WriteString("# Signalith agent for a network sensor (Zeek, Suricata). Generated by Signalith.\n")
 		} else {
 			b.WriteString("# Signalith agent for Linux, generated by Signalith.\n")
 		}
+		files := layoutFiles("")
+		if sensor {
+			files = layoutFiles(o.SensorLayout)
+		}
 		b.WriteString(section("SERVICE", [][2]string{
 			{"Flush", "5"}, {"Log_Level", "info"},
-			{"storage.path", "/var/lib/fluent-bit/signalith-buffer"},
+			{"storage.path", files.storage},
 			{"storage.sync", "normal"},
 		}))
-		if o.LinuxSource == "wazuh" {
+		if sensor {
+			// Zeek writes one JSON object per line in a file per log type;
+			// the tag expands to the file's path (zeek.opt.zeek.logs.
+			// current.conn.log), which tells Signalith the log type. Its
+			// own housekeeping logs say nothing about the network.
+			if o.Zeek {
+				b.WriteString(sensorInput("zeek.*", o.ZeekDir+"/*.log", files.db+"/signalith-zeek.db",
+					[2]string{"Exclude_Path", "*loaded_scripts.log,*packet_filter.log,*stderr.log,*stdout.log,*print.log"}))
+			}
+			if o.Suricata {
+				b.WriteString(sensorInput("suricata.eve", o.EVEPath, files.db+"/signalith-suricata.db"))
+			}
+			// The status line every 5 minutes: one short line, so small
+			// buffers do.
+			if o.Heartbeat {
+				b.WriteString(section("INPUT", [][2]string{
+					{"Name", "tail"}, {"Tag", SensorStatusTag}, {"Path", files.status},
+					{"DB", files.db + "/signalith-status.db"},
+					{"Refresh_Interval", "10"},
+					{"Rotate_Wait", "30"},
+					{"Buffer_Chunk_Size", "16k"},
+					{"Buffer_Max_Size", "64k"},
+					{"Skip_Long_Lines", "On"},
+					{"Mem_Buf_Limit", "1MB"},
+					{"storage.type", "filesystem"},
+				}))
+			}
+			// With Zeek there too, Suricata sends only what Zeek does not
+			// log (alerts, anomalies, files, stats), so each connection is
+			// counted once.
+			if o.Zeek && o.Suricata && !o.SuricataProtocols {
+				b.WriteString(section("FILTER", [][2]string{
+					{"Name", "grep"}, {"Match", "suricata.eve"},
+					{"Exclude", `log "event_type":"(flow|netflow|dns|http|tls)"`},
+				}))
+			}
+			// The lines carry no host name (Suricata's only when its
+			// sensor-name is set), so the sensor's is added. A sensor the
+			// install script built is named by --name, which its unit (or
+			// container) gives Fluent Bit as HOSTNAME; elsewhere it is the
+			// computer's name.
+			for _, m := range []string{"zeek.*", "suricata.*", "sensor.*"} {
+				if m == "zeek.*" && !o.Zeek || m == "suricata.*" && !o.Suricata || m == "sensor.*" && !o.Heartbeat {
+					continue
+				}
+				if o.SensorLayout != "" {
+					b.WriteString(section("FILTER", [][2]string{
+						{"Name", "record_modifier"}, {"Match", m},
+						{"Record", "hostname ${HOSTNAME}"},
+					}))
+					continue
+				}
+				b.WriteString(section("FILTER", [][2]string{
+					{"Name", "sysinfo"}, {"Match", m},
+					{"hostname_key", "hostname"},
+				}))
+			}
+		} else if o.LinuxSource == "wazuh" {
 			// The manager writes one JSON alert per line. The line is sent
 			// as it is, under the Wazuh tag, and Signalith decodes it, so
 			// no parsers file is needed. Alerts can be long (full_log), so
@@ -241,7 +552,7 @@ func Generate(o Options) (*Agent, error) {
 				{"storage.type", "filesystem"},
 			}))
 		} else if o.LinuxSource == "journal" {
-			b.WriteString(section("INPUT", [][2]string{
+			journal := [][2]string{
 				{"Name", "systemd"}, {"Tag", "linux.journal"},
 				{"DB", "/var/lib/fluent-bit/signalith-journal.db"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=sshd"},
@@ -256,9 +567,14 @@ func Generate(o Options) (*Agent, error) {
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamd"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=clamonacc"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=freshclam"},
+			}
+			if o.Sysmon {
+				journal = append(journal, [2]string{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"})
+			}
+			b.WriteString(section("INPUT", append(journal, [][2]string{
 				{"Read_From_Tail", "On"},
 				{"storage.type", "filesystem"},
-			}))
+			}...)))
 			// clamd checks its database every few minutes; those lines
 			// say nothing and would be most of the volume.
 			b.WriteString(section("FILTER", [][2]string{
@@ -266,9 +582,21 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "MESSAGE ^SelfCheck"},
 			}))
 		} else {
+			if o.Sysmon {
+				// Sysmon for Linux logs through syslog into the journal; only
+				// its events are read from there.
+				b.WriteString(section("INPUT", [][2]string{
+					{"Name", "systemd"}, {"Tag", "linux.journal"},
+					{"DB", "/var/lib/fluent-bit/signalith-sysmon.db"},
+					{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"},
+					{"Read_From_Tail", "On"},
+					{"storage.type", "filesystem"},
+				}))
+			}
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.auth"},
 				{"Path", "/var/log/auth.log,/var/log/secure"},
+				{"Path_Key", "file"},
 				{"DB", "/var/lib/fluent-bit/signalith-auth.db"},
 				{"storage.type", "filesystem"},
 			}))
@@ -292,38 +620,154 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
-		// Only root may read the config: it holds the ingest token.
-		a.Steps = []string{"Install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+		if o.LinuxSource != "wazuh" && !sensor {
+			// Web servers' access logs (Apache, Nginx), whichever source the
+			// auth logs come from. Path_Key says which server wrote a line,
+			// and the host name is added because the lines carry none. A
+			// host without a web server has no such files.
+			b.WriteString(section("INPUT", [][2]string{
+				{"Name", "tail"}, {"Tag", "linux.web"},
+				{"Path", strings.Join(WebAccessLogs, ",")},
+				{"Path_Key", "file"},
+				{"DB", "/var/lib/fluent-bit/signalith-web.db"},
+				{"Skip_Long_Lines", "On"},
+				{"storage.type", "filesystem"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "sysinfo"}, {"Match", "linux.web"},
+				{"hostname_key", "hostname"},
+			}))
+		}
+		if o.LinuxSource != "wazuh" && !sensor {
+			// The Linux audit log, whichever source the auth logs come
+			// from: auditd writes it as a file. Its records carry no host
+			// name, so it is added. A host without auditd has no such file.
+			b.WriteString(section("INPUT", [][2]string{
+				{"Name", "tail"}, {"Tag", "linux.audit"},
+				{"Path", AuditLogPath},
+				{"Path_Key", "file"},
+				{"DB", "/var/lib/fluent-bit/signalith-audit.db"},
+				{"Buffer_Chunk_Size", "64k"},
+				{"Buffer_Max_Size", "1M"},
+				{"Skip_Long_Lines", "On"},
+				{"storage.type", "filesystem"},
+			}))
+			b.WriteString(section("FILTER", [][2]string{
+				{"Name", "sysinfo"}, {"Match", "linux.audit"},
+				{"hostname_key", "hostname"},
+			}))
+		}
+		// Only root may read the config: it holds the agent token.
+		a.Steps = []string{"Install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
 		if o.LinuxSource == "wazuh" {
-			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later): curl https://raw.githubusercontent.com/fluent/fluent-bit/master/install.sh | sh"}
+			a.Steps = []string{"On the Wazuh manager (not on each Wazuh agent), install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
+		}
+		if sensor {
+			a.Steps = []string{"On the machine that runs Zeek or Suricata, install Fluent Bit (3.1 or later) from its signed package repository: " + fluentBitLinuxInstall}
+			site, zeekctl, siteKnown := zeekSite(o.ZeekDir)
+			soZeek := o.Zeek && securityOnion(o.ZeekDir)
+			soSuricata := o.Suricata && securityOnion(o.EVEPath)
+			switch {
+			case !o.Zeek:
+			case soZeek:
+				a.Steps = append(a.Steps, "Zeek on Security Onion already writes JSON logs: nothing to change in Zeek.")
+			case siteKnown:
+				a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+					"This adds the line @load policy/tuning/json-logs to "+site+" and applies it: "+
+					"echo '@load policy/tuning/json-logs' | sudo tee -a "+site+" && sudo "+zeekctl+" deploy")
+			default:
+				a.Steps = append(a.Steps, "Turn on JSON logs in Zeek (without them Zeek writes tab-separated logs, which arrive only as plain text under sourcetype=zeek:unknown). "+
+					"Add the line @load policy/tuning/json-logs to "+site+", then run zeekctl deploy with sudo, using "+zeekctl+".")
+			}
+			var cid []string
+			if o.Zeek && !soZeek {
+				run := "sudo " + zeekctl + " deploy"
+				if !siteKnown {
+					run = "zeekctl deploy with sudo"
+				}
+				cid = append(cid, "in Zeek, add @load policy/protocols/conn/community-id-logging to local.zeek and run "+run)
+			}
+			if o.Suricata && !soSuricata {
+				cid = append(cid, "in Suricata, set community-id to true under the eve-log output in /etc/suricata/suricata.yaml and restart Suricata (sudo systemctl restart suricata)")
+			}
+			if len(cid) > 0 {
+				a.Steps = append(a.Steps, "Recommended. Turn on Community ID, which lets you jump from an alert to the connection, lookups and files of the same flow; "+strings.Join(cid, ", and ")+".")
+			}
+			var dirs []string
+			if o.Zeek {
+				dirs = append(dirs, o.ZeekDir)
+			}
+			if o.Suricata {
+				dirs = append(dirs, o.EVEPath)
+			}
+			a.Steps = append(a.Steps, "Let the agent read the logs. Fluent Bit runs as root by default, so there is nothing to do; if you run it as another user, give that user read access to "+strings.Join(dirs, " and ")+".")
+		}
+		if o.Sysmon && o.LinuxSource != "wazuh" && !sensor {
+			a.Steps = append(a.Steps, "Install Sysmon for Linux (open source, github.com/Sysinternals/SysmonForLinux) and start it with a configuration (sudo sysmon -accepteula -i config.xml), so process, network and file events are recorded")
 		}
 		if useCA {
-			a.CAPath = LinuxCAPath
+			a.CAPath = files.ca
 			a.Steps = append(a.Steps, caStep(a, "signalith-ca.pem"))
 		}
 		a.Steps = append(a.Steps, "Save the configuration below as fluent-bit.conf.")
 		a.ConfigStep = len(a.Steps)
 		if useCA {
-			a.Steps = append(a.Steps, "From the folder you saved both files in, put them in place. Only root can read the configuration, since it holds the ingest token: "+
+			a.Steps = append(a.Steps, "From the folder you saved both files in, put them in place. Only root can read the configuration, since it holds the agent token: "+
 				"sudo install -m 644 -o root -g root signalith-ca.pem "+LinuxCAPath+" && sudo install -m 600 -o root -g root fluent-bit.conf "+a.ConfigPath)
 		} else {
-			a.Steps = append(a.Steps, "From the folder you saved it in, put it in place. Only root can read it, since it holds the ingest token: "+
+			a.Steps = append(a.Steps, "From the folder you saved it in, put it in place. Only root can read it, since it holds the agent token: "+
 				"sudo install -m 600 -o root -g root fluent-bit.conf "+a.ConfigPath)
 		}
 		done := "Events appear in Search within a minute; check the Health page if they do not."
+		if sensor {
+			var vp []string
+			if o.Zeek {
+				vp = append(vp, "Zeek")
+			}
+			if o.Suricata {
+				vp = append(vp, "Suricata")
+			}
+			done = "Network events appear in Search within a minute (search vendor_product IN (" + strings.Join(vp, ", ") + ")); only new log lines are sent. The Endpoints page lists the sensor as Network sensor. Check the Health page if nothing arrives."
+		}
 		if o.LinuxSource == "wazuh" {
 			done = "New Wazuh alerts appear in Search within a minute (search sourcetype=wazuh:alerts); alerts raised before Fluent Bit started are not sent. Check the Health page if nothing arrives."
 		}
 		a.Steps = append(a.Steps,
 			"Restart the agent: sudo systemctl enable --now fluent-bit && sudo systemctl restart fluent-bit",
 			done)
+		if o.LinuxSource != "wazuh" && !sensor {
+			a.Steps = append(a.Steps, auditdStep)
+		}
+		// The install script writes the files and starts the agent
+		// itself.
+		if sensor && o.SensorLayout != "" {
+			a.ConfigPath = "/etc/signalith-sensor/fluent-bit.conf"
+			if o.SensorLayout == SensorDocker {
+				a.ConfigPath = "/etc/signalith-sensor/docker/fluent-bit.conf"
+			}
+			a.Steps, a.ConfigStep, a.CAStep = nil, 0, 0
+		}
 	case "windows":
 		a.ConfigPath = `C:\Program Files\fluent-bit\conf\fluent-bit.conf`
-		// Microsoft Defender is always collected: it is part of every
-		// supported Windows version, needs no install and logs little.
-		channels := "Security,Microsoft-Windows-Windows Defender/Operational"
+		// The System and Application logs (services, logs cleared, SQL
+		// Server and installer events), Microsoft Defender, Code
+		// Integrity (unsigned and revoked drivers), Windows Firewall
+		// (rules and settings changed), BITS (download jobs), app
+		// package installs, WMI activity, Remote Desktop sessions, shell
+		// app shortcuts, SMB client security and exploit protection
+		// blocks are always collected: they are part of every supported Windows
+		// version, need no install and log little. So are the DNS client,
+		// Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged
+		// app, app package and certificate logs (some only once turned
+		// on), and the OpenSSH server, DNS Server and IIS configuration
+		// logs of the servers that have them.
+		channels := "Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode," +
+			"Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational"
 		if o.Sysmon {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
+		}
+		if o.PowerShell {
+			channels += ",Microsoft-Windows-PowerShell/Operational"
 		}
 		b.WriteString("# Signalith agent for Windows, generated by Signalith.\n")
 		b.WriteString(section("SERVICE", [][2]string{
@@ -334,7 +778,8 @@ func Generate(o Options) (*Agent, error) {
 			{"Name", "winevtlog"}, {"Tag", "win.events"},
 			{"Channels", channels},
 			// Without this, a host with no Defender (Server Core with the
-			// feature removed) or no Sysmon stops the input from starting.
+			// feature removed), no Sysmon or no IIS stops the input from
+			// starting.
 			{"Ignore_Missing_Channels", "On"},
 			{"Interval_Sec", "1"},
 			{"String_Inserts", "On"},
@@ -343,6 +788,9 @@ func Generate(o Options) (*Agent, error) {
 		}))
 		if o.Sysmon {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
+		}
+		if o.PowerShell {
+			a.Steps = append(a.Steps, scriptBlockLoggingStep)
 		}
 		a.Steps = append(a.Steps, "Install Fluent Bit for Windows, 3.1 or later (64-bit installer), from https://docs.fluentbit.io/manual/installation/windows")
 		files := "fluent-bit.conf"
@@ -355,13 +803,13 @@ func Generate(o Options) (*Agent, error) {
 		a.ConfigStep = len(a.Steps)
 		// A browser cannot save into Program Files, so the files are
 		// copied there. Only SYSTEM and Administrators may then read the
-		// config, which holds the ingest token (Program Files lets every
+		// config, which holds the agent token (Program Files lets every
 		// user read), and the buffer, which holds Security log events
 		// (ProgramData does too). The accounts are given by their SIDs,
 		// whose names differ in other languages.
 		a.Steps = append(a.Steps,
 			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration and the agent's buffer, "+
-				"since they hold the ingest token and Security log events: "+
+				"since they hold the agent token and Security log events: "+
 				`cd "$env:USERPROFILE\Downloads"`+"\n"+
 				"Copy-Item "+files+` 'C:\Program Files\fluent-bit\conf\' -Force`+"\n"+
 				`icacls '`+a.ConfigPath+`' /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'`+"\n"+
@@ -379,6 +827,16 @@ func Generate(o Options) (*Agent, error) {
 		{"Format", "json"},
 		{"Header", "Authorization Bearer " + o.Token},
 		{"Header_Tag", "X-Signalith-Tag"},
+		// The computer's name, and what this configuration expects, so
+		// the Endpoints page lists each agent once and can say when one
+		// needs a new configuration. Only labels: never used to let
+		// anyone in. Fluent Bit fills in ${HOSTNAME} itself when it is
+		// not set (env_preset in src/flb_env.c calls gethostname). On
+		// Windows, where services have no HOSTNAME, that works too:
+		// flb_create (src/flb_lib.c) starts Winsock before
+		// flb_config_init makes the environment.
+		{"Header", "X-Signalith-Agent ${HOSTNAME}"},
+		{"Header", "X-Signalith-Config " + ConfigHeader(o.Version, o.CAPin, o.NextCAPin)},
 		{"tls", tls}, {"tls.verify", "On"},
 	}
 	if a.CAPath != "" {
@@ -395,6 +853,15 @@ func Generate(o Options) (*Agent, error) {
 		if name := verifyName(host, o); name != "" {
 			out = append(out, [2]string{"tls.vhost", name}, [2]string{"tls.verify_hostname", "On"})
 		}
+	}
+	if o.Recycle > 0 {
+		out = append(out, [2]string{"net.keepalive_max_recycle", strconv.Itoa(o.Recycle)})
+	}
+	if sensor {
+		// A sensor sends far more than a host. While Signalith cannot be
+		// reached its buffer grows on disk; past 4 GB the oldest data is
+		// dropped rather than filling the disk Zeek and Suricata log to.
+		out = append(out, [2]string{"storage.total_limit_size", "4G"})
 	}
 	out = append(out, [2]string{"Retry_Limit", "False"})
 	b.WriteString(section("OUTPUT", out))
@@ -443,3 +910,7 @@ func section(name string, kv [][2]string) string {
 	}
 	return b.String()
 }
+
+// scriptBlockLoggingStep turns on PowerShell script block logging, which
+// is off by default, so the scripts that run are recorded.
+const scriptBlockLoggingStep = `Turn on PowerShell script block logging, so the scripts that run are recorded (or use Group Policy: Administrative Templates > Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging). In an elevated PowerShell: $k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'; New-Item -Path $k -Force | Out-Null; Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`

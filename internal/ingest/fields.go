@@ -31,12 +31,25 @@ const (
 	// always kept.
 	maxFieldsPerEvent = 200
 	// maxNewNamesPerIndex caps the field names (counting each dotted
-	// prefix, as OpenSearch does) that events from this server may add to
-	// one daily index beyond the known fields. With the known fields it
-	// stays well under the template's limit of 2000, which leaves room for
-	// names added before a restart.
+	// prefix, as OpenSearch does) that events may add to one daily index
+	// beyond the known fields, for all servers together: each server that
+	// stored events in the last 10 minutes gets an equal share, and at
+	// least minNamesPerServer (see Pipeline.Servers). With the known
+	// fields it stays well under the template's limit (totalFieldsLimit), which
+	// leaves room for names added before a restart.
 	maxNewNamesPerIndex = 1000
+	// minNamesPerServer is the smallest share of maxNewNamesPerIndex one
+	// server gets, however many share it. Past a handful of servers the
+	// shares add up to more than the budget, and the mapping guard
+	// (mappingStop) keeps the index under OpenSearch's limit.
+	minNamesPerServer = 100
 )
+
+// namesBudget is one server's share of maxNewNamesPerIndex when servers
+// store events.
+func namesBudget(servers int) int {
+	return max(minNamesPerServer, maxNewNamesPerIndex/max(servers, 1))
+}
 
 // knownFields maps the field names Signalith itself produces to their
 // OpenSearch types. The index template maps every one of them up front, so
@@ -57,6 +70,10 @@ var knownFields = func() map[string]string {
 		// new-name budget; handleFields leaves it out of the fields rail.
 		datamodel.SampleField: kw,
 
+		// Where each event came from (origin.go): mapped up front so they
+		// survive the known-fields-only retry.
+		IntakeField: kw, TokenField: kw, TokenIDField: kw, SenderField: kw, TokenPurposeField: kw,
+
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,
 		// Sysmon process fields that Sigma rules match on.
@@ -64,6 +81,166 @@ var knownFields = func() map[string]string {
 		"process_company": kw, "process_file_version": kw, "process_integrity_level": kw,
 		"process_current_directory": kw, "process_guid": kw, "parent_process_guid": kw,
 		"parent_process_id": long, "parent_user": kw, "logon_id": kw,
+		// Sysmon fields not yet in a data model: the call stack of a process
+		// access, where a remote thread starts, and a registry rename's new
+		// name.
+		"call_trace": kw, "start_address": kw, "start_module": kw, "start_function": kw,
+		"registry_new_path": kw, "registry_event_type": kw,
+		"loaded_file_hash": kw, "loaded_original_file_name": kw, "loaded_file_description": kw,
+		"loaded_file_product": kw, "loaded_file_company": kw,
+		// PowerShell script blocks: which part of a long script an event is,
+		// and its text. Script blocks run to 20,000 characters, past what a
+		// keyword indexes, and rules match words inside them, so the text is
+		// a wildcard field (see IndexTemplate).
+		"script_part": long, "script_parts": long, "script_block_text": "wildcard",
+		// A scheduled task (Security 4698): its name and its definition,
+		// XML that rules search for words inside, as for script blocks.
+		"task_name": kw, "task_content": "wildcard", "task_command": kw, "task_arguments": kw,
+		// An object access (Security 4663): what kind of object, its path
+		// and name whatever the kind, and the access asked for.
+		"object_type": kw, "object_path": kw, "object_name": kw, "access_list": kw, "access_mask": kw,
+		// A service installed (System 7045): its name, the command it runs
+		// (a path, or a whole command line), its type, start type and
+		// account, and the log's provider.
+		"service_name": kw, "service_path": kw, "service_type": kw, "service_start_type": kw, "service_account": kw,
+		"provider": kw,
+		// Whether a Sysmon network connection's source is an IPv6 address,
+		// and the service name of its destination port (smtp, ftp).
+		"src_is_ipv6": kw, "dest_port_name": kw,
+		// A Sysmon named pipe event (17, 18): the pipe and whether it was
+		// created or connected to. An alternate data stream's (Sysmon 15)
+		// hashes as Sysmon lists them, and its contents, text that rules
+		// search for words inside.
+		"pipe_name": kw, "pipe_event_type": kw, "file_hashes": kw, "file_contents": "wildcard",
+		// A logon's (Security 4624 and 4625) logon process and account SID,
+		// and for a 4624 the SID of the account that asked for it, its key
+		// length, impersonation level, elevation and outbound account.
+		"logon_process": kw, "user_sid": kw, "src_user_sid": kw, "key_length": long, "impersonation_level": kw,
+		"restricted_admin_mode": kw, "target_outbound_user": kw, "target_outbound_domain": kw, "virtual_account": kw,
+		"elevated_token": kw,
+		// The process that asked for a service install (Security 4697).
+		"client_process_id": long,
+		// An object access's access list with the names of its codes
+		// added (WriteData for %%4417), a network share access (Security 5145) and a directory
+		// object change (Security 5136), whose values (security
+		// descriptors) rules search words inside.
+		"access_names": kw, "share_name": kw, "share_path": kw, "share_target": kw,
+		"ad_object_guid": kw, "ad_object_class": kw, "ad_attribute": kw, "ad_value": "wildcard", "ad_operation": kw,
+		// A handle asked for or an operation on an object (Security 4656,
+		// 4661 and 4662): the server that owns it and its properties; a
+		// registry value changed (4657); a Kerberos ticket asked for
+		// (4768 and 4769); a logon with explicit credentials (4648); a
+		// connection the filtering platform allowed or blocked (5156, 5157).
+		"object_server": kw, "object_properties": kw, "src_user_domain": kw, "target_info": kw,
+		"filter_rtid": kw, "layer_name": kw, "layer_rtid": kw,
+		// User accounts and groups changed (Security 4720, 4726, 4728,
+		// 4732, 4738, 4756), the audit policy changed (4719) and a domain
+		// trust created (4706).
+		"object_domain": kw, "object_sid": kw, "member_sid": kw, "sam_account_name": kw, "display_name": kw,
+		"user_principal_name": kw, "primary_group_id": kw, "allowed_to_delegate_to": kw, "old_uac_value": kw,
+		"new_uac_value": kw, "user_account_control": kw, "sid_history": kw, "audit_category": kw,
+		"audit_subcategory": kw, "audit_subcategory_guid": kw, "audit_policy_changes": kw, "trust_type": kw,
+		"trust_direction": kw, "trust_attributes": kw,
+		"registry_operation": kw, "registry_value_type": kw, "registry_old_value_data": kw,
+		"kerberos_service": kw, "kerberos_service_sid": kw, "kerberos_status": kw, "ticket_options": kw,
+		"ticket_encryption_type": kw, "pre_auth_type": kw, "cert_issuer": kw, "cert_serial": kw, "cert_thumbprint": kw,
+		// NTLM credential checks (4776), computer accounts (4741, 4742), an
+		// account renamed (4781), certificates requested and issued
+		// (4886, 4887) and Sysmon's raw disk reads (9).
+		"ntlm_status": kw, "dns_host_name": kw, "service_principal_names": "wildcard", "old_object": kw,
+		"cert_request_id": kw, "cert_requester": kw, "cert_attributes": "wildcard", "cert_disposition": kw,
+		"cert_subject_key_id": kw, "cert_subject": kw, "device": kw,
+		// The data of the System log events the parser reads besides
+		// services installed (systemEvents), by name (SystemDataField).
+		"system_param1": kw, "system_param2": kw, "system_param3": kw, "system_param4": kw, "system_binary": kw,
+		"system_subject_user_name": kw, "system_subject_domain_name": kw, "system_channel": kw,
+		"system_backup_path": kw, "system_hive_name_length": kw, "system_hive_name": kw, "system_keys_updated": kw,
+		"system_dirty_pages": kw, "system_caption": kw, "system_message": "wildcard",
+		// An Application log event's data values, one per line.
+		"event_data": "wildcard",
+		// The data of the Windows logs the parser reads by name
+		// (ChannelDataField): firewall rules and settings changed, BITS
+		// transfer jobs, app packages installed, WMI subscriptions,
+		// Remote Desktop sessions, app shortcuts added, SMB guest logons
+		// refused and exploit protection blocks.
+		"firewall_action": kw, "firewall_active": kw, "firewall_application_path": kw, "firewall_direction": kw,
+		"firewall_edge_traversal": kw, "firewall_embedded_context": kw, "firewall_error_code": kw, "firewall_flags": kw,
+		"firewall_local_addresses": kw, "firewall_local_only_mapped": kw, "firewall_local_ports": kw,
+		"firewall_loose_source_mapped": kw, "firewall_modifying_application": kw, "firewall_modifying_user": kw,
+		"firewall_origin": kw, "firewall_policy_app_id": kw, "firewall_profiles": kw, "firewall_protocol": kw,
+		"firewall_remote_addresses": kw, "firewall_remote_machine_authorization_list": kw, "firewall_remote_ports": kw,
+		"firewall_remote_user_authorization_list": kw, "firewall_rule_id": kw, "firewall_rule_name": kw,
+		"firewall_rule_status": kw, "firewall_schema_version": kw, "firewall_security_options": kw,
+		"firewall_service_name": kw, "firewall_setting_type": kw, "firewall_setting_value": kw,
+		"firewall_setting_value_display": kw, "firewall_setting_value_size": kw, "firewall_setting_value_string": kw,
+		"firewall_store_type":           kw,
+		"bits_client_process_start_key": kw, "bits_file_count": kw, "bits_job_id": kw, "bits_job_owner": kw,
+		"bits_job_title": kw, "bits_local_name": kw, "bits_process_id": kw, "bits_process_path": kw,
+		"bits_remote_name": kw, "bits_user": kw,
+		"appx_calling_process": kw, "appx_deployment_operation": kw, "appx_deployment_options": kw,
+		"appx_detailed_message_info": kw, "appx_error_code": kw, "appx_error_file_info": kw, "appx_external_location": kw,
+		"appx_flags": kw, "appx_flags_high": kw, "appx_has_full_trust": kw, "appx_has_win32alacarte": kw,
+		"appx_is_centennial": kw, "appx_is_in_place_update": kw, "appx_is_in_related_set": kw, "appx_is_optional": kw,
+		"appx_is_package_encrypted": kw, "appx_is_package_using_bdc": kw, "appx_is_streaming_package": kw,
+		"appx_main_package_family_name": kw, "appx_mount_point": kw, "appx_package_display_name": kw,
+		"appx_package_flags": kw, "appx_package_flags2": kw, "appx_package_full_name": kw, "appx_package_source_uri": kw,
+		"appx_package_type": kw, "appx_path": kw, "appx_policy_reason": kw, "appx_rollback_detailed_message_info": kw,
+		"appx_rollback_error_file_info": kw, "appx_storage_id": kw, "appx_system_volume": kw, "appx_target_platform": kw,
+		"wmi_client_machine": kw, "wmi_client_process_id": kw, "wmi_component": kw, "wmi_consumer": kw, "wmi_ess": kw,
+		"wmi_id": kw, "wmi_namespace": kw, "wmi_namespace_name": kw, "wmi_operation": kw, "wmi_possible_cause": kw,
+		"wmi_processid": kw, "wmi_provider_name": kw, "wmi_query": kw, "wmi_queryid": kw, "wmi_result_code": kw,
+		"wmi_user":    kw,
+		"rdp_address": kw, "rdp_session_id": kw, "rdp_user": kw, "shell_app_id": kw, "shell_flags": kw, "shell_name": kw,
+		"smbclient_server_name": kw, "smbclient_server_name_length": kw, "smbclient_user_name": kw,
+		"smbclient_user_name_length": kw, "mitigation_image_name": kw, "mitigation_image_name_length": kw,
+		"mitigation_process_command_line": kw, "mitigation_process_command_line_length": kw,
+		"mitigation_process_create_time": kw, "mitigation_process_id": kw, "mitigation_process_path": kw,
+		"mitigation_process_path_length": kw, "mitigation_process_protection": kw,
+		"mitigation_process_section_signature_level": kw, "mitigation_process_signature_level": kw,
+		"mitigation_process_start_key": kw, "mitigation_required_signature_level": kw, "mitigation_signature_level": kw,
+		"appmodel_application_name": kw, "appmodel_image_name": kw, "appmodel_message": kw, "appmodel_package_name": kw, "appmodel_process_id": kw, "appxpackaging_subject_name": kw, "dnsclient_query_name": kw, "dnsclient_query_options": kw, "dnsclient_query_results": kw, "dnsclient_query_status": kw, "dnsclient_query_type": kw, "driver_argument1": kw, "driver_argument2": kw, "driver_argument3": kw, "driver_argument4": kw, "driver_instance_id": kw, "driver_lifetime_id": kw, "driver_major_code": kw, "driver_minor_code": kw, "driver_status": kw, "iisconfig_config_path": kw, "iisconfig_configuration": kw, "iisconfig_edit_operation_type": kw, "iisconfig_effective_location_path": kw, "iisconfig_new_value": kw, "iisconfig_old_value": kw, "iisconfig_physical_path": kw, "lsa_event_count_total": kw, "lsa_event_orginal": kw, "lsa_sid_list": kw, "lsa_target_domain_name": kw, "lsa_target_logon_guid": kw, "lsa_target_logon_id": kw, "lsa_target_user_name": kw, "lsa_target_user_sid": kw, "ntlm_caller_pid": kw, "ntlm_client_domain_name": kw, "ntlm_client_luid": kw, "ntlm_client_user_name": kw, "ntlm_domain_name": kw, "ntlm_mechanism_oid": kw, "ntlm_process_name": kw, "ntlm_schannel_name": kw, "ntlm_schannel_type": kw, "ntlm_target_name": kw, "ntlm_user_name": kw, "ntlm_workstation_name": kw, "openssh_payload": kw, "openssh_process": kw, "taskscheduler_path": kw, "taskscheduler_priority": kw, "taskscheduler_process_id": kw, "taskscheduler_task_name": kw, "taskscheduler_user_name": kw,
+		"mitigation_target_thread_create_time": kw, "mitigation_target_thread_id": kw,
+		// Security log events no data model holds, by name
+		// (ChannelDataField); a certificate template's contents and a
+		// filter's conditions are long text rules search words inside.
+		"security_access_mask": kw, "security_account_domain": kw, "security_account_name": kw, "security_action": kw,
+		"security_authentication_package": kw, "security_callout_key": kw, "security_callout_name": kw,
+		"security_change_type": kw, "security_class_id": kw, "security_class_name": kw, "security_client_address": kw,
+		"security_client_process_id": kw, "security_compatible_ids": kw, "security_conditions": "wildcard",
+		"security_count_of_credentials_returned": kw, "security_dcdnsname": kw, "security_device_description": kw,
+		"security_device_id": kw, "security_failure_reason": kw, "security_filter_id": kw, "security_filter_key": kw,
+		"security_filter_name": kw, "security_filter_type": kw, "security_handle_id": kw, "security_hardware_ids": kw,
+		"security_layer_id": kw, "security_layer_key": kw, "security_layer_name": kw, "security_location_information": kw,
+		"security_logon_id": kw, "security_logon_process_name": kw, "security_master_key_id": kw,
+		"security_new_template_content": "wildcard", "security_new_time": kw, "security_object_name": kw,
+		"security_object_server": kw, "security_object_type": kw, "security_old_template_content": "wildcard",
+		"security_previous_time": kw, "security_privilege_list": kw, "security_process_creation_time": kw,
+		"security_process_id": kw, "security_process_name": kw, "security_provider_context_key": kw,
+		"security_provider_context_name": kw, "security_provider_context_type": kw, "security_provider_key": kw,
+		"security_provider_name": kw, "security_read_operation": kw, "security_recovery_key_id": kw,
+		"security_recovery_server": kw, "security_request_type": kw, "security_return_code": kw,
+		"security_security_descriptor": kw, "security_service": kw, "security_sid_list": kw, "security_source_sid": kw,
+		"security_source_user_name": kw, "security_subject_domain_name": kw, "security_subject_logon_id": kw,
+		"security_subject_user_name": kw, "security_subject_user_sid": kw, "security_target_domain_name": kw,
+		"security_target_name": kw, "security_target_sid": kw, "security_target_user_name": kw,
+		"security_template_content": "wildcard", "security_template_dsobject_fqdn": kw,
+		"security_template_internal_name": kw, "security_template_oid": kw, "security_template_schema_version": kw,
+		"security_template_version": kw, "security_transmitted_services": kw, "security_type": kw,
+		"security_user_name": kw, "security_user_sid": kw, "security_vendor_ids": kw, "security_weight": kw,
+		"security_workstation_name": kw,
+		// Linux audit records (auditd.go): each field as auditd names it,
+		// the names of an ENRICHED record's numbers (auditd_uid_name), and
+		// a program's arguments one by one and joined, which rules search
+		// for words inside, as they do its command line (proctitle).
+		"auditd_type": kw, "auditd_id": kw, "auditd_argc": kw, "auditd_execve_command": "wildcard", "auditd_proctitle": "wildcard",
+		"auditd_syscall": kw, "auditd_syscall_name": kw, "auditd_arch": kw, "auditd_arch_name": kw, "auditd_success": kw,
+		"auditd_exit": kw, "auditd_exe": kw, "auditd_comm": kw, "auditd_key": kw, "auditd_name": kw, "auditd_nametype": kw,
+		"auditd_cwd": kw, "auditd_unit": kw, "auditd_op": kw, "auditd_res": kw, "auditd_acct": kw, "auditd_pid": kw,
+		"auditd_ppid": kw, "auditd_uid": kw, "auditd_euid": kw, "auditd_auid": kw, "auditd_gid": kw, "auditd_uid_name": kw,
+		"auditd_euid_name": kw, "auditd_auid_name": kw, "auditd_gid_name": kw, "auditd_tty": kw, "auditd_ses": kw,
+		"auditd_hostname": kw, "auditd_addr": kw, "auditd_terminal": kw, "auditd_data": "wildcard", "auditd_items": kw,
+		"auditd_mode": kw, "auditd_ouid": kw, "auditd_ouid_name": kw, "auditd_subj": kw,
+		"auditd_a0": kw, "auditd_a1": kw, "auditd_a2": kw, "auditd_a3": kw, "auditd_a4": kw, "auditd_a5": kw, "auditd_a6": kw, "auditd_a7": kw, "auditd_a8": kw, "auditd_a9": kw, "auditd_a10": kw, "auditd_a11": kw, "auditd_a12": kw, "auditd_a13": kw, "auditd_a14": kw, "auditd_a15": kw, "auditd_a16": kw, "auditd_a17": kw, "auditd_a18": kw, "auditd_a19": kw, "auditd_a20": kw, "auditd_a21": kw, "auditd_a22": kw, "auditd_a23": kw, "auditd_a24": kw, "auditd_a25": kw, "auditd_a26": kw, "auditd_a27": kw, "auditd_a28": kw, "auditd_a29": kw, "auditd_a30": kw, "auditd_a31": kw,
 		// An sshd line whose client address cannot be told from text the
 		// client sent (see ambiguousSSH).
 		"src_ambiguous": kw,
@@ -92,6 +269,78 @@ var knownFields = func() map[string]string {
 
 		// Risk events.
 		"group_key": kw, "risk_score": double, "risk_base_score": double,
+
+		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
+		// long would cut to 9 in sorts, charts and stats.
+		"cvss": double,
+		// An EPSS score and percentile are fractions (0.944).
+		"epss": double, "epss_percentile": double,
+		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
+		// be 0 as a long.
+		"duration": double,
+
+		// Network sensors (zeek.go, suricata.go): the fixed extras each
+		// log type keeps besides its data model fields, so sensor data
+		// never uses a day's field budget.
+		"zeek_history": kw, "zeek_missed_bytes": long, "zeek_local_orig": kw, "zeek_local_resp": kw,
+		"zeek_trans_depth": long, "zeek_note": kw, "zeek_sub": kw, "zeek_fuid": kw, "zeek_source": kw,
+		"zeek_analyzers": kw, "zeek_rejected": kw, "zeek_qclass_name": kw, "zeek_rtt": double,
+		"zeek_established": kw, "zeek_resumed": kw, "zeek_curve": kw, "zeek_next_protocol": kw,
+		"zeek_cert_chain_fps": kw, "zeek_is_orig": kw, "zeek_seen_bytes": long, "zeek_missing_bytes": long,
+		"zeek_peer":    kw,
+		"suricata_gid": long, "suricata_rev": long, "suricata_flow_state": kw, "suricata_flow_reason": kw,
+		"suricata_alerted": kw, "suricata_in_iface": kw, "suricata_tx_id": long, "suricata_app_proto": kw,
+		"suricata_file_state": kw, "suricata_file_stored": kw, "suricata_payload_printable": "text",
+		"suricata_event_type": kw, "suricata_anomaly_type": kw, "suricata_anomaly_event": kw,
+		// A Suricata event type no mapping knows: its own object as JSON
+		// text, one field however many keys it has.
+		"suricata_detail": "text",
+		// Sensor health: Zeek capture_loss and stats, Suricata stats.
+		"capture_loss_percent": double, "packets_received": long, "packets_dropped": long,
+		"drop_percent": double, "uptime_seconds": long, "sensor_interface": kw,
+		// The status line of a sensor the install script built
+		// (sensorstatus.go). rules_updated stays text, like device_time:
+		// it is the sensor's word, not a time Signalith checked.
+		"sensor_role": kw, "sensor_version": kw, "zeek_version": kw, "suricata_version": kw,
+		"fluentbit_version": kw, "sensor_zeek_running": kw, "sensor_suricata_running": kw,
+		"sensor_link": kw, "rules_updated": kw, "rules_count": long, "rules_update": kw,
+		"disk_free_percent": double, "disk_free_bytes": long, "sensor_disk_encrypted": kw,
+		"sensor_time_synced": kw, "sensor_warnings": kw,
+
+		// AWS CloudTrail (cloudtrail.go): the caller's name as Splunk's AWS
+		// add-on names it, and a call's whole parameters and response as
+		// JSON text, which rules search for words inside.
+		"user_name": kw, "request_parameters": "wildcard", "response_elements": "wildcard",
+	}
+	// And the record's own fields, by CloudTrail's names.
+	for _, k := range cloudTrailMapped {
+		m[k] = kw
+	}
+	// Azure records (azure.go): the record's own fields, and the
+	// resources an Entra ID audit record changed, as JSON text.
+	for _, k := range azureMapped {
+		m[k] = kw
+	}
+	m["properties.targetResources"] = "wildcard"
+	// Whether a user or an app made an Entra ID change, as Splunk's add-on
+	// names it.
+	m["src_user_type"] = kw
+	// Microsoft 365 audit records (o365.go): the record's own fields, and
+	// its record type by name.
+	for _, k := range o365Mapped {
+		m[k] = kw
+	}
+	// Google Cloud log entries (gcp.go): the entry's own fields.
+	for _, k := range gcpMapped {
+		m[k] = kw
+	}
+	// The fields the shipped cloud rules read (rulefields.go).
+	for _, k := range cloudRuleFields {
+		m[k] = kw
+	}
+	// And the lists of objects they read inside, as JSON text.
+	for _, k := range cloudTrailLists {
+		m[k] = "wildcard"
 	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
@@ -122,6 +371,31 @@ var knownFields = func() map[string]string {
 // (see the sample package). Its value is the load's ID.
 const SampleField = datamodel.SampleField
 
+// knownObjects are the objects the known fields' dotted names make
+// (properties, properties.status), which no value may take the name of.
+var knownObjects = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range knownFields {
+		for i := range len(k) {
+			if k[i] == '.' {
+				m[k[:i]] = true
+			}
+		}
+	}
+	return m
+}()
+
+// knownPrefix reports whether a dotted name's parts start with a known
+// field, which would become an object.
+func knownPrefix(parts []string) bool {
+	for i := 1; i < len(parts); i++ {
+		if KnownField(strings.Join(parts[:i], ".")) {
+			return true
+		}
+	}
+	return false
+}
+
 // KnownField reports whether Signalith's own parsers produce a field name,
 // so the index template maps it and events always keep it.
 func KnownField(name string) bool {
@@ -132,15 +406,25 @@ func KnownField(name string) bool {
 // validFieldName reports whether a sender-chosen name can become a field:
 // at most maxFieldNameLen bytes of letters, digits and _ - @ : /, parts
 // separated by single dots, at most maxFieldDepth parts, and not starting
-// with _ (OpenSearch reserves those names) or another symbol.
+// with _ (OpenSearch reserves those names) or another symbol. A part may
+// end in {}, as Splunk names the values in a list (targetResources{}.type).
 func validFieldName(name string) bool {
 	if name == "" || len(name) > maxFieldNameLen || !utf8.ValidString(name) {
 		return false
 	}
 	depth := 1
 	partStart := true
-	for _, r := range name {
+	for i, r := range name {
 		switch {
+		case r == '{':
+			// {} after a part's name, then the part's end or another {}.
+			if partStart || !strings.HasPrefix(name[i:], "{}") || i+2 < len(name) && name[i+2] != '.' && name[i+2] != '{' {
+				return false
+			}
+		case r == '}':
+			if i == 0 || name[i-1] != '{' {
+				return false
+			}
 		case r == '.':
 			if partStart {
 				return false // leading dot or two in a row
@@ -161,8 +445,8 @@ func validFieldName(name string) bool {
 	return !partStart && depth <= maxFieldDepth
 }
 
-// fieldBudget keeps the names each daily index has been given, for
-// maxNewNamesPerIndex. It is per server run; the template's field limit
+// fieldBudget keeps the names each daily index has been given on this
+// server, for its share of maxNewNamesPerIndex. It is per server run; the template's field limit
 // leaves room for what earlier runs added, and write retries an event with
 // only its known fields if OpenSearch still turns it away.
 type fieldBudget struct {
@@ -177,12 +461,31 @@ type indexNames struct {
 	paths map[string]bool
 }
 
-// limit drops the fields of an event (going to index, on day) that are
-// invalid, over the per-event cap, clash with a known field or with how
-// the index already maps the name, or do not fit the index's budget. It
-// returns how many it dropped. oldest is the first day an event can still
-// be written to; budgets of earlier days are forgotten.
+// limit is limitTo with the whole budget, as on a server alone.
 func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
+	return b.limitTo(index, day, oldest, f, maxNewNamesPerIndex, false)
+}
+
+// hasUnknown reports whether an event has a field Signalith does not
+// produce itself.
+func hasUnknown(f map[string]any) bool {
+	for k := range f {
+		if !KnownField(k) {
+			return true
+		}
+	}
+	return false
+}
+
+// limitTo drops the fields of an event (going to index, on day) that are
+// invalid, over the per-event cap, clash with a known field or with how
+// the index already maps the name, or do not fit the index's budget of
+// budget names (this server's share). With full, the index's mapping is
+// near OpenSearch's limit (mappingStop), and no new name is granted;
+// names granted before still pass. It returns how many it dropped. oldest
+// is the first day an event can still be written to; budgets of earlier
+// days are forgotten.
+func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budget int, full bool) int {
 	var unknown []string
 	for k := range f {
 		if !KnownField(k) {
@@ -235,8 +538,12 @@ func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
 			continue
 		}
 		parts := strings.Split(k, ".")
-		if KnownField(parts[0]) && len(parts) > 1 {
+		if knownPrefix(parts) {
 			drop(k) // "user.name" would turn the known field user into an object
+			continue
+		}
+		if knownObjects[k] {
+			drop(k) // a value "properties.status" where properties.status.errorCode is mapped
 			continue
 		}
 		added, clash := 1, false
@@ -249,7 +556,7 @@ func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
 				break
 			}
 		}
-		if clash || len(ix.paths)+added > maxNewNamesPerIndex {
+		if clash || full || len(ix.paths)+added > budget {
 			drop(k)
 			continue
 		}

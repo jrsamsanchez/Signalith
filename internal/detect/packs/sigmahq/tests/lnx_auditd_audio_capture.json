@@ -1,0 +1,9 @@
+{"rule": "a7af2487-9c2f-42e4-9bb9-ff961f0561d5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arecord","a1":"-vv","a2":"-fdat","argc":"3"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"SYSCALL":"memfd_create","exe":"/ecasound"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arg","a1":"-vv","a2":"-fdat","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arecord","a1":"arg","a2":"-fdat","argc":"3"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"arecord","a1":"-vv","argc":"2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"/ecasound"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"SYSCALL":"memfd_create"}}
+]}

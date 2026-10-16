@@ -1,0 +1,9 @@
+{"rule": "350837b5-13d3-4c06-b688-db07afbe5050", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload x","SiteUrl":"test-siteurl","UserAgent":"x SkyDriveSync x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"},"repeat":51,"vary":["SourceFileName"]},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload x","UserAgent":"x SkyDriveSync x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload x","SiteUrl":"test-siteurl","UserAgent":"x SkyDriveSync x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"},"repeat":31,"vary":["SourceFileName"]},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload y","UserAgent":"x SkyDriveSync x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserAgent":"x SkyDriveSync x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload x","UserAgent":"x SkyDriveSync y","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"filesyncdownload x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "06125661-3814-4e03-bfa2-1e4411c60ac3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"\\cmd.exe","TargetFilename":".wbcat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"TargetFilename":".wbcat"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"Image":"\\cmd.exe"}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "13addce7-47b2-4ca0-a98f-1de964d1d669", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0xf003f","ObjectName":"ServicesActive","ObjectType":"SC_MANAGER OBJECT"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0xf003f","ObjectName":"ServicesActive","ObjectType":"SC_MANAGER OBJECT","SubjectLogonId":"0x3e4"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"ServicesActive","ObjectType":"SC_MANAGER OBJECT"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0xf003f","ObjectType":"SC_MANAGER OBJECT"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0xf003f","ObjectName":"ServicesActive"}}
+]}

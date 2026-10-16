@@ -3,7 +3,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,13 +19,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
@@ -34,14 +37,19 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/oidc"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -77,12 +85,25 @@ type Server struct {
 	Cases cases.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
+	// Playbooks backs the Playbooks and Approvals pages; nil disables
+	// them.
+	Playbooks *Playbooks
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Audit backs the Audit page; nil leaves it empty.
+	Audit *Audit
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// SensorTuning keeps the Suricata rule tuning network sensors fetch
+	// (Settings > Network sensors); nil without OpenSearch.
+	SensorTuning *sensortune.Store
+	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
+	// disables it.
+	Vulns *Vulns
+	// Content installs content pack updates; nil disables them.
+	Content *content.Updater
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
@@ -93,9 +114,14 @@ type Server struct {
 	Background context.Context
 	// Assistant is an optional AI model for plain-English questions.
 	Assistant *assistant.Client
-	UI        fs.FS // web UI files; nil disables the UI
-	Log       *slog.Logger
-	Version   string
+	// M365Cursors reads how far the Microsoft 365 audit log was read, for
+	// the health page; M365Check is the Settings page's test (nil signs
+	// in to Microsoft).
+	M365Cursors func(ctx context.Context, tenant string) ([]m365.Cursor, error)
+	M365Check   func(ctx context.Context, s m365.Settings) (map[string]bool, error)
+	UI          fs.FS // web UI files; nil disables the UI
+	Log         *slog.Logger
+	Version     string
 
 	// Syslog is the syslog receiver, for its stats; nil when it is off.
 	Syslog *syslog.Receiver
@@ -107,8 +133,11 @@ type Server struct {
 	Runtime *Runtime
 
 	// Sessions and Limiter back the sign-in page; nil uses defaults.
-	Sessions *auth.Sessions
-	Limiter  *auth.Limiter
+	// SessionStore, when set, keeps the sessions instead of Sessions (in
+	// OpenSearch, for every server of a cluster).
+	Sessions     *auth.Sessions
+	SessionStore SessionStore
+	Limiter      *auth.Limiter
 	// KnownBrowsers signs the cookie that marks a browser as one that
 	// signed in to an account before (see auth.Limiter); nil makes a key
 	// kept in memory only.
@@ -118,6 +147,13 @@ type Server struct {
 	// them in memory only.
 	Users     *users.Store
 	Directory *users.Directory
+	// OIDC talks to the single sign-on identity provider; nil makes one
+	// on first use.
+	OIDC *oidc.Client
+	// SharedUsers is set when Users, Directory and SessionStore keep the
+	// users, the directory settings and the sessions in the shared
+	// settings of a cluster; nil keeps them on this server.
+	SharedUsers *SharedUsers
 
 	// DirectoryRecheck is how often signed-in directory users are looked
 	// up again; 0 means every 5 minutes.
@@ -131,18 +167,72 @@ type Server struct {
 	// Pages keeps the settings saved on the Settings page; nil keeps them
 	// in the settings file next to Config (config.PageFile).
 	Pages config.PageStore
+	// Settings keeps them in the shared settings once the servers of a
+	// cluster share their settings; nil, or while it is not Shared, they
+	// stay in Pages.
+	Settings SettingsStore
+	// NodeURLChanged hears of a new server.node_url applied at once, which
+	// the heartbeat then carries; nil when there is no heartbeat.
+	NodeURLChanged func(*config.Config)
 	// Cluster is this server among those that share its OpenSearch: it
 	// says which one runs the background jobs. nil means this server runs
 	// them when detections.scheduler is on, and lists no servers.
 	Cluster Cluster
+	// Shared is the shared configuration in OpenSearch; nil on a server
+	// that keeps every setting in its own files.
+	Shared Shared
+	// ConfigToken is how far this server has read the shared settings,
+	// for the X-Signalith-Config headers; nil sends none.
+	ConfigToken ConfigToken
 	// Security runs the Security page's checks and keeps the last
 	// report; it carries over a restart in place. nil makes one.
 	Security *SecurityChecker
+	// Tokens are the agent tokens, shared by every server on the same
+	// OpenSearch; nil keeps only the shared tokens of the configuration
+	// (ingest.tokens).
+	Tokens *agenttokens.Registry
+	// Agents counts the agents that send events, for the Endpoints page;
+	// nil keeps no list.
+	Agents *agentinv.Inventory
+	// EventAge follows ingest.max_event_age when a change applies at once:
+	// how old an event's own time may be in the pipeline and syslog. nil
+	// leaves the age the server started with.
+	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
+	// ComplianceNotes keeps the notes on compliance controls in the
+	// shared settings, used while this server takes its content from them;
+	// nil, or until then, they stay in the state folder.
+	ComplianceNotes compliance.NoteStore
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
+	// ClusterServers drains and removes servers and rotates the cluster
+	// key; nil on a server that is not a member of a cluster.
+	ClusterServers ClusterServers
+	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
+	// keeps; nil on a server that is not a member of a cluster.
+	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
 
 	authOnce     sync.Once
-	creds        credCache  // recently checked Basic credentials
-	routes       []route    // every API route and its role, from Handler
-	caseMu       sync.Mutex // serializes case changes
+	ssoOnce      sync.Once
+	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
+	creds        credCache    // recently checked Basic credentials
+	routes       []route      // every API route and its role, from Handler
+	caseLocks    caseLocks    // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once
@@ -150,7 +240,9 @@ type Server struct {
 	background   sync.WaitGroup // directory checks still running
 	settingsMu   sync.Mutex     // serializes saves on the Settings page
 	testMu       sync.Mutex     // one connection test at a time
+	aiModels     modelCache     // model lists read from the AI model's service
 	sampleJob    sampleJob      // the one running sample-data load or remove
+	pageCache    pages          // index.html and login.html, rendered
 	// live holds Config with the settings saved on the Settings page that
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
@@ -161,8 +253,23 @@ type Server struct {
 	legacyProxies addrSeen
 	secOnce       sync.Once
 	sec           *SecurityChecker
+	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
-	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
+	// badTuning is the hash of the stored rule tuning last refused to
+	// sensors (refusedTuning), so it is logged once.
+	badTuningMu sync.Mutex
+	badTuning   string
+	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	tokensOnce  sync.Once
+	tokenRate   tokenRate         // agent token creation
+	sensorCache sensorHealthCache // the Health page's network sensor counts
+}
+
+// EventAge is what keeps the age of events the server accepts in step
+// with the configuration in use.
+type EventAge interface {
+	// Use works the age out again from c.
+	Use(c *config.Config)
 }
 
 // liveModel is the assistant after a change on the Settings page; nil
@@ -195,6 +302,7 @@ func (s *Server) model() *assistant.Client {
 // docs/users.md.
 func (s *Server) Handler() http.Handler {
 	s.sessions()
+	s.tokens()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/ingest", s.handleIngest)
 	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
@@ -211,43 +319,70 @@ func (s *Server) Handler() http.Handler {
 	api.viewer("GET /api/fields", s.handleFields)
 	api.viewer("GET /api/fields/values", s.handleFieldValues)
 	api.viewer("GET /api/language", s.handleLanguage)
-	// Agent configs carry the ingest token.
+	// Agent configs hold a placeholder the page fills with a new agent
+	// token (POST /api/agent-tokens).
 	api.admin("GET /api/agents/config", s.handleAgentConfig)
+	api.admin("GET /api/agents/destinations", s.handleAgentDestinations)
 	// Adds the address agents or syslog devices send to to the HTTPS
 	// certificate.
 	api.admin("POST /api/tls/names", s.handleTLSName)
 	// The security checks name files, accounts and addresses on the
 	// server, and the certificate authority is the server's to change.
 	api.admin("GET /api/security", s.handleSecurity)
-	api.admin("POST /api/security/ca", s.handleSecurityCA)
+	api.sensitive("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
+	s.routeLookupTables(api)
 	s.routeAsk(api)
+	s.routeInvestigate(api)
 	s.routeIntel(api)
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
 	s.routeRespond(api)
+	s.routePlaybooks(api)
 	s.routeUsers(api)
+	s.routeSSO(api)
 	s.routeRetention(api)
+	s.routeAudit(api)
+	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeEndpoints(api)
+	s.routeVulns(api)
+	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
+	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
+	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
+	s.routeSensor(mux, api)
+	s.routeSCIM(mux, api)
+	s.routeSensors(api)
+	s.routeTokens(api)
+	s.routeAPITokens(api)
+	s.routeAgents(api)
 	if s.UI != nil {
-		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(staticFiles(s.UI, true)))
+		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
+		if v := versionSegment(s.Version); v != "" {
+			// The same files under /v/<version>/, which pages name.
+			api.add(route{Pattern: "GET /v/" + v + "/", Role: users.Viewer},
+				versionedFiles(s.Version, true, http.StripPrefix("/v/"+v, staticFiles(s.UI, false))))
+		}
 	}
 	s.routes = api.routes
 	s.routeLogin(mux)
-	mux.Handle("/", s.requireUser(api.mux))
-	return limitBodies(s.securityHeaders(s.guardAPI(mux)))
+	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(api.mux))))
+	return limitBodies(s.securityHeaders(s.configHeaders(s.guardAPI(mux))))
 }
 
 // guardAPI makes sure no /api/ route escapes sign-in: a route registered
 // straight on the outer mux, rather than with a role on the router, is
 // admin-only unless it is one of publicRoutes.
 func (s *Server) guardAPI(mux *http.ServeMux) http.Handler {
-	guarded := s.requireUser(s.allow(route{Pattern: "(outer mux)", Role: users.Admin, Unclassified: true}, mux))
+	guarded := s.requireUser(s.configToken(false, s.allow(route{Pattern: "(outer mux)", Role: users.Admin, Unclassified: true}, mux)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if _, pattern := mux.Handler(r); pattern != "" && pattern != "/" && !slices.Contains(publicRoutes, pattern) {
@@ -316,7 +451,8 @@ func decodeJSON(b []byte, v any) error {
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	from := clientaddr.Parse(r.RemoteAddr)
-	if !s.validToken(r) && !s.retiredTokenAccepted(w, r) {
+	who, ok := s.agentIdentity(w, r)
+	if !ok {
 		return
 	}
 	// Only agents that hold a token count: anyone can send a request.
@@ -355,7 +491,18 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if tag == "" {
 		tag = r.URL.Query().Get("tag")
 	}
-	res, err = s.Pipeline.IngestBody(r.Context(), tag, body)
+	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
+	if res != nil {
+		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
+		// Only a token made for a sensor speaks for a sensor's health:
+		// any other agent token could otherwise keep a stopped sensor
+		// looking healthy, or add sensors that are not there.
+		sensor := res.Sensor
+		if who.Legacy || who.Purpose != agenttokens.PurposeSensor {
+			sensor = nil
+		}
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, sensor)
+	}
 	if err != nil {
 		var bad *ingest.BodyError
 		if errors.As(err, &bad) {
@@ -518,19 +665,6 @@ func (b *batchBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (s *Server) validToken(r *http.Request) bool {
-	tok := bearerToken(r)
-	if tok == "" {
-		return false
-	}
-	for _, t := range s.conf().Ingest.Tokens {
-		if subtle.ConstantTimeCompare([]byte(t), []byte(tok)) == 1 {
-			return true
-		}
-	}
-	return false
-}
-
 func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 }
@@ -562,7 +696,7 @@ func (s *Server) retiredTokenAccepted(w http.ResponseWriter, r *http.Request) bo
 		return false
 	}
 	s.Pipeline.NoteRefused(from, ingest.RefusedToken)
-	writeError(w, http.StatusUnauthorized, errors.New("missing or invalid ingest token"))
+	writeError(w, http.StatusUnauthorized, errors.New("missing or invalid agent token"))
 	return false
 }
 
@@ -664,6 +798,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeSearchError(w, err)
 		return
 	}
+	res.Drill = q.Drilldown()
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -801,6 +936,14 @@ func (s *Server) handleLanguage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"commands":  query.Commands,
 		"functions": query.AggFuncs,
+		"eval_functions": func() []string {
+			names := make([]string, 0, len(query.EvalFuncs))
+			for n := range query.EvalFuncs {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			return names
+		}(),
 		"operators": []string{"=", "!=", "<", "<=", ">", ">=", "IN", "AND", "OR", "NOT"},
 	})
 }
@@ -831,6 +974,15 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		server = o
 	}
+	otherServer := false
+	if to := v.Get("to"); to != "" && v.Get("server") == "" {
+		dest, other, err := s.agentDestination(to)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "field": "to"})
+			return
+		}
+		server, otherServer = dest, other
+	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("server.public_url: %w", err))
@@ -846,7 +998,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	// the certificate (POST api/tls/names) once it is entered, not while
 	// it is being typed. Here it only checks that it can.
 	addName := ""
-	if u.Scheme == "https" && certs != nil {
+	if u.Scheme == "https" && certs != nil && !otherServer {
 		if err := certs.CanCover(u.Hostname()); err != nil {
 			fieldError(err)
 			return
@@ -855,36 +1007,48 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			addName = u.Hostname()
 		}
 	}
-	token := s.agentToken()
 	opts := agents.Options{
-		OS:          v.Get("os"),
-		ServerURL:   server,
-		Token:       token,
+		OS:        v.Get("os"),
+		ServerURL: server,
+		// The page puts a new agent token in its place when the
+		// configuration is copied or downloaded.
+		Token:       agents.TokenPlaceholder,
 		LinuxSource: v.Get("source"),
 		Sysmon:      v.Get("sysmon") == "true",
+		PowerShell:  v.Get("powershell") == "true",
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
+		Version:     s.Version,
+		Recycle:     s.agentRecycleFor(),
+		// A network sensor: both tools unless the page says otherwise.
+		Zeek:              v.Get("zeek") != "false",
+		Suricata:          v.Get("suricata") != "false",
+		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
+		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
+		SuricataProtocols: v.Get("suricata_protocols") == "true",
+		// AWS CloudTrail: the bucket and queue the Collector reads.
+		AWSBucket:   v.Get("aws_bucket"),
+		AWSQueueURL: v.Get("aws_queue"),
+		// Google Cloud: the subscription the Collector pulls.
+		GCPProject:      v.Get("gcp_project"),
+		GCPSubscription: v.Get("gcp_subscription"),
 	}
-	if certs != nil {
-		// While a new certificate authority is prepared, agents get both,
-		// so they keep sending after the switch.
-		opts.CA = string(certs.AgentCAPEM())
-		opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
-		opts.OwnCA = certs.LocalCA()
-		if leaf := certs.Leaf(); leaf != nil {
-			opts.CertNames = leaf.DNSNames
-		}
-	}
+	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
+		return
+	}
+	var fe *agents.FieldError
+	if errors.As(err, &fe) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fe.Error(), "field": fe.Field})
 		return
 	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	out := agentConfig{Agent: a, AddName: addName}
+	out := agentConfig{Agent: a, AddName: addName, TokenPlaceholder: agents.TokenPlaceholder}
 	if a.CA != "" {
 		a.CAFingerprint = certs.Fingerprint()
 		if next := certs.Next(); next != nil {
@@ -892,6 +1056,31 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentTLS fills in how an agent checks the server's certificate, made
+// by certs (nil when Signalith does not serve HTTPS itself).
+func agentTLS(opts *agents.Options, certs *tlsauto.Manager) {
+	if certs == nil {
+		return
+	}
+	// While a new certificate authority is prepared, agents get both,
+	// so they keep sending after the switch.
+	opts.CA = string(certs.AgentCAPEM())
+	opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
+	opts.OwnCA = certs.LocalCA()
+	if leaf := certs.Leaf(); leaf != nil {
+		opts.CertNames = leaf.DNSNames
+	}
+	// The pins name the CAs the agent gets: the current one, and the
+	// next one too while a switch is prepared, so the Endpoints page
+	// still counts the agent as fine after the switch.
+	if opts.CA != "" {
+		opts.CAPin = agentinv.Pin(certs.Fingerprint())
+		if next := certs.Next(); next != nil && certs.LocalCA() {
+			opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+		}
+	}
 }
 
 // agentConfig is the answer to GET api/agents/config. AddName is the
@@ -902,22 +1091,9 @@ type agentConfig struct {
 	// NextCAFingerprint is the new certificate authority's, while
 	// Signalith is switching: the CA file holds both.
 	NextCAFingerprint string `json:"next_ca_fingerprint,omitempty"`
-}
-
-// agentToken is the ingest token new agents get: the first that is not
-// the example token from an older docker-compose.yml, which anyone can
-// look up (kept only for agents that still use it).
-func (s *Server) agentToken() string {
-	tokens := s.conf().Ingest.Tokens
-	for _, t := range tokens {
-		if !config.IsPublicIngestToken(t) {
-			return t
-		}
-	}
-	if len(tokens) > 0 {
-		return tokens[0]
-	}
-	return ""
+	// TokenPlaceholder stands for the agent token in the configuration
+	// and steps, until the page makes one.
+	TokenPlaceholder string `json:"token_placeholder"`
 }
 
 // handleTLSName adds the address agents or syslog devices are being set up
@@ -958,6 +1134,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			out["cluster_banners"] = b
 		}
 	}
+	s.addClusterHealth(r, out)
+	if sensors := s.sensorHealth(ctx); sensors != nil {
+		out["sensors"] = sensors
+	}
+	if m := s.m365Status(ctx); m != nil {
+		out["m365"] = m
+	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
@@ -990,8 +1173,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	out["opensearch"] = osOut
 	warnings := s.conf().Warnings()
-	if len(s.conf().Ingest.Tokens) == 0 {
-		warnings = append(warnings, "No ingest tokens are configured, so agents cannot send data. Add one under ingest.tokens.")
+	if active, shared := s.tokens().Counts(); active == 0 && shared == 0 && s.tokens().Loaded() {
+		warnings = append(warnings, "No agent can send data yet, because there are no agent tokens. Copy or download an agent configuration on the Add data page and Signalith makes one.")
 	}
 	since := time.Now().Add(-plaintextWindow)
 	docker := s.inContainer()
@@ -1014,38 +1197,61 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if p := s.dir().Problem(); p != "" {
 		warnings = append(warnings, p)
 	}
-	if w := s.behindWarning(time.Now()); w != "" {
-		warnings = append(warnings, w)
-	}
+	warnings = append(warnings, s.behindWarnings(time.Now())...)
 	warnings = append(warnings, s.notifyWarnings(ctx)...)
+	if s.Cluster != nil {
+		warnings = append(warnings, agentTrafficWarnings(s.Cluster.Status())...)
+	}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// behindWarning names the detections falling behind their schedule
-// (see detect.Behind), on the server that runs them; "" when none are.
-func (s *Server) behindWarning(now time.Time) string {
-	if s.Scheduler == nil || s.Detections == nil || !s.conf().Detections.Scheduler || (s.Cluster != nil && !s.Cluster.RunsJobs()) {
-		return ""
+// behindWarnings names the detections falling behind their schedule
+// (see detect.Behind), and those that had missed runs skipped in the
+// last day; none when there are none. With several servers the run
+// state is shared, so every server warns the same, whether or not it
+// would run the detections itself.
+func (s *Server) behindWarnings(now time.Time) []string {
+	if s.Scheduler == nil || s.Detections == nil || (s.Cluster == nil && !s.conf().Detections.Scheduler) {
+		return nil
 	}
 	states := s.Scheduler.Status()
-	var late []string
+	var late, skipped []string
+	runs := 0
 	for _, d := range s.Detections.List() {
-		if detect.Behind(d, states[d.ID], now) {
-			late = append(late, d.ID)
+		st := states[d.ID]
+		if detect.Behind(d, st, now) {
+			late = append(late, "‘"+d.BaseTitle()+"’")
+		}
+		if sk := st.Skipped; d.Enabled && sk != nil && sk.Count > 0 && now.Sub(sk.At) < 24*time.Hour {
+			skipped = append(skipped, "‘"+d.BaseTitle()+"’")
+			runs += sk.Count
 		}
 	}
-	if len(late) == 0 {
-		return ""
+	short := func(ids []string) []string {
+		if len(ids) > 10 {
+			return append(ids[:10:10], fmt.Sprintf("%d more", len(ids)-10))
+		}
+		return ids
 	}
-	if len(late) > 10 {
-		late = append(late[:10], fmt.Sprintf("%d more", len(late)-10))
+	var out []string
+	if len(late) > 0 {
+		out = append(out, "Detections are running behind schedule. "+joinAnd(short(late))+" waited more than their schedule interval, "+
+			"because slower detections held every worker or detections were not running. Missed runs are made up in order, up to "+
+			"the Make up missed runs limit on the Settings page, so findings arrive late but nothing is searched twice. On the Detections page, narrow or "+
+			"reschedule the slow or timed-out detections.")
 	}
-	return "Detections are running behind schedule. " + joinAnd(late) + " waited more than their schedule interval for a free worker, " +
-		"because slower detections held every worker. Each run searches on from where the last one stopped, up to a limit, so events are not skipped, " +
-		"but findings arrive late. On the Detections page, narrow or reschedule the slow or timed-out detections."
+	if len(skipped) > 0 {
+		noun, verb := "runs", "were"
+		if runs == 1 {
+			noun, verb = "run", "was"
+		}
+		out = append(out, fmt.Sprintf("Detections were not running for longer than the Make up missed runs limit on the Settings page, so %d missed %s of %s %s skipped "+
+			"and never searched. The Detections page shows the times; search those times by hand if they matter.", runs, noun, joinAnd(short(skipped)), verb))
+	}
+	return out
 }
 
 // tlsInfo says how Signalith serves HTTPS, the names its certificate
@@ -1061,6 +1267,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope
@@ -1114,7 +1324,7 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		by[x.Reason] = append(by[x.Reason], x)
 	}
 	var out []string
-	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedToken} {
+	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedRevoked, ingest.RefusedToken} {
 		list := by[reason]
 		if len(list) == 0 {
 			continue
@@ -1129,11 +1339,14 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		case ingest.RefusedPlaintext:
 			msg = agent + " turned away for sending over plain HTTP (server.tls.plaintext_ingest is deny): " + names + ". " +
 				"They keep their events and send them again. On the Add data page, get a new configuration, which uses HTTPS, and put it on each."
+		case ingest.RefusedRevoked:
+			msg = agent + " turned away for sending with a revoked or no longer accepted token: " + names + ". " +
+				"Fluent Bit drops what is refused this way. On the Add data page, get a new configuration and put it on each."
 		case ingest.RefusedOldToken:
 			msg = agent + " turned away for sending the example ingest token from an older docker-compose.yml: " + names + ". " +
 				"They keep their events and send them again. On the Add data page, get a new configuration and put it on each."
 		default:
-			msg = agent + " turned away for a wrong or missing ingest token: " + names + ". " +
+			msg = agent + " turned away for a wrong or missing agent token: " + names + ". " +
 				"Fluent Bit drops what is refused this way. On the Add data page, get a new configuration and put it on each."
 		}
 		out = append(out, msg+dockerNote(list, docker))

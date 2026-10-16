@@ -1,0 +1,5 @@
+{"rule": "be254a5c-63e7-11ec-89da-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x sudoers.tmp x","User":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x sudoers.tmp y","User":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","User":"tester"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "9b8d9203-4e0f-4cd9-bb06-4cc4ea6d0e9a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4697","data":{"ServiceFileName":"mshtavbscript:createobjectwindow.close.run"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4697","data":{}}
+]}

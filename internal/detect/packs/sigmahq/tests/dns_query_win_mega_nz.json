@@ -1,0 +1,4 @@
+{"rule": "613c03ba-0779-4a53-8a1f-47f914a4ded3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":"userstorage.mega.co.nz"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

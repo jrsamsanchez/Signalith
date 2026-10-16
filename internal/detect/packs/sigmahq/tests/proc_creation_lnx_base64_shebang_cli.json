@@ -1,0 +1,4 @@
+{"rule": "fe2f9663-41cb-47e2-b954-8a228f3b9dff", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"IyEvYmluL2Zpc2"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{}}
+]}

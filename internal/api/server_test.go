@@ -67,13 +67,13 @@ func (f *fakeOS) Mapping(_ context.Context, pattern string) (map[string]string, 
 	return map[string]string{"user": "keyword", "custom_score": "long"}, nil
 }
 
-func newTestServer(t *testing.T) (*httptest.Server, *fakeOS) {
+func newTestServer(t testing.TB) (*httptest.Server, *fakeOS) {
 	t.Helper()
 	return newTestServerWith(t, nil)
 }
 
 // newTestServerWith lets a test change the server before it starts.
-func newTestServerWith(t *testing.T, change func(*Server)) (*httptest.Server, *fakeOS) {
+func newTestServerWith(t testing.TB, change func(*Server)) (*httptest.Server, *fakeOS) {
 	t.Helper()
 	cfg := config.Default()
 	h, _ := config.HashPassword("s3cret-pass")
@@ -303,10 +303,26 @@ func TestAgentConfig(t *testing.T) {
 	ts, _ := newTestServer(t)
 	_, body := do(t, ts, "GET", "/api/agents/config?os=windows&sysmon=true", "", true)
 	cfg := body["config"].(string)
-	for _, want := range []string{"winevtlog", "Microsoft-Windows-Sysmon/Operational", "Bearer tok-0123456789abcdef", "Port                 8080", "Header_Tag"} {
+	for _, want := range []string{"winevtlog", "Microsoft-Windows-Sysmon/Operational", "Bearer @@AGENT_TOKEN@@", "Port                 8080", "Header_Tag"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("windows config missing %q:\n%s", want, cfg)
 		}
+	}
+}
+
+// The Google Cloud option writes the subscription the page names, and an
+// option it cannot use comes back with the field it came from.
+func TestAgentConfigGCP(t *testing.T) {
+	ts, _ := newTestServer(t)
+	q := url.Values{"os": {"gcp"}, "gcp_project": {"prod-logs-1"}, "gcp_subscription": {"audit-to-siem"}}
+	code, body := do(t, ts, "GET", "/api/agents/config?"+q.Encode(), "", true)
+	cfg, _ := body["config"].(string)
+	if code != http.StatusOK || !strings.Contains(cfg, "subscription: projects/prod-logs-1/subscriptions/audit-to-siem\n") {
+		t.Fatalf("%d %v", code, body)
+	}
+	q.Set("gcp_project", "Not_A_Project")
+	if code, body := do(t, ts, "GET", "/api/agents/config?"+q.Encode(), "", true); code != http.StatusBadRequest || body["field"] != "gcp_project" {
+		t.Errorf("bad project: %d %v", code, body)
 	}
 }
 

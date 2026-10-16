@@ -1,0 +1,4 @@
+{"rule": "07a99744-56ac-40d2-97b7-2095967b0e03", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\consent.exe.local\\comctl32.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

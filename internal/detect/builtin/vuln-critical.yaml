@@ -1,0 +1,20 @@
+id: vuln-critical
+title: Critical vulnerability $cve$ on $dest$
+name: Critical vulnerability found
+description: A vulnerability scan found software with a critical vulnerability (CVSS 9 or higher) that is not yet known to be used by attackers. Critical vulnerabilities can often be exploited over the network without a password. Known exploited ones raise their own, higher finding.
+query: |
+  datamodel=Vulnerabilities category=vulnerability cvss>=9 known_exploited=false
+schedule: 15m
+lookback: 30m
+severity: medium
+mitre: [T1190, T1210]
+throttle:
+  fields: [dest, cve]
+  window: 7d
+risk:
+  score: 25
+  objects:
+    - {field: dest, type: system}
+enabled: true
+tags: [vulnerability]
+guidance: Plan to patch or upgrade the software named in product and product_version soon; the NVD page in url lists the fixed versions. If the service does not need to be reachable, limit who can reach it until it is patched. Search datamodel=Vulnerabilities dest=<host> to see everything the scan found on it.

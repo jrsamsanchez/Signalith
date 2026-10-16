@@ -1,0 +1,5 @@
+{"rule": "0afecb6e-6223-4a82-99fb-bf5b981e92a5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\ScreenConnect.WindowsClient.exe","TargetFilename":"\\Documents\\ConnectWiseControl\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Documents\\ConnectWiseControl\\Temp\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\ScreenConnect.WindowsClient.exe"}}
+]}

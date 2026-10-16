@@ -1,0 +1,4 @@
+{"rule": "f7385ee2-0e0c-11eb-adc1-0242ac120002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"clipboard]::\u0026\u0026cmd","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

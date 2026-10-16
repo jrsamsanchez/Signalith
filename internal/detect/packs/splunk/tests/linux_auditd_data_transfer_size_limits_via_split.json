@@ -1,0 +1,6 @@
+{"rule": "4669561d-3bbd-44e3-857c-0e3c6ef2120c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"split","a2":"x","a3":"x","a4":"-b","a5":"","a6":"x","argc":"7"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"x","a1":"split","a2":"x","a3":"x","a4":"-b","a5":"","a6":"y","argc":"7"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"EXECVE","data":{"_raw":"type=EXECVE msg=audit(02/20/2025 11:02:58.146:94942) : argc=4 a0=split a1=-b a2=1000000 a3=split_me.txt"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "72cd00d6-490c-4650-86ff-1d11f491daa1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"ImageLoaded":"\\fpcie2com.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

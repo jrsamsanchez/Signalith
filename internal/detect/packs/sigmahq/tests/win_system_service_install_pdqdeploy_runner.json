@@ -1,0 +1,4 @@
+{"rule": "b98a10af-1e1e-44a7-bab2-4cc026917648", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"PDQDeployRunner-","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

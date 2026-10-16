@@ -1,0 +1,4 @@
+{"rule": "5af54681-df95-4c26-854f-2565e13cfab0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4624","data":{"ProcessName":"\\WmiPrvSE.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4624","data":{}}
+]}

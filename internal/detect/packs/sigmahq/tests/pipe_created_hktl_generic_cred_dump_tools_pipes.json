@@ -1,0 +1,4 @@
+{"rule": "961d0ba2-3eea-4303-a930-2cf78bbfcc5e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"PipeName":"\\lsadump"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{}}
+]}

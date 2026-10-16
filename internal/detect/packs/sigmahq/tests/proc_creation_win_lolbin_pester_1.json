@@ -1,0 +1,14 @@
+{"rule": "59e938ff-0d6d-4dc3-b13f-36cc28734d4e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"PesterGet-Help","Image":"\\powershell.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"PesterGet-Help","NewProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pester ? ;","Image":"\\cmd.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"pester ? ;","NewProcessName":"\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\powershell.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\powershell.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"PesterGet-Help"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"PesterGet-Help","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\cmd.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"pester ? ;"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"pester ? ;","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

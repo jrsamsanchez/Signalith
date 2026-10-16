@@ -243,6 +243,10 @@ Feeds from signalith.yaml are removed by editing the file and restarting.
 
 ### Where feeds are stored
 
+When several servers share one OpenSearch and form a cluster, the feeds are stored in
+OpenSearch and shared by every server; see [Several servers](#several-servers). The
+rest of this section is about a server on its own.
+
 Feeds added on the page are saved in `intel_feeds.yaml` in `lookups.dir`, or in
 `intel.feeds_file` (environment: `SIGNALITH_INTEL_FEEDS_FILE`); a relative path is
 relative to the folder of signalith.yaml. Signalith writes the file atomically
@@ -270,16 +274,38 @@ shown with the problem and not downloaded.
 
 ### Several servers
 
-When several servers share one OpenSearch, feeds download on the one that runs the
-background jobs (one with `detections.scheduler: true`; another takes over if it
-stops), from its own `intel_feeds.yaml`. Add and change feeds on that server's page.
-On other servers the page lists the feeds read-only and says which server downloads
-them (`"downloads": false`, `"manage": false`, `"downloads_why"` and `"runs_on"` in
-the API, which refuses changes there with 409), and **Refresh now** works only for feeds from
-signalith.yaml, which every server shares. A server whose feeds differ from those of
-the server that runs the jobs does not take the jobs over by itself, so its list
-never removes the other's indicators; copy `intel_feeds.yaml` across to let it.
-Indicators are shared through OpenSearch, so matching works on every server.
+When several servers share one OpenSearch, they form a cluster and share the feeds
+(see [Shared feeds and retention policies](servers.md#shared-feeds-and-retention-policies)):
+every server's Threat intel page lists the same feeds, and a feed added, changed or
+deleted on any of them changes for all of them at once. API keys and passwords are
+stored in OpenSearch encrypted with the cluster key, which OpenSearch never holds.
+
+- **Downloads.** The server that runs the background jobs (one with
+  `detections.scheduler: true`; another takes over if it stops) downloads every feed,
+  and the page says which server that is. **Refresh now** on another server asks it
+  to: the page shows "Queued on siem-a", then "Downloading…", then what the download
+  found. Each feed's status (last download, error, indicators) is shared too, and
+  reaches the other servers within a few seconds.
+- **Where a feed came from.** When the cluster is made, the feeds of the server that
+  founds it, from its `intel_feeds.yaml` and from `intel.feeds` in signalith.yaml,
+  become the shared feeds. Feeds from signalith.yaml then work like feeds added on the
+  page: they can be changed and deleted on the page, and show a badge and a line
+  saying where they came from, such as "Applied from signalith.yaml on siem-b". A
+  feed in a server's signalith.yaml applies again only when it changes there (see
+  [Shared feeds and retention policies](servers.md#shared-feeds-and-retention-policies)).
+  The other servers' own `intel_feeds.yaml` files are no longer used.
+- **Changes at the same moment.** If someone changed a feed since you opened the
+  page, your change to it is refused, and the page says so and shows theirs.
+- While a server cannot use the shared settings (it cannot reach OpenSearch, or
+  misses the cluster key), changes there are refused and the page says why.
+
+Indicators are stored in OpenSearch, so matching works on every server.
+
+**Servers that are not part of the cluster** (an older version, or a server without
+the cluster key) use their own `intel_feeds.yaml` and download nothing while another
+server runs the jobs: their page lists the feeds read-only and says which server
+downloads them, and **Refresh now** works only for feeds from signalith.yaml. Give
+them the cluster key (see [signalith cluster](cluster-cli.md#export-key-and-import-key)).
 
 ### Network access and safety
 
@@ -438,11 +464,11 @@ as `{"name": "X-Api-Key", "set": true}` and the password as `{"set": true}`.
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/intel` | Counts by type and source, and every feed with its status |
-| `GET /api/intel/feeds` | Every feed with its settings and status, plus `downloads` (whether this server downloads feeds), `feeds_file`, `formats`, `types`, and `file_error` when the feeds file cannot be read |
+| `GET /api/intel/feeds` | Every feed with its settings and status, plus `downloads` (whether this server downloads feeds), `manage` (whether feeds can be changed here), `shared` (whether the feeds are shared), `feeds_file` (empty when shared), `formats`, `types`, `file_error` when the feeds file cannot be read, and for admins `etags`, each feed's version by name. A shared feed that was not added on the page has `from`, such as `"applied from signalith.yaml on siem-b"` |
 | `POST /api/intel/feeds` | Add a feed (body below); it downloads at once |
-| `PUT /api/intel/feeds/{name}` | Change a feed added on the page. Settings left out stay as they are; an empty secret keeps the saved one. 409 for a feed from signalith.yaml |
-| `DELETE /api/intel/feeds/{name}?indicators=remove\|keep` | Delete a feed added on the page; `remove` (default) deletes its indicators, `keep` lets them age out |
-| `POST /api/intel/feeds/{name}/refresh` | Download a feed now |
+| `PUT /api/intel/feeds/{name}` | Change a feed added on the page. Settings left out stay as they are; an empty secret keeps the saved one. 409 for a feed from signalith.yaml, unless the feeds are shared. With `If-Match` and the feed's etag, 412 when it changed meanwhile; the answer's `ETag` is its new version |
+| `DELETE /api/intel/feeds/{name}?indicators=remove\|keep` | Delete a feed added on the page; `remove` (default) deletes its indicators, `keep` lets them age out. Takes `If-Match` like `PUT` |
+| `POST /api/intel/feeds/{name}/refresh` | Download a feed now. With shared feeds, on a server that does not download them: `202 {"feed","request_id","queued_on"}`, followed with `GET /api/requests/{id}` (see [the retention API](retention.md#api)), whose `result` is the feed's status, or `{"already_running":true}` when it was downloading already |
 | `POST /api/intel/feeds/test` | Download without saving; the body is a feed, or `{"feed": "<name>"}` plus any settings to try on a saved feed with its saved secrets |
 | `GET /api/intel/catalog` | The catalog, each entry with `added` and the `feed` made from it |
 | `POST /api/intel/catalog` | Add catalog feeds: `{"ids": ["feodo-tracker", "spamhaus-drop"]}` returns `{"added": [feeds], "skipped": [{"id", "reason"}]}` |

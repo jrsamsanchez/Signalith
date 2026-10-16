@@ -1,0 +1,5 @@
+{"rule": "e40f4962-b02b-4192-9bfe-245f7ece1f99", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"multiFactorAuthentication","Status":"MFA Denied"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"Status":"MFA Denied"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"multiFactorAuthentication"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "3761e026-f259-44e6-8826-719ed8079408", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"/nc","key":"network_connect_4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"key":"network_connect_4"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"/nc"}}
+]}

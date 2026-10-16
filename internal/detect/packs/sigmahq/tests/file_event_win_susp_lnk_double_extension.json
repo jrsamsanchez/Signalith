@@ -1,0 +1,10 @@
+{"rule": "3215aa19-f060-4332-86d5-5602511f3ca8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".xls..lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":".xls.\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\.lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\excel.exe","TargetFilename":".xls. \\AppData\\Roaming\\Microsoft\\Excel .lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\powerpnt.exe","TargetFilename":"\\AppData\\Roaming\\Microsoft\\PowerPoint.xls..lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\excel.exe","TargetFilename":".xls. \\AppData\\Roaming\\Microsoft\\Office\\Recent\\ .lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\winword.exe","TargetFilename":".xls.\\AppData\\Roaming\\Microsoft\\Word.lnk"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:54:01.546","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"5AA13A44-0C90-68FC-BF1D-000000004002","ProcessId":"10048","RuleName":"-","TargetFilename":"C:\\evil.doc.lnk","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:54:01.546"}}
+]}

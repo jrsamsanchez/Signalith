@@ -1,0 +1,4 @@
+{"rule": "db885529-903f-4c5d-9864-28fe199e6370", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"x -Filter *Get-ADComputer Add-Content"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}}
+]}

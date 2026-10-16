@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -250,7 +253,7 @@ func TestForeignAdvancingHeartbeatRefusesStart(t *testing.T) {
 	}
 	select {
 	case err := <-b.Fatal():
-		if !strings.Contains(err.Error(), "is using this server's identity") || !strings.Contains(err.Error(), nodeFile) {
+		if !strings.Contains(err.Error(), "is using this server's identity") || !strings.Contains(err.Error(), "signalith cluster new-identity") {
 			t.Errorf("message: %v", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -532,6 +535,15 @@ func TestLiveCopyWithLastBootStops(t *testing.T) {
 		t.Errorf("a: ready %v (%s), runs jobs %v", ok, why, a.RunsJobs())
 	}
 	until(t, 5*time.Second, "a's heartbeat back", func() bool { return heartbeatOf(t, fos, a.ID()).BootID == a.local.BootID })
+	// a can only tell that a copy was started when the copy wrote its
+	// heartbeat. The copy may see a's heartbeat first and stop before it
+	// writes one; then there is nothing to warn about.
+	cp.mu.Lock()
+	wrote := !cp.hb.ver.IsZero()
+	cp.mu.Unlock()
+	if !wrote {
+		return
+	}
 	found := false
 	for _, w := range a.Status().Warnings {
 		found = found || strings.Contains(w.Text, "A copy of this server's state folder was started")
@@ -1071,4 +1083,403 @@ func TestRefusedAfterRunning(t *testing.T) {
 		s := selfOf(n.Status())
 		return s.State == StateReady && s.Detail.OpenSearch.Problem == ""
 	})
+}
+
+func TestIndexingServers(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	var nilNode *Node
+	if nilNode.IndexingServers(10*time.Minute) != 1 {
+		t.Error("without a node")
+	}
+	at := func(v *atomic.Int64) func() time.Time {
+		return func() time.Time {
+			if n := v.Load(); n != 0 {
+				return time.Unix(n, 0)
+			}
+			return time.Time{}
+		}
+	}
+	var aAt, bAt atomic.Int64
+	a := testNode(t, t.TempDir(), c, true)
+	a.Use(c, "s", Settings{Eligible: true, Indexed: at(&aAt)})
+	// Alone and not indexing yet: itself.
+	if got := a.IndexingServers(10 * time.Minute); got != 1 {
+		t.Errorf("alone: %d", got)
+	}
+	b := testNode(t, t.TempDir(), c, false)
+	b.Use(c, "s", Settings{Indexed: at(&bAt)})
+	until(t, 5*time.Second, "a sees b", func() bool {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return len(a.members) >= 2
+	})
+	// Neither has indexed: never less than 1.
+	if got := a.IndexingServers(10 * time.Minute); got != 1 {
+		t.Errorf("nobody indexing: %d", got)
+	}
+	// A server of a version before indexed_at counts while it is up.
+	stopOld := make(chan struct{})
+	oldDone := make(chan struct{})
+	go func() {
+		defer close(oldDone)
+		for {
+			fos.Put("s_runtime", nodeDocID("n_old"), map[string]any{"kind": "node", "node_id": "n_old", "name": "old",
+				"state": StateReady, "version": "0.9.0", "heartbeat_at": time.Now().UTC().Format(time.RFC3339Nano)})
+			select {
+			case <-stopOld:
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}()
+	aAt.Store(time.Now().Unix())
+	until(t, 5*time.Second, "a counts itself and the old one", func() bool { return a.IndexingServers(10*time.Minute) == 2 })
+	bAt.Store(time.Now().Add(-2 * time.Minute).Unix())
+	until(t, 5*time.Second, "a sees b's indexed_at", func() bool { return a.IndexingServers(10*time.Minute) == 3 })
+	if hb := heartbeatOf(t, fos, b.ID()); hb.IndexedAt == nil || hb.IndexedAt.Unix() != bAt.Load() {
+		t.Errorf("heartbeat indexed_at: %v", hb.IndexedAt)
+	}
+	// b last indexed 15 minutes ago: it no longer counts.
+	bAt.Store(time.Now().Add(-15 * time.Minute).Unix())
+	until(t, 5*time.Second, "b stops counting", func() bool { return a.IndexingServers(10*time.Minute) == 2 })
+	// The old one goes offline: it no longer counts either.
+	close(stopOld)
+	<-oldDone
+	until(t, 5*time.Second, "the old one goes offline", func() bool { return a.IndexingServers(10*time.Minute) == 1 })
+}
+
+// stepClock is a real clock whose wall time a test can step, as a clock
+// correction does, without moving its monotonic time.
+type stepClock struct {
+	Clock
+	mu  sync.Mutex
+	off time.Duration
+}
+
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Clock.Now().Add(c.off)
+}
+
+func (c *stepClock) step(d time.Duration) {
+	c.mu.Lock()
+	c.off += d
+	c.mu.Unlock()
+}
+
+// ClusterNow follows OpenSearch's clock, not this server's wall clock:
+// a server 5 s behind works out OpenSearch's time, and a step of its
+// wall clock does not move it.
+func TestClusterNowFollowsOpenSearch(t *testing.T) {
+	fos := ostest.New(t)
+	fos.Offset = 5 * time.Second
+	c := store.New(store.Config{URL: fos.URL})
+	clock := &stepClock{Clock: NewRealClock()}
+	n := startNode(t, t.TempDir(), c, clock, nil)
+	near := func() bool {
+		d := n.ClusterNow().Sub(time.Now().Add(5 * time.Second))
+		return d < 50*time.Millisecond && d > -50*time.Millisecond
+	}
+	until(t, 5*time.Second, "OpenSearch's time", near)
+	clock.step(time.Hour)
+	if !near() {
+		t.Errorf("a step of the wall clock moved the cluster time: %v", n.ClusterNow().Sub(time.Now()))
+	}
+}
+
+// The shared configuration's state goes into the heartbeat, and a server
+// it keeps out (not part of the cluster yet) does not run the jobs.
+func TestSharedStatusInHeartbeatAndEligibility(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("siem-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	var why atomic.Value
+	why.Store("it is not part of the cluster yet")
+	n.Start(ctx)
+	n.Use(c, "s", Settings{Eligible: true, Shared: func() SharedStatus {
+		return SharedStatus{Mode: "legacy_b", LevelMin: 1, LevelMax: 1, ConfigSeq: 7, MaxRev: 3, Tamper: []string{"feeds"}, NotEligible: why.Load().(string)}
+	}})
+	waitReady(t, n, 5*time.Second)
+	until(t, 5*time.Second, "the heartbeat carries the shared status", func() bool {
+		hb := heartbeatOf(t, fos, n.ID())
+		return hb.Mode == "legacy_b" && hb.LevelMax == 1 && hb.ConfigSeq == 7 && hb.MaxRev == 3 && len(hb.Tamper) == 1 &&
+			!hb.LeaderEligible && hb.NotEligible == "it is not part of the cluster yet"
+	})
+	time.Sleep(3 * fast.Renew)
+	if n.RunsJobs() {
+		t.Fatal("a server kept out by the shared configuration took the jobs")
+	}
+	why.Store("")
+	until(t, 5*time.Second, "it takes the jobs once it may", n.RunsJobs)
+}
+
+// The settings waiting for a restart, the shared ones refused, how far
+// the settings were applied and the restart run by request go into the
+// heartbeat; a server with none of them writes none of the fields.
+func TestSettingsStateInHeartbeat(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("siem-a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	var busy atomic.Bool
+	n.Start(ctx)
+	n.Use(c, "s", Settings{Eligible: true})
+	waitReady(t, n, 5*time.Second)
+	if src := fos.Source(RuntimeIndex("s"), nodeDocID(n.ID())); src["restart_needed"] != nil || src["restart"] != nil || src["settings_rev"] != nil {
+		t.Fatalf("fields written without settings: %v", src)
+	}
+	at := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	n.Use(c, "s", Settings{Eligible: true,
+		Shared: func() SharedStatus {
+			return SharedStatus{Mode: "member", SettingsRev: &SettingsRev{Settings: 7, NodeCfg: 12}}
+		},
+		Pending: func() ([]string, []string) { return []string{"server.listen"}, []string{"server.tls.names"} },
+		Restart: func() RestartStatus {
+			return RestartStatus{Busy: busy.Load(), Last: &RestartResult{At: at, Error: "port 8443 is in use", RolledBack: true, Keys: []string{"server.listen"}}}
+		}})
+	busy.Store(true)
+	until(t, 5*time.Second, "the heartbeat carries the settings' state", func() bool {
+		hb := heartbeatOf(t, fos, n.ID())
+		return slices.Equal(hb.RestartNeeded, []string{"server.listen"}) && slices.Equal(hb.SettingsRefused, []string{"server.tls.names"}) &&
+			hb.SettingsRev != nil && *hb.SettingsRev == SettingsRev{Settings: 7, NodeCfg: 12} &&
+			hb.Restart != nil && hb.Restart.Busy && hb.Restart.Last != nil && hb.Restart.Last.RolledBack && hb.Restart.Last.At.Equal(at)
+	})
+}
+
+// A revocation list OpenSearch would refuse everyone over is red, with a
+// banner on every page.
+func TestCRLProblemIsABanner(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("host-crl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	n.Start(ctx)
+	var mu sync.Mutex
+	problem := ""
+	n.Use(c, "s", Settings{Eligible: true, Listen: "0.0.0.0:8080", OSIdentity: func() *OSIdentityStatus {
+		mu.Lock()
+		defer mu.Unlock()
+		return &OSIdentityStatus{CRL: &CRLStatus{File: "/crl/crl.pem", Problem: problem}}
+	}})
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	until(t, 5*time.Second, "the jobs", n.RunsJobs)
+	for _, b := range n.Banners() {
+		if strings.Contains(b, "revocation list") {
+			t.Fatalf("a banner without a problem: %q", b)
+		}
+	}
+	mu.Lock()
+	problem = "OpenSearch's revocation list /crl/crl.pem is missing."
+	mu.Unlock()
+	found := false
+	for _, w := range n.Status().Warnings {
+		found = found || w.Level == "red" && strings.Contains(w.Text, "/crl/crl.pem is missing")
+	}
+	if !found {
+		t.Errorf("warnings %+v", n.Status().Warnings)
+	}
+	if !slices.ContainsFunc(n.Banners(), func(b string) bool { return strings.Contains(b, "revocation list") }) {
+		t.Errorf("banners %q", n.Banners())
+	}
+}
+
+// A drained server is not ready, gives up the background jobs and does
+// not take them back; resumed, it is ready again.
+func TestDrainAndResume(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	a := testNode(t, t.TempDir(), c, true)
+	waitReady(t, a, 5*time.Second)
+	b := testNode(t, t.TempDir(), c, true)
+	waitReady(t, b, 5*time.Second)
+	deadline := time.Now().Add(5 * time.Second)
+	for !a.RunsJobs() {
+		if time.Now().After(deadline) {
+			t.Fatal("a never ran the jobs")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	a.Drain("")
+	if !a.Drained() {
+		t.Fatal("not drained")
+	}
+	if ok, why := a.Ready(); ok || why != NotReadyDraining {
+		t.Fatalf("ready %v (%s) while drained", ok, why)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for a.RunsJobs() || !b.RunsJobs() || heartbeatOf(t, fos, a.ID()).State != StateDraining {
+		if time.Now().After(deadline) {
+			t.Fatalf("a runs jobs %v, b %v, a's state %q", a.RunsJobs(), b.RunsJobs(), heartbeatOf(t, fos, a.ID()).State)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	a.Resume()
+	waitReady(t, a, 5*time.Second)
+	if a.Drained() || !b.RunsJobs() {
+		t.Error("resuming moved the jobs back")
+	}
+}
+
+// yieldTiming is fast with a short hand-over to a newer version.
+func yieldTiming(every time.Duration) Timing {
+	t := fast
+	t.YieldSettle, t.YieldEvery = 400*time.Millisecond, every
+	return t
+}
+
+// versionNode starts an eligible node of version with timing; mod may
+// change its settings.
+func versionNode(t *testing.T, c *store.Client, version string, timing Timing, mod func(*Settings)) *Node {
+	t.Helper()
+	dir := t.TempDir()
+	l, err := OpenLocal(dir, testOptions("host-"+version+"-"+filepath.Base(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: version, Timing: timing})
+	ctx, cancel := context.WithCancel(context.Background())
+	n.Start(ctx)
+	s := Settings{Eligible: true, Listen: "0.0.0.0:8080"}
+	if mod != nil {
+		mod(&s)
+	}
+	n.Use(c, "s", s)
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	return n
+}
+
+// stays fails when cond turns false within d.
+func stays(t *testing.T, d time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if !cond() {
+			t.Fatalf("%s stopped being true", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestHolderHandsTheJobsToANewerVersion(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	until(t, 10*time.Second, "the jobs to move to the newer b", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+	lease := fos.Source("s_runtime", LeaseDocID)
+	if lease["holder"] != b.ID() {
+		t.Errorf("lease %v", lease)
+	}
+	until(t, 5*time.Second, "a's heartbeat to say it handed the jobs over", func() bool {
+		hb := heartbeatOf(t, fos, a.ID())
+		return hb.Upgrade != nil && hb.Upgrade.YieldedTo == b.Name() && hb.Upgrade.YieldedAt != nil
+	})
+	if hb := heartbeatOf(t, fos, b.ID()); !slices.Contains(hb.Features, FeatureYieldNewer) || hb.Upgrade != nil {
+		t.Errorf("b's heartbeat: features %v upgrade %+v", hb.Features, hb.Upgrade)
+	}
+	// The newer server never hands them back.
+	stays(t, 2*time.Second, "b running the jobs", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+}
+
+func TestNoHandOverWhileBusy(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	var busy atomic.Value
+	busy.Store("retention run")
+	a := versionNode(t, c, "1.5.0", timing, func(s *Settings) { s.Busy = func() string { return busy.Load().(string) } })
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	until(t, 5*time.Second, "a's heartbeat to say it is busy", func() bool {
+		hb := heartbeatOf(t, fos, a.ID())
+		return hb.Upgrade != nil && hb.Upgrade.Busy == "retention run"
+	})
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b, 5*time.Second)
+	stays(t, 2*time.Second, "a running the jobs while busy", func() bool { return a.RunsJobs() && !b.RunsJobs() })
+	busy.Store("")
+	until(t, 10*time.Second, "the jobs to move once a is no longer busy", b.RunsJobs)
+}
+
+func TestNoHandOverToAServerWhoseFilesDiffer(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	files := func(r string) func(*Settings) {
+		return func(s *Settings) {
+			s.Fingerprints = func() Fingerprints { return Fingerprints{Retention: r, Feeds: "f", Detections: "d"} }
+		}
+	}
+	a := versionNode(t, c, "1.5.0", timing, files("r1"))
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, files("r2"))
+	until(t, 5*time.Second, "b to say it cannot take over", func() bool { return heartbeatOf(t, fos, b.ID()).CannotTakeOver != "" })
+	// Never a moment's "" between b's watch passes either: a heartbeat
+	// sent then had a hand the jobs to b, which refuses them.
+	stays(t, 2*time.Second, "a running the jobs", func() bool {
+		return a.RunsJobs() && !b.RunsJobs() && b.lease.View().CannotTake != ""
+	})
+}
+
+func TestHandOverAtMostOncePerYieldEvery(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	until(t, 10*time.Second, "the jobs to move to b", func() bool { return b.RunsJobs() && !a.RunsJobs() })
+	// b stops; a takes the jobs back. A newer server that starts now is
+	// not handed them again within YieldEvery.
+	b.Stop()
+	until(t, 10*time.Second, "a to take the jobs back", a.RunsJobs)
+	b2 := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b2, 5*time.Second)
+	stays(t, 2*time.Second, "a running the jobs", func() bool { return a.RunsJobs() && !b2.RunsJobs() })
+}
+
+func TestNoHandOverWhileFrozen(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	timing := yieldTiming(time.Minute)
+	timing.YieldSettle = 1500 * time.Millisecond
+	a := versionNode(t, c, "1.5.0", timing, nil)
+	until(t, 5*time.Second, "a to run the jobs", a.RunsJobs)
+	b := versionNode(t, c, "1.6.0", timing, nil)
+	waitReady(t, b, 5*time.Second)
+	fos.Block(true)
+	until(t, 5*time.Second, "a to hold the jobs in delete-only mode", a.Lease().Frozen)
+	stays(t, 2*time.Second, "a holding the jobs while frozen", func() bool { return a.Lease().Holding() && !b.RunsJobs() })
+	fos.Block(false)
+	until(t, 15*time.Second, "the jobs to move once OpenSearch takes writes", b.RunsJobs)
 }

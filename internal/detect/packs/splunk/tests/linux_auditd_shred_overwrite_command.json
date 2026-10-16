@@ -1,0 +1,13 @@
+{"rule": "ce2bde4d-a1d4-4452-8c87-98440e5adfb3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -n x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -z x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -u x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -s x"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -n y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -z y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -u y"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"proctitle":"x shred x x -s y"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 10:00:26.358:44872) : proctitle=shred -n 5 -u -z 0"}},
+  {"expect":true,"source":"attack_data","channel":"Linux-auditd","event_id":"PROCTITLE","data":{"_raw":"type=PROCTITLE msg=audit(02/20/2025 13:06:23.403:103739) : proctitle=shred -n 5 -u -z 0"}}
+]}

@@ -1,0 +1,10 @@
+{"rule": "962fe167-e48d-4fd6-9974-11e5b9a5d6d1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectName":"\\lsass.exe","ObjectType":"Process"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectName":"\\lsass.exe","ObjectType":"Process","ProcessName":":\\Program Files (x86)\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectName":"\\lsass.exe","ObjectType":"Process","SubjectUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"0x1410","ObjectName":"\\lsass.exe","ObjectType":"Process","ProcessName":"C:\\Windows\\System32\\wbem\\WmiPrvSE.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectName":"\\lsass.exe","ObjectType":"Process","ProcessName":"\\SteamLibrary\\steamapps\\"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"ObjectName":"\\lsass.exe","ObjectType":"Process"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectType":"Process"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4656","data":{"AccessMask":"1f1fff","ObjectName":"\\lsass.exe"}}
+]}

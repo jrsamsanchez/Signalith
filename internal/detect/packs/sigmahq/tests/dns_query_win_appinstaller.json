@@ -1,0 +1,4 @@
+{"rule": "7cff77e1-9663-46a3-8260-17f2e1aa9d0a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"Image":"C:\\Program Files\\WindowsApps\\Microsoft.DesktopAppInstaller_\\AppInstaller.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

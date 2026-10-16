@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,9 @@ const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    
 func goodFacts(t *testing.T, extra string) *Facts {
 	t.Helper()
 	c := loadConfig(t, httpsAuto+"opensearch:\n  url: https://127.0.0.1:9200\n  username: signalith\n  password: "+sentinelOS+"\n  index_prefix: signalith\n"+extra)
+	if c.Auth.MFARequired == "" {
+		c.Auth.MFARequired = "admins"
+	}
 	ca := &tlsauto.CAInfo{Scope: tlsauto.ScopeStandard, Fingerprint: "AB:12", Subject: "Signalith Local CA (siem-1)",
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
@@ -398,6 +402,52 @@ func TestCAScope(t *testing.T) {
 				t.Errorf("%q", c.Details)
 			}
 		}},
+		// The certificate authority all servers share can't be changed
+		// yet: no step says to make a new one, and no button leads there.
+		{name: "cluster's, unconstrained", set: func(f *Facts) {
+			f.Runtime.ClusterServer, f.TLS.ClusterCA, f.TLS.CA.Scope = "siem-1", true, "unconstrained"
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Fix)
+			if len(c.Details) != 1 || !strings.Contains(c.Details[0], "All the cluster's servers share") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "cluster's, mismatch", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.ScopeSetup = true, "strict" }, state: Attention,
+			line: "You chose a strict certificate authority, but the one all servers share is standard.",
+			fix:  func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "cluster's, standard", set: func(f *Facts) { f.TLS.ClusterCA = true }, state: Good, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Tip)
+			if strings.Contains(strings.Join(c.Tip.Steps, " "), "from this server") {
+				t.Errorf("tip %q", c.Tip.Steps)
+			}
+		}},
+	})
+}
+
+// noChange checks a fix offers no change of the cluster's certificate
+// authority: no button, and no step to make a new one.
+func noChange(t *testing.T, f *Fix) {
+	t.Helper()
+	if f == nil {
+		t.Fatal("no fix")
+	}
+	text := strings.Join(f.Steps, " ")
+	if f.Action != "" || strings.Contains(text, "Make a new") || strings.Contains(text, "switch to") {
+		t.Errorf("fix %+v", f)
+	}
+}
+
+func TestClusterCACertificate(t *testing.T) {
+	runCases(t, "transit.certificate", []checkCase{
+		{name: "outside", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.Outside = true, []string{"siem.example.com"} }, state: Attention,
+			fix: func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "expiring", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.CA.NotAfter = true, now.AddDate(0, 3, 0) }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				noChange(t, c.Fix)
+				if !strings.Contains(c.Line, "all servers share expires") {
+					t.Errorf("line %q", c.Line)
+				}
+			}},
 	})
 }
 
@@ -778,7 +828,7 @@ func TestDisk(t *testing.T) {
 
 func TestArchives(t *testing.T) {
 	arch := func(f *Facts) {
-		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}}
+		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}, Encrypting: true, Plain: 120}
 	}
 	runCases(t, "rest.archives", []checkCase{
 		{name: "none", state: ""},
@@ -801,9 +851,20 @@ func TestArchives(t *testing.T) {
 			}
 		}},
 		{name: "plain disk", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain }, state: Attention,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Signalith doesn't encrypt archives itself."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encrypted", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 0 }, state: Good,
+			line: "120 archived days (3 GB) in /var/lib/signalith/archive are encrypted, readable only by Signalith."},
+		{name: "some plain", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 20 }, state: Attention,
+			line: "20 of the 120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encryption off", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Encrypting = false }, state: Attention,
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Archive encryption is turned off (retention.encrypt_archives: false).",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 2 {
+					t.Errorf("%q", c.Fix.Steps)
+				}
+			}},
 		{name: "share", set: func(f *Facts) { arch(f); f.Archive.Disk = Disk{Kind: DiskNetwork, Source: "nas:/a"} }, state: Unknown,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
 		{name: "many", set: func(f *Facts) { arch(f); f.Archive.Count, f.Archive.More = archiveMaxFiles, true }, state: Good,
 			fix: func(t *testing.T, c *Check) {
 				if !strings.HasPrefix(c.Line, "100,000+ archived days") {
@@ -1035,7 +1096,7 @@ func TestUserFactsFrom(t *testing.T) {
 	st := users.NewMemory()
 	st.Now = func() time.Time { return now.AddDate(0, 0, -10) }
 	mk := func(name string, role users.Role, must bool) {
-		if _, err := st.Create(users.NewUser{Username: name, Role: role, Password: "a-long-password-1", MustChangePassword: must}); err != nil {
+		if _, err := st.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "a-long-password-1", MustChangePassword: must}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1082,38 +1143,105 @@ func TestDirectory(t *testing.T) {
 
 func TestSessions(t *testing.T) {
 	runCases(t, "accounts.sessions", []checkCase{
-		// Keep me signed in skips the idle limit (see auth.Sessions).
-		{name: "default", state: Good, line: "People are signed out after 12 hours without use, unless they choose Keep me signed in, which keeps them signed in for up to 7 days."},
-		{name: "long", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention, line: "People stay signed in for up to 3 days without using Signalith.",
+		// Keep me signed in skips the idle limit, but not the maximum age
+		// (see auth.Sessions).
+		{name: "default", state: Good, line: "People are signed out after 1 hour without use, unless they choose Keep me signed in, and every sign-in ends after 1 day."},
+		{name: "long idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention,
+			line: "People stay signed in for up to 3 days without using Signalith. NIST SP 800-63B (AAL2) asks for at most 1 hour.",
 			fix: func(t *testing.T, c *Check) {
-				if c.Fix.Setting != "auth.session_timeout" {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 1 {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+		{name: "just over an hour idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "2h" }, state: Attention},
+		{name: "long max age", set: func(f *Facts) { f.Config.Auth.SessionMaxAge = "7d" }, state: Attention,
+			line: "A sign-in lasts up to 7 days before people must sign in again. NIST SP 800-63B (AAL2) asks for at most 24 hours.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_max_age" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "both long", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "12h", "30d" }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 2 {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "stricter", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "15m", "8h" }, state: Good,
+			line: "People are signed out after 15 minutes without use, unless they choose Keep me signed in, and every sign-in ends after 8 hours."},
+	})
+}
+
+func TestMFACheck(t *testing.T) {
+	runCases(t, "accounts.mfa", []checkCase{
+		{name: "off", set: func(f *Facts) { f.Config.Auth.MFARequired = "" }, state: Attention, line: "Admins can sign in with a password alone.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.mfa_required" || c.Fix.Docs.Anchor != "two-step-sign-in" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "admins", set: func(f *Facts) { f.Config.Auth.MFARequired = "admins" }, state: Good, line: "Admins who sign in with a password also enter a code from an authenticator app."},
+		{name: "everyone", set: func(f *Facts) { f.Config.Auth.MFARequired = "everyone" }, state: Good, line: "Everyone who signs in with a password also enters a code from an authenticator app."},
 	})
 }
 
 func TestAgentTokens(t *testing.T) {
+	shared := "ingest:\n  tokens: [" + sentinelToken + "]\n"
+	legacy := func(l LegacyTokenFact) func(f *Facts) {
+		return func(f *Facts) {
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 2, Legacy: []LegacyTokenFact{l}}
+		}
+	}
+	replaceFix := func(t *testing.T, c *Check) {
+		if c.Fix == nil || len(c.Fix.Steps) != 3 || c.Fix.Page == nil || c.Fix.Page.ID != "data" || c.Fix.Docs == nil || c.Fix.Docs.Anchor != "replace-a-shared-token" ||
+			c.Fix.Docs.Label != "Replace a shared token" || !strings.Contains(c.Fix.Steps[2], "Docker quick start, leave docker-compose.yml as it is") {
+			t.Errorf("%+v", c.Fix)
+		}
+	}
 	runCases(t, "accounts.agent_tokens", []checkCase{
 		{name: "none", state: ""},
-		{name: "good", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", state: Good, line: "Agents send with tokens of 24 characters or more.",
-			fix: func(t *testing.T, c *Check) {
-				if len(c.Details) != 1 {
+		{name: "none, read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true} }, state: ""},
+		{name: "own tokens only", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 3} }, state: Good,
+			line: "Each agent group sends with its own token (3 active)."},
+		// A refused shared token counts as retired: nobody needs to edit
+		// docker-compose.yml.
+		{name: "shared token refused", set: legacy(LegacyTokenFact{Length: 48, Refused: true, LastUsed: now}), state: Good,
+			line: "Each agent group sends with its own token (2 active).", fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 2 || !strings.Contains(c.Details[1], "no longer accepted") || !strings.Contains(c.Details[1], "Leaving it there is fine") {
 					t.Errorf("%q", c.Details)
 				}
 			}},
-		{name: "public", extra: "ingest:\n  tokens: [change-this-ingest-token]\n", state: Risk,
-			line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.",
-			fix: func(t *testing.T, c *Check) {
-				if !strings.HasPrefix(c.Fix.Commands["linux"], "sudo signalith secrets set ingest.tokens"+tempConfigArg) {
-					t.Errorf("%q", c.Fix.Commands)
+		{name: "shared token in use", set: legacy(LegacyTokenFact{Length: 48, LastUsed: now.Add(-time.Hour)}), state: Attention,
+			line: "Some agents still send with a shared token.", fix: replaceFix},
+		{name: "shared token unused", set: legacy(LegacyTokenFact{Length: 48, LastUsed: now.Add(-8 * 24 * time.Hour)}), state: Attention,
+			line: "A shared agent token is still accepted, though no agent has used it in the last 7 days.", fix: replaceFix},
+		// The token a new Docker quick start makes, which no agent has:
+		// good, with a tip to stop accepting it.
+		{name: "shared token never used", set: legacy(LegacyTokenFact{Length: 48}), state: Good,
+			line: "No agent sends with a shared token, though one is still accepted.", fix: func(t *testing.T, c *Check) {
+				if c.Fix != nil || c.Tip == nil || c.Tip.Page == nil || c.Tip.Page.ID != "data" || c.Tip.Docs.Label != "Replace a shared token" {
+					t.Errorf("%+v %+v", c.Fix, c.Tip)
 				}
 			}},
+		{name: "shared token never used, new Docker quick start", set: func(f *Facts) {
+			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
+			f.InContainer, f.Docker = true, true
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Legacy: []LegacyTokenFact{{Length: 48, Source: "SIGNALITH_INGEST_TOKEN_FILE"}}}
+		}, state: Good, line: "No agent sends with a shared token, though one is still accepted."},
+		{name: "shared token never used, no agent token", set: func(f *Facts) {
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Legacy: []LegacyTokenFact{{Length: 48}}}
+		}, state: Attention, line: "A shared agent token is still accepted, though no agent has used it in the last 7 days."},
+		{name: "not read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{} }, state: Unknown, line: "Couldn't read the agent tokens from OpenSearch."},
+		{name: "not read, shared from the configuration", extra: shared, state: Attention,
+			line: "A shared agent token is accepted; how it was used couldn't be read from OpenSearch."},
+		{name: "public", extra: "ingest:\n  tokens: [change-this-ingest-token]\n", state: Risk,
+			line: "Agents can send events with change-this-ingest-token, an example token anyone can look up.", fix: replaceFix},
+		{name: "public refused", set: legacy(LegacyTokenFact{Public: true, Refused: true, Length: 24}), state: Good},
 		// A Docker quick start upgraded from a version whose agents send
 		// the old example token accepts it over plain HTTP while agents on
 		// plain HTTP are (see api.retiredTokenAccepted), whatever tokens
 		// are set.
-		{name: "public token accepted", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "public token accepted", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Index: "signalith-authentication-2026.09.30",
 				IndexMade: time.Date(2026, 9, 30, 0, 4, 0, 0, time.UTC), Decided: now})
 			f.InContainer, f.Docker, f.PublicTokenAccepted = true, true, true
@@ -1130,32 +1258,33 @@ func TestAgentTokens(t *testing.T) {
 		{name: "public token accepted, no tokens", set: func(f *Facts) { f.PublicTokenAccepted = true }, state: Risk},
 		// Elsewhere on the Docker quick start, the check says why the old
 		// token is refused.
-		{name: "quick start installed new", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "quick start installed new", set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Decided: now})
 			f.InContainer, f.Docker = true, true
+			f.AgentTokens = &AgentTokenFacts{Loaded: true, Active: 1}
 		}, state: Good, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "change-this-ingest-token, is refused: this install started new") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
-		{name: "quick start not decided yet", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "quick start not decided yet", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(nil)
 			f.InContainer, f.Docker = true, true
-		}, state: Good, fix: func(t *testing.T, c *Check) {
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for now") || !strings.Contains(c.Details[1], "keep their events") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
-		{name: "upgraded quick start, ended", extra: "ingest:\n  tokens: [" + sentinelToken + "]\n", set: func(f *Facts) {
+		{name: "upgraded quick start, ended", extra: shared, set: func(f *Facts) {
 			f.Config = f.Config.WithDockerUpgrade(&config.DockerUpgrade{Upgraded: true, Decided: now, Ended: time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)})
 			f.InContainer, f.Docker = true, true
-		}, state: Good, fix: func(t *testing.T, c *Check) {
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
 			if len(c.Details) != 2 || !strings.Contains(c.Details[1], "is refused for good") || !strings.Contains(c.Details[1], "since 2 Oct 2026") {
 				t.Errorf("%q", c.Details)
 			}
 		}},
 		{name: "short", extra: "ingest:\n  tokens: [SENTINEL-short-tok20]\n", state: Attention,
-			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 48."},
+			line: "An agent token is only 20 characters long, so it's easier to guess. Tokens Signalith makes have 56."},
 	})
 }
 
@@ -1230,6 +1359,31 @@ func TestOpenSearchRole(t *testing.T) {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+	})
+}
+
+func TestOpenSearchCRL(t *testing.T) {
+	later := func(f *Facts) time.Time { return f.Now.Add(5 * 365 * 24 * time.Hour) }
+	runCases(t, "accounts.opensearch_crl", []checkCase{
+		{name: "not set", state: ""},
+		{name: "good", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."},
+		{name: "names some", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Revoked: 2, NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once. It names 2 certificates."},
+		{name: "missing", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Missing: true} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem is missing. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.crl_file" || c.Fix.Docs.Anchor != "ending-a-servers-opensearch-access-at-once" || !strings.Contains(c.Fix.Steps[0], "up -d") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "expired", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Err: "it expired on 2026-01-01"} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem cannot be used: it expired on 2026-01-01. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."},
+		{name: "expires soon", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: f.Now.Add(10 * 24 * time.Hour)} }, state: Attention},
+		{name: "behind", set: func(f *Facts) {
+			f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)}
+			f.Runtime = &RuntimeFacts{CRLProblem: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."}
+		}, state: Risk, line: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."},
 	})
 }
 

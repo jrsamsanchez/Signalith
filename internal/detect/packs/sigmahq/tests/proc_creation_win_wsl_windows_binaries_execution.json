@@ -1,0 +1,5 @@
+{"rule": "ed825c86-c009-4014-b413-b76003e33d35", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CurrentDirectory":"\\\\wsl.localhost","Image":"A:\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"A:\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CurrentDirectory":"\\\\wsl.localhost"}}
+]}

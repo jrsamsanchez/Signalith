@@ -1,0 +1,4 @@
+{"rule": "92772523-d9c1-4c93-9547-b0ca500baba3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\mpnotify"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+]}

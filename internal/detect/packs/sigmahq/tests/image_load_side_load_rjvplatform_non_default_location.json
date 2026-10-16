@@ -1,0 +1,5 @@
+{"rule": "0e0bc253-07ed-43f1-816d-e1b220fe8971", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\SystemResetPlatform.exe","ImageLoaded":"\\RjvPlatform.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"\\RjvPlatform.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"\\SystemResetPlatform.exe"}}
+]}

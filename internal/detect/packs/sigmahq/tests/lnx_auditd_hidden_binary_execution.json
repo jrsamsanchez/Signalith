@@ -1,0 +1,5 @@
+{"rule": "9e1bef8d-0fff-46f6-8465-9aa54e128c1e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/."}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/. /.rustup/toolchains"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "4281cb20-2994-4580-aa63-c8b86d019934", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x +h x","OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x +h \\desktop.ini x","OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"+R +H +S +A \\*.cui","OriginalFileName":"ATTRIB.EXE","ParentCommandLine":"C:\\WINDOWS\\system32\\*.bat","ParentImage":"\\cmd.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"ATTRIB.EXE"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x +h x"}}
+]}

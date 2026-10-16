@@ -1,0 +1,4 @@
+{"rule": "f92a6f1e-a512-4a15-9735-da09e78d7273", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\System32\\config \\Hotfixinfo.txt"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

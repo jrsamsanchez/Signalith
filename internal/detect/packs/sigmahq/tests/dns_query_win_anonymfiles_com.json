@@ -1,0 +1,4 @@
+{"rule": "065cceea-77ec-4030-9052-fc0affea7110", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{"QueryName":".anonfiles.com"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"22","data":{}}
+]}

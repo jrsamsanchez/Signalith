@@ -19,13 +19,33 @@ type Session struct {
 	User     string
 	Created  time.Time
 	LastSeen time.Time
-	// Remember keeps the session through idle periods up to MaxAge, for a
-	// "keep me signed in" sign-in.
+	// Remember keeps the session through idle periods, for a "keep me
+	// signed in" sign-in. It still ends MaxAge after sign-in.
 	Remember bool
 	// Version identifies the password the user signed in with ("" when
 	// there is none to follow), so a session can end when the password
 	// changes on another server that shares the users file.
 	Version string
+	// Epoch is the user's session epoch at sign-in (users.User.
+	// SessionEpoch): a session made in an older epoch has ended.
+	Epoch int64
+	// Method is how the user signed in: local, directory or builtin.
+	Method string
+	// Degraded marks a session made while OpenSearch could not be
+	// reached, kept by one server only until it can be written through.
+	Degraded bool
+}
+
+// NewSession is what a session starts with.
+type NewSession struct {
+	User     string
+	Remember bool
+	// Version, Epoch and Method are as in Session.
+	Version string
+	Epoch   int64
+	Method  string
+	// Client is the address the user signed in from.
+	Client string
 }
 
 // Sessions stores sessions by a hash of their token, so the tokens
@@ -42,31 +62,50 @@ type Sessions struct {
 
 	mu   sync.Mutex
 	byID map[[32]byte]*Session
+	// forward, when set, takes each new session instead of the store
+	// (see Forward).
+	forward func(Held)
 }
 
-// NewSessions returns a store with the given idle timeout and a 7 day
+// DefaultMaxAge is how long a session lasts after sign-in, remembered or
+// not, until SetMaxAge says otherwise: NIST SP 800-63B asks for a new
+// sign-in at least every 24 hours at AAL2.
+const DefaultMaxAge = 24 * time.Hour
+
+// NewSessions returns a store with the given idle timeout and the default
 // maximum age.
 func NewSessions(idle time.Duration) *Sessions {
-	return &Sessions{Idle: idle, MaxAge: 7 * 24 * time.Hour, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
+	return &Sessions{Idle: idle, MaxAge: DefaultMaxAge, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
 }
 
 func hash(token string) [32]byte { return sha256.Sum256([]byte(token)) }
 
 // Create starts a session and returns its token.
 func (s *Sessions) Create(user string, remember bool) string {
+	return s.Start(NewSession{User: user, Remember: remember})
+}
+
+// Start starts the session n and returns its token.
+func (s *Sessions) Start(n NewSession) string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
 	s.mu.Lock()
+	if f := s.forward; f != nil {
+		s.mu.Unlock()
+		f(Held{Hash: hash(token), Session: *ss})
+		return token
+	}
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
 	if len(s.byID) >= s.Limit {
 		s.evictLocked(len(s.byID) - s.Limit + 1)
 	}
-	s.byID[hash(token)] = &Session{User: user, Created: now, LastSeen: now, Remember: remember}
+	s.byID[hash(token)] = ss
 	return token
 }
 
@@ -112,6 +151,21 @@ func (s *Sessions) SetIdle(idle time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Idle = idle
+}
+
+// SetMaxAge changes how long a session lasts after sign-in, remembered or
+// not, for every session, the current ones included.
+func (s *Sessions) SetMaxAge(maxAge time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.MaxAge = maxAge
+}
+
+// MaxAgeNow returns MaxAge, safe to call while SetMaxAge may run.
+func (s *Sessions) MaxAgeNow() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.MaxAge
 }
 
 // SetVersion records which password a session's user has now (see
@@ -167,6 +221,41 @@ func (s *Sessions) Users() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Held is a session as the store keeps it, under the SHA-256 of its
+// token.
+type Held struct {
+	Hash [32]byte
+	Session
+}
+
+// Take removes every session and returns those that have not expired:
+// for a server that moves them to another store when it starts keeping
+// its sessions elsewhere.
+func (s *Sessions) Take() []Held {
+	now := s.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Held
+	for id, ss := range s.byID {
+		if !s.expired(ss, now) {
+			out = append(out, Held{Hash: id, Session: *ss})
+		}
+	}
+	clear(s.byID)
+	return out
+}
+
+// Forward hands each session started from now on to f instead of
+// keeping it, or keeps them again when f is nil: for a server that moved
+// its sessions to another store (Take), whose sign-ins already under way
+// when it switched still finish here. Call it before Take, so every
+// session is either taken or handed to f.
+func (s *Sessions) Forward(f func(Held)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forward = f
 }
 
 // Len reports how many sessions are stored.

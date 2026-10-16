@@ -1,5 +1,6 @@
 id: auth-shadow-file-access
 title: $src_user$ read password hashes on $dest$ with sudo
+name: Password hashes read with sudo
 description: A sudo command touched /etc/shadow or /etc/gshadow, where Linux stores password hashes.
 query: |
   datamodel=Authentication app=sudo action=success process IN ("*/etc/shadow*", "*/etc/gshadow*")

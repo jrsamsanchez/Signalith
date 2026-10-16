@@ -1,0 +1,5 @@
+{"rule": "214e8f95-100a-4e04-bb31-ef6cba8ce07e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"spoolss","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"spoolss"}}
+]}

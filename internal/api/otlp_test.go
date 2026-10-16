@@ -93,8 +93,8 @@ func TestOTLPLogs(t *testing.T) {
 		code   int
 		msg    string
 	}{
-		{"no token", otlpProtoRequest("x"), map[string]string{"Authorization": ""}, 401, "ingest token"},
-		{"wrong token", otlpProtoRequest("x"), map[string]string{"Authorization": "Bearer nope-nope-nope-nope"}, 401, "ingest token"},
+		{"no token", otlpProtoRequest("x"), map[string]string{"Authorization": ""}, 401, "agent token"},
+		{"wrong token", otlpProtoRequest("x"), map[string]string{"Authorization": "Bearer nope-nope-nope-nope"}, 401, "agent token"},
 		{"not OTLP", []byte("x"), map[string]string{"Content-Type": "text/plain"}, 415, "application/x-protobuf"},
 		{"zstd", otlpProtoRequest("x"), map[string]string{"Content-Encoding": "zstd"}, 415, "gzip"},
 		{"bad gzip", []byte("not gzip"), map[string]string{"Content-Encoding": "gzip"}, 400, "gzip"},

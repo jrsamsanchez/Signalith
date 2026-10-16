@@ -1,0 +1,4 @@
+{"rule": "1a42dfa6-6cb2-4df9-9b48-295be477e835", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"ImageLoaded":"\\WinRing0.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

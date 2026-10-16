@@ -1,0 +1,4 @@
+{"rule": "d99b79d2-0a6f-4f46-ad8b-260b6e17f982", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"1102","data":{"Provider_Name":"Microsoft-Windows-Eventlog"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"1102","data":{}}
+]}

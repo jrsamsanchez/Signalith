@@ -1,0 +1,5 @@
+{"rule": "d54c2f06-aca9-4e2b-81c9-5317858f4b79", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"vsan  get","Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"Image":"/esxcli"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"1","data":{"CommandLine":"vsan  get"}}
+]}

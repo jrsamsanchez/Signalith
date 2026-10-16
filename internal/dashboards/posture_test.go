@@ -162,8 +162,15 @@ func TestPostureMetrics(t *testing.T) {
 	if d := rep.TopDetections[0]; d.ID != "endpoint-scheduled-task" || d.RiskEvents != 9 || d.Findings != 0 {
 		t.Errorf("top = %+v", d)
 	}
-	if d := rep.TopDetections[1]; d.ID != "auth-brute-force" || d.Findings != 2 || d.RiskEvents != 1 || strings.Contains(d.Title, "$") {
+	// Counted across hosts, a detection is named without its $field$
+	// placeholders, not "Brute force against dest from src".
+	if d := rep.TopDetections[1]; d.ID != "auth-brute-force" || d.Findings != 2 || d.RiskEvents != 1 || d.Title != "Brute force" {
 		t.Errorf("second = %+v", d)
+	}
+	for _, d := range rep.TopDetections {
+		if d.ID == "endpoint-encoded-powershell" && d.Title != "Encoded PowerShell command" {
+			t.Errorf("encoded PowerShell title = %q", d.Title)
+		}
 	}
 
 	// Tactics in matrix order with names.
@@ -182,7 +189,7 @@ func TestPostureMetrics(t *testing.T) {
 	if h.Total != len(lib.List()) || h.Enabled == 0 || h.Enabled >= h.Total || !h.SchedulerOn {
 		t.Errorf("health counts = %+v", h)
 	}
-	if len(h.Erroring) != 1 || h.Erroring[0].ID != "auth-password-spray" || h.Erroring[0].Error != "unknown field" {
+	if len(h.Erroring) != 1 || h.Erroring[0].ID != "auth-password-spray" || h.Erroring[0].Error != "unknown field" || h.Erroring[0].Title != "Password spray" {
 		t.Errorf("erroring = %+v", h.Erroring)
 	}
 	silent := map[string]bool{}
@@ -243,7 +250,84 @@ func TestTriageAndResolveTimes(t *testing.T) {
 	if _, ok := ResolvedAt(f); ok {
 		t.Error("open finding has a resolve time")
 	}
-	if cleanTitle("Brute force against $dest$ from $src$") != "Brute force against dest from src" {
-		t.Error("title tokens")
+}
+
+// A detection no longer in the library is named by its findings' title
+// only when every finding has the same one: a title filled in for one host
+// must not name a count across several.
+func TestPostureTopDetectionsRemovedDetection(t *testing.T) {
+	m := findings.NewMemory()
+	for i, x := range []struct{ det, title string }{
+		{"gone-same", "Odd thing seen"}, {"gone-same", "Odd thing seen"},
+		{"gone-mixed", "Odd login on ws-1"}, {"gone-mixed", "Odd login on ws-2"},
+	} {
+		f := mkFinding(fmt.Sprint("f", i), x.det, "low", "new", now.Add(-time.Hour), nil)
+		f.Title = x.title
+		if err := m.Create(context.Background(), f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := &Posture{Engine: postureExec(t, ""), Findings: m, Now: func() time.Time { return now }}
+	rep := p.Report(context.Background(), 24*time.Hour, "24h")
+	got := map[string]string{}
+	for _, d := range rep.TopDetections {
+		got[d.ID] = d.Title
+	}
+	if got["gone-same"] != "Odd thing seen" || got["gone-mixed"] != "gone-mixed" {
+		t.Errorf("titles = %v", got)
+	}
+}
+
+// Health comes from the run state every server shares: a server that
+// does not run the detections still counts the ones that never ran or
+// fail, lists the ones behind, and merges the runs that were skipped.
+func TestPostureHealthOnAnotherServer(t *testing.T) {
+	lib, _, err := detect.NewLibrary("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gapFrom, gapTo := now.Add(-10*time.Hour), now.Add(-6*time.Hour)
+	status := map[string]detect.RunState{
+		"auth-password-spray": {LastRun: now.Add(-time.Minute), LastError: "unknown field", ErrorKind: detect.ErrorQuery},
+		"auth-brute-force": {LastRun: now.Add(-time.Minute), NextRun: now.Add(time.Minute),
+			Skipped: &detect.Skipped{From: gapFrom, To: gapTo.Add(-time.Hour), At: now.Add(-time.Hour), Count: 48}},
+		"endpoint-encoded-powershell": {LastRun: now.Add(-time.Minute), NextRun: now.Add(-3 * time.Hour),
+			Skipped: &detect.Skipped{From: gapFrom.Add(time.Hour), To: gapTo, At: now.Add(-2 * time.Hour), Count: 12}},
+		// Skipped long ago: not shown.
+		"endpoint-shadow-copy-delete": {LastRun: now.Add(-time.Minute),
+			Skipped: &detect.Skipped{From: now.Add(-80 * time.Hour), To: now.Add(-79 * time.Hour), At: now.Add(-72 * time.Hour), Count: 5}},
+	}
+	p := &Posture{Engine: postureExec(t, ""), Findings: seedFindings(t), Detections: lib, Status: func() map[string]detect.RunState { return status },
+		SchedulerOn: true, Elsewhere: true, RunsOn: "siem-a", StaleAfter: 2 * time.Hour, Now: func() time.Time { return now }}
+	h := p.Report(context.Background(), 24*time.Hour, "24h").Health
+	if !h.RunsElsewhere || h.RunsOn != "siem-a" || h.SchedulerOn {
+		t.Errorf("label = %+v", h)
+	}
+	if h.NotRun != h.Enabled-len(status) {
+		t.Errorf("not run = %d of %d enabled", h.NotRun, h.Enabled)
+	}
+	if len(h.Erroring) != 1 || h.Erroring[0].ID != "auth-password-spray" {
+		t.Errorf("erroring = %+v", h.Erroring)
+	}
+	behind := false
+	for _, b := range h.Behind {
+		behind = behind || b.ID == "endpoint-encoded-powershell"
+		if b.ID == "auth-brute-force" {
+			t.Errorf("brute force is not behind: %+v", h.Behind)
+		}
+	}
+	if !behind {
+		t.Errorf("behind = %+v", h.Behind)
+	}
+	g := h.Skipped
+	if g == nil || g.Runs != 60 || g.Detections != 2 || g.Title != "" || !g.From.Equal(gapFrom) || !g.To.Equal(gapTo) {
+		t.Errorf("skipped = %+v", g)
+	}
+
+	// One rule: the gap names it.
+	status = map[string]detect.RunState{"auth-brute-force": status["auth-brute-force"]}
+	g = p.Report(context.Background(), 24*time.Hour, "24h").Health.Skipped
+	if g == nil || g.Runs != 48 || g.Detections != 1 || g.Title == "" {
+		t.Errorf("one skipped = %+v", g)
 	}
 }

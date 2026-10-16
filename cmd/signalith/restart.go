@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
@@ -23,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/httpserver"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/security"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -94,9 +96,22 @@ type runner struct {
 	// identity and lock, heartbeat and job lease. A restart keeps it and
 	// points it at the new OpenSearch client; nil in some tests.
 	node *cluster.Node
+	// shared is this server's place in the shared configuration: its
+	// watcher, its copy of the settings and cache.enc. A restart keeps it
+	// and points it at the new OpenSearch client; nil in some tests.
+	shared *shared.Runtime
+	// sharedContent links the shared settings' content (feeds, retention
+	// policies) to the components of each start; nil with shared.
+	sharedContent *sharedContent
+	// audit is the process's audit spool (see sharedaudit.go); nil in
+	// some tests.
+	audit *processAudit
 	// security runs the Security page's checks and keeps the last
 	// report, which a restart keeps.
 	security *api.SecurityChecker
+	// agents is the agent inventory of the instance running now, which
+	// hears of the agents that refuse the certificate.
+	agents atomic.Pointer[agentinv.Inventory]
 
 	front *front
 	// prepared is the HTTPS certificate a restart's checks loaded or made
@@ -126,6 +141,10 @@ type runner struct {
 	web     *webServer
 	retired []*webServer // old web servers still answering for a while
 
+	// srv is the API server of the start running now, which checks a
+	// change of this server's own settings made on another server's page.
+	srv atomic.Pointer[api.Server]
+
 	// failStart, for tests, makes starting with a config fail.
 	failStart func(*config.Config) error
 	// keysLogged is where the master key came from when that was last
@@ -138,6 +157,16 @@ type restartRequest struct {
 	// localOnly is true when the admin agreed that the web page answers
 	// on the server itself only: a move is then not undone.
 	localOnly bool
+	// keep restarts with the settings in use rather than the saved ones:
+	// the components are built again for another reason (see
+	// followShared).
+	keep bool
+	// reload, with keep, starts with the configuration loaded again: the
+	// settings of the Settings page moved to the shared settings or back.
+	reload bool
+	// remote is the restart request of another server this restart
+	// runs for; nil for one asked for here.
+	remote *remoteRestart
 }
 
 // move is a restart that moved the web page, waiting for someone to reach
@@ -153,15 +182,26 @@ type move struct {
 	prev   *config.Config
 	refuse []string
 	timer  *time.Timer
+	// token, for a restart run by a restart request, is the token the
+	// server that asked probes the new address with, and remote that
+	// request, which ends once the move was confirmed or undone.
+	token  string
+	remote *remoteRestart
 }
 
 func newRunner(path string, log *slog.Logger) *runner {
 	r := &runner{
 		path: path, log: log, started: time.Now(),
-		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
+		sessions: auth.NewSessions(config.DefaultSessionIdle), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
 		front: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
 	}
 	r.front.ready = r.ready
+	r.front.confirmMove = r.confirmProbe
+	// While the users are shared, the limits are shared out among the
+	// servers that take sign-ins, and a lock tripped here is reported to
+	// the others; otherwise these change nothing. Set once, as the limiter
+	// carries over a restart.
+	r.limiter.Divisor, r.limiter.OnLock = r.signInServers, r.reportLock
 	r.security = api.NewSecurityChecker(log)
 	r.security.Started = r.started
 	r.security.OnReport = func(rep *security.Report) {
@@ -173,13 +213,31 @@ func newRunner(path string, log *slog.Logger) *runner {
 	return r
 }
 
+// signInServers is the limiter's Divisor (see sharedUsers).
+func (r *runner) signInServers() int {
+	if r.sharedContent == nil {
+		return 1
+	}
+	return r.sharedContent.users.signInServers()
+}
+
+// reportLock is the limiter's OnLock (see sharedUsers).
+func (r *runner) reportLock(scope, key string, until time.Time) {
+	if r.sharedContent != nil {
+		r.sharedContent.users.reportLock(scope, key, until)
+	}
+}
+
 // ready answers /readyz: whether a load balancer should send this server
 // traffic, and if not, why, in a word.
 func (r *runner) ready() (bool, string) {
 	if r.node == nil {
 		return true, ""
 	}
-	return r.node.Ready()
+	if ok, why := r.node.Ready(); !ok {
+		return ok, why
+	}
+	return sharedReady(r.shared)
 }
 
 // fatal receives an error when this server must not run at all.
@@ -188,6 +246,15 @@ func (r *runner) fatal() <-chan error {
 		return nil
 	}
 	return r.node.Fatal()
+}
+
+// sharedFatal receives an error when the shared configuration in
+// OpenSearch is of a level this version cannot use.
+func (r *runner) sharedFatal() <-chan error {
+	if r.shared == nil {
+		return nil
+	}
+	return r.shared.Fatal()
 }
 
 // Restart implements api.Restarter.
@@ -206,6 +273,155 @@ func (r *runner) Restart(by, client string, localOnly bool) error {
 		r.requests <- restartRequest{by: by, client: client, localOnly: localOnly}
 	}()
 	return nil
+}
+
+// restartInPlace builds the components again with the settings in use,
+// or, with reload, with the configuration loaded again, for why; it
+// returns api.ErrRestarting while a restart is going.
+func (r *runner) restartInPlace(why string, reload bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.busy || r.awaiting != nil {
+		return api.ErrRestarting
+	}
+	r.busy = true
+	go func() { r.requests <- restartRequest{by: "signalith", client: why, keep: true, reload: reload} }()
+	return nil
+}
+
+// sharedCheckEvery is how often followShared looks again without being
+// told, in nanoseconds; atomic, as the tests shorten it while servers of
+// earlier tests may still look.
+var sharedCheckEvery atomic.Int64
+
+func init() { sharedCheckEvery.Store(int64(30 * time.Second)) }
+
+// sharedCheck is how often followShared looks again without being told.
+func sharedCheck() time.Duration { return time.Duration(sharedCheckEvery.Load()) }
+
+// followShared restarts the components in place when the shared
+// configuration changes where their content comes from: this server
+// founded or joined the cluster (its files to the shared settings), or
+// left it; or the users, the directory sign-in settings and the sessions
+// moved to the shared settings (or back); or the settings of the Settings
+// page did, which loads the configuration again. Each start decides once,
+// so the switch takes a restart, one for every change seen at once.
+func (r *runner) followShared(ctx context.Context) {
+	if r.shared == nil || r.sharedContent == nil {
+		return
+	}
+	changed := make(chan struct{}, 1)
+	kick := func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
+	r.shared.OnMode(func(_, _ shared.Mode) { kick() })
+	// A server that joins while the founder still moves its files into
+	// OpenSearch is a member before the shared content may be used: that
+	// waits for the cluster document to say the import is done, which
+	// changes no mode. So the cluster document is followed too, the one
+	// of the runtime's index prefix of the moment.
+	var watched *shared.Doc[shared.ClusterBody]
+	watch := func() {
+		if d := r.shared.Cluster(); d != nil && d != watched {
+			watched = d
+			d.OnChange(func(_, _ *shared.ClusterBody) { kick() })
+		}
+	}
+	// tried is the switch of the settings a restart in place was asked
+	// for: one that kept the settings in use (they could not be loaded,
+	// or they move the web page, which waits for a restart) leaves the
+	// switch undone, and it is not asked for again until another restart
+	// decides once more.
+	var tried *bool
+	for {
+		watch()
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+		case <-time.After(sharedCheck()):
+		}
+		ct := r.sharedContent
+		want, wantUsers, wantSettings := r.shared.SharedContent(), r.shared.SharedUsers(), r.settingsShared()
+		// Read once, so that the switch below agrees with settingsFlip.
+		settingsOn := ct.settingsOn.Load()
+		settingsFlip := wantSettings != settingsOn
+		if !settingsFlip {
+			tried = nil
+		} else if tried != nil && *tried == wantSettings {
+			settingsFlip = false
+		}
+		// A switch of the settings left undone counts as made until
+		// another restart decides once more.
+		if !settingsFlip {
+			settingsOn = wantSettings
+		}
+		// The parts of the components that switch between the shared
+		// settings and this server's own files, the first to switch
+		// giving the reason.
+		switches := []sharedSwitch{
+			{want, ct.on.Load(), switchWhy(want,
+				"this server now takes the threat intel feeds and retention policies from the shared settings",
+				"this server now takes the threat intel feeds and retention policies from its own files")},
+			{wantUsers, ct.users.on.Load(), switchWhy(wantUsers,
+				"the users and sign-in are now shared by every server of the cluster; everyone signs in once more",
+				"this server now keeps the users and sign-in in its own files")},
+			{wantSettings, settingsOn, switchWhy(wantSettings,
+				"this server now takes the settings of the Settings page from the shared settings",
+				"this server now takes the settings of the Settings page from its own files")},
+			// The audit records, the retention history and the archive
+			// list (sharedaudit.go).
+			{r.wantAudit(), r.auditOn(), switchWhy(r.wantAudit(),
+				"every server now keeps its audit records, the retention history and the archive list in OpenSearch",
+				"this server now keeps its retention history and archive list in its own files")},
+			{want && r.shared.SharedLibrary(), ct.library.on.Load(), switchWhy(want && r.shared.SharedLibrary(),
+				"the detections and dashboards are now shared by every server of the cluster",
+				"this server now keeps the detections and dashboards in its own folders")},
+			{want && r.shared.SharedLookups(), ct.library.lists.Load(), switchWhy(want && r.shared.SharedLookups(),
+				"the asset and identity lists are now shared by every server of the cluster",
+				"this server now keeps the asset and identity lists in its own folder")},
+			// Append a new shared feature's switch here.
+		}
+		i := slices.IndexFunc(switches, func(s sharedSwitch) bool { return s.want != s.on })
+		if i < 0 {
+			continue
+		}
+		why := switches[i].why
+		if !want {
+			// Leaving the shared content says so, whatever switches with it.
+			why = switches[0].why
+		}
+		if err := r.restartInPlace(why, settingsFlip); err != nil {
+			// Another restart is going; it decides again, and so does the
+			// next look.
+			continue
+		}
+		if settingsFlip {
+			tried = &wantSettings
+		}
+	}
+}
+
+// sharedSwitch is a part of the components that takes its content from
+// the shared settings or from this server's own files (followShared):
+// want is where the shared configuration says it comes from now, on
+// whether the components running now take it from the shared settings,
+// and why the reason a restart in place gives for the switch.
+type sharedSwitch struct {
+	want, on bool
+	why      string
+}
+
+// switchWhy is the reason for a switch to the shared settings when want,
+// to this server's own files otherwise.
+func switchWhy(want bool, toShared, toOwn string) string {
+	if want {
+		return toShared
+	}
+	return toOwn
 }
 
 // RestartStatus implements api.Restarter.
@@ -250,14 +466,26 @@ func (r *runner) Confirm(req *http.Request) bool {
 func (r *runner) run(ctx context.Context, c *config.Config) error {
 	r.background, r.stopBackground = context.WithCancel(ctx)
 	defer r.stopBackground()
+	// While the settings are shared, the configuration to start with
+	// comes from them, which the runtime reads first.
+	c = r.primeShared(c)
 	c = r.checkPageOpenSearch(ctx, c)
 	in, ln, err := r.open(ctx, c)
-	if err != nil && len(c.PageKeys()) > 0 {
+	if err != nil && c.SharedSettings() {
+		// The shared settings, or this server's own, must not keep it from
+		// starting either: without its own settings, then with
+		// signalith.yaml alone. Those to blame are refused here once
+		// OpenSearch takes writes.
+		var bc *config.Config
+		if bc, in, ln, err = r.startWithout(ctx, c, err); err == nil {
+			c = bc
+		}
+	} else if err != nil && len(c.PageKeys()) > 0 {
 		// Settings saved on the Settings page must not keep Signalith from
 		// starting, which would also lock everyone out of the page that
 		// can fix them: start with signalith.yaml alone, and say why there.
 		// They are to blame only when that starts.
-		keys := blame(err, c)
+		keys := blame(err, c, nil)
 		base, berr := config.LoadWithoutPage(r.path, fmt.Sprintf("Signalith could not start with them (%v)", err), keys)
 		if berr == nil {
 			var bin *instance
@@ -279,6 +507,14 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 	r.cur, r.good = in, c
 	r.front.resume(in.handler, in.plain)
 	r.web = r.serveWeb(c, ln, in.certs)
+	go r.followShared(ctx)
+	if r.shared != nil && r.node != nil {
+		// The restart and check requests that name this server; it runs
+		// them only while it is a member.
+		go r.shared.RunServerRequests(ctx, r.serverHandlers())
+		// A drain kept in this server's nodecfg holds across restarts.
+		go r.followDrain(ctx)
+	}
 	logListening(r.log, c, ln.Addr().String())
 	var retry <-chan time.Time
 	for {
@@ -295,6 +531,9 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 		case err := <-r.fatal():
 			r.shutdown()
 			return err
+		case err := <-r.sharedFatal():
+			r.shutdown()
+			return err
 		case req := <-r.requests:
 			r.restart(ctx, req)
 		case m := <-r.confirmed:
@@ -303,6 +542,10 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 			if m.old != nil {
 				r.retire(m.old, oldAddressGrace)
 			}
+			r.mu.Lock()
+			last := r.last
+			r.mu.Unlock()
+			m.remote.end(last)
 		case <-moveTimeout:
 			r.mu.Lock()
 			m := r.awaiting
@@ -373,16 +616,22 @@ func (e *keyedError) Unwrap() error { return e.err }
 func keyed(err error, keys ...string) error { return &keyedError{err: err, keys: keys} }
 
 // blame returns the settings changed on the Settings page that err is
-// about, or every one that a restart applies when that is not known. A
-// password saved there that cannot be decrypted is never among them: it
-// is left out, not used, and set aside it would stay unused after the
-// master key it needs is back.
-func blame(err error, c *config.Config) []string {
+// about, or every one that a restart applies when that is not known: each
+// setting of this server's page whose value differs from signalith.yaml's,
+// and, while the settings are shared, each shared value that differs from
+// the one prev ran with (prev is the configuration in use before c; nil
+// at a start, when none is known, so a shared value is to blame only when
+// err names it). A shared value at another value than signalith.yaml's is
+// no sign it is to blame: the files do not set it. A password saved there
+// that cannot be decrypted is never among them: it is left out, not used,
+// and set aside it would stay unused after the master key it needs is
+// back.
+func blame(err error, c, prev *config.Config) []string {
 	var ke *keyedError
 	var keys []string
 	if errors.As(err, &ke) {
 		for _, k := range ke.keys {
-			if c.Source(k).Kind == config.FromPage {
+			if fromPage(c, k) {
 				keys = append(keys, k)
 			}
 		}
@@ -391,12 +640,40 @@ func blame(err error, c *config.Config) []string {
 		}
 	}
 	base := c.Base()
-	for _, k := range c.PageKeys() {
-		if !config.SameValue(base, c, k) {
+	for _, k := range pageKeys(c) {
+		if c.Source(k).Kind != config.FromShared {
+			if !config.SameValue(base, c, k) {
+				keys = append(keys, k)
+			}
+			continue
+		}
+		if prev != nil && !config.SameValue(prev, c, k) {
 			keys = append(keys, k)
 		}
 	}
 	return usable(c, keys)
+}
+
+// fromPage reports whether key's value in c was set on a Settings page:
+// this server's, or, while the settings are shared, any server's.
+func fromPage(c *config.Config, key string) bool {
+	k := c.Source(key).Kind
+	return k == config.FromPage || k == config.FromShared
+}
+
+// pageKeys lists the settings of c set on a Settings page (see fromPage).
+func pageKeys(c *config.Config) []string {
+	keys := c.PageKeys()
+	if !c.SharedSettings() {
+		return keys
+	}
+	for _, k := range config.SharedKeys() {
+		if c.Source(k).Kind == config.FromShared && !slices.Contains(keys, k) {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // undecryptable returns those of keys whose password or key saved on the
@@ -427,7 +704,8 @@ func usable(c *config.Config, keys []string) []string {
 
 // openSearchKeys are the settings of the OpenSearch connection.
 var openSearchKeys = []string{"opensearch.url", "opensearch.username", "opensearch.password", "opensearch.ca_file",
-	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify"}
+	"opensearch.cert_file", "opensearch.key_file", "opensearch.proxy", "opensearch.allow_insecure_http", "opensearch.tls_skip_verify",
+	"opensearch.urls"}
 
 // checkPageOpenSearch checks, at startup, an OpenSearch connection set on
 // the Settings page that no restart has checked: one saved with no
@@ -470,8 +748,8 @@ func (r *runner) checkPageOpenSearch(ctx context.Context, c *config.Config) *con
 		return c
 	}
 	reason := "When Signalith started, OpenSearch did not answer with these settings but did with those in signalith.yaml: " + rep.Message
-	r.setAside(c.SettingsFile(), keys, reason)
-	next, err := config.LoadSetAside(r.path, keys, reason)
+	r.setAside(c, c, keys, reason)
+	next, err := r.loadSetAside(keys, reason)
 	if err != nil {
 		return c
 	}
@@ -489,7 +767,13 @@ func (r *runner) shutdown() error {
 	r.awaiting = nil
 	r.mu.Unlock()
 	if m != nil {
-		r.setAside(m.prev.SettingsFile(), m.refuse, "Signalith stopped before anyone opened it at "+m.To+", so it was not used")
+		cur := m.prev
+		if r.cur != nil {
+			cur = r.cur.srv.Running()
+		}
+		reason := "Signalith stopped before anyone opened it at " + m.To + ", so it was not used"
+		r.setAside(cur, m.prev, m.refuse, reason)
+		m.remote.end(&api.RestartResult{Error: reason + "."})
 	}
 	// A sample-data load or removal running here stops, and notes in
 	// OpenSearch that it did not finish, so every server shows that at
@@ -509,6 +793,7 @@ func (r *runner) shutdown() error {
 		// are handed over, so another server takes them within seconds.
 		r.node.Stop()
 	}
+	flushShared(r.shared, r.log)
 	var err error
 	if r.web != nil {
 		err = r.web.close(10 * time.Second)
@@ -551,7 +836,24 @@ func (r *runner) restart(ctx context.Context, req restartRequest) {
 	// The settings in use, including those applied at once from the
 	// Settings page since the last start.
 	prev := r.cur.srv.Running()
-	next, err := config.Load(r.path)
+	if req.keep {
+		r.log.Info("restarting in place: " + req.client)
+		next := prev
+		if req.reload {
+			// The settings of the Settings page moved: the configuration
+			// is loaded again, with the same values unless they changed.
+			if c, err := r.loadStartConfig(); err != nil {
+				r.log.Error("the settings cannot be loaded again; restarting with those in use", "err", err)
+			} else if !moved(prev, c) {
+				next = c
+			} else {
+				r.log.Warn("the settings loaded again move the web page; restarting with those in use until a restart applies them")
+			}
+		}
+		r.switchTo(ctx, prev, next, res, false)
+		return
+	}
+	next, err := r.loadStartConfig()
 	if err != nil {
 		res.Error = fmt.Sprintf("The saved settings could not be loaded (%v). Signalith kept running with the previous settings.", err)
 		return
@@ -570,6 +872,10 @@ func (r *runner) restart(ctx context.Context, req restartRequest) {
 	}
 	if confirm {
 		awaiting = r.awaitMove(prev, next)
+		if req.remote != nil {
+			awaiting.remote = req.remote
+			r.announceMove(req.remote, awaiting, next)
+		}
 	}
 }
 
@@ -580,6 +886,8 @@ func (r *runner) done(res *api.RestartResult, req restartRequest, start time.Tim
 	switch {
 	case res.OK && res.Reverted:
 		r.log.Warn("went back to the previous web address", "audit", true, "by", req.by, "settings", strings.Join(res.Keys, ","), "reason", res.Error)
+	case res.OK && req.keep:
+		r.log.Info("restarted in place", "reason", req.client, "took_ms", res.TookMS)
 	case res.OK:
 		r.log.Info("restarted with the saved settings", "audit", true, "by", req.by, "client", req.client, "settings", strings.Join(res.Keys, ","), "took_ms", res.TookMS)
 	default:
@@ -591,6 +899,11 @@ func (r *runner) done(res *api.RestartResult, req restartRequest, start time.Tim
 	r.finish(res, m)
 	if r.cur != nil {
 		r.front.resume(r.cur.handler, r.cur.plain)
+	}
+	if m == nil {
+		// A restart another server asked for ends here, unless it moved the
+		// web page: then once the move was confirmed or undone.
+		req.remote.end(res)
 	}
 }
 
@@ -620,7 +933,7 @@ func (r *runner) awaitMove(prev, next *config.Config) *move {
 	for _, k := range moveKeys {
 		if !config.SameValue(prev, next, k) {
 			m.Keys = append(m.Keys, k)
-			if next.Source(k).Kind == config.FromPage {
+			if fromPage(next, k) {
 				m.refuse = append(m.refuse, k)
 			}
 		}
@@ -641,7 +954,7 @@ func (r *runner) awaitMove(prev, next *config.Config) *move {
 func (r *runner) revert(ctx context.Context, m *move) {
 	start := time.Now()
 	res := &api.RestartResult{At: start.UTC(), By: "Signalith", Keys: []string{}, Reverted: true}
-	req := restartRequest{by: "Signalith"}
+	req := restartRequest{by: "Signalith", remote: m.remote}
 	defer func() { r.done(res, req, start, nil) }()
 	if r.cur == nil {
 		return
@@ -651,8 +964,8 @@ func (r *runner) revert(ctx context.Context, m *move) {
 		reason = fmt.Sprintf("Nobody opened Signalith at %s in time, so it went back to %s", m.To, m.From)
 	}
 	cur := r.cur.srv.Running()
-	res.Refused = r.setAside(cur.SettingsFile(), m.refuse, reason)
-	next, err := config.LoadSetAside(r.path, m.refuse, reason)
+	res.Refused = r.setAside(cur, m.prev, m.refuse, reason)
+	next, err := r.loadSetAside(m.refuse, reason)
 	if err != nil || next.SettingsProblem() != "" || moved(m.prev, next) {
 		// The move came from signalith.yaml, or the settings cannot be
 		// read now: go back to the settings in use before it.
@@ -668,24 +981,6 @@ func (r *runner) revert(ctx context.Context, m *move) {
 			res.Error = reason + "."
 		}
 	}
-}
-
-// setAside sets the changes made on the Settings page to keys aside in
-// its file, for reason, and returns those it did. Keys not changed there
-// are left alone. Changes that cannot be used without them go too (see
-// config.SetAsideAlong), so the next start can still use the rest.
-func (r *runner) setAside(file string, keys []string, reason string) []string {
-	if len(keys) == 0 {
-		return nil
-	}
-	keys = config.SetAsideAlong(r.path, keys)
-	marked, err := config.MarkRefused(file, keys, reason)
-	if err != nil {
-		r.log.Error("could not set changes from the Settings page aside in its file; the next start may use them again",
-			"settings", strings.Join(keys, ","), "file", file, "err", err)
-		return nil
-	}
-	return marked
 }
 
 // switchTo checks next and switches to it from prev, filling in res. It
@@ -705,7 +1000,7 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 			// reason is the cause alone: the setting is not in use. A
 			// password that cannot be decrypted is not set aside (see
 			// usable).
-			res.Refused = r.setAside(next.SettingsFile(), usable(next, ke.keys), strings.TrimSuffix(res.Error, keptRunning))
+			res.Refused = r.setAside(next, prev, usable(next, ke.keys), strings.TrimSuffix(res.Error, keptRunning))
 		}
 		return false
 	}
@@ -738,8 +1033,8 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 		if plan.reuse != nil {
 			r.retire(plan.reuse, 0)
 		}
-		res.ProblemKeys = blame(err, next)
-		res.Refused = r.setAside(next.SettingsFile(), res.ProblemKeys, fmt.Sprintf("Signalith could not start with it (%v).", err))
+		res.ProblemKeys = blame(err, next, prev)
+		res.Refused = r.setAside(next, prev, res.ProblemKeys, fmt.Sprintf("Signalith could not start with it (%v).", err))
 		back, err2 := r.start(ctx, prev)
 		if err2 != nil {
 			res.Error = fmt.Sprintf("Signalith could not start with the saved settings (%v) or the previous ones (%v). It tries again every 30 seconds.", err, err2)
@@ -811,14 +1106,16 @@ func (r *runner) recover(ctx context.Context) bool {
 		}
 		r.cur, r.good = in, c
 		r.web.certs.Store(in.certs)
-		r.front.resume(in.handler, in.plain)
 		r.log.Info("Signalith started again", "audit", true)
+		// The result is in place before the requests held back go through,
+		// as after a restart (done).
 		r.finish(&api.RestartResult{At: time.Now().UTC(), By: "Signalith", OK: true, Keys: []string{}}, nil)
+		r.front.resume(in.handler, in.plain)
 		return true
 	}
 	// The saved settings, unless they move the web page: that is checked
 	// by a restart.
-	if c, err := config.Load(r.path); err == nil && c.SettingsProblem() == "" && (r.web == nil || !moved(r.web.cfg, c)) {
+	if c, err := r.loadConfig(); err == nil && c.SettingsProblem() == "" && (r.web == nil || !moved(r.web.cfg, c)) {
 		if try(c) {
 			return true
 		}
@@ -1046,16 +1343,18 @@ func certKeys(c *config.Config) []string {
 }
 
 // webChanges reports whether the web listener changes: another address,
-// HTTPS turned on or off, or other connection limits. Another certificate
+// HTTPS turned on or off, other connection limits, or PROXY headers read
+// or not. Another certificate
 // is served by the same listener.
 func webChanges(old, next *config.Config) bool {
 	return moved(old, next) || old.Server.MaxConnections != next.Server.MaxConnections ||
-		!slices.Equal(old.Server.SharedAddresses, next.Server.SharedAddresses)
+		!slices.Equal(old.Server.SharedAddresses, next.Server.SharedAddresses) || old.Server.ProxyProtocol != next.Server.ProxyProtocol
 }
 
 // webLimits are the connection limits of the web listener.
 func webLimits(c *config.Config) httpserver.Limits {
-	return httpserver.Limits{Max: c.Server.MaxConnections, Shared: c.Server.SharedList()}
+	return httpserver.Limits{Max: c.Server.MaxConnections, Shared: c.Server.SharedList(),
+		Proxy: proxyFor(c, c.Server.ProxyProtocol, nil)}
 }
 
 // openSearchMoves reports whether the OpenSearch connection changes.
@@ -1095,7 +1394,7 @@ func overlaps(a, b string) bool {
 func changedSettings(a, b *config.Config) []string {
 	out := []string{}
 	for _, s := range config.Registry {
-		if !config.SameValue(a, b, s.Key) {
+		if s.OnPage(false) && !config.SameValue(a, b, s.Key) {
 			out = append(out, s.Key)
 		}
 	}
@@ -1139,6 +1438,12 @@ func (r *runner) serveWeb(c *config.Config, ln net.Listener, certs *tlsauto.Mana
 		httpserver.OnRefusal(w.hs, func(addr string) {
 			if m := w.certs.Load(); m != nil {
 				m.NoteRefusal(addr, "https")
+			}
+			// An agent pinned to a certificate authority this server does
+			// not use never gets a batch through: the Endpoints page says
+			// it needs a new configuration.
+			if v := r.agents.Load(); v != nil {
+				v.NoteRefusedCA(addr)
 			}
 		})
 		w.hs.TLSConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -1227,7 +1532,8 @@ func (r *runner) retiredAt(next *config.Config) *webServer {
 	for _, w := range r.retired {
 		c := w.cfg
 		if c == nil || !w.open() || c.Server.Listen != next.Server.Listen || c.Server.HTTPS() != next.Server.HTTPS() ||
-			c.Server.MaxConnections != next.Server.MaxConnections || !slices.Equal(c.Server.SharedAddresses, next.Server.SharedAddresses) {
+			c.Server.MaxConnections != next.Server.MaxConnections || !slices.Equal(c.Server.SharedAddresses, next.Server.SharedAddresses) ||
+			c.Server.ProxyProtocol != next.Server.ProxyProtocol {
 			continue
 		}
 		if w.keep() {
@@ -1282,6 +1588,10 @@ type front struct {
 	idle     chan struct{} // closed when the last request in progress ends
 	// ready says whether this server should get traffic, for /readyz.
 	ready func() (bool, string)
+	// confirmMove confirms a move of the web page that a restart request
+	// made, with the token the server that asked probes /readyz?move=
+	// with (see runner.probeMoves).
+	confirmMove func(*http.Request, string) bool
 }
 
 func (f *front) ServeHTTP(w http.ResponseWriter, r *http.Request) { f.serve(w, r, false) }
@@ -1328,6 +1638,9 @@ func (f *front) probe(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	status, body := http.StatusOK, `{"live":true}`
+	if t := r.URL.Query().Get("move"); t != "" && r.URL.Path == "/readyz" && f.confirmMove != nil {
+		f.confirmMove(r, t)
+	}
 	if r.URL.Path == "/readyz" {
 		if ok, why := f.readiness(); ok {
 			body = `{"ready":true}`

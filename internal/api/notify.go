@@ -38,7 +38,7 @@ type Notify struct {
 // makes this server send to an address the request names.
 func (s *Server) routeNotify(api *router) {
 	api.admin("GET /api/notify", s.handleNotify)
-	api.admin("PUT /api/notify", s.handleNotifySave)
+	api.sensitive("PUT /api/notify", s.handleNotifySave)
 	api.admin("POST /api/notify/test", s.handleNotifyTest)
 	api.admin("GET /api/notify/deliveries", s.handleNotifyDeliveries)
 }
@@ -319,6 +319,7 @@ type deliveryView struct {
 	ChannelName string     `json:"channel_name"`
 	ChannelType string     `json:"channel_type"`
 	RuleName    string     `json:"rule_name,omitempty"`
+	Playbook    string     `json:"playbook,omitempty"`
 	Status      string     `json:"status"`
 	Final       bool       `json:"final,omitempty"`
 	Attempts    int        `json:"attempts"`
@@ -350,7 +351,7 @@ func (s *Server) handleNotifyDeliveries(w http.ResponseWriter, r *http.Request) 
 		}
 		for _, d := range got {
 			list = append(list, deliveryView{ID: d.ID, Kind: d.Kind, FindingID: d.FindingID, Title: d.Message.Title, Urgency: d.Message.Urgency,
-				Channel: d.Channel, ChannelName: d.ChannelName, ChannelType: d.ChannelType, RuleName: d.RuleName, Status: d.Status,
+				Channel: d.Channel, ChannelName: d.ChannelName, ChannelType: d.ChannelType, RuleName: d.RuleName, Playbook: d.Playbook, Status: d.Status,
 				Final: d.Final, Attempts: d.Attempts, Error: d.Error, DurationMS: d.DurationMS, Summary: d.Summary, Server: d.Server,
 				Created: d.Created, Updated: d.Updated, NextTry: d.NextTry})
 		}

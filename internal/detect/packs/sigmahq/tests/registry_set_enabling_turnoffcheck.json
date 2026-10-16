@@ -1,0 +1,5 @@
+{"rule": "7d995e63-ec83-4aa3-89d5-8a17b5c87c86", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Policies\\Microsoft\\Windows\\ScriptedDiagnostics\\TurnOffCheck"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Policies\\Microsoft\\Windows\\ScriptedDiagnostics\\TurnOffCheck"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

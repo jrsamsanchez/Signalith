@@ -1,0 +1,5 @@
+{"rule": "973ef012-8f1a-4c40-93b4-7e659a5cd17f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Control\\Session Manager\\Configuration Manager\\EnablePeriodicBackup"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Session Manager\\Configuration Manager\\EnablePeriodicBackup"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "c462f537-a1e3-41a6-b5fc-b2c2cef9bf82", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"-stderr","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"PSEXESVC-stderr","ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"ShareName":"\\\\*\\IPC$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"5145","data":{"RelativeTargetName":"-stderr"}}
+]}

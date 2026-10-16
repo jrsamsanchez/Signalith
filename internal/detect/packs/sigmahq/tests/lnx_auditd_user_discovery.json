@@ -1,0 +1,4 @@
+{"rule": "9a0d8ca0-2385-4020-b6c6-cb6153ca56f3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{"a0":"whoami","argc":"1"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"EXECVE","data":{}}
+]}

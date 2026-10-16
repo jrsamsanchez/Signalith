@@ -1,0 +1,6 @@
+{"rule": "a29c1813-ab1f-4dde-b489-330b952e91ae", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"ipconfig /all"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"ipconfig /all","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

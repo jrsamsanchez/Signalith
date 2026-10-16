@@ -1,0 +1,4 @@
+{"rule": "85cce894-dd8b-4427-a958-5cc47a4dc9b9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"ImagePath":"-service\\rutserv.exe","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"Provider_Name":"Service Control Manager"}}
+]}

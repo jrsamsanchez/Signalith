@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -12,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
@@ -33,9 +37,12 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("PUT /api/settings", s.handlePutSettings)
 	api.admin("POST /api/settings/test/opensearch", s.handleTestOpenSearch)
 	api.admin("POST /api/settings/test/assistant", s.handleTestAssistant)
+	api.admin("POST /api/settings/test/m365", s.handleTestM365)
+	api.admin("POST /api/settings/assistant/models", s.handleAssistantModels)
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
 	api.admin("GET /api/settings/export", s.handleExportSettings)
+	api.admin("POST /api/cluster/restart", s.handleClusterRestart)
 }
 
 // Restarter restarts the server in-process with the saved settings. The
@@ -121,12 +128,21 @@ type RestartResult struct {
 var errNoConfigFile = errors.New("this server was started without a configuration file, so its settings cannot be changed here")
 
 // savedSettings returns the configuration as saved: on the page, in
-// signalith.yaml and in the environment.
+// signalith.yaml and in the environment, and, on a server whose settings
+// are shared, in the shared settings.
 func (s *Server) savedSettings() (*config.Saved, error) {
 	if s.Config.Path() == "" {
 		return &config.Saved{Config: s.conf()}, nil
 	}
-	saved, err := config.LoadSaved(s.Config.Path())
+	var saved *config.Saved
+	var err error
+	if s.settingsShared() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		saved, _, _, err = s.savedShared(ctx)
+	} else {
+		saved, err = config.LoadSaved(s.Config.Path())
+	}
 	if err != nil {
 		return nil, fmt.Errorf("Signalith could not read its configuration file: %v. Fix it on the server; until then settings cannot be changed here", err)
 	}
@@ -178,6 +194,20 @@ type settingField struct {
 	// StartupProblem is true when this setting kept Signalith from
 	// starting with the settings saved here.
 	StartupProblem bool `json:"startup_problem,omitempty"`
+
+	// On a server whose settings are shared: Scope is cluster (every
+	// server), server (this server's own) or bootstrap (its connection
+	// and folders); Version is the revision a change names (if_version);
+	// AppliedFrom says which server's signalith.yaml or environment the
+	// shared value came from, when it did; Kept is set when the server
+	// shown could not use the shared value and keeps its own; Servers
+	// says, for a shared setting that waits for a restart, where it is
+	// applied, waiting or refused, by server name.
+	Scope       string            `json:"scope,omitempty"`
+	Version     *int64            `json:"version,omitempty"`
+	AppliedFrom string            `json:"applied_from,omitempty"`
+	Kept        *keptSetting      `json:"kept,omitempty"`
+	Servers     map[string]string `json:"servers,omitempty"`
 }
 
 // resetTo is a setting's value without the page: from signalith.yaml
@@ -236,7 +266,7 @@ func pendingSettings(running, saved *config.Config) []pendingSetting {
 	out := []pendingSetting{}
 	for i := range config.Registry {
 		set := &config.Registry[i]
-		if config.SameValue(running, saved, set.Key) {
+		if !set.OnPage(saved.SharedSettings()) || config.SameValue(running, saved, set.Key) {
 			continue
 		}
 		p := pendingSetting{Key: set.Key, Label: set.Label, Section: set.Section}
@@ -371,6 +401,12 @@ func (s *Server) settingsView() (map[string]any, error) {
 	if w := unencryptedWarning(saved.Config); w != "" && warnings["server.tls.mode"] == "" {
 		warnings["server.tls.mode"] = w
 	}
+	if a := saved.Config.Assistant; warnings["assistant.model"] == "" {
+		if id, ok := assistant.ModelID(a.Provider, a.Model); ok {
+			warnings["assistant.model"] = fmt.Sprintf("%q is the model's display name, not its ID. Signalith uses %s in its place.", a.Model, id)
+			suggest["assistant.model"] = id
+		}
+	}
 	pending := pendingSettings(running, saved.Config)
 	waiting := map[string]bool{}
 	for _, p := range pending {
@@ -385,12 +421,17 @@ func (s *Server) settingsView() (map[string]any, error) {
 		refused[refusedList[i].Key] = &refusedList[i]
 	}
 	startupKeys := running.SettingsProblemKeys()
+	onShared := saved.SharedSettings()
 	sections := make([]settingsSection, 0, len(config.Sections))
 	for _, sec := range config.Sections {
+		if sec.Tab != "" {
+			// A tab of its own shows it.
+			continue
+		}
 		out := settingsSection{ID: sec.ID, Title: sec.Title, Help: sec.Help, Fields: []settingField{}}
 		for i := range config.Registry {
 			set := &config.Registry[i]
-			if set.Section != sec.ID {
+			if set.Section != sec.ID || !set.OnPage(onShared) {
 				continue
 			}
 			f := settingField{Key: set.Key, Label: set.Label, Help: set.Help, Type: set.Type, Choices: set.Choices,
@@ -423,7 +464,7 @@ func (s *Server) settingsView() (map[string]any, error) {
 			if f.Source.Kind == config.FromEnv {
 				f.Locked, f.LockedReason = true, config.LockedReason(f.Source.Env)
 			}
-			if f.Source.Kind == config.FromPage {
+			if f.Source.Kind == config.FromPage && !(onShared && set.Scope == config.ScopeCluster) {
 				base := saved.Base()
 				rt := &resetTo{Source: base.Source(set.Key).Kind}
 				rt.Value, rt.Set = fieldValue(base, set)
@@ -589,6 +630,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "notify.file", Label: "Notifications file", Path: c.NotifyFile(), Source: c.Source("notify.file")},
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
+		{Key: "playbooks.file", Label: "Playbooks file", Path: c.PlaybooksFile(), Source: c.Source("playbooks.file")},
 	}
 	// Whoever reads the page is not in Signalith's working folder.
 	for i := range paths {
@@ -618,17 +660,18 @@ func settingsFileSource(c *config.Config) config.Source {
 // managedElsewhere points to the pages that manage what this one does
 // not. Page is the app's page name.
 func (s *Server) managedElsewhere(c *config.Config) []map[string]any {
-	tokens := len(c.Ingest.Tokens)
-	detail := fmt.Sprintf("%d agent tokens are set in signalith.yaml or the environment.", tokens)
-	switch tokens {
+	active, shared := s.tokens().Counts()
+	detail := fmt.Sprintf("Agent tokens are on Add data, under Agent tokens: %d active.", active)
+	switch shared {
 	case 0:
-		detail = "No agent token is set, so agents cannot send data. Set one in signalith.yaml (ingest.tokens) or with SIGNALITH_INGEST_TOKEN, then restart."
 	case 1:
-		detail = "1 agent token is set in signalith.yaml or the environment."
+		detail += " 1 shared token from signalith.yaml or the environment is still accepted."
+	default:
+		detail += fmt.Sprintf(" %d shared tokens from signalith.yaml or the environment are still accepted.", shared)
 	}
 	return []map[string]any{
 		{"what": "Users and directory sign-in", "page": "users"},
-		{"what": "Agent setup", "page": "data", "detail": detail},
+		{"what": "Agent setup and tokens", "page": "data", "detail": detail},
 		{"what": "Threat intel feeds", "page": "intel"},
 		{"what": "Data retention", "page": "retention"},
 	}
@@ -646,10 +689,28 @@ func (s *Server) confirmMove(r *http.Request) bool {
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	s.confirmMove(r)
+	if s.settingsShared() {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		view, err := s.sharedSettingsView(ctx, r.URL.Query().Get("server"))
+		var unknown errUnknownServer
+		switch {
+		case errors.As(err, &unknown):
+			writeError(w, http.StatusNotFound, err)
+		case err != nil:
+			writeError(w, http.StatusInternalServerError, err)
+		default:
+			writeJSON(w, http.StatusOK, view)
+		}
+		return
+	}
 	view, err := s.settingsView()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if p := s.settingsPending(); p != nil {
+		view["shared_pending"] = p
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -800,13 +861,37 @@ func clientHost(r *http.Request) string {
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
-	var req settingsRequest
-	if err := readJSON(r, &req); err != nil {
+	var raw json.RawMessage
+	if err := readJSON(r, &raw); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if settingsSaveRecheck(raw) && s.recheckNeeded(w, r, principalOf(r)) {
 		return
 	}
 	if s.Config.Path() == "" {
 		writeError(w, http.StatusConflict, errNoConfigFile)
+		return
+	}
+	if s.settingsShared() {
+		s.handlePutSharedSettings(w, r, raw)
+		return
+	}
+	if s.Settings != nil {
+		// This server's own settings may be moving into the shared
+		// settings right now: the save waits for the move, and goes to
+		// the shared settings once they are there.
+		moved, release := s.Settings.HoldFile()
+		if moved {
+			release()
+			s.handlePutSharedSettings(w, r, raw)
+			return
+		}
+		defer release()
+	}
+	var req settingsRequest
+	if err := decodeJSON(raw, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	s.settingsMu.Lock()
@@ -1032,6 +1117,13 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 			applied = append(applied, k)
 		}
 	}
+	if saved.SharedSettings() {
+		for _, k := range sharedLiveKeys {
+			if !config.SameValue(old, saved, k) && !config.SameValue(cur, saved, k) && next.CopyValue(k, saved) == nil {
+				applied = append(applied, k)
+			}
+		}
+	}
 	if len(applied) == 0 {
 		return nil
 	}
@@ -1043,21 +1135,38 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_timeout") {
 		s.sessions().SetIdle(next.SessionIdle())
 	}
+	if changed("auth.session_max_age") {
+		s.sessions().SetMaxAge(next.SessionMaxAge())
+	}
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
 	}
 	if changed("detections.max_findings_per_run") && s.Scheduler != nil {
 		s.Scheduler.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
 	}
+	if changed("detections.catch_up") && s.Scheduler != nil {
+		s.Scheduler.SetCatchUp(next.DetectionsCatchUp())
+	}
 	if changed("assistant.") {
-		a := next.Assistant
-		s.liveAI.Store(&liveModel{c: assistant.New(a.Provider, a.URL, a.Model, a.APIKey)})
+		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
+	}
+	if changed("vulns.") && s.Vulns != nil {
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
 	}
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)
 	}
 	if changed("server.tls.plaintext_ingest") {
 		s.endOldTokenLocked()
+	}
+	if changed("ingest.max_event_age") && s.EventAge != nil {
+		s.EventAge.Use(&next)
+	}
+	if changed("ingest.url_query") && s.Pipeline != nil {
+		s.Pipeline.SetURLQuery(next.URLQueryMode())
+	}
+	if changed("server.node_url") && s.NodeURLChanged != nil {
+		s.NodeURLChanged(&next)
 	}
 	return applied
 }
@@ -1230,13 +1339,15 @@ type assistantReport struct {
 	// Query is the model's answer, when it gave one.
 	Query   string `json:"query,omitempty"`
 	Message string `json:"message"`
-	TookMS  int64  `json:"took_ms"`
+	// Field is the setting a failure points at, when one does.
+	Field  string `json:"field,omitempty"`
+	TookMS int64  `json:"took_ms"`
 }
 
 // handleTestAssistant asks the model in the form one fixed question and
 // says whether it answered.
 func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
-	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key")
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key", "assistant.request_timeout")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1265,16 +1376,15 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer done()
-	client := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
-	client.HTTP.Timeout = 45 * time.Second
+	client := c.AssistantClient()
 	rep := assistantReport{Provider: a.Provider, Model: client.Model, URL: redact.URL(client.URL), Question: assistantQuestion}
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), c.AssistantRequestTimeout()+15*time.Second)
 	defer cancel()
 	q, err := client.Translate(ctx, assistantQuestion, "")
 	rep.TookMS = time.Since(start).Milliseconds()
 	if err != nil {
-		rep.Message = explainAssistant(err)
+		rep.Message, rep.Field = explainAssistant(err, client.Model, c.AssistantRequestTimeout())
 	} else {
 		rep.OK, rep.Query = true, q
 		rep.Message = fmt.Sprintf("The model answered in %.1f seconds.", time.Since(start).Seconds())
@@ -1283,18 +1393,133 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-// explainAssistant words a failed assistant test.
-func explainAssistant(err error) string {
+// explainAssistant words a failed assistant test, and names the setting
+// it points at.
+func explainAssistant(err error, model string, limit time.Duration) (string, string) {
 	msg := err.Error()
-	switch {
-	case strings.Contains(msg, "returned 401"), strings.Contains(msg, "returned 403"):
-		return "The model's service refused the API key. Check the key. (" + msg + ")"
-	case strings.Contains(msg, "returned 404"):
-		return "The model's service answered \"not found\": check the address and the model's name. (" + msg + ")"
-	case strings.Contains(msg, "did not parse"):
-		return "The model answered, but not with a query Signalith understands. A larger model may do better."
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(msg, "Client.Timeout exceeded") || strings.Contains(msg, "deadline exceeded") {
+		return fmt.Sprintf("The model did not answer within the answer time limit (%s). A local model on a CPU without a GPU may need 15m or more: raise Answer time limit, or use a faster model.", shortDuration(limit)), "assistant.request_timeout"
 	}
-	return sentence(msg)
+	var ae *assistant.APIError
+	if errors.As(err, &ae) {
+		switch {
+		case ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden:
+			return "The model's service refused the API key. Check the key. (" + msg + ")", "assistant.api_key"
+		case ae.UnknownModel():
+			return fmt.Sprintf("Unknown model: the service has no model called %q. Choose one from the Model list. (%s)", model, msg), "assistant.model"
+		case ae.Status == http.StatusNotFound:
+			return "The address answered \"not found\": check the address. (" + msg + ")", "assistant.url"
+		}
+	}
+	switch {
+	case strings.Contains(msg, "could not reach"):
+		return sentence(msg), "assistant.url"
+	case strings.Contains(msg, "did not parse"):
+		return "The model answered, but not with a query Signalith understands. A larger model may do better.", "assistant.model"
+	}
+	return sentence(msg), ""
+}
+
+// modelCache keeps model lists for a few minutes, by provider, address
+// and a hash of the key, so the Settings page does not ask the service
+// each time it is opened.
+type modelCache struct {
+	mu   sync.Mutex
+	byID map[string]cachedModels
+}
+
+type cachedModels struct {
+	models []assistant.Model
+	at     time.Time
+}
+
+const modelCacheFor = 10 * time.Minute
+
+// modelsReport is what POST /api/settings/assistant/models answers.
+type modelsReport struct {
+	Models []assistant.Model `json:"models"`
+	// Live is true when the list came from the service; otherwise it is
+	// the models Signalith knows of, and Message says why.
+	Live    bool   `json:"live"`
+	Message string `json:"message,omitempty"`
+}
+
+// handleAssistantModels lists the models the provider in the form offers:
+// read from the service with the form's address and key (or the saved
+// key, only for the address it was saved for), or, when that fails, the
+// ones Signalith knows of. The key never reaches the page.
+func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.api_key")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	a := c.Assistant
+	if _, ok := fields["assistant.api_key"]; ok && len(fields) == 1 {
+		// The saved key belongs to another address; many model servers on
+		// your own hardware need none.
+		delete(fields, "assistant.api_key")
+		a.APIKey = ""
+	}
+	rep := modelsReport{Models: assistant.KnownModels(a.Provider, a.URL)}
+	switch {
+	case a.Provider != assistant.Anthropic && a.Provider != assistant.OpenAI:
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case len(fields) > 0:
+		rep.Message = "Fix the address or API key to see the provider's own list."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case a.URL != "" && config.Origin(a.URL) == "":
+		rep.Message = "Enter a whole address, such as http://localhost:11434/v1, to see its models."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case a.Provider == assistant.Anthropic && a.APIKey == "":
+		rep.Message = "Save an API key to see every model your account can use."
+		writeJSON(w, http.StatusOK, rep)
+		return
+	}
+	client := assistant.New(a.Provider, a.URL, "", a.APIKey)
+	sum := sha256.Sum256([]byte(a.APIKey))
+	id := a.Provider + "\x00" + client.URL + "\x00" + hex.EncodeToString(sum[:])
+	s.aiModels.mu.Lock()
+	hit, ok := s.aiModels.byID[id]
+	s.aiModels.mu.Unlock()
+	if ok && time.Since(hit.at) < modelCacheFor {
+		writeJSON(w, http.StatusOK, modelsReport{Models: hit.models, Live: true})
+		return
+	}
+	client.HTTP.Timeout = 10 * time.Second
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	models, err := client.ListModels(ctx)
+	if err == nil && len(models) == 0 {
+		err = errors.New("the service listed no models")
+	}
+	if err != nil {
+		why := "Couldn't read the provider's list of models"
+		var ae *assistant.APIError
+		switch {
+		case errors.As(err, &ae) && (ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden):
+			why = "The provider refused the API key"
+		case strings.Contains(err.Error(), "could not reach"):
+			why = "Couldn't reach the address"
+		}
+		if len(rep.Models) > 0 {
+			rep.Message = why + ", so these are the models Signalith knows of."
+		} else {
+			rep.Message = why + ". Enter the model's ID under Other."
+		}
+		writeJSON(w, http.StatusOK, rep)
+		return
+	}
+	s.aiModels.mu.Lock()
+	if s.aiModels.byID == nil || len(s.aiModels.byID) > 50 {
+		s.aiModels.byID = map[string]cachedModels{}
+	}
+	s.aiModels.byID[id] = cachedModels{models: models, at: time.Now()}
+	s.aiModels.mu.Unlock()
+	writeJSON(w, http.StatusOK, modelsReport{Models: models, Live: true})
 }
 
 // sentence makes an error message a sentence.
@@ -1433,7 +1658,14 @@ func (s *Server) handleExportSettings(w http.ResponseWriter, r *http.Request) {
 	if len(saved.Problems) > 0 || saved.PageErr != nil {
 		c = s.conf()
 	}
-	text, err := exportSettings(c, redact.URL(s.conf().Server.PublicURL), time.Now())
+	var text string
+	if s.settingsShared() && c == saved.Config {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		text, err = s.exportShared(ctx, saved, r.URL.Query().Get("server"), time.Now())
+	} else {
+		text, err = exportSettings(c, redact.URL(s.conf().Server.PublicURL), time.Now())
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -1477,13 +1709,34 @@ func exportSettings(c *config.Config, from string, now time.Time) (string, error
 	fmt.Fprintf(&b, "# Settings exported from Signalith at %s on %s.\n", from, now.UTC().Format("2006-01-02"))
 	b.WriteString("# Copy what you need into signalith.yaml on another server. Passwords and\n")
 	b.WriteString("# keys are left out: set them there, or with environment variables.\n")
-	// signalith.yaml groups settings by their first word, which does not
-	// always follow the page's sections (server.public_url is under
-	// General, server.listen under Web server).
+	var list []*config.Setting
+	for i := range config.Registry {
+		if set := &config.Registry[i]; set.OnPage(false) {
+			list = append(list, set)
+		}
+	}
+	if err := (exporter{value: c.Value, note: serverOwn}).write(&b, list); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// exporter writes settings as signalith.yaml sections: value gives each
+// one's value, note says why one may not suit another server (or ""),
+// and comment turns every line into a comment.
+type exporter struct {
+	value   func(key string) any
+	note    func(*config.Setting) string
+	comment bool
+}
+
+// write writes settings in their order. signalith.yaml groups settings
+// by their first word, which does not always follow the page's sections
+// (server.public_url is under General, server.listen under Web server).
+func (e exporter) write(b *strings.Builder, settings []*config.Setting) error {
 	var tops []string
 	byTop := map[string][]*config.Setting{}
-	for i := range config.Registry {
-		set := &config.Registry[i]
+	for _, set := range settings {
 		top, _, _ := strings.Cut(set.Key, ".")
 		if byTop[top] == nil {
 			tops = append(tops, top)
@@ -1491,15 +1744,23 @@ func exportSettings(c *config.Config, from string, now time.Time) (string, error
 		byTop[top] = append(byTop[top], set)
 	}
 	for _, top := range tops {
-		fmt.Fprintf(&b, "%s:\n", top)
-		if err := exportSection(&b, c, byTop[top]); err != nil {
-			return "", err
+		fmt.Fprintf(b, "%s%s:\n", e.lead(), top)
+		if err := e.section(b, byTop[top]); err != nil {
+			return err
 		}
 	}
-	return b.String(), nil
+	return nil
 }
 
-func exportSection(b *strings.Builder, c *config.Config, settings []*config.Setting) error {
+// lead begins each line.
+func (e exporter) lead() string {
+	if e.comment {
+		return "# "
+	}
+	return ""
+}
+
+func (e exporter) section(b *strings.Builder, settings []*config.Setting) error {
 	// A setting a level deeper, such as server.tls.mode, goes in its own
 	// part, written where the first of its settings is.
 	var flat []*config.Setting
@@ -1523,22 +1784,23 @@ func exportSection(b *strings.Builder, c *config.Config, settings []*config.Sett
 		if set == nil {
 			sub := subs[next]
 			next++
-			fmt.Fprintf(b, "  %s:\n", sub)
-			if err := exportSettingLines(b, c, bySub[sub], "    "); err != nil {
+			fmt.Fprintf(b, "%s  %s:\n", e.lead(), sub)
+			if err := e.lines(b, bySub[sub], "    "); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := exportSettingLines(b, c, []*config.Setting{set}, "  "); err != nil {
+		if err := e.lines(b, []*config.Setting{set}, "  "); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// exportSettingLines writes settings, each under the last word of its key,
-// indented by indent.
-func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config.Setting, indent string) error {
+// lines writes settings, each under the last word of its key, indented
+// by indent.
+func (e exporter) lines(b *strings.Builder, settings []*config.Setting, indent string) error {
+	indent = e.lead() + indent
 	for _, set := range settings {
 		name := set.Key[strings.LastIndex(set.Key, ".")+1:]
 		if set.Type == config.TypeSecret {
@@ -1549,13 +1811,14 @@ func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config
 			fmt.Fprintf(b, "%s# %s: left out; %s\n", indent, name, hint)
 			continue
 		}
+		val := e.value(set.Key)
 		// An address with a password in it is left out like a password.
-		if s, _ := c.Value(set.Key).(string); urlKeys[set.Key] && s != "" && redact.URL(s) != s {
+		if s, _ := val.(string); urlKeys[set.Key] && s != "" && redact.URL(s) != s {
 			fmt.Fprintf(b, "%s# %s: left out, as it holds a password; set it here\n", indent, name)
 			continue
 		}
 		v := &yaml.Node{}
-		if err := v.Encode(c.Value(set.Key)); err != nil {
+		if err := v.Encode(val); err != nil {
 			return err
 		}
 		if v.Kind == yaml.SequenceNode {
@@ -1566,7 +1829,7 @@ func exportSettingLines(b *strings.Builder, c *config.Config, settings []*config
 			return err
 		}
 		line := fmt.Sprintf("%s%s: %s", indent, name, strings.TrimSpace(string(out)))
-		if note := serverOwn(set); note != "" {
+		if note := e.note(set); note != "" {
 			line += "  # " + note
 		}
 		b.WriteString(line + "\n")

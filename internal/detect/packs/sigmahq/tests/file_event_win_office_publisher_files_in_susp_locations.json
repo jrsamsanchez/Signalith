@@ -1,0 +1,4 @@
+{"rule": "3d2a2d59-929c-4b78-8c1a-145dfe9e07b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\Users\\Public\\.pub"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}}
+]}

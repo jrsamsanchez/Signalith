@@ -1,5 +1,6 @@
 id: risk-multiple-tactics
 title: $risk_object$ shows activity across $tactics$ ATT&CK tactics
+name: Activity across several ATT&CK tactics
 description: Detections across three or more ATT&CK tactics fired for one user or system within a week, which looks like an attack progressing rather than a single noisy rule.
 query: |
   datamodel=Risk

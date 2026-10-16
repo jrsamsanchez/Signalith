@@ -81,12 +81,24 @@ func writePair(t *testing.T, dir string) (certFile, keyFile string, certPEM []by
 // settled waits for the goroutines left over from requests and restarts
 // to end, and returns how many are left.
 func settled(rs *running, most int) int {
-	rs.client.CloseIdleConnections()
-	noFollow.CloseIdleConnections()
+	// The server's own keep-alive connections to the fake OpenSearch come
+	// and go with its background loops, so they are closed before each
+	// count: what is left is what the restarts left running.
+	drop := func() {
+		rs.client.CloseIdleConnections()
+		noFollow.CloseIdleConnections()
+		if rs.os != nil {
+			rs.os.CloseClientConnections()
+		}
+	}
+	drop()
 	n := runtime.NumGoroutine()
 	// Under -race on a busy CI runner, closed connections and stopped
 	// listeners can take several seconds to finish their goroutines.
-	for deadline := time.Now().Add(20 * time.Second); n > most && time.Now().Before(deadline); n = runtime.NumGoroutine() {
+	for i, deadline := 0, time.Now().Add(20*time.Second); n > most && time.Now().Before(deadline); i, n = i+1, runtime.NumGoroutine() {
+		if i%20 == 19 {
+			drop()
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	return n

@@ -1,0 +1,13 @@
+{"rule": "d5866ddf-ce8f-4aea-b28e-d96485a20d3d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\Windows\\explorer.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"C:\\$WINDOWS.~BT\\ \\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\SecurityHealthSetup.exe","TargetFilename":"C:\\Windows\\System32\\SecurityHealth\\ \\SecurityHealthSystray.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\WINDOWS\\system32\\msiexec.exe","TargetFilename":"C:\\Program Files\\WindowsApps\\Microsoft.PowerShellPreview\\ \\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\system32\\svchost.exe","TargetFilename":"\\AppData\\Local\\Microsoft\\WindowsApps\\ \\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"\\wuaucltcore.exe","TargetFilename":"C:\\Windows\\Temp\\\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\wuauclt.exe","TargetFilename":"\\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\wslhost.exe \\AppData\\Local\\Microsoft\\WindowsApps\\ C:\\Users\\ \\schtasks.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 23:41:48.482","Image":"C:\\Windows\\system32\\cmd.exe","ProcessGuid":"5AA13A44-0C90-68FC-BF1D-000000004002","ProcessId":"10048","RuleName":"-","TargetFilename":"C:\\bitsadmin.exe","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:41:48.482"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "37b437cf-3fc5-4c8e-9c94-1d7c9aff842b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"System\\CurrentControlSet\\Control\\Terminal Server\\fAllowToGetHelp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"System\\CurrentControlSet\\Control\\Terminal Server\\fAllowToGetHelp"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","EventType":"SetValue","Image":"C:\\Windows\\system32\\reg.exe","ProcessGuid":"5AA13A44-5C04-68FE-5855-000000004002","ProcessId":"10080","RuleName":"-","TargetObject":"HKLM\\System\\CurrentControlSet\\Control\\Terminal Server\\fAllowToGetHelp","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-26 17:36:04.941"}}
+]}

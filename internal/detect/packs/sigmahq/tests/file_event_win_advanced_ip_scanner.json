@@ -1,0 +1,5 @@
+{"rule": "fed85bf9-e075-4280-9159-fbe8a023d6fa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"\\AppData\\Local\\Temp\\Advanced IP Scanner 2"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2025-10-24 10:44:35.897","Image":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\is-3C3LU.tmp\\Advanced_IP_Scanner_2.5.4594.1(1).tmp","ProcessGuid":"5AA13A44-0D74-68FC-EB1D-000000004002","ProcessId":"5624","RuleName":"-","TargetFilename":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\Advanced IP Scanner 2\\platforms\\qwindows.dll","User":"ATTACKRANGE\\Administrator","UtcTime":"2025-10-24 23:36:29.110"}}
+]}

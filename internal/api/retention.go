@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 )
 
@@ -17,15 +18,17 @@ import (
 // data, so every route is for admins only.
 func (s *Server) routeRetention(api *router) {
 	api.admin("GET /api/retention", s.handleRetention)
-	api.admin("PUT /api/retention/policies/{category}", s.handleRetentionSetPolicy)
-	api.admin("DELETE /api/retention/policies/{category}", s.handleRetentionResetPolicy)
-	api.admin("PUT /api/retention/default", s.handleRetentionSetDefault)
-	api.admin("PUT /api/retention/guard", s.handleRetentionSetGuard)
+	api.sensitive("PUT /api/retention/policies/{category}", s.handleRetentionSetPolicy)
+	api.sensitive("DELETE /api/retention/policies/{category}", s.handleRetentionResetPolicy)
+	api.sensitive("PUT /api/retention/default", s.handleRetentionSetDefault)
+	api.sensitive("PUT /api/retention/guard", s.handleRetentionSetGuard)
+	api.sensitive("POST /api/retention/policies/confirm", s.handleRetentionConfirm)
 	api.admin("POST /api/retention/preview", s.handleRetentionPreview)
-	api.admin("POST /api/retention/run", s.handleRetentionRun)
+	api.sensitive("POST /api/retention/run", s.handleRetentionRun)
 	api.admin("GET /api/retention/archive", s.handleRetentionArchive)
 	api.admin("POST /api/retention/archive/preview", s.handleRetentionRestorePreview)
 	api.admin("POST /api/retention/archive/restore", s.handleRetentionRestore)
+	api.admin("GET /api/retention/job", s.handleRetentionJob)
 }
 
 var errRetentionOff = errors.New("data retention is not available on this server")
@@ -45,6 +48,9 @@ var policyFields = []string{"keep_days", "max_size_gb", "compact_after_days", "a
 func writeRetentionError(w http.ResponseWriter, err error) {
 	var pe *retention.PolicyError
 	var ce *retention.ConfirmError
+	if sharedError(w, err) {
+		return
+	}
 	switch {
 	case errors.As(err, &ce):
 		// The restore needs confirming; check says what it would do.
@@ -69,7 +75,7 @@ func writeRetentionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, retention.ErrManaged):
 		writeError(w, http.StatusBadRequest, err)
 	case errors.Is(err, retention.ErrFromConfig), errors.Is(err, retention.ErrBusy), errors.Is(err, retention.ErrRestoring),
-		errors.Is(err, retention.ErrReadOnly):
+		errors.Is(err, retention.ErrReadOnly), errors.Is(err, retention.ErrNoHold):
 		writeError(w, http.StatusConflict, err)
 	case errors.Is(err, retention.ErrOpenSearch):
 		writeError(w, http.StatusServiceUnavailable, err)
@@ -99,14 +105,53 @@ func (s *Server) handleRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.Retention.Overview(ctx))
+	ov := s.Retention.Overview(ctx)
+	ov.RestoreQueued = s.Audit.on()
+	if ov.ETag != "" {
+		w.Header().Set("ETag", ov.ETag)
+	}
+	writeJSON(w, http.StatusOK, ov)
+}
+
+// retentionEditable refuses a change of shared policies while the shared
+// settings cannot be changed on this server.
+func (s *Server) retentionEditable(w http.ResponseWriter) bool {
+	if !s.retentionOK(w) {
+		return false
+	}
+	if s.sharedContent() {
+		return s.sharedWritable(w)
+	}
+	return true
 }
 
 // changed logs a settings change and starts a run so it applies now, or
-// queues one when a run or restore is going.
+// queues one when a run or restore is going. Where the policies are
+// shared and another server runs retention, that server is asked to.
 func (s *Server) retentionChanged(w http.ResponseWriter, r *http.Request, what string, out map[string]any) {
 	user := userOf(r)
 	s.Log.Info("retention settings changed", "what", what, "by", user)
+	if tag := s.Retention.ETag(); tag != "" {
+		w.Header().Set("ETag", tag)
+	}
+	if s.sharedContent() && !s.leads() {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		req, err := s.Shared.Submit(ctx, clustercfg.RequestRetentionRun, clustercfg.RetentionRunArgs{Trigger: retention.TriggerChange}, user)
+		// No run here: the other server is asked, and request_id follows
+		// that.
+		out["run_started"], out["run_queued"] = false, false
+		if err == nil {
+			out["request_id"] = req.ID
+			if s.Cluster != nil {
+				out["queued_on"] = s.Cluster.JobHolder()
+			}
+		} else {
+			s.Log.Warn("could not ask the server that runs retention to apply the change now; its next run does", "err", err)
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	got, _ := s.Retention.ApplySoon(retention.TriggerChange, user)
 	out["run_started"] = got == retention.ApplyStarted
 	out["run_queued"] = got == retention.ApplyQueued
@@ -114,7 +159,7 @@ func (s *Server) retentionChanged(w http.ResponseWriter, r *http.Request, what s
 }
 
 func (s *Server) handleRetentionSetPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.retentionOK(w) {
+	if !s.retentionEditable(w) {
 		return
 	}
 	id := r.PathValue("category")
@@ -123,7 +168,7 @@ func (s *Server) handleRetentionSetPolicy(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.Retention.SetPolicy(id, &p); err != nil {
+	if err := s.Retention.SetPolicyIf(id, &p, r.Header.Get("If-Match")); err != nil {
 		writeRetentionError(w, err)
 		return
 	}
@@ -131,11 +176,11 @@ func (s *Server) handleRetentionSetPolicy(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleRetentionResetPolicy(w http.ResponseWriter, r *http.Request) {
-	if !s.retentionOK(w) {
+	if !s.retentionEditable(w) {
 		return
 	}
 	id := r.PathValue("category")
-	if err := s.Retention.SetPolicy(id, nil); err != nil {
+	if err := s.Retention.SetPolicyIf(id, nil, r.Header.Get("If-Match")); err != nil {
 		writeRetentionError(w, err)
 		return
 	}
@@ -145,7 +190,7 @@ func (s *Server) handleRetentionResetPolicy(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleRetentionSetDefault(w http.ResponseWriter, r *http.Request) {
-	if !s.retentionOK(w) {
+	if !s.retentionEditable(w) {
 		return
 	}
 	var p retention.Policy
@@ -153,7 +198,7 @@ func (s *Server) handleRetentionSetDefault(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.Retention.SetDefault(p); err != nil {
+	if err := s.Retention.SetDefaultIf(p, r.Header.Get("If-Match")); err != nil {
 		writeRetentionError(w, err)
 		return
 	}
@@ -161,7 +206,7 @@ func (s *Server) handleRetentionSetDefault(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleRetentionSetGuard(w http.ResponseWriter, r *http.Request) {
-	if !s.retentionOK(w) {
+	if !s.retentionEditable(w) {
 		return
 	}
 	var g retention.Guard
@@ -169,7 +214,7 @@ func (s *Server) handleRetentionSetGuard(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.Retention.SetGuard(g); err != nil {
+	if err := s.Retention.SetGuardIf(g, r.Header.Get("If-Match")); err != nil {
 		writeRetentionError(w, err)
 		return
 	}
@@ -204,6 +249,12 @@ func (s *Server) handleRetentionRun(w http.ResponseWriter, r *http.Request) {
 	if !s.retentionOK(w) {
 		return
 	}
+	if s.sharedContent() && !s.leads() {
+		// The server that runs the background jobs runs retention; the
+		// page follows the request.
+		s.submit(w, r, clustercfg.RequestRetentionRun, clustercfg.RetentionRunArgs{Trigger: retention.TriggerManual}, nil)
+		return
+	}
 	user := userOf(r)
 	if err := s.Retention.RunAsync(retention.TriggerManual, user); err != nil {
 		writeRetentionError(w, err)
@@ -211,6 +262,22 @@ func (s *Server) handleRetentionRun(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("retention run started by hand", "by", user)
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
+}
+
+// handleRetentionConfirm confirms shared policies that wait to be
+// confirmed (their import found that the servers' own policies
+// differed), so runs enforce them in full again, starting now.
+func (s *Server) handleRetentionConfirm(w http.ResponseWriter, r *http.Request) {
+	if !s.retentionEditable(w) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.Retention.Confirm(ctx, userOf(r)); err != nil {
+		writeRetentionError(w, err)
+		return
+	}
+	s.retentionChanged(w, r, "shared policies confirmed", map[string]any{"confirmed": true})
 }
 
 func (s *Server) handleRetentionArchive(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +333,9 @@ func (s *Server) handleRetentionRestore(w http.ResponseWriter, r *http.Request) 
 	var req restoreRequest
 	if err := readStrict(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.restoreQueued(w, r, req) {
 		return
 	}
 	user := userOf(r)

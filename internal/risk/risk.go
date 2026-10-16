@@ -32,7 +32,9 @@ func (s *Store) pattern() string {
 	return s.Prefix + "-" + strings.ToLower(datamodel.RiskModel) + "-*"
 }
 
-// Write indexes risk events.
+// Write indexes risk events, in the daily index of each event's time. An
+// event with an ID that is already stored was written before (by an
+// earlier run of the same slot), so that counts as written.
 func (s *Store) Write(ctx context.Context, events []detect.RiskEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -41,6 +43,7 @@ func (s *Store) Write(ctx context.Context, events []detect.RiskEvent) error {
 	for _, e := range events {
 		docs = append(docs, store.IndexedDoc{
 			Index: datamodel.IndexName(s.Prefix, datamodel.RiskModel, e.Time.UTC().Format("2006.01.02")),
+			ID:    e.ID,
 			Doc:   e.Doc(),
 		})
 	}
@@ -48,6 +51,8 @@ func (s *Store) Write(ctx context.Context, events []detect.RiskEvent) error {
 	if err != nil {
 		return err
 	}
+	// A risk event with an ID that is already stored was written before.
+	errs, _ = store.WithoutConflicts(errs, docs)
 	if len(errs) > 0 {
 		return fmt.Errorf("%d risk events were rejected: %s", len(errs), errs[0].Reason)
 	}

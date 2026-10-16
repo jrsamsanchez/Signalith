@@ -1,0 +1,4 @@
+{"rule": "679085d5-f427-4484-9f58-1dc30a7c426d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{"ImageLoaded":"\\WinDivert64.sys"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"6","data":{}}
+]}

@@ -2,14 +2,11 @@ package intel
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/secrets"
-	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,47 +51,6 @@ func (e *FileError) Error() string {
 }
 
 func (e *FileError) Unwrap() error { return e.Err }
-
-// loadFile reads the feeds file once; the caller holds f.mu.
-func (f *Feeds) loadFile() {
-	if f.fileRead {
-		return
-	}
-	f.fileRead = true
-	if f.gen == nil {
-		f.gen = map[string]int{}
-	}
-	if f.File == "" {
-		return
-	}
-	data, err := os.ReadFile(f.File)
-	if errors.Is(err, os.ErrNotExist) {
-		return
-	}
-	if err != nil {
-		f.fileErr = &FileError{Path: f.File, Err: err}
-		return
-	}
-	var ff feedsFile
-	if err := yaml.Unmarshal(data, &ff); err != nil {
-		f.fileErr = &FileError{Path: f.File, Err: err}
-		return
-	}
-	for i := range ff.Feeds {
-		s := &ff.Feeds[i]
-		s.eachSecret(func(part, label, v string) (string, error) {
-			plain, err := secrets.Open(FeedsFileField(s.Name, part), v)
-			if err != nil {
-				f.log().Warn("a saved secret of a threat intel feed cannot be decrypted; edit the feed and enter it again",
-					"feed", s.Name, "secret", label, "file", f.File, "err", err)
-				return v, nil
-			}
-			return plain, nil
-		})
-		s.Defaults()
-	}
-	f.ui, f.kept = ff.Feeds, ff.Kept
-}
 
 // FeedsFileField is the setting a secret in the feeds file is encrypted
 // for: part is password or headers.<header name>, as in
@@ -192,47 +148,4 @@ func encodeFeedsFile(ff feedsFile) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// retryFile reads the feeds file again if it could not be read before, so
-// a fixed file takes effect without a restart; the caller holds f.mu.
-func (f *Feeds) retryFile() {
-	if f.fileRead && f.fileErr != nil {
-		f.fileRead, f.fileErr = false, nil
-	}
-	f.loadFile()
-}
-
-// saveFile writes the feeds file; the caller holds f.mu. The caller
-// updates f.ui and f.kept only after it succeeds.
-func (f *Feeds) saveFile(ui []FeedSpec, kept []KeptFeed) error {
-	if f.File == "" {
-		return nil
-	}
-	now := f.now()
-	var live []KeptFeed
-	for _, k := range kept {
-		if k.Until.After(now) {
-			live = append(live, k)
-		}
-	}
-	sealed := make([]FeedSpec, len(ui))
-	for i, s := range ui {
-		c := s.clone()
-		err := c.eachSecret(func(part, _, v string) (string, error) {
-			return secrets.Seal(FeedsFileField(c.Name, part), v)
-		})
-		if err != nil {
-			return fmt.Errorf("could not save %s: %w", f.File, err)
-		}
-		sealed[i] = c
-	}
-	data, err := encodeFeedsFile(feedsFile{Feeds: sealed, Kept: live})
-	if err != nil {
-		return err
-	}
-	if err := securefile.WriteFile(f.File, data); err != nil {
-		return fmt.Errorf("could not save %s: %w", f.File, err)
-	}
-	return nil
 }

@@ -1,0 +1,4 @@
+{"rule": "13f08f54-e705-4498-91fd-cce9d9cee9f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{"TargetFilename":"/etc/profile.d/.sh"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-Sysmon/Operational","event_id":"11","data":{}}
+]}
