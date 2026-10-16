@@ -35,7 +35,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,455 from
+- Content packs of tested community rules: 2,471 from
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,131 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
@@ -77,6 +77,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   30 Splunk Entra ID rules.
 - [Microsoft 365](microsoft-365.md) audit log, read from Microsoft with no agent, with 17
   SigmaHQ and 19 Splunk Microsoft 365 rules.
+- [Google Cloud](google-cloud.md) audit logs through a log sink, Pub/Sub and the
+  OpenTelemetry Collector, with 16 SigmaHQ Google Cloud rules.
 - A [network sensor](network-sensor.md) with Zeek and Suricata, installed with one line,
   network detections for sensor, firewall, DNS and proxy data, and a Network dashboard.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, a scanner for

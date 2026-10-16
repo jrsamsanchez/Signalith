@@ -330,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,455 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,471 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -338,8 +338,9 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [Web server access logs](#web-server-access-logs)), 45 network rules (see
 [Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
-[Entra ID and Azure](#entra-id-and-azure)) and 17 Microsoft 365 rules (see
-[Microsoft 365](#microsoft-365)):
+[Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
+[Microsoft 365](#microsoft-365)) and 16 Google Cloud rules (see
+[Google Cloud](#google-cloud)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -361,6 +362,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: azure`, `service: riskdetection`, `pim` | Entra ID Protection risk detections | Alerts |
 | `product: azure`, `service: activitylogs` | Azure activity log records | Change |
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
+| `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -709,6 +711,20 @@ schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
 `Parameters{}.Value`, so rules that name one as a field (`Role=ApplicationImpersonation`)
 are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
 the audit log, see [Microsoft 365](microsoft-365.md).
+
+### Google Cloud
+
+SigmaHQ's 16 tested Google Cloud audit log rules ship. Most name a call's method as
+Elastic does (`gcp.audit.method_name`), which reads `protoPayload.methodName`; the others
+name the entry's fields as Splunk's add-on keeps them, under `data.`
+(`data.protoPayload.serviceName`), which read the same names without it. An entry's list
+of permissions checked reads Splunk's names for its values
+(`protoPayload.authorizationInfo{}.permission`), and a rule's log (`logName`) reads
+`log_id`, the end of the entry's `logName`. A rule's keywords are searched in the call's
+request (`request_parameters`), where a Kubernetes object's annotations are. Every rule
+searches `sourcetype=google:gcp:pubsub:message`. SigmaHQ's Google Workspace rules are left
+out, as are Splunk's Google Cloud detections, which are all experimental. To send the
+audit logs, see [Google Cloud](google-cloud.md).
 
 ### Splunk Security Content
 

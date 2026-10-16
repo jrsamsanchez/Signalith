@@ -11,7 +11,7 @@ import (
 
 // cloudSourcetypes are the sourcetypes of cloud records, whose field
 // names the sender chooses in part.
-var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype}
+var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype, ingest.GCPSourcetype}
 
 // TestCloudRuleFieldsMapped checks every field a shipped cloud rule reads
 // is mapped up front, so names a caller chooses (a call's tags, an

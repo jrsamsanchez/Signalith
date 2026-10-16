@@ -330,6 +330,10 @@ var knownFields = func() map[string]string {
 	for _, k := range o365Mapped {
 		m[k] = kw
 	}
+	// Google Cloud log entries (gcp.go): the entry's own fields.
+	for _, k := range gcpMapped {
+		m[k] = kw
+	}
 	// The fields the shipped cloud rules read (rulefields.go).
 	for _, k := range cloudRuleFields {
 		m[k] = kw
