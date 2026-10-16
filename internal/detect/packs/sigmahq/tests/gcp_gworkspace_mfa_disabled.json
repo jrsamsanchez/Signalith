@@ -1,0 +1,6 @@
+{"rule": "780601d1-6376-4f2a-884e-b8d45599f78c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"ENFORCE_STRONG_AUTHENTICATION","eventService":"admin.googleapis.com","new_value":"false"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com","new_value":"false"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"ENFORCE_STRONG_AUTHENTICATION","new_value":"false"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"ENFORCE_STRONG_AUTHENTICATION","eventService":"admin.googleapis.com"}}
+]}

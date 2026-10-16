@@ -8,7 +8,9 @@ Denied** log requests that a security policy refused. Signalith reads them, make
 searchable and runs the SigmaHQ Google Cloud rules on them. Those rules cover firewall
 rules, VPN tunnels, DNS zones, SQL databases and storage buckets changed or deleted,
 service accounts changed or disabled, access policies deleted, Kubernetes secrets, role
-bindings, cron jobs and admission webhooks, and break-glass deployments.
+bindings, cron jobs and admission webhooks, and break-glass deployments. **Google
+Workspace** can share its own audit logs with Google Cloud, and Signalith reads them the
+same way (see [Google Workspace](#google-workspace)).
 
 ## How it works
 
@@ -139,7 +141,7 @@ index's field names. Each event also gets the data model fields of what it is:
   `dest` (the service) and `vendor_account` (the project).
 - A sign-in to a Google account (`login.googleapis.com`, when your organization shares its
   Google Workspace data with Google Cloud) is an **Authentication** event, with `action`
-  success or failure.
+  success or failure (see [Google Workspace](#google-workspace)).
 - The rest (Data Access and Policy Denied entries) are **Other** events, with the same
   `user`, `src`, `status` and `vendor_account`.
 
@@ -151,6 +153,55 @@ sourcetype=google:gcp:pubsub:message status=failure | stats count by user, src, 
 sourcetype=google:gcp:pubsub:message protoPayload.methodName=SetIamPolicy | table _time, user, object_path
 ```
 
+## Google Workspace
+
+Google Workspace keeps audit logs of what its admins and users do. When you share them
+with Google Cloud, Cloud Logging keeps them in your organization's audit logs, as log
+entries like Google Cloud's own, and the same sink, topic and Collector bring them to
+Signalith. The Admin log (`admin.googleapis.com`: users, roles, settings and apps
+changed) is in the organization's Admin Activity log, and the Login log
+(`login.googleapis.com`: sign-ins, failed sign-ins and Google's warnings about them) in
+its Data Access log.
+
+To share them:
+
+1. In the Google Admin console, as a super admin, go to **Account**, then **Account
+   settings**, then **Legal and compliance**.
+2. Open **Sharing options**, choose **Enabled** under **Share data with Google Cloud
+   services**, and save. Your Workspace needs a Google Cloud organization to share with,
+   which Google makes the first time someone in it uses Google Cloud.
+3. Make the log sink at the organization, as the second step of
+   [Set it up](#set-it-up) says: Workspace's entries are in the organization's own logs,
+   not in any project's, so a project's sink never sees them.
+   `gcloud logging sinks create signalith-audit pubsub.googleapis.com/projects/my-project/topics/signalith-audit --organization=ORGANIZATION_ID --include-children --log-filter='logName:"cloudaudit.googleapis.com"'`.
+   The same filter matches Google Cloud's logs and Workspace's. `gcloud organizations list`
+   shows the organization's ID. When you let the sink publish to the topic, describe it
+   with `--organization=ORGANIZATION_ID` too.
+
+After you share them, entries can take an hour or more to start arriving, and Google can
+take longer to publish a Workspace event than a Google Cloud one. Each Workspace entry is
+an event like any other Google Cloud one, with `vendor_product="Google Workspace"`, and a
+little more:
+
+| Field | Example |
+| --- | --- |
+| `event_name` | the event as Workspace's Reports API names it: `GRANT_ADMIN_PRIVILEGE`, `login_failure` |
+| `event_parameters.<name>` | each of the event's parameters, by its name in lower case: `event_parameters.user_email`, `event_parameters.new_value`; a list's values are each in the list |
+| `protoPayload.methodName` | the event in the entry's own form: `google.admin.AdminService.grantAdminPrivilege` |
+
+An admin's change is a **Change** event: `command` and `signature` are the event's name,
+`user` is the admin, `src` their address, `object` what the change is about (the user,
+group, role, app or setting the event's parameters name), `object_category` the
+event's type (`USER_SETTINGS`) and `vendor_account` the organization's ID. A sign-in is an
+**Authentication** event: `action` is success or failure, `user` who signed in,
+`authentication_method` how (`google_password`, `saml`), and `reason` why it failed
+(`login_failure_invalid_password`). Some searches to start with:
+
+```
+datamodel=Change sourcetype=google:gcp:pubsub:message vendor_product="Google Workspace" | stats count by user, command
+sourcetype=google:gcp:pubsub:message event_name=login_failure | stats count by user, src, reason
+```
+
 ## Detections
 
 The SigmaHQ pack has 16 Google Cloud rules (see [Detections](detections.md#google-cloud)):
@@ -159,15 +210,24 @@ deleted, buckets listed, data re-identified with Sensitive Data Protection, pack
 mirroring, service accounts changed, disabled or deleted, access policies deleted, and
 Kubernetes secrets, role bindings, cron jobs, admission webhooks and break-glass
 deployments. Each searches `sourcetype=google:gcp:pubsub:message`. Turn them on from the
-pack's page like any other rules. SigmaHQ's Google Workspace rules read Workspace's own
-reports, another log Signalith does not read.
+pack's page like any other rules.
+
+It also has 7 Google Workspace rules, for Workspace's audit logs shared with Google Cloud:
+an application's access level changed, an application removed, an API client given
+domain-wide access, 2-step verification turned off, a role changed or deleted, a privilege
+removed from a role, and admin rights granted. SigmaHQ's 3 Workspace sign-in rules are
+experimental, so they don't ship.
 
 Splunk Security Content's Google Cloud detections are all experimental, and the Splunk
-pack ships only production ones, so none ship yet.
+pack ships only production ones, so none ship yet. Its Google Workspace detections read
+the records of Workspace's Reports API, as Splunk's add-on for Google Workspace stores
+them, rather than these log entries, so they don't ship either.
 
 ## When nothing arrives
 
 - **Wait 5 minutes.** Google Cloud publishes audit log entries within a minute or two.
+  Google Workspace's can take an hour or more after you share them, and only an
+  organization's sink sends them.
 - **Check the subscription.** Its page in the Google Cloud console charts unacknowledged
   messages. None published to the topic: the sink is missing, its filter matches nothing,
   or its writer identity lacks Pub/Sub Publisher (Cloud Logging's **Log Router** page

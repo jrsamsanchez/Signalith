@@ -1,0 +1,5 @@
+{"rule": "bf638ef7-4d2d-44bb-a1dc-a238252e6267", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"REMOVE_PRIVILEGE","eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"REMOVE_PRIVILEGE"}}
+]}
