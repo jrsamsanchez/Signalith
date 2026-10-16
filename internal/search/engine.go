@@ -375,7 +375,7 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
-				by := map[string]any{"terms": map[string]any{"field": c.By, "size": 10}}
+				by := map[string]any{"terms": map[string]any{"field": storedField(c.By), "size": 10}}
 				if len(sub) > 0 {
 					by["aggs"] = sub
 				}
@@ -444,7 +444,7 @@ func metricAggs(aggs []query.Agg) (map[string]any, error) {
 func compositeAgg(by []string, aggs []query.Agg, maxBuckets int) (map[string]any, error) {
 	var sources []any
 	for i, f := range by {
-		sources = append(sources, map[string]any{fmt.Sprintf("k%d", i): map[string]any{"terms": map[string]any{"field": f}}})
+		sources = append(sources, map[string]any{fmt.Sprintf("k%d", i): map[string]any{"terms": map[string]any{"field": storedField(f)}}})
 	}
 	size := min(maxBuckets, 10000)
 	comp := map[string]any{"composite": map[string]any{"size": size, "sources": sources}}
@@ -735,6 +735,9 @@ func eventRows(resp map[string]any) ([]Row, []string) {
 		if m, ok := row[StoredRawField]; ok {
 			row[RawField] = m
 			delete(row, StoredRawField)
+		}
+		if ix, ok := hm[indexMeta].(string); ok && ix != "" {
+			row[IndexField] = ix
 		}
 		for k := range row {
 			seen[k] = true

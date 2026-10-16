@@ -267,6 +267,40 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("rows = %v", res.Rows)
 		}
 	})
+	t.Run("index is a field", func(t *testing.T) {
+		total := run(t, eng, `index=`+prefix+`-* | stats count`).Rows[0]["count"].(int64)
+		res := run(t, eng, `index=`+prefix+`-* | stats count, dc(index) as n, values(index) as names by index | sort index`)
+		var sum int64
+		for _, r := range res.Rows {
+			ix, _ := r["index"].(string)
+			if !strings.HasPrefix(ix, prefix+"-") || r["n"] != int64(1) || r["names"] != ix {
+				t.Errorf("row = %v", r)
+			}
+			sum += r["count"].(int64)
+		}
+		if len(res.Rows) < 2 || sum != total {
+			t.Fatalf("rows = %v, total %d", res.Rows, total)
+		}
+		first, _ := res.Rows[0]["index"].(string)
+		for _, q := range []string{
+			`* | where index="` + first + `"`,
+			`(index="` + strings.ToUpper(first) + `" OR index=nothing-here)`,
+			`(index=` + first[:len(first)-3] + `* NOT index=nothing-*) | where index="` + first + `"`,
+		} {
+			got := run(t, eng, q+` | stats count by index`)
+			if len(got.Rows) != 1 || got.Rows[0]["index"] != first || got.Rows[0]["count"] != res.Rows[0]["count"] {
+				t.Errorf("%s: rows = %v", q, got.Rows)
+			}
+		}
+		ev := run(t, eng, `* | where index="`+first+`" | head 1 | table index`)
+		if len(ev.Rows) != 1 || ev.Rows[0]["index"] != first {
+			t.Errorf("events = %v", ev.Rows)
+		}
+		tc := run(t, eng, `index=`+prefix+`-* | timechart span=1h count by index`)
+		if len(tc.Columns) < 3 {
+			t.Errorf("timechart columns = %v", tc.Columns)
+		}
+	})
 	t.Run("plain-English questions run", func(t *testing.T) {
 		ip, err := nlq.Translate("failed logins from 203.0.113.9", nil)
 		if err != nil {

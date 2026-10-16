@@ -3,6 +3,7 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -16,6 +17,25 @@ import (
 
 // TimeField is the event timestamp field in every Signalith index.
 const TimeField = "@timestamp"
+
+// IndexField is the search field that holds the index an event is stored
+// in, as in Splunk (stats count by index). OpenSearch keeps it as the
+// metadata field _index, which no event's own fields can change.
+const IndexField = "index"
+
+// indexMeta is OpenSearch's name for IndexField.
+const indexMeta = "_index"
+
+// storedField returns the name OpenSearch keeps a search field under.
+func storedField(f string) string {
+	switch f {
+	case "_time":
+		return TimeField
+	case IndexField:
+		return indexMeta
+	}
+	return f
+}
 
 // RawField is the name users see for the original event text. It is stored
 // as StoredRawField because OpenSearch reserves leading-underscore names.
@@ -87,6 +107,9 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 	case "!=":
 		return boolQuery("must_not", []any{equalsQuery(c.Field, c.Value)}), nil
 	case "=~":
+		if c.Field == IndexField {
+			return nil, indexOnlyEquals()
+		}
 		if c.Field == RawField || c.Field == "_time" {
 			return nil, fmt.Errorf("a regular expression (=~) needs a field other than %s", c.Field)
 		}
@@ -100,6 +123,9 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 		var v any = c.Value
 		if n, ok := parseNumber(c.Value); ok {
 			v = n
+		}
+		if c.Field == IndexField {
+			return nil, indexOnlyEquals()
 		}
 		field := c.Field
 		if field == "_time" {
@@ -122,7 +148,23 @@ var WildcardFields = map[string]bool{
 	"requestParameters.containerDefinitions": true,
 }
 
+func indexOnlyEquals() error {
+	return errors.New("index can be compared only with = and != (with * wildcards), as in index=signalith-authentication-*")
+}
+
 func equalsQuery(field, value string) map[string]any {
+	if field == IndexField {
+		// Index names are lower case. OpenSearch takes term and
+		// wildcard queries on _index, not exists.
+		value = strings.ToLower(value)
+		if value == "*" {
+			return map[string]any{"match_all": map[string]any{}}
+		}
+		if strings.ContainsAny(value, "*?") {
+			return map[string]any{"wildcard": map[string]any{indexMeta: map[string]any{"value": value}}}
+		}
+		return map[string]any{"term": map[string]any{indexMeta: map[string]any{"value": value}}}
+	}
 	if field == "_time" {
 		field = TimeField
 	}

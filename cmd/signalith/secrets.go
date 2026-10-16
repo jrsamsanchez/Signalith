@@ -33,7 +33,8 @@ const secretsUsage = `Usage:
                                                before going back to a version older than this one
 
 Settings for "set": opensearch.password, assistant.api_key, auth.ldap.bind_password,
-and ingest.tokens (adds a shared agent token; leave it empty to have one made).
+auth.oidc.client_secret and ingest.tokens (adds a shared agent token; leave it empty to
+have one made).
 New agents get a token of their own instead: signalith tokens create, or the
 Add data page.
 "encrypt" and "set" make the master key if there is none. If the files hold values
@@ -51,6 +52,7 @@ var secretEnv = map[string]string{
 	"vulns.openvas_password":  "SIGNALITH_OPENVAS_PASSWORD",
 	"auth.ldap.bind_password": "SIGNALITH_LDAP_BIND_PASSWORD",
 	"m365.client_secret":      "SIGNALITH_M365_CLIENT_SECRET",
+	"auth.oidc.client_secret": "SIGNALITH_OIDC_CLIENT_SECRET",
 	"ingest.tokens":           "SIGNALITH_INGEST_TOKEN",
 }
 
