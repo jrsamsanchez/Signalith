@@ -292,7 +292,18 @@ func cleanReply(s string) string {
 		}
 		s = rest
 	}
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "Query:"))
+	// A model may wrap the whole query in quotes or backticks, which would
+	// make it one phrase that matches nothing. Quotes inside the query
+	// (status="failed") are kept.
+	for len(s) >= 2 {
+		q := s[0]
+		if q != '`' && q != '\'' && q != '"' || s[len(s)-1] != q || strings.IndexByte(s[1:len(s)-1], q) >= 0 {
+			break
+		}
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
 }
 
 func userPrompt(question, draft string) string {

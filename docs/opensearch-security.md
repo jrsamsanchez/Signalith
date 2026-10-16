@@ -267,15 +267,23 @@ change `index_patterns` in `opensearch-security/roles.yml` to match before step 
    sudo chown -R opensearch:opensearch /etc/opensearch/certs
    sudo chmod 700 /etc/opensearch/certs && sudo chmod 600 /etc/opensearch/certs/*
    ```
-2. Copy the four files in `opensearch/opensearch-security/` into
+2. Delete the demo certificates OpenSearch put directly in `<config>` (`esnode.pem`,
+   `kirk.pem`, `root-ca.pem` and their keys), but not your new `certs` folder. OpenSearch
+   refuses to start while they are there (`Demo certificates found`), and the Linux
+   packages put them there even when the demo setup is skipped. On Linux:
+   ```sh
+   sudo rm -f /etc/opensearch/*.pem
+   ```
+   On Windows, delete the `.pem` files in `C:\opensearch\config` (not in its `certs` folder).
+3. Copy the four files in `opensearch/opensearch-security/` into
    `<config>/opensearch-security/`, replacing the ones there (keep a copy of the old ones).
-3. Edit `<config>/opensearch.yml`: delete the block from
+4. Edit `<config>/opensearch.yml`: delete the block from
    `######## Start OpenSearch Security Demo Configuration ########` to
    `######## End OpenSearch Security Demo Configuration ########` if there is one, and any
    other line starting with `plugins.security.`. Then paste in the contents of
    `opensearch/add-to-opensearch.yml`. Leave `network.host` as it is when Signalith runs on
    the same machine (OpenSearch then listens on this machine only).
-4. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
+5. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
    service (or `opensearch.bat`).
 
 ### 3. Load the security settings
