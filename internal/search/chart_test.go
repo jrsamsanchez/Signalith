@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestChartXYSeriesUntable(t *testing.T) {
@@ -77,7 +78,7 @@ func TestSpath(t *testing.T) {
 	{"_source":{"@timestamp":"2026-10-15T11:00:00Z","message":"{\"actor\":{\"user\":\"amy\",\"roles\":[\"admin\",\"dev\"]},\"items\":[{\"id\":1},{\"id\":2}],\"ok\":true,\"n\":null}"}},
 	{"_source":{"@timestamp":"2026-10-15T10:00:00Z","message":"not json"}}]}}`
 	for src, want := range map[string]map[string]any{
-		`* | spath`: {"actor.user": "amy", "actor.roles{}": []any{"admin", "dev"}, "items{}.id": []any{int64(1), int64(2)}, "ok": "true"},
+		`* | spath`:                            {"actor.user": "amy", "actor.roles{}": []any{"admin", "dev"}, "items{}.id": []any{int64(1), int64(2)}, "ok": "true"},
 		`* | spath output=who path=actor.user`: {"who": "amy"},
 		`* | spath path=items{}.id`:            {"items{}.id": []any{int64(1), int64(2)}},
 		`* | spath path=actor`:                 {"actor": `{"roles":["admin","dev"],"user":"amy"}`},
@@ -121,5 +122,23 @@ func TestSpathCountsAgainstTheBudget(t *testing.T) {
 	var qe *QueryError
 	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestSpathCapsFieldNames(t *testing.T) {
+	// Every row has 100 keys of its own: 300,000 names in all.
+	keys := make([]string, 100)
+	for i := range keys {
+		keys[i] = fmt.Sprintf(`\"k%dQN\":1`, i)
+	}
+	src := `| makeresults count=3000 | streamstats count as n | eval j=replace("{` + strings.Join(keys, ",") + `}", "QN", tostring(n)) | spath input=j`
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := (&Engine{}).Run(ctx, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Truncated || len(res.Columns) > maxSpathNames+10 {
+		t.Errorf("truncated = %v, %d columns", res.Truncated, len(res.Columns))
 	}
 }

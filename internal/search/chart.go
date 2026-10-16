@@ -135,6 +135,10 @@ func applyUntable(ctx context.Context, res *Result, c *query.Untable) error {
 // value.
 const maxSpathFields = 500
 
+// maxSpathNames caps the field names spath adds across a search, so a
+// search whose events each hold other keys cannot make a column for each.
+const maxSpathNames = query.MaxSeriesColumns
+
 // applySpath extracts fields from the JSON in c.Input: the value at
 // c.Path, or every value named by its path (items{}.id for each id of an
 // array of items). Values that are objects or arrays are written as JSON.
@@ -152,6 +156,10 @@ func applySpath(ctx context.Context, res *Result, c *query.Spath) error {
 	var order []string
 	set := func(r Row, name string, v any) bool {
 		if v == nil {
+			return true
+		}
+		if !added[name] && len(order) >= maxSpathNames {
+			res.Truncated = true
 			return true
 		}
 		if !ev.charge(valueSize(v) + len(name)) {
@@ -215,8 +223,14 @@ func applySpath(ctx context.Context, res *Result, c *query.Spath) error {
 			}
 		}
 	}
+	have := map[string]bool{}
+	for _, col := range res.Columns {
+		have[col] = true
+	}
 	for _, name := range order {
-		addColumn(res, name)
+		if !have[name] {
+			addColumn(res, name)
+		}
 	}
 	return nil
 }
