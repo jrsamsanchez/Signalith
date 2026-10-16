@@ -13,7 +13,8 @@ it), a point on a line chart, or a series in the legend. The search is the panel
 query up to its `stats`, `top` or `timechart`, plus that row's values (for example
 `dest=web-01`) and the panel's time range; a column or a point narrows it to that
 time bucket. Numbers you can click show a pointer and turn the accent colour on
-hover.
+hover. A row of a table of events (such as **Malware not removed**) opens that
+event in Search: its values at its exact time.
 
 A filter goes into the search itself when it can, so it runs in OpenSearch. When
 the query makes or changes fields before it summarises them (`eval`, `rex`,

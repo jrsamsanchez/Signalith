@@ -1341,6 +1341,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-search .results-chart .legend { margin-top: 10px; }
 #page-search #results .table th { border-radius: 0; }
 #page-search #results .table td { cursor: pointer; }
+/* A number in a summary opens the events behind it */
+#page-search #results .table td.drill { color: var(--text); text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
+#page-search #results .table td.drill:hover { color: var(--accent); text-decoration: underline; }
 #page-search .th-sort { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
 #page-search .th-sort:hover { color: var(--text); }
 #page-search .th-sort .icon { margin: 0; opacity: 0; transition: opacity var(--t-fast); }
@@ -1567,6 +1570,10 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-dashboards a.db-drill:not(.db-single) { color: inherit; text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
 #page-dashboards a.db-drill:not(.db-single):hover { color: var(--accent); text-decoration: underline; }
 #page-dashboards .db-table td:has(> a.db-drill) { cursor: pointer; }
+#page-dashboards .db-table tr.db-row-drill { cursor: pointer; }
+#page-dashboards .db-table tr.db-row-drill:hover td { background: var(--hover); }
+#page-dashboards .db-table tr.db-row-drill:hover td:first-child { color: var(--accent); }
+#page-dashboards .db-table tr.db-row-drill:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #page-dashboards .cols.is-drill .col { cursor: pointer; }
 #page-dashboards .db-hit { cursor: pointer; }
 #page-dashboards .tip__hint { margin-top: 6px; padding-top: 6px; box-shadow: inset 0 1px 0 var(--line-subtle); color: var(--text-3); font-size: var(--fs-xs); }
@@ -1746,6 +1753,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 :is(#page-findings, #page-detections) .dx-hint { color: var(--text-3); font-size: var(--fs-sm); }
 :is(#page-findings, #page-detections) .dx-kv { gap: 6px 14px; font-size: var(--fs-sm); }
 :is(#page-findings, #page-detections) .dx-kv dt { white-space: nowrap; }
+:is(#page-findings, #page-detections) .dx-value-link { color: var(--text); text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; overflow-wrap: anywhere; }
+:is(#page-findings, #page-detections) .dx-value-link:hover { color: var(--accent); text-decoration: underline; }
 :is(#page-findings, #page-detections) .dx-kv dd { overflow-wrap: anywhere; color: var(--text); }
 :is(#page-findings, #page-detections) .dx-kv .mono { font-size: var(--fs-sm); }
 :is(#page-findings, #page-detections) .section { grid-template-columns: minmax(0, 1fr); }
