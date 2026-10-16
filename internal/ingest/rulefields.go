@@ -29,5 +29,6 @@ var cloudRuleFields = []string{
 	"ErrorNumber", "LogonError", "Name", "Payload",
 	// Read by the later stages of Microsoft 365 rules (stats values(...)).
 	"DetectionMethod", "FileData.FileName", "FileData.FilePath", "FileData.FileSize", "FileData.MalwareFamily", "Id",
-	"ModifiedProperties{}.NewValue",
+	"ModifiedProperties{}.NewValue", "Item.ParentFolder.MemberRights", "Item.ParentFolder.MemberUpn", "SessionId",
+	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName",
 }
