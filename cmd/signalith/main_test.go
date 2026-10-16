@@ -246,6 +246,35 @@ func TestSyslogSummary(t *testing.T) {
 	}
 }
 
+// init's agent port listens on -listen's host, so a server whose web page
+// is on loopback only takes agents on loopback only too, and the
+// installers open no firewall port for either.
+func TestInitAgentPortFollowsListen(t *testing.T) {
+	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	for listen, want := range map[string]string{"127.0.0.1:9000": "127.0.0.1:7779", "0.0.0.0:9000": "0.0.0.0:7779"} {
+		path := filepath.Join(t.TempDir(), "signalith.yaml")
+		captureStdout(t, func() {
+			if err := cmdInit([]string{"-c", path, "-admin-password", "first-password", "-listen", listen}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		raw, _ := os.ReadFile(path)
+		if !strings.Contains(string(raw), "agent_listen: "+want) {
+			t.Errorf("-listen %s: config lacks agent_listen %s:\n%s", listen, want, raw)
+		}
+	}
+	for host, want := range map[string]string{"127.0.0.1": "local", "::1": "local", "localhost": "local", "0.0.0.0": "any", "": "any", "10.0.0.5": "any"} {
+		if got := listenScope(host); got != want {
+			t.Errorf("listenScope(%q) = %q, want %q", host, got, want)
+		}
+	}
+	c := config.Default()
+	c.Server.Listen, c.Server.AgentListen = "0.0.0.0:9000", "127.0.0.1:7779"
+	if out := captureStdout(t, func() { printWebPorts(c) }); out != "web 9000 any\nagents 7779 local\n" {
+		t.Errorf("printWebPorts:\n%s", out)
+	}
+}
+
 // A new config serves HTTPS with Signalith's own certificate, refuses
 // agents over plain HTTP and receives syslog over TLS on 6514.
 func TestInitTurnsOnHTTPS(t *testing.T) {

@@ -746,3 +746,52 @@ func FuzzGCPEntry(f *testing.F) {
 		}
 	})
 }
+
+func FuzzOktaRecord(f *testing.F) {
+	f.Add(oktaSignInFailed)
+	f.Add(oktaFactorDeactivated)
+	f.Add("[" + oktaThreat + "," + oktaSignInFailed + "]")
+	f.Add(`{"uuid": "u", "published": "p", "eventType": "e", "actor": {}, "target": [1, {"a": [{"b": 2}]}, null], "debugContext": {"debugData": {"a.b": 1, "": 2, "c{}": 3}}}`)
+	f.Add(`{"uuid": 1, "published": 2, "eventType": "user.session.start", "actor": {"alternateId": {"x": 1}}, "outcome": {"result": []}, "client": {"userAgent": "x"}}`)
+	f.Add(`{"uuid": "u", "published": "p", "eventType": "e", "actor": ` + strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := OktaRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		for _, r := range recs {
+			ev := Normalize(OktaTag, r, now)
+			if !IsOktaRecord(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != OktaSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them.
+		for _, e := range oktaFromOTLP(msg) {
+			if !IsOktaRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
+	})
+}

@@ -142,7 +142,7 @@ services:
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
       - SIGNALITH_NODE_NAME=siem-a
-      - SIGNALITH_NODE_URL=https://siem-a:8080
+      - SIGNALITH_NODE_URL=https://siem-a:9000
     volumes:
       - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-a-data:/var/lib/signalith
@@ -159,14 +159,14 @@ services:
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
       - SIGNALITH_NODE_NAME=siem-b
-      - SIGNALITH_NODE_URL=https://siem-b:8080
+      - SIGNALITH_NODE_URL=https://siem-b:9000
     volumes:
       - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-b-data:/var/lib/signalith
       - signalith-secrets:/run/signalith-secrets:ro
       - cluster-key:/run/signalith-cluster:ro
 
-  # Passes the web port and syslog through to both servers with a PROXY
+  # Passes the web port, the agent port and syslog through to both servers with a PROXY
   # protocol v2 header. Its address (172.30.11.10) is the one trusted proxy
   # in signalith-cluster.yaml.
   haproxy:
@@ -179,6 +179,7 @@ services:
       default: { ipv4_address: 172.30.11.10 }
     ports:
       - "8443:8443"
+      - "7779:7779"
       - "514:514/tcp"
       - "6514:6514"
     volumes:

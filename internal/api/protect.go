@@ -53,7 +53,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 
 // hstsHost reports whether browsers should be told to use only HTTPS for
 // host (a Host header). Not for localhost or an IP address: HSTS covers
-// every port of a host, so after https://localhost:8080 the browser would
+// every port of a host, so after https://localhost:9000 the browser would
 // force HTTPS on every other local tool and dev server for a year, and
 // browsers ignore it for IP addresses anyway.
 func hstsHost(hostport string) bool {

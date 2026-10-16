@@ -27,9 +27,60 @@ only: the agent token is what lets an agent in. OpenTelemetry Collector configur
 send the second header only; Signalith takes a Collector's computer name from its events.
 
 Agents on other machines must send to an address they can reach, such as
-`https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that
-page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by
-default, through this computer's firewall.
+`https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on that
+page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`; agents use its host on the
+agent port), and allow the agent port, 7779 by default, through this computer's firewall,
+besides the web port, 9000 by default.
+
+### The agent port
+
+Agents send to a port of their own, apart from the web page and API: Fluent Bit, the
+OpenTelemetry Collector (OTLP), osquery and network sensors. The web page is on port 9000
+and agents send to port 7779, by default. Both use the same HTTPS certificate.
+
+The agent port takes only what agents need: events (`/api/ingest`, and OTLP's
+`/api/otlp/v1/logs`), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
+(`/api/tls/ca.pem`), the sensor install script (`/api/sensor/install.sh`), and `/livez`
+and `/readyz` for load balancer health checks. It serves no web page and no API. Once
+`server.agent_listen` is set, the web port turns agents away with 503 and a message
+naming the agent port.
+
+Set it with `server.agent_listen` (or `SIGNALITH_AGENT_LISTEN`), on the **Settings** page
+as **Agent address**:
+
+```yaml
+server:
+  listen: 0.0.0.0:9000        # web page and API
+  agent_listen: 0.0.0.0:7779  # agents
+```
+
+`server.agent_listen: off` sends agents to the web port, as before 0.3. When you change
+the agent port, set each agent up again from **Add data**: agents that send to the old
+port stop sending.
+
+**Add data** writes the agent port into each configuration: **Agents send to** takes the
+host of the server's address and port 7779. With several servers, each server's choice
+uses that server's own agent port. A firewall must let in both ports, and a load balancer
+in front of several servers must forward both (see [Load balancers](load-balancers.md)).
+
+### Upgrading to 0.3
+
+New installs (`signalith init`, the installers and the Docker compose files) set
+`server.agent_listen`, so their web port never takes agent traffic. A server installed
+before 0.3 has no `server.agent_listen` in its `signalith.yaml`. It keeps its web port
+(such as 8080), listens for agents on that address's host at port 7779, and still takes
+agents on the web port, with a warning in the log for each one, so nothing stops sending.
+To move over:
+
+1. Allow port 7779 through the firewall, and through any load balancer.
+2. Set up each agent again from **Add data**; the new configuration sends to port 7779.
+3. Set `server.agent_listen`, such as `0.0.0.0:7779`, so the web port stops taking
+   agents. The next release stops taking agents on the web port anyway.
+
+The Docker quick start is different: its updated files publish 9000 and 7779 and set
+`server.agent_listen`, so after the update open `https://localhost:9000` and set up each
+agent again from **Add data** (see
+[Upgrading to 0.3](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-to-03-the-agent-port)).
 
 ## What each source becomes
 

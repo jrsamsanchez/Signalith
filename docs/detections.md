@@ -330,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,478 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,497 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -340,7 +340,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
-[Google Cloud](#google-cloud)):
+[Google Cloud](#google-cloud)), and 19 Okta rules (see [Okta](#okta)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -364,6 +364,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
+| `product: okta`, `service: okta` | Okta System Log events (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -713,6 +714,27 @@ schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
 are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
 the audit log, see [Microsoft 365](microsoft-365.md).
 
+### Okta
+
+SigmaHQ's 19 tested Okta rules ship. They name a System Log event's own fields
+(`eventType`, `actor.alternateId`, `securityContext.isProxy`,
+`debugContext.debugData.behaviors`), which Signalith keeps by the same names; a field of
+an event's targets (`target.displayName`) reads each target's value
+(`target{}.displayName`), as Splunk's add-on for Okta names them. Every rule searches
+`sourcetype=OktaIM2:log`. `okta_user_created` is informational, and
+`okta_password_in_alternateid_field` uses `^` inside a regular expression's
+alternatives, so they are left out.
+
+The Splunk pack adds 12 Okta detections (see
+[Splunk Security Content](#splunk-security-content)). Five search the `okta` macro by
+Okta's field names (`eventType`, `outcome.result`) and the CIM fields Splunk's add-on
+gives an event (`user`, `src`, `signature`). Seven are `tstats` searches of the
+Authentication or Change data model whose only data source is Okta: they read the same
+CIM fields of Okta's events (`Authentication.action`, `All_Changes.command`), limited to
+`sourcetype=OktaIM2:log`. Experimental, hunting and correlation rules, two that need
+`iplocation` to name a city and one that uses a command Signalith doesn't run are left
+out. To read the System Log, see [Okta](okta.md).
+
 ### Google Cloud
 
 SigmaHQ's 16 tested Google Cloud audit log rules ship. Most name a call's method as
@@ -744,8 +766,8 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,144 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,156 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365 and Okta detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -794,6 +816,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
 | `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
+| `` `okta` `` (raw search) | Okta System Log events, by Okta's own field names and the CIM fields Splunk's add-on for Okta Identity Cloud gives them (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
+| `Authentication.Authentication`, `Change.All_Changes` (rules whose only data source is Okta) | Okta System Log events of that data model (see [Okta](#okta)) | Authentication or Change |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
@@ -986,19 +1010,14 @@ Other later stages (`eval`, `rex`, `stats`, `eventstats`, `dedup`, `fillnull`, a
 converted filter. Before them, each field they name by Splunk's name is copied from the
 field Signalith keeps it as (`eval TargetUserName=user`), and a `tstats` search's own
 grouping comes first, with the data model's missing fields as `unknown`, as in the CIM.
-A raw search's `stats ... by` gets the same for the fields it groups by that Signalith
-keeps none of (fields Splunk's add-ons add, such as `process_exec`), so an event without
-them still makes a row.
 A test event is one the rule finds when the filter matches it and the later stages keep a
 row for it; a rule ships only when some test event comes through. A rule that counts
 (`stats count`, `dc`) keeps no row for one event, so its test is the same event
 repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
 with a field it counts distinct values of different each time (`"vary"`), next to a
-smaller repeat that the rule must not find. A `where` that compares two fields
-(`where process_name != service_process`) has both quoted (`'process_name' !=
-'service_process'`), so Signalith compares the two fields' values, as Splunk does. Where
-the two languages read a stage differently, the rule is left out: a `where` that compares
-a field with text that has a `*`, or with bare words in `IN (...)`, since Signalith's
+smaller repeat that the rule must not find. Where the two
+languages read a stage differently, the rule is left out: a `where` that compares two
+fields (`where process_name != service_process`), or text with a `*`, since Signalith's
 `where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
 (`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
@@ -1078,6 +1097,46 @@ signalith content remove
 Restart Signalith after `install` or `remove` so a running server uses the change, or
 upload on the Detections page instead.
 
+## Describe a detection in plain English
+
+On the Detections page, **Describe a detection** turns a sentence such as
+"more than 10 failed logins from the same source in 5 minutes" into a whole
+rule: the search, how often it runs and how far back it looks, severity,
+ATT&CK techniques, risk and how repeats are grouped. The draft opens in the
+editor turned off, with a note on how each part was chosen, and is
+backtested straight away.
+
+- **Offline by default.** The draft uses the same translator as the Ask
+  box, a table of common attack behaviours (brute force, encoded
+  PowerShell, log clearing, admin group changes and so on) for severity and
+  ATT&CK, and a time window in the sentence ("in 5 minutes", "within an
+  hour") for the lookback. Say "high severity" or "priority: low" to set
+  the severity yourself.
+- **Similar detections.** The draft lists detections already in the
+  library that look like the description, so you can turn one of those on
+  instead. When the translator understands little and the library has a
+  close match, the draft starts as a copy of it.
+- **With an AI model.** When an AI model is set up (Settings, AI
+  assistant), it writes the draft instead, and the offline draft is used if
+  the model fails. The model sees only the description, never your events.
+  Every model draft is checked like any detection, and ATT&CK IDs that are
+  not in the matrix are dropped.
+
+### Backtest
+
+**Backtest** in the editor runs the detection over the past 7, 30 or 90
+days the way its scheduled runs would have, and shows how many findings it
+would have raised, a bar per search, the users and systems that raised the
+most, and the newest titles. Exceptions and the repeat grouping apply.
+Nothing is written: no findings, risk or throttle records.
+
+A backtest runs at most 60 searches, each bounded by the usual search
+limits. Each search covers the lookback, or more when the window needs
+more than 60 of them; a stats detection is then marked approximate, since
+counting over a longer span can cross a threshold that live runs would
+not. Each person runs one backtest at a time, the server at most two, and
+a backtest stops after 3 minutes with what it has so far.
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
@@ -1143,6 +1202,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET`, `PUT`, `DELETE /api/detections/{id}` | Read, save, delete or revert |
 | `GET /api/detections/{id}/yaml` | Export as YAML |
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
+| `POST /api/detections/draft` | `{"description": "...", "mode": "auto"}`: draft a detection from plain English (admin). `mode` is `auto` (the AI model when one is set up), `rules` (offline) or `ai`. Returns the draft with its steps, warnings and similar detections; nothing is saved |
+| `POST /api/detections/backtest` | `{"detection": {...}, "window": "30d"}`: what an unsaved detection would have raised over a past window of 1h to 90d (admin; 429 while one of yours runs). Raises nothing |
 | `POST /api/detections/{id}/run` | Run now on this server and raise findings (admin). Searches the lookback up to now, does not change the schedule, and is recorded as the detection's last Run now with who ran it |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |

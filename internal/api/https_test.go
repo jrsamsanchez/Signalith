@@ -78,7 +78,7 @@ func TestPlainHTTPGoesToHTTPS(t *testing.T) {
 	}
 	// A Host header that is not a host is not echoed into the redirect.
 	resp, _ := plainSend(t, "GET", ts.URL+"/", "", map[string]string{"Host": "evil.example/x"})
-	if loc := resp.Header.Get("Location"); loc != "https://127.0.0.1:8080/" {
+	if loc := resp.Header.Get("Location"); loc != "https://127.0.0.1:9000/" {
 		t.Errorf("bad Host: Location %q", loc)
 	}
 	// No port in Host: the browser used port 80, which serves HTTPS now;

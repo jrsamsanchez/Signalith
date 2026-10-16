@@ -166,7 +166,11 @@ type Heartbeat struct {
 	ClockOffsetMS *int64 `json:"clock_offset_ms"`
 	NodeURL       string `json:"node_url,omitempty"`
 	Listen        string `json:"listen,omitempty"`
-	Syslog        Syslog `json:"syslog"`
+	// AgentListen is where agents send to this server; empty when they
+	// send to its web port (server.agent_listen off, or a server before
+	// 0.3).
+	AgentListen string `json:"agent_listen,omitempty"`
+	Syslog      Syslog `json:"syslog"`
 	// Role is what the server is for: "" a cluster server, RoleScanner a
 	// scanner, which only scans its network zone (cluster.role).
 	Role string `json:"role,omitempty"`

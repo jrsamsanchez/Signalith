@@ -28,9 +28,10 @@ import (
 
 // The cluster key is 32 random bytes every member keeps, sealed under its
 // own master key, and never in OpenSearch in a usable form. Sub-keys made
-// from it with HKDF-SHA256 sign the shared documents, encrypt the shared
-// secrets (the same scheme as the master key's, so values look like
-// enc:v1:<kid>:...), tag session cookies and encrypt archives. Its id is
+// from it with HKDF-SHA256 sign the shared documents and the audit
+// records, encrypt the shared secrets (the same scheme as the master
+// key's, so values look like enc:v1:<kid>:...), tag session cookies and
+// encrypt archives. Its id is
 // the same kind of fingerprint as a master key's.
 //
 // Each server also has a node key, an X25519 pair, so the cluster key can
@@ -45,6 +46,7 @@ const (
 	infoSeal    = "signalith seal-to-node v1"
 	infoBrowser = "signalith known browser v1"
 	infoLocks   = "signalith sign-in locks v1"
+	infoAudit   = "signalith audit chain v1"
 )
 
 const keySize = 32
@@ -159,6 +161,10 @@ func (k *ClusterKey) KnownBrowserKey() []byte { return k.sub(infoBrowser) }
 // locks with (auth.LockKey), so the lock documents of a cluster name no
 // address or account anyone could read back.
 func (k *ClusterKey) LockKey() []byte { return k.sub(infoLocks) }
+
+// AuditKey returns the key that signs the audit records each server
+// writes to OpenSearch (internal/audit), so any member can check them.
+func (k *ClusterKey) AuditKey() []byte { return k.sub(infoAudit) }
 
 func (k *ClusterKey) sub(info string) []byte {
 	b, err := hkdf.Key(sha256.New, k.raw, nil, info, 32)

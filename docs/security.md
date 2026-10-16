@@ -70,7 +70,7 @@ up to 50 addresses of each, in memory only. Computers and agents on the server i
 aren't counted: what they send doesn't cross the network.
 
 - Good: HTTPS is on; or HTTPS is off but Signalith answers only on this computer
-  (such as `127.0.0.1:8080`); or a trusted reverse proxy serves HTTPS.
+  (such as `127.0.0.1:9000`); or a trusted reverse proxy serves HTTPS.
 - Needs attention: a proxy serves HTTPS, but people signed in, or agents sent events,
   to Signalith directly over plain HTTP; or HTTPS is left to a reverse proxy that
   Signalith believes only because `signalith.yaml` was written before HTTPS was the
@@ -84,7 +84,7 @@ the listen address so only the proxy reaches Signalith
 ([Behind a reverse proxy](https.md#behind-a-reverse-proxy)).
 
 **How to check by hand:** from another computer,
-`curl -sI http://siem.example.com:8080/` prints `Location: https://...` when Signalith
+`curl -sI http://siem.example.com:9000/` prints `Location: https://...` when Signalith
 serves HTTPS itself.
 
 ### HTTPS certificate
@@ -111,7 +111,7 @@ in its log when it starts.
 **How to check by hand:**
 
 ```sh
-openssl s_client -connect siem.example.com:8080 -servername siem.example.com </dev/null 2>/dev/null \
+openssl s_client -connect siem.example.com:9000 -servername siem.example.com </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -enddate -ext subjectAltName
 ```
 
@@ -591,6 +591,25 @@ or Signalith couldn't yet ask OpenSearch which it is. See
 
 See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
 
+### API tokens
+
+Shown when there are API tokens that are accepted: tokens made on **Settings > API
+tokens** for the AI tools server or your own scripts. See
+[API tokens](ai-tools.md#api-tokens).
+
+**Looks at:** whether each accepted token expires. A token that never expires keeps
+working until someone revokes it, even if it leaks or the tool it was made for is long
+gone. Tokens made before Signalith had expiry never expire.
+
+- Good: every accepted token expires ("Every API token expires (N active).").
+- Needs attention: one or more tokens never expire; the check names them.
+
+**To fix:**
+
+1. On **Settings > API tokens**, make a new token for each tool the check names, one
+   that expires (90 days unless you pick another time).
+2. Put the new token in the tool's settings, then revoke the old one.
+
 ### Signalith's OpenSearch account
 
 Shown when OpenSearch requires sign-in and has its security plugin.
@@ -764,8 +783,8 @@ server:
 Signalith can't see these, so it says so once rather than showing **Can't tell** for
 them every time:
 
-- **Firewalls**: which computers can reach Signalith's ports (8080 by default, and the
-  syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
+- **Firewalls**: which computers can reach Signalith's ports (9000 for the web page and
+  7779 for agents by default, and the syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
   and of the network.
 - **Backups**, and whether the master key is kept apart from them (see
   [Backing up the key](encryption.md#backing-up-the-key)).

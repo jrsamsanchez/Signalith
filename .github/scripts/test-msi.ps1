@@ -18,17 +18,23 @@ function Invoke-Msi([string]$Action, [string]$Msi, [string]$Log) {
     throw "msiexec $Action $Msi failed with exit code $($p.ExitCode)"
   }
 }
+# The web port: 9000, or 8080 for a config written before 0.3, which an
+# upgrade keeps.
+$script:port = 0
 function Wait-Up {
   if ((Get-Service Signalith).Status -ne "Running") { throw "the Signalith service is $((Get-Service Signalith).Status)" }
   for ($i = 0; $i -lt 30; $i++) {
-    try { Invoke-WebRequest https://localhost:8080/livez -SkipCertificateCheck -UseBasicParsing | Out-Null; return } catch { Start-Sleep 2 }
+    foreach ($p in 9000, 8080) {
+      try { Invoke-WebRequest "https://localhost:$p/livez" -SkipCertificateCheck -UseBasicParsing | Out-Null; $script:port = $p; return } catch { }
+    }
+    Start-Sleep 2
   }
   Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 50 -ErrorAction SilentlyContinue
-  throw "Signalith does not answer on https://localhost:8080"
+  throw "Signalith does not answer on https://localhost:9000 (or 8080)"
 }
 function Test-SignIn([string]$Password) {
   $body = @{ username = "admin"; password = $Password } | ConvertTo-Json
-  Invoke-RestMethod https://localhost:8080/api/login -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+  Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
 }
 
 Write-Host "== Install $Previous"

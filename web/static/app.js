@@ -980,7 +980,7 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv'],
+  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
   evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
@@ -2455,7 +2455,8 @@ function renderGuide() {
 // as "Do this: command" shows the command in a copyable well, and the step
 // that saves the config file carries the file itself.
 //
-// "Agents send to" is the address written into the config. It starts as
+// "Agents send to" is the address written into the config, on the agent
+// port (the server puts an address of this server on it). It starts as
 // the server's public_url; when that is localhost but this browser reached
 // Signalith by another name, the browser's address is the better guess. An
 // address typed here is remembered in this browser.
@@ -2852,9 +2853,15 @@ async function agentSetupLoad() {
     sensorFieldError('');
     awsFieldError('');
     gcpFieldError('');
+    let shown = server;
+    if (!agentDest.to && server && a.server_url && a.server_url !== server && agentSameHost(server, a.server_url)) {
+      // An address of this server, such as the web page's: agents send to
+      // it on the agent port, which the field shows.
+      shown = agentServerEl.value = agentServerSent = a.server_url;
+    }
     try {
       if (agentDest.to) { /* one server's own address: not remembered */ }
-      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      else if (shown && shown !== agentServerGuess) localStorage.setItem(agentServerKey, shown);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
@@ -2912,6 +2919,17 @@ function awsFieldError(field, msg) {
   }
 }
 
+// agentSameHost reports whether two addresses differ in their port alone.
+function agentSameHost(a, b) {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    return x.protocol === y.protocol && x.hostname === y.hostname;
+  } catch (_) {
+    return false;
+  }
+}
+
 // gcpFieldError shows a Google Cloud option's error under it (field
 // gcp_project or gcp_subscription), or clears both when field is empty.
 function gcpFieldError(field, msg) {
@@ -2937,7 +2955,17 @@ function gcpFieldError(field, msg) {
 // the better guess, so the config must be built again.
 function agentServerFirst(a) {
   const own = a.server_url || '';
-  agentServerGuess = a.server_loopback && !agentLoopbackHost(location.hostname) ? location.origin : own;
+  agentServerGuess = own;
+  if (a.server_loopback && !agentLoopbackHost(location.hostname)) {
+    // This browser's address, on the port agents send to (server_url's).
+    try {
+      const u = new URL(own);
+      u.hostname = location.hostname;
+      agentServerGuess = u.origin;
+    } catch (_) {
+      agentServerGuess = location.origin;
+    }
+  }
   agentServerEl.placeholder = agentServerGuess;
   if (!agentServerEl.value.trim()) agentServerEl.value = agentServerGuess;
   return agentServerGuess !== own;
@@ -2969,8 +2997,8 @@ function agentServerWarn(a) {
   if (w.dataset.url === a.server_url) return; // unchanged: don't announce it again
   w.dataset.url = a.server_url;
   let host = 'localhost';
-  let example = 'https://192.168.1.20:8080';
-  let port = '8080';
+  let example = 'https://192.168.1.20:7779';
+  let port = '7779';
   try {
     const u = new URL(a.server_url);
     host = u.hostname;
@@ -3329,19 +3357,21 @@ try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; }
 // setup lives in antivirus.js.
 function loadDataSource() {
   const src = document.querySelector('input[name=os]:checked').value;
-  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365' || src === 'custom');
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365' || src === 'okta' || src === 'custom');
   $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
   $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
   $('m365-setup').classList.toggle('hidden', src !== 'm365');
+  $('okta-setup').classList.toggle('hidden', src !== 'okta');
   $('custom-setup').classList.toggle('hidden', src !== 'custom');
   if (src === 'custom') return typeof customLogsOpen === 'function' ? customLogsOpen() : null;
   if (src === 'm365') return typeof m365Open === 'function' ? m365Open() : null;
+  if (src === 'okta') return typeof oktaOpen === 'function' ? oktaOpen() : null;
   if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
 // pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, gcp or custom. It is false
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, okta, gcp or custom. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

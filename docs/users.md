@@ -84,6 +84,39 @@ first password comes from a file the setup step made (`signalith initial-passwor
 it), and the new one is kept in `admin-password-hash` in the `signalith-data` volume,
 where it replaces the first one.
 
+**The first password must be changed.** When Signalith made the built-in admin's
+password (the Docker quick start's setup step, the packages, or `signalith init`), the
+first sign-in with it is like a local user's with a temporary password: the sign-in page
+asks for a new password, and until one is chosen every other request, with the session
+or HTTP Basic credentials, is refused with `403` and `"code": "password_change_required"`
+(`GET /api/me`, `POST /api/me/password` and signing out still work). The new password is
+kept in `admin-password-hash` in the state folder, as `signalith passwd` keeps it, and
+works at once, with no restart. On servers that share their users it is the cluster's
+password, on every server. From then on `signalith initial-password` says the first
+password was changed instead of showing it, and the packages' file next to the config
+file is removed where Signalith may (`signalith passwd`, run as root, always may; the
+Docker quick start's file is on a read-only volume and stays, but no longer works).
+Later changes are made with `signalith passwd` as above.
+
+Signalith knows the first password is still in use by checking the password in use
+against the file that keeps it, where the server can read that file (the Docker quick
+start, and Windows), or against the hash `signalith init` noted in
+`first-admin-password.json` in the state folder (the Linux packages, whose file only
+root can read; an upgrade of the package notes it for an install made before). An
+install that still uses the first password after an upgrade is asked once too, however
+often it signed in with it before: that is intended. A password you chose yourself, in
+`signalith.yaml`, `SIGNALITH_ADMIN_PASSWORD` or a `SIGNALITH_ADMIN_PASSWORD_FILE` of
+your own, is never asked to be changed.
+
+Scripts that sign in with the first password must choose a new one first, as an admin
+would:
+
+```sh
+curl -sk -u "admin:$FIRST" -H 'Content-Type: application/json' \
+  -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$NEW\"}" \
+  https://localhost:9000/api/me/password
+```
+
 Keep its password somewhere safe and use your own account day to day. No local user
 or directory user can have the built-in admin's name.
 
@@ -404,6 +437,8 @@ Some changes ask for your password again when you have not entered it in the las
   notifications, or removing the detection content pack;
 - linking a Slack or Teams account to yourself, making a code to link one, or confirming
   that a Teams app channel moves to another Teams channel;
+- saving the networks to scan for vulnerabilities, and adding, changing or removing a
+  scan login;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
@@ -411,7 +446,8 @@ Some changes ask for your password again when you have not entered it in the las
   PROXY protocol, the OpenSearch connection (`opensearch.*` and
   `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
   feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
-  and masked fields, or **Reset all**.
+  and masked fields, the Microsoft 365 and Okta connections (`m365.*`, `okta.*`), or
+  **Reset all**.
 
 With two-step sign-in on, a passkey, a code from your app or a recovery code works
 instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
@@ -1086,9 +1122,9 @@ sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning`
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
 (see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
-server, which can only read), `POST /api/tls/names`, `GET /api/security`,
+server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
@@ -1104,7 +1140,8 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
 `GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
-`POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
+`POST /api/vulns/scans/{id}/stop`, `GET /api/vulns/logins`, `PUT /api/vulns/logins/{id}`, `DELETE /api/vulns/logins/{id}`
+(setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
@@ -1127,13 +1164,13 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
 `GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
-`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
-`GET /api/audit/servers` (the [Audit page](audit.md)), every
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
+`GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
 three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
 [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
 
 A route added without a role is admin-only, and a test fails until it gets one. That
@@ -1168,7 +1205,11 @@ returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `builtin` or `directory` (those passwords are changed elsewhere). On servers that
 share their users, the built-in admin may change its own password here too
 (`can_change_password` says so), and the answer sets a new session cookie: the
-password change ended every session of the user, this one's too.
+password change ended every session of the user, this one's too. On a server that
+keeps its own users, the built-in admin may change it here only while it is the
+first password Signalith made (`must_change_password` is then `true`; see
+[The built-in admin](#the-built-in-admin)); a `500` means the state folder could not
+keep the new one.
 
 ### Two-step sign-in
 

@@ -55,6 +55,7 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Vulns      Vulns      `yaml:"vulns,omitempty"`
 	M365       M365       `yaml:"m365,omitempty"`
+	Okta       Okta       `yaml:"okta,omitempty"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
@@ -75,6 +76,9 @@ type Config struct {
 	// (see AdminPasswordVersion), and envAdminHash is the hash made from
 	// it for this process.
 	envAdminVersion, envAdminHash string
+	// firstPassword is what the state folder keeps about the built-in
+	// admin's first password (see FirstPassword).
+	firstPassword FirstPassword
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -114,6 +118,9 @@ type Config struct {
 	keys *secrets.Keyring
 	// layers records where each setting's value came from.
 	layers *layers
+	// agentListenDerived is true when server.agent_listen was empty and
+	// was worked out from the listen address (see AgentsOnWebPort).
+	agentListenDerived bool
 	// publicURLDerived is true when server.public_url was empty and
 	// Validate worked it out from the listen address.
 	publicURLDerived bool
@@ -167,9 +174,15 @@ type layers struct {
 
 // Server controls the web UI and API listener.
 type Server struct {
-	// Listen is host:port. The default binds to localhost only; use
-	// 0.0.0.0:8080 to accept agents from other machines.
+	// Listen is host:port for the web page and API. The default binds to
+	// localhost only; use 0.0.0.0:9000 to accept browsers from other
+	// machines.
 	Listen string `yaml:"listen"`
+	// AgentListen is host:port for agents (ingest, OTLP, osquery and the
+	// network sensor), kept apart from the web page. Empty means Listen's
+	// host on port 7779; "off" serves agents on the web port, as before
+	// 0.3. SIGNALITH_AGENT_LISTEN overrides it. See AgentsOnWebPort.
+	AgentListen string `yaml:"agent_listen,omitempty"`
 	// PublicURL is the address agents and browsers use to reach this
 	// server: scheme, host and optional port, no path. It goes into the
 	// agent configs Signalith generates. SIGNALITH_PUBLIC_URL overrides it.
@@ -1022,7 +1035,7 @@ func (s *Syslog) problems(server Server) []string {
 		}
 	}
 	// TCP listeners cannot share a port with each other or the web server.
-	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
+	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"server.agent_listen", server.AgentAddr()}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
 	for i := range tcp {
 		for j := i + 1; j < len(tcp); j++ {
 			if sameListener(tcp[i].addr, tcp[j].addr) {
@@ -1275,6 +1288,25 @@ type M365 struct {
 	Cloud string `yaml:"cloud,omitempty"`
 }
 
+// Okta reads an Okta organization's System Log from Okta's System Log
+// API (internal/okta), as an API service app granted the okta.logs.read
+// scope that signs in with its private key, or with an admin's API token.
+// It is on when the domain and either the app and its key or the token
+// are set.
+type Okta struct {
+	// Domain is the organization's Okta domain, such as
+	// example.okta.com.
+	Domain string `yaml:"domain,omitempty"`
+	// ClientID is the service app's client ID, and PrivateKey its private
+	// key (PEM, or a JWK as Okta's admin console shows it). KeyID is the
+	// key's ID (kid), needed when the app has more than one key.
+	ClientID   string `yaml:"client_id,omitempty"`
+	PrivateKey string `yaml:"private_key,omitempty"`
+	KeyID      string `yaml:"key_id,omitempty"`
+	// APIToken is an admin's API token, used when no app is set.
+	APIToken string `yaml:"api_token,omitempty"`
+}
+
 // Vulns configures the CVE lookups of vulnerability scans (the
 // Vulnerabilities page keeps its networks in OpenSearch).
 type Vulns struct {
@@ -1419,6 +1451,10 @@ func (c *Config) ResponseScriptsDir() string {
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
 
+// GeoIPDir is where the search command iplocation finds its GeoIP
+// database, a .mmdb file an admin puts there.
+func (c *Config) GeoIPDir() string { return filepath.Join(c.LookupsDir(), "geoip") }
+
 // TLSDir is where Signalith keeps its own certificate authority and HTTPS
 // certificate (server.tls.mode auto).
 func (c *Config) TLSDir() string { return filepath.Join(c.StateDir(), "tls") }
@@ -1467,7 +1503,7 @@ func (c *Config) DetectionsCatchUp() time.Duration {
 // Default returns a config with every default filled in.
 func Default() *Config {
 	return &Config{
-		Server:     Server{Listen: "127.0.0.1:8080"},
+		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
 		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000},
 		Retention:  Retention{Days: 90},
@@ -1827,6 +1863,7 @@ func readAndEnv(path string) (*Config, error) {
 	}
 	c.syncEligible()
 	c.readDockerUpgrade()
+	c.readFirstPassword()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil
@@ -2068,6 +2105,10 @@ func (c *Config) applyEnv() error {
 		c.Server.Listen = v
 		c.fromEnv("server.listen", "SIGNALITH_LISTEN")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_AGENT_LISTEN")); v != "" {
+		c.Server.AgentListen = v
+		c.fromEnv("server.agent_listen", "SIGNALITH_AGENT_LISTEN")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_PUBLIC_URL")); v != "" {
 		if _, err := agents.ParseServerURL(v); err != nil {
 			return fmt.Errorf("SIGNALITH_PUBLIC_URL %q: %v", v, err)
@@ -2182,6 +2223,18 @@ func (c *Config) applyEnv() error {
 	} else if len(v) > 0 {
 		c.M365.ClientSecret = strings.TrimSpace(v[0])
 		c.fromEnv("m365.client_secret", from)
+	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_PRIVATE_KEY"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.PrivateKey = strings.TrimSpace(v[0])
+		c.fromEnv("okta.private_key", from)
+	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_API_TOKEN"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.APIToken = strings.TrimSpace(v[0])
+		c.fromEnv("okta.api_token", from)
 	}
 	if v, from, err := envSecret("SIGNALITH_NVD_API_KEY"); err != nil {
 		return err
@@ -2318,10 +2371,11 @@ func (c *Config) JoinedCluster() bool {
 func (c *Config) Validate() error {
 	var p []string
 	if _, port, err := net.SplitHostPort(c.Server.Listen); err != nil {
-		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:8080", c.Server.Listen))
+		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:9000", c.Server.Listen))
 	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		p = append(p, fmt.Sprintf("server.listen port %q must be 1-65535", port))
 	}
+	p = append(p, c.agentListenProblems()...)
 	if c.Server.MaxConnections < 0 {
 		p = append(p, "server.max_connections cannot be negative (0 uses the default, 10000)")
 	}
@@ -2479,6 +2533,16 @@ func (c *Config) Validate() error {
 	}
 	for _, f := range []struct{ key, what, v string }{{"m365.tenant_id", "tenant ID", c.M365.TenantID}, {"m365.client_id", "application ID", c.M365.ClientID}} {
 		if err := m365ID(f.what)(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
+		}
+	}
+	for _, f := range []struct {
+		key   string
+		check func(any) error
+		v     string
+	}{{"okta.domain", checkOktaDomain, c.Okta.Domain}, {"okta.client_id", checkOktaClientID, c.Okta.ClientID},
+		{"okta.key_id", checkOktaKeyID, c.Okta.KeyID}, {"okta.private_key", CheckOktaPrivateKey, c.Okta.PrivateKey}} {
+		if err := f.check(f.v); err != nil {
 			p = append(p, f.key+": "+err.Error())
 		}
 	}
@@ -2853,7 +2917,9 @@ const header = `# Signalith configuration.
 # pasted in works too, and "signalith secrets encrypt" encrypts it (see
 # docs/encryption.md).
 #
-# server.listen      address the UI/API binds to (0.0.0.0:8080 for all interfaces)
+# server.listen      address the web page and API bind to (0.0.0.0:9000 for all interfaces)
+# server.agent_listen  address agents send to (default: listen's host, port 7779;
+#                    "off" serves agents on the web port as before 0.3)
 # server.public_url  URL agents use to reach this server (or SIGNALITH_PUBLIC_URL)
 # server.tls.mode    auto: HTTPS with a certificate Signalith makes and renews itself
 #                    (browsers warn until you trust its CA; see docs/https.md);
@@ -2868,8 +2934,9 @@ const header = `# Signalith configuration.
 # server.client_header  x-forwarded-for or forwarded: the header those proxies
 #                    write each person's address into, for the sign-in limits and
 #                    the log; empty counts everyone behind them as one shared address
-# server.max_connections  open connections allowed at once (default 10000); one
-#                    client may hold a tenth of them
+# server.max_connections  open connections allowed at once (default 10000), on the
+#                    web port and again on the agent port; one client may hold a
+#                    tenth of them
 # server.shared_addresses  IPs or CIDRs of a proxy, load balancer or NAT that many
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address
@@ -2922,6 +2989,10 @@ const header = `# Signalith configuration.
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md
+# okta.domain, okta.client_id, okta.private_key, okta.key_id  read Okta's System
+#                    Log with an API service app (SIGNALITH_OKTA_PRIVATE_KEY_FILE);
+#                    or okta.api_token, an admin's API token
+#                    (SIGNALITH_OKTA_API_TOKEN); see docs/okta.md
 # notify.file        where the Notifications page keeps its channels and rules
 #                    (default notifications.yaml in lookups.dir); see docs/notifications.md
 # response.file      where the Response actions page keeps its actions (default

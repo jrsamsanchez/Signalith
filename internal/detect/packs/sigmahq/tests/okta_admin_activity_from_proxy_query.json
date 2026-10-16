@@ -1,0 +1,5 @@
+{"rule": "9058ca8b-f397-4fd1-a9fa-2b7aad4d6309", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.requestUri":"admin","securityContext.isProxy":"true"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"securityContext.isProxy":"true"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"debugContext.debugData.requestUri":"admin"}}
+]}

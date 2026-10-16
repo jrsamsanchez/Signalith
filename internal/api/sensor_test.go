@@ -97,7 +97,7 @@ func TestSensorInstallLine(t *testing.T) {
 	}
 	ca := sha256Hex(s.TLS.Fingerprint())
 	line, _ := out["linux"].(string)
-	for _, want := range []string{"https://siem.example.com:8443/api/sensor/install.sh", "--role sensor --from https://siem.example.com:8443 --ca-sha256 " + ca,
+	for _, want := range []string{"https://siem.example.com:7779/api/sensor/install.sh", "--role sensor --from https://siem.example.com:7779 --ca-sha256 " + ca,
 		"--version test --token -", "--interface ens192", "--networks 10.9.0.0/16", "echo '" + agents.TokenPlaceholder + "'"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line has no %q:\n%s", want, line)
@@ -179,7 +179,7 @@ func TestSensorConfig(t *testing.T) {
 	}
 	pin := agentinv.Pin(s.TLS.Fingerprint())
 	for _, want := range []string{"Authorization Bearer ${SIGNALITH_TOKEN}", "/etc/signalith-sensor/ca.pem", "Tag                  sensor.status",
-		"/var/lib/signalith-sensor/agent/buffer", "ca=" + pin, "Host                 siem.example.com", "Port                 8443", "suricata.eve", "zeek.*"} {
+		"/var/lib/signalith-sensor/agent/buffer", "ca=" + pin, "Host                 siem.example.com", "Port                 7779", "suricata.eve", "zeek.*"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("config has no %q:\n%s", want, cfg)
 		}
