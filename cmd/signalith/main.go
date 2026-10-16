@@ -42,6 +42,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
@@ -773,6 +774,7 @@ func cmdQuery(args []string) error {
 	if tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir())); err == nil {
 		eng.Lookups = tables
 	}
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	if strings.Contains(src, "intel") || strings.Contains(src, "threatmatch") {
 		eng.Intel = intel.NewStore(intel.NewOpenSearch(newStore(c), c.OpenSearch.IndexPrefix))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -1191,6 +1193,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)

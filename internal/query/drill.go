@@ -170,6 +170,11 @@ func (q *Query) Drilldown() *Drill {
 			if c.LabelField != "" {
 				delete(fields, c.LabelField)
 			}
+		case *IPLocation:
+			// Places are in no event.
+			for _, f := range c.Fields() {
+				delete(fields, f)
+			}
 		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace:
 			// Its fields can overwrite any column.
 			clear(fields)
