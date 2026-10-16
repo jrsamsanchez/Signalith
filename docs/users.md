@@ -340,6 +340,8 @@ Some changes ask for your password again when you have not entered it in the las
   now;
 - switching certificate authority, and saving response actions, playbooks or
   notifications, or removing the detection content pack;
+- saving the networks to scan for vulnerabilities, and adding, changing or removing a
+  scan login;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,

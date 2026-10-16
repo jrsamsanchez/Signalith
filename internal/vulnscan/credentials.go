@@ -1,9 +1,12 @@
 package vulnscan
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -54,7 +57,14 @@ const (
 
 // loginUserRE is a user name OpenVAS can sign in with: letters, digits
 // and . _ - @ $, with a DOMAIN\ in front for Windows.
-var loginUserRE = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]{0,63}\\)?[A-Za-z0-9._@$-]{1,128}$`)
+// Neither part starts with a - or other punctuation, so a name is never
+// read as an option.
+var loginUserRE = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]{0,63}\\)?[A-Za-z0-9_][A-Za-z0-9._@$-]{0,127}$`)
+
+// maxKeyRounds is the most bcrypt rounds an encrypted OpenSSH key may ask
+// for: each round costs about 10 ms, and the key is opened while an admin
+// waits. ssh-keygen uses 16 unless told otherwise.
+const maxKeyRounds = 64
 
 // Keys encrypts the secrets of scan logins so that every server can
 // decrypt them: in a cluster, with the cluster key.
@@ -136,7 +146,11 @@ type loginsDoc struct {
 	Logins []Credential `json:"logins"`
 }
 
-func secretField(id, part string) string { return "vulns.credentials[" + id + "]." + part }
+// The field also names the login's kind and how it signs in, so a secret
+// cannot be read back as another kind of secret.
+func secretField(c Credential, part string) string {
+	return "vulns.credentials[" + c.ID + "]." + c.Kind + "." + c.Auth + "." + part
+}
 
 // View is c without its secrets; keys, when set, says whether they can
 // be decrypted here.
@@ -144,7 +158,7 @@ func (c Credential) View(keys Keys) LoginView {
 	v := LoginView{ID: c.ID, Name: c.Name, Kind: c.Kind, Username: c.Username, Auth: c.Auth, Port: c.Port,
 		HasPassphrase: c.Passphrase != "", UpdatedBy: c.UpdatedBy, UpdatedAt: c.UpdatedAt}
 	if keys != nil {
-		_, err := keys.Open(secretField(c.ID, "secret"), c.Secret)
+		_, err := keys.Open(secretField(c, "secret"), c.Secret)
 		v.Readable = err == nil && secrets.IsSealed(c.Secret)
 	}
 	return v
@@ -210,7 +224,9 @@ func (s *Store) SaveLogin(ctx context.Context, in LoginInput, by string) (Creden
 
 // DeleteLogin removes a scan login, unless a network uses it.
 func (s *Store) DeleteLogin(ctx context.Context, id string) (Credential, error) {
-	set, err := s.CachedSettings(ctx)
+	// The saved settings, not a cached copy: a network that just picked
+	// this login must keep it.
+	set, _, err := s.Settings(ctx)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -303,8 +319,8 @@ func (s *Store) buildLogin(in LoginInput, prev *Credential, list []Credential) (
 	if prev != nil && prev.Auth != c.Auth && in.Secret == "" {
 		return c, inputErrorf("%s: enter the %s, as it now signs in with one", c.Name, secretWord(c.Auth))
 	}
-	field := secretField(c.ID, "secret")
-	phraseField := secretField(c.ID, "passphrase")
+	field := secretField(c, "secret")
+	phraseField := secretField(c, "passphrase")
 	if in.Secret == "" && prev == nil {
 		return c, inputErrorf("%s: enter the %s", c.Name, secretWord(c.Auth))
 	}
@@ -367,13 +383,24 @@ func checkSecret(c Credential, secret, phrase string) error {
 		return inputErrorf("%s: that is too long for a %s", c.Name, secretWord(c.Auth))
 	}
 	if c.Auth != AuthKey {
-		if len(secret) > maxPasswordLen || strings.ContainsFunc(secret, func(r rune) bool { return r == 0 || r == '\n' || r == '\r' }) {
-			return inputErrorf("%s: the password is longer than %d characters or has a line break", c.Name, maxPasswordLen)
+		// OpenVAS gets it in XML, which cannot carry control characters.
+		if len(secret) > maxPasswordLen || strings.ContainsFunc(secret, unicode.IsControl) {
+			return inputErrorf("%s: the password is longer than %d characters or has a line break or other control character", c.Name, maxPasswordLen)
 		}
 		return nil
 	}
+	if len(phrase) > maxPasswordLen || strings.ContainsFunc(phrase, unicode.IsControl) {
+		return inputErrorf("%s: the passphrase is longer than %d characters or has a line break or other control character", c.Name, maxPasswordLen)
+	}
+	if strings.ContainsFunc(secret, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' }) {
+		return inputErrorf("%s: that is not a private key SSH can read; paste the whole file, from -----BEGIN to -----END", c.Name)
+	}
 	if strings.Contains(secret, "PUBLIC KEY") || strings.HasPrefix(strings.TrimSpace(secret), "ssh-") {
 		return inputErrorf("%s: that is the public key; paste the private key, which starts with -----BEGIN", c.Name)
+	}
+	if n, ok := keyRounds(secret); ok && n > maxKeyRounds {
+		return inputErrorf("%s: the key's passphrase is protected with %d rounds, more than the %d Signalith opens; "+
+			"set it again with ssh-keygen -p -a 16, or remove the passphrase (Signalith keeps the key encrypted)", c.Name, n, maxKeyRounds)
 	}
 	var err error
 	if phrase != "" {
@@ -396,6 +423,48 @@ func checkSecret(c Credential, secret, phrase string) error {
 	return inputErrorf("%s: that is not a private key SSH can read; paste the whole file, from -----BEGIN to -----END", c.Name)
 }
 
+// keyRounds reads how many bcrypt rounds an OpenSSH private key's
+// passphrase asks for; ok is false for any other key.
+func keyRounds(secret string) (int, bool) {
+	b, _ := pem.Decode([]byte(secret))
+	if b == nil || b.Type != "OPENSSH PRIVATE KEY" {
+		return 0, false
+	}
+	const magic = "openssh-key-v1\x00"
+	rest, ok := bytes.CutPrefix(b.Bytes, []byte(magic))
+	if !ok {
+		return 0, false
+	}
+	str := func() ([]byte, bool) {
+		if len(rest) < 4 {
+			return nil, false
+		}
+		n := binary.BigEndian.Uint32(rest)
+		if uint64(n) > uint64(len(rest)-4) {
+			return nil, false
+		}
+		v := rest[4 : 4+n]
+		rest = rest[4+n:]
+		return v, true
+	}
+	if _, ok := str(); !ok { // the cipher
+		return 0, false
+	}
+	kdf, ok := str()
+	if !ok || string(kdf) != "bcrypt" {
+		return 0, false
+	}
+	opts, ok := str()
+	if !ok {
+		return 0, false
+	}
+	rest = opts
+	if _, ok := str(); !ok || len(rest) < 4 { // the salt, then the rounds
+		return 0, false
+	}
+	return int(binary.BigEndian.Uint32(rest)), true
+}
+
 // OpenLogin decrypts the login id for a scan.
 func (s *Store) OpenLogin(ctx context.Context, id string) (*Login, error) {
 	list, _, err := s.Logins(ctx)
@@ -412,13 +481,13 @@ func (s *Store) OpenLogin(ctx context.Context, id string) (*Login, error) {
 	}
 	// A secret is only ever stored encrypted: one in the clear was not
 	// written by Signalith, so it is not used.
-	secret, err := s.Keys.Open(secretField(c.ID, "secret"), c.Secret)
+	secret, err := s.Keys.Open(secretField(c, "secret"), c.Secret)
 	if err != nil || !secrets.IsSealed(c.Secret) || (c.Passphrase != "" && !secrets.IsSealed(c.Passphrase)) {
 		return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its %s again in Settings > Scanners", c.Name, secretWord(c.Auth))
 	}
 	l := &Login{Kind: c.Kind, Username: c.Username, Auth: c.Auth, Port: c.Port, Secret: secret}
 	if c.Passphrase != "" {
-		if l.Passphrase, err = s.Keys.Open(secretField(c.ID, "passphrase"), c.Passphrase); err != nil {
+		if l.Passphrase, err = s.Keys.Open(secretField(c, "passphrase"), c.Passphrase); err != nil {
 			return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its key and passphrase again in Settings > Scanners", c.Name)
 		}
 	}
@@ -438,10 +507,16 @@ func (s *Store) loginsFor(ctx context.Context, t Target) (ScanLogins, error) {
 		if out.SSH, err = s.OpenLogin(ctx, t.SSHLogin); err != nil {
 			return out, err
 		}
+		if out.SSH.Kind != LoginSSH {
+			return ScanLogins{}, errors.New("its SSH login is a Windows login; edit the network and pick another")
+		}
 	}
 	if t.SMBLogin != "" {
 		if out.SMB, err = s.OpenLogin(ctx, t.SMBLogin); err != nil {
 			return out, err
+		}
+		if out.SMB.Kind != LoginSMB {
+			return ScanLogins{}, errors.New("its Windows login is an SSH login; edit the network and pick another")
 		}
 	}
 	return out, nil
@@ -490,4 +565,37 @@ func (s *Store) CheckLogins(ctx context.Context, set Settings) error {
 // validLoginRef is a login ID a network may name.
 func validLoginRef(id string) bool {
 	return id == "" || (idRE.MatchString(id) && !strings.ContainsFunc(id, unicode.IsSpace))
+}
+
+// ResealLogins seals the logins' secrets again, after the cluster key
+// changes. reseal returns a value as it is when it is not its to seal
+// again, such as one sealed with a single server's own key.
+func (s *Store) ResealLogins(ctx context.Context, reseal func(field, sealed string) (string, error)) error {
+	for range 3 {
+		list, v, err := s.Logins(ctx)
+		if err != nil || len(list) == 0 {
+			return err
+		}
+		next := slices.Clone(list)
+		for i := range next {
+			c := &next[i]
+			if c.Secret, err = reseal(secretField(*c, "secret"), c.Secret); err != nil {
+				return fmt.Errorf("the scan login %s: %w", c.Name, err)
+			}
+			if c.Passphrase, err = reseal(secretField(*c, "passphrase"), c.Passphrase); err != nil {
+				return fmt.Errorf("the scan login %s: %w", c.Name, err)
+			}
+		}
+		if slices.Equal(next, list) {
+			return nil
+		}
+		if err := s.putLogins(ctx, next, v); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return errors.New("someone else changed the scan logins at the same time; try again")
 }

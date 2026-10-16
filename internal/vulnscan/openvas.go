@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +38,20 @@ type OpenVAS struct {
 	Poll time.Duration
 	// Dial overrides how gvmd is reached (tests).
 	Dial func(ctx context.Context) (net.Conn, error)
+	// Log hears of what could not be removed from OpenVAS; nil uses
+	// slog's default.
+	Log *slog.Logger
+}
+
+// scanComment marks what Signalith makes in OpenVAS for one scan, so that
+// whatever a scan could not remove is found and removed later.
+const scanComment = "Made by Signalith for one scan; removed when it ends."
+
+func (o *OpenVAS) log() *slog.Logger {
+	if o.Log != nil {
+		return o.Log
+	}
+	return slog.Default()
 }
 
 // IDs of objects every Greenbone install has.
@@ -131,7 +147,9 @@ func (g *gmpConn) do(ctx context.Context, cmd any, out statusOf) error {
 	_ = g.c.SetDeadline(dl)
 	b, err := xml.Marshal(cmd)
 	if err != nil {
-		return err
+		// Not the marshaling error itself: a command may carry a password
+		// or key, and the error ends up in the log and on the page.
+		return fmt.Errorf("the OpenVAS command %T could not be written", cmd)
 	}
 	if _, err := g.c.Write(b); err != nil {
 		return fmt.Errorf("OpenVAS connection: %w", err)
@@ -362,7 +380,8 @@ type Finding struct {
 // Scan scans t with OpenVAS's "Full and fast" configuration and returns
 // what it found, signing in to the hosts with the logins given. progress,
 // when set, is called with the percent done. The task, target and logins
-// it makes in OpenVAS are removed afterwards, whatever happens.
+// it makes in OpenVAS are removed afterwards, on a connection of their
+// own; what cannot be removed then is left to Sweep.
 func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLogins, progress func(float64)) ([]Finding, error) {
 	g, err := o.open(ctx)
 	if err != nil {
@@ -374,7 +393,7 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 	} else if n == 0 {
 		return nil, ErrFeedLoading
 	}
-	tgt := gmpCreateTarget{Name: name, Comment: "Made by Signalith for one scan; removed when it ends.",
+	tgt := gmpCreateTarget{Name: name, Comment: scanComment,
 		Hosts: strings.Join(t.Networks, ","), ExcludeHosts: strings.Join(t.Exclude, ","), AliveTests: "Scan Config Default"}
 	switch t.Ports {
 	case PortsAll:
@@ -386,32 +405,18 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 	}
 	var created gmpCreated
 	var credIDs []string
-	// Clean up on a fresh connection when ctx ended.
 	var targetID string
+	// Clean up on a fresh connection: the scan's own may be the reason it
+	// ended (gvmd restarted, or the connection broke).
 	cleanup := func(taskID string) {
-		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 		defer cancel()
 		c := g
-		if ctx.Err() != nil {
-			nc, err := o.open(cctx)
-			if err != nil {
-				return
-			}
+		if nc, err := o.open(cctx); err == nil {
 			defer nc.Close()
 			c = nc
 		}
-		var st gmpStatus
-		if taskID != "" {
-			_ = c.do(cctx, gmpStopTask{TaskID: taskID}, &st)
-			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_task"}, TaskID: taskID, Ultimate: "1"}, &st)
-		}
-		if targetID != "" {
-			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_target"}, TargetID: targetID, Ultimate: "1"}, &st)
-		}
-		// The logins last: a target that uses one cannot go before it.
-		for _, id := range credIDs {
-			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_credential"}, CredentialID: id, Ultimate: "1"}, &st)
-		}
+		o.remove(cctx, c, taskID, targetID, credIDs)
 	}
 	for _, l := range []*Login{logins.SSH, logins.SMB} {
 		if l == nil {
@@ -476,6 +481,121 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 			return nil, ctx.Err()
 		case <-time.After(poll):
 		}
+	}
+}
+
+// remove stops and deletes a scan's task, then its target, then its
+// logins (a target that uses one cannot go before it), and logs what it
+// could not remove: a login left in OpenVAS is a secret left behind.
+func (o *OpenVAS) remove(ctx context.Context, c *gmpConn, taskID, targetID string, credIDs []string) {
+	var st gmpStatus
+	if taskID != "" {
+		_ = c.do(ctx, gmpStopTask{TaskID: taskID}, &st)
+		// A task still stopping cannot be deleted yet, nor its target and
+		// logins after it: try again for a while.
+		wait := min(max(o.Poll, 10*time.Millisecond), 2*time.Second)
+		var err error
+		for try := 0; ; try++ {
+			err = c.do(ctx, gmpDelete{XMLName: xml.Name{Local: "delete_task"}, TaskID: taskID, Ultimate: "1"}, &st)
+			if err == nil || try == 29 || !sleepCtx(ctx, wait) {
+				break
+			}
+		}
+		if err != nil {
+			o.log().Warn("vulnerability scans: could not remove an OpenVAS task; it is removed before the next scan", "task", taskID, "err", err)
+		}
+	}
+	if targetID != "" {
+		if err := c.do(ctx, gmpDelete{XMLName: xml.Name{Local: "delete_target"}, TargetID: targetID, Ultimate: "1"}, &st); err != nil {
+			o.log().Warn("vulnerability scans: could not remove an OpenVAS target; it is removed before the next scan", "target", targetID, "err", err)
+		}
+	}
+	for _, id := range credIDs {
+		if err := c.do(ctx, gmpDelete{XMLName: xml.Name{Local: "delete_credential"}, CredentialID: id, Ultimate: "1"}, &st); err != nil {
+			o.log().Warn("vulnerability scans: could not remove a scan login from OpenVAS; it is removed before the next scan", "credential", id, "err", err)
+		}
+	}
+}
+
+type gmpGetByFilter struct {
+	XMLName xml.Name
+	Filter  string `xml:"filter,attr"`
+}
+
+type gmpObject struct {
+	ID      string `xml:"id,attr"`
+	Name    string `xml:"name"`
+	Comment string `xml:"comment"`
+}
+
+type gmpObjects struct {
+	gmpStatus
+	Tasks       []gmpObject `xml:"task"`
+	Targets     []gmpObject `xml:"target"`
+	Credentials []gmpObject `xml:"credential"`
+}
+
+// Sweep removes the tasks, targets and logins that scans made in OpenVAS
+// and could not remove, such as when the server stopped mid-scan. live
+// says whether the scan with that ID is still queued or running, on any
+// server, as several may share one OpenVAS: its objects are kept. It
+// returns how many objects it removed.
+func (o *OpenVAS) Sweep(ctx context.Context, live func(scanID string) bool) (int, error) {
+	g, err := o.open(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer g.Close()
+	// The scan ID is the last word of the name; a login's name ends with
+	// its kind after it.
+	scanOf := func(ob gmpObject, login bool) (string, bool) {
+		if ob.Comment != scanComment || !strings.HasPrefix(ob.Name, "Signalith ") {
+			return "", false
+		}
+		f := strings.Fields(ob.Name)
+		if login {
+			f = f[:len(f)-1]
+		}
+		if len(f) < 2 {
+			return "", false
+		}
+		return f[len(f)-1], true
+	}
+	var found [3][]string
+	for i, cmd := range []string{"get_tasks", "get_targets", "get_credentials"} {
+		var l gmpObjects
+		if err := g.do(ctx, gmpGetByFilter{XMLName: xml.Name{Local: cmd}, Filter: "name~Signalith rows=-1"}, &l); err != nil {
+			return 0, err
+		}
+		for _, ob := range slices.Concat(l.Tasks, l.Targets, l.Credentials) {
+			if id, ok := scanOf(ob, i == 2); ok && !live(id) {
+				found[i] = append(found[i], ob.ID)
+			}
+		}
+	}
+	for _, id := range found[0] {
+		o.remove(ctx, g, id, "", nil)
+	}
+	for _, id := range found[1] {
+		o.remove(ctx, g, "", id, nil)
+	}
+	o.remove(ctx, g, "", "", found[2])
+	n := len(found[0]) + len(found[1]) + len(found[2])
+	if n > 0 {
+		o.log().Info("vulnerability scans: removed what earlier scans left in OpenVAS", "tasks", len(found[0]), "targets", len(found[1]), "logins", len(found[2]))
+	}
+	return n, nil
+}
+
+// sleepCtx waits for d, and reports false if ctx ends first.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
 	}
 }
 

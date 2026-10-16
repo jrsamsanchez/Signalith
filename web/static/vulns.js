@@ -1096,6 +1096,14 @@
     const phrase = el('input', { class: 'input', id: 'sc-login-phrase', type: 'password', maxlength: '256', autocomplete: 'new-password' });
     const clearPhrase = el('input', { type: 'checkbox' });
     const userHint = el('p', { class: 'hint' });
+    // OpenVAS hands every host it scans what the login signs in with: a
+    // password can be kept by a host that is not what it seems, a key
+    // cannot.
+    const passWarn = el('div', { class: 'alert', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, 'A key is safer. '), 'With a password, every host in the network receives it when OpenVAS signs in, so a host that is not what it seems can keep it. ' +
+        'Use a key where you can, and an account that is a plain user on each host.'));
+    const smbWarn = el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Every Windows host scanned receives this account’s sign-in. Use an account made for scanning, for this zone only, ' +
+      'and see the guide for the Windows settings that keep it safe.'));
     const keyWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-key' }, 'Private key'), keyBox,
       el('p', { class: 'hint' }, l ? 'Leave empty to keep the saved key. ' : '', 'Paste the whole private key file. Signalith never shows it again.'));
     const phraseWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-phrase' }, 'Key passphrase'), phrase,
@@ -1109,6 +1117,8 @@
       keyWrap.hidden = phraseWrap.hidden = v !== 'ssh-key';
       passWrap.hidden = v === 'ssh-key';
       portWrap.hidden = v === 'smb';
+      passWarn.hidden = v !== 'ssh-password';
+      smbWarn.hidden = v !== 'smb';
       user.placeholder = v === 'smb' ? 'CORP\\svc-signalith-scan' : 'signalith-scan';
       userHint.textContent = v === 'smb' ? 'A domain account as DOMAIN\\name, or a local account by name alone.' : 'The account it signs in to each host as.';
     };
@@ -1122,7 +1132,7 @@
         el('p', { class: 'modal__desc' }, 'Use an account made only for scanning, with the least access it needs. Saved encrypted; only admins can change it.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
       el('div', { class: 'modal__body vs-form' },
-        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-type' }, 'Hosts it signs in to'), type),
+        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-type' }, 'Hosts it signs in to'), type), passWarn, smbWarn,
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-name' }, 'Name'), name),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-user' }, 'User name'), user, userHint),
         portWrap, keyWrap, phraseWrap, passWrap, err),

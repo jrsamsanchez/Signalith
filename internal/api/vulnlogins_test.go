@@ -61,6 +61,10 @@ func TestVulnLogins(t *testing.T) {
 	if code, o, _ := call(t, ts, "PUT", "/api/vulns/settings", net("smb_login", "win"), "admin", "s3cret-pass", nil); code != 200 {
 		t.Fatalf("save network %d %v", code, o)
 	}
+	// The audit log says which addresses get which login.
+	if !strings.Contains(logs.String(), "Office added: scans 10.0.0.0/24, skips none, scanner none, SSH login none, Windows login win") {
+		t.Errorf("settings audit:\n%s", logs.String())
+	}
 	_, out, _ = call(t, ts, "GET", "/api/vulns/logins", "", "admin", "s3cret-pass", nil)
 	if used := out["logins"].([]any)[0].(map[string]any)["used_by"].([]any); len(used) != 1 || used[0] != "Office" {
 		t.Fatalf("used by %v", used)
@@ -80,5 +84,16 @@ func TestVulnLoginsNoKey(t *testing.T) {
 	})
 	if code, out, _ := call(t, ts, "PUT", "/api/vulns/logins/a", `{"name":"A","kind":"smb","username":"u","secret":"p"}`, "admin", "s3cret-pass", nil); code != 503 {
 		t.Fatalf("saved with no key: %d %v", code, out)
+	}
+}
+
+func TestVulnChanges(t *testing.T) {
+	a := vulnscan.Target{ID: "o", Name: "Office", Networks: []string{"10.0.0.0/24"}, OpenVAS: true, SMBLogin: "win"}
+	b := a
+	b.Networks, b.SMBLogin, b.SSHLogin = []string{"0.0.0.0/0"}, "", "lin"
+	got := strings.Join(vulnChanges(vulnscan.Settings{Targets: []vulnscan.Target{a, {ID: "x", Name: "Lab"}}}, vulnscan.Settings{Targets: []vulnscan.Target{b}}), "; ")
+	want := "Office: addresses 10.0.0.0/24 -> 0.0.0.0/0; Office: SSH login none -> lin; Office: Windows login win -> none; Lab removed"
+	if got != want {
+		t.Errorf("changes = %s\nwant %s", got, want)
 	}
 }

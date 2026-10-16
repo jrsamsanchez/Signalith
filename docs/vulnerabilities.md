@@ -239,7 +239,8 @@ Windows hosts (SMB) of a network:
 #### A Linux scan account (SSH key)
 
 A plain user is enough: the package checks read `dpkg`, `rpm` and `uname` output, which
-any user can. Do not give it `sudo` or add it to `wheel`, `sudo` or `adm`.
+any user can. Do not add it to `wheel`, `sudo` or `adm`. If a check you need does want
+more, allow only those exact read-only commands in a `sudoers` file, never `ALL`.
 
 ```sh
 # On the scanning server, make a key pair just for scanning.
@@ -259,7 +260,9 @@ server's address in `from=`, so the key works from there only. Paste the
 private key file, `signalith-scan`, into the login and then delete that file: Signalith
 keeps it encrypted. An `ed25519` key is best; RSA keys of 3072 bits or more work too. A key
 with a passphrase works; enter the passphrase with it. An SSH password works where keys
-cannot be used, but a key is safer: it cannot be guessed and does not work from elsewhere.
+cannot be used, but avoid it: OpenVAS sends the login to every host it scans, so a host
+in the range that is not what it seems (a compromised one, or one an attacker put there)
+can keep a password and use it on the others. It only ever sees a key's signature.
 
 #### A Windows scan account (SMB)
 
@@ -269,16 +272,28 @@ be a local administrator on the hosts it scans, and nothing more:
 
 1. In Active Directory, make a user such as `svc-signalith-scan` with a long random
    password, and a group such as `Signalith scanners` with only that user in it. Do not add
-   it to Domain Admins or any other admin group.
+   it to Domain Admins or any other admin group. On the account, tick **Account is
+   sensitive and cannot be delegated**. Do not put it in **Protected Users**: that turns
+   off NTLM, which the scan signs in with.
 2. With a Group Policy Object linked to the computers to scan (not to the domain
    controllers), add `Signalith scanners` to the local Administrators group
    (**Computer Configuration > Preferences > Control Panel Settings > Local Users and Groups**).
 3. In the same GPO, under **User Rights Assignment**, add the group to **Deny log on
-   locally** and **Deny log on through Remote Desktop Services**: it signs in over the
-   network only.
-4. Allow **File and Printer Sharing (SMB-In)** (TCP 445) from the scanning server in
-   Windows Defender Firewall, and set the **Remote Registry** service to Manual so it can
-   start when asked.
+   locally**, **Deny log on through Remote Desktop Services**, **Deny log on as a batch
+   job** and **Deny log on as a service**: it signs in over the network only.
+4. Under **Security Options**, set **Microsoft network server: Digitally sign
+   communications (always)** to Enabled, and **Network security: LAN Manager
+   authentication level** to **Send NTLMv2 response only. Refuse LM & NTLM**.
+5. Allow **File and Printer Sharing (SMB-In)** (TCP 445) in Windows Defender Firewall
+   from the scanning server's address only, and set the **Remote Registry** service to
+   Manual so it can start when asked.
+
+Every Windows host the scan reaches receives this account's sign-in, so a host that is
+not what it seems can try to relay it to another host or crack it offline. The settings
+above make both much harder; also make one account per network zone, each an
+administrator only on that zone's computers, rather than one for the whole domain, so a
+captured sign-in reaches no further. Change its password after any sign that one of the
+hosts was compromised.
 
 Enter the user name as `CORP\svc-signalith-scan`. For a computer outside a domain, a
 local account works too (its name alone), but Windows then also needs
@@ -295,9 +310,15 @@ the login and enter the new one.
   network. Each change is in the audit log (`vulnerability scan login saved` or
   `removed`), with the login's name, user name and whether its key or password changed.
 - A login is decrypted only on the server that scans the network, when a scan starts. It is
-  handed to OpenVAS for that scan alone, and removed from OpenVAS when the scan ends.
+  handed to OpenVAS for that scan alone and removed from OpenVAS when the scan ends, on a
+  connection of its own. If that fails (OpenVAS restarted, or the server stopped
+  mid-scan), the next scan removes what was left, and the server log says so.
+- Saving or changing a login, and saving the networks to scan, asks for your password
+  again (see [Confirming it's you](users.md#confirming-its-you)). The audit log records
+  each network's addresses, scanner and logins as they change.
 - Servers that share their settings encrypt the logins with the cluster key, so every
-  scanner can use them. A login saved on a single server, before it joined a cluster, is
+  scanner can use them; every server of the cluster can therefore decrypt every login.
+  Rotating the cluster key, or removing a server, encrypts them again with the new key. A login saved on a single server, before it joined a cluster, is
   encrypted with that server's own key: the list then marks it **Enter again**, and scans
   run without OpenVAS until you edit it and enter its key or password again.
 - A login in use by a network cannot be removed: pick another one, or None, for the network

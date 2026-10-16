@@ -43,6 +43,8 @@ type fakeGVMD struct {
 	polls    int
 	password string
 	noFeed   atomic.Bool // the feed is still loading
+	drop     atomic.Bool // the connection breaks at the next get_tasks
+	stopping int         // delete_task fails this many times: the task is still stopping
 }
 
 func (f *fakeGVMD) dial(context.Context) (net.Conn, error) {
@@ -57,8 +59,10 @@ func (f *fakeGVMD) serve(c net.Conn) {
 	for {
 		var cmd struct {
 			XMLName  xml.Name
-			Password string `xml:"credentials>password"`
-			Inner    string `xml:",innerxml"`
+			Password string     `xml:"credentials>password"`
+			Filter   string     `xml:"filter,attr"`
+			Attrs    []xml.Attr `xml:",any,attr"`
+			Inner    string     `xml:",innerxml"`
 		}
 		if err := dec.Decode(&cmd); err != nil {
 			return
@@ -69,11 +73,37 @@ func (f *fakeGVMD) serve(c net.Conn) {
 		if f.raw == nil {
 			f.raw = map[string]string{}
 		}
-		f.raw[name] = cmd.Inner
+		f.raw[name] = cmd.Inner + fmt.Sprint(cmd.Attrs)
 		f.creds += map[bool]int{true: 1}[name == "create_credential"]
 		n := f.creds
 		f.mu.Unlock()
 		var out string
+		left := func(tag, kind string) string {
+			c := "<comment>" + scanComment + "</comment>"
+			return fmt.Sprintf(`<get_%ss_response status="200" status_text="OK">`+
+				`<%s id="%s-old"><name>Signalith Office LAN old1%s</name>%s</%s>`+
+				`<%s id="%s-live"><name>Signalith Office LAN live1%s</name>%s</%s>`+
+				`<%s id="%s-mine"><name>Signalith by hand</name><comment>Someone's own</comment></%s></get_%ss_response>`,
+				tag, tag, tag, kind, c, tag, tag, tag, kind, c, tag, tag, tag, tag, tag)
+		}
+		switch {
+		case cmd.Filter != "" && name == "get_tasks":
+			out = left("task", "")
+		case cmd.Filter != "" && name == "get_targets":
+			out = left("target", "")
+		case cmd.Filter != "" && name == "get_credentials":
+			out = left("credential", " ssh")
+		case name == "get_tasks" && f.drop.CompareAndSwap(true, false):
+			return
+		case name == "delete_task" && f.takeStopping():
+			out = `<delete_task_response status="400" status_text="Task is still stopping"/>`
+		}
+		if out != "" {
+			if _, err := io.WriteString(c, out); err != nil {
+				return
+			}
+			continue
+		}
 		switch name {
 		case "authenticate":
 			if cmd.Password != f.password {
@@ -118,6 +148,16 @@ func (f *fakeGVMD) serve(c net.Conn) {
 	}
 }
 
+func (f *fakeGVMD) takeStopping() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopping > 0 {
+		f.stopping--
+		return true
+	}
+	return false
+}
+
 func (f *fakeGVMD) sent() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -151,7 +191,8 @@ func TestOpenVASScan(t *testing.T) {
 		t.Errorf("progress = %v", progress)
 	}
 	// The task and target are removed after.
-	if s := f.sent(); !strings.HasSuffix(s, "get_reports,stop_task,delete_task,delete_target") {
+	// The task and target are removed after, on a connection of their own.
+	if s := f.sent(); !strings.HasSuffix(s, "get_reports,authenticate,stop_task,delete_task,delete_target") {
 		t.Errorf("commands = %s", s)
 	}
 	// With logins: made before the target, named in it, removed after it.
@@ -178,6 +219,34 @@ func TestOpenVASScan(t *testing.T) {
 	if fmt.Sprint(ssh) != "ssh login scan" || strings.Contains(fmt.Sprintf("%v %+v", ssh, smb), "pass") {
 		t.Errorf("a login prints its secret: %v %+v", ssh, smb)
 	}
+
+	// The connection breaks mid-scan, and the task takes a moment to stop:
+	// the logins are still removed, on a new connection.
+	f.commands, f.polls, f.stopping = nil, 0, 2
+	f.drop.Store(true)
+	if _, err := ov.Scan(ctx, target("192.0.2.0/24"), "Signalith test", ScanLogins{SSH: ssh}, nil); err == nil || !strings.Contains(err.Error(), "closed the connection") {
+		t.Errorf("a broken connection: %v", err)
+	}
+	if s := f.sent(); !strings.HasSuffix(s, "get_tasks,authenticate,stop_task,delete_task,delete_task,delete_task,delete_target,delete_credential") {
+		t.Errorf("commands after a broken connection = %s", s)
+	}
+
+	// Sweep removes what ended scans left behind, and nothing else.
+	f.commands, f.raw = nil, nil
+	n, err := ov.Sweep(ctx, func(id string) bool { return id == "live1" })
+	if err != nil || n != 3 {
+		t.Fatalf("sweep = %d %v", n, err)
+	}
+	if s := f.sent(); !strings.HasSuffix(s, "get_tasks,get_targets,get_credentials,stop_task,delete_task,delete_target,delete_credential") {
+		t.Errorf("sweep commands = %s", s)
+	}
+	f.mu.Lock()
+	raw := fmt.Sprint(f.raw)
+	f.mu.Unlock()
+	if !strings.Contains(raw, "credential-old") || strings.Contains(raw, "live") || strings.Contains(raw, "mine") {
+		t.Errorf("swept a live scan's or someone's own: %s", raw)
+	}
+
 	ov.Password = "wrong"
 	if _, err := ov.Version(ctx); err == nil || !strings.Contains(err.Error(), "refused the user name or password") {
 		t.Errorf("wrong password: %v", err)

@@ -15,8 +15,9 @@ import (
 
 func (s *Server) routeVulnLogins(api *router) {
 	api.admin("GET /api/vulns/logins", s.handleVulnLogins)
-	api.admin("PUT /api/vulns/logins/{id}", s.handleSaveVulnLogin)
-	api.admin("DELETE /api/vulns/logins/{id}", s.handleDeleteVulnLogin)
+	// The password is asked again: a login is a key to many hosts.
+	api.sensitive("PUT /api/vulns/logins/{id}", s.handleSaveVulnLogin)
+	api.sensitive("DELETE /api/vulns/logins/{id}", s.handleDeleteVulnLogin)
 }
 
 // vulnLogin is a scan login as the page shows it.

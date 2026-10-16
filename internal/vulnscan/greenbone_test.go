@@ -183,11 +183,6 @@ func waitFor(ctx context.Context, t *testing.T, limit time.Duration, what string
 	}
 }
 
-type gmpGetByFilter struct {
-	XMLName xml.Name
-	Filter  string `xml:"filter,attr"`
-}
-
 type gmpList struct {
 	gmpStatus
 	Tasks       []gmpRef `xml:"task"`

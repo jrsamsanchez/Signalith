@@ -207,6 +207,26 @@ func (s *Scanner) CheckNow(ctx context.Context) *Report {
 	return r
 }
 
+// sweepOpenVAS removes what earlier scans left in OpenVAS, such as the
+// logins of a scan cut off when this server stopped. The objects of
+// scans still queued or running, here or on another server sharing the
+// same OpenVAS, are kept.
+func (s *Scanner) sweepOpenVAS(ctx context.Context, ov *OpenVAS) {
+	scans, err := s.Store.Scans(ctx)
+	if err != nil {
+		return
+	}
+	live := map[string]bool{}
+	for _, sc := range scans {
+		if sc.State == StateQueued || sc.State == StateRunning {
+			live[sc.ID] = true
+		}
+	}
+	if _, err := ov.Sweep(ctx, func(id string) bool { return live[id] }); err != nil {
+		s.log().Warn("vulnerability scans: could not look for what earlier scans left in OpenVAS", "err", err)
+	}
+}
+
 func (s *Scanner) openVAS() *OpenVAS {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -577,6 +597,7 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 				s.log().Warn("vulnerability scan: OpenVAS scan skipped; the Nmap results are kept", "network", t.Name, "scan", sc.ID, "err", lerr)
 				break
 			}
+			s.sweepOpenVAS(ctx, ov)
 			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID,
 				"ssh_login", logins.SSH != nil, "windows_login", logins.SMB != nil)
 			var oerr error

@@ -49,7 +49,10 @@ func (s *Server) routeVulns(api *router) {
 	// what to scan, and scanning, are for admins.
 	api.admin("GET /api/vulns/setup", s.handleVulnSetup)
 	api.admin("GET /api/vulns/scanners", s.handleVulnScanners)
-	api.admin("PUT /api/vulns/settings", s.handleSaveVulnSettings)
+	// What is scanned, and which logins are sent to it: the password is
+	// asked again, as a login sent to a host someone added hands that
+	// host the login.
+	api.sensitive("PUT /api/vulns/settings", s.handleSaveVulnSettings)
 	api.admin("POST /api/vulns/networks/{id}/scan", s.handleVulnScanNow)
 	api.admin("POST /api/vulns/scans/{id}/stop", s.handleVulnStop)
 }
@@ -463,7 +466,7 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 	for _, t := range set.Targets {
 		nets = append(nets, t.Name)
 	}
-	s.audit(r, "vulnerability scan settings saved", "networks", nets, "cve_lookup", set.CVELookup)
+	s.audit(r, "vulnerability scan settings saved", "networks", nets, "cve_lookup", set.CVELookup, "changes", vulnChanges(saved, set))
 	s.handleVulns(w, r)
 }
 
@@ -576,4 +579,53 @@ func (s *Server) handleVulnStop(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "vulnerability scan stopped", "network", sc.TargetName, "scan", sc.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"stopping": sc.ID})
+}
+
+// vulnChanges says what a save changed in each network: what it scans
+// and skips, its scanner and the logins it sends, for the audit log.
+func vulnChanges(before, after vulnscan.Settings) []string {
+	old := map[string]vulnscan.Target{}
+	for _, t := range before.Targets {
+		old[t.ID] = t
+	}
+	list := func(v []string) string {
+		if len(v) == 0 {
+			return "none"
+		}
+		return strings.Join(v, ",")
+	}
+	or := func(v string) string {
+		if v == "" {
+			return "none"
+		}
+		return v
+	}
+	var out []string
+	for _, t := range after.Targets {
+		p, ok := old[t.ID]
+		delete(old, t.ID)
+		if !ok {
+			out = append(out, fmt.Sprintf("%s added: scans %s, skips %s, scanner %s, SSH login %s, Windows login %s",
+				t.Name, list(t.Networks), list(t.Exclude), or(t.Scanner), or(t.SSHLogin), or(t.SMBLogin)))
+			continue
+		}
+		for _, d := range []struct{ what, was, now string }{
+			{"addresses", list(p.Networks), list(t.Networks)},
+			{"skipped addresses", list(p.Exclude), list(t.Exclude)},
+			{"scanner", or(p.Scanner), or(t.Scanner)},
+			{"OpenVAS", fmt.Sprint(p.OpenVAS), fmt.Sprint(t.OpenVAS)},
+			{"SSH login", or(p.SSHLogin), or(t.SSHLogin)},
+			{"Windows login", or(p.SMBLogin), or(t.SMBLogin)},
+		} {
+			if d.was != d.now {
+				out = append(out, fmt.Sprintf("%s: %s %s -> %s", t.Name, d.what, d.was, d.now))
+			}
+		}
+	}
+	for _, t := range before.Targets {
+		if _, gone := old[t.ID]; gone {
+			out = append(out, t.Name+" removed")
+		}
+	}
+	return out
 }
