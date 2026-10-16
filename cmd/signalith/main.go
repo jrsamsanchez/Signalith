@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -95,12 +96,14 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
+  signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
   signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
+  signalith bootstrap-kubernetes -prefix NAME [-opensearch=false] [-opensearch-name NAME]   make the Helm chart's Kubernetes Secrets (its setup Job runs this)
   signalith version
 
 The config file defaults to %s
@@ -149,6 +152,8 @@ func main() {
 		err = cmdInitialPassword(args)
 	case "bootstrap-docker":
 		err = cmdBootstrapDocker(args)
+	case "bootstrap-kubernetes":
+		err = cmdBootstrapKubernetes(args)
 	case "opensearch-certs":
 		err = cmdOpenSearchCerts(args)
 	case "query":
@@ -171,6 +176,8 @@ func main() {
 		err = cmdContent(args)
 	case "security":
 		err = cmdSecurity(args)
+	case "audit":
+		err = cmdAudit(args)
 	case "cluster":
 		err = cmdCluster(args)
 	case "join":
@@ -185,6 +192,9 @@ func main() {
 		fmt.Printf(usage, defaultConfigPath())
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
+		os.Exit(2)
+	}
+	if errors.Is(err, errTampered) {
 		os.Exit(2)
 	}
 	if err != nil {
@@ -278,9 +288,9 @@ func cmdInit(args []string) error {
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
 	switch {
 	case saved:
-		fmt.Printf("  Password:    show it with: signalith initial-password   (change it with: signalith passwd)\n")
+		fmt.Printf("  Password:    show it with: signalith initial-password   (you choose your own at the first sign-in)\n")
 	case generated:
-		fmt.Printf("  Password:    %s   (shown once; change it with: signalith passwd)\n", pw)
+		fmt.Printf("  Password:    %s   (shown once; you choose your own at the first sign-in)\n", pw)
 	}
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
@@ -289,6 +299,14 @@ func cmdInit(args []string) error {
 	// none), so init can say where it is and to back it up.
 	if _, err := c.Keyring().Seal("init", "make the master key"); err != nil {
 		return fmt.Errorf("making the master key: %w", err)
+	}
+	// A password Signalith made must be changed at the first sign-in with
+	// it. The packages keep it where only root can read it, so the server
+	// is told its hash (see config.FirstPassword).
+	if generated {
+		if err := config.RecordFirstPassword(config.StateDirFor(*path), h); err != nil {
+			return fmt.Errorf("cannot note the first admin password in the state folder: %w", err)
+		}
 	}
 	if src, err := c.Keyring().Source(); err == nil {
 		fmt.Printf("  Master key:  %s\n", src)
@@ -648,11 +666,15 @@ func cmdPasswd(args []string) error {
 			return err
 		}
 		fmt.Printf("Password updated in %s, on this server only. It replaces the configured password: restart the server to apply it.\n", hashFile)
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// A member of a cluster that shares its users changes the built-in
 	// admin of every server, at once.
 	if done, err := passwdShared(*path, stateDir, h); done || err != nil {
+		if err == nil {
+			firstPasswordReplaced(os.Stdout, *path, stateDir)
+		}
 		return err
 	}
 	_, statErr := os.Stat(hashFile)
@@ -675,6 +697,7 @@ func cmdPasswd(args []string) error {
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
 				"(signalith passwd -local sets the password for that). Run signalith passwd again once OpenSearch answers to change the cluster's password.")
 		}
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// Only the hash changes in the file; settings from the environment
@@ -690,6 +713,7 @@ func cmdPasswd(args []string) error {
 	if os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
 		fmt.Println("Note: SIGNALITH_ADMIN_PASSWORD is set in this environment, and wherever it is set for the server it replaces the password in the file.")
 	}
+	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
 }
 
@@ -1309,6 +1333,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return nil, err
 		}
 	}
+	// A change of the first password that reached this server while its
+	// users moved is kept, and so is the session that made it. Checked
+	// before the shared users are in use, so sign-ins that finish meanwhile
+	// stay in the sessions carry moves.
+	cc := c
+	if parts != nil {
+		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
+			cc = c.WithAdminHashFile(h)
+		}
+	}
 	if r.sharedContent != nil {
 		r.sharedContent.users.use(parts)
 	}
@@ -1317,7 +1351,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if parts != nil {
 		// The sessions made while this server kept its users in its own
 		// files carry over.
-		parts.carry(ctx, r.sessions, r.people, c, log)
+		parts.carry(ctx, r.sessions, r.people, cc, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
@@ -1456,6 +1490,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	pruns := playbooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The buttons in Slack and Teams messages: linked chat accounts and
+	// where Teams app channels post are kept in <prefix>_chat, so a click
+	// may reach any server.
+	chats := chatops.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	chats.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	senders.Conversations = chats
 	// Sessions and the failed sign-in limits carry over a restart (shared
 	// sessions are in OpenSearch, with this server's cache of them kept).
 	r.sessions.SetIdle(c.SessionIdle())
@@ -1550,6 +1590,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notebooks:    nstore,
 		Respond:      responder,
 		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Chat:         &api.Chat{Store: chats},
 		Retention:    ret,
 		Sample:       sampleLoader,
 		Content:      updater,
@@ -1571,12 +1612,24 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:      version,
 	}
 	followProxyTrust(srv)
+	// Likewise a host that stopped sending: the server that runs the
+	// background jobs writes an event when a steady source goes quiet, which
+	// the built-in detection data-source-stopped reads.
+	sourceWatch := &dashboards.SourceWatch{Engine: eng, Events: pipeline, Log: log,
+		StaleAfter: func() time.Duration { return srv.Running().StaleAfter() }}
+	if r.node != nil {
+		sourceWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sourceWatch.Run(ctx) })
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
 	}
 	wireFeatures(srv, r.shared)
+	if parts == nil && r.sharedContent != nil {
+		srv.BuiltinSetHere = r.sharedContent.users.builtinSetHere(c)
+	}
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1599,7 +1652,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK, chatOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1649,6 +1702,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
 		} else {
 			playbooksOK = true
+		}
+		if err := chats.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the chat index; buttons in Slack and Teams messages will not work", "index", chats.Index, "err", err)
+		} else {
+			chatOK = true
 		}
 		close(indicesReady)
 	})
@@ -1701,6 +1759,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{findingsOK, fstore.Index, clusterUpgrade(r.shared, "findings-fields", fstore.Upgrade), fstore.Replicate},
 				{notifyOK, deliveries.Index, nil, deliveries.Replicate},
 				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},
+				{chatOK, chats.Index, nil, chats.Replicate},
 			})
 		}},
 		{Name: "detections", Run: func(ctx context.Context) {

@@ -78,6 +78,9 @@ approval channel, if it has one, gets a message with a link to the page.
   shown on the finding.
 - A step **nobody approves within 24 hours expires**. It is not done, and the playbook
   stops for that finding.
+- When the approval channel is Slack or a Teams app with buttons, analysts can also
+  **Reject** (and, if the channel allows it, **Approve**) from the message itself. See
+  [Buttons in Slack and Teams](notifications.md#buttons-in-slack-and-teams).
 
 Only one decision counts. If two analysts press Approve at the same moment, one wins and
 the other is told "It was already approved by ann." The action runs once. Viewers see

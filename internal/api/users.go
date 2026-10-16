@@ -71,8 +71,9 @@ func meView(p *principal) map[string]any {
 		"mfa":                  p.MFA,
 		"must_setup_mfa":       p.MustSetupMFA,
 		// Only local users' passwords are kept by Signalith, and the
-		// built-in admin's once it is shared by the servers of a cluster.
-		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && p.shared),
+		// built-in admin's once it is shared by the servers of a cluster,
+		// or while it is the first one Signalith made.
+		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && (p.shared || p.MustChangePassword)),
 		"auth":                p.Method,
 		// The tenant the user belongs to ("" for the provider's own
 		// users) and the one they work in now.
@@ -96,7 +97,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleChangeOwnPassword lets local users change their own password. It
-// is also how a temporary password is replaced after signing in.
+// is also how a temporary password is replaced after signing in, and how
+// the built-in admin replaces the first password Signalith made.
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	var req struct {
@@ -108,7 +110,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	switch {
-	case p.Source == users.SourceBuiltin && s.SharedUsers == nil:
+	case p.Source == users.SourceBuiltin && s.SharedUsers == nil && !p.MustChangePassword:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "builtin",
 			"error": "The built-in admin's password is kept on the server. Change it there with signalith passwd, then restart Signalith. " +
 				"With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd, " +
@@ -161,6 +163,11 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeUserError(w, err)
 		return
 	}
+	var ke keepError
+	if errors.As(err, &ke) {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if err != nil && sharedError(w, err) {
 		return
 	}
@@ -194,14 +201,17 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		s.rememberBrowser(w, r, p.Username)
 	}
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
+	if builtin && p.MustChangePassword {
+		s.firstPasswordChanged()
+	}
 	np.Method = p.Method
 	s.noteMFA(np)
 	writeJSON(w, http.StatusOK, meView(np))
 }
 
 // setOwnPassword gives the signed-in user p the new password and returns
-// them as they are then: a local user, or the built-in admin when the
-// servers of a cluster share it.
+// them as they are then: a local user, or the built-in admin (the
+// cluster's when the servers of a cluster share it, else this server's).
 func (s *Server) setOwnPassword(ctx context.Context, p *principal, password string) (*principal, error) {
 	if p.Source == users.SourceBuiltin {
 		if err := users.CheckNewPassword(p.Username, password); err != nil {
@@ -211,7 +221,14 @@ func (s *Server) setOwnPassword(ctx context.Context, p *principal, password stri
 		if err != nil {
 			return nil, err
 		}
-		if err := s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash); err != nil {
+		if s.SharedUsers == nil {
+			if err = s.setBuiltinHere(hash); err == nil && s.BuiltinSetHere != nil {
+				s.BuiltinSetHere(context.WithoutCancel(ctx))
+			}
+		} else {
+			err = s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash)
+		}
+		if err != nil {
 			return nil, err
 		}
 		return s.builtinPrincipal(), nil

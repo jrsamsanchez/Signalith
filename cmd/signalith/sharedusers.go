@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -198,6 +201,73 @@ func carried(held []auth.Held, people *users.Store, c *config.Config) []clustera
 		list = append(list, cr)
 	}
 	return list
+}
+
+// firstPasswordMu keeps keepFirstPasswordChange from running twice at
+// once (at the switch and from a late change on the page).
+var firstPasswordMu sync.Mutex
+
+// keepFirstPasswordChange carries into the shared settings a change of
+// the first password Signalith made that this server kept in its own
+// files while its users moved into the shared settings: the change on
+// the page lands there when it reaches the server between the import and
+// the switch, and the cluster's built-in admin would keep the first
+// password. It does so only while the cluster's built-in admin still has
+// this server's first password and was never changed since the import
+// (session epoch 1), so a password set on the cluster is never replaced
+// with an older one. It returns the hash it set, or "".
+func keepFirstPasswordChange(ctx context.Context, docs *clusterauth.Docs, c *config.Config, log *slog.Logger) string {
+	firstPasswordMu.Lock()
+	defer firstPasswordMu.Unlock()
+	b, err := os.ReadFile(c.AdminHashFile())
+	if err != nil {
+		return ""
+	}
+	h := strings.TrimSpace(string(b))
+	if _, err := bcrypt.Cost([]byte(h)); err != nil {
+		return ""
+	}
+	u, _, ok := docs.BuiltinUser()
+	if !ok || u.SessionEpoch != 1 || u.PasswordHash == h || !isFirstPassword(c, u.PasswordHash) {
+		return ""
+	}
+	if err := docs.SetBuiltinHash(ctx, u.Username, h); err != nil {
+		log.Warn("the built-in admin's new password reached this server while its users moved into the shared settings and could not be kept there; "+
+			"change it again on the page or with signalith passwd", "user", u.Username, "err", err)
+		return ""
+	}
+	log.Info("kept the built-in admin's new password, changed while the users moved into the shared settings", "audit", true, "user", u.Username)
+	return h
+}
+
+// isFirstPassword reports whether hash is that of the first password
+// Signalith made for the built-in admin of this server (see
+// config.FirstPassword).
+func isFirstPassword(c *config.Config, hash string) bool {
+	if fh := c.FirstPasswordHash(); fh != "" && subtle.ConstantTimeCompare([]byte(fh), []byte(hash)) == 1 {
+		return true
+	}
+	file, _ := c.InitialPasswordFile()
+	if file == "" {
+		return false
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	pw := strings.TrimSpace(string(b))
+	return pw != "" && bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
+}
+
+// builtinSetHere is api.Server.BuiltinSetHere for a server whose API keeps
+// the users in its own files: once the users are shared (the change
+// finished after the switch), the change is carried there.
+func (ua *sharedUsers) builtinSetHere(c *config.Config) func(context.Context) {
+	return func(ctx context.Context) {
+		if p := ua.cur.Load(); p != nil {
+			keepFirstPasswordChange(ctx, p.sessions.Docs, c, ua.log)
+		}
+	}
 }
 
 // api is what the API needs of p.

@@ -77,6 +77,9 @@ type Config struct {
 	// (see AdminPasswordVersion), and envAdminHash is the hash made from
 	// it for this process.
 	envAdminVersion, envAdminHash string
+	// firstPassword is what the state folder keeps about the built-in
+	// admin's first password (see FirstPassword).
+	firstPassword FirstPassword
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -1861,6 +1864,7 @@ func readAndEnv(path string) (*Config, error) {
 	}
 	c.syncEligible()
 	c.readDockerUpgrade()
+	c.readFirstPassword()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil

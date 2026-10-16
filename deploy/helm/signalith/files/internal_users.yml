@@ -1,0 +1,6 @@
+# No users with passwords: Signalith signs in with a certificate (see
+# config.yml). This file replaces the one OpenSearch ships, whose demo
+# users have passwords anyone can look up.
+_meta:
+  type: "internalusers"
+  config_version: 2

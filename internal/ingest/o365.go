@@ -172,7 +172,8 @@ func ParseO365(r map[string]any) Event {
 			leaves++
 		}
 	}
-	if raw, err := json.Marshal(r); err == nil {
+	raw, rawErr := json.Marshal(r)
+	if rawErr == nil {
 		f["message"] = truncateUTF8(string(raw), MaxRecordBytes)
 	}
 	set := func(k, v string) {
@@ -217,9 +218,11 @@ func ParseO365(r map[string]any) Event {
 	if t, ok := o365Time(str(r, "CreationTime")); ok {
 		ev.Time = t
 	}
-	// The same record, read twice from the API, is stored once.
-	if id := str(r, "Id"); id != "" {
-		ev.ID = sensorDocID("o365", id)
+	// The same record, read twice from the API, is stored once. The ID
+	// covers the whole record, not just its Id, so a record sent with a
+	// real record's Id before the poller reads it cannot take its place.
+	if id := str(r, "Id"); id != "" && rawErr == nil {
+		ev.ID = sensorDocID("o365", id+"\n"+string(raw))
 	}
 	switch {
 	case op == "UserLoggedIn" || op == "UserLoginFailed":

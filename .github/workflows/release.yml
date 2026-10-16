@@ -92,6 +92,47 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+  # The Helm chart (deploy/helm/signalith), versioned as the release and
+  # running its image: a .tgz on the release page, and an OCI chart on
+  # GHCR (oci://ghcr.io/<owner>/charts/signalith), signed with Sigstore.
+  chart:
+    needs: [packages, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.packages.outputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Package the chart
+        run: |
+          helm version
+          helm lint --strict --kube-version 1.30.0 deploy/helm/signalith
+          mkdir chart
+          helm package deploy/helm/signalith --version "$VERSION" --app-version "$VERSION" -d chart
+          ls -l chart
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: helm-chart
+          path: chart/
+      - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: Push the chart to GHCR and sign it
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push "chart/signalith-$VERSION.tgz" "oci://ghcr.io/$owner/charts" 2>&1 | tee "$RUNNER_TEMP/push.log"
+          digest=$(sed -n 's/^Digest: //p' "$RUNNER_TEMP/push.log")
+          [ -n "$digest" ] || { echo "no digest from helm push" >&2; exit 1; }
+          printf '%s' "$GH_TOKEN" | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          cosign sign --yes "ghcr.io/$owner/charts/signalith@$digest"
+
   # Authenticode signing of the .msi and signalith.exe through SignPath
   # Foundation (docs/code-signing.md). It runs for a tag once the repository
   # has the SIGNPATH_ORGANIZATION_ID variable and the SIGNPATH_API_TOKEN
@@ -149,9 +190,9 @@ jobs:
           path: signed/
 
   publish:
-    needs: [packages, image, windows-signing]
+    needs: [packages, image, chart, windows-signing]
     # Also when windows-signing is skipped (no SignPath set up, or a dry run).
-    if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.windows-signing.result != 'failure' }}
+    if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.chart.result == 'success' && needs.windows-signing.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,7 +205,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: '{binaries,linux-packages,windows-packages}'
+          pattern: '{binaries,linux-packages,windows-packages,helm-chart}'
           path: release
           merge-multiple: true
       - name: Use the signed Windows files

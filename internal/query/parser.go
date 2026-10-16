@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -62,7 +62,7 @@ func parseAt(src string, base, depth int) (*Query, error) {
 	p := &parser{toks: toks, depth: depth, src: src, base: base}
 	// A query copied from Splunk may start with the search command's name.
 	if t := p.peek(); t.kind == tokWord && strings.EqualFold(t.text, "search") {
-		if n := p.peekAt(1); n.kind != tokEOF && !(n.kind == tokOp && n.text == "=") {
+		if n := p.peekAt(1); n.kind != tokEOF && n.kind != tokOp {
 			p.next()
 		}
 	}
@@ -104,6 +104,9 @@ func parseAt(src string, base, depth int) (*Query, error) {
 	}
 	if depth == 0 && countSubsearches(q) > MaxSubsearches {
 		return nil, errorf(base, "a query can run at most %d subsearches", MaxSubsearches)
+	}
+	if depth == 0 && countMapSearches(q) > MaxMapSearches {
+		return nil, errorf(base, "the map commands of a query can run at most %d searches in all; lower maxsearches=", MaxMapSearches)
 	}
 	return q, nil
 }
@@ -562,6 +565,8 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseReplace(t)
 	case "iplocation":
 		return p.parseIPLocation(t)
+	case "map":
+		return p.parseMap(t)
 	case "xmlkv":
 		return p.parseXMLKV(t)
 	case "fieldformat":

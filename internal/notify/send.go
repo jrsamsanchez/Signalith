@@ -38,6 +38,17 @@ type Senders struct {
 	// Hostname is the name this server gives mail servers (EHLO); ""
 	// is localhost.
 	Hostname string
+	// Conversations finds where Teams app channels post; nil fails
+	// them.
+	Conversations Conversations
+	// TeamsLogin is where Teams app channels get their bot's token; ""
+	// is MicrosoftLogin. Tests point it elsewhere.
+	TeamsLogin string
+	// Transport, when set, carries Teams app channels' requests instead
+	// of the guarded client. Tests send them to fake Microsoft servers.
+	Transport http.RoundTripper
+
+	tokens botTokens
 }
 
 func (s *Senders) now() time.Time {
@@ -69,9 +80,11 @@ func (s *Senders) Send(ctx context.Context, c Channel, m Message) error {
 	case TypeEmail:
 		err = s.sendMail(ctx, c, m)
 	case TypeSlack:
-		err = s.post(ctx, c, m.slackBody(c.Label()))
+		err = s.post(ctx, c, m.slackBody(c))
 	case TypeTeams:
-		err = s.post(ctx, c, m.teamsBody(c.Label()))
+		err = s.post(ctx, c, m.teamsBody(c))
+	case TypeTeamsApp:
+		err = s.sendTeamsApp(ctx, c, m)
 	case TypeWebhook:
 		err = s.post(ctx, c, m.webhookBody(s.now()))
 	default:
@@ -166,8 +179,13 @@ func said(b []byte) string {
 
 // retryable reports whether trying again later could help.
 func retryable(err error) bool {
+	var se *SendError
+	if errors.As(err, &se) {
+		return se.Retry
+	}
 	var be *BlockedError
-	if errors.As(err, &be) || errors.Is(err, errBadURL) || errors.Is(err, errRedirect) {
+	var te *TokenError
+	if errors.As(err, &be) || errors.As(err, &te) || errors.Is(err, errBadURL) || errors.Is(err, errRedirect) {
 		return false
 	}
 	var ae *AnswerError
@@ -198,6 +216,10 @@ func describe(err error, c Channel) string {
 	var be *BlockedError
 	if errors.As(err, &be) {
 		return be.Error()
+	}
+	var te *TokenError
+	if errors.As(err, &te) {
+		return te.Error()
 	}
 	switch {
 	case errors.Is(err, errBadURL), errors.Is(err, errRedirect):
@@ -255,9 +277,12 @@ func describeAnswer(ae *AnswerError, c Channel) string {
 	msg := "The receiver answered " + ae.Status + "."
 	switch {
 	case ae.Code == http.StatusUnauthorized || ae.Code == http.StatusForbidden:
-		if c.Type == TypeWebhook {
+		switch c.Type {
+		case TypeWebhook:
 			msg += " Check the key or token in the URL or headers."
-		} else {
+		case TypeTeamsApp:
+			msg += " Check that the bot's app ID and tenant are right, and that the app is still in the Teams channel."
+		default:
 			msg += " Check that the webhook URL is complete and still allowed to post."
 		}
 	case ae.Code == http.StatusNotFound || ae.Code == http.StatusGone:
@@ -266,6 +291,8 @@ func describeAnswer(ae *AnswerError, c Channel) string {
 			msg += " The webhook may have been removed, or its Slack channel deleted or archived: make a new one in Slack and enter its URL."
 		case TypeTeams:
 			msg += " The workflow may have been turned off or deleted: check it in Teams (Workflows) and enter its URL again."
+		case TypeTeamsApp:
+			msg += " The app may have been removed from the Teams channel, or the channel deleted: add the app to a channel again."
 		default:
 			msg += " Check the URL."
 		}
@@ -298,7 +325,7 @@ func sentence(s string) string {
 // secretValues returns a channel's secrets and the parts of its URL that
 // may hold a token, for scrub.
 func secretValues(c Channel) []string {
-	out := []string{c.URL, c.SigningSecret, c.Password}
+	out := []string{c.URL, c.SigningSecret, c.Password, c.AppPassword}
 	for _, v := range c.Headers {
 		out = append(out, v)
 		if _, after, ok := strings.Cut(v, " "); ok {

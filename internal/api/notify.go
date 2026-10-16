@@ -78,14 +78,29 @@ func (s *Server) notifyElsewhere() error {
 // whether they are set, and a webhook URL only shows its server.
 type channelView struct {
 	notify.Channel
-	Label            string                `json:"label"`
-	URLSet           bool                  `json:"url_set"`
-	URLServer        string                `json:"url_server,omitempty"`
-	Headers          []headerView          `json:"headers"`
-	SigningSecretSet bool                  `json:"signing_secret_set"`
-	PasswordSet      bool                  `json:"password_set"`
-	Problem          string                `json:"problem,omitempty"`
-	Last             *notify.ChannelStatus `json:"last,omitempty"`
+	Label            string       `json:"label"`
+	URLSet           bool         `json:"url_set"`
+	URLServer        string       `json:"url_server,omitempty"`
+	Headers          []headerView `json:"headers"`
+	SigningSecretSet bool         `json:"signing_secret_set"`
+	PasswordSet      bool         `json:"password_set"`
+	AppPasswordSet   bool         `json:"app_password_set"`
+	// Interactive is set when its messages carry buttons; ChatURL is
+	// then the address to give the Slack app (Interactivity Request URL)
+	// or the Azure bot (messaging endpoint), "" when server.public_url is
+	// not set; PostsTo names the Teams channel a Teams app channel posts
+	// to, "" when it was not added to one yet.
+	Interactive bool   `json:"interactive"`
+	ChatURL     string `json:"chat_url,omitempty"`
+	PostsTo     string `json:"posts_to,omitempty"`
+	// MoveTo, MoveID and MoveBy describe a move to another Teams
+	// conversation a Signalith admin asked for in Teams, which waits for
+	// an admin to confirm it here.
+	MoveTo  string                `json:"move_to,omitempty"`
+	MoveID  string                `json:"move_id,omitempty"`
+	MoveBy  string                `json:"move_by,omitempty"`
+	Problem string                `json:"problem,omitempty"`
+	Last    *notify.ChannelStatus `json:"last,omitempty"`
 	// Rules names the rules that send to it.
 	Rules []string `json:"rules"`
 }
@@ -110,6 +125,22 @@ func urlServer(raw string) string {
 	return u.Scheme + "://" + u.Host
 }
 
+// chatURL is where Slack or Teams sends a channel's button clicks, or ""
+// when the channel has none or server.public_url is not set.
+func chatURL(publicURL string, c notify.Channel) string {
+	pub := strings.TrimRight(strings.TrimSpace(publicURL), "/")
+	if pub == "" {
+		return ""
+	}
+	switch c.Type {
+	case notify.TypeSlack:
+		return pub + strings.Replace(strings.TrimPrefix(chatSlackRoute, "POST "), "{channel}", url.PathEscape(c.ID), 1)
+	case notify.TypeTeamsApp:
+		return pub + strings.Replace(strings.TrimPrefix(chatTeamsRoute, "POST "), "{channel}", url.PathEscape(c.ID), 1)
+	}
+	return ""
+}
+
 // notifyView is the page's data.
 func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr error) map[string]any {
 	var last map[string]notify.ChannelStatus
@@ -125,7 +156,17 @@ func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr er
 	channels := make([]channelView, 0, len(set.Channels))
 	for _, c := range set.Channels {
 		v := channelView{Channel: c, Label: c.Label(), URLSet: c.URL != "", SigningSecretSet: c.SigningSecret != "",
-			PasswordSet: c.Password != "", Headers: []headerView{}, Rules: []string{}}
+			PasswordSet: c.Password != "", AppPasswordSet: c.AppPassword != "", Interactive: c.Interactive(),
+			Headers: []headerView{}, Rules: []string{}}
+		v.ChatURL = chatURL(s.conf().Server.PublicURL, c)
+		if c.Type == notify.TypeTeamsApp && s.Chat != nil && s.Chat.Store != nil {
+			if conv, ok, err := s.Chat.Store.Conversation(ctx, c.ID); err == nil && ok {
+				v.PostsTo = conv.Place()
+				if conv.Next != nil {
+					v.MoveTo, v.MoveID, v.MoveBy = conv.Next.Place(), conv.Next.ConversationID, conv.Next.AddedBy
+				}
+			}
+		}
 		if !strings.HasPrefix(c.URL, "enc:") {
 			v.URLServer = urlServer(c.URL)
 		}
@@ -167,6 +208,7 @@ func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr er
 	out["types"] = notify.Types
 	out["urgencies"] = notify.Urgencies
 	out["flood_limit"] = notify.FloodLimit
+	out["chat"] = s.Chat != nil && s.Chat.Store != nil
 	pub := strings.TrimSpace(s.conf().Server.PublicURL)
 	out["public_url"] = pub
 	out["link"] = notify.FindingsLink(pub)

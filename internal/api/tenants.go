@@ -31,11 +31,13 @@ var (
 	// the default tenant's server. So are the resources a tenant's server
 	// cannot keep apart yet: API tokens (in the shared settings),
 	// compliance notes (in the state folder), vulnerability scans (the
-	// server's scanners and OpenVAS), network sensors and the custom
-	// parsers (one set that reads every tenant's records).
+	// server's scanners and OpenVAS), network sensors, the custom
+	// parsers (one set that reads every tenant's records) and the chat
+	// accounts linked for the buttons in Slack and Teams messages, whose
+	// clicks the default tenant's server answers.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,

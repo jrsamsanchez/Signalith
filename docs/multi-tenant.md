@@ -77,6 +77,8 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
 - Syslog, Microsoft 365, Okta, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the
   default tenant; tenants get the detections built into Signalith.
+- The buttons in Slack and Teams messages work in the default tenant only: only provider users
+  link chat accounts, and a click on a tenant's message is refused.
 - Custom log parsers are the provider's: only provider admins change them, and they read every
   tenant's records alike.
 - Downgrading to a version without multi-tenant mode is not supported once there are
