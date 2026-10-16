@@ -32,9 +32,9 @@ const (
 	// MaxTableMemory is the most memory one parsed table may take: a file
 	// of many short or empty cells takes far more in memory than on disk.
 	MaxTableMemory = 64 << 20
-	MaxTables     = 200
-	MaxRows       = 1_000_000
-	MaxColumns    = 100
+	MaxTables      = 200
+	MaxRows        = 1_000_000
+	MaxColumns     = 100
 )
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
