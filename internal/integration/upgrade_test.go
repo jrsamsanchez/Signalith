@@ -162,6 +162,22 @@ type upgradeOutput struct {
 		Code   string `json:"code"`
 		Server string `json:"server"`
 	} `json:"warnings"`
+	Servers []struct {
+		Name     string `json:"name"`
+		Live     bool   `json:"live"`
+		CaughtUp string `json:"caught_up"`
+	} `json:"servers"`
+}
+
+// caughtUp says whether server name is live and has applied every
+// change of the shared settings.
+func (o upgradeOutput) caughtUp(name string) bool {
+	for _, s := range o.Servers {
+		if s.Name == name {
+			return s.Live && s.CaughtUp == "yes"
+		}
+	}
+	return false
 }
 
 func (o upgradeOutput) has(code string) bool {
@@ -584,11 +600,13 @@ func TestUpgradeCheckSays(t *testing.T) {
 		return ok && st == cluster.StateReady
 	})
 	// The shared settings may have changed while siem-b was paused: the
-	// heartbeat copied below must be one that has caught up.
+	// heartbeat copied below must be one that has caught up. Right after
+	// the pause siem-b's last heartbeat is stale, which upgrade-check
+	// reports as offline rather than behind, so it must be live too.
 	waitUntil(t, 60*time.Second, "siem-b to catch up on the shared settings", func() bool {
 		code, out, r := upgradeCheck(t, a, b.next)
 		raw = r
-		return code == 0 && !out.has("config_behind")
+		return code == 0 && !out.has("config_behind") && !out.has("offline") && out.caughtUp("siem-b")
 	})
 
 	// A restart in place by request ends within a second, faster than
@@ -613,10 +631,25 @@ func TestUpgradeCheckSays(t *testing.T) {
 	if code != 3 || out.Safe || !out.has("restart_running") {
 		t.Errorf("upgrade-check while siem-c restarts: exit %d\n%s", code, raw)
 	}
-	hb.Restart = &cluster.RestartStatus{}
-	plant()
-	if code, out, raw := upgradeCheck(t, a, b.next); code != 0 || out.has("restart_running") {
-		t.Errorf("upgrade-check once siem-c restarted: exit %d\n%s", code, raw)
+	// Once it restarted, siem-c is as caught up as siem-b: the shared
+	// settings may have moved on since the copy, so it copies siem-b's
+	// latest heartbeat until siem-b has applied them.
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		latest, ok := h.heartbeat("siem-b")
+		if !ok {
+			t.Fatal("no heartbeat of siem-b")
+		}
+		hb.ConfigSeq, hb.MaxRev, hb.Restart = latest.ConfigSeq, latest.MaxRev, &cluster.RestartStatus{}
+		plant()
+		code, out, raw := upgradeCheck(t, a, b.next)
+		if code == 0 && !out.has("restart_running") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("upgrade-check once siem-c restarted: exit %d\n%s", code, raw)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
