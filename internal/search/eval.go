@@ -47,6 +47,8 @@ type evaluator struct {
 	produced int
 	steps    int
 	err      error
+	// eachValues counts the values mvmap and mvfilter went through.
+	eachValues int
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
@@ -160,8 +162,11 @@ func (ev *evaluator) charge(n int) bool {
 	return true
 }
 
-// list returns a new multivalue result after checking its count and its
-// bytes against the limits.
+// maxEachValues caps the values mvmap and mvfilter go through in one
+// search, so nesting them over different multivalue fields cannot
+// multiply into work that only the deadline stops.
+const maxEachValues = 10_000_000
+
 // eachValue calls f for each value of r's field name, with the field set
 // to that one value while f runs, and gives the values f keeps.
 func (ev *evaluator) eachValue(r Row, name string, f func(v any) (any, bool)) any {
@@ -176,8 +181,12 @@ func (ev *evaluator) eachValue(r Row, name string, f func(v any) (any, bool)) an
 			delete(r, name)
 		}
 	}()
+	vals := asList(orig)
+	if ev.eachValues += len(vals); ev.eachValues > maxEachValues {
+		return ev.fail("mvmap and mvfilter went through more than %d million values; narrow the search first", maxEachValues/1_000_000)
+	}
 	var out []any
-	for _, v := range asList(orig) {
+	for _, v := range vals {
 		if !ev.step() {
 			return nil
 		}
@@ -209,6 +218,8 @@ func evalFields(e query.EvalExpr, names map[string]bool) {
 	}
 }
 
+// list returns a new multivalue result after checking its count and its
+// bytes against the limits.
 func (ev *evaluator) list(vs []any) any {
 	if len(vs) > maxMultiValues {
 		return ev.fail("a multivalue field would hold %d values; the limit is %d", len(vs), maxMultiValues)

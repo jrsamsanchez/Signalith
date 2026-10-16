@@ -130,7 +130,7 @@ datamodel=Network_Traffic bytes_out>1000000
 
 | Syntax | Meaning |
 | --- | --- |
-| `bytes`, `userIdentity.userName`, `'dc(user)'` | A field's value. Dots between name characters are part of the name, as in Splunk. Put names with other characters in single quotes (`'event code'`) |
+| `bytes`, `userIdentity.userName`, `'dc(user)'` | A field's value. Dots between name characters are part of the name, as in Splunk. Before Signalith 0.3.0, `a.b` joined the values of `a` and `b`; a saved search or custom detection written that way now reads the field `a.b`, so write `a . b` to join. Put names with other characters in single quotes (`'event code'`) |
 | `"text"`, `42`, `1.5e3` | A string (double quotes) or a number |
 | `+ - * / %` | Arithmetic. `+` also joins two strings. Dividing by zero gives null |
 | `.` | Joins values as text, with spaces around it: `user . "@" . domain` |
@@ -154,7 +154,7 @@ name it is read as an expression, so `where bytes_out > bytes_in` compares the t
 | Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)` |
 | Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)` |
 | Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
-| Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value) |
+| Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value). `mvfilter` and `mvmap` go through at most 10 million values in one search, counting the values of nested calls |
 | Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time` |
 
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.

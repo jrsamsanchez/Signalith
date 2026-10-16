@@ -3,7 +3,11 @@ package search
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 func TestEvalDottedFieldNames(t *testing.T) {
@@ -108,5 +112,27 @@ func TestFromJSON(t *testing.T) {
 		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), "| makeresults | "+bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
+	}
+}
+
+// Nested mvmap over different fields multiplies its work, so the values
+// it goes through are capped per search.
+func TestNestedMVMapIsCapped(t *testing.T) {
+	vals := make([]any, 10000)
+	for i := range vals {
+		vals[i] = int64(i)
+	}
+	q, err := query.Parse(`* | eval y=mvmap(x, if(isnull(mvmap(z, if(isnull(mvmap(w, null())), null(), null()))), null(), null()))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := &Result{Rows: []Row{{"x": vals, "z": vals, "w": vals}}}
+	start := time.Now()
+	err = applyEval(withEvaluator(context.Background()), res, q.Commands[0].(*query.Eval))
+	if err == nil || !strings.Contains(err.Error(), "10 million values") {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d > 30*time.Second {
+		t.Errorf("took %v", d)
 	}
 }
