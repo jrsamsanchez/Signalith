@@ -117,6 +117,7 @@ nav:
   - Getting started:
       - Overview: getting-started.md
       - Install from packages: install-packages.md
+      - How Signalith compares: comparison.md
   - Data intake:
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
