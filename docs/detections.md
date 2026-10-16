@@ -341,7 +341,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
-| `process_creation` | Sysmon 1, Security 4688 | Endpoint |
+| `process_creation` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded | Endpoint |
 | `network_connection` | Sysmon 3 | Network_Traffic |
 | `process_access`, `create_remote_thread` | Sysmon 10, 8 | Endpoint |
 | `image_load`, `driver_load` | Sysmon 7, 6 | Image_Load |
@@ -462,6 +462,30 @@ decoded. A program's arguments are also joined as `auditd_execve_command`, and t
 program, its process ID and the logged-in user are in the usual `process`,
 `process_path`, `process_name`, `process_id` and `user` fields. Records that
 `ausearch -i` printed are read too.
+
+auditd writes each program start as several records with one serial number
+(`auditd_id`): SYSCALL (the program, its process and parent process IDs, and its
+user), EXECVE (its arguments), CWD (its working folder) and PROCTITLE. Signalith
+also joins them into one process launch in the Endpoint data model, as Splunk's
+add-on for Linux does, so `datamodel=Endpoint` and the process rules see Linux hosts
+that run auditd without Sysmon for Linux:
+
+| Field | From |
+| --- | --- |
+| `process` | the arguments, joined (the command line) |
+| `process_path`, `process_name` | SYSCALL's `exe`, and its file name |
+| `process_id`, `parent_process_id` | SYSCALL's `pid` and `ppid` |
+| `user` | the account the program runs as (`uid`, by name when the record has it) |
+| `logon_id` | the login session's user ID (`auid`), as Sysmon for Linux gives it |
+| `process_current_directory` | CWD's `cwd` |
+| `parent_process`, `parent_process_path`, `parent_process_name`, `parent_user` | the parent's own start, when the same server recorded it |
+| `action` | `allowed`, or `blocked` when the call failed |
+
+The launch has sourcetype `linux:audit` and `signature_id` `EXECVE`; the records
+stay in Other as well, for the auditd rules. The 103 SigmaHQ Linux process rules
+(`product: linux`, `category: process_creation`) and Splunk's Linux process rules
+fire on these launches as they do on Sysmon for Linux events: CI checks each of
+their test events both ways.
 
 40 SigmaHQ rules (`service: auditd`) and 46 Splunk rules (the `linux_auditd` macro)
 read these records, for example capabilities discovery, clipboard and screen capture,
@@ -692,7 +716,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
 | --- | --- | --- |
-| `Endpoint.Processes` | Sysmon 1, Security 4688 | Endpoint |
+| `Endpoint.Processes` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded | Endpoint |
 | `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
 | `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
 | `Network_Traffic.All_Traffic` | Sysmon 3 (`app` is the program's path, `dest_ip` and `src_ip` are `dest` and `src`) | Network_Traffic |
