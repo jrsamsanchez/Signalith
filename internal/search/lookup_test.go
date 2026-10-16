@@ -164,3 +164,25 @@ func TestInputLookupSkipsEmptyCells(t *testing.T) {
 		t.Errorf("rows = %v", res.Rows)
 	}
 }
+
+func TestLookupCountsAgainstTheBudget(t *testing.T) {
+	st, _ := lookuptables.Open("")
+	if _, err := st.Put("wide", []byte("k,v\na,"+strings.Repeat("x", 1<<20-100)+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	b.WriteString(`{"hits":{"total":{"value":300},"hits":[`)
+	for i := range 300 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"_source":{"@timestamp":"2026-10-15T10:00:00Z","k":"a"}}`)
+	}
+	b.WriteString(`]}}`)
+	e := &Engine{Store: &fakeStore{responses: []string{b.String()}}, Lookups: st}
+	_, err := e.Run(context.Background(), `* | sort k | lookup wide k OUTPUT v`)
+	var qe *QueryError
+	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -59,9 +59,16 @@ Every add, replace and delete is in the audit log (`lookup table saved`,
 | Rows in one table | 1,000,000 |
 | Columns in one table | 100 |
 | Tables | 200 |
-| All tables together | 256 MB |
+| One table in memory | 64 MB |
+| All tables together, in memory | 256 MB |
 
-Tables are kept in memory for searches, which is what the limits protect.
+Tables are kept in memory for searches, which is what the limits protect. A table
+takes more memory than its file, about 16 bytes more for each cell, so a table of
+many short or empty cells reaches the memory limits first. The values `lookup` and
+`join` add to results count toward the search's memory budget, as `eval`'s do.
+
+Every user who can search can read every table, with `inputlookup` or by
+downloading it, so keep secrets out of them.
 
 ## The lookup command
 

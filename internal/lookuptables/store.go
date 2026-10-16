@@ -28,7 +28,10 @@ import (
 // server's memory: every table is kept in memory for searches.
 const (
 	MaxTableBytes = 16 << 20
-	MaxTotalBytes = 256 << 20
+	MaxTotalBytes = 256 << 20 // in memory, all tables together (Table.Memory)
+	// MaxTableMemory is the most memory one parsed table may take: a file
+	// of many short or empty cells takes far more in memory than on disk.
+	MaxTableMemory = 64 << 20
 	MaxTables     = 200
 	MaxRows       = 1_000_000
 	MaxColumns    = 100
@@ -50,7 +53,16 @@ type Table struct {
 	Rows    [][]string
 	Bytes   int
 	Updated time.Time
+	// Memory estimates what the parsed table takes in memory: each cell's
+	// text and string header, and each row's slice.
+	Memory int
 }
+
+// Per-cell and per-row overhead in memory, on 64-bit platforms.
+const (
+	cellOverhead = 16
+	rowOverhead  = 24
+)
 
 // Info describes a table without its rows.
 type Info struct {
@@ -195,6 +207,11 @@ func Parse(name string, data []byte) (*Table, error) {
 		row := make([]string, len(t.Columns))
 		for i, v := range rec {
 			row[i] = strings.TrimSpace(v)
+			t.Memory += len(row[i])
+		}
+		t.Memory += rowOverhead + cellOverhead*len(row)
+		if t.Memory > MaxTableMemory {
+			return nil, parseErr("the table would take more than %d MB in memory (line %d); split it or remove empty columns", MaxTableMemory>>20, line)
 		}
 		t.Rows = append(t.Rows, row)
 	}
@@ -232,17 +249,17 @@ func (s *Store) Put(name string, data []byte) (*Table, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	total := t.Bytes
+	total := t.Memory
 	for n, old := range s.tables {
 		if n != name {
-			total += old.Bytes
+			total += old.Memory
 		}
 	}
 	if _, ok := s.tables[name]; !ok && len(s.tables) >= MaxTables {
 		return nil, fmt.Errorf("there are already %d lookup tables, the most a server keeps; delete one first", MaxTables)
 	}
 	if total > MaxTotalBytes {
-		return nil, fmt.Errorf("the lookup tables would take %d MB together; the limit is %d MB", total>>20, MaxTotalBytes>>20)
+		return nil, fmt.Errorf("the lookup tables would take %d MB of memory together; the limit is %d MB", total>>20, MaxTotalBytes>>20)
 	}
 	if s.dir != "" {
 		if err := securefile.WriteFile(filepath.Join(s.dir, name+".csv"), data); err != nil {

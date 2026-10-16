@@ -54,6 +54,7 @@ func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *qu
 			idx[k] = append(idx[k], r)
 		}
 	}
+	ev := evaluatorFor(ctx)
 	out := make([]Row, 0, len(res.Rows))
 	for n, r := range res.Rows {
 		if n%checkEvery == 0 && ctx.Err() != nil {
@@ -82,7 +83,12 @@ func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *qu
 					row[f] = v
 				}
 			}
+			// What a join copies counts against the search's budget, as
+			// eval's values do.
 			for f, v := range m {
+				if !ev.charge(valueSize(v) + len(f)) {
+					return ev.err
+				}
 				row[f] = v
 			}
 			out = append(out, row)

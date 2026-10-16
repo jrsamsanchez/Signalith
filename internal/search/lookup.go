@@ -58,6 +58,9 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 			outs = append(outs, out{i, o.Field()})
 		}
 	}
+	// The values a lookup copies count against the search's budget, as
+	// eval's do: a few wide table rows matched on many events add up.
+	ev := evaluatorFor(ctx)
 	vals := make([]string, len(c.Keys))
 	for n, r := range res.Rows {
 		if n%checkEvery == 0 && ctx.Err() != nil {
@@ -109,6 +112,9 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 				}
 			}
 			if v := mvOut(got); v != nil {
+				if !ev.charge(valueSize(v)) {
+					return ev.err
+				}
 				r[o.field] = v
 			} else if !c.New {
 				delete(r, o.field)

@@ -150,3 +150,24 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+// Empty cells cost little on disk but a string header each in memory, so
+// a table is measured by what it takes once parsed.
+func TestParseCountsMemory(t *testing.T) {
+	cols := make([]string, MaxColumns)
+	for i := range cols {
+		cols[i] = "c" + strings.Repeat("x", i)
+	}
+	data := []byte(strings.Join(cols, ",") + "\n" + strings.Repeat("x"+strings.Repeat(",", MaxColumns-1)+"\n", 50_000))
+	if len(data) > MaxTableBytes {
+		t.Fatalf("test file is %d bytes", len(data))
+	}
+	_, err := Parse("wide", data)
+	if err == nil || !strings.Contains(err.Error(), "in memory") {
+		t.Fatalf("err = %v", err)
+	}
+	tb, err := Parse("small", []byte("a,b\n1,2\n"))
+	if err != nil || tb.Memory != rowOverhead+2*cellOverhead+2 {
+		t.Fatalf("memory = %d, %v", tb.Memory, err)
+	}
+}

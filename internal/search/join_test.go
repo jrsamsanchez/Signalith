@@ -93,3 +93,25 @@ func TestJoinErrors(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// A join that copies wide subsearch rows onto many rows stops at the
+// search's budget instead of building gigabytes.
+func TestJoinCountsAgainstTheBudget(t *testing.T) {
+	big := strings.Repeat("x", 600<<10)
+	var outer, sub strings.Builder
+	outer.WriteString(`{"hits":{"total":{"value":600},"hits":[`)
+	for i := range 600 {
+		if i > 0 {
+			outer.WriteString(",")
+		}
+		outer.WriteString(`{"_source":{"@timestamp":"2026-10-15T10:00:00Z","k":"a"}}`)
+	}
+	outer.WriteString(`]}}`)
+	sub.WriteString(`{"hits":{"total":{"value":1},"hits":[{"_source":{"@timestamp":"2026-10-15T10:00:00Z","k":"a","wide":"` + big + `"}}]}}`)
+	e := &Engine{Store: &fakeStore{responses: []string{outer.String(), sub.String()}}}
+	_, err := e.Run(context.Background(), `* | sort k | join k [search *]`)
+	var qe *QueryError
+	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+		t.Fatalf("err = %v", err)
+	}
+}
