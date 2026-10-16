@@ -233,6 +233,10 @@ func (r *Registry) ParseCustom(name string, rec map[string]any, now time.Time) (
 	return ev, drop, true
 }
 
+// maxSyslogRegexInput is how much of a syslog message a regular
+// expression reads.
+const maxSyslogRegexInput = 2 << 10
+
 // syslogKept are the fields of a syslog event that the receiver set from
 // the header and the connection: a parser's fields never replace them.
 var syslogKept = map[string]bool{"host": true, "dvc": true, "facility": true, "severity": true, "severity_id": true,
@@ -260,9 +264,14 @@ func (r *Registry) Syslog(m *syslog.Message, ev *ingest.Event) {
 	case FormatCEF, FormatLEEF:
 		return
 	}
-	text := m.Text
-	if len(text) > MaxLine {
-		text = text[:MaxLine]
+	// Syslog arrives unauthenticated on a few reader goroutines, so a
+	// regular expression reads less of it than of an agent's line.
+	text, limit := m.Text, MaxLine
+	if c.P.Format == FormatRegex {
+		limit = maxSyslogRegexInput
+	}
+	if len(text) > limit {
+		text = text[:limit]
 	}
 	fields, ok := c.parseBody(text)
 	if !ok {

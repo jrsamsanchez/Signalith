@@ -67,7 +67,7 @@ Name groups after data model fields where you can (`user`, `src`, `dest`, `actio
 expression is [RE2](https://github.com/google/re2/wiki/Syntax): matching takes time in
 proportion to the line and never backtracks, so a pattern cannot stall ingest. RE2 has no
 look-ahead or back-references. A pattern can compile to at most 500 instructions, with
-counted repeats such as `{1,20}` up to 100, and reads at most the first 8 KB of a line, so
+counted repeats such as `{1,20}` up to 100, and reads at most the first 8 KB of a line (2 KB of a syslog message), so
 what one line costs stays small. A line the pattern does not match is still stored, as
 text, and found by searching for its words.
 
