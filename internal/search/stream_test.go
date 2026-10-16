@@ -223,6 +223,21 @@ func TestStreamStatsCountsAgainstTheBudget(t *testing.T) {
 	}
 }
 
+func TestBinCountsAgainstTheBudget(t *testing.T) {
+	// A bucket of 1e308 is about 620 bytes; 10,000 rows of them written
+	// to 300 fields is past the search's 256 MB.
+	var b strings.Builder
+	b.WriteString(`| makeresults count=10000 | eval x=1e308`)
+	for i := range 300 {
+		fmt.Fprintf(&b, ` | bin span=1 x as a%d`, i)
+	}
+	_, err := (&Engine{}).Run(context.Background(), b.String())
+	var qe *QueryError
+	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // FuzzStreamCommands runs streamstats, bin, regex, append and appendpipe
 // with any arguments over a few events: a bad query fails with an error,
 // never with an internal one.

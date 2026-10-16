@@ -233,6 +233,9 @@ func applyBin(ctx context.Context, res *Result, c *query.Bin) error {
 	if c.As != "" {
 		out = c.As
 	}
+	// Each bucket is a new value written out with the result, so it
+	// counts against the search's budget.
+	ev := evaluatorFor(ctx)
 	offset := int64(0)
 	if secs%604800 == 0 {
 		offset = weekStart
@@ -268,6 +271,9 @@ func applyBin(ctx context.Context, res *Result, c *query.Bin) error {
 			}
 			lo := math.Floor(f/size) * size
 			b = strconv.FormatFloat(lo, 'f', -1, 64) + "-" + strconv.FormatFloat(lo+size, 'f', -1, 64)
+		}
+		if !ev.charge(valueSize(b)) {
+			return ev.err
 		}
 		r[out] = b
 	}
