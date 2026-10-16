@@ -60,7 +60,10 @@ function mdRender(text, depth = 0) {
     const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
     if (h) {
       flush();
-      out.push(el('h' + Math.min(6, h[1].length + 2), { class: 'nb-md__h' + Math.min(3, h[1].length) }, ...mdInline(h[2])));
+      const level = h[1].length;
+      const tag = level === 1 ? 'h3' : level === 2 ? 'h4' : level === 3 ? 'h5' : 'h6';
+      const cls = level === 1 ? 'nb-md__h1' : level === 2 ? 'nb-md__h2' : 'nb-md__h3';
+      out.push(el(tag, { class: cls }, ...mdInline(h[2])));
       continue;
     }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); out.push(el('hr', {})); continue; }
@@ -113,21 +116,6 @@ function mdSafeHref(url) {
   return null;
 }
 
-// mdLink makes a note's link. The target never becomes an href attribute:
-// the link opens it from a click, so note text is never read back as markup.
-function mdLink(href, children) {
-  const go = (e) => {
-    e.preventDefault();
-    if (href.startsWith('#')) location.hash = href;
-    else window.open(href, '_blank', 'noopener,noreferrer');
-  };
-  return el('a', {
-    class: 'nb-link', role: 'link', tabindex: '0', title: href,
-    onclick: go,
-    onkeydown: (e) => { if (e.key === 'Enter') go(e); },
-  }, ...children);
-}
-
 // mdInline renders one line's code spans, links, bold and italic.
 function mdInline(text, depth = 0) {
   const out = [];
@@ -142,7 +130,8 @@ function mdInline(text, depth = 0) {
     else if (m[2] != null) {
       const href = mdSafeHref(m[3]);
       if (!href) out.push(m[0]);
-      else out.push(mdLink(href, mdInline(m[2], depth + 1)));
+      else if (href.startsWith('#')) out.push(el('a', { href }, ...mdInline(m[2], depth + 1)));
+      else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, ...mdInline(m[2], depth + 1)));
     } else if (m[4] != null || m[5] != null) out.push(el('strong', {}, ...mdInline(m[4] ?? m[5], depth + 1)));
     else out.push(el('em', {}, ...mdInline(m[6] ?? m[7], depth + 1)));
     rest = rest.slice(m.index + m[0].length);
