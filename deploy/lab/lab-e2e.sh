@@ -379,7 +379,10 @@ if command -v clamdscan >/dev/null; then
   rm -f /root/e2e-eicar.com.txt
 fi
 curl -s -o /dev/null --max-time 8 http://portquiz.net:4444/
-for i in $(seq 1 30); do getent hosts "e2e-$RANDOM-$i.example.com" >/dev/null; done
+# Names under example.com get an empty answer, not NXDOMAIN: use a
+# random, unregistered .com domain, which the .com servers refuse.
+nx="sgl-e2e-$RANDOM$RANDOM$RANDOM.com"
+for i in $(seq 1 30); do getent hosts "e2e-$RANDOM-$i.$nx" >/dev/null; done
 [ -x /usr/local/sbin/lab-traffic ] && /usr/local/sbin/lab-traffic
 sleep 2
 userdel -r e2e-tester 2>/dev/null
