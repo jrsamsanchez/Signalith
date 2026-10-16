@@ -141,6 +141,7 @@ func TestScopes(t *testing.T) {
 		"retention.policies":      ScopeCluster,
 		"assistant.api_key":       ScopeCluster,
 		"opensearch.replicas":     ScopeCluster,
+		"opensearch.shards":       ScopeCluster,
 		"opensearch.url":          ScopeBootstrap,
 		"opensearch.index_prefix": ScopeBootstrap,
 		"cluster.node_name":       ScopeBootstrap,
@@ -386,6 +387,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 		"retention.days":          float64(7),
 		"no.such":                 "x",
 		"opensearch.replicas":     "two",
+		"opensearch.shards":       float64(5000),
 		"search.default_earliest": "+1h",
 	}})
 	if err != nil {
@@ -399,6 +401,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 		"retention.days":          "Data retention has its own page",
 		"no.such":                 "There is no setting",
 		"opensearch.replicas":     "Enter auto, or a whole number",
+		"opensearch.shards":       "from 0 to 64",
 		"search.default_earliest": "not a time in the past",
 	} {
 		if !strings.Contains(res.Fields[key], want) {
