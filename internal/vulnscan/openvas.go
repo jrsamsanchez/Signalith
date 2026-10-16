@@ -551,13 +551,7 @@ func MergeOpenVAS(hosts []*Host, found []Finding, t Target, scanID string, at ti
 	for _, h := range hosts {
 		sort.SliceStable(h.Services, func(a, b int) bool { return h.Services[a].Port < h.Services[b].Port })
 		for i := range h.Services {
-			vs := h.Services[i].Vulns
-			sort.SliceStable(vs, func(a, b int) bool {
-				if vs[a].KEV != vs[b].KEV {
-					return vs[a].KEV
-				}
-				return vs[a].CVSS > vs[b].CVSS
-			})
+			SortVulns(h.Services[i].Vulns)
 		}
 	}
 	SortHosts(hosts)
@@ -569,7 +563,7 @@ func MergeOpenVAS(hosts []*Host, found []Finding, t Target, scanID string, at ti
 func Recount(hosts []*Host) Counts {
 	var total Counts
 	for _, h := range hosts {
-		h.Counts, h.MaxCVSS = Counts{Hosts: 1}, 0
+		h.Counts, h.MaxCVSS, h.MaxEPSS = Counts{Hosts: 1}, 0, 0
 		for _, svc := range h.Services {
 			if svc.Port > 0 {
 				h.Counts.Services++
@@ -577,7 +571,12 @@ func Recount(hosts []*Host) Counts {
 			for _, v := range svc.Vulns {
 				h.Counts.add(v.Severity, v.KEV)
 				total.add(v.Severity, v.KEV)
+				if !v.KEV && v.Likely() {
+					h.Counts.Likely++
+					total.Likely++
+				}
 				h.MaxCVSS = max(h.MaxCVSS, v.CVSS)
+				h.MaxEPSS = max(h.MaxEPSS, v.EPSS)
 			}
 		}
 		total.Services += h.Counts.Services

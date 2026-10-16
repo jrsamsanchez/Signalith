@@ -4643,7 +4643,7 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .vs-skel__row .skeleton { height: 12px; }
 .vs-toolbar { flex-wrap: wrap; }
 .vs-toolbar .input-wrap { flex: 1 1 260px; max-width: 420px; }
-.vs-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-3); }
+.vs-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-3); }
 .vs-kpi { display: grid; gap: 2px; padding: 14px 16px; }
 .vs-kpi__label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); white-space: nowrap; }
 .vs-kpi__label .icon { width: 14px; height: 14px; color: var(--text-3); }
@@ -4673,6 +4673,9 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .vs-count { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg, var(--text)); }
 .vs-kev { color: var(--sev-critical-fg); background: var(--sev-critical-bg); }
 .vs-kev .icon { width: 12px; height: 12px; }
+.vs-kpi[data-sev="likely"] { --c: var(--sev-high); --fg: var(--sev-high-fg); }
+.vs-epss { font-variant-numeric: tabular-nums; color: var(--text-2); background: var(--sunken, var(--raised)); }
+.vs-likely { color: var(--sev-high-fg); background: var(--sev-high-bg); }
 .vs-found { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .vs-running { align-items: center; }
 .vs-running .pulse { margin: 0 4px; }
@@ -4785,6 +4788,19 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .vs-net__scanner { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .vs-zone-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0; }
 .vs-zone-hint .icon { flex: none; margin-top: 2px; }
+.vs-scanners .card__body { display: flex; flex-direction: column; gap: var(--sp-3); }
+.vs-scanners__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.vs-scanner { display: flex; align-items: center; gap: 12px; padding: 10px 0; box-shadow: inset 0 -1px 0 var(--line-subtle); }
+.vs-scanner:last-child { box-shadow: none; padding-bottom: 0; }
+.vs-scanner__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-md); color: var(--text-2); background: var(--hover); }
+.vs-scanner__icon .icon { width: 16px; height: 16px; }
+.vs-scanner[data-state="success"] .vs-scanner__icon { color: var(--success); background: var(--success-soft); }
+.vs-scanner[data-state="warning"] .vs-scanner__icon { color: var(--warning); background: var(--warning-soft); }
+.vs-scanner[data-state="danger"] .vs-scanner__icon { color: var(--danger); background: var(--danger-soft); }
+.vs-scanner__text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; font-size: var(--fs-sm); }
+.vs-scanner__name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--fs-md); }
+.vs-scanner__acts { flex: none; display: flex; gap: 8px; }
+@media (max-width: 720px) { .vs-scanner { flex-wrap: wrap; } .vs-scanner__acts { flex-basis: 100%; padding-left: 44px; } }
 .vs-setup__more { display: flex; align-items: flex-start; gap: 8px; margin: var(--sp-3) 0 0; }
 .vs-setup__more .icon { flex: none; margin-top: 2px; }
 
