@@ -185,6 +185,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyFillDown(ctx, res, c)
 	case *query.Trendline:
 		return applyTrendline(ctx, res, c)
+	case *query.Concurrency:
+		return applyConcurrency(ctx, res, c)
+	case *query.Contingency:
+		return applyContingency(ctx, res, c)
+	case *query.Format:
+		return applyFormat(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

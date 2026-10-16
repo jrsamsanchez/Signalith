@@ -194,6 +194,8 @@ func (q *Query) Drilldown() *Drill {
 					}
 				}
 			}
+		case *Concurrency:
+			delete(fields, c.Output)
 		case *AddInfo:
 			delete(fields, AddInfoMinTime)
 			delete(fields, AddInfoMaxTime)
@@ -221,7 +223,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

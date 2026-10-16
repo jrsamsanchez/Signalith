@@ -450,6 +450,8 @@ func CommandString(c Command) string {
 		return seqString(c)
 	case *Transpose, *FillDown, *AddInfo, *Trendline:
 		return rowCmdString(c)
+	case *Concurrency, *Contingency, *Format:
+		return shapeCmdString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

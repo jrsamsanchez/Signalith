@@ -464,7 +464,8 @@ func needsAllEvents(cmds []query.Command) bool {
 		case *query.Head:
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
-			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary:
+			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
+			*query.Concurrency, *query.Contingency, *query.Format:
 			return true
 		}
 	}
