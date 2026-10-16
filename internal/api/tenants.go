@@ -107,7 +107,7 @@ func (s *Server) tenantUsable(id string) bool {
 type TenantRuntime interface {
 	// Server returns the server of tenant id while it runs, else nil.
 	Server(id string) *Server
-	// Servers returns the servers running now.
+	// Servers returns the servers running here, also while Ready fails.
 	Servers() []*Server
 	// Changed starts tenant id's server, or stops it, after the tenant
 	// was added, turned off or on.
@@ -167,18 +167,22 @@ func (s *Server) dispatchTo(rt route, p *principal) (t *Server, other bool) {
 // agentTenant returns the server of the tenant whose agent token the
 // request carries, or nil when it is the default tenant's (or none's,
 // which the default tenant's server refuses). Agent tokens are 256 random
-// bits, so at most one tenant has a token.
-func (s *Server) agentTenant(r *http.Request) *Server {
+// bits, so at most one tenant has a token. wait is true for a token of a
+// tenant this server does not run now (another server of the cluster
+// does): the agent is told to send again later, as its batch would
+// otherwise be refused and lost.
+func (s *Server) agentTenant(r *http.Request) (t *Server, wait bool) {
 	if s.TenantID != "" || s.TenantRuntime == nil {
-		return nil
+		return nil, false
 	}
 	tok := bearerToken(r)
 	if tok == "" {
-		return nil
+		return nil, false
 	}
 	if _, res := s.tokens().Check(tok); res == agenttokens.Valid || res == agenttokens.Revoked || res == agenttokens.Refused {
-		return nil
+		return nil, false
 	}
+	runs := s.TenantRuntime.Ready() == nil
 	// A tenant whose tokens are not read yet answers "send again later",
 	// as the default tenant's server does then.
 	var loading *Server
@@ -186,17 +190,28 @@ func (s *Server) agentTenant(r *http.Request) *Server {
 		if !s.tenantUsable(t.TenantID) {
 			continue
 		}
-		switch _, res := t.tokens().Check(tok); res {
-		case agenttokens.Valid, agenttokens.Revoked:
-			return t
-		case agenttokens.NotLoaded:
+		switch _, res := t.tokens().Check(tok); {
+		case res == agenttokens.Valid, res == agenttokens.Revoked && runs:
+			return t, !runs
+		case res == agenttokens.NotLoaded:
 			if loading == nil {
 				loading = t
 			}
 		}
 	}
-	return loading
+	if !runs {
+		return nil, loading != nil
+	}
+	return loading, false
 }
+
+// tenantAgentWait is the answer to an agent of a tenant this server does
+// not run now (see agentTenant).
+const tenantAgentWait = "This server does not run your organization's data right now; send again in a moment."
+
+// tenantAgentRetry is the Retry-After of tenantAgentWait, in seconds: a
+// server takes over the background jobs within seconds.
+const tenantAgentRetry = "10"
 
 // activeTenant returns the tenant a request of p works in: a tenant
 // user's own; for the provider's users the one their session switched
@@ -297,7 +312,7 @@ func (s *Server) handleChangeTenant(w http.ResponseWriter, r *http.Request) {
 		writeTenantError(w, err)
 		return
 	}
-	t, err := s.Tenants.Change(id, req.Name, req.Disabled)
+	t, err := s.Tenants.Change(id, req.Name, req.Disabled, userOf(r))
 	if err != nil {
 		writeTenantError(w, err)
 		return

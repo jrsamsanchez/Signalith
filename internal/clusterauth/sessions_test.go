@@ -13,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -547,5 +548,40 @@ func TestNoTenantsBelowTheirLevel(t *testing.T) {
 	b.cycle()
 	if b.valid(cookie) {
 		t.Error("a session with a tenant is read below the tenants' level")
+	}
+}
+
+// The tenants are the same on every server: a change on one is read on
+// the other; below the tenants' level, nothing writes them.
+func TestTenantListAcrossServers(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	la, lb := a.docs.TenantList(), b.docs.TenantList()
+	if _, ok := lb.List(); ok {
+		t.Fatal("a list before one was written")
+	}
+	local := []tenants.Tenant{{ID: "acme", Name: "Acme"}}
+	if err := la.Mutate(ctx, "test", local, func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+		l[0].Disabled = true
+		return l, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if list, ok := lb.List(); !ok || len(list) != 1 || !list[0].Disabled {
+		t.Errorf("B's list: %v %v", list, ok)
+	}
+	if err := lb.Mutate(ctx, "test", nil, func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+		return append(l, tenants.Tenant{ID: "acme"}), nil
+	}); err == nil {
+		t.Error("a list with acme twice was written")
+	}
+	never := func() bool { return false }
+	a.docs.Tenants = never
+	if la.On() {
+		t.Error("on below the tenants' level")
+	}
+	if err := la.Mutate(ctx, "test", nil, func(l []tenants.Tenant) ([]tenants.Tenant, error) { return l, nil }); !errors.Is(err, tenants.ErrNotShared) {
+		t.Errorf("write below the tenants' level: %v", err)
 	}
 }

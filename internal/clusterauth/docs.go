@@ -48,6 +48,7 @@ type Docs struct {
 	users     *shared.Collection[UserBody]
 	directory *shared.Doc[DirectoryBody]
 	tokens    *shared.Collection[APITokenBody]
+	tenantDoc *shared.Doc[TenantsBody]
 	subs      map[string][]func()
 	sessions  []func(ctx context.Context, raw json.RawMessage, v store.Version)
 
@@ -96,8 +97,9 @@ func (d *Docs) Track(h *shared.Hub) {
 		d.fire(changeLocks)
 		return nil
 	})
+	tl := trackTenants(h)
 	d.mu.Lock()
-	d.hub, d.users, d.directory, d.tokens = h, users, dir, tokens
+	d.hub, d.users, d.directory, d.tokens, d.tenantDoc = h, users, dir, tokens, tl
 	d.mu.Unlock()
 }
 

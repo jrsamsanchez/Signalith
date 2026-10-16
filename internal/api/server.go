@@ -511,7 +511,11 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
-	if t := s.agentTenant(r); t != nil {
+	if t, wait := s.agentTenant(r); wait {
+		w.Header().Set("Retry-After", tenantAgentRetry)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": tenantAgentWait, "code": "tenant_unavailable"})
+		return
+	} else if t != nil {
 		t.handleIngest(w, r)
 		return
 	}

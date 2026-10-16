@@ -1,9 +1,11 @@
 package tenants
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -69,10 +71,10 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("List = %+v, %v", list, err)
 	}
 	off := true
-	if _, err := r.Change("acme", nil, &off); err != nil {
+	if _, err := r.Change("acme", nil, &off, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Change("nobody", nil, &off); !errors.Is(err, ErrNotFound) {
+	if _, err := r.Change("nobody", nil, &off, "test"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("changing a missing tenant: %v", err)
 	}
 	// Another process reading the same file sees the change.
@@ -103,5 +105,72 @@ func TestRegistryRefusesDamagedFile(t *testing.T) {
 		if _, err := Open(p); err == nil {
 			t.Errorf("%s: Open accepted the file", name)
 		}
+	}
+}
+
+// fakeShared is a cluster's shared list of tenants.
+type fakeShared struct {
+	on   bool
+	list []Tenant
+	kept bool
+}
+
+func (f *fakeShared) On() bool { return f.on }
+
+func (f *fakeShared) List() ([]Tenant, bool) { return slices.Clone(f.list), f.kept }
+
+func (f *fakeShared) Mutate(_ context.Context, _ string, local []Tenant, fn func([]Tenant) ([]Tenant, error)) error {
+	cur := f.list
+	if !f.kept {
+		cur = local
+	}
+	out, err := fn(slices.Clone(cur))
+	if err != nil {
+		return err
+	}
+	f.list, f.kept = out, true
+	return nil
+}
+
+// Once a cluster keeps the tenants, the list is the shared one, started
+// from this server's; before, nothing can change it.
+func TestRegistryShared(t *testing.T) {
+	r, err := Open(File(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Add("acme", "Acme", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	sh := &fakeShared{}
+	r.UseShared(sh)
+	if _, err := r.Add("contoso", "Contoso", "test", time.Now()); !errors.Is(err, ErrNotShared) {
+		t.Fatalf("add before the cluster keeps tenants: %v", err)
+	}
+	sh.on = true
+	if list, _ := r.List(); len(list) != 1 || list[0].ID != "acme" {
+		t.Fatalf("before the list was shared: %v", list)
+	}
+	if err := r.Share(context.Background()); err != nil || !sh.kept || len(sh.list) != 1 {
+		t.Fatalf("share: %v %v", err, sh.list)
+	}
+	if _, err := r.Add("contoso", "Contoso", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// Another server turns acme off.
+	sh.list[0].Disabled = true
+	if tn, err := r.Get("acme"); err != nil || !tn.Disabled {
+		t.Errorf("acme: %+v %v", tn, err)
+	}
+	if list, _ := r.List(); len(list) != 2 {
+		t.Errorf("shared list: %v", list)
+	}
+	if _, err := r.Add("contoso", "Contoso", "test", time.Now()); !errors.Is(err, ErrExists) {
+		t.Errorf("adding a tenant twice: %v", err)
+	}
+	// The file is this server's own, as it was.
+	local, _ := Open(r.Path)
+	if list, _ := local.List(); len(list) != 1 {
+		t.Errorf("the file changed: %v", list)
 	}
 }

@@ -63,6 +63,10 @@ type tenantRuntime struct {
 	mu       sync.Mutex
 	running  map[string]*tenantInstance
 	stopped  bool
+
+	// listErr and shareErr are the last problems logged by startAll's
+	// loop, so each is logged once.
+	listErr, shareErr string
 }
 
 // tenantInstance is one tenant's running server.
@@ -81,17 +85,65 @@ func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *stor
 // startAll starts every tenant that is not turned off. One that cannot
 // start is logged and left stopped: its users' requests are refused.
 func (t *tenantRuntime) startAll() {
-	list, err := t.reg.List()
-	if err != nil {
-		t.log.Error("the list of tenants cannot be read; no tenant's data can be used until it is fixed", "file", t.reg.Path, "err", err)
+	t.reconcile()
+	if t.sharedOK == nil {
 		return
 	}
-	for _, tn := range list {
-		if tn.Disabled {
-			continue
+	// In a cluster the list is shared: follow what other servers change
+	// in it, and share this server's once the cluster keeps tenants.
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case <-tick.C:
 		}
-		if err := t.Changed(t.ctx, tn.ID); err != nil {
-			t.log.Error("could not start a tenant", "tenant", tn.ID, "err", err)
+		if t.Ready() == nil {
+			err := t.reg.Share(t.ctx)
+			if err != nil && fmt.Sprint(err) != t.shareErr {
+				t.log.Warn("could not share the list of tenants with the other servers yet", "err", err)
+			}
+			t.shareErr = fmt.Sprint(err)
+		}
+		t.reconcile()
+	}
+}
+
+// reconcile runs the tenants that are on, and stops those turned off or
+// gone.
+func (t *tenantRuntime) reconcile() {
+	list, err := t.reg.List()
+	if err != nil {
+		if fmt.Sprint(err) != t.listErr {
+			t.log.Error("the list of tenants cannot be read; no tenant's data can be used until it is fixed", "file", t.reg.Path, "err", err)
+		}
+		t.listErr = fmt.Sprint(err)
+		return
+	}
+	t.listErr = ""
+	want := map[string]bool{}
+	for _, tn := range list {
+		if !tn.Disabled {
+			want[tn.ID] = true
+		}
+	}
+	t.mu.Lock()
+	var change []string
+	for id := range t.running {
+		if !want[id] {
+			change = append(change, id)
+		}
+	}
+	for id := range want {
+		if t.running[id] == nil {
+			change = append(change, id)
+		}
+	}
+	t.mu.Unlock()
+	for _, id := range change {
+		if err := t.Changed(t.ctx, id); err != nil {
+			t.log.Error("could not start a tenant", "tenant", id, "err", err)
 		}
 	}
 }
@@ -126,10 +178,10 @@ func (t *tenantRuntime) Server(id string) *api.Server {
 	return nil
 }
 
+// Servers returns every tenant server running here, also while another
+// server runs the tenants (Ready): their agent tokens tell this server
+// which tenant an agent is of.
 func (t *tenantRuntime) Servers() []*api.Server {
-	if t.Ready() != nil {
-		return nil
-	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	out := make([]*api.Server, 0, len(t.running))
@@ -426,6 +478,14 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+	}
+	if t.sharedOK != nil && ret.Archive != nil {
+		// A tenant's archive folder is in this server's state folder,
+		// which a server running the tenants after it would not see:
+		// days to archive are kept until tenants' archives can be shared.
+		ret.CanArchive = func() (bool, string) {
+			return false, "a tenant's events are not archived while servers share their settings"
+		}
 	}
 
 	// The tenant's index template and indices, then its background jobs

@@ -32,7 +32,7 @@ func newTenantServer(t *testing.T) (*Server, func(method, path, body, user strin
 		t.Fatal(err)
 	}
 	off := true
-	if _, err := reg.Change("off", nil, &off); err != nil {
+	if _, err := reg.Change("off", nil, &off, "test"); err != nil {
 		t.Fatal(err)
 	}
 	var srv *Server
@@ -180,7 +180,7 @@ func TestSwitchedTenantTurnedOff(t *testing.T) {
 		t.Fatalf("switch: %d", code)
 	}
 	off := true
-	if _, err := reg.Change("acme", nil, &off); err != nil {
+	if _, err := reg.Change("acme", nil, &off, "test"); err != nil {
 		t.Fatal(err)
 	}
 	if code, body, _ := call(t, ts, "GET", "/api/findings", "", "", "", cookie); code != http.StatusConflict || body["code"] != "tenant_unavailable" {

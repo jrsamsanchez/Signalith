@@ -74,12 +74,19 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
   version that supports them: the cluster then moves to level 10, and older versions
   refuse to start. Until it has, tenants cannot be added and provider users cannot
   switch.
-- Tenants run on the server that runs the background jobs, and their list is kept in its
-  state folder. Every other server refuses tenants' users, tenants' agents and provider
-  users switched into a tenant (`503`, code `tenant_unavailable`), and so does a server
-  that gives the background jobs up; the tenant's data waits in OpenSearch. Point
-  tenants' users and agents at that server. A switch shows on the other servers within
-  one poll of the shared settings, about 15 seconds at most.
+- Tenants run on the server that runs the background jobs. Which tenants exist and which
+  are turned off is kept in the shared settings, so it is the same on every server, and
+  another server that takes the background jobs over runs the tenants from then on. Every
+  other server answers tenants' users and provider users switched into a tenant with
+  `503` (code `tenant_unavailable`), and tenants' agents with `503` and `Retry-After`, so
+  they send their batches again rather than lose them; the tenant's data waits in
+  OpenSearch. Point tenants' users and agents at the server that runs the background
+  jobs, or at a load balancer that sends them there. A switch shows on the other servers
+  within one poll of the shared settings, about 15 seconds at most.
+- A tenant's files (its detections, lookups, dashboards and response scripts) are in the
+  state folder of the server that runs it: copy `tenants/` to a server before it takes
+  the background jobs over. While servers share their settings, tenants' events are not
+  archived: retention keeps the days it would archive, and the Retention page says so.
 - Directory (LDAP) and single sign-on users are provider users.
 - Syslog, Microsoft 365, Okta, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the

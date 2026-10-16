@@ -238,7 +238,7 @@ func TestTenantsInACluster(t *testing.T) {
 	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
 	must(a, "POST", "/api/users", `{"username":"ada","role":"analyst","password":"Long-pass-for-acme-9","must_change_password":false}`, http.StatusCreated)
 	token, _ := must(a, "POST", "/api/agent-tokens", `{"name":"acme agents"}`, http.StatusCreated)["secret"].(string)
-	ingest := func(rs *running) int {
+	ingest := func(rs *running) (int, string) {
 		t.Helper()
 		req, _ := http.NewRequest("POST", "http://"+rs.addr+"/api/ingest", strings.NewReader(`[{"log":"acme"}]`))
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -247,19 +247,29 @@ func TestTenantsInACluster(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		return resp.StatusCode
+		return resp.StatusCode, resp.Header.Get("Retry-After")
 	}
-	eventually(t, "acme's agent is accepted on A", func() bool { return ingest(a) == 200 })
+	accepted := func(rs *running) bool { code, _ := ingest(rs); return code == 200 }
+	// B, which runs no tenant now, tells acme's agents to send again
+	// later, so no batch is lost.
+	toldToWait := func(rs *running) bool {
+		code, retry := ingest(rs)
+		return code == http.StatusServiceUnavailable && retry != ""
+	}
+	eventually(t, "acme's agent is accepted on A", func() bool { return accepted(a) })
+	eventually(t, "B knows acme", func() bool {
+		tn, err := b.r.srv.Load().Tenants.Get("acme")
+		return err == nil && !tn.Disabled
+	})
+	eventually(t, "B tells acme's agent to wait", func() bool { return toldToWait(b) })
 	// The session's tenant is shared: B, which runs no tenant, refuses.
 	b.cookie = a.cookie
 	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
 		t.Errorf("B on acme's findings: %d %v", code, out)
 	}
-	if code := ingest(b); code == 200 {
-		t.Error("B accepted acme's agent")
-	}
 	saved := b.cookie
-	// Once B has read ada, she is refused: B runs no tenant.
+	// Once B has read ada, she signs in there too, and is told acme's
+	// data is not run there now.
 	eventually(t, "B read acme's user", func() bool {
 		if err := b.r.shared.Hub().Cycle(context.Background()); err != nil {
 			return false
@@ -267,17 +277,43 @@ func TestTenantsInACluster(t *testing.T) {
 		_, ok := b.r.srv.Load().Users.Get("ada")
 		return ok
 	})
-	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != http.StatusForbidden {
+	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != 200 {
 		t.Errorf("acme's user signing in on B: %d", code)
 	}
+	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("ada on B: %d %v", code, out)
+	}
 	b.cookie = saved
-	// A gives the jobs up: it refuses acme's requests and agents too.
+	// Turned off on A, acme is off on B as well.
+	off := func(disabled bool) {
+		t.Helper()
+		must(a, "PATCH", "/api/tenants/acme", fmt.Sprintf(`{"disabled":%v}`, disabled), 200)
+		eventually(t, "B knows whether acme is off", func() bool {
+			tn, err := b.r.srv.Load().Tenants.Get("acme")
+			return err == nil && tn.Disabled == disabled
+		})
+	}
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
+	off(true)
+	if code, _ := ingest(b); code == 200 || code == http.StatusServiceUnavailable {
+		t.Errorf("B: acme's agent after acme was turned off: %d", code)
+	}
+	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != http.StatusForbidden {
+		t.Errorf("B: acme's user after acme was turned off: %d", code)
+	}
+	b.cookie = saved
+	off(false)
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
+	// A gives the jobs up: it refuses acme's requests, and tells its
+	// agents to wait.
 	a.r.node.Drain("test")
 	eventually(t, "A gave the jobs up", func() bool { return !a.r.node.RunsJobs() })
 	if code, out, _ := a.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
 		t.Errorf("A on acme's findings without the jobs: %d %v", code, out)
 	}
-	if code := ingest(a); code == 200 {
-		t.Error("A accepted acme's agent without the jobs")
-	}
+	eventually(t, "A tells acme's agent to wait", func() bool { return toldToWait(a) })
+	// A stops: B takes the jobs over, and acme's data with them.
+	a.stop()
+	eventually(t, "B takes the jobs over", b.r.node.RunsJobs)
+	eventually(t, "B accepts acme's agent", func() bool { return accepted(b) })
 }

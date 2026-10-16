@@ -1895,6 +1895,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if reg, err := tenants.Open(c.TenantsFile()); err != nil {
 		log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
 	} else {
+		if parts != nil {
+			// Which tenants exist and are on is the same on every server.
+			reg.UseShared(r.sharedContent.users.docs.TenantList())
+		}
 		srv.Tenants = reg
 	}
 	tokenSrv.Store(srv)
