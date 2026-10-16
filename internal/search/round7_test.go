@@ -207,3 +207,23 @@ func TestForEachMatchIsAName(t *testing.T) {
 		t.Errorf("row = %v", r)
 	}
 }
+
+// Each field a command adds to a row counts toward the search's memory
+// budget, so fromjson over many keys and rows stops before it holds
+// gigabytes.
+func TestFromJSONCountsNewFields(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{`)
+	for i := 0; i < 500; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `\"k%d\":1`, i)
+	}
+	b.WriteString(`}`)
+	q := `| makeresults count=10000 | eval j="` + b.String() + `" | fromjson j | fields - j | stats count`
+	_, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), q)
+	if err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Fatalf("err = %v", err)
+	}
+}

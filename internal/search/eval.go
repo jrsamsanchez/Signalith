@@ -175,6 +175,18 @@ func (ev *evaluator) charge(n int) bool {
 	return true
 }
 
+// fieldOverhead is what the budget counts for a field a command adds to
+// a row, besides its name and value: the row map's entry and its growth.
+const fieldOverhead = 64
+
+// newField charges for adding name to r, when r does not have it yet.
+func (ev *evaluator) newField(r Row, name string) bool {
+	if _, ok := r[name]; ok {
+		return true
+	}
+	return ev.charge(len(name) + fieldOverhead)
+}
+
 // maxEachValues caps the values mvmap and mvfilter go through in one
 // search, so nesting them over different multivalue fields cannot
 // multiply into work that only the deadline stops.
@@ -1348,6 +1360,9 @@ func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
 			if v == nil {
 				delete(r, a.Field)
 			} else {
+				if !ev.newField(r, a.Field) {
+					return ev.err
+				}
 				r[a.Field] = v
 			}
 		}
@@ -1362,6 +1377,7 @@ func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
 	if c.Sed != "" {
 		return applySed(ctx, res, c)
 	}
+	ev := evaluatorFor(ctx)
 	re, err := regexp.Compile(c.Pattern)
 	if err != nil {
 		return &QueryError{Msg: fmt.Sprintf("rex pattern: %v", err)}
@@ -1395,6 +1411,9 @@ func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
 			}
 			if len(vals) == 0 {
 				continue
+			}
+			if !ev.newField(r, name) {
+				return ev.err
 			}
 			if c.MaxMatch == 1 {
 				r[name] = vals[0]

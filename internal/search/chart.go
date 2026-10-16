@@ -162,7 +162,7 @@ func applySpath(ctx context.Context, res *Result, c *query.Spath) error {
 			res.Truncated = true
 			return true
 		}
-		if !ev.charge(valueSize(v) + len(name)) {
+		if !ev.step() || !ev.newField(r, name) || !ev.charge(valueSize(v)) {
 			return false
 		}
 		r[name] = v
@@ -368,7 +368,7 @@ func applyFromJSON(ctx context.Context, res *Result, c *query.FromJSON) error {
 				res.Truncated = true
 				continue
 			}
-			if !ev.charge(valueSize(v) + len(name)) {
+			if !ev.step() || !ev.newField(r, name) || !ev.charge(valueSize(v)) {
 				return ev.err
 			}
 			r[name] = v
