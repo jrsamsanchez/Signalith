@@ -706,6 +706,10 @@ rules:
     rule_id: 8551252d-b5b6-4b6e-8a82-51460aeb29a3
     file: dns_kerberos_coercion.yml
     path: detections/network/dns_kerberos_coercion.yml
+  - id: splunk-dns-query-length-with-high-standard-deviation
+    rule_id: 1a67f15a-f4ff-4170-84e9-08cf6f75d6f5
+    file: dns_query_length_with_high_standard_deviation.yml
+    path: detections/network/dns_query_length_with_high_standard_deviation.yml
   - id: splunk-domain-account-discovery-with-dsquery
     rule_id: b1a8ce04-04c2-11ec-bea7-acde48001122
     file: domain_account_discovery_with_dsquery.yml
@@ -1754,6 +1758,10 @@ rules:
     rule_id: f4cabbc7-c19a-4e41-8be5-98daeaccbb50
     file: o365_compliance_content_search_started.yml
     path: detections/cloud/o365_compliance_content_search_started.yml
+  - id: splunk-o365-concurrent-sessions-from-different-ips
+    rule_id: 58e034de-1f87-4812-9dc3-a4f68c7db930
+    file: o365_concurrent_sessions_from_different_ips.yml
+    path: detections/cloud/o365_concurrent_sessions_from_different_ips.yml
   - id: splunk-o365-disable-mfa
     rule_id: c783dd98-c703-4252-9e8a-f19d9f5c949e
     file: o365_disable_mfa.yml
@@ -1770,6 +1778,14 @@ rules:
     rule_id: 8158ccc4-6038-11eb-ae93-0242ac130002
     file: o365_excessive_sso_logon_errors.yml
     path: detections/cloud/o365_excessive_sso_logon_errors.yml
+  - id: splunk-o365-exfiltration-via-file-download
+    rule_id: 06b23921-bfe2-4576-89dd-616f06e129da
+    file: o365_exfiltration_via_file_download.yml
+    path: detections/cloud/o365_exfiltration_via_file_download.yml
+  - id: splunk-o365-exfiltration-via-file-sync-download
+    rule_id: 350837b5-13d3-4c06-b688-db07afbe5050
+    file: o365_exfiltration_via_file_sync_download.yml
+    path: detections/cloud/o365_exfiltration_via_file_sync_download.yml
   - id: splunk-o365-external-guest-user-invited
     rule_id: 8c6d52ec-d5f2-4b2f-8ba1-f32c047a71fa
     file: o365_external_guest_user_invited.yml
@@ -1778,6 +1794,10 @@ rules:
     rule_id: 31641378-2fa9-42b1-948e-25e281cb98f7
     file: o365_high_number_of_failed_authentications_for_user.yml
     path: detections/cloud/o365_high_number_of_failed_authentications_for_user.yml
+  - id: splunk-o365-mailbox-folder-read-permission-assigned
+    rule_id: 1435475e-2128-4417-a34f-59770733b0d5
+    file: o365_mailbox_folder_read_permission_assigned.yml
+    path: detections/cloud/o365_mailbox_folder_read_permission_assigned.yml
   - id: splunk-o365-multiple-appids-and-useragents-authentication-spike
     rule_id: 66adc486-224d-45c1-8e4d-9e7eeaba988f
     file: o365_multiple_appids_and_useragents_authentication_spike.yml
@@ -2310,6 +2330,10 @@ rules:
     rule_id: 09e5c72a-4c0d-11ec-aa29-3e22fbd008af
     file: svchost_lolbas_execution_process_spawn.yml
     path: detections/endpoint/svchost_lolbas_execution_process_spawn.yml
+  - id: splunk-system-information-discovery-detection
+    rule_id: 8e99f89e-ae58-4ebc-bf52-ae0b1a277e72
+    file: system_information_discovery_detection.yml
+    path: detections/endpoint/system_information_discovery_detection.yml
   - id: splunk-time-provider-persistence-registry
     rule_id: 5ba382c4-2105-11ec-8d8f-acde48001122
     file: time_provider_persistence_registry.yml

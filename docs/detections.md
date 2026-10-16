@@ -712,7 +712,7 @@ the audit log, see [Microsoft 365](microsoft-365.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,125 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,131 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -955,7 +955,11 @@ converted filter. Before them, each field they name by Splunk's name is copied f
 field Signalith keeps it as (`eval TargetUserName=user`), and a `tstats` search's own
 grouping comes first, with the data model's missing fields as `unknown`, as in the CIM.
 A test event is one the rule finds when the filter matches it and the later stages keep a
-row for it; a rule ships only when some test event comes through. Where the two
+row for it; a rule ships only when some test event comes through. A rule that counts
+(`stats count`, `dc`) keeps no row for one event, so its test is the same event
+repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
+with a field it counts distinct values of different each time (`"vary"`), next to a
+smaller repeat that the rule must not find. Where the two
 languages read a stage differently, the rule is left out: a `where` that compares two
 fields (`where process_name != service_process`), or text with a `*`, since Signalith's
 `where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)

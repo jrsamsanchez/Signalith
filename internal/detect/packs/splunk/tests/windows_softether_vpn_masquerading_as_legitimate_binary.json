@@ -1,12 +1,8 @@
 {"rule": "69fe4cb7-807e-4012-a17f-cd288215b038", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe x","Company":"x SoftEther x","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x dllhost.exe x","OriginalFileName":"vpnbridge .exe","ParentProcessId":"4000","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe x","Company":"x SoftEther x","ParentProcessId":"4000","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe x","Company":"x SoftEther x","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe y","Company":"x SoftEther x","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe x","Company":"x SoftEther y","ParentProcessId":"4000","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x dllhost.exe x","OriginalFileName":"vpnbridge .exe","ParentProcessId":"4000","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x dllhost.exe x","OriginalFileName":"vpnbridge .exe","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x dllhost.exe y","OriginalFileName":"vpnbridge .exe","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Company":"x SoftEther x","ParentProcessId":"4000","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x conhost.exe x","ParentProcessId":"4000","ProcessId":"4242"}},

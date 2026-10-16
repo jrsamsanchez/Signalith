@@ -1,7 +1,5 @@
 {"rule": "b2fbe95a-9c62-4c12-8a29-24b97e84c0cd", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\taskmgr.exe","ProcessId":"4242","TargetFilename":"x lsass .dmp"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\taskmgr.exe","ProcessId":"4242","TargetFilename":"x lsass .dmp"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\taskmgr.exe","ProcessId":"4242","TargetFilename":"x lsass .dmp"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\taskmgr.exf","ProcessId":"4242","TargetFilename":"x lsass .dmp"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x lsass .dmp"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"C:\\Windows\\System32\\taskmgr.exe","ProcessId":"4242","TargetFilename":"x lsass .dmq"}},

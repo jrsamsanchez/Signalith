@@ -62,6 +62,38 @@ type Case struct {
 	Channel string            `json:"channel"`
 	EventID string            `json:"event_id"`
 	Data    map[string]string `json:"data"`
+	// Repeat is how many times the event happens, for a rule that counts
+	// events (0 for once), with each of the Vary fields different each
+	// time (Copies).
+	Repeat int      `json:"repeat,omitempty"`
+	Vary   []string `json:"vary,omitempty"`
+}
+
+// RepeatSpan is how far apart in time the first and last of a repeated
+// case's events are, at most.
+const RepeatSpan = 30 * time.Second
+
+// Copies are a case's events, each with the time offset it happens at:
+// the event itself, or each of its repeats, spread over RepeatSpan, the
+// Vary fields numbered (tester1, tester2...).
+func (c Case) Copies() ([]Case, []time.Duration) {
+	if c.Repeat <= 1 {
+		c.Repeat, c.Vary = 0, nil
+		return []Case{c}, []time.Duration{0}
+	}
+	out := make([]Case, c.Repeat)
+	at := make([]time.Duration, c.Repeat)
+	for i := range out {
+		cp := c
+		cp.Repeat, cp.Vary = 0, nil
+		cp.Data = maps.Clone(c.Data)
+		for _, f := range c.Vary {
+			cp.Data[f] += strconv.Itoa(i + 1)
+		}
+		out[i] = cp
+		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)
+	}
+	return out, at
 }
 
 // Security 4688 data names and the Sigma process_creation fields they

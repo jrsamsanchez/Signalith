@@ -1,6 +1,5 @@
 {"rule": "9e5726fe-8fde-460e-bd74-cddcf6c86113", "cases": [
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /catalog-portal/ui/oauth/verify?error=\u0026deviceudid= x x freemarker.template.utility.Execute x"}},
-  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /catalog-portal/ui/oauth/verify?error=\u0026deviceudid= x x freemarker.template.utility.Execute x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /catalog-portal/ui/oauth/verify?error=\u0026deviceudid= x x freemarker.template.utility.Execute y"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x /catalog-portal/ui/oauth/verify?error=\u0026deviceudid= x x freemarker.template.utility.Execute x"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}}

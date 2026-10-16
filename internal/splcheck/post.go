@@ -3,12 +3,14 @@ package splcheck
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
 // A search's later stages that do more than filter events (eval, rex,
@@ -140,11 +142,87 @@ func tstatsGroup(aggs, by string) (string, error) {
 // Keeps reports whether the rule's later stages keep a row for an event
 // as Signalith stores it (true when the rule has none).
 func (r *Rule) Keeps(doc map[string]any) bool {
+	return r.KeepsAll([]map[string]any{doc})
+}
+
+// KeepsAll reports whether the rule's later stages keep a row for events
+// that all happen (a repeated case's).
+func (r *Rule) KeepsAll(docs []map[string]any) bool {
 	if len(r.post) == 0 {
 		return true
 	}
-	rows, err := search.RunCommands(context.Background(), []map[string]any{doc}, r.post)
+	rows, err := search.RunCommands(context.Background(), docs, r.post)
 	return err == nil && len(rows) > 0
+}
+
+// Bursts: a rule whose later stages count events (stats count, dc,
+// eventstats) keeps no row for one event, but may for the same event
+// repeated; one that groups by a field keeps none for an event without
+// it. maxBursts is how many of a rule's events are tried, and burstSizes
+// the repeats tried, smallest first (1: the event once, with the fields
+// it groups by).
+const maxBursts = 2
+
+var burstSizes = []int{1, 2, 3, 4, 6, 11, 21, 26, 31, 51, 101, 201}
+
+// bursts returns, for an event the rule's filter matches but its later
+// stages drop, the smallest repeat of it that they keep (with one or
+// none of its fields different each time), and the largest smaller one
+// tried, which they drop; nil when no repeat comes through.
+func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
+	// Splunk's stats drops events that miss a field it groups by, so the
+	// event gets each one it misses (the record's own names, as a cloud
+	// rule's are), unless that loses the filter's match.
+	by, counted := r.postFields()
+	filled := c
+	filled.Data = maps.Clone(c.Data)
+	for _, f := range by {
+		if _, ok := filled.Data[f]; !ok && !strings.HasPrefix(f, "_") {
+			filled.Data[f] = "test-" + strings.ToLower(f)
+		}
+	}
+	if doc, _ := Stored(filled); Eval(r.Where, View(doc)) {
+		c = filled
+	}
+	varies := [][]string{nil}
+	for _, k := range slices.Sorted(maps.Keys(c.Data)) {
+		varies = append(varies, []string{k})
+	}
+	for _, k := range counted {
+		if _, ok := c.Data[k]; !ok {
+			varies = append(varies, []string{k})
+		}
+	}
+	for i, n := range burstSizes {
+		for _, vary := range varies {
+			if n == 1 && vary != nil {
+				break
+			}
+			b := c
+			if n > 1 {
+				b.Repeat, b.Vary = n, vary
+			}
+			docs, model := StoredCopies(b)
+			if !InModel(r.Node, model) {
+				continue
+			}
+			if !slices.ContainsFunc(docs, func(d map[string]any) bool { return !Eval(r.Where, View(d)) }) && r.KeepsAll(docs) {
+				b.Expect = true
+				out := []sigmacheck.Case{b}
+				if i > 0 {
+					less := b
+					less.Repeat = burstSizes[i-1]
+					docs, _ := StoredCopies(less)
+					less.Expect = r.KeepsAll(docs)
+					if !less.Expect {
+						out = append(out, less)
+					}
+				}
+				return out
+			}
+		}
+	}
+	return nil
 }
 
 // PostGroups are the fields the rows of a rule's later stages are groups
@@ -222,4 +300,30 @@ func quoteDotted(x string) string {
 		}
 		return "'" + m + "'"
 	})
+}
+
+// postFields are the fields the rule's later stages group by and the
+// fields they count distinct values of (dc), by the names they use.
+func (r *Rule) postFields() (by, counted []string) {
+	add := func(aggs []query.Agg, groups []string) {
+		for _, f := range groups {
+			if !slices.Contains(by, f) {
+				by = append(by, f)
+			}
+		}
+		for _, a := range aggs {
+			if a.Func == "dc" && a.Field != "" && !slices.Contains(counted, a.Field) {
+				counted = append(counted, a.Field)
+			}
+		}
+	}
+	for _, c := range r.post {
+		switch c := c.(type) {
+		case *query.Stats:
+			add(c.Aggs, c.By)
+		case *query.EventStats:
+			add(c.Aggs, c.By)
+		}
+	}
+	return by, counted
 }
