@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -144,6 +145,20 @@ func (c *capped) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// ctxReader stops a read, and so parsing the database, once ctx ends,
+// so a server stopping doesn't wait for a large file to be read.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
 func (d *IPDB) addLine(s string) error {
 	if s == "" || s[0] == '#' {
 		return nil
@@ -264,9 +279,9 @@ func (d *IPDB) network(asn uint32, cc [2]byte) Network {
 
 // encode writes the database back as gzipped lines in the format it was
 // read from, so a stored copy is read with ParseIPDB.
-func (d *IPDB) encode() ([]byte, error) {
+func (d *IPDB) encode(ctx context.Context) ([]byte, error) {
 	var buf bytes.Buffer
-	zw, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	zw, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
 	if err != nil {
 		return nil, err
 	}
@@ -277,12 +292,18 @@ func (d *IPDB) encode() ([]byte, error) {
 		}
 		return string(c[:])
 	}
-	for _, r := range d.v4 {
+	for i, r := range d.v4 {
+		if i%65536 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		s := netip.AddrFrom4([4]byte{byte(r.start >> 24), byte(r.start >> 16), byte(r.start >> 8), byte(r.start)})
 		e := netip.AddrFrom4([4]byte{byte(r.end >> 24), byte(r.end >> 16), byte(r.end >> 8), byte(r.end)})
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", s, e, r.asn, cc(r.cc), d.names[r.asn])
 	}
-	for _, r := range d.v6 {
+	for i, r := range d.v6 {
+		if i%65536 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", netip.AddrFrom16(r.start), netip.AddrFrom16(r.end), r.asn, cc(r.cc), d.names[r.asn])
 	}
 	if err := w.Flush(); err != nil {

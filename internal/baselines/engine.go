@@ -1029,6 +1029,9 @@ func (e *Engine) maintainIPDB(ctx context.Context, set Settings, now time.Time) 
 		if err == nil {
 			err = e.Store.saveIPDB(ctx, db, now)
 		}
+		if ctx.Err() != nil {
+			return // stopping: tried again by the next round
+		}
 		if err != nil {
 			meta.Error = sentence(err)
 			e.log().Warn("behavior baselines: could not download the IP database; the last copy is used", "source", redactSource(src), "err", err)
@@ -1083,7 +1086,7 @@ func (e *Engine) fetchIPDB(ctx context.Context, src string) (*IPDB, error) {
 			return nil, fmt.Errorf("%s is not in the ipdb folder (%s)", name, e.FileDir)
 		}
 		defer f.Close()
-		return ParseIPDB(f)
+		return ParseIPDB(&ctxReader{ctx: ctx, r: f})
 	}
 	if e.HTTP == nil {
 		return nil, errors.New("downloads are not set up on this server")
@@ -1112,7 +1115,7 @@ func (e *Engine) fetchIPDB(ctx context.Context, src string) (*IPDB, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s answered %s", redactSource(src), resp.Status)
 	}
-	return ParseIPDB(resp.Body)
+	return ParseIPDB(&ctxReader{ctx: ctx, r: resp.Body})
 }
 
 // redactSource leaves only the host of an address, for logs.

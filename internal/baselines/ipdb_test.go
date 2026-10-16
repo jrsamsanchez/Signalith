@@ -52,7 +52,7 @@ func TestParseIPDB(t *testing.T) {
 	}
 	// What the store keeps reads back the same.
 	db, _ := ParseIPDB(strings.NewReader(testIPDB))
-	z, err := db.encode()
+	z, err := db.encode(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,5 +249,15 @@ func TestIPDBRedirectStaysHTTPS(t *testing.T) {
 	e := &Engine{HTTP: tls.Client()}
 	if _, err := e.fetchIPDB(context.Background(), tls.URL+"/ip.tsv"); err == nil || !strings.Contains(err.Error(), "not https") {
 		t.Errorf("followed a redirect to http: %v", err)
+	}
+}
+
+// TestIPDBStopsWithContext: reading a large database ends at once when
+// the server stops.
+func TestIPDBStopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ParseIPDB(&ctxReader{ctx: ctx, r: strings.NewReader(testIPDB)}); err == nil {
+		t.Error("parsed after the context ended")
 	}
 }

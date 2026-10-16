@@ -332,7 +332,7 @@ func (s *Store) saveIPDBStatus(ctx context.Context, st IPDBStatus) error {
 
 // saveIPDB keeps a copy of the database.
 func (s *Store) saveIPDB(ctx context.Context, db *IPDB, at time.Time) error {
-	z, err := db.encode()
+	z, err := db.encode(ctx)
 	if err != nil {
 		return err
 	}
@@ -359,6 +359,6 @@ func (s *Store) loadIPDB(ctx context.Context) (*IPDB, time.Time, error) {
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	db, err := ParseIPDB(bytes.NewReader(z))
+	db, err := ParseIPDB(&ctxReader{ctx: ctx, r: bytes.NewReader(z)})
 	return db, d.FetchedAt, err
 }
