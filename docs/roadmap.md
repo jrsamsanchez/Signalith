@@ -81,7 +81,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   SigmaHQ and 19 Splunk Microsoft 365 rules.
 - [Okta](okta.md) System Log, read from Okta with no agent, with 19 SigmaHQ and 12 Splunk
   Okta rules.
-- [Kubernetes](kubernetes.md) audit logs, posted by the API server's audit webhook or
+- [Kubernetes audit logs](kubernetes-audit.md), posted by the API server's audit webhook or
   tailed from its log file, with 15 SigmaHQ and 11 Splunk Kubernetes rules.
 - [Google Cloud](google-cloud.md) audit logs through a log sink, Pub/Sub and the
   OpenTelemetry Collector, with 16 SigmaHQ Google Cloud rules, and Google Workspace's

@@ -66,7 +66,7 @@ func loadConfig(t *testing.T, extra string) *config.Config {
 	return c
 }
 
-const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    plaintext_ingest: deny\n"
+const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  agent_listen: 0.0.0.0:7779\n  tls:\n    mode: auto\n    plaintext_ingest: deny\n"
 
 // goodFacts are the facts of a server set up safely: HTTPS with
 // Signalith's own strict certificate authority, an OpenSearch that
@@ -446,6 +446,30 @@ func TestClusterCACertificate(t *testing.T) {
 				noChange(t, c.Fix)
 				if !strings.Contains(c.Line, "all servers share expires") {
 					t.Errorf("line %q", c.Line)
+				}
+			}},
+	})
+}
+
+func TestAgentPort(t *testing.T) {
+	unset := func(f *Facts) { f.Config.Server.AgentListen = ""; f.Config.Validate() }
+	runCases(t, "transit.agent_port", []checkCase{
+		{name: "own port", state: Good, line: "Agents send to a port of their own (7779), and the web port turns them away."},
+		{name: "off", set: func(f *Facts) { f.Config.Server.AgentListen = "off" }, state: ""},
+		{name: "upgraded", set: unset, state: Attention,
+			line: "The web port (8080) still takes agents, besides the agent port (7779), because Agent address is not set, as on servers installed before 0.3. The web page then has to be open to every computer that runs an agent.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "server.agent_listen" || len(c.Fix.Steps) != 3 || c.Fix.Steps[2] != "Then set Agent address to 0.0.0.0:7779, so the web port stops taking agents." ||
+					c.Fix.Page == nil || c.Fix.Page.ID != "data" || c.Fix.Docs == nil || c.Fix.Docs.File != "sending-data.md" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "7779 taken", set: func(f *Facts) { f.Config.Syslog.TCP = "0.0.0.0:7779"; unset(f) }, state: Attention,
+			line: "Agents send to the web port (8080), since Agent address is not set and port 7779 is taken, so the web page has to be open to every computer that runs an agent."},
+		{name: "env", set: func(f *Facts) { unset(f); f.SettingEnv["server.agent_listen"] = "SIGNALITH_AGENT_LISTEN" }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.LockedBy != "SIGNALITH_AGENT_LISTEN" {
+					t.Errorf("%+v", c.Fix)
 				}
 			}},
 	})
@@ -1198,6 +1222,20 @@ func TestAgentTokens(t *testing.T) {
 			t.Errorf("%+v", c.Fix)
 		}
 	}
+	runCases(t, "accounts.api_tokens", []checkCase{
+		{name: "none", state: ""},
+		{name: "none active", set: func(f *Facts) { f.APITokens = &APITokenFacts{} }, state: ""},
+		{name: "every one expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2} }, state: Good,
+			line: "Every API token expires (2 active)."},
+		{name: "one never expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"Claude Desktop"}} }, state: Attention,
+			line: "1 API token never expires: Claude Desktop.", fix: func(t *testing.T, c *Check) {
+				if c.Fix.Page == nil || c.Fix.Page.ID != "apitokens" || c.Fix.Docs == nil || c.Fix.Docs.Anchor != "api-tokens" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "two never expire", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"A", "B"}} }, state: Attention,
+			line: "2 API tokens never expire: A and B."},
+	})
 	runCases(t, "accounts.agent_tokens", []checkCase{
 		{name: "none", state: ""},
 		{name: "none, read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true} }, state: ""},

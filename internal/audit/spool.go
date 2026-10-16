@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -99,7 +100,6 @@ type Sink struct {
 	log      *slog.Logger
 	now      func() time.Time
 	enabled  atomic.Bool
-	seq      atomic.Int64
 	flushing sync.Mutex
 
 	mu        sync.Mutex
@@ -119,13 +119,30 @@ type Sink struct {
 	lastErr   string
 	lastFlush time.Time
 	failing   bool
+
+	// The chain (see chain.go): the key events are signed with now and
+	// the function giving it, where the chain is, whether that changed
+	// since it was saved, and the runs of records lost that no audit.lost
+	// record names yet. curFirst and curLast are the first and last
+	// chained events of the segment being written.
+	keySrc    func() (string, []byte)
+	kid       string
+	key       []byte
+	head      chainHead
+	headDirty bool
+	pending   []lostRange
+	lostMarks []lostMark
+	curFirst  chainRef
+	curLast   chainRef
 }
 
-// segment is one closed spool file.
+// segment is one closed spool file, with its first and last chained
+// events.
 type segment struct {
-	name   string
-	size   int64
-	events int64
+	name        string
+	size        int64
+	events      int64
+	first, last chainRef
 }
 
 // NewSink returns an enabled sink spooling to opts.Dir. Events already
@@ -154,6 +171,7 @@ func NewSink(opts SinkOptions) *Sink {
 		return s
 	}
 	s.load()
+	s.loadHead()
 	return s
 }
 
@@ -174,11 +192,59 @@ func (s *Sink) load() {
 			s.lastErr = err.Error()
 			continue
 		}
-		s.closed = append(s.closed, segment{name: e.Name(), size: int64(len(data)), events: countLines(data)})
+		first, last := segmentRefs(data)
+		s.closed = append(s.closed, segment{name: e.Name(), size: int64(len(data)), events: countLines(data), first: first, last: last})
 		s.total += int64(len(data))
 		s.counter = max(s.counter, n)
 	}
 	sort.Slice(s.closed, func(i, j int) bool { return s.closed[i].name < s.closed[j].name })
+}
+
+// loadHead picks up where the chain is: the head saved in the spool
+// directory or, when the spool holds a later record (one added after the
+// head was last saved), that record. Without either, the next record
+// starts a new chain.
+func (s *Sink) loadHead() {
+	h, err := readHead(s.dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.log.Warn("audit spool: the chain head cannot be read, so the next audit record starts a new chain", "dir", s.dir, "err", err)
+	}
+	for i := len(s.closed) - 1; i >= 0; i-- {
+		if l := s.closed[i].last; l.chain != "" {
+			if l.chain != h.Chain || l.seq > h.Seq {
+				h = chainHead{NodeID: l.node, Chain: l.chain, Seq: l.seq, Hash: l.hash}
+			}
+			break
+		}
+	}
+	s.head = h
+}
+
+// segmentRefs returns the first and last chained events of a segment's
+// lines; zero refs when it has none.
+func segmentRefs(data []byte) (first, last chainRef) {
+	lines := bytes.Split(data, []byte("\n"))
+	ref := func(line []byte) (chainRef, bool) {
+		var ev Event
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 || json.Unmarshal(line, &ev) != nil || ev.Chain == "" {
+			return chainRef{}, false
+		}
+		return chainRef{node: ev.NodeID, chain: ev.Chain, seq: ev.Seq, hash: ev.Hash()}, true
+	}
+	for _, l := range lines {
+		if r, ok := ref(l); ok {
+			first = r
+			break
+		}
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		if r, ok := ref(lines[i]); ok {
+			last = r
+			break
+		}
+	}
+	return first, last
 }
 
 func segmentName(n uint64) string { return fmt.Sprintf("seg-%020d.ndjson", n) }
@@ -226,6 +292,36 @@ func (s *Sink) SetTarget(c Bulker, prefix string) {
 	s.client, s.prefix = c, prefix
 }
 
+// SetKeySource sets the function giving the audit key later events are
+// signed with and its id (shared.ClusterKey.AuditKey and ID), "" and nil
+// while this server has none: its events are then chained but not
+// signed. It is asked now and before every flush, never while the sink
+// holds its lock, as it may take locks of its own and those may log.
+func (s *Sink) SetKeySource(f func() (string, []byte)) {
+	s.mu.Lock()
+	s.keySrc = f
+	s.mu.Unlock()
+	s.refreshKey()
+}
+
+// refreshKey asks the key source for the key in use now.
+func (s *Sink) refreshKey() {
+	s.mu.Lock()
+	f := s.keySrc
+	s.mu.Unlock()
+	var kid string
+	var key []byte
+	if f != nil {
+		kid, key = f()
+	}
+	if kid == "" || len(key) == 0 {
+		kid, key = "", nil
+	}
+	s.mu.Lock()
+	s.kid, s.key = kid, key
+	s.mu.Unlock()
+}
+
 // SetEpoch sets the function giving the cluster epoch later events
 // record; nil records none.
 func (s *Sink) SetEpoch(f func() int64) {
@@ -234,10 +330,11 @@ func (s *Sink) SetEpoch(f func() int64) {
 	s.epoch = f
 }
 
-// Add spools ev, filling in this server's name, node ID, the epoch and a
-// sequence number where ev has none. It does nothing while the sink is
+// Add spools ev, filling in this server's name, node ID, the epoch and the
+// time where ev has none, and its place in the chain (Seq, Chain, Prev,
+// and the MAC when there is a key). It does nothing while the sink is
 // disabled, and never fails: a spool it cannot write to is counted in
-// Stats.
+// Stats, and the records lost are named in an audit.lost record.
 func (s *Sink) Add(ev Event) {
 	if !s.Enabled() {
 		return
@@ -259,69 +356,205 @@ func (s *Sink) Add(ev Event) {
 }
 
 func (s *Sink) addLocked(ev Event) {
+	ev = s.fillLocked(ev)
+	ev, err := normalized(ev)
+	if err != nil {
+		s.lost++
+		s.failLocked(err)
+		return
+	}
+	s.writeLostLocked(ev.Epoch)
+	size := s.sizeLocked(ev)
+	if s.total+size > s.max {
+		probe := s.sizeLocked(s.fillLocked(lostEvent(lostRange{chain: strings.Repeat("0", 16), from: 1 << 62, to: 1 << 62,
+			hash: strings.Repeat("0", 64), n: 1 << 62, reason: "the spool was full"})))
+		// The audit.lost records written take room too, so this may
+		// take more than one drop.
+		for range 3 {
+			ranges := s.dropLocked(size + probe*int64(len(s.pending)+1) + 32)
+			if len(ranges) == 0 {
+				break
+			}
+			s.pending = append(s.pending, ranges...)
+			s.writeLostLocked(ev.Epoch)
+			if s.total+size <= s.max {
+				break
+			}
+		}
+		if s.total+size > s.max {
+			s.lost++
+			s.pending = append(s.pending, lostRange{n: 1, reason: "the record did not fit in the spool"})
+			return
+		}
+	}
+	s.appendLocked(ev)
+}
+
+// lostMark is an audit.lost record still in the spool: its sequence
+// number, and the first of the run it names. When the spool drops it
+// too, the run of the audit.lost record that says so starts there, so
+// the first run stays named.
+type lostMark struct {
+	chain     string
+	seq, from int64
+}
+
+// fillLocked fills in this server's name and node ID, and the time, where
+// ev has none.
+func (s *Sink) fillLocked(ev Event) Event {
 	if ev.Server == "" {
 		ev.Server = s.server
 	}
 	if ev.NodeID == "" {
 		ev.NodeID = s.nodeID
 	}
-	if ev.Seq == 0 {
-		ev.Seq = s.seq.Add(1)
-	}
 	if ev.Time.IsZero() {
 		ev.Time = s.now()
 	}
 	ev.Time = ev.Time.UTC()
-	line, err := json.Marshal(ev)
-	if err != nil {
-		s.failLocked(err)
-		return
+	return ev
+}
+
+// sizeLocked returns about how many bytes ev takes in the spool once
+// chained: a little more, never less.
+func (s *Sink) sizeLocked(ev Event) int64 {
+	ev.Chain, ev.Seq, ev.Prev, ev.ChainStart = strings.Repeat("0", 16), s.head.Seq+1, strings.Repeat("0", 64), false
+	if s.key != nil {
+		ev.KID, ev.MAC = s.kid, strings.Repeat("0", 64)
 	}
-	line = append(line, '\n')
-	if s.total+int64(len(line)) > s.max {
-		lostEv := Event{Time: s.now().UTC(), Server: s.server, NodeID: s.nodeID, Epoch: ev.Epoch,
-			Action: "audit.lost", Message: "audit records lost: the spool was full", Level: slog.LevelWarn.String(),
-			Seq: s.seq.Add(1)}
-		lostEv.Fields = map[string]string{"lost": "0"}
-		probe, _ := json.Marshal(lostEv)
-		n := s.dropLocked(int64(len(line)) + int64(len(probe)) + 32)
-		if n > 0 {
-			lostEv.Fields["lost"] = strconv.FormatInt(n, 10)
-			ll, _ := json.Marshal(lostEv)
-			s.writeLocked(append(ll, '\n'))
-		}
-		if s.total+int64(len(line)) > s.max {
-			s.lost++
+	b, _ := json.Marshal(ev)
+	return int64(len(b)) + 1 + 8
+}
+
+// sealLocked gives ev its place in the chain, a new chain when there is
+// none for its node yet, and its MAC when there is a key, and moves the
+// chain's head on to it.
+func (s *Sink) sealLocked(ev *Event) chainRef {
+	if s.head.Chain == "" || s.head.NodeID != ev.NodeID {
+		s.head = chainHead{NodeID: ev.NodeID, Chain: newChainID()}
+	}
+	ev.Chain, ev.Seq, ev.Prev, ev.ChainStart = s.head.Chain, s.head.Seq+1, s.head.Hash, s.head.Seq == 0
+	ev.KID, ev.MAC = "", ""
+	if s.key != nil {
+		ev.KID = s.kid
+		ev.MAC = ev.sign(s.key)
+	}
+	h := ev.Hash()
+	s.head.Seq, s.head.Hash = ev.Seq, h
+	s.headDirty = true
+	return chainRef{node: ev.NodeID, chain: ev.Chain, seq: ev.Seq, hash: h}
+}
+
+// appendLocked chains ev and writes it to the spool, and reports whether
+// it was written. One that was not is lost: it is named in the next
+// audit.lost record, as its sequence number is taken.
+func (s *Sink) appendLocked(ev Event) (chainRef, bool) {
+	ref := s.sealLocked(&ev)
+	line, err := json.Marshal(ev)
+	if err == nil && s.writeLocked(append(line, '\n'), ref) {
+		return ref, true
+	}
+	if err != nil {
+		s.lost++
+		s.failLocked(err)
+	}
+	s.lostLocked(ref, "the spool could not be written")
+	return ref, false
+}
+
+// lostLocked adds a chained record that will not reach OpenSearch to the
+// runs of lost records the next audit.lost record names.
+func (s *Sink) lostLocked(ref chainRef, reason string) {
+	if n := len(s.pending); n > 0 {
+		if p := &s.pending[n-1]; p.chain == ref.chain && p.reason == reason && p.to+1 == ref.seq {
+			p.to, p.hash = ref.seq, ref.hash
+			p.n++
 			return
 		}
 	}
-	s.writeLocked(line)
+	s.pending = append(s.pending, lostRange{chain: ref.chain, from: ref.seq, to: ref.seq, hash: ref.hash, n: 1, reason: reason})
+}
+
+// writeLostLocked writes an audit.lost record for each run of records
+// lost that none names yet. When one cannot be written either, it and
+// the runs after it wait for the next time.
+func (s *Sink) writeLostLocked(epoch int64) {
+	runs := s.pending
+	s.pending = nil
+	for i, r := range runs {
+		ev := s.fillLocked(lostEvent(r))
+		ev.Time, ev.Epoch, ev.Level = s.now().UTC(), epoch, slog.LevelWarn.String()
+		ref, ok := s.appendLocked(ev)
+		if !ok {
+			// The record that failed is in s.pending now, after these.
+			s.pending = append(slices.Clone(runs[i:]), s.pending...)
+			return
+		}
+		if r.chain != "" {
+			s.lostMarks = append(s.lostMarks, lostMark{chain: r.chain, seq: ref.seq, from: r.from})
+		}
+	}
 }
 
 // dropLocked closes the current segment and deletes the oldest ones
-// until need more bytes fit, and returns how many events it dropped.
-func (s *Sink) dropLocked(need int64) int64 {
+// until need more bytes fit, and returns the runs of records it dropped.
+func (s *Sink) dropLocked(need int64) []lostRange {
 	s.rotateLocked()
-	var n int64
+	var runs []lostRange
 	for len(s.closed) > 0 && s.total+need > s.max {
 		seg := s.closed[0]
 		s.closed = s.closed[1:]
 		s.total -= seg.size
-		n += seg.events
+		s.lost += seg.events
 		s.removeFile(seg.name)
+		r := lostRange{n: seg.events, reason: "the spool was full"}
+		if seg.last.chain != "" {
+			r.chain, r.to, r.hash, r.from = seg.last.chain, seg.last.seq, seg.last.hash, 1
+			if seg.first.chain == seg.last.chain {
+				r.from = seg.first.seq
+			}
+			r.from = s.dropMarksLocked(r.chain, r.from, r.to)
+		}
+		if n := len(runs); n > 0 {
+			if p := &runs[n-1]; p.chain == r.chain && (r.chain == "" || p.to+1 == r.from) {
+				p.n += r.n
+				if r.chain != "" {
+					p.to, p.hash = r.to, r.hash
+				}
+				continue
+			}
+		}
+		runs = append(runs, r)
 	}
-	s.lost += n
-	return n
+	return runs
 }
 
-// writeLocked appends one line to the current segment, starting one when
-// there is none, and closes it once it is large enough.
-func (s *Sink) writeLocked(line []byte) {
+// dropMarksLocked forgets the audit.lost records among the sequence
+// numbers from to to of chain, which are dropped, and returns where the
+// run dropped starts: at from, or at the first record one of them named.
+func (s *Sink) dropMarksLocked(chain string, from, to int64) int64 {
+	out := from
+	kept := s.lostMarks[:0]
+	for _, m := range s.lostMarks {
+		if m.chain == chain && m.seq >= from && m.seq <= to {
+			out = min(out, m.from)
+			continue
+		}
+		kept = append(kept, m)
+	}
+	s.lostMarks = kept
+	return out
+}
+
+// writeLocked appends one line, of the event ref names, to the current
+// segment, starting one when there is none, and closes it once it is
+// large enough. It reports whether the line was written.
+func (s *Sink) writeLocked(line []byte, ref chainRef) bool {
 	if s.cur == nil {
 		if err := os.MkdirAll(s.dir, 0o700); err != nil {
 			s.lost++
 			s.failLocked(err)
-			return
+			return false
 		}
 		s.counter++
 		name := segmentName(s.counter)
@@ -329,9 +562,10 @@ func (s *Sink) writeLocked(line []byte) {
 		if err != nil {
 			s.lost++
 			s.failLocked(err)
-			return
+			return false
 		}
 		s.cur, s.curName, s.curSize, s.curEvents = f, name, 0, 0
+		s.curFirst, s.curLast = chainRef{}, chainRef{}
 	}
 	n, err := s.cur.Write(line)
 	s.curSize += int64(n)
@@ -341,17 +575,33 @@ func (s *Sink) writeLocked(line []byte) {
 		s.failLocked(err)
 		// A part written is skipped when read back.
 		s.rotateLocked()
-		return
+		return false
 	}
 	s.curEvents++
+	if ref.chain != "" {
+		if s.curFirst.chain == "" {
+			s.curFirst = ref
+		}
+		s.curLast = ref
+	}
 	if s.curSize >= s.segMax {
 		s.rotateLocked()
 	}
+	return true
 }
 
 // rotateLocked closes the current segment, if any, so it can be read and
-// deleted (Windows deletes no file still open).
+// deleted (Windows deletes no file still open), and saves the chain head
+// when it moved. Every segment is deleted after a rotation, so the head
+// saved is never behind the records that have left the spool.
 func (s *Sink) rotateLocked() {
+	if s.headDirty && s.head.Chain != "" {
+		if err := writeHead(s.dir, s.head); err != nil {
+			s.failLocked(err)
+		} else {
+			s.headDirty = false
+		}
+	}
 	if s.cur == nil {
 		return
 	}
@@ -364,7 +614,7 @@ func (s *Sink) rotateLocked() {
 	if s.curSize == 0 {
 		s.removeFile(s.curName)
 	} else {
-		s.closed = append(s.closed, segment{name: s.curName, size: s.curSize, events: s.curEvents})
+		s.closed = append(s.closed, segment{name: s.curName, size: s.curSize, events: s.curEvents, first: s.curFirst, last: s.curLast})
 	}
 	s.cur = nil
 }
@@ -423,6 +673,7 @@ func (s *Sink) Run(ctx context.Context) {
 			cancel()
 			return
 		case <-t.C:
+			s.refreshKey()
 			_ = s.Flush(ctx)
 		}
 	}
@@ -464,6 +715,10 @@ func (s *Sink) Flush(ctx context.Context) error {
 				s.closed = append(s.closed[:i], s.closed[i+1:]...)
 				s.total -= c.size
 				s.removeFile(c.name)
+				if c.last.chain != "" {
+					// The audit.lost records in it are in OpenSearch now.
+					s.dropMarksLocked(c.last.chain, 0, c.last.seq)
+				}
 				break
 			}
 		}
@@ -495,6 +750,7 @@ func (s *Sink) flushSegment(ctx context.Context, seg segment) error {
 		return err
 	}
 	var docs []store.IndexedDoc
+	var evs []Event
 	var bad int64
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
 		line = bytes.TrimSpace(line)
@@ -507,28 +763,42 @@ func (s *Sink) flushSegment(ctx context.Context, seg segment) error {
 			continue
 		}
 		docs = append(docs, store.IndexedDoc{Index: IndexName(prefix, ev.Time), ID: ev.ID(), Doc: ev.doc()})
+		evs = append(evs, ev)
 	}
 	for len(docs) > 0 {
 		batch := docs[:min(bulkSize, len(docs))]
-		docs = docs[len(batch):]
+		batchEvs := evs[:len(batch)]
+		docs, evs = docs[len(batch):], evs[len(batch):]
 		errs, err := client.Bulk(ctx, batch)
 		if err != nil {
 			return err
 		}
-		var refused int64
+		var refused []Event
 		for _, e := range errs {
 			switch {
 			case e.Conflict():
 			case retryable(e):
 				return fmt.Errorf("opensearch refused an audit record for now: %s", e.Reason)
 			default:
-				refused++
+				if e.Pos >= 0 && e.Pos < len(batchEvs) {
+					refused = append(refused, batchEvs[e.Pos])
+				}
 				s.log.Warn("audit: OpenSearch refused an audit record, dropping it", "index", e.Index, "reason", e.Reason)
 			}
 		}
 		s.mu.Lock()
-		s.written += int64(len(batch)) - refused
-		s.lost += refused
+		s.written += int64(len(batch) - len(refused))
+		s.lost += int64(len(refused))
+		// The records refused are named in an audit.lost record, so their
+		// gap in the chain is not taken for a removal.
+		for _, ev := range refused {
+			if ev.Chain != "" {
+				s.lostLocked(chainRef{node: ev.NodeID, chain: ev.Chain, seq: ev.Seq, hash: ev.Hash()}, "OpenSearch refused them")
+			}
+		}
+		if len(refused) > 0 {
+			s.writeLostLocked(0)
+		}
 		s.mu.Unlock()
 	}
 	if bad > 0 {

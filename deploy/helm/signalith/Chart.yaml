@@ -1,0 +1,20 @@
+apiVersion: v2
+name: signalith
+description: Signalith, an open-source SIEM, with a secured OpenSearch, on Kubernetes.
+type: application
+# The release workflow sets both to the release's version when it
+# publishes the chart. From a checkout, the chart runs the image built
+# from main.
+version: 0.0.0-dev
+appVersion: "main"
+kubeVersion: ">=1.27.0-0"
+home: https://signalith.io
+icon: https://signalith.io/favicon.svg
+sources:
+  - https://github.com/jrsamsanchez/Signalith
+annotations:
+  artifacthub.io/license: Apache-2.0
+keywords: [siem, security, opensearch, sigma, detection]
+maintainers:
+  - name: Samuel Sanchez Jr.
+    url: https://github.com/jrsamsanchez

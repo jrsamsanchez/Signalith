@@ -764,7 +764,7 @@ macro (`kube_allowed_user_agents`, `kube_allowed_images` and the like), shipped 
 Splunk's sample values. Two rules that group by the country and city `iplocation`
 names, one that compares the country, the Falco rule, the metrics and Splunk Connect for
 Kubernetes object rules, and experimental and hunting rules are left out. To send the
-audit log, see [Kubernetes](kubernetes.md).
+audit log, see [Kubernetes audit logs](kubernetes-audit.md).
 
 ### Google Cloud
 

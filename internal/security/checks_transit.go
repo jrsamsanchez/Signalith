@@ -1,6 +1,7 @@
 package security
 
 import (
+	"net"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -640,4 +641,34 @@ func checkProxies(f *Facts) *Check {
 				"If the proxy sets X-Forwarded-For itself, choose it under Client address header, so each person is counted and logged by their own address."}}}
 	}
 	return &Check{State: Good, Line: "Signalith believes forwarded HTTPS and client addresses (" + header + ") only from " + shorten(prefixList(list), 3) + "."}
+}
+
+// checkAgentPort shows whether agents still send to the web port: on a
+// server installed before 0.3, server.agent_listen is not set, so the web
+// port keeps taking them besides the agent port, and the web page cannot
+// be kept from computers that only run agents. server.agent_listen off
+// chooses that on purpose, and is left out.
+func checkAgentPort(f *Facts) *Check {
+	c := f.Config
+	if c.Server.AgentListen == config.AgentListenOff {
+		return nil
+	}
+	if !c.AgentsOnWebPort() {
+		return &Check{State: Good, Line: "Agents send to a port of their own (" + c.Server.AgentPort() + "), and the web port turns them away."}
+	}
+	fix := &Fix{Setting: "server.agent_listen", LockedBy: f.SettingEnv["server.agent_listen"],
+		Page: &PageLink{ID: "data", Label: "Open Add data"}, Docs: doc(docAgentPortUp)}
+	if c.Server.AgentAddr() == "" {
+		// Port 7779 was in use, so no agent port was started.
+		fix.Steps = []string{"Free port " + config.DefaultAgentPort + " or pick another free port, and set Agent address to it, such as " + config.DefaultAgentListen(c.Server.Listen) + ".",
+			"Then set each agent up again from Add data."}
+		return &Check{State: Attention, Line: "Agents send to the web port (" + c.Server.AgentPort() + "), since Agent address is not set and port " +
+			config.DefaultAgentPort + " is taken, so the web page has to be open to every computer that runs an agent.", Fix: fix}
+	}
+	fix.Steps = []string{"Let port " + c.Server.AgentPort() + " through the firewall, and through any load balancer.",
+		"Set each agent up again from Add data, so it sends to port " + c.Server.AgentPort() + ".",
+		"Then set Agent address to " + c.Server.AgentAddr() + ", so the web port stops taking agents."}
+	_, webPort, _ := net.SplitHostPort(c.Server.Listen)
+	return &Check{State: Attention, Line: "The web port (" + webPort + ") still takes agents, besides the agent port (" + c.Server.AgentPort() +
+		"), because Agent address is not set, as on servers installed before 0.3. The web page then has to be open to every computer that runs an agent.", Fix: fix}
 }

@@ -1218,7 +1218,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             <li class="agent-step"><span class="agent-step__num">3</span><div class="agent-step__body"><p class="agent-step__text">Save a webhook configuration (a kubeconfig file) whose server is <code>https://&lt;this server&gt;:7779/api/ingest?tag=kubernetes</code> (the agent port), with the token and Signalith's CA certificate, <code>/api/tls/ca.pem</code>.</p></div></li>
             <li class="agent-step"><span class="agent-step__num">4</span><div class="agent-step__body"><p class="agent-step__text">Start the API server with <code>--audit-policy-file</code>, <code>--audit-webhook-config-file</code> and <code>--audit-webhook-mode=batch</code>. Events appear in Search under <code>source=kubernetes</code> within a minute.</p></div></li>
           </ol>
-          <p class="hint">To tail the audit log file with Fluent Bit instead, or for EKS, GKE and AKS, which send it through their cloud's logs, see the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes.md" target="_blank" rel="noopener">Kubernetes guide</a>.</p>
+          <p class="hint">To tail the audit log file with Fluent Bit instead, or for EKS, GKE and AKS, which send it through their cloud's logs, see the <a href="https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes-audit.md" target="_blank" rel="noopener">Kubernetes audit log guide</a>.</p>
         </div>
       </div>
 
@@ -1774,6 +1774,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       </div>
     </div>
     <div id="au-filters"></div>
+    <div id="au-check"></div>
     <div id="au-body"></div>
   </section>
 

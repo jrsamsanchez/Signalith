@@ -76,6 +76,9 @@ type Config struct {
 	// (see AdminPasswordVersion), and envAdminHash is the hash made from
 	// it for this process.
 	envAdminVersion, envAdminHash string
+	// firstPassword is what the state folder keeps about the built-in
+	// admin's first password (see FirstPassword).
+	firstPassword FirstPassword
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -1448,6 +1451,10 @@ func (c *Config) ResponseScriptsDir() string {
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
 
+// GeoIPDir is where the search command iplocation finds its GeoIP
+// database, a .mmdb file an admin puts there.
+func (c *Config) GeoIPDir() string { return filepath.Join(c.LookupsDir(), "geoip") }
+
 // TLSDir is where Signalith keeps its own certificate authority and HTTPS
 // certificate (server.tls.mode auto).
 func (c *Config) TLSDir() string { return filepath.Join(c.StateDir(), "tls") }
@@ -1856,6 +1863,7 @@ func readAndEnv(path string) (*Config, error) {
 	}
 	c.syncEligible()
 	c.readDockerUpgrade()
+	c.readFirstPassword()
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil

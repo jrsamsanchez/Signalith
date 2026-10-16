@@ -1,247 +1,231 @@
-# Kubernetes
+# Kubernetes (Helm)
 
-A Kubernetes cluster's API server can keep an **audit log**: every request made of it,
-who made it, from where, and what came of it. Pods created and exec'd into, secrets
-read, listed and changed, role bindings and admission webhooks edited, cron jobs and
-DaemonSets added, services opened on a node port, and requests refused. Signalith takes
-the audit log as the API server writes it, makes each event searchable and runs the
-SigmaHQ and Splunk Kubernetes rules on it.
+The Helm chart runs Signalith on Kubernetes: one or more Signalith servers, optional
+vulnerability scanners, and a secured OpenSearch, or an OpenSearch you already run. It
+makes no default passwords, serves HTTPS everywhere, and its pods meet the **restricted**
+[Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
 
-## How it works
+You need Kubernetes 1.27 or newer, Helm 3.8 or newer, and a default storage class for the
+volumes. OpenSearch's pod asks for 2 GB of memory and 30 GB of disk by default.
 
-The API server writes each request as an `audit.k8s.io/v1` **Event**, at the stages and
-level its **audit policy** asks for. It can post them to a webhook, in batches (an
-`EventList`), or write them to a file, one per line. Either way they reach Signalith's
-agent port, `/api/ingest`, with an [agent token](agent-tokens.md) and the tag
-`kubernetes`:
+## Install
 
-- **The webhook backend** (`--audit-webhook-config-file`) sends straight from the API
-  server, with nothing to install. This needs access to the API server's flags, so it
-  suits clusters you run yourself (kubeadm, k3s, RKE2, kops and the like).
-- **Fluent Bit tailing the log file** (`--audit-log-path`) on each control plane node
-  works where the API server already writes a file, and keeps events on disk while
-  Signalith is out of reach.
+```sh
+helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith \
+  --version <release> --namespace signalith --create-namespace
+```
 
-An event sent twice (the webhook backend retries a batch it is not sure arrived) is
-stored once.
+`<release>` is a Signalith release, such as `0.3.0`; each release publishes the chart with
+the same version, signed with Sigstore, and its `.tgz` is on the release page. From a
+checkout of the repository, `helm install signalith deploy/helm/signalith -n signalith
+--create-namespace` installs the chart as it is on that branch, with the image built from
+`main`.
 
-## What you need
+The first start takes a few minutes. Then:
 
-- A Signalith [agent token](agent-tokens.md). Create one on the **Add data** page, or
-  with `sudo signalith tokens create "Kubernetes audit"`.
-- The control plane nodes must reach Signalith's agent port (7779 by default) over
-  HTTPS.
-- Signalith's CA certificate, `/api/tls/ca.pem` on the server, unless its certificate is
-  one the nodes already trust.
+1. Show the first admin password:
 
-## Set it up
+    ```sh
+    kubectl -n signalith get secret signalith-secrets -o jsonpath='{.data.initial-admin-password}' | base64 -d; echo
+    ```
 
-### 1. Choose what to record
+2. Open Signalith. With the default `ClusterIP` service:
 
-The audit policy says which requests are recorded, and how much of each. Recording
-everything at the `RequestResponse` level makes a great deal of data: start from a
-policy that keeps the request body (`Request`) for changes, so rules can see a pod's
-spec, and only the metadata for reads. Save it as
-`/etc/kubernetes/audit-policy.yaml` on each control plane node:
+    ```sh
+    kubectl -n signalith port-forward service/signalith 8080:8080
+    ```
+
+    then <https://localhost:8080>, and sign in as `admin`. The browser warns about the
+    certificate until you trust Signalith's CA ([HTTPS](https.md#trust-the-certificate)).
+
+3. So agents and devices outside the cluster can send to it, give it an address they
+   reach (below) and set `server.publicURL` to it. The Add data page puts that address
+   into each agent's configuration.
+
+The chart's settings are in its
+[values.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/helm/signalith/values.yaml),
+each with a comment. Change them with a file of your own (`-f my-values.yaml`) on
+`helm install` or `helm upgrade`.
+
+## What it runs
+
+| Part | Kubernetes objects | Notes |
+| --- | --- | --- |
+| Signalith servers | StatefulSet `signalith`, `server.replicas` pods | Each has its own volume for its master key, identity, detections and archived days |
+| Scanners | StatefulSet `signalith-scanner`, off unless `scanner.enabled` | [Scanners](multi-server.md#cluster-servers-and-scanners) scan networks from inside the cluster and never run the background jobs |
+| OpenSearch | StatefulSet `signalith-opensearch`, 1 or 3+ nodes | Off with `opensearch.enabled: false` |
+| Setup | A Job before each install and upgrade | Makes the secrets (below), then is deleted with its rights |
+| Services | `signalith` (web, API and agents), `signalith-syslog`, `signalith-pods`, `signalith-opensearch` | |
+| Network policies | Around OpenSearch and the servers | Need a network plugin that enforces them |
+
+## Exposing Signalith
+
+The web Service is `ClusterIP` by default. To reach it from outside the cluster:
+
+- **A load balancer**: `server.service.type: LoadBalancer`. Limit who can connect with
+  `server.service.loadBalancerSourceRanges` (without it the sign-in page is open to every
+  network the load balancer is on, and the install notes warn about it), and keep each client's own address (which
+  sign-in limits and the audit log use) with `server.service.externalTrafficPolicy: Local`.
+- **Syslog**: the `signalith-syslog` Service takes UDP and TCP 514 and syslog over TLS on
+  6514, with the same settings under `server.syslog.service`. `server.syslog.allow` lists
+  the addresses that may send.
+- **An ingress controller**: Signalith serves HTTPS itself and agents send their own token,
+  so pass connections through (TLS passthrough, such as ingress-nginx's
+  `nginx.ingress.kubernetes.io/ssl-passthrough`) rather than ending TLS in the ingress.
+
+Signalith makes and renews its own HTTPS certificate from a CA the servers share
+([HTTPS](https.md)). To serve one of your own, such as one from cert-manager, name its
+`kubernetes.io/tls` Secret in `server.tls.existingSecret`.
+
+## Several servers
 
 ```yaml
-apiVersion: audit.k8s.io/v1
-kind: Policy
-# One event per request, when the answer is complete.
-omitStages:
-  - RequestReceived
-rules:
-  # Leave out the noisiest requests that say nothing about who did what.
-  - level: None
-    users: ["system:kube-proxy"]
-    verbs: ["watch"]
-  - level: None
-    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version"]
-  - level: None
-    resources:
-      - group: ""
-        resources: ["events"]
-    verbs: ["get", "list", "watch"]
-  # Secrets and ConfigMaps: who touched them, never their contents.
-  - level: Metadata
-    resources:
-      - group: ""
-        resources: ["secrets", "configmaps"]
-  # Changes, with the object that was sent (a pod's spec, a role binding's subjects).
-  - level: Request
-    verbs: ["create", "update", "patch", "delete", "deletecollection"]
-  # Everything else, its metadata.
-  - level: Metadata
+server:
+  replicas: 3
 ```
 
-Keep secrets at `Metadata`: at `Request` or `RequestResponse` the event would carry the
-secret itself.
+The servers share OpenSearch, settings, users and detections, take turns running the
+background jobs, and keep working when one of them stops ([Servers](servers.md)). They join
+by themselves: each pod reads the **cluster key** from the chart's secret, so no join token
+or **Add a server** is needed. The Servers page lists each pod by its name (`signalith-0`,
+`signalith-1`, ...). Scale down by lowering `replicas`: the stopped server hands its jobs
+over, and you can remove it from the Servers page afterwards
+([Draining and removing a server](servers.md#draining-and-removing-a-server)).
 
-### 2a. Send with the webhook backend
+With more than one server, a PodDisruptionBudget keeps at least one running while nodes are
+drained, and the pods prefer different nodes.
 
-Save this as `/etc/kubernetes/signalith-audit.yaml`, with Signalith's address, the CA
-certificate's path and the agent token. It is a kubeconfig file, the format the API
-server reads its webhook settings in:
+**Scanners** in the cluster: `scanner.enabled: true`. Pick the networks each scans on the
+Vulnerabilities page. A server outside Kubernetes (Linux, Windows or Docker) can still join
+the same cluster with **Add a server**, once OpenSearch is reachable from it.
+**Network sensors** (Zeek, Suricata) need a mirror port and run on machines of their own:
+see [Network sensor](network-sensor.md).
+
+## OpenSearch
+
+The bundled OpenSearch (version 3.9) uses HTTPS on its API and TLS between its nodes, with
+certificates from a CA of its own, and takes sign-ins only by certificate: Signalith's, and
+an admin certificate used to load its security settings. Nothing outside the release may
+connect to it. For a cluster that keeps working when a node stops, run three:
 
 ```yaml
-apiVersion: v1
-kind: Config
-clusters:
-  - name: signalith
-    cluster:
-      server: https://siem.example.com:7779/api/ingest?tag=kubernetes
-      certificate-authority: /etc/kubernetes/signalith-ca.pem
-users:
-  - name: signalith
-    user:
-      token: sgl_...
-contexts:
-  - name: signalith
-    context:
-      cluster: signalith
-      user: signalith
-current-context: signalith
+opensearch:
+  replicas: 3
+  javaOpts: "-Xms4g -Xmx4g"
+  resources:
+    requests: { cpu: "2", memory: 8Gi }
+    limits: { memory: 8Gi }
+  persistence:
+    size: 500Gi
 ```
 
-The file holds the token: make it readable by root only (`chmod 600`). Then add these
-flags to the API server. With kubeadm, they go in
-`/etc/kubernetes/manifests/kube-apiserver.yaml`, which also needs the two files and the
-CA certificate mounted into the API server's pod (`volumes` and `volumeMounts`); the
-kubelet restarts the API server when the file changes.
+Signalith keeps a copy of each day's events on a second node once there is one. Give
+OpenSearch about half its memory limit as heap ([Performance and sizing](performance.md)).
 
-```
---audit-policy-file=/etc/kubernetes/audit-policy.yaml
---audit-webhook-config-file=/etc/kubernetes/signalith-audit.yaml
---audit-webhook-mode=batch
---audit-webhook-batch-max-size=100
-```
+**An OpenSearch you already run**, which must use HTTPS and a sign-in:
 
-Each batch is one `EventList`, and Signalith reads its events one by one. A request can
-be up to 16 MB, so keep batches small (`--audit-webhook-batch-max-size`) if the policy
-records request bodies.
-
-On k3s, pass the same flags with `--kube-apiserver-arg`; on RKE2, under
-`kube-apiserver-arg` in its configuration file.
-
-### 2b. Or tail the audit log with Fluent Bit
-
-If the API server writes the log to a file (`--audit-log-path=/var/log/kubernetes/audit/audit.log`),
-read it with Fluent Bit on each control plane node. Set up the agent from the **Linux**
-card on the **Add data** page first, then add this input to the agent's
-`fluent-bit.conf`, next to its other inputs, and restart Fluent Bit:
-
-```
-[INPUT]
-    Name              tail
-    Tag               kubernetes
-    Path              /var/log/kubernetes/audit/audit.log
-    DB                /var/lib/fluent-bit/signalith-kube-audit.db
-    Buffer_Chunk_Size 64k
-    Buffer_Max_Size   1M
-    Skip_Long_Lines   On
-    storage.type      filesystem
+```yaml
+opensearch:
+  enabled: false
+  external:
+    urls: [https://opensearch.example.com:9200]
+    existingSecret: signalith-opensearch   # ca.crt, plus username and password
+    auth: password                          # or certificate: tls.crt and tls.key
 ```
 
-Each line of the file is one Event. Fluent Bit sends it as it is, under the
-`kubernetes` tag, through the agent's output, and Signalith decodes it, so no parsers
-file is needed. Lines longer than 1 MB are skipped. The
-[OpenTelemetry Collector](opentelemetry.md) works too: its `filelog` receiver passes each
-line on as a log record's body, and Signalith recognizes an Event there.
+Its user needs the rights in
+[roles.yml](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/docker/opensearch/security/roles.yml)
+([Securing OpenSearch](opensearch-security.md)).
 
-### Managed clusters
+## Secrets
 
-EKS, GKE and AKS don't let you set the API server's flags; they send the audit log
-through their cloud's logging instead:
+Nothing in the chart or its values is a secret. Before each install and upgrade, the setup
+Job makes what it needs and keeps it in three Kubernetes Secrets:
 
-- **GKE** writes it to Google Cloud's audit logs, which Signalith reads through a log sink
-  and Pub/Sub (see [Google Cloud](google-cloud.md)). Those entries are Google Cloud's,
-  with `sourcetype=google:gcp:pubsub:message`, and SigmaHQ's Google Cloud Kubernetes rules
-  run on them.
-- **EKS** writes it to CloudWatch Logs when the cluster's `audit` log type is turned on
-  (log group `/aws/eks/<cluster>/cluster`, streams `kube-apiserver-audit-*`). The
-  OpenTelemetry Collector's `awscloudwatch` receiver can read that group; each record's
-  body is one Event, which Signalith recognizes as one sent here.
-- **AKS** sends it through the cluster's diagnostic settings (category `kube-audit`) to
-  an Event Hub, which Signalith reads as Azure records (see [Entra ID and Azure](azure.md)),
-  with the Event as text in `properties.log`; the Kubernetes rules don't read those.
+| Secret | Holds | Mounted by |
+| --- | --- | --- |
+| `signalith-secrets` | The first admin password, the agents' ingest token, the cluster key, and Signalith's OpenSearch client certificate | Signalith's pods |
+| `signalith-opensearch-certs` | OpenSearch's node certificate and the admin certificate | OpenSearch's pods |
+| `signalith-opensearch-ca` | The OpenSearch CA's key | Nobody: only the setup Job reads it |
 
-## What you get
+The Job keeps what is already there, and renews a certificate within 30 days of its
+expiry (restart the pods afterwards: `kubectl -n signalith rollout restart statefulset`).
+It runs with a service account that exists only while it runs and may only read and
+write Secrets in its namespace. The pods copy their secrets into memory-only folders,
+readable by their own user alone.
 
-Each event becomes one event with `sourcetype=_json` and `source=kubernetes`: what
-Splunk's own test data for its Kubernetes detections is, and what its `kube_audit` macro
-searches. Its fields keep the Event's own names, with nested objects flattened into
-dotted names:
+To use your own values, such as from an external secrets manager, create the Secrets
+before installing, with the same names and keys: the Job keeps them and makes only what is
+missing.
 
-| Field | Example |
-| --- | --- |
-| `verb`, `stage`, `level` | `create`, `ResponseComplete`, `Request` |
-| `objectRef.resource`, `.subresource`, `.namespace`, `.name`, `.apiGroup` | `pods`, `exec`, `default`, `debug`, `rbac.authorization.k8s.io` |
-| `kube_user.username`, `kube_user.groups{}` | `jane@example.com`, `system:authenticated` (the Event's `user` object, renamed because Signalith's `user` field holds text) |
-| `impersonatedUser.username` | the user a request acted as |
-| `sourceIPs{}`, `userAgent` | `203.0.113.7`, `kubectl/v1.30.2 (linux/amd64)` |
-| `responseStatus.code`, `.reason`, `.message` | `201`, `403`, `Forbidden` |
-| `requestURI` | `/api/v1/namespaces/default/pods/debug/exec?command=sh` |
-| `annotations.authorization.k8s.io/decision`, `.../reason` | `allow`, why RBAC allowed it |
-| `requestObject.spec.containers{}.image`, `requestObject.spec.hostNetwork`, `requestObject.spec.volumes{}.hostPath.path` | what a pod asked for |
-| `requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration` | the object as `kubectl apply` sent it, as JSON text |
+Helm does not own these Secrets or the volumes, so `helm uninstall` keeps them, and
+installing again picks up where you left off. To remove everything:
 
-Every value is kept as text. The objects sent and returned (`requestObject`,
-`responseObject`) can be whole manifests: the fields rules read (containers' images and
-security contexts, host namespaces and paths, a CronJob's schedule, a Service's type, a
-role binding's subjects) are kept however deep they are, and up to 80 others; all of
-the event stays in the raw message. A list keeps its first 50 values. Each event also
-gets the data model fields of what it is:
-
-- A request that **creates, changes or deletes** an object (`create`, `update`, `patch`,
-  `delete`, `deletecollection`) is a **Change** event, with `action` (created, modified
-  or deleted), `command` (the verb), `object` (the object's name), `object_category` (its
-  resource, such as `pods`) and `change_type` `Kubernetes`.
-- A request refused for **lacking valid credentials** (401) is an **Authentication**
-  event with `action` failure.
-- Everything else, such as reads and watches, is an **Other** event.
-
-All of them have `user` and `src_user` (the user), `src` (the first source address),
-`signature` (the verb and resource, such as `create pods/exec`), `user_agent`,
-`object_path` (the request's URI), `result` (the response code), `status` (success, or
-failure for a code of 400 or more), `reason` and `id` (the audit ID). Some searches to
-start with:
-
-```
-sourcetype=_json source=kubernetes verb=create objectRef.subresource=exec | stats count by user, objectRef.namespace, objectRef.name
-datamodel=Change sourcetype=_json source=kubernetes | stats count by signature, user
-sourcetype=_json source=kubernetes responseStatus.code IN (401, 403) | stats count by src, user, userAgent
+```sh
+helm uninstall signalith -n signalith
+kubectl -n signalith delete pvc,secret -l app.kubernetes.io/instance=signalith
 ```
 
-## Detections
+**Change the admin password** on the Users page, or with `signalith passwd` in a server's
+pod (`kubectl -n signalith exec -it signalith-0 -- signalith passwd`); the first password
+then stops working. Then delete it from the Secret, so nobody who can read Secrets finds
+an old password there; the setup Job does not make it again:
 
-The SigmaHQ pack has 15 Kubernetes rules (see [Detections](detections.md#kubernetes)):
-admission controllers, cron jobs and jobs, role bindings and secrets created, changed or
-deleted, deployments and events deleted, exec into a container, pods created with a
-hostPath volume, with added capabilities or in `kube-system`, RBAC permissions listed,
-secrets listed, service accounts created, sidecars patched into a deployment, and
-requests refused as unauthorized or forbidden. One, potential enumeration activity, is
-experimental and is left out.
+```sh
+kubectl -n signalith patch secret signalith-secrets --type=json \
+  -p '[{"op":"remove","path":"/data/initial-admin-password"}]'
+```
 
-The Splunk Security Content pack has 11 Kubernetes rules: secrets read with an unusual
-user agent, by an unusual group or user, privileged and host-network pods created or
-updated, cron jobs, DaemonSets and node port services created, pods created in the
-default and system namespaces, suspicious images pulled, and create requests refused.
-The rules that read an allowed list (`kube_allowed_user_agents` and the like) ship with
-Splunk's sample values; set your own in the rule's search after turning it on. Of
-Splunk's 13 production rules that read the audit log, 2 are left out because they need
-`iplocation` to name a country and city, which Signalith has no database for, and one
-because it also compares the country; one more is experimental (`REPORT.md` in each pack
-lists every rule left out and why). Turn them on from each pack's page like any other
-rules.
+Turn on [two-factor sign-in](users.md) for every admin.
 
-## When nothing arrives
+## Security
 
-- **Look at the API server's log.** The webhook backend logs each batch it fails to
-  send, with the HTTP status Signalith gave: `401` for a token Signalith doesn't know,
-  `413` for a batch over 16 MB, and a certificate error when the CA file is not
-  Signalith's.
-- **Check the policy.** With no rule matching (or a first rule of `level: None`), the
-  API server records nothing.
-- **Search for the events by their tag**: `source=kubernetes` should find them. Events
-  sent under another tag are still recognized by their shape (`kind: Event`,
-  `apiVersion: audit.k8s.io/v1`).
+- **Pods**: non-root users (Signalith 65532, OpenSearch 1000), read-only root file systems,
+  every capability dropped, no privilege escalation, the runtime's seccomp profile, and no
+  Kubernetes API token. They meet the restricted Pod Security Standard, so the namespace
+  can enforce it:
+
+    ```sh
+    kubectl label namespace signalith pod-security.kubernetes.io/enforce=restricted
+    ```
+
+- **A namespace of its own**: install Signalith in a namespace used by nothing else. The
+  network policies recognize Signalith's pods by their labels, so anyone who can create
+  pods in the namespace could give one those labels and reach OpenSearch's port (it still
+  needs a client certificate from OpenSearch's CA to sign in).
+- **Network**: OpenSearch takes connections only from the release's Signalith pods (and its
+  own nodes), and connects only to its own nodes. Signalith's pods take connections only on
+  their web and syslog ports. Limit who may reach those with `networkPolicy.webFrom` and
+  `networkPolicy.syslogFrom`, and where Signalith may connect with
+  `networkPolicy.serverEgress` (threat intel downloads, CVE lookups, content updates and
+  notifications need the internet).
+- **Images**: Signalith's image is signed with Sigstore and has build provenance; pin it by
+  digest with `image.digest`. OpenSearch's image is pinned by digest.
+- **Secrets**: see above. Turn on encryption at rest for Secrets in your cluster, and keep
+  `get secret` rights in the namespace to the people who run Signalith.
+
+## Upgrading
+
+```sh
+helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <new release> -n signalith --reuse-values
+```
+
+The servers restart one at a time; each hands its jobs over as it stops. Read the release
+notes first: when a release moves OpenSearch to a new major version, back up its volume.
+Rolling back with `helm rollback` restarts the previous version; see
+[Going back to the previous version](servers.md#going-back-to-the-previous-version) for
+what a server keeps across that.
+
+## Troubleshooting
+
+- **Pods stay Pending**: no storage class makes their volumes. Set
+  `server.persistence.storageClass` and `opensearch.persistence.storageClass`, or give
+  the cluster a default one.
+- **OpenSearch is not ready**: its `security` container loads OpenSearch's security
+  settings and says what went wrong:
+  `kubectl -n signalith logs signalith-opensearch-0 -c security`.
+- **A server is not ready**: `/readyz` says why
+  ([Load balancers](servers.md#load-balancers-readyz-and-livez)), and so does its log:
+  `kubectl -n signalith logs signalith-0`.
+- **The install fails in the setup Job**: `kubectl -n signalith logs job/signalith-setup`.
+  It stays there after a failure, so the next install or upgrade replaces it.
