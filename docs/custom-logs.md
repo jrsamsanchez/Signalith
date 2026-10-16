@@ -77,6 +77,13 @@ When an AI model is set up under **Settings → AI assistant** (see [Investigate
 better parser, for free text especially. Before you select it, the page says which model
 it uses and where it sends the request. Signalith sends only the first 20 lines of the
 sample (at most 8 KB), the current parser, and the list of data models and formats.
+Credentials in those lines are replaced with `[masked]` first: values after names such as
+password, token, key, secret, auth and signature, cookie and Authorization headers,
+passwords in URLs, private keys, and the shapes of common access keys and tokens (AWS,
+GitHub, Slack, JWTs). The lines go as a JSON list of
+strings, and the model is told they are data to describe, not instructions to follow,
+since whoever writes to the log can put any text in them. Still compare the field
+mappings with the sample before you save: a crafted log line could try to steer them.
 
 The model's answer goes through the same checks as a parser you write, and its regular
 expression must read at least half the sample lines; one that does not is sent back

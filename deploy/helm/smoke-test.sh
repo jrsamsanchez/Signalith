@@ -10,8 +10,10 @@ REL=${REL:-sig}
 CHART=${CHART:-deploy/helm/signalith}
 VALUES=${VALUES:-deploy/helm/ci/kind-values.yaml}
 FULL=$REL-signalith
-PORT=18080
+PORT=19000
 URL=https://localhost:$PORT
+AGENT_PORT=17779
+AGENT_URL=https://localhost:$AGENT_PORT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 until_ok() {
@@ -28,7 +30,7 @@ secret() { kubectl -n "$NS" get secret "$FULL-secrets" -o "jsonpath={.data.$1}" 
 helm test -n "$NS" "$REL" --logs || fail "helm test"
 echo "ok: helm test"
 
-kubectl -n "$NS" port-forward "service/$FULL" "$PORT:8080" >/tmp/port-forward.log 2>&1 &
+kubectl -n "$NS" port-forward "service/$FULL" "$PORT:9000" "$AGENT_PORT:7779" >/tmp/port-forward.log 2>&1 &
 PF=$!
 trap 'kill $PF 2>/dev/null || true' EXIT
 until_ok 60 "the web Service answers through port-forward" sh -c "curl -sfk $URL/readyz | grep -q '\"ready\":true'"
@@ -46,11 +48,16 @@ v = json.load(sys.stdin)
 ready = [s for s in v[\"servers\"] if s[\"state\"] == \"ready\"]
 sys.exit(0 if len(ready) == 3 else 1)'"
 
-# An agent's batch gets in.
+# An agent's batch gets in on the agent port, and the web port turns it
+# away (503, so an agent set up for the web port keeps its events).
+code=$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \
+  "$URL/api/ingest?tag=linux_secure" -d '[{"log":"x"}]')
+[ "$code" = 503 ] || fail "the web port answered an agent batch with $code, not 503"
+echo "ok: the web port turns agents away"
 i=0
 while [ $i -lt 5 ]; do
   curl -sfk -o /dev/null -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \
-    "$URL/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$i port 22 ssh2\"}]" \
+    "$AGENT_URL/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$i port 22 ssh2\"}]" \
     || fail "agent batch $i"
   i=$((i + 1))
 done
