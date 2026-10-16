@@ -27,11 +27,11 @@ func (s *Server) routeTokens(api *router) {
 	// Analysts see which tokens exist and how they are used; no response
 	// holds a token except the one that creates it.
 	api.analyst("GET /api/agent-tokens", s.handleListTokens)
-	api.admin("POST /api/agent-tokens", s.handleCreateToken)
+	api.sensitive("POST /api/agent-tokens", s.handleCreateToken)
 	api.admin("PATCH /api/agent-tokens/{id}", s.handleRenameToken)
 	api.admin("POST /api/agent-tokens/{id}/revoke", s.handleRevokeToken)
 	api.admin("POST /api/agent-tokens/legacy/{id}/refuse", s.handleRefuseLegacy)
-	api.admin("POST /api/agent-tokens/legacy/{id}/accept", s.handleAcceptLegacy)
+	api.sensitive("POST /api/agent-tokens/legacy/{id}/accept", s.handleAcceptLegacy)
 }
 
 // tokens returns the agent tokens in use. Without a registry from the

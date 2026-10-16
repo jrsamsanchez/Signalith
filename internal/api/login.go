@@ -229,8 +229,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 		s.sessions().Delete(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	for _, name := range []string{s.cookieName(r), s.recheckCookieName(r)} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 

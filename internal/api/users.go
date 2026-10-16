@@ -18,15 +18,16 @@ func (s *Server) routeUsers(api *router) {
 	api.self("GET /api/me", s.handleMe)
 	api.self("POST /api/me/password", s.handleChangeOwnPassword)
 	s.routeMFA(api)
+	s.routeRecheck(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
-	api.admin("POST /api/users", s.handleCreateUser)
-	api.admin("PUT /api/users/{username}", s.handleUpdateUser)
-	api.admin("DELETE /api/users/{username}", s.handleDeleteUser)
-	api.admin("POST /api/users/{username}/password", s.handleResetPassword)
+	api.sensitive("POST /api/users", s.handleCreateUser)
+	api.sensitive("PUT /api/users/{username}", s.handleUpdateUser)
+	api.sensitive("DELETE /api/users/{username}", s.handleDeleteUser)
+	api.sensitive("POST /api/users/{username}/password", s.handleResetPassword)
 
 	api.admin("GET /api/auth/directory", s.handleGetDirectory)
-	api.admin("PUT /api/auth/directory", s.handlePutDirectory)
+	api.sensitive("PUT /api/auth/directory", s.handlePutDirectory)
 	api.admin("POST /api/auth/directory/test", s.handleTestDirectory)
 	api.admin("POST /api/auth/directory/test-user", s.handleTestDirectoryUser)
 }

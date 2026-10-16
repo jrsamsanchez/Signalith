@@ -25,7 +25,7 @@ func (s *Server) routeMFA(api *router) {
 	api.self("POST /api/me/mfa/confirm", s.handleConfirmMFA)
 	api.self("POST /api/me/mfa/recovery", s.handleNewRecoveryCodes)
 	api.self("POST /api/me/mfa/off", s.handleMFAOff)
-	api.admin("DELETE /api/users/{username}/mfa", s.handleResetMFA)
+	api.sensitive("DELETE /api/users/{username}/mfa", s.handleResetMFA)
 }
 
 var (

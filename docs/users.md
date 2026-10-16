@@ -321,6 +321,27 @@ rotated). Recovery codes are kept only as hashes.
 | `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
 | `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
 
+## Confirming it's you
+
+Some changes ask for your password again when you have not entered it in the last
+15 minutes, so someone at a computer you left signed in cannot make them:
+
+- adding, changing, disabling or deleting a user, resetting a password or two-step
+  sign-in, and saving the directory sign-in settings;
+- making an API token, an agent token or a token to add a server, and accepting an
+  old shared agent token;
+- saving a setting that affects sign-in or encryption: **Sign out after**, **Require
+  two-step sign-in** and the other `auth.*` settings, HTTPS (`server.tls.*`),
+  **Trusted reverse proxies**, **Client address header**, **Proxies and gateways**,
+  **PROXY protocol from load balancers** and syslog's **Allowed senders**, or **Reset
+  all**.
+
+With two-step sign-in on, a code from your app (or a recovery code) works instead of
+the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
+two-step sign-in and making new recovery codes always take a code. Scripts that use
+HTTP Basic auth send the password with every request, so they are never asked.
+
 ## Sign in with Active Directory or LDAP
 
 Directory sign-in lets people use their Active Directory or LDAP account, with their
@@ -851,6 +872,8 @@ the Settings page and restarts are logged the same way; see
 | `new recovery codes made` | `by`, `user` |
 | `recovery code used` | `by`, `user`, `recovery_codes_left` |
 | `two-step code refused` | `user`, `client`, `locked_out` |
+| `password or code entered again` | `by`, `user`, `with` (`password`, `app` or `recovery`) |
+| `recheck refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
 | `directory user looked up` | `by`, `user`, `servers`, `ok`, `code`, `password_checked` |
@@ -921,7 +944,8 @@ request, so a server that has not yet read that change reads it first (see
 
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
 `POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
-`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`.
+`POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
+`POST /api/me/recheck`.
 
 **Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
@@ -1066,6 +1090,22 @@ and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
 
 A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
 sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
+
+### Confirming it's you
+
+A change that needs the password again (see [Confirming it's you](#confirming-its-you))
+answers `403`:
+
+```json
+{"code": "recheck_required", "with": "password", "minutes": 15,
+ "error": "Enter your password to make this change."}
+```
+
+`with` is `password`, `password_or_code` (two-step sign-in is on) or `sign_in` (the
+account signs in elsewhere, so sign in again). `POST /api/me/recheck` with
+`{"password": "..."}` or `{"code": "123456"}` sets a cookie for this sign-in session
+that lasts 15 minutes; then send the change again. A wrong password answers `400` with
+`"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 
 ### Users (admin)
 

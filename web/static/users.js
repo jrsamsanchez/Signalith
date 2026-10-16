@@ -1529,4 +1529,82 @@
   function refreshMe() {
     api('api/me').then(showUser).catch(() => {});
   }
+
+  // confirmIdentity asks for the password, or a two-step code, again before
+  // a sensitive change (the server answered recheck_required, see api()).
+  // It resolves to true once the server took it; requests that need it at
+  // the same moment share one dialog.
+  let rechecking = null;
+  function confirmIdentity(data) {
+    if (rechecking) return rechecking;
+    const d = modalDialog('u-recheck');
+    rechecking = new Promise((resolve) => {
+      let ok = false;
+      const close = () => d.close();
+      d.onclose = () => { rechecking = null; resolve(ok); };
+      const minutes = data.minutes || 15;
+      if (data.with === 'sign_in') {
+        const again = el('button', { type: 'button', class: 'btn btn--primary', onclick: () => { close(); toSignIn(); } }, 'Sign in again');
+        fill(d, modalHead('u-recheck', 'Sign in again to continue', 'This change needs a recent sign-in. Sign in again, then make the change.', close),
+          footer(el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), again));
+        d.showModal();
+        again.focus();
+        return;
+      }
+      const err = formAlert();
+      const pass = el('input', { id: 'u-recheck-password', class: 'input', type: 'password', autocomplete: 'current-password' });
+      const code = codeInput('u-recheck-code', true);
+      const passField = field('Password', pass);
+      const codeField = field('Code from your app', code, 'Or one of your recovery codes.');
+      codeField.hidden = true;
+      let useCode = false;
+      const swap = el('button', { type: 'button', class: 'link-btn', hidden: data.with === 'password_or_code' ? null : '' }, 'Use a code from your app instead');
+      swap.addEventListener('click', () => {
+        useCode = !useCode;
+        passField.hidden = useCode;
+        codeField.hidden = !useCode;
+        swap.textContent = useCode ? 'Use your password instead' : 'Use a code from your app instead';
+        (useCode ? code : pass).focus();
+      });
+      const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Continue');
+      [pass, code].forEach((n) => n.addEventListener('input', () => clearField(n)));
+      const form = el('form', { novalidate: '', class: 'u-recheck' },
+        modalHead('u-recheck', 'Confirm it’s you', `This is a sensitive change, so enter your password again. You won’t be asked again for ${minutes} minutes.`, close),
+        el('div', { class: 'modal__body' }, err, passField, codeField, el('p', { class: 'u-recheck__swap' }, swap)),
+        footer(el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), submit));
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        err.classList.add('hidden');
+        clearFields(form);
+        const input = useCode ? code : pass;
+        const value = useCode ? code.value.trim() : pass.value;
+        if (!value) { markField(input, useCode ? 'enter the code your app shows' : 'enter your password'); input.focus(); return; }
+        const restore = busy(submit, 'Checking…');
+        try {
+          // Straight to the server: api() would ask again on an error.
+          const resp = await apiRaw('api/me/recheck', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(useCode ? { code: value } : { password: value }) });
+          const res = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            restore();
+            if (res.code === 'wrong_password') { markField(pass, 'that password isn’t right'); pass.select(); return; }
+            if (res.code === 'mfa_wrong') { markField(code, 'that code isn’t right, or was used already'); code.select(); return; }
+            showAlert(err, 'Signalith couldn’t check it.', sentence(res.error || resp.statusText));
+            return;
+          }
+        } catch (e) {
+          restore();
+          showAlert(err, 'Signalith couldn’t check it.', sentence(e.message));
+          return;
+        }
+        ok = true;
+        close();
+      });
+      fill(d, form);
+      d.showModal();
+      pass.focus();
+    });
+    return rechecking;
+  }
+  window.confirmIdentity = confirmIdentity;
 }());

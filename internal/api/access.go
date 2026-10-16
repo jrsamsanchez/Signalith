@@ -23,6 +23,9 @@ import (
 type route struct {
 	Pattern string
 	Role    users.Role
+	// Recheck routes make sensitive changes, which ask for the password
+	// or two-step code again (see recheckNeeded).
+	Recheck bool
 	// Unclassified routes were registered without a role. They are
 	// admin-only, and TestEveryRouteHasARole fails until they get one.
 	Unclassified bool
@@ -107,6 +110,9 @@ type principal struct {
 	tokenID string
 	// codeUsed is the two-step code this sign-in was made with.
 	codeUsed *users.CodeResult
+	// signedIn is when the session (Method "session") was made: signing
+	// in counts as entering the password again (see rechecked).
+	signedIn time.Time
 }
 
 type userKey struct{}
@@ -170,6 +176,9 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 			})
 			return
 		}
+		if rt.Recheck && s.recheckNeeded(w, r, p) {
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -221,7 +230,7 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 			// A password changed since signing in (perhaps on another
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
-				p.Method, p.token, p.remember = "session", c.Value, ss.Remember
+				p.Method, p.token, p.remember, p.signedIn = "session", c.Value, ss.Remember, ss.Created
 				return p, nil
 			}
 			// Deleted, disabled or given a new password since signing in.

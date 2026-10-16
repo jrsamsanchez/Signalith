@@ -866,6 +866,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if settingsSaveRecheck(raw) && s.recheckNeeded(w, r, principalOf(r)) {
+		return
+	}
 	if s.Config.Path() == "" {
 		writeError(w, http.StatusConflict, errNoConfigFile)
 		return
