@@ -130,7 +130,7 @@ type fieldStats struct {
 func applyFieldSummary(ctx context.Context, res *Result, c *query.FieldSummary) error {
 	ev := evaluatorFor(ctx)
 	stats := map[string]*fieldStats{}
-	wanted := func(f string) bool {
+	wanted := fieldMatcher(ev, len(c.Fields), func(f string) bool {
 		if strings.HasPrefix(f, "\x00") {
 			return false
 		}
@@ -143,13 +143,20 @@ func applyFieldSummary(ctx context.Context, res *Result, c *query.FieldSummary) 
 			}
 		}
 		return false
-	}
+	})
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		for f, v := range r {
-			if v == nil || !wanted(f) {
+			if v == nil {
+				continue
+			}
+			want, ok := wanted(f)
+			if !ok {
+				return ev.err
+			}
+			if !want {
 				continue
 			}
 			s := stats[f]

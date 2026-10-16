@@ -142,7 +142,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Regex:
 		return applyRegex(ctx, res, c)
 	case *query.FieldsRemove:
-		applyFieldsRemove(res, c)
+		return applyFieldsRemove(ctx, res, c)
 	case *query.Chart:
 		for _, cc := range chartCommands(c) {
 			if err := applyCommand(ctx, res, cc); err != nil {

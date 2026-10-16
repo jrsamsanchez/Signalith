@@ -41,7 +41,9 @@ const (
 	// MaxAutoRegressFields bounds the fields one autoregress adds.
 	MaxAutoRegressFields = 100
 	// MaxFieldSummaryVals bounds fieldsummary maxvals=.
-	MaxFieldSummaryVals     = 1000
+	MaxFieldSummaryVals = 1000
+	// MaxFieldSummaryFields bounds the field patterns fieldsummary takes.
+	MaxFieldSummaryFields   = 100
 	defaultFieldSummaryVals = 100
 )
 
@@ -204,6 +206,9 @@ func (p *parser) parseFieldSummary(cmd token) (Command, error) {
 			continue
 		}
 		if (t.kind == tokWord || t.kind == tokString) && t.text != "" {
+			if len(c.Fields) >= MaxFieldSummaryFields {
+				return nil, errorf(t.pos, "fieldsummary takes at most %d fields", MaxFieldSummaryFields)
+			}
 			p.next()
 			c.Fields = append(c.Fields, t.text)
 			continue

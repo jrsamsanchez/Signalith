@@ -13,7 +13,7 @@ import (
 // first matching pair wins.
 func applyReplace(ctx context.Context, res *Result, c *query.Replace) error {
 	ev := evaluatorFor(ctx)
-	wanted := func(f string) bool {
+	wanted := fieldMatcher(ev, len(c.Fields), func(f string) bool {
 		if len(c.Fields) == 0 {
 			return !strings.HasPrefix(f, "_")
 		}
@@ -23,7 +23,7 @@ func applyReplace(ctx context.Context, res *Result, c *query.Replace) error {
 			}
 		}
 		return false
-	}
+	})
 	// prefixes[i] is the text before pair i's first *, or the whole
 	// pattern when it has none.
 	prefixes := make([]string, 0, len(c.Pairs))
@@ -62,7 +62,11 @@ func applyReplace(ctx context.Context, res *Result, c *query.Replace) error {
 		}
 		keys = keys[:0]
 		for f := range r {
-			if wanted(f) {
+			want, ok := wanted(f)
+			if !ok {
+				return ev.err
+			}
+			if want {
 				keys = append(keys, f)
 			}
 		}
