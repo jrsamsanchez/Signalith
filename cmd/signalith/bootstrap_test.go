@@ -313,9 +313,18 @@ func TestInitialPassword(t *testing.T) {
 		t.Errorf("second change: %v", err)
 	}
 
+	// The change is noted, so the server and initial-password know it
+	// without the variable too.
+	if fp, err := config.ReadFirstPassword(state); err != nil || fp.Changed.IsZero() {
+		t.Errorf("the change was not noted: %+v %v", fp, err)
+	}
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
-	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "no generated first password") {
+	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") {
 		t.Errorf("without the variable: %v", err)
+	}
+	// The setup step's file stays: the server reads it at every start.
+	if _, err := os.Stat(filepath.Join(sigDir, initialPasswordFile)); err != nil {
+		t.Error(err)
 	}
 }
 
@@ -455,5 +464,73 @@ func TestInitSavePassword(t *testing.T) {
 	}
 	if !c.CheckPassword("admin", pw) {
 		t.Error("the saved password does not sign in")
+	}
+	// The server, which cannot read the file, is told the hash, so it asks
+	// for a new password at the first sign-in.
+	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
+		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
+	}
+
+	// signalith passwd replaces it: the file goes, and initial-password
+	// says it was changed.
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "the admin's own password")
+	printed = captureStdout(t, func() {
+		if err := cmdPasswd([]string{"-c", path}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Stat(saved); !os.IsNotExist(err) || !strings.Contains(printed, "Removed "+saved) {
+		t.Errorf("the first password's file: %v; passwd said:\n%s", err, printed)
+	}
+	out.Reset()
+	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") || out.Len() != 0 {
+		t.Errorf("initial-password after the change: %q %v", out.String(), err)
+	}
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("admin", "the admin's own password") {
+		t.Errorf("after passwd: %v", err)
+	}
+}
+
+// An install from before init noted the first password's hash: the
+// packages' upgrade notes it with initial-password -note while the
+// password is still the first one, and never once it was changed.
+func TestNoteFirstPassword(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
+	path := filepath.Join(root, "etc", "signalith.yaml")
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-save-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	// As an older version left it.
+	if err := os.Remove(config.FirstPasswordFileIn(state)); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
+		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
+	}
+	// A password someone chose is not noted.
+	os.Remove(config.FirstPasswordFileIn(state))
+	h, _ := config.HashPassword("chosen by the admin")
+	if err := config.SetAdminPasswordHash(path, h); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(config.FirstPasswordFileIn(state)); !os.IsNotExist(err) {
+		t.Errorf("a chosen password was noted: %v", err)
 	}
 }

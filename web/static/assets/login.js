@@ -263,7 +263,9 @@
   function showChange(me, typed) {
     temporary = typed || '';
     const who = me && (me.name || me.username);
-    $('change-sub').textContent = (who ? who + ', you' : 'You') + ' signed in with a temporary password. Choose your own to continue.';
+    // The built-in admin's first password is one Signalith made.
+    const made = me && me.source === 'builtin' ? 'the first password Signalith made' : 'a temporary password';
+    $('change-sub').textContent = (who ? who + ', you' : 'You') + ' signed in with ' + made + '. Choose your own to continue.';
     $('change-current-field').hidden = !!temporary;
     $('change-error').hidden = true;
     form.hidden = true;

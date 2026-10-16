@@ -270,9 +270,9 @@ func cmdInit(args []string) error {
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
 	switch {
 	case saved:
-		fmt.Printf("  Password:    show it with: signalith initial-password   (change it with: signalith passwd)\n")
+		fmt.Printf("  Password:    show it with: signalith initial-password   (you choose your own at the first sign-in)\n")
 	case generated:
-		fmt.Printf("  Password:    %s   (shown once; change it with: signalith passwd)\n", pw)
+		fmt.Printf("  Password:    %s   (shown once; you choose your own at the first sign-in)\n", pw)
 	}
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
@@ -281,6 +281,14 @@ func cmdInit(args []string) error {
 	// none), so init can say where it is and to back it up.
 	if _, err := c.Keyring().Seal("init", "make the master key"); err != nil {
 		return fmt.Errorf("making the master key: %w", err)
+	}
+	// A password Signalith made must be changed at the first sign-in with
+	// it. The packages keep it where only root can read it, so the server
+	// is told its hash (see config.FirstPassword).
+	if generated {
+		if err := config.RecordFirstPassword(config.StateDirFor(*path), h); err != nil {
+			return fmt.Errorf("cannot note the first admin password in the state folder: %w", err)
+		}
 	}
 	if src, err := c.Keyring().Source(); err == nil {
 		fmt.Printf("  Master key:  %s\n", src)
@@ -610,11 +618,15 @@ func cmdPasswd(args []string) error {
 			return err
 		}
 		fmt.Printf("Password updated in %s, on this server only. It replaces the configured password: restart the server to apply it.\n", hashFile)
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// A member of a cluster that shares its users changes the built-in
 	// admin of every server, at once.
 	if done, err := passwdShared(*path, stateDir, h); done || err != nil {
+		if err == nil {
+			firstPasswordReplaced(os.Stdout, *path, stateDir)
+		}
 		return err
 	}
 	_, statErr := os.Stat(hashFile)
@@ -637,6 +649,7 @@ func cmdPasswd(args []string) error {
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
 				"(signalith passwd -local sets the password for that). Run signalith passwd again once OpenSearch answers to change the cluster's password.")
 		}
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// Only the hash changes in the file; settings from the environment
@@ -652,6 +665,7 @@ func cmdPasswd(args []string) error {
 	if os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
 		fmt.Println("Note: SIGNALITH_ADMIN_PASSWORD is set in this environment, and wherever it is set for the server it replaces the password in the file.")
 	}
+	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
 }
 

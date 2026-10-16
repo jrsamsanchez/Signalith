@@ -139,6 +139,19 @@ jobs:
             -H 'Content-Type: application/json' \
             -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" \
             https://localhost:8080/api/login > /dev/null
+          # The first password Signalith made allows only choosing a new
+          # one, as an admin does on the sign-in page.
+          code=$(curl -s -o "$RUNNER_TEMP/refused.json" -w '%{http_code}' -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            https://localhost:8080/api/health)
+          test "$code" = 403
+          jq -e '.code == "password_change_required"' "$RUNNER_TEMP/refused.json"
+          newpw=$(openssl rand -hex 16)
+          curl -sf -b "$RUNNER_TEMP/cookies" -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg c "$password" --arg n "$newpw" '{current_password: $c, new_password: $n}')" \
+            https://localhost:8080/api/me/password | jq -e '.must_change_password == false'
+          # It is no longer shown once changed.
+          if $COMPOSE exec -T signalith signalith initial-password; then echo "initial-password still shows the first password"; exit 1; fi
           # OpenSearch loads its security settings a moment after it starts
           # answering, so the health may say "not initialized" at first.
           for i in $(seq 1 60); do
@@ -384,6 +397,11 @@ jobs:
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
             -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:8080/api/login > /dev/null
+          # The first password Signalith made must be replaced before
+          # anything else.
+          curl -sf -b "$RUNNER_TEMP/cookies" -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg c "$password" --arg n "$(openssl rand -hex 16)" '{current_password: $c, new_password: $n}')" \
+            https://localhost:8080/api/me/password > /dev/null
           for i in $(seq 1 60); do
             curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health |
               jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break

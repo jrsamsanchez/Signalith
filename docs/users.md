@@ -84,6 +84,39 @@ first password comes from a file the setup step made (`signalith initial-passwor
 it), and the new one is kept in `admin-password-hash` in the `signalith-data` volume,
 where it replaces the first one.
 
+**The first password must be changed.** When Signalith made the built-in admin's
+password (the Docker quick start's setup step, the packages, or `signalith init`), the
+first sign-in with it is like a local user's with a temporary password: the sign-in page
+asks for a new password, and until one is chosen every other request, with the session
+or HTTP Basic credentials, is refused with `403` and `"code": "password_change_required"`
+(`GET /api/me`, `POST /api/me/password` and signing out still work). The new password is
+kept in `admin-password-hash` in the state folder, as `signalith passwd` keeps it, and
+works at once, with no restart. On servers that share their users it is the cluster's
+password, on every server. From then on `signalith initial-password` says the first
+password was changed instead of showing it, and the packages' file next to the config
+file is removed where Signalith may (`signalith passwd`, run as root, always may; the
+Docker quick start's file is on a read-only volume and stays, but no longer works).
+Later changes are made with `signalith passwd` as above.
+
+Signalith knows the first password is still in use by checking the password in use
+against the file that keeps it, where the server can read that file (the Docker quick
+start, and Windows), or against the hash `signalith init` noted in
+`first-admin-password.json` in the state folder (the Linux packages, whose file only
+root can read; an upgrade of the package notes it for an install made before). An
+install that still uses the first password after an upgrade is asked once too, however
+often it signed in with it before: that is intended. A password you chose yourself, in
+`signalith.yaml`, `SIGNALITH_ADMIN_PASSWORD` or a `SIGNALITH_ADMIN_PASSWORD_FILE` of
+your own, is never asked to be changed.
+
+Scripts that sign in with the first password must choose a new one first, as an admin
+would:
+
+```sh
+curl -sk -u "admin:$FIRST" -H 'Content-Type: application/json' \
+  -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$NEW\"}" \
+  https://localhost:8080/api/me/password
+```
+
 Keep its password somewhere safe and use your own account day to day. No local user
 or directory user can have the built-in admin's name.
 
@@ -978,7 +1011,11 @@ returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `builtin` or `directory` (those passwords are changed elsewhere). On servers that
 share their users, the built-in admin may change its own password here too
 (`can_change_password` says so), and the answer sets a new session cookie: the
-password change ended every session of the user, this one's too.
+password change ended every session of the user, this one's too. On a server that
+keeps its own users, the built-in admin may change it here only while it is the
+first password Signalith made (`must_change_password` is then `true`; see
+[The built-in admin](#the-built-in-admin)); a `500` means the state folder could not
+keep the new one.
 
 ### Users (admin)
 

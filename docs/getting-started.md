@@ -33,7 +33,9 @@ the admin password, the agents' ingest token and the certificates OpenSearch and
 Signalith use with each other, and keeps them in Docker volumes; no password is written
 in the compose files. The last command shows the admin password.
 
-Open **https://localhost:8080** and sign in as `admin` with that password.
+Open **https://localhost:8080** and sign in as `admin` with that password. Since
+Signalith made it, you are then asked to choose your own before anything else; from then
+on `signalith initial-password` no longer shows the first one, which no longer works.
 
 !!! tip "The browser warns about the certificate"
     Signalith serves HTTPS with a certificate it makes for itself, so the browser warns
@@ -45,7 +47,7 @@ OpenSearch runs with its security plugin on: it answers only over HTTPS, publish
 port, and lets in only Signalith's certificate, which may use only Signalith's own
 indices. See [Securing OpenSearch](opensearch-security.md).
 
-To change the admin password (the first one then stops working):
+To change the admin password again later:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd

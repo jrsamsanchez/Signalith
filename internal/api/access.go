@@ -282,9 +282,12 @@ func PasswordStamp(h string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// builtinPrincipal is the built-in admin as it is now. While its password
+// is still the first one Signalith made, it must choose its own before
+// anything else, as a local user with a temporary password must.
 func (s *Server) builtinPrincipal() *principal {
 	return &principal{Username: s.builtinName(), Role: users.Admin, Source: users.SourceBuiltin,
-		epoch: s.builtinEpoch(), shared: s.SharedUsers != nil}
+		MustChangePassword: s.builtinFirstPassword(), epoch: s.builtinEpoch(), shared: s.SharedUsers != nil}
 }
 
 func principalFromUser(u users.User) *principal {

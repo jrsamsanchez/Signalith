@@ -264,6 +264,7 @@ type Server struct {
 	badTuningMu sync.Mutex
 	badTuning   string
 	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	firstPW     firstPasswordCheck
 	tokensOnce  sync.Once
 	tokenRate   tokenRate         // agent token creation
 	sensorCache sensorHealthCache // the Health page's network sensor counts
