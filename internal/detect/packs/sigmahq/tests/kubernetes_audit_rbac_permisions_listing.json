@@ -1,0 +1,6 @@
+{"rule": "84b777bd-c946-4d17-aa2e-c39f5a454325", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"authorization.k8s.io","objectRef.resource":"selfsubjectrulesreviews","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"selfsubjectrulesreviews","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"authorization.k8s.io","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"authorization.k8s.io","objectRef.resource":"selfsubjectrulesreviews"}}
+]}

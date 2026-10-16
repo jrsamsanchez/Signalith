@@ -164,11 +164,12 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:
 			// Unquoted, as quoted, \\ is one backslash in Splunk's search
-			// syntax: *\\users\\public\\* matches C:\Users\Public\x.
+			// syntax: *\\users\\public\\* matches C:\Users\Public\x. And
+			// \" is a quote inside the word: *\"privileged\":true*.
 			var b strings.Builder
 			j := i
 			for j < len(rs) && !unicode.IsSpace(rs[j]) && !strings.ContainsRune("()=,\"`!<>", rs[j]) {
-				if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '\\' {
+				if rs[j] == '\\' && j+1 < len(rs) && (rs[j+1] == '\\' || rs[j+1] == '"') {
 					j++
 				} else if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '/' {
 					return nil, errUnsureEscape

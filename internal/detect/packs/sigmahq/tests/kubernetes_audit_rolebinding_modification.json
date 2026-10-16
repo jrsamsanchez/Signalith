@@ -1,0 +1,6 @@
+{"rule": "10b97915-ec8d-455f-a815-9a78926585f6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"rbac.authorization.k8s.io","objectRef.resource":"clusterrolebindings","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"clusterrolebindings","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"rbac.authorization.k8s.io","verb":"replace"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.apiGroup":"rbac.authorization.k8s.io","objectRef.resource":"clusterrolebindings"}}
+]}
