@@ -62,6 +62,10 @@ https://signalith.io/docs/opensearch-security/
 MSG
 else
   /usr/bin/signalith secrets encrypt -c "$config" || echo "Some passwords or keys could not be encrypted; check with: sudo signalith secrets status" >&2
+  # The server asks for a new admin password at the first sign-in with the
+  # one Signalith made, which only root can read: while it is still the one
+  # in use, its hash is noted in the state folder for the server.
+  /usr/bin/signalith initial-password -c "$config" -note >/dev/null 2>&1 || true
   if [ -e "$removed" ]; then
     # Installed again after being removed: the removal stopped and
     # disabled the service, so it is turned back on with the kept config.

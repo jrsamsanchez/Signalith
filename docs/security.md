@@ -591,6 +591,25 @@ or Signalith couldn't yet ask OpenSearch which it is. See
 
 See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
 
+### API tokens
+
+Shown when there are API tokens that are accepted: tokens made on **Settings > API
+tokens** for the AI tools server or your own scripts. See
+[API tokens](ai-tools.md#api-tokens).
+
+**Looks at:** whether each accepted token expires. A token that never expires keeps
+working until someone revokes it, even if it leaks or the tool it was made for is long
+gone. Tokens made before Signalith had expiry never expire.
+
+- Good: every accepted token expires ("Every API token expires (N active).").
+- Needs attention: one or more tokens never expire; the check names them.
+
+**To fix:**
+
+1. On **Settings > API tokens**, make a new token for each tool the check names, one
+   that expires (90 days unless you pick another time).
+2. Put the new token in the tool's settings, then revoke the old one.
+
 ### Signalith's OpenSearch account
 
 Shown when OpenSearch requires sign-in and has its security plugin.

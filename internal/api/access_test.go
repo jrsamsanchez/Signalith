@@ -97,6 +97,7 @@ func TestEveryRouteHasARole(t *testing.T) {
 		"GET /api/settings/export":   users.Admin,
 		"GET /api/cluster/features":  users.Viewer,
 		"GET /api/cluster/upgrade":   users.Admin,
+		"GET /api/audit/verify":      users.Admin,
 		"GET /api/sensors":           users.Admin,
 		"GET /api/sensors/tuning":    users.Admin,
 		"PUT /api/sensors/tuning":    users.Admin,

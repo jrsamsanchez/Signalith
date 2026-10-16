@@ -132,7 +132,7 @@ func apiError(status int, data []byte, token bool) error {
 	msg := e.Error
 	switch {
 	case status == http.StatusUnauthorized && token:
-		msg = "Signalith did not accept the API token set for the MCP server (SIGNALITH_TOKEN). It may have been revoked: make a new one on Settings > API tokens."
+		msg = "Signalith did not accept the API token set for the MCP server (SIGNALITH_TOKEN). It may have expired or been revoked: make a new one on Settings > API tokens."
 	case status == http.StatusUnauthorized:
 		msg = "Signalith did not accept the username and password set for the MCP server (SIGNALITH_USER and SIGNALITH_PASSWORD)."
 	case e.Code == "password_change_required":

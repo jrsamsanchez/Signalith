@@ -46,7 +46,8 @@ sign in, and what each may do), and Signalith starts after it. If the first comm
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 The second command shows the admin password. Open https://localhost:9000 and sign
-in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
+in as `admin` with it; since Signalith made that password, you then choose your own
+before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
@@ -179,7 +180,9 @@ same):
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
 4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. Trust the certificate as described in [docs/https.md](docs/https.md).
+   `admin`. You are asked to choose your own password before anything else (an install
+   that still uses the first password Signalith made is asked once, after any upgrade,
+   however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
    Signalith sees that OpenSearch already holds events from before the upgrade, so it
    still accepts agents over plain `http://`, with the old example token. (A new install
