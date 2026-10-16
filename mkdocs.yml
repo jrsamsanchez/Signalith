@@ -136,6 +136,7 @@ nav:
       - Lookup tables: lookups.md
       - Detections: detections.md
       - Investigate with AI: investigate.md
+      - Attack storyline: storyline.md
       - AI tools (MCP): ai-tools.md
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md

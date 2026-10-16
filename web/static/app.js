@@ -437,6 +437,9 @@ function showPage(name, opts = {}) {
 // to show, as in #data?source=antivirus; it is selected here and the
 // address goes back to #data once the page opens.
 let hashSource = false;
+// pageQuery is the rest of an address such as #storyline?type=user&object=bob,
+// for the page to read when it opens (and clear).
+let pageQuery = '';
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -445,6 +448,7 @@ function pageFromHash() {
   try { name = decodeURIComponent(name); } catch (_) { return null; }
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  pageQuery = name === 'data' ? '' : query;
   return name;
 }
 const followHash = () => {
@@ -525,7 +529,7 @@ slideOver.addEventListener('change', syncInspectInert);
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
-  risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
+  risk: 'risk scores', storyline: 'attack story kill chain timeline graph mitre att&ck tactics intrusion entities incident', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
   compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
