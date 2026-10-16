@@ -92,6 +92,14 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 		&query.Compare{Field: "sourcetype", Op: "=", Value: sourcetype},
 		&query.In{Field: "signature_id", Values: splunkEvents[r.Node]},
 	})
+	if r.Linux && r.Node == "Processes" {
+		// A Linux program start as auditd records it, too, as Splunk's
+		// add-on for Linux puts it in Endpoint.Processes.
+		scope = or([]query.Expr{scope, and([]query.Expr{
+			&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype},
+			&query.Compare{Field: "signature_id", Op: "=", Value: ingest.ProcessStartSignatureID},
+		})})
+	}
 	return and([]query.Expr{scope, e}), nil
 }
 

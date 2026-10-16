@@ -45,7 +45,7 @@ or detection covers every source of the same kind.
 | Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
-| Linux audit log (auditd: audit.log, or its syslog plugin) | Other, sourcetype `linux:audit` |
+| Linux audit log (auditd: audit.log, or its syslog plugin; each program start also joined into one process launch, see [Detections](detections.md#linux-audit-log-auditd)) | Other, sourcetype `linux:audit`; program starts in Endpoint |
 | Apache and Nginx access logs (/var/log/nginx, /var/log/apache2, /var/log/httpd; see [Detections](detections.md#web-server-access-logs)) | Web |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |

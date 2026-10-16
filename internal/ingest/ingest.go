@@ -114,6 +114,7 @@ type Pipeline struct {
 
 	stats   Stats
 	names   fieldBudget
+	procs   ProcessTracker
 	counter fieldCounter
 	slots   chan struct{}
 	slotsMu sync.Mutex
@@ -328,6 +329,16 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
 	ctxOrigin := OriginFrom(ctx)
+	// Linux program starts, joined from their audit records, are stored
+	// too. Each takes its ID from its EXECVE record's.
+	for i := range min(len(ids), len(events)) {
+		if events[i].ID == "" && isAuditRecord(&events[i], "EXECVE") {
+			events[i].ID = ids[i]
+		}
+	}
+	if starts := p.procs.Starts(events); len(starts) > 0 {
+		events = append(events, starts...)
+	}
 	// Each server's share of the day's new field names, and the indices
 	// whose mapping is near OpenSearch's limit, asked once per index.
 	budget := namesBudget(p.servers())
