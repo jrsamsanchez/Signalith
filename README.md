@@ -138,6 +138,11 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 
 #### Upgrading the Docker quick start
 
+From 0.3.0 on, the quick start runs OpenSearch 3.9 instead of 2.17. Your data moves over
+by itself on the next start, but OpenSearch can't go back to 2.17 afterwards, so copy the
+OpenSearch volume first as in
+[Moving to OpenSearch 3.x](docs/opensearch-security.md#moving-to-opensearch-3x).
+
 Earlier versions of the quick start served plain HTTP, ran OpenSearch without security,
 and took the admin password and ingest token from `docker-compose.yml`
 (`change-me-please` and `change-this-ingest-token` unless you changed them). To upgrade,
