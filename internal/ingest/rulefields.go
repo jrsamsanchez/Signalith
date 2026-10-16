@@ -2,7 +2,7 @@ package ingest
 
 // cloudRuleFields are the fields of cloud records that the shipped rules
 // read, beyond the ones each parser maps already (cloudTrailMapped,
-// azureMapped, o365Mapped). The index template maps them up front, so
+// azureMapped, o365Mapped, oktaMapped). The index template maps them up front, so
 // names a caller chooses (a call's parameters, an audit record's
 // properties) can't use up a day's budget of new names and leave a
 // rule's fields out of the index. TestCloudRuleFieldsMapped in
@@ -33,4 +33,7 @@ var cloudRuleFields = []string{
 	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name",
 	// Google Workspace: an admin event's parameters.
 	"event_parameters.new_value", "event_parameters.setting_name",
+	// Okta: what an event's debugData says, whose names vary by event.
+	"debugContext.debugData.behaviors", "debugContext.debugData.factor", "debugContext.debugData.logOnlySecurityData",
+	"debugContext.debugData.url",
 }

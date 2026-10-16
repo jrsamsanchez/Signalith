@@ -42,6 +42,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
@@ -49,6 +50,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -92,12 +94,14 @@ Usage:
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
+  signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
   signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
+  signalith bootstrap-kubernetes -prefix NAME [-opensearch=false] [-opensearch-name NAME]   make the Helm chart's Kubernetes Secrets (its setup Job runs this)
   signalith version
 
 The config file defaults to %s
@@ -146,6 +150,8 @@ func main() {
 		err = cmdInitialPassword(args)
 	case "bootstrap-docker":
 		err = cmdBootstrapDocker(args)
+	case "bootstrap-kubernetes":
+		err = cmdBootstrapKubernetes(args)
 	case "opensearch-certs":
 		err = cmdOpenSearchCerts(args)
 	case "query":
@@ -168,6 +174,8 @@ func main() {
 		err = cmdContent(args)
 	case "security":
 		err = cmdSecurity(args)
+	case "audit":
+		err = cmdAudit(args)
 	case "cluster":
 		err = cmdCluster(args)
 	case "join":
@@ -182,6 +190,9 @@ func main() {
 		fmt.Printf(usage, defaultConfigPath())
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
+		os.Exit(2)
+	}
+	if errors.Is(err, errTampered) {
 		os.Exit(2)
 	}
 	if err != nil {
@@ -275,9 +286,9 @@ func cmdInit(args []string) error {
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
 	switch {
 	case saved:
-		fmt.Printf("  Password:    show it with: signalith initial-password   (change it with: signalith passwd)\n")
+		fmt.Printf("  Password:    show it with: signalith initial-password   (you choose your own at the first sign-in)\n")
 	case generated:
-		fmt.Printf("  Password:    %s   (shown once; change it with: signalith passwd)\n", pw)
+		fmt.Printf("  Password:    %s   (shown once; you choose your own at the first sign-in)\n", pw)
 	}
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
@@ -286,6 +297,14 @@ func cmdInit(args []string) error {
 	// none), so init can say where it is and to back it up.
 	if _, err := c.Keyring().Seal("init", "make the master key"); err != nil {
 		return fmt.Errorf("making the master key: %w", err)
+	}
+	// A password Signalith made must be changed at the first sign-in with
+	// it. The packages keep it where only root can read it, so the server
+	// is told its hash (see config.FirstPassword).
+	if generated {
+		if err := config.RecordFirstPassword(config.StateDirFor(*path), h); err != nil {
+			return fmt.Errorf("cannot note the first admin password in the state folder: %w", err)
+		}
 	}
 	if src, err := c.Keyring().Source(); err == nil {
 		fmt.Printf("  Master key:  %s\n", src)
@@ -645,11 +664,15 @@ func cmdPasswd(args []string) error {
 			return err
 		}
 		fmt.Printf("Password updated in %s, on this server only. It replaces the configured password: restart the server to apply it.\n", hashFile)
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// A member of a cluster that shares its users changes the built-in
 	// admin of every server, at once.
 	if done, err := passwdShared(*path, stateDir, h); done || err != nil {
+		if err == nil {
+			firstPasswordReplaced(os.Stdout, *path, stateDir)
+		}
 		return err
 	}
 	_, statErr := os.Stat(hashFile)
@@ -672,6 +695,7 @@ func cmdPasswd(args []string) error {
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
 				"(signalith passwd -local sets the password for that). Run signalith passwd again once OpenSearch answers to change the cluster's password.")
 		}
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// Only the hash changes in the file; settings from the environment
@@ -687,6 +711,7 @@ func cmdPasswd(args []string) error {
 	if os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
 		fmt.Println("Note: SIGNALITH_ADMIN_PASSWORD is set in this environment, and wherever it is set for the server it replaces the password in the file.")
 	}
+	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
 }
 
@@ -812,6 +837,7 @@ func cmdQuery(args []string) error {
 	if tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir())); err == nil {
 		eng.Lookups = tables
 	}
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	if strings.Contains(src, "intel") || strings.Contains(src, "threatmatch") {
 		eng.Intel = intel.NewStore(intel.NewOpenSearch(newStore(c), c.OpenSearch.IndexPrefix))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -1240,6 +1266,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -1299,6 +1326,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return nil, err
 		}
 	}
+	// A change of the first password that reached this server while its
+	// users moved is kept, and so is the session that made it. Checked
+	// before the shared users are in use, so sign-ins that finish meanwhile
+	// stay in the sessions carry moves.
+	cc := c
+	if parts != nil {
+		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
+			cc = c.WithAdminHashFile(h)
+		}
+	}
 	if r.sharedContent != nil {
 		r.sharedContent.users.use(parts)
 	}
@@ -1307,7 +1344,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if parts != nil {
 		// The sessions made while this server kept its users in its own
 		// files carry over.
-		parts.carry(ctx, r.sessions, r.people, c, log)
+		parts.carry(ctx, r.sessions, r.people, cc, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
@@ -1354,6 +1391,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// their scanner; the server that runs the background jobs runs the
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	// The SSH and Windows logins OpenVAS signs in with, encrypted.
+	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
@@ -1477,7 +1516,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var openvas *vulnscan.OpenVAS
 	if c.Vulns.OpenVASAddress != "" {
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
-			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile, Log: log}
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
@@ -1559,12 +1598,24 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:      version,
 	}
 	followProxyTrust(srv)
+	// Likewise a host that stopped sending: the server that runs the
+	// background jobs writes an event when a steady source goes quiet, which
+	// the built-in detection data-source-stopped reads.
+	sourceWatch := &dashboards.SourceWatch{Engine: eng, Events: pipeline, Log: log,
+		StaleAfter: func() time.Duration { return srv.Running().StaleAfter() }}
+	if r.node != nil {
+		sourceWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sourceWatch.Run(ctx) })
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
 	}
 	wireFeatures(srv, r.shared)
+	if parts == nil && r.sharedContent != nil {
+		srv.BuiltinSetHere = r.sharedContent.users.builtinSetHere(c)
+	}
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1668,6 +1719,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.M365Cursors = func(ctx context.Context, tenant string) ([]m365.Cursor, error) {
 		return m365.Cursors(ctx, cl, runtimeIndex, tenant)
 	}
+	oktaLog := &okta.Poller{
+		Settings: func() okta.Settings { return okta.FromConfig(srv.Running()) },
+		Store:    cl, Index: runtimeIndex, Ingest: pipeline.Ingest, Log: log,
+	}
+	srv.OktaCursor = func(ctx context.Context, domain string) (okta.Cursor, bool, error) {
+		return okta.CursorOf(ctx, cl, runtimeIndex, domain)
+	}
 	in.jobsList = []cluster.Job{
 		{Name: "index upgrades", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -1733,6 +1791,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			}
 			o365.Run(ctx)
 		}},
+		// Okta's System Log is read while Settings > Okta names an
+		// organization; a change there applies at the next round.
+		{Name: "okta system log", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			oktaLog.Run(ctx)
+		}},
 	}
 	if r.shared != nil {
 		in.jobsList = append(in.jobsList, requestsJob(r.shared, contentHandlers(feeds, ret, r.auditHandlers(ret), r.lifecycleLeaderHandlers())))
@@ -1772,6 +1838,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
+		oktaLog.Allowed, oktaLog.Epoch, oktaLog.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.

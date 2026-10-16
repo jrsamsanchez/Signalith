@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs and Microsoft 365 detections for its audit records, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records and Okta detections for its System Log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -159,10 +159,13 @@ func main() {
 	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
 	rules = append(rules, network...)
 	// Cloud detections that read CloudTrail records, Entra ID and Azure
-	// records, or Microsoft 365 audit records.
+	// records, Microsoft 365 audit records or Okta's System Log, and the
+	// application detections over Okta's System Log.
 	cloud, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "cloud", "*.yml"))
+	apps, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "application", "*.yml"))
+	cloud = append(cloud, apps...)
 	for _, f := range cloud {
-		if src, err := os.ReadFile(f); err == nil && cloudFile.Match(src) {
+		if src, err := os.ReadFile(f); err == nil && (cloudFile.Match(src) || oktaFile.Match(src)) {
 			rules = append(rules, f)
 		}
 	}
@@ -199,7 +202,8 @@ func main() {
 				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
 			}
-		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web && !cloudSearch.MatchString(meta.Search) {
+		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web &&
+			!cloudSearch.MatchString(meta.Search) && !slices.Equal(meta.DataSource, []string{"Okta"}) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue
 		}
@@ -311,12 +315,17 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
-// cloudSearch is a search of CloudTrail, Entra ID, Azure or Microsoft 365
-// records, and cloudFile a rule file with one.
+// cloudSearch is a search of CloudTrail, Entra ID, Azure, Microsoft 365
+// or Okta records, and cloudFile a rule file with one.
 var (
-	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
-	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta)`")
 )
+
+// oktaFile is a rule file whose only data source is Okta: a tstats
+// search over the Authentication or Change data model reads Okta's
+// events.
+var oktaFile = regexp.MustCompile(`(?m)^data_source:\s*\n\s*-\s*Okta\s*\n\S`)
 
 // webSearch is a search of the Web data model.
 var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)

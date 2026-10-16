@@ -170,6 +170,11 @@ func (q *Query) Drilldown() *Drill {
 			if c.LabelField != "" {
 				delete(fields, c.LabelField)
 			}
+		case *IPLocation:
+			// Places are in no event.
+			for _, f := range c.Fields() {
+				delete(fields, f)
+			}
 		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace:
 			// Its fields can overwrite any column.
 			clear(fields)
@@ -188,7 +193,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

@@ -135,6 +135,8 @@ var cloudCategories = map[string][2]string{
 	"gcp.audit":              {"gcp", "rules/cloud/gcp/audit"},
 	"google_workspace.admin": {"gcp", "rules/cloud/gcp/gworkspace/admin"},
 	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
+	// Okta's System Log (product: okta, service: okta).
+	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
 }
 
 // networkCategories are the network log sources, and the folders their

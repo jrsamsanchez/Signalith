@@ -71,9 +71,14 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
   token and syslog on ports 514 and 6514, make the master key in
   `/var/lib/signalith/keys`, and start the service. The first admin password is kept in
   `/etc/signalith/initial-admin-password`, readable only by root, and
-  `sudo signalith initial-password` shows it until you change it.
+  `sudo signalith initial-password` shows it until you change it. The first sign-in
+  with it asks you to choose your own before anything else, and the file is removed
+  when you change the password with `sudo signalith passwd` (the service may not remove
+  it itself; it no longer works either way).
 - On an upgrade, keep the config, encrypt any passwords an older version kept as plain
-  text, and restart the service.
+  text, and restart the service. While the admin password is still the first one
+  Signalith made, the next sign-in with it asks for a new one, also on an install that
+  has used it for a long time.
 - On removal, stop the service and keep `/etc/signalith` and `/var/lib/signalith`, so
   installing again picks up where you left off. Delete them by hand to remove
   everything; events stay in OpenSearch.

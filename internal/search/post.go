@@ -37,7 +37,7 @@ func RunCommands(ctx context.Context, docs []map[string]any, cmds []query.Comman
 	for _, c := range cmds {
 		switch c.(type) {
 		case *query.Lookup, *query.Join, *query.Append, *query.AppendPipe, *query.InputLookup,
-			*query.Enrich, *query.Intel, *query.ThreatMatch, *query.MakeResults:
+			*query.Enrich, *query.Intel, *query.ThreatMatch, *query.MakeResults, *query.IPLocation, *query.Map:
 			return nil, fmt.Errorf("command %q reads other data", c.Name())
 		}
 		if err := applyCommand(ctx, res, c); err != nil {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -49,6 +50,8 @@ type Engine struct {
 	Intel *intel.Store
 	// Lookups backs the lookup command; nil makes it an error.
 	Lookups *lookuptables.Store
+	// GeoIP backs the iplocation command; nil makes it an error.
+	GeoIP *geoip.Store
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -475,7 +478,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
-			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV:
+			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation:
 			continue
 		}
 		return 0, false
@@ -633,6 +636,10 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
+		case *query.IPLocation:
+			err = e.ipLocation(ctx, res, c)
+		case *query.Map:
+			err = e.mapSearch(ctx, res, c, q)
 		default:
 			err = applyCommand(ctx, res, c)
 		}

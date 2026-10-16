@@ -1,0 +1,4 @@
+{"rule": "cf1dbc6b-6205-41b4-9b88-a83980d2255b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.api_token.revoke"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

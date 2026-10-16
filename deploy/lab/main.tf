@@ -91,7 +91,7 @@ resource "hcloud_firewall" "lab" {
     description = "Signalith web page"
     direction   = "in"
     protocol    = "tcp"
-    port        = "8080"
+    port        = "9000"
     source_ips  = ["${local.home_ip}/32"]
   }
   rule {
@@ -192,12 +192,34 @@ resource "hcloud_load_balancer_service" "web" {
   count            = local.full ? 1 : 0
   load_balancer_id = hcloud_load_balancer.lab[0].id
   protocol         = "tcp"
-  listen_port      = 8080
-  destination_port = 8080
+  listen_port      = 9000
+  destination_port = 9000
   proxyprotocol    = true
   health_check {
     protocol = "http"
-    port     = 8080
+    port     = 9000
+    interval = 10
+    timeout  = 5
+    retries  = 3
+    http {
+      path         = "/readyz"
+      tls          = true
+      status_codes = ["200"]
+    }
+  }
+}
+
+# Agents send to their own port, 7779, which also answers /readyz.
+resource "hcloud_load_balancer_service" "agents" {
+  count            = local.full ? 1 : 0
+  load_balancer_id = hcloud_load_balancer.lab[0].id
+  protocol         = "tcp"
+  listen_port      = 7779
+  destination_port = 7779
+  proxyprotocol    = true
+  health_check {
+    protocol = "http"
+    port     = 7779
     interval = 10
     timeout  = 5
     retries  = 3

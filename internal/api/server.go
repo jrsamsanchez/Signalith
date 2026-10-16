@@ -40,6 +40,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -125,9 +126,13 @@ type Server struct {
 	// in to Microsoft).
 	M365Cursors func(ctx context.Context, tenant string) ([]m365.Cursor, error)
 	M365Check   func(ctx context.Context, s m365.Settings) (map[string]bool, error)
-	UI          fs.FS // web UI files; nil disables the UI
-	Log         *slog.Logger
-	Version     string
+	// OktaCursor reads how far Okta's System Log was read, for the health
+	// page; OktaCheck is the Settings page's test (nil signs in to Okta).
+	OktaCursor func(ctx context.Context, domain string) (okta.Cursor, bool, error)
+	OktaCheck  func(ctx context.Context, s okta.Settings) (*okta.CheckResult, error)
+	UI         fs.FS // web UI files; nil disables the UI
+	Log        *slog.Logger
+	Version    string
 
 	// Syslog is the syslog receiver, for its stats; nil when it is off.
 	Syslog *syslog.Receiver
@@ -163,6 +168,11 @@ type Server struct {
 	// users, the directory settings and the sessions in the shared
 	// settings of a cluster; nil keeps them on this server.
 	SharedUsers *SharedUsers
+	// BuiltinSetHere, when set, hears that the built-in admin's password
+	// was changed in this server's own files (SharedUsers nil), so a
+	// change that lands while the users move into the shared settings is
+	// carried there too.
+	BuiltinSetHere func(ctx context.Context)
 
 	// DirectoryRecheck is how often signed-in directory users are looked
 	// up again; 0 means every 5 minutes.
@@ -254,12 +264,17 @@ type Server struct {
 	dirChecks         map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce      sync.Once
 	dirSlots          chan struct{}  // limits directory connections at once
-	background        sync.WaitGroup // directory checks still running
+	background        sync.WaitGroup // directory checks and API token use records still running
 	settingsMu        sync.Mutex     // serializes saves on the Settings page
 	testMu            sync.Mutex     // one connection test at a time
 	aiModels          modelCache     // model lists read from the AI model's service
 	sampleJob         sampleJob      // the one running sample-data load or remove
 	pageCache         pages          // index.html and login.html, rendered
+
+	// refused is when this server last logged the use of each revoked or
+	// expired API token (tokenRefused).
+	refusedMu sync.Mutex
+	refused   map[string]time.Time
 	// live holds Config with the settings saved on the Settings page that
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
@@ -282,6 +297,7 @@ type Server struct {
 	badTuningMu sync.Mutex
 	badTuning   string
 	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	firstPW     firstPasswordCheck
 	webAgentLog logOnce // agents that send to the web port
 	tokensOnce  sync.Once
 	tokenRate   tokenRate         // agent token creation
@@ -377,6 +393,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeVulnLogins(api)
 	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
@@ -1172,6 +1189,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	if m := s.m365Status(ctx); m != nil {
 		out["m365"] = m
+	}
+	if m := s.oktaStatus(ctx); m != nil {
+		out["okta"] = m
 	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup

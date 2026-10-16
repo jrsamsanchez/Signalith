@@ -49,6 +49,8 @@ var fuzzSeeds = []string{
 	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
 	`* | rex field=u mode=sed "s|^CORP\\\\|\\1&|g" | rex mode=sed "y/ab/cd/" | convert timeformat="%Y" ctime(*Time), dur2sec(d) AS secs, none(lastTime) | tail 3 | uniq`,
 	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
+	`* | map maxsearches=3 search="search user=$user$ host=\"$h$\" | eval x='$y$' | head 2" | map search="| tstats count from datamodel=Authentication by Authentication.user"`,
+	`* | iplocation src | iplocation prefix="s c" allfields=t lang=zh-CN "src ip" | iplocation prefix=~x dest`,
 	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
 	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
 	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,

@@ -330,7 +330,7 @@ func eventHitsIntel(e ingest.Event, indicators map[string]bool) bool {
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep", "source-stopped"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}

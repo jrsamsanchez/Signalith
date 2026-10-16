@@ -178,6 +178,26 @@ names it. See [Upgrading from plain HTTP](https.md#upgrading-from-plain-http).
 
 **How to check by hand:** the **Health** page lists agents that send over plain HTTP.
 
+### Agent port
+
+Shown unless `server.agent_listen` is `off`, which sends agents to the web port on
+purpose.
+
+**Looks at:** **Agent address** (`server.agent_listen`). A server installed before 0.3
+doesn't set it, so its web port still takes agents besides the agent port (7779). The web
+page then has to be reachable from every computer that runs an agent.
+
+- Good: agents send to a port of their own, and the web port turns them away.
+- Needs attention: the web port still takes agents, or no agent port could be opened
+  because port 7779 is taken.
+
+**To fix:** let port 7779 through the firewall and any load balancer, set each agent up
+again from **Add data**, then set **Agent address**, such as `0.0.0.0:7779`. See
+[Upgrading to 0.3](sending-data.md#upgrading-to-03).
+
+**How to check by hand:** the log warns once a day for each agent that still sends to the
+web port.
+
 ### Syslog
 
 Shown when a syslog listener is on (`syslog.udp`, `syslog.tcp` or `syslog.tls`).
@@ -590,6 +610,25 @@ or Signalith couldn't yet ask OpenSearch which it is. See
    is.
 
 See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
+
+### API tokens
+
+Shown when there are API tokens that are accepted: tokens made on **Settings > API
+tokens** for the AI tools server or your own scripts. See
+[API tokens](ai-tools.md#api-tokens).
+
+**Looks at:** whether each accepted token expires. A token that never expires keeps
+working until someone revokes it, even if it leaks or the tool it was made for is long
+gone. Tokens made before Signalith had expiry never expire.
+
+- Good: every accepted token expires ("Every API token expires (N active).").
+- Needs attention: one or more tokens never expire; the check names them.
+
+**To fix:**
+
+1. On **Settings > API tokens**, make a new token for each tool the check names, one
+   that expires (90 days unless you pick another time).
+2. Put the new token in the tool's settings, then revoke the old one.
 
 ### Signalith's OpenSearch account
 

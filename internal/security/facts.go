@@ -38,6 +38,9 @@ type Facts struct {
 	// configuration; nil counts only the shared ones, as not read from
 	// OpenSearch.
 	AgentTokens *AgentTokenFacts
+	// APITokens are the API tokens of the AI tools server; nil where
+	// there are none to read, such as in the CLI or without shared users.
+	APITokens *APITokenFacts
 	// Uptime is how long the server has run (zero in the CLI).
 	Uptime time.Duration
 
@@ -602,6 +605,14 @@ type AgentTokenFacts struct {
 	Active int
 	// Legacy are the shared tokens of the configuration.
 	Legacy []LegacyTokenFact
+}
+
+// APITokenFacts are the accepted API tokens (see clusterauth.APITokenBody).
+type APITokenFacts struct {
+	// Active counts the accepted tokens; NeverExpire names those of them
+	// that never expire.
+	Active      int
+	NeverExpire []string
 }
 
 // LegacyTokenFact is a shared agent token from the configuration.

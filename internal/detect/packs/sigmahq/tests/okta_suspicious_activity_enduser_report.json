@@ -1,0 +1,4 @@
+{"rule": "07e97cc6-aed1-43ae-9081-b3470d2367f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.report_suspicious_activity_by_enduser"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

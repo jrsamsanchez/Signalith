@@ -28,7 +28,7 @@ import (
 var postMacros = regexp.MustCompile("`(security_content_ctime\\([^`]*\\)|drop_dm_object_name\\([^`]*\\)|[\\w-]+_filter)`")
 
 // nodeFieldRe is a tstats field with its node's prefix (Processes.dest).
-var nodeFieldRe = regexp.MustCompile(`\b(?:Processes|Filesystem|Registry|Web|All_Traffic|DNS|Network_Resolution|Network_Traffic)\.(\w+)`)
+var nodeFieldRe = regexp.MustCompile(`\b(?:Processes|Filesystem|Registry|Web|All_Traffic|DNS|Network_Resolution|Network_Traffic|Authentication|All_Changes)\.(\w+)`)
 
 // fieldTokenRe is a field a stage may name: a quoted field ('Actor{}.ID')
 // or a bare word; double-quoted strings are skipped.
@@ -103,7 +103,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Lookup, *query.Join, *query.Append, *query.AppendPipe, *query.InputLookup, *query.Transaction:
+		case *query.Lookup, *query.Join, *query.Append, *query.AppendPipe, *query.InputLookup, *query.Transaction, *query.IPLocation, *query.Map:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}

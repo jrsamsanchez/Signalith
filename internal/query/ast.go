@@ -442,6 +442,10 @@ func CommandString(c Command) string {
 		return replaceString(c)
 	case *XMLKV:
 		return xmlkvString(c)
+	case *IPLocation:
+		return ipLocationString(c)
+	case *Map:
+		return mapString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"
