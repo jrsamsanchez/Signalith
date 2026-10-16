@@ -229,7 +229,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
 
 ### Linux
 
-1. Install OpenSearch 2.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
+1. Install OpenSearch 2.x or 3.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
    ```sh
    sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -268,7 +268,7 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 ### Windows
 
-1. Install OpenSearch 2.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
+1. Install OpenSearch 2.x or 3.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
 2. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
