@@ -1,6 +1,6 @@
 // Package cases stores investigations: a case groups related findings with
 // the analyst's notes, the searches they ran and the events they pinned,
-// like Splunk ES investigations.
+// like a SOC investigation.
 package cases
 
 import (
