@@ -1,0 +1,9 @@
+{"rule": "f4cabbc7-c19a-4e41-8be5-98daeaccbb50", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreated","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreated","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreated","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCentes","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreated","UserId":"admin@example.com","Workload":"SecurityComplianceCentes"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreated","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"SearchCreatee","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}}
+]}

@@ -97,7 +97,7 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records and Entra ID detections for its sign-in and audit logs, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs and Microsoft 365 detections for its audit records, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
@@ -158,8 +158,8 @@ func main() {
 	rules = append(rules, web...)
 	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
 	rules = append(rules, network...)
-	// Cloud detections that read CloudTrail records, or Entra ID and
-	// Azure records.
+	// Cloud detections that read CloudTrail records, Entra ID and Azure
+	// records, or Microsoft 365 audit records.
 	cloud, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "cloud", "*.yml"))
 	for _, f := range cloud {
 		if src, err := os.ReadFile(f); err == nil && cloudFile.Match(src) {
@@ -311,11 +311,11 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
-// cloudSearch is a search of CloudTrail, Entra ID or Azure records, and
-// cloudFile a rule file with one.
+// cloudSearch is a search of CloudTrail, Entra ID, Azure or Microsoft 365
+// records, and cloudFile a rule file with one.
 var (
-	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
-	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity)`")
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
 )
 
 // webSearch is a search of the Web data model.
@@ -360,7 +360,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 	for _, v := range skipped {
 		total += len(v)
 	}
-	fmt.Fprintf(&b, "%d rules shipped. %d endpoint, web and network detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
+	fmt.Fprintf(&b, "%d rules shipped. %d endpoint, web, network and cloud detections were left out:\n\n| Rules | Reason |\n| ---: | --- |\n", len(p.Rules), total)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)

@@ -25,5 +25,6 @@ var cloudRuleFields = []string{
 	"properties.targetResources{}.displayName", "properties.targetResources{}.modifiedProperties{}.displayName",
 	"properties.targetResources{}.modifiedProperties{}.newValue", "properties.userAgent",
 	// Microsoft 365.
-	"Payload",
+	"AppId", "ApplicationId", "Category", "ClientAppId", "ClientInfoString", "DeliveryAction", "Directionality",
+	"ErrorNumber", "LogonError", "Name", "Payload",
 }

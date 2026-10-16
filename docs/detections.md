@@ -694,13 +694,24 @@ ones name `eventSource` (the workload), `eventName` (the operation, or for the S
 Compliance Center an alert's name) and `status` (success or failure), which read
 `Workload`, `signature` and `status`. A sign-in's `RequestType` is one of its
 `ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
-`sourcetype=o365:management:activity`. To read the audit log, see
-[Microsoft 365](microsoft-365.md).
+`sourcetype=o365:management:activity`.
+
+The Splunk pack adds 19 Microsoft 365 detections (see
+[Splunk Security Content](#splunk-security-content)): MFA turned off, service principals
+added or given new credentials, mail security settings changed, content searches
+exported, mailboxes read through EWS or Microsoft Graph, malware in SharePoint, and
+counts that catch password spraying and MFA fatigue. They name a record's own fields and
+the CIM fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, and a
+sign-in's `UserAgent` is `user_agent`). A field must be one Microsoft's audit record
+schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
+`Parameters{}.Value`, so rules that name one as a field (`Role=ApplicationImpersonation`)
+are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
+the audit log, see [Microsoft 365](microsoft-365.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,092 Windows,
-Linux, web, network, AWS CloudTrail and Entra ID detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,111 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -748,6 +759,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
+| `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
