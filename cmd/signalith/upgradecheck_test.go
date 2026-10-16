@@ -54,7 +54,7 @@ func TestClusterUpgradeCheck(t *testing.T) {
 	fake.Put("uc_runtime", "node:n_b", asMap(t, hbB))
 	fake.Put("uc_runtime", "lease:jobs", asMap(t, cluster.LeaseDoc{Kind: "lease", Job: "jobs", Holder: a.NodeID, HolderName: "siem-a", HolderVersion: "0.2.0"}))
 	v, err = run()
-	if err != nil || exited != -1 || !v.Safe || v.Single || len(v.Servers) != 2 || !strings.Contains(v.Next, "Upgrade siem-b next") {
+	if err != nil || exited != -1 || !v.Safe || v.Single || len(v.Servers) != 2 || v.Current != "0.2.0" || !strings.Contains(v.Next, "start with siem-b") {
 		t.Fatalf("two servers: %v, exit %d, %+v", err, exited, v)
 	}
 
