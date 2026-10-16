@@ -8,9 +8,13 @@ package shared
 // the cluster is at it.
 const LevelTenants = 10
 
+// ImportTenants is the name of the importer of the founder's list of
+// tenants in cluster.import.done: the list is shared once it ran.
+const ImportTenants = "tenants"
+
 // Tenants reports whether tenant users and sessions' tenants may be kept
-// in the shared settings: the users are shared and the cluster is at
-// LevelTenants.
+// in the shared settings: the users are shared, the cluster is at
+// LevelTenants, and the founder's list of tenants was moved there.
 func (rt *Runtime) Tenants() bool {
-	return rt.SharedUsers() && rt.sharedAt(LevelTenants)
+	return rt.SharedUsers() && rt.sharedAt(LevelTenants, ImportTenants)
 }

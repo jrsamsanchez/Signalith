@@ -64,9 +64,9 @@ type tenantRuntime struct {
 	running  map[string]*tenantInstance
 	stopped  bool
 
-	// listErr and shareErr are the last problems logged by startAll's
-	// loop, so each is logged once.
-	listErr, shareErr string
+	// listErr is the last problem logged by startAll's loop, so each is
+	// logged once.
+	listErr string
 }
 
 // tenantInstance is one tenant's running server.
@@ -90,7 +90,7 @@ func (t *tenantRuntime) startAll() {
 		return
 	}
 	// In a cluster the list is shared: follow what other servers change
-	// in it, and share this server's once the cluster keeps tenants.
+	// in it.
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
@@ -98,13 +98,6 @@ func (t *tenantRuntime) startAll() {
 		case <-t.ctx.Done():
 			return
 		case <-tick.C:
-		}
-		if t.Ready() == nil {
-			err := t.reg.Share(t.ctx)
-			if err != nil && fmt.Sprint(err) != t.shareErr {
-				t.log.Warn("could not share the list of tenants with the other servers yet", "err", err)
-			}
-			t.shareErr = fmt.Sprint(err)
 		}
 		t.reconcile()
 	}

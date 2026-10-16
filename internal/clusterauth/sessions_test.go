@@ -557,21 +557,28 @@ func TestTenantListAcrossServers(t *testing.T) {
 	_, a, b, _ := pair(t)
 	ctx := context.Background()
 	la, lb := a.docs.TenantList(), b.docs.TenantList()
-	if _, ok := lb.List(); ok {
-		t.Fatal("a list before one was written")
+	b.cycle()
+	if list, err := lb.List(); err != nil || len(list) != 0 {
+		t.Fatalf("a list before one was written: %v %v", list, err)
 	}
-	local := []tenants.Tenant{{ID: "acme", Name: "Acme"}}
-	if err := la.Mutate(ctx, "test", local, func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+	if err := a.docs.ImportTenants(ctx, "test", []tenants.Tenant{{ID: "acme", Name: "Acme"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := la.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) {
 		l[0].Disabled = true
 		return l, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	b.cycle()
-	if list, ok := lb.List(); !ok || len(list) != 1 || !list[0].Disabled {
-		t.Errorf("B's list: %v %v", list, ok)
+	// Importing again keeps acme turned off.
+	if err := a.docs.ImportTenants(ctx, "test", []tenants.Tenant{{ID: "acme", Name: "Acme"}, {ID: "contoso", Name: "Contoso"}}); err != nil {
+		t.Fatal(err)
 	}
-	if err := lb.Mutate(ctx, "test", nil, func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+	b.cycle()
+	if list, err := lb.List(); err != nil || len(list) != 2 || list[0].ID != "acme" || !list[0].Disabled {
+		t.Errorf("B's list: %v %v", list, err)
+	}
+	if err := lb.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) {
 		return append(l, tenants.Tenant{ID: "acme"}), nil
 	}); err == nil {
 		t.Error("a list with acme twice was written")
@@ -581,7 +588,7 @@ func TestTenantListAcrossServers(t *testing.T) {
 	if la.On() {
 		t.Error("on below the tenants' level")
 	}
-	if err := la.Mutate(ctx, "test", nil, func(l []tenants.Tenant) ([]tenants.Tenant, error) { return l, nil }); !errors.Is(err, tenants.ErrNotShared) {
+	if err := la.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) { return l, nil }); !errors.Is(err, tenants.ErrNotShared) {
 		t.Errorf("write below the tenants' level: %v", err)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -28,7 +29,8 @@ import (
 // (settings.yaml: the shared values and the -server server's own), and,
 // when d has the users' documents, the users (users.json, password hashes
 // as stored; the built-in admin stays in signalith.yaml) and the
-// directory sign-in settings (directory.json). Each writes with the file
+// directory sign-in settings (directory.json) and the tenants
+// (tenants.json). Each writes with the file
 // store of the package that reads it, so the format is the one a server
 // on its own reads, and passwords and keys are sealed with this server's
 // master key.
@@ -51,6 +53,9 @@ func Exporters(d *Docs, f Files) []shared.Exporter {
 			}},
 			shared.Exporter{Name: shared.ImportDirectory, Run: func(ctx context.Context, t shared.ExportTarget) ([]shared.ExportedFile, error) {
 				return exportDirectory(ctx, a, f, t)
+			}},
+			shared.Exporter{Name: shared.ImportTenants, Run: func(ctx context.Context, t shared.ExportTarget) ([]shared.ExportedFile, error) {
+				return exportTenants(a, f, t)
 			}})
 	}
 	return append(out, shared.Exporter{Name: shared.ImportSettings, Run: func(ctx context.Context, t shared.ExportTarget) ([]shared.ExportedFile, error) {
@@ -208,6 +213,24 @@ func exportUsers(ctx context.Context, a *clusterauth.Docs, f Files, t shared.Exp
 		return nil, err
 	}
 	return []shared.ExportedFile{{Path: p, Dest: dest, Secret: true}}, nil
+}
+
+// exportTenants writes the shared list of tenants as tenants.json, with
+// which are turned off.
+func exportTenants(a *clusterauth.Docs, f Files, t shared.ExportTarget) ([]shared.ExportedFile, error) {
+	list, ok := a.TenantsKept()
+	if !ok {
+		return nil, nil
+	}
+	dest := f.Config().TenantsFile()
+	p, err := exportPath(t, dest)
+	if err != nil {
+		return nil, err
+	}
+	if err := tenants.WriteFile(p, list); err != nil {
+		return nil, err
+	}
+	return []shared.ExportedFile{{Path: p, Dest: dest}}, nil
 }
 
 func exportDirectory(ctx context.Context, a *clusterauth.Docs, f Files, t shared.ExportTarget) ([]shared.ExportedFile, error) {

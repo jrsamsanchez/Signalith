@@ -75,7 +75,9 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
   refuse to start. Until it has, tenants cannot be added and provider users cannot
   switch.
 - Tenants run on the server that runs the background jobs. Which tenants exist and which
-  are turned off is kept in the shared settings, so it is the same on every server, and
+  are turned off is kept in the shared settings (the first server's list moves there when
+  the cluster reaches level 10, and `signalith cluster export --to-files` writes it back
+  to `tenants.json`), so it is the same on every server, and
   another server that takes the background jobs over runs the tenants from then on. Every
   other server answers tenants' users and provider users switched into a tenant with
   `503` (code `tenant_unavailable`), and tenants' agents with `503` and `Retry-After`, so

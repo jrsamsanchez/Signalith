@@ -135,7 +135,7 @@ func File(stateDir string) string {
 
 // Registry is the list of tenants, kept in a file in the state folder,
 // or, once the servers of a cluster keep it, in their shared settings
-// (UseShared). The default tenant is not in it: it always exists.
+// (UseShared): then only there. The default tenant is not in it: it always exists.
 type Registry struct {
 	Path string
 
@@ -149,24 +149,24 @@ type Registry struct {
 
 // Shared keeps the list of tenants for every server of a cluster, so each
 // knows the same tenants and which are turned off, whichever runs them.
+// The founder's list moves there when the cluster starts keeping it.
 type Shared interface {
 	// On reports whether the list is kept there: every server of the
 	// cluster reads it.
 	On() bool
-	// List returns the list kept there, and false when none was written
-	// yet.
-	List() ([]Tenant, bool)
-	// Mutate changes the list kept there with fn, which gets the latest
-	// one; local is the list until one was written.
-	Mutate(ctx context.Context, by string, local []Tenant, fn func([]Tenant) ([]Tenant, error)) error
+	// List returns the list kept there (none when none was written), or
+	// why it cannot be read now: then no tenant can be used.
+	List() ([]Tenant, error)
+	// Mutate changes the list kept there with fn, which gets the latest.
+	Mutate(ctx context.Context, by string, fn func([]Tenant) ([]Tenant, error)) error
 }
 
 // ErrNotShared is returned when changing the tenants of a server whose
 // cluster does not keep them yet.
 var ErrNotShared = errors.New("tenants need every server sharing these settings on a version that supports them: upgrade the others first")
 
-// UseShared keeps the list in s from now on: while s is on, the list is
-// s's, once one was written; until then, this server's file.
+// UseShared keeps the list in s from now on, while s is on; until then,
+// in this server's file.
 func (r *Registry) UseShared(s Shared) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -176,9 +176,7 @@ func (r *Registry) UseShared(s Shared) {
 // currentLocked returns the list in use.
 func (r *Registry) currentLocked() ([]Tenant, error) {
 	if r.shared != nil && r.shared.On() {
-		if list, ok := r.shared.List(); ok {
-			return list, nil
-		}
+		return r.shared.List()
 	}
 	if err := r.load(); err != nil {
 		return nil, err
@@ -204,39 +202,15 @@ func (r *Registry) change(by string, fn func([]Tenant) ([]Tenant, error)) error 
 	if !r.shared.On() {
 		return ErrNotShared
 	}
-	if err := r.load(); err != nil {
-		return err
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return r.shared.Mutate(ctx, by, slices.Clone(r.tenants), func(list []Tenant) ([]Tenant, error) {
+	return r.shared.Mutate(ctx, by, func(list []Tenant) ([]Tenant, error) {
 		out, err := fn(list)
 		if err != nil {
 			return nil, err
 		}
 		return out, CheckList(out)
 	})
-}
-
-// Share writes this server's list to the shared settings when they keep
-// none yet, so every server knows the tenants this one ran before it
-// joined them. The cluster's job holder does it.
-func (r *Registry) Share(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.shared == nil || !r.shared.On() {
-		return nil
-	}
-	if _, ok := r.shared.List(); ok {
-		return nil
-	}
-	if err := r.load(); err != nil {
-		return err
-	}
-	if len(r.tenants) == 0 {
-		return nil
-	}
-	return r.shared.Mutate(ctx, "tenants", slices.Clone(r.tenants), func(list []Tenant) ([]Tenant, error) { return list, nil })
 }
 
 // CheckList reports why list cannot be a list of tenants, or nil.
@@ -309,18 +283,24 @@ func (r *Registry) load() error {
 }
 
 func (r *Registry) save(list []Tenant) error {
-	b, err := json.MarshalIndent(fileFormat{Version: 1, Tenants: list}, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := securefile.MkdirPrivate(filepath.Dir(r.Path)); err != nil {
-		return err
-	}
-	if err := securefile.Replace(r.Path, append(b, '\n')); err != nil {
+	if err := WriteFile(r.Path, list); err != nil {
 		return err
 	}
 	r.tenants, r.loaded = list, false
 	return r.load()
+}
+
+// WriteFile writes list as the registry's file at path, as a server on
+// its own reads it.
+func WriteFile(path string, list []Tenant) error {
+	b, err := json.MarshalIndent(fileFormat{Version: 1, Tenants: list}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := securefile.MkdirPrivate(filepath.Dir(path)); err != nil {
+		return err
+	}
+	return securefile.Replace(path, append(b, '\n'))
 }
 
 // List returns the tenants, by ID, without the default tenant.
