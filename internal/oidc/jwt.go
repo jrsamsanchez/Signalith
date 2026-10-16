@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 )
 
@@ -222,4 +223,43 @@ func verifySignature(alg string, pub crypto.PublicKey, signed string, sig []byte
 		return nil
 	}
 	return fmt.Errorf("unsupported algorithm %s", alg)
+}
+
+// ErrUnknownKey is a token signed with a key ID the key set does not
+// hold, which may be a key the issuer rotated in since the set was read.
+var ErrUnknownKey = errors.New("the token is signed with a key the issuer does not publish")
+
+// VerifyJWS checks the signature of a compact JWS token with the keys of
+// set, for one of algs (Algorithms when empty, and never "none" or an
+// HMAC algorithm), and returns its payload. It checks nothing in the
+// payload: the caller checks the claims. It is for tokens other than ID
+// tokens, such as the ones Microsoft's Bot Framework signs.
+func VerifyJWS(token string, set JWKS, algs []string) ([]byte, error) {
+	if len(algs) == 0 {
+		algs = Algorithms
+	}
+	h, payload, sig, signed, err := splitToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(algs, h.Alg) || !slices.Contains(Algorithms, h.Alg) {
+		return nil, fmt.Errorf("the token is signed with %q, which is not accepted", h.Alg)
+	}
+	if len(h.Crit) > 0 {
+		return nil, errors.New("the token has critical header parameters")
+	}
+	known := false
+	for _, k := range parseKeys(set) {
+		if h.Kid != "" && k.kid != h.Kid {
+			continue
+		}
+		known = true
+		if (k.alg == "" || k.alg == h.Alg) && verifySignature(h.Alg, k.pub, signed, sig) == nil {
+			return payload, nil
+		}
+	}
+	if !known {
+		return nil, ErrUnknownKey
+	}
+	return nil, errors.New("the token's signature does not match")
 }

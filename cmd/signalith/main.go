@@ -35,6 +35,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -1483,6 +1484,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	pruns := playbooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The buttons in Slack and Teams messages: linked chat accounts and
+	// where Teams app channels post are kept in <prefix>_chat, so a click
+	// may reach any server.
+	chats := chatops.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	chats.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	senders.Conversations = chats
 	// Sessions and the failed sign-in limits carry over a restart (shared
 	// sessions are in OpenSearch, with this server's cache of them kept).
 	r.sessions.SetIdle(c.SessionIdle())
@@ -1577,6 +1584,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notebooks:    nstore,
 		Respond:      responder,
 		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Chat:         &api.Chat{Store: chats},
 		Retention:    ret,
 		Sample:       sampleLoader,
 		Content:      updater,
@@ -1638,7 +1646,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK, chatOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1688,6 +1696,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
 		} else {
 			playbooksOK = true
+		}
+		if err := chats.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the chat index; buttons in Slack and Teams messages will not work", "index", chats.Index, "err", err)
+		} else {
+			chatOK = true
 		}
 		close(indicesReady)
 	})
@@ -1740,6 +1753,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{findingsOK, fstore.Index, clusterUpgrade(r.shared, "findings-fields", fstore.Upgrade), fstore.Replicate},
 				{notifyOK, deliveries.Index, nil, deliveries.Replicate},
 				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},
+				{chatOK, chats.Index, nil, chats.Replicate},
 			})
 		}},
 		{Name: "detections", Run: func(ctx context.Context) {
