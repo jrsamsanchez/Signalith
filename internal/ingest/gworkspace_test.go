@@ -153,7 +153,9 @@ func TestWorkspaceManyEvents(t *testing.T) {
 	r := decode(t, gwsManyEvents(45000))
 	start := time.Now()
 	ev := Normalize(GCPTag, r, now)
-	if d := time.Since(start); d > 2*time.Second {
+	// Generous, for the race detector on a busy CI runner (3s seen there);
+	// work that grew with every event and value would take far longer.
+	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("took %v", d)
 	}
 	if names, _ := ev.Fields["event_name"].([]any); len(names) != workspaceMaxEvents {
