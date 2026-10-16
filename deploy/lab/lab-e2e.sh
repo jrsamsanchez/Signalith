@@ -433,6 +433,9 @@ else
 fi
 if have sensor; then
   expect_events "Traffic to port 4444 is seen by the sensor" "datamodel=Network_Traffic dest_port=4444" -15m 8
+  # linux-1's own public address is in the sensor's --networks, so its
+  # traffic out counts as outbound, not external.
+  expect_events "The sensor counts linux-1's address as inside" "datamodel=Network_Traffic dest_port=4444 direction=outbound" -15m 2
 fi
 
 FINDINGS=()
@@ -509,7 +512,12 @@ if call GET /api/detections; then
   # network-shell-port needs the program name, which an endpoint agent
   # gives; the sensor's flows fire network-sensor-shell-port.
   if have sensor; then
-    detection network-sensor-shell-port
+    # It counts only answered connections, so it needs portquiz.net up.
+    if search "datamodel=Network_Traffic dest_port=4444 action=allowed" -15m && [ "$ROWS" = 0 ]; then
+      skip "Detection network-sensor-shell-port fires" "portquiz.net did not answer on port 4444, and the rule counts only answered connections"
+    else
+      detection network-sensor-shell-port
+    fi
     detection network-dns-nxdomain-burst
   fi
   if [ -n "$INDICATOR" ]; then

@@ -184,11 +184,21 @@ does. If you changed the admin password yourself, give it to the test:
 ## A lab made before the port change
 
 Labs set up before Signalith moved to ports 9000 (web page) and 7779 (agents) still use 8080
-for both. `terraform apply` with this version moves the firewall and the load balancer to
-9000 and 7779. Then, on signalith-1 and signalith-2, set `server.listen: 0.0.0.0:9000` and
-`server.agent_listen: 0.0.0.0:7779` in `/etc/signalith/signalith.yaml`, change the `:8080` in
-`server.public_url` and `server.node_url` to `:9000`, restart them one at a time, and get new
-agent configurations from **Add data** for linux-1 and the sensor.
+for both. Change the servers' settings first, while the page is still on 8080; the new ports
+are used from each server's restart:
+
+1. In **Settings**, for each server (**Settings of**, at the top of the page), set
+   **Listen address** to `0.0.0.0:9000` and **Agent address** to `0.0.0.0:7779`, and change
+   the `:8080` in **Address for other servers** to `:9000`. These are each server's own
+   settings: in a lab with more than one server they are kept with the shared settings, so
+   editing `/etc/signalith/signalith.yaml` does not change them.
+2. Change the `:8080` in **Public address** to `:9000`. It is shared by all servers.
+3. Run `terraform apply` with this version, which moves the firewall and the load balancer
+   to 9000 and 7779. Add `-var windows=false` if you have not made windows-1, or it is
+   made too.
+4. Restart the servers one at a time, the one that runs background jobs last.
+5. Get new agent configurations from **Add data** for linux-1 and the sensor; they now send
+   to port 7779.
 
 ## After the setup
 
