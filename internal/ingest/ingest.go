@@ -90,6 +90,10 @@ type Pipeline struct {
 	// byte until they have been written (default DefaultMaxReceiving); one
 	// sender may hold a quarter of it. See ReadBody.
 	MaxReceiving int64
+	// Custom parses the records sent under a custom parser's tag
+	// (CustomTagPrefix); nil leaves them to the built-in parsers. Set it
+	// before the pipeline takes records.
+	Custom CustomParsers
 	// Log, when set, gets a warning (at most once a minute per kind) when
 	// events are refiled under their arrival time or lose fields.
 	Log *slog.Logger
@@ -282,7 +286,12 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		end := min(start+batchEvents, len(records))
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
-			events = append(events, Normalize(tag, r, p.now()))
+			if ev, drop := p.normalize(tag, r, p.now()); !drop {
+				events = append(events, ev)
+			}
+		}
+		if len(events) == 0 {
+			continue
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {

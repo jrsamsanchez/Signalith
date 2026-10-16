@@ -1,7 +1,6 @@
 # Threat intel
 
-Signalith matches events against threat intel **indicators**, like the Splunk ES
-threat intelligence framework. Indicators come from feeds that the server downloads,
+Signalith matches events against threat intel **indicators**. Indicators come from feeds that the server downloads,
 from indicators you add by hand, and from uploaded lists.
 
 ## Indicators

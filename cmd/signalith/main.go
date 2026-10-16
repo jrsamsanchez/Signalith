@@ -1126,6 +1126,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	indexingServers := func() int { return r.node.IndexingServers(10 * time.Minute) }
 	pipeline.Servers = indexingServers
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
+	// Custom parsers admins save on the Add data page read the records
+	// agents send under their tags, and syslog from the programs they name.
+	parsers := r.parsersRegistry(c, sharedOn)
+	pipeline.Custom = parsers
 	// Closed once the index template is in place, so syslog does not
 	// create the day's first indices with the wrong field types.
 	templateReady := make(chan struct{})
@@ -1146,6 +1150,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			sc.OnTLSName = certs.NoteName
 		}
 		receiver = syslog.New(sc, pipeline, log)
+		receiver.Custom = parsers.Syslog
 		if err := receiver.Start(ctx); err != nil {
 			return nil, keyed(err, "syslog.udp", "syslog.tcp", "syslog.tls")
 		}
@@ -1466,6 +1471,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Agents:       agentsInv,
 		Engine:       eng,
 		Pipeline:     pipeline,
+		Parsers:      parsers,
 		EventAge:     live,
 		Syslog:       receiver,
 		Backend:      cl,
