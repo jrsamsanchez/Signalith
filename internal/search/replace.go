@@ -24,13 +24,26 @@ func applyReplace(ctx context.Context, res *Result, c *query.Replace) error {
 		}
 		return false
 	}
+	// prefixes[i] is the text before pair i's first *, or the whole
+	// pattern when it has none.
+	prefixes := make([]string, 0, len(c.Pairs))
+	for _, p := range c.Pairs {
+		pre, _, _ := strings.Cut(p[0], "*")
+		prefixes = append(prefixes, pre)
+	}
 	change := func(v any) (any, bool) {
 		s, ok := v.(string)
 		if !ok {
 			return v, true
 		}
-		for _, p := range c.Pairs {
+		for i, p := range c.Pairs {
 			if !ev.step() {
+				return nil, false
+			}
+			// A pattern with a * past a matching prefix searches the
+			// rest of the value, so it costs as much as the value is
+			// long, whatever the pattern.
+			if len(prefixes[i]) < len(p[0]) && strings.HasPrefix(s, prefixes[i]) && !ev.stepN(len(s)) {
 				return nil, false
 			}
 			if to, ok := query.RenameField(p, s); ok {

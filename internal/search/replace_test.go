@@ -2,10 +2,13 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 func TestReplace(t *testing.T) {
@@ -86,4 +89,30 @@ func FuzzXMLElements(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestReplaceWildcardScanCountsSteps(t *testing.T) {
+	defer func(n int) { maxEvalSteps = n }(maxEvalSteps)
+	maxEvalSteps = 10_000_000
+	rows := make([]Row, 20)
+	big := strings.Repeat("0123456789", 60_000)
+	for i := range rows {
+		rows[i] = Row{"s": big}
+	}
+	pairs := make([]string, 0, 100)
+	for i := 0; i < 100; i++ {
+		pairs = append(pairs, fmt.Sprintf(`"*01234567x%d*" WITH "x"`, i))
+	}
+	q, err := query.Parse("* | replace " + strings.Join(pairs, ", ") + " IN s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err = applyReplace(withEvaluator(context.Background()), &Result{Rows: rows}, q.Commands[0].(*query.Replace))
+	if err == nil || !strings.Contains(err.Error(), "million expressions") {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
 }
