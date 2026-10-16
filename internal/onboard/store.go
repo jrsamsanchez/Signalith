@@ -154,7 +154,7 @@ func (s *FileStore) change(fn func(map[string]Parser) error) error {
 	if s.err != nil {
 		return fmt.Errorf("the custom parsers file could not be read, so it is not changed: %w", s.err)
 	}
-	next := make(map[string]Parser, len(s.m)+1)
+	next := make(map[string]Parser, len(s.m))
 	for k, v := range s.m {
 		next[k] = v
 	}
