@@ -38,7 +38,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -83,6 +85,9 @@ type Server struct {
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Notebooks holds hunting notebooks; nil leaves only the starter
+	// hunts, which can be run but not saved.
+	Notebooks notebooks.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
 	// Playbooks backs the Playbooks and Approvals pages; nil disables
@@ -206,6 +211,9 @@ type Server struct {
 	// ClusterTLS is the cluster's one certificate authority; nil on a
 	// server that is not a member of a cluster.
 	ClusterTLS ClusterTLS
+	// Parsers keeps and runs the custom parsers admins save on the Add
+	// data page; nil keeps them in the state folder, for this API only.
+	Parsers *onboard.Registry
 	// ComplianceNotes keeps the notes on compliance controls in the
 	// shared settings, used while this server takes its content from them;
 	// nil, or until then, they stay in the state folder.
@@ -258,6 +266,8 @@ type Server struct {
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
 	liveAI atomic.Pointer[liveModel]
+	// backtests limits detection backtests running at once.
+	backtests backtestSlots
 
 	// legacyProxies are reverse proxies believed only because the config
 	// predates HTTPS by default (see viaTrustedProxy).
@@ -266,12 +276,16 @@ type Server struct {
 	sec           *SecurityChecker
 	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
+	// localParsers is the parsers' registry of a server started without
+	// one (Parsers), made at first use.
+	localParsers localParsers
 	// badTuning is the hash of the stored rule tuning last refused to
 	// sensors (refusedTuning), so it is logged once.
 	badTuningMu sync.Mutex
 	badTuning   string
 	blockedLog  logOnce // blocked osquery hosts that tried to enroll
 	firstPW     firstPasswordCheck
+	webAgentLog logOnce // agents that send to the web port
 	tokensOnce  sync.Once
 	tokenRate   tokenRate         // agent token creation
 	sensorCache sensorHealthCache // the Health page's network sensor counts
@@ -316,9 +330,11 @@ func (s *Server) Handler() http.Handler {
 	s.sessions()
 	s.tokens()
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/ingest", s.handleIngest)
-	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
-	s.routeOsquery(mux)
+	intake := http.NewServeMux()
+	s.routeAgentIntake(intake)
+	for _, p := range agentRoutes {
+		mux.Handle(p, s.webPortAgents(intake))
+	}
 
 	api := &router{s: s, mux: http.NewServeMux()}
 	api.viewer("GET /api/health", s.handleHealth)
@@ -345,12 +361,14 @@ func (s *Server) Handler() http.Handler {
 	s.routeDetections(api)
 	s.routeRisk(api)
 	s.routeLookupTables(api)
+	s.routeParsers(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeNotebooks(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeUsers(api)
@@ -994,6 +1012,10 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		server, otherServer = dest, other
+	} else {
+		// This server's address, typed or public: agents send to its
+		// agent port.
+		server = s.agentURL(server)
 	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {

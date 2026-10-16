@@ -41,7 +41,7 @@ Any OTLP/HTTP sender works. Point it at:
 
 | Setting | Value |
 | --- | --- |
-| Logs endpoint | `https://<server>:8080/api/otlp/v1/logs` (or endpoint `https://<server>:8080/api/otlp`, to which the exporter adds `/v1/logs`) |
+| Logs endpoint | `https://<server>:7779/api/otlp/v1/logs` (or endpoint `https://<server>:7779/api/otlp`, to which the exporter adds `/v1/logs`), on the [agent port](sending-data.md#the-agent-port), not the web page's port |
 | Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)) |
 | Encoding | protobuf (`application/x-protobuf`, the Collector's default) or JSON (`application/json`) |
 | Compression | gzip (the Collector's default) or none |
@@ -50,7 +50,7 @@ Any OTLP/HTTP sender works. Point it at:
 For example, with curl:
 
 ```sh
-curl --cacert signalith-ca.pem https://siem.example.com:8080/api/otlp/v1/logs \
+curl --cacert signalith-ca.pem https://siem.example.com:7779/api/otlp/v1/logs \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"shop"}}]},
        "scopeLogs":[{"logRecords":[{"severityText":"ERROR","body":{"stringValue":"payment failed"}}]}]}]}'

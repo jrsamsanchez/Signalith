@@ -104,7 +104,7 @@ func (x *clusterCLI) token(ctx context.Context, o tokenOptions, asJSON bool) err
 		// reaches.
 		u, err = (&joinAPI{c: x.c}).tokenURL("")
 		if p, perr := url.Parse(u); err != nil || perr != nil || tokenHostLocal(p.Hostname()) {
-			return errors.New("a join token needs this server's https address that the new server reaches: give it with -url https://siem-a.example.com:8080, or set server.node_url (or server.public_url) on the Settings page")
+			return errors.New("a join token needs this server's https address that the new server reaches: give it with -url https://siem-a.example.com:9000, or set server.node_url (or server.public_url) on the Settings page")
 		}
 	}
 	is, err := x.join.Issue(ctx, clusterjoin.IssueArgs{By: x.by, Node: x.self.Name, URL: u, CADER: ca, TTL: o.ttl,

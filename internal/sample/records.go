@@ -166,6 +166,17 @@ func (b *builder) generic(t time.Time, sourcetype string, fields map[string]any)
 	b.emit(ev)
 }
 
+// signalith adds an event Signalith writes about itself (intake
+// signalith), such as a silent sensor's.
+func (b *builder) signalith(t time.Time, sourcetype string, fields map[string]any) {
+	ev := ingest.Event{Time: t, Model: "Other", Fields: map[string]any{}, Origin: ingest.Origin{Intake: ingest.IntakeSignalith}}
+	for k, v := range fields {
+		ev.Fields[k] = v
+	}
+	ev.Fields["sourcetype"] = sourcetype
+	b.emit(ev)
+}
+
 // sensorHost is the network sensor the sample's Zeek and Suricata events
 // come from, as Fluent Bit's sysinfo filter names it.
 const sensorHost = "nsm-01"
@@ -203,7 +214,11 @@ func (b *builder) eve(t time.Time, rec map[string]any) {
 func (b *builder) sensorStatus(t time.Time, rec map[string]any) {
 	rec["kind"], rec["v"], rec["host"], rec["role"] = "signalith-sensor-status", 1, sensorHost, "sensor"
 	line := sensorLine(rec, "time", t.UTC().Format(time.RFC3339))
-	b.emit(ingest.Normalize(ingest.SensorStatusTag, map[string]any{"log": line, "hostname": sensorHost}, t))
+	ev := ingest.Normalize(ingest.SensorStatusTag, map[string]any{"log": line, "hostname": sensorHost}, t)
+	// As a sensor's token sends it: network-sensor-unhealthy believes
+	// only those.
+	ev.Origin = ingest.Origin{Intake: ingest.IntakeAgent, Purpose: "sensor"}
+	b.emit(ev)
 }
 
 // sensorLine writes rec as one JSON line with its time first, as Zeek and

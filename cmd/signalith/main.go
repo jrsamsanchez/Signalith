@@ -47,6 +47,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -93,7 +94,7 @@ Usage:
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
-  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
@@ -202,7 +203,8 @@ func configFlag(fs *flag.FlagSet) *string {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
-	listen := fs.String("listen", "0.0.0.0:8080", "address to listen on")
+	listen := fs.String("listen", "0.0.0.0:9000", "address the web page and API listen on")
+	agentListen := fs.String("agent-listen", "", "address agents send to (default: -listen's host, port "+config.DefaultAgentPort+"; off: the web port)")
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
@@ -223,6 +225,13 @@ func cmdInit(args []string) error {
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
 	c.Server.Listen = *listen
+	// Set, so the web port takes no agent traffic. By default on the web
+	// page's host: a server whose page is on loopback only takes agents on
+	// loopback only too.
+	c.Server.AgentListen = *agentListen
+	if c.Server.AgentListen == "" {
+		c.Server.AgentListen = config.DefaultAgentListen(*listen)
+	}
 	c.Server.PublicURL = *publicURL
 	// HTTPS with a certificate the server makes for itself, and no
 	// agents over plain HTTP.
@@ -266,6 +275,7 @@ func cmdInit(args []string) error {
 	}
 	fmt.Printf("Wrote %s\n\n", *path)
 	fmt.Printf("  Web UI:      %s\n", c.Server.PublicURL)
+	fmt.Printf("  Agents:      %s\n", c.AgentURL(c.Server.PublicURL))
 	fmt.Printf("  HTTPS:       the server makes its own certificate when it starts; browsers warn\n")
 	fmt.Printf("               until you trust it (see docs/https.md)\n")
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
@@ -363,10 +373,36 @@ func printSyslogPorts(c *config.Config) {
 	}
 }
 
+// printWebPorts prints the web port, and the agent port when agents send
+// to one of their own, one per line with whether other machines can reach
+// it ("web 9000 any", "agents 7779 local"), for the installers' firewall
+// rules.
+func printWebPorts(c *config.Config) {
+	for _, l := range []struct{ kind, addr string }{{"web", c.Server.Listen}, {"agents", c.Server.AgentAddr()}} {
+		if host, port, err := net.SplitHostPort(l.addr); err == nil {
+			fmt.Println(l.kind, port, listenScope(host))
+		}
+	}
+}
+
+// listenScope says whether a listen host takes connections from other
+// machines ("any") or from this one alone ("local"), for installers that
+// open the firewall only for the first.
+func listenScope(host string) string {
+	if host == "localhost" {
+		return "local"
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
+		return "local"
+	}
+	return "any"
+}
+
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	path := configFlag(fs)
 	ports := fs.Bool("syslog-ports", false, "only print the syslog listeners, one per line: protocol, port, and the allowed senders (any, or a comma-separated list); for installers")
+	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line with any or local (web 9000 any, agents 7779 local); for installers")
 	fileFlag := settingsFileFlag(fs)
 	fs.Parse(args)
 	// -file first: the service's settings below do not replace it.
@@ -374,9 +410,9 @@ func cmdValidate(args []string) error {
 		return err
 	}
 	// The service's folders and master key, so this checks what it uses.
-	// Installers read the -syslog-ports output, so nothing else is
-	// printed then.
-	if *ports {
+	// Installers read the -syslog-ports and -web-ports output, so
+	// nothing else is printed then.
+	if *ports || *webPorts {
 		applyServiceEnv(*path)
 	} else {
 		useServiceEnv(*path, os.Stdout)
@@ -387,6 +423,10 @@ func cmdValidate(args []string) error {
 	}
 	if *ports {
 		printSyslogPorts(c)
+		return nil
+	}
+	if *webPorts {
+		printWebPorts(c)
 		return nil
 	}
 	fmt.Printf("%s is valid.\n", *path)
@@ -1027,6 +1067,9 @@ type instance struct {
 	certs    *tlsauto.Manager
 	certKey  string
 	receiver *syslog.Receiver
+	// agentHandler serves the agent port, and agentPlain plain HTTP on it;
+	// nil when agents send to the web port.
+	agentHandler, agentPlain http.Handler
 	// retention is the retention manager.
 	retention *retention.Manager
 	// jobsList are the background jobs, which run only while this server
@@ -1107,6 +1150,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.certs, in.certKey = certs, certKey
 		in.jobs.Go(func() { certs.Run(ctx) })
 	}
+	// The agent port, before the parts that tell agents where to send:
+	// when the default one of a server upgraded from before 0.3 cannot be
+	// listened on, they keep sending to the web port.
+	if err := r.listenAgents(c, certs); err != nil {
+		in.cancel()
+		return nil, err
+	}
 	// The master key, again after a restart: the files saved from now on
 	// are encrypted with this config's, and their plain values with it.
 	r.useKeys(c)
@@ -1145,6 +1195,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	indexingServers := func() int { return r.node.IndexingServers(10 * time.Minute) }
 	pipeline.Servers = indexingServers
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
+	// Custom parsers admins save on the Add data page read the records
+	// agents send under their tags, and syslog from the programs they name.
+	parsers := r.parsersRegistry(c, sharedOn)
+	pipeline.Custom = parsers
 	// Closed once the index template is in place, so syslog does not
 	// create the day's first indices with the wrong field types.
 	templateReady := make(chan struct{})
@@ -1165,6 +1219,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			sc.OnTLSName = certs.NoteName
 		}
 		receiver = syslog.New(sc, pipeline, log)
+		receiver.Custom = parsers.Syslog
 		if err := receiver.Start(ctx); err != nil {
 			return nil, keyed(err, "syslog.udp", "syslog.tcp", "syslog.tls")
 		}
@@ -1315,6 +1370,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
@@ -1495,6 +1552,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Agents:       agentsInv,
 		Engine:       eng,
 		Pipeline:     pipeline,
+		Parsers:      parsers,
 		EventAge:     live,
 		Syslog:       receiver,
 		Backend:      cl,
@@ -1507,6 +1565,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards:   boards,
 		Cases:        cstore,
+		Notebooks:    nstore,
 		Respond:      responder,
 		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Retention:    ret,
@@ -1561,7 +1620,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1578,6 +1637,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the cases index; investigations will not work", "index", cstore.Index, "err", err)
 		} else {
 			casesOK = true
+		}
+		if err := nstore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the hunting notebooks index; notebooks cannot be saved", "index", nstore.Index, "err", err)
+		} else {
+			notebooksOK = true
 		}
 		if err := fstore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the findings index; detections will not run", "index", fstore.Index, "err", err)
@@ -1647,6 +1711,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			upgradeIndices(ctx, log, func() bool { return r.node == nil || r.node.RunsJobs() }, []indexUpgrade{
 				{intelOK, ibackend.Index, clusterUpgrade(r.shared, "intel-fields", ibackend.Upgrade), ibackend.Replicate},
 				{casesOK, cstore.Index, clusterUpgrade(r.shared, "cases-fields", cstore.Upgrade), cstore.Replicate},
+				{notebooksOK, nstore.Index, clusterUpgrade(r.shared, "notebooks-fields", nstore.Upgrade), nstore.Replicate},
 				{findingsOK, fstore.Index, clusterUpgrade(r.shared, "findings-fields", fstore.Upgrade), fstore.Replicate},
 				{notifyOK, deliveries.Index, nil, deliveries.Replicate},
 				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},
@@ -1774,6 +1839,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
+	if c.Server.AgentAddr() != "" {
+		in.agentHandler = srv.AgentHandler()
+		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
+	}
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1789,7 +1858,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen, AgentListen: c.Server.AgentAddr(),
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
 				fp := filesFingerprints(c, ret, feeds, notes, pbooks)

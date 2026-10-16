@@ -70,6 +70,9 @@ func (e *Text) String() string {
 	if e.Value == "*" {
 		return `"*"` // a bare * is no search term at all
 	}
+	if strings.EqualFold(e.Value, "search") {
+		return quote(e.Value) // first, a bare search is the command's name
+	}
 	return FormatValue(e.Value)
 }
 
@@ -154,7 +157,9 @@ func (a Agg) Column() string {
 func (a Agg) String() string {
 	s := a.Func
 	if a.Field != "" {
-		s += "(" + a.Field + ")"
+		// A name that is not a bare word, such as one an eval() alias
+		// gave, is quoted: values(" ").
+		s += "(" + FormatValue(a.Field) + ")"
 	}
 	if a.Alias != "" {
 		s += " as " + FormatValue(a.Alias)
@@ -433,6 +438,10 @@ func CommandString(c Command) string {
 		return rangeMapString(c)
 	case *ForEach:
 		return forEachString(c)
+	case *Replace:
+		return replaceString(c)
+	case *XMLKV:
+		return xmlkvString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

@@ -799,6 +799,14 @@ function entryNode(c, e, linked) {
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
           snapshotTable(e)],
         remove: removeEntryButton(c, e, 'search') });
+    case 'notebook':
+      // A hunting notebook linked to this case; unlinking happens from the
+      // notebook, so the entry has no remove button here.
+      return tlItem({ kind: 'notebook', icon: 'notebook-pen', time: e.time, text: [who, ' linked a hunting notebook'],
+        body: el('div', { class: 'c-finding-ref' },
+          typeof openNotebook === 'function'
+            ? el('button', { type: 'button', class: 'link-btn c-link', title: 'Open this notebook', onclick: () => openNotebook(e.notebook_id) }, e.text || e.notebook_id)
+            : el('span', {}, e.text || e.notebook_id)) });
     case 'action':
       // A response action run from this case: the record of what was
       // done, so it cannot be removed. Details come from the audit log.
