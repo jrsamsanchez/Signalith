@@ -43,13 +43,10 @@ func TestParseThreshold(t *testing.T) {
 	for search, want := range map[string]string{
 		// A count by _time needs a span, and a bucket a count.
 		"`wineventlog_security` EventCode=4768 | stats dc(TargetUserName) AS n BY _time, IpAddress | where n > 30": "span",
-		"`wineventlog_security` EventCode=4768 | bucket span=5m _time":                                             "bucket",
 		// The limit must read a count of the search.
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=\"a.exe\" by Processes.dest | where other >= 3": "reads no count",
 		// Fields Signalith does not keep cannot be grouped by.
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=\"a.exe\" by Processes.vendor_product | where count >= 3": "no Signalith mapping",
-		// Counts against an average (eventstats) are not thresholds.
-		"`wineventlog_security` EventCode=4768 | bucket span=2m _time | stats dc(TargetUserName) AS n BY _time, IpAddress | eventstats avg(n) as a BY IpAddress": "eventstats",
 	} {
 		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: got %v, want an error about %s", search, err, want)

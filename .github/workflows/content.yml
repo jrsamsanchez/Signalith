@@ -31,7 +31,7 @@ jobs:
       contents: write # the content release
     services:
       opensearch:
-        image: opensearchproject/opensearch:2.17.1
+        image: opensearchproject/opensearch:3.9.0
         env:
           discovery.type: single-node
           DISABLE_SECURITY_PLUGIN: 'true'

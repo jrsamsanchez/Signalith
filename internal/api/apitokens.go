@@ -120,7 +120,7 @@ func (s *Server) tokenRefused(r *http.Request, b clusterauth.APITokenBody, now t
 
 func (s *Server) routeAPITokens(api *router) {
 	api.admin("GET /api/api-tokens", s.handleListAPITokens)
-	api.admin("POST /api/api-tokens", s.handleCreateAPIToken)
+	api.sensitive("POST /api/api-tokens", s.handleCreateAPIToken)
 	api.admin("POST /api/api-tokens/{id}/revoke", s.handleRevokeAPIToken)
 }
 

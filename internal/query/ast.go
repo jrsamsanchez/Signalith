@@ -97,10 +97,21 @@ func FormatValue(v string) string {
 	case "AND", "OR", "NOT", "IN", "AS", "BY":
 		needs = true
 	}
+	// Brackets would end or open a join's subsearch.
+	needs = needs || strings.ContainsAny(v, "[]")
 	if !needs {
 		return v
 	}
 	return quote(v)
+}
+
+// optionValue writes the value of a key=value option: as FormatValue,
+// but quoted when it starts with ~, which after = would read as =~.
+func optionValue(v string) string {
+	if strings.HasPrefix(v, "~") {
+		return quote(v)
+	}
+	return FormatValue(v)
 }
 
 func quote(v string) string {
@@ -170,10 +181,48 @@ type Top struct {
 	Fields []string
 	By     []string
 	Rare   bool // rare: the least common values first
+
+	CountField   string // the count column's name; "" is count
+	PercentField string // the percent column's name; "" is percent
+	NoCount      bool   // showcount=f
+	NoPercent    bool   // showperc=f
+	// UseOther adds a row per group counting the values past the limit,
+	// with OtherStr (OTHER when "") as the value of each field.
+	UseOther bool
+	OtherStr string
 }
 
-// Where filters rows: where count > 20 AND src != "10.0.0.1".
-type Where struct{ Expr Expr }
+// CountColumn is the name top gives its count column.
+func (t *Top) CountColumn() string {
+	if t.CountField == "" {
+		return "count"
+	}
+	return t.CountField
+}
+
+// PercentColumn is the name top gives its percent column.
+func (t *Top) PercentColumn() string {
+	if t.PercentField == "" {
+		return "percent"
+	}
+	return t.PercentField
+}
+
+// Other is the value top's other row holds.
+func (t *Top) Other() string {
+	if t.OtherStr == "" {
+		return "OTHER"
+	}
+	return t.OtherStr
+}
+
+// Where filters rows: where count > 20 AND src != "10.0.0.1". Search is
+// set when it was written as a search command, | search count>20 user=adm*,
+// which filters with the search's own syntax.
+type Where struct {
+	Expr   Expr
+	Search bool
+}
 
 // SortKey is one sort field.
 type SortKey struct {
@@ -213,7 +262,12 @@ func (t *Top) Name() string {
 	}
 	return "top"
 }
-func (*Where) Name() string       { return "where" }
+func (w *Where) Name() string {
+	if w.Search {
+		return "search"
+	}
+	return "where"
+}
 func (*Sort) Name() string        { return "sort" }
 func (*Head) Name() string        { return "head" }
 func (*Table) Name() string       { return "table" }
@@ -262,7 +316,7 @@ func CommandString(c Command) string {
 	case *Timechart:
 		s := "timechart"
 		if c.Span != "" {
-			s += " span=" + c.Span
+			s += " span=" + optionValue(c.Span)
 		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
@@ -272,7 +326,7 @@ func CommandString(c Command) string {
 	case *Top:
 		// Always written: without it the default of 10 would apply, and
 		// limit=0 (no limit) would be lost.
-		s := c.Name() + " limit=" + strconv.Itoa(max(c.Limit, 0))
+		s := c.Name() + " limit=" + strconv.Itoa(max(c.Limit, 0)) + topOptions(c)
 		s += " " + strings.Join(c.Fields, ", ")
 		if len(c.By) > 0 {
 			s += " by " + strings.Join(c.By, ", ")
@@ -285,6 +339,9 @@ func CommandString(c Command) string {
 		}
 		return s
 	case *Where:
+		if c.Search {
+			return "search " + topLevel(c.Expr, " ")
+		}
 		return "where " + topLevel(c.Expr, " AND ")
 	case *Eval:
 		return evalString(c)
@@ -314,12 +371,68 @@ func CommandString(c Command) string {
 			names[i] = formatName(f)
 		}
 		return "table " + strings.Join(names, ", ")
+	case *MVExpand:
+		return mvExpandString(c)
+	case *MakeMV:
+		return makeMVString(c)
+	case *Reverse:
+		return "reverse"
+	case *Tail:
+		return "tail " + strconv.Itoa(c.N)
+	case *Uniq:
+		return "uniq"
+	case *Convert:
+		return convertString(c)
+	case *AddTotals:
+		return addTotalsString(c)
 	case *Rename:
 		ps := make([]string, len(c.Pairs))
 		for i, p := range c.Pairs {
 			ps[i] = formatName(p[0]) + " as " + FormatValue(p[1])
 		}
 		return "rename " + strings.Join(ps, ", ")
+	case *Lookup:
+		return lookupString(c)
+	case *InputLookup:
+		return inputLookupString(c)
+	case *Transaction:
+		return transactionString(c)
+	case *Join:
+		return joinString(c)
+	case *Append:
+		return "append [search " + c.Sub.String() + "]"
+	case *AppendPipe:
+		return appendPipeString(c)
+	case *StreamStats:
+		return streamStatsString(c)
+	case *Bin:
+		return binString(c)
+	case *Regex:
+		return regexString(c)
+	case *MakeResults:
+		return makeResultsString(c)
+	case *FieldsRemove:
+		return fieldsRemoveString(c)
+	case *Chart:
+		return chartString(c)
+	case *XYSeries:
+		return seriesString("xyseries", append([]string{c.X, c.Y}, c.Values...)...)
+	case *Untable:
+		return seriesString("untable", c.X, c.Label, c.Value)
+	case *Spath:
+		return spathString(c)
+	case *FromJSON:
+		return fromJSONString(c)
+	case *NoMV:
+		return "nomv " + FormatValue(c.Field)
+	case *MVCombine:
+		return mvCombineString(c)
+	case *StrCat:
+		return strCatString(c)
+	case *RangeMap:
+		return rangeMapString(c)
+	case *ForEach:
+		return forEachString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

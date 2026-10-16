@@ -15,6 +15,9 @@ finding or a case. Playbooks come next.
 Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
 **https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
+Choosing a SIEM? [How Signalith compares](https://signalith.io/docs/comparison/) with
+Wazuh, Security Onion, Elastic Security and others, including where it is weaker.
+
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
@@ -138,6 +141,11 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 ```
 
 #### Upgrading the Docker quick start
+
+From 0.3.0 on, the quick start runs OpenSearch 3.9 instead of 2.17. Your data moves over
+by itself on the next start, but OpenSearch can't go back to 2.17 afterwards, so copy the
+OpenSearch volume first as in
+[Moving to OpenSearch 3.x](docs/opensearch-security.md#moving-to-opensearch-3x).
 
 Earlier versions of the quick start served plain HTTP, ran OpenSearch without security,
 and took the admin password and ingest token from `docker-compose.yml`
@@ -341,6 +349,7 @@ Supported sources in Phase 1:
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
+| Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
@@ -842,9 +851,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,455 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure and Microsoft 365 rules and 1,092
-  Windows, Linux, web, network, AWS CloudTrail and Entra ID detections
+- **Content packs** add community rules, off until you turn them on: 2,471 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365 and Google Cloud rules and 1,138
+  Windows, Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as

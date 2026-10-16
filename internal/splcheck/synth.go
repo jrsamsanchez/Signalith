@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"html"
 	"maps"
@@ -314,6 +315,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		return []sigmacheck.Case{cloudTrailRecord(ev)}
 	case AzureNode:
 		return []sigmacheck.Case{azureRecord(ev)}
+	case O365Node:
+		return []sigmacheck.Case{o365Record(ev)}
 	case "Web":
 		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
@@ -790,6 +793,20 @@ func Stored(c sigmacheck.Case) (map[string]any, string) {
 	return ev.Document(), ev.Model
 }
 
+// StoredCopies are a case's events as Signalith stores them, each of a
+// repeated case's copies at its own time, with their data model.
+func StoredCopies(c sigmacheck.Case) ([]map[string]any, string) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	cs, at := c.Copies()
+	docs := make([]map[string]any, len(cs))
+	model := ""
+	for i, cp := range cs {
+		ev := cp.Stored("test-host", now.Add(at[i]))
+		docs[i], model = ev.Document(), ev.Model
+	}
+	return docs, model
+}
+
 // View is a stored event as the string field values a where clause reads.
 func View(doc map[string]any) map[string]string {
 	out := map[string]string{}
@@ -830,6 +847,7 @@ var wordRe = regexp.MustCompile(`^[DQ]WORD \((0x[0-9a-fA-F]+)\)$`)
 func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
 	var out []sigmacheck.Case
+	bursts := 0
 	for _, ev := range append(pos, neg...) {
 		if r.Threshold != nil {
 			countable(r.Threshold, ev)
@@ -841,10 +859,30 @@ func Cases(r *Rule) []sigmacheck.Case {
 		for _, c := range cs {
 			doc, model := Stored(c)
 			c.Source = "synthesized"
-			c.Expect = InModel(r.Node, model) && Eval(r.Where, View(doc))
+			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
+			c.Expect = matched && r.Keeps(doc)
 			out = append(out, c)
+			if matched && !c.Expect && bursts < maxBursts {
+				// The later stages may count events: the same event,
+				// repeated, may come through.
+				if b := r.bursts(c); b != nil {
+					bursts++
+					out = append(out, b...)
+				}
+			}
 		}
 	}
+	// Events that differ only in a field the rule ignores may come out
+	// the same; each is tested once.
+	seen := map[string]bool{}
+	out = slices.DeleteFunc(out, func(c sigmacheck.Case) bool {
+		k, _ := json.Marshal(c)
+		if seen[string(k)] {
+			return true
+		}
+		seen[string(k)] = true
+		return false
+	})
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Expect && !out[j].Expect })
 	return out
 }
@@ -957,6 +995,12 @@ const AttackDataSource = "attack_data"
 // Reads reports whether Splunk's rule finds an event: one of its node's
 // events whose stored fields match the where clause.
 func Reads(r *Rule, c sigmacheck.Case) bool {
+	doc, _ := Stored(c)
+	return reads(r, c) && r.Keeps(doc)
+}
+
+// reads is Reads without the rule's later stages.
+func reads(r *Rule, c sigmacheck.Case) bool {
 	doc, model := Stored(c)
 	if r.Node == AuditdNode {
 		// Every audit record type.
@@ -969,6 +1013,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 	if r.Node == AzureNode {
 		// Every Entra ID or Azure record, in any data model.
 		return c.Channel == sigmacheck.AzureChannel && Eval(r.Where, View(doc))
+	}
+	if r.Node == O365Node {
+		// Every Microsoft 365 record, in any data model.
+		return c.Channel == sigmacheck.O365Channel && Eval(r.Where, View(doc))
 	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
@@ -1021,8 +1069,8 @@ func InModel(node, model string) bool {
 		// Sign-ins, changes and reads.
 		return model == "Authentication" || model == "Change" || model == "Other"
 	}
-	if node == AzureNode {
-		// Sign-ins, changes, risk detections and the rest.
+	if node == AzureNode || node == O365Node {
+		// Sign-ins, changes, risk detections or alerts, and the rest.
 		return model == "Authentication" || model == "Change" || model == "Alerts" || model == "Other"
 	}
 	return strings.EqualFold(model, NodeModel[node])
@@ -1031,15 +1079,20 @@ func InModel(node, model string) bool {
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the
 // Splunk where clause (Eval) and by the detection's filter
-// (search.MatchDoc), and as the test file says. It returns every
-// disagreement.
+// (search.MatchDoc), and as the test file says. A rule's later stages
+// (Post) run after both. It returns every disagreement.
 func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFile) []error {
 	var errs []error
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
-		doc, model := Stored(c)
+		docs, model := StoredCopies(c)
+		doc := docs[0]
 		inModel := InModel(r.Node, model)
-		if got := inModel && Eval(r.Where, View(doc)); got != c.Expect {
+		matched := inModel
+		for _, d := range docs {
+			matched = matched && Eval(r.Where, View(d))
+		}
+		if got := matched && r.KeepsAll(docs); got != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the Splunk rule says %v for %s", where, got, sigmacheck.String(View(doc))))
 			continue
 		}
@@ -1049,11 +1102,16 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 			}
 			continue
 		}
-		m, err := search.MatchDoc(filter, doc)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %v", where, err))
-			continue
+		m := true
+		for _, d := range docs {
+			ok, err := search.MatchDoc(filter, d)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %v", where, err))
+			}
+			m = m && ok && err == nil
 		}
+		// The detection runs the rule's later stages after its filter.
+		m = m && r.KeepsAll(docs)
 		if m != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the detection says %v for %s", where, m, sigmacheck.String(c.Data)))
 		}

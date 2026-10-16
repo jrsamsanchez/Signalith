@@ -43,6 +43,9 @@ const (
 	// O365Channel is Microsoft 365 audit records, whose data are the
 	// fields of the Sigma rule.
 	O365Channel = ingest.O365Channel
+	// GCPChannel is Google Cloud audit log entries, whose data are the
+	// fields of the Sigma rule (gcp.audit.method_name).
+	GCPChannel = ingest.GCPChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -62,6 +65,38 @@ type Case struct {
 	Channel string            `json:"channel"`
 	EventID string            `json:"event_id"`
 	Data    map[string]string `json:"data"`
+	// Repeat is how many times the event happens, for a rule that counts
+	// events (0 for once), with each of the Vary fields different each
+	// time (Copies).
+	Repeat int      `json:"repeat,omitempty"`
+	Vary   []string `json:"vary,omitempty"`
+}
+
+// RepeatSpan is how far apart in time the first and last of a repeated
+// case's events are, at most.
+const RepeatSpan = 30 * time.Second
+
+// Copies are a case's events, each with the time offset it happens at:
+// the event itself, or each of its repeats, spread over RepeatSpan, the
+// Vary fields numbered (tester1, tester2...).
+func (c Case) Copies() ([]Case, []time.Duration) {
+	if c.Repeat <= 1 {
+		c.Repeat, c.Vary = 0, nil
+		return []Case{c}, []time.Duration{0}
+	}
+	out := make([]Case, c.Repeat)
+	at := make([]time.Duration, c.Repeat)
+	for i := range out {
+		cp := c
+		cp.Repeat, cp.Vary = 0, nil
+		cp.Data = maps.Clone(c.Data)
+		for _, f := range c.Vary {
+			cp.Data[f] += strconv.Itoa(i + 1)
+		}
+		out[i] = cp
+		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)
+	}
+	return out, at
 }
 
 // Security 4688 data names and the Sigma process_creation fields they
@@ -92,7 +127,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
 		}
 		return out, true
-	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel:
+	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel, c.Channel == GCPChannel:
 		// Sigma's CloudTrail rules name the record's own fields, and its
 		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
@@ -188,6 +223,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == O365Channel {
 		return ingest.O365Tag, ingest.O365SigmaRecord(host, t, c.Data)
+	}
+	if c.Channel == GCPChannel {
+		return ingest.GCPTag, ingest.GCPRecord(host, t, c.Data)
 	}
 	if c.Channel == WebChannel {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
@@ -327,6 +365,9 @@ func init() {
 	// And a Microsoft 365 record's.
 	Bases["m365"] = map[string]string{}
 	sysmonEvents["m365"] = "audit"
+	// And a Google Cloud audit log entry's.
+	Bases[ingest.GCPService] = map[string]string{}
+	sysmonEvents[ingest.GCPService] = "activity"
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -362,6 +403,8 @@ func Channel(category string) string {
 		return CloudTrailChannel
 	case "m365":
 		return O365Channel
+	case ingest.GCPService:
+		return GCPChannel
 	}
 	if slices.Contains(ingest.AzureServices, category) {
 		return AzureChannel

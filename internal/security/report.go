@@ -228,6 +228,7 @@ var checks = []def{
 	{"accounts.temp_passwords", "accounts", "Temporary passwords", 22, checkTempPasswords},
 	{"accounts.directory", "accounts", "Directory sign-in", 5, checkDirectory},
 	{"accounts.sessions", "accounts", "Sign-in sessions", 23, checkSessions},
+	{"accounts.mfa", "accounts", "Two-step sign-in", 5, checkMFA},
 	{"accounts.agent_tokens", "accounts", "Agent tokens", 6, checkAgentTokens},
 	{"accounts.api_tokens", "accounts", "API tokens", 28, checkAPITokens},
 	{"accounts.opensearch_role", "accounts", "Signalith's OpenSearch account", 14, checkOpenSearchRole},
@@ -406,7 +407,6 @@ func notChecked() []string {
 		"Firewalls: which computers can reach Signalith's ports.",
 		"Backups, and whether the master key is kept apart from them.",
 		"Updates for Signalith, OpenSearch and the operating system. Signalith doesn't contact the internet to check.",
-		"Two-step sign-in. Signalith has none of its own.",
 		"The computers agents run on.",
 		"Copies of events outside Signalith, such as exports, moved archives and OpenSearch snapshots.",
 	}

@@ -124,7 +124,18 @@ The SigmaHQ pack has 17 Microsoft 365 rules (see [Detections](detections.md)): M
 off, new federated domains, PST exports, and the Defender for Cloud Apps and Purview
 alerts for impossible travel, activity from anonymous or suspicious addresses,
 suspicious inbox forwarding, ransomware activity, mass file deletion and users restricted
-from sending mail. Turn them on from the pack's page like any other rules.
+from sending mail.
+
+The Splunk Security Content pack has 19 Microsoft 365 rules: MFA turned off, service
+principals added or given new credentials, app roles granted, mail security settings
+(anti-phishing, Safe Links, Safe Attachments, anti-malware) changed, content searches
+started or exported, admins reading a user's mail, apps reading mailboxes through EWS or
+Microsoft Graph, malware found in SharePoint, suspicious mail delivered, the PST export
+alert, and counts that catch password spraying, MFA fatigue, SSO errors and sign-ins
+with many apps and user agents. Rules that use `eval`, `spath`, `fromjson`, `rex` or
+lookups are left out, and so are rules that name an Exchange cmdlet's parameter as a
+field (`Role`, `AccessRights`): Signalith keeps parameters only in `Parameters{}.Name` and
+`Parameters{}.Value`. Turn them on from each pack's page like any other rules.
 
 ## When nothing arrives
 

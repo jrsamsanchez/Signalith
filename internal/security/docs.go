@@ -60,6 +60,7 @@ var (
 	docUsersBuiltin    = DocLink{File: "users.md", Anchor: "the-built-in-admin"}
 	docUsersLocal      = DocLink{File: "users.md", Anchor: "managing-local-users"}
 	docUsersDirectory  = DocLink{File: "users.md", Anchor: "set-it-up"}
+	docUsersMFA        = DocLink{File: "users.md", Anchor: "two-step-sign-in"}
 	docReadmeLinux     = DocLink{File: "README.md", Anchor: "linux"}
 	docReadmeWindows   = DocLink{File: "README.md", Anchor: "windows"}
 	docReadmeDocker    = DocLink{File: "README.md", Anchor: "docker-evaluation"}

@@ -220,7 +220,7 @@ are on by default and raise findings:
 
 ## Vulnerability detections
 
-Three built-in detections read the Vulnerabilities data model, which Signalith's
+Five built-in detections read the Vulnerabilities data model, which Signalith's
 own network scans fill (see the **Vulnerabilities** page). All are on by default,
 raise findings and add risk to the scanned host. Each raises one finding per host
 and CVE (or per host, for Telnet) a week: a nightly scan that finds the same
@@ -229,6 +229,8 @@ vulnerability again raises it again only after seven days.
 | ID | Severity | Fires when |
 | --- | --- | --- |
 | `vuln-known-exploited` | high | A scan found a vulnerability in CISA's Known Exploited Vulnerabilities catalog (`known_exploited=true`): attackers are using it |
+| `vuln-known-exploited-priority-asset` | critical | The same, on an asset whose priority in the asset list is critical or high |
+| `vuln-likely-exploited` | medium | A scan found a vulnerability not yet known exploited with an EPSS score of 10% or more (`epss>=0.1`) |
 | `vuln-critical` | medium | A scan found a critical vulnerability (CVSS 9 or higher) that is not known to be exploited yet |
 | `vuln-cleartext-remote-login` | low | A scan found Telnet open, which sends passwords in clear text |
 
@@ -328,7 +330,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,455 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,471 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -336,8 +338,9 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [Web server access logs](#web-server-access-logs)), 45 network rules (see
 [Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
-[Entra ID and Azure](#entra-id-and-azure)) and 17 Microsoft 365 rules (see
-[Microsoft 365](#microsoft-365)):
+[Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
+[Microsoft 365](#microsoft-365)) and 16 Google Cloud rules (see
+[Google Cloud](#google-cloud)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -359,6 +362,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: azure`, `service: riskdetection`, `pim` | Entra ID Protection risk detections | Alerts |
 | `product: azure`, `service: activitylogs` | Azure activity log records | Change |
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
+| `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -694,13 +698,38 @@ ones name `eventSource` (the workload), `eventName` (the operation, or for the S
 Compliance Center an alert's name) and `status` (success or failure), which read
 `Workload`, `signature` and `status`. A sign-in's `RequestType` is one of its
 `ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
-`sourcetype=o365:management:activity`. To read the audit log, see
-[Microsoft 365](microsoft-365.md).
+`sourcetype=o365:management:activity`.
+
+The Splunk pack adds 19 Microsoft 365 detections (see
+[Splunk Security Content](#splunk-security-content)): MFA turned off, service principals
+added or given new credentials, mail security settings changed, content searches
+exported, mailboxes read through EWS or Microsoft Graph, malware in SharePoint, and
+counts that catch password spraying and MFA fatigue. They name a record's own fields and
+the CIM fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, and a
+sign-in's `UserAgent` is `user_agent`). A field must be one Microsoft's audit record
+schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
+`Parameters{}.Value`, so rules that name one as a field (`Role=ApplicationImpersonation`)
+are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
+the audit log, see [Microsoft 365](microsoft-365.md).
+
+### Google Cloud
+
+SigmaHQ's 16 tested Google Cloud audit log rules ship. Most name a call's method as
+Elastic does (`gcp.audit.method_name`), which reads `protoPayload.methodName`; the others
+name the entry's fields as Splunk's add-on keeps them, under `data.`
+(`data.protoPayload.serviceName`), which read the same names without it. An entry's list
+of permissions checked reads Splunk's names for its values
+(`protoPayload.authorizationInfo{}.permission`), and a rule's log (`logName`) reads
+`log_id`, the end of the entry's `logName`. A rule's keywords are searched in the call's
+request (`request_parameters`), where a Kubernetes object's annotations are. Every rule
+searches `sourcetype=google:gcp:pubsub:message`. SigmaHQ's Google Workspace rules are left
+out, as are Splunk's Google Cloud detections, which are all experimental. To send the
+audit logs, see [Google Cloud](google-cloud.md).
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,092 Windows,
-Linux, web, network, AWS CloudTrail and Entra ID detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,138 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -748,6 +777,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `Web` (`datamodel=Web` or `Web.Web`) | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)), and a network sensor's web requests (Zeek's http.log) | Web |
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
+| `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
@@ -901,7 +931,7 @@ pack.
 Registry values that Sysmon writes as `DWORD (0x00000001)` compare as `0x00000001`,
 the way Splunk's Sysmon add-on reads them.
 
-A rule is shipped only when its whole search converts exactly (a `tstats` search
+A rule is shipped only when its search converts exactly (a `tstats` search
 whose later stages only rename fields, format times, keep rows that have a field
 (`where isnotnull(...)`), keep rows a regular expression matches (`regex field="..."`,
 or `where match(field, "...")` joined by AND or OR) or apply the rule's empty `_filter`
@@ -926,7 +956,8 @@ and each group is found once a day. Fields of Splunk's add-ons that only restate
 which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
 `authentication_method`) are left out of the grouping; an event's `Computer` is
 `host`. A rule ships only when its test events carry every field it groups by and
-counts. Counts compared with an average (`eventstats`) are left out.
+counts. Counts compared with an average (`eventstats`) run as later stages (below), but
+no single test event reaches one, so none ship yet.
 
 A test that only leaves out the other platform's events (`NOT Processes.os="Linux"` in
 a Windows rule) is always true for the rule's own events, whether Splunk's add-on sets
@@ -934,9 +965,25 @@ a Windows rule) is always true for the rule's own events, whether Splunk's add-o
 A `\/` in a value is left out too, since Splunk's documented escapes do not say how
 it reads it.
 
-Searches with other `eval`s, `rex`, `lookup`, and other
-raw searches are left out for now; `internal/detect/packs/splunk/REPORT.md` lists
-every rule left out and why. The same CI checks as the SigmaHQ pack run on it.
+Other later stages (`eval`, `rex`, `stats`, `eventstats`, `dedup`, `fillnull`, a later
+`search`) run as written, in Signalith's [query language](query-language.md), after the
+converted filter. Before them, each field they name by Splunk's name is copied from the
+field Signalith keeps it as (`eval TargetUserName=user`), and a `tstats` search's own
+grouping comes first, with the data model's missing fields as `unknown`, as in the CIM.
+A test event is one the rule finds when the filter matches it and the later stages keep a
+row for it; a rule ships only when some test event comes through. A rule that counts
+(`stats count`, `dc`) keeps no row for one event, so its test is the same event
+repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
+with a field it counts distinct values of different each time (`"vary"`), next to a
+smaller repeat that the rule must not find. Where the two
+languages read a stage differently, the rule is left out: a `where` that compares two
+fields (`where process_name != service_process`), or text with a `*`, since Signalith's
+`where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
+is quoted, as Splunk reads it as one field. When the stages end in groups
+(`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
+`spath` and the functions Signalith lacks are left out for now;
+`internal/detect/packs/splunk/REPORT.md` lists every rule left out and why. The same
+CI checks as the SigmaHQ pack run on it.
 
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).

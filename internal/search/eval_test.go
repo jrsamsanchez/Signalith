@@ -425,6 +425,7 @@ func FuzzEvalCommands(f *testing.F) {
 		`* | eval r=replace(s, "(a)(b)?", "\2\1$1"), p=pow(a, b), l=log(a, b), q=tonumber(s, 36)`,
 		`* | eval x=substr("abc", 1, "NaN"), y=substr(s, a), z=mvindex(s, "NaN"), w=substr(s, 1e300, -1e300)`,
 		`* | eval x=replace(s, "", s) | eval y=mvjoin(mvappend(x, x, x), x)`,
+		`* | eval p=printf("%-5s|%05.1f|%x|%c|%%", s, a, a, a), r=relative_time(a, s), m=mvrange(a, b, 0.5), j=json_object(s, a, "m", mvrange(0, b)), k=json_keys(j), v=spath(j, s), w=json_array_to_mv(json_array(s, a)), i=validate(isint(a), s)`,
 	} {
 		f.Add(s, "a,b,10.1.2.3", 3.5)
 	}
@@ -472,11 +473,11 @@ func TestEvalChargesCopiedValues(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "MB of values") {
 		t.Errorf("err = %v, want the search budget", err)
 	}
-	// A value the expression built is counted once.
+	// A value the expression built is counted once, with the new field t.
 	ev := newEvaluator(context.Background())
 	res = &Result{Rows: []Row{{"s": "abc"}}}
-	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6 {
-		t.Errorf("err = %v, produced = %d, want 6", err, ev.produced)
+	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6+1+fieldOverhead {
+		t.Errorf("err = %v, produced = %d, want %d", err, ev.produced, 6+1+fieldOverhead)
 	}
 }
 
@@ -497,5 +498,33 @@ func TestEventStatsChargesEachRow(t *testing.T) {
 	res = &Result{Rows: []Row{{"m": "a"}, {"m": "b"}}}
 	if err := applyCommand(withEvaluator(context.Background()), res, c); err != nil || !reflect.DeepEqual(res.Rows[0]["v"], []any{"a", "b"}) {
 		t.Errorf("err = %v, rows = %v", err, res.Rows)
+	}
+}
+
+func TestCommandsCannotGrowResultsWithoutLimit(t *testing.T) {
+	// Each command shares one 4 KB value among 10,000 rows, which costs
+	// nothing to build but 40 MB to write out; ten of them pass the limit.
+	wide := strings.Repeat("x", 4000)
+	for name, cmd := range map[string]string{
+		"fillnull": `fillnull value="` + wide + `" a%d`,
+		"rex":      `rex field=s "(?<a%d>.*)"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := `| makeresults count=10000 | eval s="` + wide + `"`
+			for i := range 10 {
+				q += " | " + fmt.Sprintf(cmd, i)
+			}
+			e := &Engine{Store: &fakeStore{}}
+			_, err := e.Run(context.Background(), q)
+			var qe *QueryError
+			if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+				t.Fatalf("err = %v", err)
+			}
+			// Fewer of them are fine.
+			q = `| makeresults count=10000 | eval s="` + wide + `" | ` + fmt.Sprintf(cmd, 0)
+			if _, err := e.Run(context.Background(), q); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

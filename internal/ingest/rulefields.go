@@ -25,5 +25,10 @@ var cloudRuleFields = []string{
 	"properties.targetResources{}.displayName", "properties.targetResources{}.modifiedProperties{}.displayName",
 	"properties.targetResources{}.modifiedProperties{}.newValue", "properties.userAgent",
 	// Microsoft 365.
-	"Payload",
+	"AppId", "ApplicationId", "Category", "ClientAppId", "ClientInfoString", "DeliveryAction", "Directionality",
+	"ErrorNumber", "LogonError", "Name", "Payload",
+	// Read by the later stages of Microsoft 365 rules (stats values(...)).
+	"DetectionMethod", "FileData.FileName", "FileData.FilePath", "FileData.FileSize", "FileData.MalwareFamily", "Id",
+	"ModifiedProperties{}.NewValue", "Item.ParentFolder.MemberRights", "Item.ParentFolder.MemberUpn", "SessionId",
+	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name",
 }

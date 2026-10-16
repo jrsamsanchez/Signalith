@@ -75,7 +75,7 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if r.Node == splcheck.CloudTrailNode {
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}, e}), nil
 	}
-	if r.Node == splcheck.AzureNode {
+	if r.Node == splcheck.AzureNode || r.Node == splcheck.O365Node {
 		// The where clause names the macro's sourcetype.
 		return e, nil
 	}
@@ -296,6 +296,8 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"vendor_account", "user", "src", "eventName"}
 	case splcheck.AzureNode:
 		return []string{"vendor_account", "user", "src", "operationName"}
+	case splcheck.O365Node:
+		return []string{"vendor_account", "user", "src", "Operation"}
 	}
 	return packThrottle("", dm)
 }
@@ -348,14 +350,17 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		d.Throttle.Fields = packNetworkThrottle("", dm)
 		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
 		d.Tags = append(d.Tags, "network")
-	} else if rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode {
-		// An AWS call, or an Entra ID sign-in or change, is the account's,
-		// from an address; the host is only the Collector that read it.
+	} else if cloudNode(rule.Node) {
+		// An AWS call, an Entra ID sign-in or change, or a Microsoft 365
+		// action is the account's, from an address; the host is only the
+		// Collector that read it.
 		d.Title = strings.TrimSpace(rule.Name) + " for $user$"
 		d.Risk.Objects = []RiskObject{{Field: "user", Type: "user"}, {Field: "src", Type: "system"}}
 	}
 	if rule.Threshold != nil {
 		splunkThreshold(d, q, rule)
+	} else if rule.Post != "" {
+		splunkPost(d, q, rule)
 	}
 	d.Origin = &Origin{
 		Pack: p.Name, PackTitle: p.Title, Rule: rule.ID, Author: strings.TrimSpace(rule.Author),
@@ -412,35 +417,62 @@ func splunkThreshold(d *Detection, q *query.Query, rule *splcheck.Rule) {
 	if pq, err := query.Parse(d.Query); err == nil {
 		d.Query = pq.String()
 	}
+	groupedBy(d, rule, t.By)
+}
+
+// groupedBy makes a detection whose rows are groups (stats ... by) find
+// each group once a day, with the title and risk about the group's host,
+// address or account.
+func groupedBy(d *Detection, rule *splcheck.Rule, by []string) {
 	d.Title = strings.TrimSpace(rule.Name)
 	toks := []struct{ field, word string }{{"dest", "on"}, {"host", "on"}, {"src", "from"}, {"user", "for"}}
-	if rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode {
-		// dest is the AWS service, or the Azure resource.
+	if cloudNode(rule.Node) {
+		// dest is the AWS service, the Azure resource or the Microsoft
+		// 365 workload.
 		toks = toks[2:]
 	}
 	for _, tok := range toks {
-		if slices.Contains(t.By, tok.field) {
+		if slices.Contains(by, tok.field) {
 			d.Title += " " + tok.word + " $" + tok.field + "$"
 			break
 		}
 	}
-	d.Throttle = Throttle{Window: "24h", Fields: slices.Clone(t.By)}
+	d.Throttle = Throttle{Window: "24h", Fields: slices.Clone(by)}
 	var objects []RiskObject
-	for _, f := range t.By {
+	for _, f := range by {
 		switch f {
 		case "user", "src_user":
 			objects = append(objects, RiskObject{Field: f, Type: "user"})
 		case "dest", "host", "src":
-			if f != "src" && (rule.Node == splcheck.CloudTrailNode || rule.Node == splcheck.AzureNode) {
+			if f != "src" && cloudNode(rule.Node) {
 				continue
 			}
 			objects = append(objects, RiskObject{Field: f, Type: "system"})
 		}
 	}
 	if len(objects) == 0 {
-		objects = []RiskObject{{Field: t.By[0], Type: "other"}}
+		objects = []RiskObject{{Field: by[0], Type: "other"}}
 	}
 	d.Risk.Objects = objects
+}
+
+// splunkPost runs a rule's later stages after its filter, as they are
+// written. When they end in groups, each is found once a day.
+func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
+	d.Query = q.String() + "\n| " + rule.Post
+	// In canonical form; Validate reports a query that does not parse.
+	if pq, err := query.Parse(d.Query); err == nil {
+		d.Query = pq.String()
+	}
+	if by := rule.PostGroups(); len(by) > 0 {
+		groupedBy(d, rule, by)
+	}
+}
+
+// cloudNode reports whether a node is a cloud service's records:
+// CloudTrail's, Entra ID's and Azure's, or Microsoft 365's.
+func cloudNode(node string) bool {
+	return node == splcheck.CloudTrailNode || node == splcheck.AzureNode || node == splcheck.O365Node
 }
 
 // formatDuration writes a duration as a detection schedule: 90s, 5m, 1h.

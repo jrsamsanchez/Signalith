@@ -19,6 +19,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
+	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
 
 // TestPackRulesAgainstOpenSearch repeats the content pack check against a
@@ -46,10 +47,15 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		det       *detect.Detection
 		hosts     []string
 		positives map[string]bool
+		// later is set for a Splunk rule whose later stages run after
+		// its filter: its whole query runs for each event's host.
+		later bool
 	}
 	var rules []ruleCases
 	records := map[string][]map[string]any{}
-	at := time.Now().Add(-5 * time.Minute)
+	// On a 10-minute boundary, so a repeated case's events fall in one
+	// bucket of any span a rule counts over (bucket span=2m _time).
+	at := time.Now().Add(-15 * time.Minute).Truncate(10 * time.Minute)
 	i := 0
 	for _, name := range []string{"sigmahq", "splunk"} {
 		dir := filepath.Join("..", "detect", "packs", name)
@@ -61,11 +67,36 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		if err := yaml.Unmarshal(data, &manifest); err != nil {
 			t.Fatal(err)
 		}
+		macros := map[string]*splcheck.Macro{}
+		files, _ := filepath.Glob(filepath.Join(dir, "macros", "*.yml"))
+		for _, f := range files {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, err := splcheck.ParseMacro(src)
+			if err != nil {
+				t.Fatalf("%s: %v", f, err)
+			}
+			macros[m.Name] = m
+		}
 		for _, r := range manifest.Rules {
 			i++
 			d := byID[r.ID]
 			if d == nil {
 				t.Fatalf("%s is in the manifest but not loaded", r.ID)
+			}
+			later := false
+			if name == "splunk" {
+				src, err := os.ReadFile(filepath.Join(dir, "rules", r.File))
+				if err != nil {
+					t.Fatal(err)
+				}
+				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path)})
+				if err != nil {
+					t.Fatalf("%s: %v", r.ID, err)
+				}
+				later = rule.Post != ""
 			}
 			raw, err := os.ReadFile(filepath.Join(dir, "tests", strings.TrimSuffix(r.File, ".yml")+".json"))
 			if err != nil {
@@ -75,17 +106,20 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rc := ruleCases{det: d, positives: map[string]bool{}}
+			rc := ruleCases{det: d, positives: map[string]bool{}, later: later}
 			for j, c := range tf.Cases {
 				host := fmt.Sprintf("case-%d-%d", i, j)
 				rc.hosts = append(rc.hosts, host)
 				if c.Expect {
 					rc.positives[host] = true
 				}
-				tag, rec := c.Record(host, at)
-				records[tag] = append(records[tag], rec)
+				copies, offsets := c.Copies()
+				for k, cp := range copies {
+					tag, rec := cp.Record(host, at.Add(offsets[k]))
+					records[tag] = append(records[tag], rec)
+				}
 				// A Linux program start, as auditd records it too.
-				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok {
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 {
 					rc.hosts = append(rc.hosts, host+"-auditd")
 					if c.Expect {
 						rc.positives[host+"-auditd"] = true
@@ -115,6 +149,30 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 
 	failed := 0
 	for _, rc := range rules {
+		if rc.later {
+			var wrong []string
+			for _, h := range rc.hosts {
+				q, err := query.Parse(rc.det.Query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				q.Search = &query.And{Children: []query.Expr{q.Search, &query.Compare{Field: "host", Op: "=", Value: h}}}
+				q.Earliest = "-1h"
+				res, err := eng.Execute(ctx, q)
+				if err != nil {
+					wrong = append(wrong, fmt.Sprintf("%s (%v)", h, err))
+					continue
+				}
+				if got := len(res.Rows) > 0; got != rc.positives[h] {
+					wrong = append(wrong, fmt.Sprintf("%s (want %v)", h, rc.positives[h]))
+				}
+			}
+			if len(wrong) > 0 {
+				t.Errorf("%s: OpenSearch disagrees on %s\nquery: %s", rc.det.ID, strings.Join(wrong, ", "), rc.det.Query)
+				failed++
+			}
+			continue
+		}
 		q, err := query.Parse(rc.det.Query)
 		if err != nil {
 			t.Fatal(err)

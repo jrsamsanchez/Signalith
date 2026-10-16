@@ -43,6 +43,9 @@ type Scanner struct {
 	Log *slog.Logger
 	// Runner runs Nmap; nil finds it.
 	Runner *Runner
+	// Exploits ranks the CVEs found by CISA's KEV catalog and FIRST's EPSS
+	// scores; nil leaves them as the NVD has them.
+	Exploits *ExploitFeeds
 	// OpenVAS runs the deeper scans of the networks that ask for them;
 	// nil or not configured is not set up on this server.
 	OpenVAS *OpenVAS
@@ -289,6 +292,7 @@ func (s *Scanner) Step(ctx context.Context) error {
 	if leader {
 		s.prune(ctx, targets, false)
 	}
+	s.exploits(ctx, leader && len(set.Targets) > 0)
 	if s.busy() {
 		return nil
 	}
@@ -392,6 +396,45 @@ func (s *Scanner) failUnclaimed(ctx context.Context, scans []*Scan, targets map[
 		}
 		s.finish(ctx, sc, StateFailed, msg)
 		s.log().Warn("vulnerability scan not picked up by its scanner", "network", t.Name, "scanner", t.Scanner)
+	}
+}
+
+// exploits keeps the exploit feeds current: every server reads the
+// stored copy when it changes, and the server running the jobs downloads
+// them once a day while there are networks to scan, then ranks the hosts
+// kept again.
+func (s *Scanner) exploits(ctx context.Context, download bool) {
+	if s.Exploits == nil {
+		return
+	}
+	if err := s.Exploits.Load(ctx, false); err != nil && ctx.Err() == nil {
+		s.log().Debug("exploit intelligence: could not read the stored copy", "err", err)
+	}
+	if !download {
+		return
+	}
+	run := func() {
+		kept, err := s.Exploits.Refresh(ctx)
+		if err != nil && ctx.Err() == nil {
+			s.log().Debug("exploit intelligence: refresh incomplete", "err", err)
+		}
+		if !kept {
+			return
+		}
+		n, err := s.Store.Reprioritize(ctx, s.Exploits.Current())
+		if err != nil && ctx.Err() == nil {
+			s.log().Warn("exploit intelligence: could not rank the hosts kept again", "err", err)
+		} else if n > 0 {
+			s.log().Info("exploit intelligence: hosts ranked again", "hosts", n)
+		}
+	}
+	s.mu.Lock()
+	async := s.async
+	s.mu.Unlock()
+	if async {
+		go run()
+	} else {
+		run()
 	}
 }
 
@@ -573,6 +616,10 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	hosts, counts, cveErr := s.assess(parent, sc, t, found, set.CVELookup, finished)
 	if len(deep) > 0 {
 		hosts = MergeOpenVAS(hosts, deep, t, sc.ID, finished)
+		counts = Recount(hosts)
+	}
+	if x := s.Exploits.Current(); x != nil {
+		x.Apply(hosts)
 		counts = Recount(hosts)
 	}
 	if err := s.Store.SaveHosts(parent, t.ID, hosts); err != nil {

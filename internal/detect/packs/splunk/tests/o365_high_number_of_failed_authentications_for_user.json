@@ -1,0 +1,6 @@
+{"rule": "31641378-2fa9-42b1-948e-25e281cb98f7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ApplicationId":"4765445b-32c6-49b0-83e6-1d93765276ca","ClientIP":"203.0.113.7","Operation":"UserLoginFailed","RecordType":"15","UserAgent":"Mozilla/5.0","UserId":"CORP\\tester","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"UserLoginFailee","RecordType":"15","UserId":"CORP\\tester","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","RecordType":"15","UserId":"CORP\\tester","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ApplicationId":"4765445b-32c6-49b0-83e6-1d93765276ca","ClientIP":"203.0.113.7","Operation":"UserLoginFailed","RecordType":"15","UserAgent":"Mozilla/5.0","UserId":"CORP\\tester","Workload":"AzureActiveDirectorz"}}
+]}

@@ -51,6 +51,16 @@ type User struct {
 	// provider: its issuer, a space and their subject (sub) there. Only
 	// that identity can sign in as them.
 	Subject string `json:"subject,omitempty"`
+	// ExternalID is a single sign-on user's id at the identity provider
+	// that provisions them (SCIM), as it sent it. A provisioned user with
+	// no Subject yet has not signed in: their first sign-in with the same
+	// username binds the identity.
+	ExternalID string `json:"external_id,omitempty"`
+	// InactiveAtIdP is true when provisioning disabled the user (they are
+	// inactive at the identity provider). Provisioning re-enables only
+	// users it disabled: an admin's disable here stays until an admin
+	// enables them.
+	InactiveAtIdP bool `json:"inactive_at_idp,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
@@ -232,6 +242,7 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*User
 	hashes map[string]string // username -> bcrypt hash, local users only
+	mfa    map[string]*MFA
 	etags  map[string]string
 
 	// recheck is how often reads look for changes to the file, checked
@@ -248,7 +259,7 @@ const recheckEvery = time.Second
 
 // New returns a store over a backend, with the users it holds now.
 func New(b Backend) (*Store, error) {
-	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, etags: map[string]string{}}
+	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, mfa: map[string]*MFA{}, etags: map[string]string{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -288,7 +299,7 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	people, hashes, etags := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs))
+	people, hashes, etags, mfa := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs)), map[string]*MFA{}
 	for name, r := range recs {
 		u := r.User
 		u.SessionEpoch = r.Epoch
@@ -297,9 +308,12 @@ func (s *Store) load() error {
 		if r.Hash != "" && u.Source == SourceLocal {
 			hashes[name] = r.Hash
 		}
+		if r.MFA != nil {
+			mfa[name] = r.MFA.clone()
+		}
 	}
 	s.mu.Lock()
-	s.users, s.hashes, s.etags = people, hashes, etags
+	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
 	return nil
 }
@@ -557,6 +571,10 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if u.Disabled && !cur.Disabled {
 			// Their sessions end everywhere.
 			r.Epoch++
+		}
+		if u.Disabled != cur.Disabled {
+			// The admin decides now, not provisioning.
+			u.InactiveAtIdP = false
 		}
 		u.Updated = s.now()
 		r.User = u
