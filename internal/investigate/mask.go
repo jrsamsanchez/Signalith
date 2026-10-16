@@ -62,18 +62,25 @@ func (m *Masker) Fields() []string {
 // DropsRaw reports whether the original event text is left out.
 func (m *Masker) DropsRaw() bool { return m.dropRaw }
 
-// Masks reports whether a field's values are masked.
+// Masks reports whether a field's values are masked. Masking a field
+// masks its subfields too: user covers user.name and user.id.
 func (m *Masker) Masks(field string) bool {
 	f := strings.ToLower(field)
 	if f == "_raw" {
 		return m.dropRaw
 	}
-	for _, p := range m.patterns {
-		if ok, _ := path.Match(p, f); ok {
-			return true
+	for {
+		for _, p := range m.patterns {
+			if ok, _ := path.Match(p, f); ok {
+				return true
+			}
 		}
+		i := strings.LastIndexByte(f, '.')
+		if i <= 0 {
+			return false
+		}
+		f = f[:i]
 	}
-	return false
 }
 
 // token returns the stand-in for a value of a masked field.
