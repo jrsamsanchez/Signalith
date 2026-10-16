@@ -3,7 +3,7 @@ title: Network sensor $host$ needs attention ($sensor_warnings$)
 name: Network sensor unhealthy
 description: A network sensor reported that Zeek or Suricata stopped, its capture port is down or sees no traffic, its rules or rule tuning failed to update or are old, or its disk is nearly full; or Signalith found it silent. Parts of the network go unwatched until it is fixed.
 query: |
-  sourcetype IN ("sensor:status", "sensor:health") sensor_warnings IN (silent, zeek_stopped, suricata_stopped, capture_link, no_traffic, rules_failed, rules_old, tuning_failed, disk_low)
+  ((sourcetype="sensor:health" signalith_intake="signalith") OR (sourcetype="sensor:status" signalith_intake="agent" signalith_token_purpose="sensor")) sensor_warnings IN (silent, zeek_stopped, suricata_stopped, capture_link, no_traffic, rules_failed, rules_old, tuning_failed, disk_low)
   | stats count, max(_time) as last_seen by host, sensor_warnings
   | where sensor_warnings IN (silent, zeek_stopped, suricata_stopped, capture_link, no_traffic, rules_failed, rules_old, tuning_failed, disk_low)
 schedule: 15m

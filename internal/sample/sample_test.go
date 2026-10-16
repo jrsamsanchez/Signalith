@@ -282,7 +282,14 @@ func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 		if q.Datamodel != "" && !strings.EqualFold(e.Model, q.Datamodel) {
 			continue
 		}
-		if ok, err := search.MatchDoc(q.Search, e.Document()); err != nil {
+		doc := e.Document()
+		// The origin the loader stamps on the stored event.
+		for k, v := range map[string]string{ingest.IntakeField: e.Origin.Intake, ingest.TokenPurposeField: e.Origin.Purpose} {
+			if v != "" {
+				doc[k] = v
+			}
+		}
+		if ok, err := search.MatchDoc(q.Search, doc); err != nil {
 			panic(fmt.Sprintf("search %v: %v", q.Search, err))
 		} else if !ok {
 			continue
