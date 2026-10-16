@@ -312,20 +312,63 @@ func describeCommand(c query.Command) string {
 		}
 		return fmt.Sprintf("Fill missing values in %s with %s.", what, c.Value)
 	case *query.Top:
+		which := "most"
 		if c.Rare {
-			s := fmt.Sprintf("List the %d least common values of %s with their count and percentage", c.Limit, strings.Join(c.Fields, " and "))
-			if len(c.By) > 0 {
-				s += " for each " + strings.Join(c.By, " and ")
-			}
-			return s + "."
+			which = "least"
 		}
-		s := fmt.Sprintf("List the %d most common values of %s with their count and percentage", c.Limit, strings.Join(c.Fields, " and "))
+		var with []string
+		if !c.NoCount {
+			with = append(with, "count")
+		}
+		if !c.NoPercent {
+			with = append(with, "percentage")
+		}
+		s := fmt.Sprintf("List the %d %s common values of %s", c.Limit, which, strings.Join(c.Fields, " and "))
+		if len(with) > 0 {
+			s += " with their " + strings.Join(with, " and ")
+		}
 		if len(c.By) > 0 {
 			s += " for each " + strings.Join(c.By, " and ")
 		}
+		if c.UseOther {
+			s += ", and a row counting the rest as " + c.Other()
+		}
 		return s + "."
 	case *query.Where:
+		if c.Search {
+			return "Keep only rows matching " + describeExpr(c.Expr) + "."
+		}
 		return "Keep only rows where " + describeExpr(c.Expr) + "."
+	case *query.MVExpand:
+		s := "Make one row for each value of " + c.Field
+		if c.Limit > 0 {
+			s += fmt.Sprintf(" (up to %d per row)", c.Limit)
+		}
+		return s + "."
+	case *query.MakeMV:
+		switch {
+		case c.Tokenizer != "":
+			return "Split " + c.Field + " into a value for each match of " + c.Tokenizer + "."
+		case c.Delim != "":
+			return "Split " + c.Field + " into values at each " + strconv.Quote(c.Delim) + "."
+		}
+		return "Split " + c.Field + " into values at each space."
+	case *query.Reverse:
+		return "Turn the order of the rows around."
+	case *query.AddTotals:
+		var parts []string
+		what := "the numeric fields"
+		if len(c.Fields) > 0 {
+			what = strings.Join(c.Fields, ", ")
+		}
+		if !c.NoRow {
+			parts = append(parts, "add up "+what+" of each row into "+c.TotalName())
+		}
+		if c.Col {
+			parts = append(parts, "add a last row with each column's total")
+		}
+		s := strings.Join(parts, " and ")
+		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
 		parts := make([]string, len(c.Keys))
 		for i, k := range c.Keys {

@@ -474,7 +474,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Head:
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
-			*query.Bin, *query.FieldsRemove, *query.Spath:
+			*query.Bin, *query.FieldsRemove, *query.Spath, *query.MakeMV:
 			continue
 		}
 		return 0, false
@@ -699,7 +699,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		var rows []Row
 		for _, b := range buckets {
 			row := bucketKeys(b, keys)
-			row["count"] = toNumber(b["doc_count"])
+			row[topCount] = toNumber(b["doc_count"])
 			rows = append(rows, row)
 		}
 		res.Kind = "table"

@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -51,6 +51,12 @@ func parseAt(src string, base, depth int) (*Query, error) {
 		toks[i].pos += base
 	}
 	p := &parser{toks: toks, depth: depth}
+	// A query copied from Splunk may start with the search command's name.
+	if t := p.peek(); t.kind == tokWord && strings.EqualFold(t.text, "search") {
+		if n := p.peekAt(1); n.kind != tokEOF && !(n.kind == tokOp && n.text == "=") {
+			p.next()
+		}
+	}
 	q := &Query{}
 	if err := p.parseSearch(q); err != nil {
 		return nil, err
@@ -400,33 +406,9 @@ func (p *parser) parseCommand() (Command, error) {
 		}
 		return tc, p.endCommand()
 	case "top", "rare":
-		top := &Top{Limit: 10, Rare: strings.EqualFold(t.text, "rare")}
-		if p.isKeywordFold("limit") && p.peekAt(1).kind == tokOp {
-			p.next()
-			p.next()
-			n, err := p.int()
-			if err != nil {
-				return nil, err
-			}
-			top.Limit = n
-		} else if n, err := strconv.Atoi(p.peek().text); err == nil && n >= 0 && p.peek().kind == tokWord {
-			p.next()
-			top.Limit = n
-		}
-		fields, err := p.fieldList(false)
-		if err != nil {
-			return nil, err
-		}
-		if len(fields) == 0 {
-			return nil, errorf(t.pos, "%s needs at least one field", strings.ToLower(t.text))
-		}
-		top.Fields = fields
-		by, err := p.parseBy()
-		if err != nil {
-			return nil, err
-		}
-		top.By = by
-		return top, p.endCommand()
+		return p.parseTop(t)
+	case "search":
+		return p.parseSearchCommand(t)
 	case "where":
 		raw := p.next()
 		e, err := parseWhere(raw.text, raw.pos)
@@ -525,6 +507,14 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseXYSeries(t)
 	case "untable":
 		return p.parseUntable(t)
+	case "mvexpand":
+		return p.parseMVExpand(t)
+	case "makemv":
+		return p.parseMakeMV(t)
+	case "reverse":
+		return &Reverse{}, p.endCommand()
+	case "addtotals", "addcoltotals":
+		return p.parseAddTotals(t)
 	case "spath":
 		return p.parseSpath(t)
 	case "lookup":
@@ -572,11 +562,18 @@ func (p *parser) parseCommand() (Command, error) {
 			if to.kind != tokWord && to.kind != tokString {
 				return nil, errorf(to.pos, "rename expects: rename old as new")
 			}
+			if msg := checkRename(fromName, to.text); msg != "" {
+				return nil, errorf(from.pos, "rename %s %s", FormatValue(fromName), msg)
+			}
 			r.Pairs = append(r.Pairs, [2]string{fromName, to.text})
-			if p.peek().kind != tokComma {
+			// Pairs may be separated by commas or by spaces alone.
+			if p.peek().kind == tokComma {
+				p.next()
+				continue
+			}
+			if k := p.peek().kind; k == tokEOF || k == tokPipe {
 				break
 			}
-			p.next()
 		}
 		return r, p.endCommand()
 	}

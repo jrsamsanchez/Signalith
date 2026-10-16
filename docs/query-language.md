@@ -53,8 +53,9 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `chart` | `chart count over host by action` | One row per `over` value and, with `by`, one column per `by` value: the 10 with the largest totals unless `limit=N` says (`0` for all, up to 1,000). Without a split field it is `stats ... by` the over field; `chart count by host, action` is the same as `over host by action`. Runs in OpenSearch like `stats` when it comes first |
 | `xyseries` | `xyseries host action count` | Turns rows into one row per first field and one column per second field's value, holding the third; with several value fields the columns are named `count: allow` |
 | `untable` | `untable host action count` | The reverse of `xyseries`: one row per cell, with the row field, the column's name and its value |
-| `top` | `top limit=10 process_name by host` | Adds `count` and `percent` |
+| `top` | `top limit=10 process_name by host` | Adds `count` and `percent`. `countfield=` and `percentfield=` rename them, `showcount=f` and `showperc=f` leave them out, and `useother=t` adds a row per group counting the values past the limit, with `OTHER` (or `otherstr=`) as the value. `top 5 user` is `limit=5` |
 | `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
+| `search` | `search count>20 user=adm*` | After the first `\|`, filters the rows with the [search syntax](#search) (wildcards, bare words, `OR` binding tighter than the implicit AND). Right after the search it runs in OpenSearch. A query may also start with the word `search`, as copied from Splunk |
 | `where` | `where count > 20 AND users >= 2` | AND binds tighter than OR here, as in most languages. Also takes [expressions](#expressions-eval-and-where): `where len(process) > 1000`, `where bytes_out > bytes_in * 10` |
 | `eval` | `eval kb=round(bytes / 1024, 1), who=lower(user)` | Sets fields from [expressions](#expressions-eval-and-where). Separate several with commas; each sees the ones before it. A result that is null removes the field |
 | `rex` | `rex field=process "-enc(?:odedcommand)? (?<encoded>\S+)"` | Extracts a field for each named group (`(?<name>...)` or `(?P<name>...)`) of an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression. Reads `_raw` unless `field=` names another. `max_match=N` keeps up to N matches as a multivalue field (`0` for all) |
@@ -66,11 +67,15 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
+| `mvexpand` | `mvexpand user limit=100` | Makes one row for each value of a multivalue field, each a copy of the row with that one value (up to `limit=` values per row, and 100,000 rows). Rows without the field are dropped |
+| `makemv` | `makemv delim="," recipients` | Splits a field's text into a multivalue field at `delim=` (a space by default), or takes each match of `tokenizer="<regex>"` (its first group if it has one). Empty values are dropped unless `allowempty=t` |
+| `reverse` | `reverse` | Turns the rows' order around, so events come oldest first |
+| `addtotals` | `addtotals fieldname=total bytes_*` | Adds each row's numeric fields (or the listed ones, `*` matching any text) into `Total` (or `fieldname=`). Fields starting with `_` are left out. `col=t` also adds a last row with each column's total, labelled with `label=` (default `Total`) in `labelfield=`; `row=f` leaves out the row totals. `addcoltotals [labelfield=f] [label=x]` adds only the column totals |
 | `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
 | `sort` | `sort -count, src` | `-` for descending |
 | `head` | `head 20` | Also `limit` |
 | `table` | `table _time, user, src` | Also `fields`; wildcards allowed. `fields - _raw, tmp_*` removes fields instead |
-| `rename` | `rename src as source_ip` | |
+| `rename` | `rename src as source_ip, dest as target` | Pairs may be separated by commas or spaces. A `*` in the old name matches any text, which the new name's `*` takes: `rename *_ip as *` renames `src_ip` to `src`, `rename Processes.* as *` drops a `tstats` prefix. A renamed field replaces one that already had its new name |
 | `lookup` | `lookup owners host OUTPUT owner, team` | Adds columns from a lookup table (Settings > Lookups) to rows whose field matches a key column; `host AS dest` matches another field, `OUTPUTNEW` fills only missing fields, no `OUTPUT` adds every column. See [Lookup tables](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md) |
 | `makeresults` | `\| makeresults count=3 \| eval user="test"` | Starts a search with rows that hold only `_time` (now), for trying out `eval` and other commands; `count=N` makes up to 10,000. It must come first, with nothing before the `\|` |
 | `tstats` | `\| tstats count from datamodel=Endpoint.Processes where Processes.process_name=cmd.exe by Processes.dest` | Splunk's `tstats`, read as the data model search and `stats` it stands for, so it runs in OpenSearch. CIM nodes map to Signalith's data models (`Endpoint.Processes` is `Endpoint`, `Endpoint.Filesystem` is `Filesystem`, `Network_Traffic.All_Traffic` is `Network_Traffic`), fields drop the node prefix (`Processes.dest` is `dest`) and result columns keep it, as in Splunk. `\| tstats count where index=* by index, sourcetype` counts events of any kind. `by _time span=1h` buckets times, which runs in the server over the newest events. `summariesonly=` and similar options are accepted and do nothing; `prestats=t` is not supported. It must come first |
@@ -188,7 +193,7 @@ model is configured, questions with unknown words go to it; see
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
   `rex`, `dedup`, `eventstats`, `streamstats`, `bin`, `regex`, `append`, `appendpipe`,
-  `xyseries`, `untable`, `spath`, and a
+  `xyseries`, `untable`, `spath`, `mvexpand`, `makemv`, `reverse`, `addtotals`, and a
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,

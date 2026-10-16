@@ -82,7 +82,14 @@ func (q *Query) Drilldown() *Drill {
 			fields[f] = f
 		}
 	case *Top:
-		for _, f := range append(append([]string{}, c.Fields...), c.By...) {
+		// An other row's value is in no event, so with one only the by
+		// fields narrow the events.
+		if !c.UseOther {
+			for _, f := range c.Fields {
+				fields[f] = f
+			}
+		}
+		for _, f := range c.By {
 			fields[f] = f
 		}
 	case *Timechart:
@@ -95,12 +102,21 @@ func (q *Query) Drilldown() *Drill {
 		switch c := c.(type) {
 		case *Rename:
 			for _, p := range c.Pairs {
-				f, ok := fields[p[0]]
-				delete(fields, p[0])
-				delete(fields, p[1])
-				if ok {
-					fields[p[1]] = f
+				// A renamed column replaces one that had its new name.
+				next := map[string]string{}
+				for col, f := range fields {
+					if to, ok := RenameField(p, col); ok {
+						next[to] = f
+					}
 				}
+				for col, f := range fields {
+					if _, renamed := RenameField(p, col); !renamed {
+						if _, replaced := next[col]; !replaced {
+							next[col] = f
+						}
+					}
+				}
+				fields = next
 			}
 		case *Eval:
 			for _, a := range c.Assigns {
@@ -113,6 +129,16 @@ func (q *Query) Drilldown() *Drill {
 			}
 			for _, f := range c.Fields {
 				delete(fields, f)
+			}
+		case *MVExpand:
+			delete(fields, c.Field)
+		case *MakeMV:
+			delete(fields, c.Field)
+		case *AddTotals:
+			// The totals row's label is in no event.
+			delete(fields, c.TotalName())
+			if c.LabelField != "" {
+				delete(fields, c.LabelField)
 			}
 		case *Rex, *Spath:
 			// Its fields can overwrite any column.

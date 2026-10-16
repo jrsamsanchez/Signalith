@@ -238,8 +238,8 @@ func TestBinCountsAgainstTheBudget(t *testing.T) {
 	}
 }
 
-// FuzzStreamCommands runs streamstats, bin, regex, append and appendpipe
-// with any arguments over a few events: a bad query fails with an error,
+// FuzzStreamCommands runs streamstats, bin, regex, append, appendpipe and
+// the other commands that run in the server with any arguments over a few events: a bad query fails with an error,
 // never with an internal one.
 func FuzzStreamCommands(f *testing.F) {
 	for _, s := range []string{
@@ -249,6 +249,9 @@ func FuzzStreamCommands(f *testing.F) {
 		`appendpipe [stats count by g | eval g="all"]`, `append [| makeresults count=2]`,
 		`chart limit=1 sum(v) over n by g | untable n g s | xyseries n g s`, `eval j="{\"a\":[{\"b\":1},{\"b\":2}]}" | spath input=j path=a{}.b`,
 		`eval j="{\"a\":{\"b\":[1,{\"c\":true}]}}" | spath input=j`,
+		`top 2 useother=t countfield=c g by n | search c>1 OR g=o*`, `rename * as x_* | rename x_g as v`,
+		`eval m=split("a,b,,c", ",") | mvexpand m limit=2 | makemv delim="b" m | reverse`,
+		`eval s="a1b22c" | makemv tokenizer="(\d+)" s | addtotals col=t labelfield=g v n | addcoltotals`,
 	} {
 		f.Add(s)
 	}

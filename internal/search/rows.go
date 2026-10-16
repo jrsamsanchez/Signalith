@@ -89,16 +89,8 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return transaction(ctx, res, c)
 	case *query.Rename:
 		for _, p := range c.Pairs {
-			for i, col := range res.Columns {
-				if col == p[0] {
-					res.Columns[i] = p[1]
-				}
-			}
-			for _, r := range res.Rows {
-				if v, ok := r[p[0]]; ok {
-					delete(r, p[0])
-					r[p[1]] = v
-				}
+			if err := applyRename(ctx, res, p); err != nil {
+				return err
 			}
 		}
 	case *query.Stats:
@@ -122,14 +114,14 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			}
 			g, exists := groups[k]
 			if !exists {
-				g = Row{"count": int64(0)}
+				g = Row{topCount: int64(0)}
 				for _, f := range keys {
 					g[f] = r[f]
 				}
 				groups[k] = g
 				counted = append(counted, g)
 			}
-			g["count"] = g["count"].(int64) + 1
+			g[topCount] = g[topCount].(int64) + 1
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
@@ -163,6 +155,14 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyUntable(ctx, res, c)
 	case *query.Spath:
 		return applySpath(ctx, res, c)
+	case *query.MVExpand:
+		return applyMVExpand(ctx, res, c)
+	case *query.MakeMV:
+		return applyMakeMV(ctx, res, c)
+	case *query.Reverse:
+		applyReverse(res)
+	case *query.AddTotals:
+		return applyAddTotals(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:
@@ -171,8 +171,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	return nil
 }
 
+// topCount holds a value's count in the rows topRows takes; a name no
+// field can have, so it never clashes with one of top's fields.
+const topCount = "\x00count"
+
 // topRows turns per-value counts into a top table with percentages,
-// limited per by-group.
+// limited per by-group, with an other row for the rest when asked.
 func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 	groupTotals := map[string]int64{}
 	byGroup := map[string][]Row{}
@@ -183,30 +187,66 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 			order = append(order, k)
 		}
 		byGroup[k] = append(byGroup[k], r)
-		n, _ := r["count"].(int64)
-		groupTotals[k] += n
+		groupTotals[k] += topN(r)
 	}
+	countCol, percentCol := top.CountColumn(), top.PercentColumn()
 	var out []Row
 	for _, k := range order {
 		g := byGroup[k]
 		sort.SliceStable(g, func(i, j int) bool {
 			if top.Rare {
-				return g[i]["count"].(int64) < g[j]["count"].(int64)
+				return topN(g[i]) < topN(g[j])
 			}
-			return g[i]["count"].(int64) > g[j]["count"].(int64)
+			return topN(g[i]) > topN(g[j])
 		})
+		var rest int64
 		if top.Limit > 0 && len(g) > top.Limit {
+			for _, r := range g[top.Limit:] {
+				rest += topN(r)
+			}
 			g = g[:top.Limit]
 		}
+		if top.UseOther && rest > 0 {
+			other := Row{topCount: rest}
+			for _, f := range top.By {
+				other[f] = g[0][f]
+			}
+			for _, f := range top.Fields {
+				other[f] = top.Other()
+			}
+			g = append(g, other)
+		}
 		for _, r := range g {
-			if t := groupTotals[k]; t > 0 {
-				r["percent"] = math.Round(float64(r["count"].(int64))*10000/float64(t)) / 100
+			n := topN(r)
+			delete(r, topCount)
+			if !top.NoCount {
+				r[countCol] = n
+			}
+			if t := groupTotals[k]; t > 0 && !top.NoPercent {
+				r[percentCol] = math.Round(float64(n)*10000/float64(t)) / 100
 			}
 			out = append(out, r)
 		}
 	}
-	cols := append(append(append([]string{}, top.By...), top.Fields...), "count", "percent")
+	cols := append(append([]string{}, top.By...), top.Fields...)
+	if !top.NoCount {
+		cols = append(cols, countCol)
+	}
+	if !top.NoPercent {
+		cols = append(cols, percentCol)
+	}
 	return out, cols
+}
+
+// topN is a row's count in topRows.
+func topN(r Row) int64 {
+	switch n := r[topCount].(type) {
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	}
+	return 0
 }
 
 func groupKey(r Row, fields []string) (string, bool) {

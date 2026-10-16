@@ -343,8 +343,9 @@ func QueryReference() string {
   stats <aggs> [by f1, f2]   aggs: ` + strings.Join(query.AggFuncs, ", ") + ` as count, count(f), dc(f), sum(f), avg(f), min(f), max(f), median(f), perc95(f) (any perc1 to perc99), stdev(f), var(f), range(f), mode(f), values(f) (distinct values), list(f), first(f)/latest(f) (newest value), last(f)/earliest(f) (oldest value), each optionally "as name"
   timechart [span=1h] <agg> [by field]
   eventstats <aggs> [by f1, f2]   like stats, but adds the aggregate columns to every row instead of replacing the rows
-  top [limit=N] field [by field]
-  rare [limit=N] field [by field]   least common values first
+  top [limit=N] [countfield=c] [percentfield=p] [showcount=f] [showperc=f] [useother=t] [otherstr=x] field [by field]
+  rare [limit=N] field [by field]   least common values first; same options as top
+  search <search terms>   after the first |, filters rows with search syntax (field=val*, bare words, OR)
   where <expression on result columns>   a filter such as count > 20 AND user=adm*, or an eval expression such as len(process) > 200 or bytes_out > bytes_in * 10
   eval name=<expression>[, name2=<expression>]   operators + - * / % . (concatenate) = != < <= > >= AND OR NOT XOR LIKE; field names with other characters in single quotes ('dc(user)'); strings in double quotes. Functions: ` + evalFuncList() + `
   rex [field=f] [max_match=N] "<RE2 regex with named groups (?<name>...)>"   extracts fields (default field _raw)
@@ -365,7 +366,11 @@ func QueryReference() string {
   sort [-]field, ...    ("-" is descending)
   head N
   table f1, f2   (fields - f1, f2 removes fields instead)
-  rename f as g
+  rename f as g[, f2 as g2]   rename *_ip as * renames by pattern
+  mvexpand f [limit=N]   one row per value of a multivalue field
+  makemv [delim=","] [tokenizer="<regex>"] f   splits text into a multivalue field (default at spaces)
+  reverse   turns the row order around
+  addtotals [fieldname=Total] [col=t] [labelfield=f] [fields]   adds each row's numbers into Total; col=t adds a totals row; addcoltotals adds only that row
   lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
   | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events
   enrich [fields]   adds asset and identity context columns
