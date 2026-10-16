@@ -64,6 +64,7 @@ func (s *Server) sessions() SessionStore {
 		if s.SessionStore == nil {
 			if s.Sessions == nil {
 				s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+				s.Sessions.MaxAge = s.conf().SessionMaxAge()
 			}
 			s.SessionStore = MemorySessions(s.Sessions)
 		}

@@ -479,3 +479,23 @@ func TestEvalChargesCopiedValues(t *testing.T) {
 		t.Errorf("err = %v, produced = %d, want 6", err, ev.produced)
 	}
 }
+
+func TestEventStatsChargesEachRow(t *testing.T) {
+	// 300 rows of 20 KB: values() gives every row 100 of them, 600 MB in
+	// all, past the search's budget.
+	rows := make([]Row, 300)
+	for i := range rows {
+		rows[i] = Row{"m": fmt.Sprint(i) + strings.Repeat("x", 20<<10)}
+	}
+	res := &Result{Rows: rows}
+	c := &query.EventStats{Aggs: []query.Agg{{Func: "values", Field: "m", Alias: "v"}}}
+	err := applyCommand(withEvaluator(context.Background()), res, c)
+	if err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Errorf("err = %v, want the search budget", err)
+	}
+	// Small results are unchanged.
+	res = &Result{Rows: []Row{{"m": "a"}, {"m": "b"}}}
+	if err := applyCommand(withEvaluator(context.Background()), res, c); err != nil || !reflect.DeepEqual(res.Rows[0]["v"], []any{"a", "b"}) {
+		t.Errorf("err = %v, rows = %v", err, res.Rows)
+	}
+}

@@ -1132,6 +1132,9 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_timeout") {
 		s.sessions().SetIdle(next.SessionIdle())
 	}
+	if changed("auth.session_max_age") {
+		s.sessions().SetMaxAge(next.SessionMaxAge())
+	}
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
 	}

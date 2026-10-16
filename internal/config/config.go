@@ -749,8 +749,13 @@ type Auth struct {
 	AdminUser         string `yaml:"admin_user"`
 	AdminPasswordHash string `yaml:"admin_password_hash"`
 	// SessionTimeout signs the web UI out after this long without use,
-	// unless "keep me signed in" was ticked. Default 12h.
+	// unless "keep me signed in" was ticked. Default 1h, the NIST SP
+	// 800-63B limit for AAL2.
 	SessionTimeout string `yaml:"session_timeout,omitempty"`
+	// SessionMaxAge ends every session this long after sign-in, kept
+	// signed in or not: from 1h to 30d, default 24h (NIST SP 800-63B asks
+	// for a new sign-in at least every 24 hours at AAL2).
+	SessionMaxAge string `yaml:"session_max_age,omitempty"`
 	// UsersFile holds the users added on the Users page. Default
 	// users.json in lookups.dir; directory.json (directory sign-in
 	// settings from the Users page) goes in the same folder.
@@ -821,12 +826,34 @@ func (c *Config) ldap(env bool) (*users.LDAPSettings, error) {
 	return &s, nil
 }
 
+// DefaultSessionIdle and DefaultSessionMaxAge are how long a session
+// lasts without a request, and at most, when auth.session_timeout and
+// auth.session_max_age are not set: the NIST SP 800-63B limits for AAL2.
+const (
+	DefaultSessionIdle   = time.Hour
+	DefaultSessionMaxAge = 24 * time.Hour
+)
+
+// The shortest and longest auth.session_max_age.
+const (
+	MinSessionMaxAge = time.Hour
+	MaxSessionMaxAge = 30 * 24 * time.Hour
+)
+
 // SessionIdle returns auth.session_timeout as a duration.
 func (c *Config) SessionIdle() time.Duration {
 	if d, err := detect.ParseDuration(c.Auth.SessionTimeout); err == nil && d > 0 {
 		return d
 	}
-	return 12 * time.Hour
+	return DefaultSessionIdle
+}
+
+// SessionMaxAge returns auth.session_max_age as a duration.
+func (c *Config) SessionMaxAge() time.Duration {
+	if d, err := detect.ParseDuration(c.Auth.SessionMaxAge); err == nil && d > 0 {
+		return d
+	}
+	return DefaultSessionMaxAge
 }
 
 // Ingest controls agent access.
@@ -2330,7 +2357,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Auth.SessionTimeout != "" {
 		if d, err := detect.ParseDuration(c.Auth.SessionTimeout); err != nil || d < 5*time.Minute {
-			p = append(p, fmt.Sprintf("auth.session_timeout %q must be a duration of at least 5m, for example 12h or 1d", c.Auth.SessionTimeout))
+			p = append(p, fmt.Sprintf("auth.session_timeout %q must be a duration of at least 5m, for example 1h or 30m", c.Auth.SessionTimeout))
+		}
+	}
+	if c.Auth.SessionMaxAge != "" {
+		if d, err := detect.ParseDuration(c.Auth.SessionMaxAge); err != nil || d < MinSessionMaxAge || d > MaxSessionMaxAge {
+			p = append(p, fmt.Sprintf("auth.session_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.SessionMaxAge))
 		}
 	}
 	if c.Auth.LDAP != nil {
@@ -2662,6 +2694,11 @@ func defaultPublicURL(s Server) string {
 // passwords follow the same rules.
 func HashPassword(pw string) (string, error) { return users.HashPassword(pw) }
 
+// CheckNewPassword checks a password someone chooses for the built-in
+// admin named user, by the rules for users' passwords (see
+// users.CheckNewPassword).
+func CheckNewPassword(user, pw string) error { return users.CheckNewPassword(user, pw) }
+
 // CheckPassword reports whether user and pw are the built-in admin's. The
 // username ignores case, like every other username.
 func (c *Config) CheckPassword(user, pw string) bool {
@@ -2770,7 +2807,9 @@ const header = `# Signalith configuration.
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address
 # auth.admin_user    the built-in admin, a break-glass account; add other users on the Users page
-# auth.session_timeout  sign the web UI out after this long idle (default 12h)
+# auth.session_timeout  sign the web UI out after this long idle (default 1h)
+# auth.session_max_age  sign the web UI out this long after sign-in, even when kept
+#                    signed in (default 24h; 1h to 30d)
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users
 #                    page instead (see docs/users.md)
