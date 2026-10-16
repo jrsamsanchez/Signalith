@@ -215,8 +215,14 @@ Provisioning lets the identity provider manage single sign-on users for you, ove
   their sessions at once**, instead of at their next sign-in. Removing them deletes them.
 
 Roles still come from the groups claim at each sign-in, as above; groups are not provisioned.
-A provisioned person's first sign-in with the same username links their identity, even when
-**Add users at first sign-in** is off. Provisioning only sees single sign-on users: it cannot
+A provisioned person's first sign-in links their identity, even when **Add users at first
+sign-in** is off, but only when it matches what provisioning sent: the ID token's `sub` or
+`oid` claim must equal the user's `externalId`, or its verified email address their email. A
+matching username alone is not enough, since people can sometimes edit the claim it comes
+from. A first sign-in that matches neither is refused, and the server log says so.
+
+If you disable a provisioned user in Signalith, they stay disabled until an admin enables them
+here: provisioning only re-enables users it disabled itself. Provisioning only sees single sign-on users: it cannot
 change local users, directory users or the built-in admin, and a username one of them has is
 refused.
 
@@ -241,9 +247,9 @@ when you save. Every change provisioning makes is in the audit log, by `scim`.
    **Secret Token**. Click **Test Connection**, then **Save**.
 3. Under **Mappings**, turn off **Provision Microsoft Entra ID Groups**. In the user mapping,
    keep `userPrincipalName` to `userName` (it must match the username claim, normally
-   `preferred_username`), `Switch([IsSoftDeleted]...)` to `active`, `displayName`,
-   `mail` to `emails[type eq "work"].value` and `objectId` to `externalId`; you can delete
-   the others.
+   `preferred_username`), `Switch([IsSoftDeleted]...)` to `active`, `displayName` and
+   `mail` to `emails[type eq "work"].value`, and change `externalId` to come from
+   `objectId`, which Entra ID also sends at sign-in (`oid`); you can delete the others.
 4. Set **Scope** to **Sync only assigned users and groups**, turn **Provisioning Status**
    on, and save.
 
@@ -259,7 +265,8 @@ when you save. Every change provisioning makes is in the audit log, by `scim`.
    Users**.
 
 Okta's username must be what the username claim sends at sign-in (Okta's
-`preferred_username` is the login, normally the email address).
+`preferred_username` is the login, normally the email address). Okta sends its user id as
+`externalId`, which is also the `sub` of its ID tokens.
 
 A username cannot change through provisioning: Signalith answers `400` (`mutability`). To
 rename someone, remove them from the app and assign them again.

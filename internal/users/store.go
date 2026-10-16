@@ -56,6 +56,11 @@ type User struct {
 	// no Subject yet has not signed in: their first sign-in with the same
 	// username binds the identity.
 	ExternalID string `json:"external_id,omitempty"`
+	// InactiveAtIdP is true when provisioning disabled the user (they are
+	// inactive at the identity provider). Provisioning re-enables only
+	// users it disabled: an admin's disable here stays until an admin
+	// enables them.
+	InactiveAtIdP bool `json:"inactive_at_idp,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
@@ -561,6 +566,10 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if u.Disabled && !cur.Disabled {
 			// Their sessions end everywhere.
 			r.Epoch++
+		}
+		if u.Disabled != cur.Disabled {
+			// The admin decides now, not provisioning.
+			u.InactiveAtIdP = false
 		}
 		u.Updated = s.now()
 		r.User = u

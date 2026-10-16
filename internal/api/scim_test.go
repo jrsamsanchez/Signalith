@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/oidc/oidctest"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -81,7 +82,7 @@ func TestSCIMNeedsTheToken(t *testing.T) {
 func TestSCIMEntraCycle(t *testing.T) {
 	p := oidctest.New(t)
 	p.Set(func(p *oidctest.Provider) {
-		p.Claims = map[string]any{"preferred_username": "alice@contoso.com", "groups": []any{"/soc"}}
+		p.Claims = map[string]any{"preferred_username": "alice@contoso.com", "groups": []any{"/soc"}, "oid": "E1"}
 	})
 	ts, s := newSCIMServer(t, p)
 	if _, err := s.userStore().Create(t.Context(), users.NewUser{Username: "bob", Role: users.Analyst, Password: "a long password"}); err != nil {
@@ -132,6 +133,18 @@ func TestSCIMEntraCycle(t *testing.T) {
 		t.Errorf("rename: %d %v", code, out)
 	}
 
+	// Someone else whose username claim says the same is refused: the
+	// first sign-in must match the externalId or the verified email.
+	p.Set(func(p *oidctest.Provider) {
+		p.Claims = map[string]any{"preferred_username": "alice@contoso.com", "groups": []any{"/soc"}, "oid": "someone-else"}
+	})
+	if at, _ := ssoSignIn(t, browser(t, p), ts, ""); at.Query().Get("sso_error") != "unconfirmed" {
+		t.Errorf("unconfirmed first sign-in ended at %s", at)
+	}
+	p.Set(func(p *oidctest.Provider) {
+		p.Claims = map[string]any{"preferred_username": "alice@contoso.com", "groups": []any{"/soc"}, "oid": "E1"}
+	})
+
 	// They sign in: the identity is bound, the role comes from groups.
 	b := browser(t, p)
 	ssoSignIn(t, b, ts, "")
@@ -153,6 +166,18 @@ func TestSCIMEntraCycle(t *testing.T) {
 	ssoSignIn(t, b, ts, "")
 	if code, _ := me(t, b, ts); code != 401 {
 		t.Errorf("sign-in while disabled: %d", code)
+	}
+
+	// An admin's disable here is not undone by the provider's next sync.
+	if code, _ := scimCall(t, ts, "PATCH", "/Users/alice@contoso.com", `{"Operations":[{"op":"Replace","path":"active","value":"True"}]}`, scimTestToken); code != 200 {
+		t.Fatalf("enable: %d", code)
+	}
+	if code, _, _ := call(t, ts, "PUT", "/api/users/alice@contoso.com", `{"disabled":true}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("admin disable: %d", code)
+	}
+	code, out = scimCall(t, ts, "PUT", "/Users/alice@contoso.com", `{"userName":"alice@contoso.com","displayName":"Alice Jones","active":true}`, scimTestToken)
+	if code != 200 || out["active"] != false {
+		t.Errorf("sync after an admin's disable: %d %v", code, out)
 	}
 
 	if code, _ := scimCall(t, ts, "DELETE", "/Users/alice@contoso.com", "", scimTestToken); code != 204 {
@@ -238,5 +263,24 @@ func TestSCIMTokenSaved(t *testing.T) {
 	}
 	if code, _, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"auth.scim.enabled":true},"clear":["auth.scim.token_sha256"]}`, "admin", "s3cret-pass", nil); code != 400 {
 		t.Errorf("on without a token saved: %d", code)
+	}
+}
+
+func TestSCIMRefusalsLogOncePerMinute(t *testing.T) {
+	var f scimRefusals
+	now := time.Now()
+	if n := f.note("10.0.0.1", now); n != 1 {
+		t.Errorf("first: %d", n)
+	}
+	for i := 0; i < 50; i++ {
+		if n := f.note("10.0.0.1", now.Add(time.Second)); n != 0 {
+			t.Fatalf("within the minute: %d", n)
+		}
+	}
+	if n := f.note("10.0.0.2", now); n != 1 {
+		t.Errorf("another address: %d", n)
+	}
+	if n := f.note("10.0.0.1", now.Add(61*time.Second)); n != 51 {
+		t.Errorf("a minute on: %d", n)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/scim"
@@ -100,13 +101,60 @@ func (s *Server) scimAuth(next http.HandlerFunc) http.Handler {
 		}
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		if !strings.EqualFold(scheme, "Bearer") || !c.SCIMToken(strings.TrimSpace(token)) {
-			s.Log.Warn("SCIM token refused", slices.Concat([]any{"audit", true, "method", r.Method, "path", r.URL.Path}, s.client(r).logAttrs())...)
+			if n := s.scimRefused.note(s.client(r).Addr.String(), time.Now()); n > 0 {
+				s.Log.Warn("SCIM token refused", slices.Concat([]any{"audit", true, "method", r.Method, "path", r.URL.Path, "refusals", n},
+					s.client(r).logAttrs())...)
+			}
 			w.Header().Set("WWW-Authenticate", `Bearer realm="Signalith SCIM"`)
 			scimFail(w, http.StatusUnauthorized, "", "the SCIM token is missing or wrong")
 			return
 		}
 		next(w, r.WithContext(users.WithActor(r.Context(), scimActor)))
 	})
+}
+
+// scimRefusals limits the log of refused SCIM tokens to one line a
+// minute for each address, with how many were refused since, so a client
+// cannot flood the log.
+type scimRefusals struct {
+	mu   sync.Mutex
+	seen map[string]scimRefusal
+}
+
+type scimRefusal struct {
+	logged time.Time
+	count  int
+}
+
+// note counts a refusal from addr, and returns how many to log now (0 to
+// log nothing).
+func (f *scimRefusals) note(addr string, now time.Time) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.seen == nil {
+		f.seen = map[string]scimRefusal{}
+	}
+	e := f.seen[addr]
+	e.count++
+	if !e.logged.IsZero() && now.Sub(e.logged) < time.Minute {
+		f.seen[addr] = e
+		return 0
+	}
+	n := e.count
+	f.seen[addr] = scimRefusal{logged: now}
+	if len(f.seen) > 10000 {
+		// Forget what is over a minute old, or everything, rather than
+		// grow without end.
+		for k, v := range f.seen {
+			if now.Sub(v.logged) >= time.Minute {
+				delete(f.seen, k)
+			}
+		}
+		if len(f.seen) > 10000 {
+			f.seen = map[string]scimRefusal{}
+		}
+	}
+	return n
 }
 
 // scimAudit logs a change provisioning made.

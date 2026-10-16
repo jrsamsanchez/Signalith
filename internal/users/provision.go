@@ -91,7 +91,7 @@ func (s *Store) Provision(ctx context.Context, p Provisioned) (User, error) {
 	defer release()
 	now := s.now()
 	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Source: SourceSSO, Name: cleanSSOName(p.Name),
-		Email: cleanSSOEmail(p.Email), ExternalID: cleanExternalID(p.ExternalID), Role: Viewer, Disabled: !p.Active,
+		Email: cleanSSOEmail(p.Email), ExternalID: cleanExternalID(p.ExternalID), Role: Viewer, Disabled: !p.Active, InactiveAtIdP: !p.Active,
 		Created: now, Updated: now}, Epoch: 1})
 	if err != nil {
 		return User{}, err
@@ -101,8 +101,10 @@ func (s *Store) Provision(ctx context.Context, p Provisioned) (User, error) {
 
 // ChangeProvisioned changes a single sign-on user with fn, on what
 // provisioning knows of them as they are now (or as read at etag, when
-// set). The username may change only in case. Made inactive, their
-// sessions end everywhere. A user who is not a single sign-on user is
+// set). The username may change only in case. Made inactive, they are
+// disabled and their sessions end everywhere; made active again, they are
+// enabled only if provisioning disabled them, so an admin's disable here
+// stays. A user who is not a single sign-on user is
 // ErrNotFound.
 func (s *Store) ChangeProvisioned(ctx context.Context, name, etag string, fn func(*Provisioned) error) (User, error) {
 	name = NormalizeUsername(name)
@@ -123,7 +125,14 @@ func (s *Store) ChangeProvisioned(ctx context.Context, name, etag string, fn fun
 			return ErrRename
 		}
 		u := r.User
-		u.Name, u.Email, u.ExternalID, u.Disabled = cleanSSOName(p.Name), cleanSSOEmail(p.Email), cleanExternalID(p.ExternalID), !p.Active
+		u.Name, u.Email, u.ExternalID = cleanSSOName(p.Name), cleanSSOEmail(p.Email), cleanExternalID(p.ExternalID)
+		switch {
+		case !p.Active && !u.Disabled:
+			u.Disabled, u.InactiveAtIdP = true, true
+		case p.Active && u.Disabled && u.InactiveAtIdP:
+			// Only a disable provisioning made; an admin's stays.
+			u.Disabled, u.InactiveAtIdP = false, false
+		}
 		if u == r.User {
 			return ErrNoChange
 		}

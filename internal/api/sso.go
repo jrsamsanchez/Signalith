@@ -322,7 +322,12 @@ func ssoIdentityOf(set config.OIDCSettings, claims oidc.Claims) (ssoIdentity, st
 		full = strings.TrimSpace(claims.String("given_name") + " " + claims.String("family_name"))
 	}
 	id.user = users.SSOUser{Username: name, Name: oidcText(full), Email: email, Role: users.Role(role),
-		Subject: users.SSOSubject(set.Issuer, claims.String("sub"))}
+		Subject: users.SSOSubject(set.Issuer, claims.String("sub")), VerifiedEmail: id.verified}
+	for _, c := range []string{"sub", "oid"} {
+		if v := claims.String(c); v != "" {
+			id.user.IDs = append(id.user.IDs, v)
+		}
+	}
 	return id, "", ""
 }
 
@@ -350,6 +355,9 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 	switch {
 	case errors.Is(err, users.ErrSSONew):
 		s.ssoFail(w, r, "new", u.Username, "not a Signalith user yet, and new users are not added")
+		return
+	case errors.Is(err, users.ErrSSOUnconfirmed):
+		s.ssoFail(w, r, "unconfirmed", u.Username, "provisioned (SCIM), and neither the sub or oid claim matches its externalId nor the verified email address its email")
 		return
 	case errors.Is(err, users.ErrSSOOther):
 		s.ssoFail(w, r, "taken", u.Username, "the name belongs to another user (local, directory, the built-in admin, or another identity at the provider)")

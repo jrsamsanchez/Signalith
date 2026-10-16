@@ -280,7 +280,7 @@ func TestProvisionedUserIsShared(t *testing.T) {
 		t.Fatalf("B's pat: %+v %v", u, ok)
 	}
 	sub := users.SSOSubject("https://idp.example.com", "9")
-	if _, err := b.store.SeeSSOUser(ctx, users.SSOUser{Username: "pat@example.com", Role: users.Analyst, Subject: sub}, false); err != nil {
+	if _, err := b.store.SeeSSOUser(ctx, users.SSOUser{Username: "pat@example.com", Role: users.Analyst, Subject: sub, IDs: []string{"9", "E9"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	a.cycle()

@@ -229,9 +229,10 @@ type Server struct {
 
 	authOnce     sync.Once
 	ssoOnce      sync.Once
-	creds        credCache // recently checked Basic credentials
-	routes       []route   // every API route and its role, from Handler
-	caseLocks    caseLocks // one lock per case being changed
+	scimRefused  scimRefusals // when a refused SCIM token was last logged, by address
+	creds        credCache    // recently checked Basic credentials
+	routes       []route      // every API route and its role, from Handler
+	caseLocks    caseLocks    // one lock per case being changed
 	checksMu     sync.Mutex
 	dirChecks    map[string]dirCheck // when each directory user was last checked
 	dirSlotsOnce sync.Once

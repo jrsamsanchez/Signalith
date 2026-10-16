@@ -33,7 +33,15 @@ func TestProvisionThenSignIn(t *testing.T) {
 	// The first sign-in binds the identity, even with new users not
 	// added, and keeps the provisioned name when the token has none.
 	sub := SSOSubject("https://idp.example.com", "123")
-	u, err = s.SeeSSOUser(ctx, SSOUser{Username: "alice@contoso.com", Role: Analyst, Subject: sub}, false)
+	// Only someone whose id or verified email matches what provisioning
+	// gave: the username alone may be one people can edit.
+	for _, d := range []SSOUser{{IDs: []string{"123"}}, {IDs: []string{"123"}, VerifiedEmail: "mallory@contoso.com"}} {
+		d.Username, d.Role, d.Subject = "alice@contoso.com", Admin, sub
+		if _, err := s.SeeSSOUser(ctx, d, true); !errors.Is(err, ErrSSOUnconfirmed) {
+			t.Errorf("%+v: %v", d, err)
+		}
+	}
+	u, err = s.SeeSSOUser(ctx, SSOUser{Username: "alice@contoso.com", Role: Analyst, Subject: sub, IDs: []string{"123", "E1"}}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +60,29 @@ func TestChangeProvisioned(t *testing.T) {
 	if _, err := s.Provision(ctx, Provisioned{Username: "carol", Active: true}); err != nil {
 		t.Fatal(err)
 	}
+	// Provisioning re-enables only users it disabled.
+	off, on := true, false
+	if _, err := s.Update(ctx, "carol", Change{Disabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := s.ChangeProvisioned(ctx, "carol", "", func(p *Provisioned) error { p.Active = true; return nil }); err != nil || !u.Disabled {
+		t.Fatalf("enabled over an admin's disable: %+v, %v", u, err)
+	}
+	if _, err := s.Update(ctx, "carol", Change{Disabled: &on}); err != nil {
+		t.Fatal(err)
+	}
 	u, err := s.ChangeProvisioned(ctx, "carol", "", func(p *Provisioned) error {
 		p.Username, p.Name, p.Active = "Carol", "Carol King", false
 		return nil
 	})
-	if err != nil || u.Name != "Carol King" || !u.Disabled || u.SessionEpoch != 2 {
+	if err != nil || u.Name != "Carol King" || !u.Disabled || u.SessionEpoch != 3 {
 		t.Fatalf("changed %+v, %v", u, err)
+	}
+	if u, err := s.ChangeProvisioned(ctx, "carol", "", func(p *Provisioned) error { p.Active = true; return nil }); err != nil || u.Disabled {
+		t.Fatalf("re-enabled: %+v, %v", u, err)
+	}
+	if _, err := s.ChangeProvisioned(ctx, "carol", "", func(p *Provisioned) error { p.Active = false; return nil }); err != nil {
+		t.Fatal(err)
 	}
 	// A disabled user stays out at sign-in.
 	if u, err := s.SeeSSOUser(ctx, SSOUser{Username: "carol", Role: Admin, Subject: SSOSubject("https://idp.example.com", "1")}, true); err != nil || !u.Disabled {
