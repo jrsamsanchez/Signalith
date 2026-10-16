@@ -1711,6 +1711,14 @@ func LoadUnchecked(path string) (*Config, error) {
 	return readAndEnv(path)
 }
 
+// LoadFileOnly reads signalith.yaml with defaults and the environment,
+// like LoadUnchecked, but nothing from the state folder: no password the
+// page saved there, and no first-password note. It is for root, which
+// should not read files the service owns.
+func LoadFileOnly(path string) (*Config, error) {
+	return readFileEnv(path, false)
+}
+
 // Saved is the configuration as saved, whether or not it is valid:
 // signalith.yaml, the settings changed on the Settings page, and the
 // environment. The Settings page shows it.
@@ -1842,7 +1850,11 @@ func (c *Config) readFiles(path string) (*Config, error) {
 
 // readAndEnv reads signalith.yaml with defaults and the environment,
 // without decrypting it.
-func readAndEnv(path string) (*Config, error) {
+func readAndEnv(path string) (*Config, error) { return readFileEnv(path, true) }
+
+// readFileEnv is readAndEnv, reading the state folder's files only when
+// state is true.
+func readFileEnv(path string, state bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -1874,12 +1886,16 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyEnv(); err != nil {
 		return nil, err
 	}
-	if err := c.applyAdminHashFile(); err != nil {
-		return nil, err
+	if state {
+		if err := c.applyAdminHashFile(); err != nil {
+			return nil, err
+		}
 	}
 	c.syncEligible()
-	c.readDockerUpgrade()
-	c.readFirstPassword()
+	if state {
+		c.readDockerUpgrade()
+		c.readFirstPassword()
+	}
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil

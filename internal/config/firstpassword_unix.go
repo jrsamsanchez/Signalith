@@ -8,7 +8,8 @@ import (
 )
 
 // shareWithGroup gives the file at path to the group of the folder dir,
-// which may read it.
+// which may read it. It changes the file it opened, never one a link
+// points to.
 func shareWithGroup(path, dir string) error {
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -18,8 +19,13 @@ func shareWithGroup(path, dir string) error {
 	if !ok {
 		return nil
 	}
-	if err := os.Lchown(path, -1, int(st.Gid)); err != nil {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o640)
+	defer f.Close()
+	if err := f.Chown(-1, int(st.Gid)); err != nil {
+		return err
+	}
+	return f.Chmod(0o640)
 }

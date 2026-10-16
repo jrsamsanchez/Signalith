@@ -515,11 +515,17 @@ func TestNoteFirstPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	note := config.FirstPasswordFileIn(filepath.Dir(path))
+	// The root step reads nothing in the service's state folder: a note
+	// there that is a FIFO would hang it.
+	if err := makeFIFO(config.FirstPasswordFileIn(state)); err != nil {
+		t.Fatal(err)
+	}
 	for range 2 { // the second time, it is noted already
 		if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
 			t.Fatal(err)
 		}
 	}
+	os.Remove(config.FirstPasswordFileIn(state))
 	if _, err := os.Stat(config.FirstPasswordFileIn(state)); !os.IsNotExist(err) {
 		t.Errorf("written in the state folder: %v", err)
 	}
@@ -535,8 +541,11 @@ func TestNoteFirstPassword(t *testing.T) {
 	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
 		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
 	}
-	// Once the server noted the change, the note goes, and the hash is
-	// not taken from it even if it is back.
+	// Once the password was changed on the page, the note goes, and the
+	// hash is not taken from it even if it is back.
+	if err := os.WriteFile(c.AdminHashFile(), []byte(c.Auth.AdminPasswordHash+"x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := config.NoteFirstPasswordChanged(state, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -554,6 +563,7 @@ func TestNoteFirstPassword(t *testing.T) {
 	}
 	// A password someone chose is not noted.
 	os.Remove(note)
+	os.Remove(c.AdminHashFile())
 	os.Remove(config.FirstPasswordFileIn(state))
 	h, _ := config.HashPassword("chosen by the admin")
 	if err := config.SetAdminPasswordHash(path, h); err != nil {

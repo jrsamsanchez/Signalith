@@ -682,14 +682,14 @@ func noteFirstPassword(path string) error {
 	if pw == "" {
 		return nil
 	}
-	c, err := config.LoadUnchecked(path)
+	// Root reads nothing from the service's state folder, whose files the
+	// service could point anywhere: a password saved there on the page
+	// is seen from the file being there at all.
+	c, err := config.LoadFileOnly(path)
 	if err != nil {
 		return err
 	}
-	if c.AdminPasswordChanged() != "" {
-		return nil
-	}
-	if fp, err := config.ReadFirstPassword(c.StateDir()); err == nil && !fp.Changed.IsZero() {
+	if _, err := os.Lstat(c.AdminHashFile()); err == nil {
 		// A note left from before the change no longer applies.
 		_ = os.Remove(config.FirstPasswordFileIn(filepath.Dir(path)))
 		return nil
