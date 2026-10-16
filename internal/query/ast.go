@@ -330,6 +330,20 @@ func CommandString(c Command) string {
 		return transactionString(c)
 	case *Join:
 		return joinString(c)
+	case *Append:
+		return "append [search " + c.Sub.String() + "]"
+	case *AppendPipe:
+		return appendPipeString(c)
+	case *StreamStats:
+		return streamStatsString(c)
+	case *Bin:
+		return binString(c)
+	case *Regex:
+		return regexString(c)
+	case *MakeResults:
+		return makeResultsString(c)
+	case *FieldsRemove:
+		return fieldsRemoveString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

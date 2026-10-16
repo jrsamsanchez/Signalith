@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch"}
+var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -62,8 +62,13 @@ func parseAt(src string, base, depth int) (*Query, error) {
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := cmd.(*InputLookup); ok && (len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "") {
-			return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners")
+		if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
+			switch cmd.(type) {
+			case *InputLookup:
+				return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners")
+			case *MakeResults:
+				return nil, errorf(at, "makeresults makes rows instead of searching events, so it starts the search: | makeresults count=3")
+			}
 		}
 		q.Commands = append(q.Commands, cmd)
 	}
@@ -476,6 +481,10 @@ func (p *parser) parseCommand() (Command, error) {
 		}
 		return h, p.endCommand()
 	case "table", "fields":
+		remove := false
+		if strings.EqualFold(t.text, "fields") && p.peek().kind == tokWord && (p.peek().text == "-" || p.peek().text == "+") {
+			remove = p.next().text == "-"
+		}
 		fields, err := p.fieldList(true)
 		if err != nil {
 			return nil, err
@@ -483,7 +492,22 @@ func (p *parser) parseCommand() (Command, error) {
 		if len(fields) == 0 {
 			return nil, errorf(t.pos, "%s needs at least one field", t.text)
 		}
+		if remove {
+			return &FieldsRemove{Fields: fields}, p.endCommand()
+		}
 		return &Table{Fields: fields}, p.endCommand()
+	case "streamstats":
+		return p.parseStreamStats(t)
+	case "bin", "bucket":
+		return p.parseBin(t)
+	case "regex":
+		return p.parseRegex(t)
+	case "makeresults":
+		return p.parseMakeResults()
+	case "append":
+		return p.parseAppend(t)
+	case "appendpipe":
+		return p.parseAppendPipe(t)
 	case "lookup":
 		return p.parseLookup(t)
 	case "inputlookup":
