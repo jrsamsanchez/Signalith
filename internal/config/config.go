@@ -2857,8 +2857,9 @@ const header = `# Signalith configuration.
 # server.client_header  x-forwarded-for or forwarded: the header those proxies
 #                    write each person's address into, for the sign-in limits and
 #                    the log; empty counts everyone behind them as one shared address
-# server.max_connections  open connections allowed at once (default 10000); one
-#                    client may hold a tenth of them
+# server.max_connections  open connections allowed at once (default 10000), on the
+#                    web port and again on the agent port; one client may hold a
+#                    tenth of them
 # server.shared_addresses  IPs or CIDRs of a proxy, load balancer or NAT that many
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address

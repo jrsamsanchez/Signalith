@@ -259,7 +259,7 @@ var Registry = []Setting{
 		Env:     "SIGNALITH_AGENT_LISTEN",
 		Confirm: "After the restart agents must send to the new address. Agents that use the old one stop sending until they are set up again from Add data."},
 	{Key: "server.max_connections", Scope: ScopeServer, Section: "web", Label: "Most connections", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(1000000),
-		Help:       "The most connections open at once from browsers, agents and the API. One computer may use a tenth of them.",
+		Help:       "The most connections open at once from browsers, agents and the API, on the web port and again on the agent port. One computer may use a tenth of them.",
 		EmptyMeans: "10000"},
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",

@@ -197,7 +197,7 @@ func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
 	listen := fs.String("listen", "0.0.0.0:9000", "address the web page and API listen on")
-	agentListen := fs.String("agent-listen", "0.0.0.0:"+config.DefaultAgentPort, "address agents send to (off: the web port)")
+	agentListen := fs.String("agent-listen", "", "address agents send to (default: -listen's host, port "+config.DefaultAgentPort+"; off: the web port)")
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
@@ -218,8 +218,13 @@ func cmdInit(args []string) error {
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
 	c.Server.Listen = *listen
-	// Set, so the web port takes no agent traffic.
+	// Set, so the web port takes no agent traffic. By default on the web
+	// page's host: a server whose page is on loopback only takes agents on
+	// loopback only too.
 	c.Server.AgentListen = *agentListen
+	if c.Server.AgentListen == "" {
+		c.Server.AgentListen = config.DefaultAgentListen(*listen)
+	}
 	c.Server.PublicURL = *publicURL
 	// HTTPS with a certificate the server makes for itself, and no
 	// agents over plain HTTP.
@@ -354,22 +359,35 @@ func printSyslogPorts(c *config.Config) {
 }
 
 // printWebPorts prints the web port, and the agent port when agents send
-// to one of their own, one per line ("web 9000", "agents 7779"), for the
-// installers' firewall rules.
+// to one of their own, one per line with whether other machines can reach
+// it ("web 9000 any", "agents 7779 local"), for the installers' firewall
+// rules.
 func printWebPorts(c *config.Config) {
-	if _, port, err := net.SplitHostPort(c.Server.Listen); err == nil {
-		fmt.Println("web", port)
+	for _, l := range []struct{ kind, addr string }{{"web", c.Server.Listen}, {"agents", c.Server.AgentAddr()}} {
+		if host, port, err := net.SplitHostPort(l.addr); err == nil {
+			fmt.Println(l.kind, port, listenScope(host))
+		}
 	}
-	if _, port, err := net.SplitHostPort(c.Server.AgentAddr()); err == nil {
-		fmt.Println("agents", port)
+}
+
+// listenScope says whether a listen host takes connections from other
+// machines ("any") or from this one alone ("local"), for installers that
+// open the firewall only for the first.
+func listenScope(host string) string {
+	if host == "localhost" {
+		return "local"
 	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
+		return "local"
+	}
+	return "any"
 }
 
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	path := configFlag(fs)
 	ports := fs.Bool("syslog-ports", false, "only print the syslog listeners, one per line: protocol, port, and the allowed senders (any, or a comma-separated list); for installers")
-	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line (web 9000, agents 7779); for installers")
+	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line with any or local (web 9000 any, agents 7779 local); for installers")
 	fileFlag := settingsFileFlag(fs)
 	fs.Parse(args)
 	// -file first: the service's settings below do not replace it.
@@ -1111,6 +1129,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.certs, in.certKey = certs, certKey
 		in.jobs.Go(func() { certs.Run(ctx) })
 	}
+	// The agent port, before the parts that tell agents where to send:
+	// when the default one of a server upgraded from before 0.3 cannot be
+	// listened on, they keep sending to the web port.
+	if err := r.listenAgents(c, certs); err != nil {
+		in.cancel()
+		return nil, err
+	}
 	// The master key, again after a restart: the files saved from now on
 	// are encrypted with this config's, and their plain values with it.
 	r.useKeys(c)
@@ -1765,9 +1790,6 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
 	r.srv.Store(srv)
-	if err := r.listenAgents(c, certs); err != nil {
-		return nil, err
-	}
 	if c.Server.AgentAddr() != "" {
 		in.agentHandler = srv.AgentHandler()
 		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)

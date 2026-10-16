@@ -17,6 +17,27 @@ const DefaultAgentPort = "7779"
 // the web port, as before Signalith 0.3.
 const AgentListenOff = "off"
 
+// DefaultAgentListen is the agent address that goes with the web address
+// listen: the same host, so a server whose web page listens on loopback
+// only takes agents on loopback only too, on port 7779. It is "" when
+// listen is not host:port.
+func DefaultAgentListen(listen string) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(listen))
+	if err != nil {
+		return ""
+	}
+	return net.JoinHostPort(host, DefaultAgentPort)
+}
+
+// DropDerivedAgentListen stops using an agent address that was worked out
+// because server.agent_listen was not set, when it cannot be listened on:
+// agents then send to the web port only, as they did before 0.3.
+func (c *Config) DropDerivedAgentListen() {
+	if c.agentListenDerived {
+		c.Server.AgentListen, c.agentListenDerived = "", false
+	}
+}
+
 // AgentAddr is the address agents are served on: server.agent_listen, or
 // "" when it is off and agents send to the web port.
 func (s Server) AgentAddr() string {
@@ -87,11 +108,19 @@ func (c *Config) agentListenProblems() []string {
 		return nil
 	}
 	if c.Server.AgentListen == "" {
-		host, _, err := net.SplitHostPort(c.Server.Listen)
-		if err != nil {
+		addr := DefaultAgentListen(c.Server.Listen)
+		if addr == "" {
 			return nil // server.listen's own problem
 		}
-		c.Server.AgentListen, c.agentListenDerived = net.JoinHostPort(host, DefaultAgentPort), true
+		// A server upgraded from before 0.3 did not ask for an agent port:
+		// when the default one is a port it uses already, it goes without,
+		// and its agents keep sending to the web port.
+		for _, used := range []string{c.Server.Listen, c.Syslog.TCP, c.Syslog.TLS} {
+			if _, p, err := net.SplitHostPort(used); err == nil && p == DefaultAgentPort {
+				return nil
+			}
+		}
+		c.Server.AgentListen, c.agentListenDerived = addr, true
 	}
 	host, port, err := net.SplitHostPort(c.Server.AgentListen)
 	if err != nil {

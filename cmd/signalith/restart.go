@@ -1218,7 +1218,7 @@ func (r *runner) check(ctx context.Context, old, next *config.Config) (*plan, er
 	}
 	// A new agent port must be free; the one in use is freed by the
 	// switch.
-	if a := next.Server.AgentAddr(); a != "" && !overlaps(old.Server.AgentAddr(), a) {
+	if a := next.Server.AgentAddr(); a != "" && !next.AgentListenDerived() && !overlaps(old.Server.AgentAddr(), a) {
 		if err := tryListen("tcp", a); err != nil {
 			return fail(keyed(refuse("Signalith cannot listen for agents on %s (%v). Choose another address or port.", a, opError(err)), "server.agent_listen"))
 		}

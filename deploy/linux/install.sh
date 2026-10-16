@@ -69,7 +69,7 @@ Usage: sudo sh install.sh [--join - --from https://<server>:9000]
   --sha256    The SHA-256 the program must have.
   --binary    Use this file as the program instead of downloading it.
   --name      This server's name on the Servers page (default: the host name).
-  --listen    Address and port for the web page, API and agents.
+  --listen    Address and port for the web page and API (agents send to port 7779 on its host).
   --node-url  The address the other servers reach this one at.
 USAGE
 }

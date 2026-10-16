@@ -961,6 +961,11 @@ func (j *joiner) writeConfig(path string) error {
 	c := config.Default()
 	c.Server.Listen = firstSet(j.listen, c.Server.Listen)
 	c.Server.AgentListen = j.agentListen
+	if c.Server.AgentListen == "" {
+		// Set, as signalith init does, so the web port takes no agent
+		// traffic; on the web page's host.
+		c.Server.AgentListen = config.DefaultAgentListen(c.Server.Listen)
+	}
 	c.Server.TLS = &config.ServerTLS{Mode: config.TLSAuto, PlaintextIngest: "deny"}
 	c.Syslog.UDP, c.Syslog.TCP, c.Syslog.TLS = "", "", ""
 	// No built-in admin password: a joined server's users are the

@@ -51,6 +51,12 @@ func (r *runner) listenAgents(c *config.Config, certs *tlsauto.Manager) error {
 	}
 	lim := webLimits(c)
 	ln, err := httpserver.Listen(addr, lim, r.log)
+	if err != nil && c.AgentListenDerived() {
+		r.log.Warn("cannot listen for agents on the default agent port, so agents keep sending to the web port only; set server.agent_listen to a free address",
+			"addr", addr, "err", opError(err))
+		c.DropDerivedAgentListen()
+		return nil
+	}
 	if err != nil {
 		return keyed(fmt.Errorf("cannot listen for agents on %s: %w", addr, opError(err)), "server.agent_listen")
 	}

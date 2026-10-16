@@ -169,7 +169,7 @@ func (s *Server) plainHandler(secure http.Handler, web bool) http.Handler {
 			s.Pipeline.NoteRefused(clientaddr.Parse(r.RemoteAddr), ingest.RefusedPlaintext)
 			w.Header().Set("Retry-After", "60")
 			plainRefusal(w, r, http.StatusServiceUnavailable, "This server only accepts events over HTTPS, so this batch was refused; the agent keeps it and sends it again. "+
-				"Get a new configuration for this agent from the Add data page (it sends to "+s.httpsBase(r)+"), or, until every agent has one, accept agents on plain HTTP for now on the Settings page, under HTTPS (server.tls.plaintext_ingest: allow).")
+				"Get a new configuration for this agent from the Add data page (it sends to "+s.agentURL(s.httpsBase(r))+"), or, until every agent has one, accept agents on plain HTTP for now on the Settings page, under HTTPS (server.tls.plaintext_ingest: allow).")
 			return
 		}
 		_, _, basic := r.BasicAuth()
