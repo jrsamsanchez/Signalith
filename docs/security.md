@@ -529,8 +529,8 @@ less on the **Settings** page.
 ### Two-step sign-in
 
 **Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
-whether people who sign in with a password must also enter a code from an
-authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+whether people who sign in with a password must also use a passkey or a code from
+an authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
 users get their second step from their identity provider.
 
 - Good: `admins` or `everyone`.

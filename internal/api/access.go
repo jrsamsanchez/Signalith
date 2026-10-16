@@ -509,7 +509,7 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 // A local username is never looked up in the directory. Wrong passwords
 // count toward the limits (see auth.Limiter), and every attempt is logged
 // without the password.
-func (s *Server) signIn(r *http.Request, name, password, code, method string) (*principal, error) {
+func (s *Server) signIn(r *http.Request, name, password string, step secondFactor, method string) (*principal, error) {
 	from := s.client(r)
 	name = strings.TrimSpace(name)
 	attempt, err := s.beginAttempt(r, from, name, "")
@@ -520,7 +520,7 @@ func (s *Server) signIn(r *http.Request, name, password, code, method string) (*
 	ctx := clusterauth.WithMethod(r.Context(), method)
 	p, reason, err := s.checkCredentials(ctx, name, password)
 	if err == nil {
-		reason, err = s.secondStep(ctx, p, method, code)
+		reason, err = s.secondStep(r, ctx, p, method, step)
 	}
 	if errors.Is(err, errMFANeeded) {
 		// The password was right; the sign-in page now asks for the
@@ -528,11 +528,12 @@ func (s *Server) signIn(r *http.Request, name, password, code, method string) (*
 		attempt.Done()
 		s.Log.Info("password accepted, waiting for the two-step code", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
 			[]any{"method", method})...)
-		return nil, err
+		// The caller says what the second step can be (stepNeeded).
+		return p, err
 	}
 	if err != nil {
 		var f auth.Failure
-		if errors.Is(err, errWrongCredentials) || errors.Is(err, errWrongCode) {
+		if errors.Is(err, errWrongCredentials) || errors.Is(err, errWrongCode) || errors.Is(err, errPasskeyWrong) || errors.Is(err, errPasskeyCloned) {
 			f = attempt.Fail()
 		} else {
 			// Unreachable directory, or a right password for an account
@@ -884,7 +885,7 @@ func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, err
 			return p, nil
 		}
 	}
-	p, err := s.signIn(r, user, pass, "", "basic")
+	p, err := s.signIn(r, user, pass, secondFactor{}, "basic")
 	if err != nil {
 		return nil, err
 	}
