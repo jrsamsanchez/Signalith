@@ -51,6 +51,7 @@ var fuzzSeeds = []string{
 	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
 	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
 	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
+	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 

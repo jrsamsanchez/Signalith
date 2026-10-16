@@ -425,6 +425,7 @@ func FuzzEvalCommands(f *testing.F) {
 		`* | eval r=replace(s, "(a)(b)?", "\2\1$1"), p=pow(a, b), l=log(a, b), q=tonumber(s, 36)`,
 		`* | eval x=substr("abc", 1, "NaN"), y=substr(s, a), z=mvindex(s, "NaN"), w=substr(s, 1e300, -1e300)`,
 		`* | eval x=replace(s, "", s) | eval y=mvjoin(mvappend(x, x, x), x)`,
+		`* | eval p=printf("%-5s|%05.1f|%x|%c|%%", s, a, a, a), r=relative_time(a, s), m=mvrange(a, b, 0.5), j=json_object(s, a, "m", mvrange(0, b)), k=json_keys(j), v=spath(j, s), w=json_array_to_mv(json_array(s, a)), i=validate(isint(a), s)`,
 	} {
 		f.Add(s, "a,b,10.1.2.3", 3.5)
 	}

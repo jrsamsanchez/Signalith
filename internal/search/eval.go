@@ -1078,6 +1078,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		}
 		return numOut(float64(t.UnixNano()) / 1e9)
 	}
+	if v, ok := ev.callMore(c.Func, args); ok {
+		return v
+	}
 	return ev.fail("function %s() is not supported here", c.Func)
 }
 
