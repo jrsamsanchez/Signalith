@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -135,5 +136,80 @@ func TestCompilePushesLeadingSearchIntoOpenSearch(t *testing.T) {
 	}
 	if p.Mode != "stats" {
 		t.Errorf("mode = %s", p.Mode)
+	}
+}
+
+func TestRexSed(t *testing.T) {
+	src := `| makeresults | eval u="CORP\\alice", m=split("a1,b22", ",")`
+	for cmd, want := range map[string]string{
+		`rex field=u mode=sed "s/^CORP\\\\//"`:           "alice",
+		`rex field=u mode=sed "s/(\w+)\\\\(\w+)/\2@\1/"`: "alice@CORP",
+		`rex field=u mode=sed "s/[a-z]/X/g"`:             `CORP\XXXXX`,
+		`rex field=u mode=sed "s/[a-z]/X/2"`:             `CORP\aXice`,
+		`rex field=u mode=sed "s/i/[&]/"`:                `CORP\al[i]ce`,
+		`rex field=u mode=sed "y/CORP/corp/"`:            `corp\alice`,
+	} {
+		res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+" | "+cmd)
+		if err != nil {
+			t.Errorf("%s: %v", cmd, err)
+			continue
+		}
+		if got := res.Rows[0]["u"]; got != want {
+			t.Errorf("%s: u = %v, want %s", cmd, got, want)
+		}
+	}
+	res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+` | rex field=m mode=sed "s/\d+/#/"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Rows[0]["m"]; !reflect.DeepEqual(got, []any{"a#", "b#"}) {
+		t.Errorf("multivalue = %v", got)
+	}
+}
+
+func TestRexSedSizeLimit(t *testing.T) {
+	// Every character becomes ten copies of itself: past 1 MB.
+	events := `{"hits":{"total":{"value":1},"hits":[{"_source":{"@timestamp":"2026-10-15T11:00:00Z","s":"` + strings.Repeat("ab", 100000) + `"}}]}}`
+	e := &Engine{Store: &fakeStore{responses: []string{events}}}
+	_, err := e.Run(context.Background(), `* | head 1 | rex field=s mode=sed "s/./&&&&&&&&&&/g"`)
+	var qe *QueryError
+	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestConvert(t *testing.T) {
+	src := `| makeresults | eval t=1760000000, d="1+02:03:04", ms="01:02.5", mem="2m", c="1,234", u="12.5kb", x="abc", a_count="7", b_count="8"`
+	res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+
+		` | convert timeformat="%Y-%m-%d" ctime(t) AS day, dur2sec(d), mstime(ms), memk(mem), rmcomma(c), rmunit(u), num(x), auto(*_count), none(b_count)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := res.Rows[0]
+	for k, want := range map[string]any{"day": "2025-10-09", "t": int64(1760000000), "d": int64(93784), "ms": 62.5, "mem": int64(2048), "c": int64(1234), "u": 12.5, "a_count": int64(7), "b_count": "8"} {
+		if !reflect.DeepEqual(r[k], want) {
+			t.Errorf("%s = %#v, want %#v", k, r[k], want)
+		}
+	}
+	if _, ok := r["x"]; ok {
+		t.Errorf("num kept x = %v", r["x"])
+	}
+	res, err = (&Engine{Store: &fakeStore{}}).Run(context.Background(), `| makeresults | eval s="2026-10-15 08:00" | convert timeformat="%Y-%m-%d %H:%M" mktime(s)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Rows[0]["s"]; got != int64(1792051200) {
+		t.Errorf("mktime = %#v", got)
+	}
+}
+
+func TestTailAndUniq(t *testing.T) {
+	res := runRound5(t, `* | head 100 | table user | tail 3`)
+	if got := rowsOf(res, "user"); !reflect.DeepEqual(got, []string{"d", "c", "b"}) {
+		t.Errorf("tail = %q", got)
+	}
+	res = runRound5(t, `* | head 100 | table host | uniq`)
+	if got := rowsOf(res, "host"); !reflect.DeepEqual(got, []string{"h1", "h2", "h1"}) {
+		t.Errorf("uniq = %q", got)
 	}
 }

@@ -161,6 +161,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyMakeMV(ctx, res, c)
 	case *query.Reverse:
 		applyReverse(res)
+	case *query.Tail:
+		applyTail(res, c)
+	case *query.Uniq:
+		return applyUniq(ctx, res)
+	case *query.Convert:
+		return applyConvert(ctx, res, c)
 	case *query.AddTotals:
 		return applyAddTotals(ctx, res, c)
 	case *query.Timechart:

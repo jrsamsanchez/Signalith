@@ -461,7 +461,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		case *query.Head:
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
-			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart:
+			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail:
 			return true
 		}
 	}
@@ -474,7 +474,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Head:
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
-			*query.Bin, *query.FieldsRemove, *query.Spath, *query.MakeMV:
+			*query.Bin, *query.FieldsRemove, *query.Spath, *query.MakeMV, *query.Convert:
 			continue
 		}
 		return 0, false

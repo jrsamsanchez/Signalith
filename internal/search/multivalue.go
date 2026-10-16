@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -267,4 +268,354 @@ func applyAddTotals(ctx context.Context, res *Result, c *query.AddTotals) error 
 		res.Truncated = true
 	}
 	return nil
+}
+
+// applySed changes c.Field's text, each value of a multivalue field, with
+// a rex mode=sed expression.
+func applySed(ctx context.Context, res *Result, c *query.Rex) error {
+	sed, err := query.ParseSed(c.Sed)
+	if err != nil {
+		return &QueryError{Msg: "rex sed expression: " + err.Error()}
+	}
+	ev := evaluatorFor(ctx)
+	var change func(string) any
+	if sed.Y {
+		from, to := []rune(sed.Find), []rune(sed.Replace)
+		m := make(map[rune]rune, len(from))
+		for i, r := range from {
+			if _, ok := m[r]; !ok {
+				m[r] = to[i]
+			}
+		}
+		change = func(s string) any {
+			out := strings.Map(func(r rune) rune {
+				if t, ok := m[r]; ok {
+					return t
+				}
+				return r
+			}, s)
+			return ev.str(out)
+		}
+	} else {
+		re, err := regexp.Compile(sed.Find)
+		if err != nil {
+			return &QueryError{Msg: "rex sed expression: " + err.Error()}
+		}
+		template := sed.GoTemplate()
+		nth := 1
+		switch {
+		case sed.Global:
+			nth = 0
+		case sed.Nth > 0:
+			nth = sed.Nth
+		}
+		change = func(s string) any { return ev.replaceNth(re, s, template, nth) }
+	}
+	for i, r := range res.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		switch v := r[c.Field].(type) {
+		case string:
+			out := change(v)
+			if ev.err != nil {
+				return ev.err
+			}
+			r[c.Field] = out
+		case []any:
+			vs := make([]any, len(v))
+			for j, x := range v {
+				vs[j] = x
+				if s, ok := x.(string); ok {
+					vs[j] = change(s)
+					if ev.err != nil {
+						return ev.err
+					}
+				}
+			}
+			r[c.Field] = vs
+		}
+	}
+	return nil
+}
+
+func applyTail(res *Result, c *query.Tail) {
+	n := min(c.N, len(res.Rows))
+	out := res.Rows[:0:0]
+	for i := len(res.Rows) - 1; i >= len(res.Rows)-n; i-- {
+		out = append(out, res.Rows[i])
+	}
+	res.Rows = out
+}
+
+// applyUniq drops rows that are the same as the row before them.
+func applyUniq(ctx context.Context, res *Result) error {
+	out := res.Rows[:0:0]
+	for i, r := range res.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if len(out) > 0 && sameRow(out[len(out)-1], r) {
+			continue
+		}
+		out = append(out, r)
+	}
+	res.Rows = out
+	return nil
+}
+
+func sameRow(a, b Row) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		w, ok := b[k]
+		if !ok || !sameValue(v, w) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameValue(a, b any) bool {
+	la, oka := a.([]any)
+	lb, okb := b.([]any)
+	if oka || okb {
+		if !oka || !okb || len(la) != len(lb) {
+			return false
+		}
+		for i := range la {
+			if !sameValue(la[i], lb[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return a == b
+}
+
+// applyConvert runs convert's conversions over each row.
+func applyConvert(ctx context.Context, res *Result, c *query.Convert) error {
+	ev := evaluatorFor(ctx)
+	format := c.TimeFormat
+	if format == "" {
+		format = query.DefaultTimeFormat
+	}
+	var none []string
+	for _, f := range c.Funcs {
+		if f.Func == "none" {
+			none = append(none, f.Field)
+		}
+	}
+	excluded := func(name string) bool {
+		for _, p := range none {
+			if query.MatchField(p, name) {
+				return true
+			}
+		}
+		return false
+	}
+	var keys []string
+	for i, r := range res.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		for _, f := range c.Funcs {
+			if f.Func == "none" {
+				continue
+			}
+			names := []string{f.Field}
+			if strings.Contains(f.Field, "*") {
+				keys = keys[:0]
+				for k := range r {
+					if query.MatchField(f.Field, k) && !excluded(k) {
+						keys = append(keys, k)
+					}
+				}
+				sort.Strings(keys)
+				names = keys
+			} else if excluded(f.Field) {
+				continue
+			}
+			for _, name := range names {
+				v, ok := r[name]
+				if !ok || v == nil {
+					continue
+				}
+				out, keep := convertValue(ev, f.Func, v, format)
+				if ev.err != nil {
+					return ev.err
+				}
+				to := name
+				if f.As != "" {
+					to = f.As
+				}
+				if !keep {
+					if f.As == "" {
+						delete(r, to)
+					}
+					continue
+				}
+				r[to] = out
+			}
+		}
+	}
+	for _, f := range c.Funcs {
+		if f.As != "" {
+			addColumn(res, f.As)
+		}
+	}
+	return nil
+}
+
+// convertValue converts one value; keep is false when the value is
+// dropped (num of something that is not a number).
+func convertValue(ev *evaluator, fn string, v any, format string) (any, bool) {
+	if vs, ok := v.([]any); ok {
+		out := make([]any, 0, len(vs))
+		for _, x := range vs {
+			if y, keep := convertValue(ev, fn, x, format); keep {
+				out = append(out, y)
+			}
+		}
+		return mvOut(out), len(out) > 0
+	}
+	s, isStr := v.(string)
+	switch fn {
+	case "ctime":
+		t, ok := toTime(v)
+		if !ok {
+			return v, true
+		}
+		return ev.str(strftime(t, format)), true
+	case "mktime":
+		if !isStr {
+			return v, true
+		}
+		t, ok := strptime(s, format)
+		if !ok {
+			return v, true
+		}
+		return numOut(float64(t.UnixNano()) / 1e9), true
+	case "dur2sec":
+		if f, ok := dur2sec(s); isStr && ok {
+			return numOut(f), true
+		}
+		return v, true
+	case "mstime":
+		if f, ok := mstime(s); isStr && ok {
+			return numOut(f), true
+		}
+		return v, true
+	case "memk":
+		if f, ok := memk(v); ok {
+			return numOut(f), true
+		}
+		return v, true
+	case "rmcomma":
+		if isStr {
+			if f, ok := convNumber(strings.ReplaceAll(s, ",", "")); ok {
+				return numOut(f), true
+			}
+		}
+		return v, true
+	case "rmunit":
+		if isStr {
+			if f, ok := leadingNumber(s); ok {
+				return numOut(f), true
+			}
+		}
+		return v, true
+	case "num", "auto":
+		if !isStr {
+			return v, true
+		}
+		if f, ok := convNumber(s); ok {
+			return numOut(f), true
+		}
+		return v, fn == "auto"
+	}
+	return v, true
+}
+
+func convNumber(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	return f, err == nil && finite(f)
+}
+
+// leadingNumber reads the number at the start of text such as 12.5kb.
+func leadingNumber(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	end := 0
+	for end < len(s) && (s[end] >= '0' && s[end] <= '9' || s[end] == '.' || end == 0 && (s[end] == '-' || s[end] == '+')) {
+		end++
+	}
+	return convNumber(s[:end])
+}
+
+// dur2sec reads [D+]HH:MM:SS as seconds.
+func dur2sec(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	days := 0.0
+	if d, rest, ok := strings.Cut(s, "+"); ok {
+		n, ok := convNumber(d)
+		if !ok || n < 0 {
+			return 0, false
+		}
+		days, s = n, rest
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) > 3 {
+		return 0, false
+	}
+	total := 0.0
+	for _, p := range parts {
+		n, ok := convNumber(p)
+		if !ok || n < 0 {
+			return 0, false
+		}
+		total = total*60 + n
+	}
+	return days*86400 + total, true
+}
+
+// mstime reads [MM:]SS.SSS as seconds.
+func mstime(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	m, sec, ok := strings.Cut(s, ":")
+	if !ok {
+		return convNumber(s)
+	}
+	mins, ok1 := convNumber(m)
+	secs, ok2 := convNumber(sec)
+	if !ok1 || !ok2 || mins < 0 || secs < 0 {
+		return 0, false
+	}
+	return mins*60 + secs, true
+}
+
+// memk reads a size such as 512, 10k, 2.5m or 1g as kilobytes; a bare
+// number is already kilobytes.
+func memk(v any) (float64, bool) {
+	if f, ok := evNum(v); ok {
+		if _, isStr := v.(string); !isStr {
+			return f, true
+		}
+	}
+	s, ok := v.(string)
+	if !ok {
+		return 0, false
+	}
+	s = strings.TrimSpace(strings.ToLower(s))
+	mult := 1.0
+	switch {
+	case strings.HasSuffix(s, "k"):
+		s = s[:len(s)-1]
+	case strings.HasSuffix(s, "m"):
+		s, mult = s[:len(s)-1], 1024
+	case strings.HasSuffix(s, "g"):
+		s, mult = s[:len(s)-1], 1024*1024
+	}
+	f, ok := convNumber(s)
+	return f * mult, ok
 }

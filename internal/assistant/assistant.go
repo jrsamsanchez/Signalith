@@ -369,7 +369,9 @@ func QueryReference() string {
   rename f as g[, f2 as g2]   rename *_ip as * renames by pattern
   mvexpand f [limit=N]   one row per value of a multivalue field
   makemv [delim=","] [tokenizer="<regex>"] f   splits text into a multivalue field (default at spaces)
-  reverse   turns the row order around
+  reverse   turns the row order around; tail N keeps the last N rows; uniq drops exact repeats of the row before
+  convert [timeformat="%Y-%m-%d"] ctime(f) [AS g], dur2sec(f), mktime(f), num(f), rmcomma(f), rmunit(f), memk(f)   converts values; * matches many fields
+  rex field=f mode=sed "s/find/replace/g"   changes text with a sed expression (y/abc/xyz/ swaps characters)
   addtotals [fieldname=Total] [col=t] [labelfield=f] [fields]   adds each row's numbers into Total; col=t adds a totals row; addcoltotals adds only that row
   lookup <table> <col> [AS field] [OUTPUT|OUTPUTNEW col [AS name], ...]   adds columns from an uploaded lookup table (Settings > Lookups) where col matches; only use table names the user gave
   | inputlookup [max=N] <table>   starts a search with the rows of a lookup table instead of events

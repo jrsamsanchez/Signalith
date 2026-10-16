@@ -12,6 +12,10 @@ type Rex struct {
 	Field    string // default _raw
 	Pattern  string // RE2, with (?<name>...) or (?P<name>...) groups
 	MaxMatch int    // matches to keep per event (default 1, 0 for all)
+	// Sed, with mode=sed, is a sed expression that changes the field's
+	// text instead: rex field=user mode=sed "s/^CORP\\\\//". Pattern is
+	// then empty.
+	Sed string
 }
 
 // Dedup keeps the first N rows for each combination of the fields' values.
@@ -115,7 +119,8 @@ func parseEvalExprAt(src string, base int) (EvalExpr, error) {
 
 func (p *parser) parseRex(cmd token) (Command, error) {
 	r := &Rex{Field: "_raw", MaxMatch: 1}
-	havePattern := false
+	sed := false
+	var pat *token
 	for {
 		t := p.peek()
 		if t.kind == tokEOF || t.kind == tokPipe {
@@ -142,37 +147,57 @@ func (p *parser) parseRex(cmd token) (Command, error) {
 				}
 				r.MaxMatch = n
 			case "mode":
-				return nil, errorf(t.pos, "rex mode=sed is not supported; use eval with replace() instead")
+				v, err := p.value()
+				if err != nil {
+					return nil, err
+				}
+				if !strings.EqualFold(v, "sed") {
+					return nil, errorf(t.pos, "rex mode can only be sed")
+				}
+				sed = true
 			default:
-				return nil, errorf(t.pos, "unknown rex option %q; rex takes field= and max_match=", t.text)
+				return nil, errorf(t.pos, "unknown rex option %q; rex takes field=, max_match= and mode=sed", t.text)
 			}
 			continue
 		}
-		if t.kind == tokString && !havePattern {
+		if t.kind == tokString && pat == nil {
 			p.next()
-			if len(t.text) > MaxRexPattern {
-				return nil, errorf(t.pos, "the rex pattern is %d characters long; the limit is %d", len(t.text), MaxRexPattern)
-			}
-			re, err := regexp.Compile(t.text)
-			if err != nil {
-				return nil, errorf(t.pos, "rex pattern: %v", err)
-			}
-			named := false
-			for _, n := range re.SubexpNames() {
-				named = named || n != ""
-			}
-			if !named {
-				return nil, errorf(t.pos, `the rex pattern needs a named group to extract, like "user=(?<user>\w+)"`)
-			}
-			r.Pattern = t.text
-			havePattern = true
+			pat = &t
 			continue
 		}
 		return nil, errorf(t.pos, `unexpected %s; rex expects: rex field=<field> "<regular expression>"`, describe(t))
 	}
-	if !havePattern {
+	if pat == nil {
+		if sed {
+			return nil, errorf(cmd.pos, `rex mode=sed needs a quoted sed expression, for example: rex field=user mode=sed "s/^CORP\\\\//"`)
+		}
 		return nil, errorf(cmd.pos, `rex needs a quoted regular expression with named groups, for example: rex field=process "-enc (?<encoded>\S+)"`)
 	}
+	if len(pat.text) > MaxRexPattern {
+		return nil, errorf(pat.pos, "the rex pattern is %d characters long; the limit is %d", len(pat.text), MaxRexPattern)
+	}
+	if sed {
+		if r.MaxMatch != 1 {
+			return nil, errorf(cmd.pos, "rex mode=sed takes no max_match=")
+		}
+		if _, err := ParseSed(pat.text); err != nil {
+			return nil, errorf(pat.pos, "rex sed expression: %v", err)
+		}
+		r.Sed = pat.text
+		return r, nil
+	}
+	re, err := regexp.Compile(pat.text)
+	if err != nil {
+		return nil, errorf(pat.pos, "rex pattern: %v", err)
+	}
+	named := false
+	for _, n := range re.SubexpNames() {
+		named = named || n != ""
+	}
+	if !named {
+		return nil, errorf(pat.pos, `the rex pattern needs a named group to extract, like "user=(?<user>\w+)"`)
+	}
+	r.Pattern = pat.text
 	return r, nil
 }
 
@@ -300,6 +325,9 @@ func rexString(c *Rex) string {
 	}
 	if c.MaxMatch != 1 {
 		s += "max_match=" + strconv.Itoa(max(c.MaxMatch, 0)) + " "
+	}
+	if c.Sed != "" {
+		return s + "mode=sed " + quote(c.Sed)
 	}
 	return s + quote(c.Pattern)
 }
