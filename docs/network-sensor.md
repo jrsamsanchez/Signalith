@@ -950,6 +950,12 @@ Common causes are a wrong address under **Agents send to**, a firewall blocking 
 revoked token, or a wrong log path (Fluent Bit says it found no files). The **Health** page
 shows problems with incoming data.
 
+**The script says OISF's Suricata repository could not be read.** On Ubuntu, Suricata
+comes from OISF's PPA, because Ubuntu's own older Suricata has no `suricata-update` and so
+never loads rules. When the PPA does not answer, the script tries three times and then
+stops before installing anything from Ubuntu instead. Run the line again later, or install
+with `--docker`. A sensor already running keeps its Suricata.
+
 **Zeek events are in `sourcetype=zeek:unknown`.** Zeek is writing tab-separated logs: turn
 on JSON logs (see [Zeek's JSON logs](#zeeks-json-logs)). Lines written before the change stay
 as they are.
