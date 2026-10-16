@@ -341,10 +341,9 @@ func applySed(ctx context.Context, res *Result, c *query.Rex) error {
 
 func applyTail(res *Result, c *query.Tail) {
 	n := min(c.N, len(res.Rows))
-	tail := res.Rows[len(res.Rows)-n:]
-	out := make([]Row, n)
-	for i, r := range tail {
-		out[n-1-i] = r
+	out := res.Rows[:0:0]
+	for i := len(res.Rows) - 1; i >= len(res.Rows)-n; i-- {
+		out = append(out, res.Rows[i])
 	}
 	res.Rows = out
 }
