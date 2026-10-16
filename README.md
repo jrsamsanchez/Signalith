@@ -15,6 +15,9 @@ finding or a case. Playbooks come next.
 Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
 **https://signalith.io/docs/** (built from [`docs/`](docs/)).
 
+Choosing a SIEM? [How Signalith compares](https://signalith.io/docs/comparison/) with
+Wazuh, Security Onion, Elastic Security and others, including where it is weaker.
+
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
