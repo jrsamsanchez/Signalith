@@ -1,0 +1,5 @@
+{"rule": "c3d22720-35d3-4da4-bd0a-740d37192bd4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.api_token.create","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.api_token.creatf","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}

@@ -411,7 +411,8 @@ Some changes ask for your password again when you have not entered it in the las
   PROXY protocol, the OpenSearch connection (`opensearch.*` and
   `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
   feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
-  and masked fields, or **Reset all**.
+  and masked fields, the Microsoft 365 and Okta connections (`m365.*`, `okta.*`), or
+  **Reset all**.
 
 With two-step sign-in on, a passkey, a code from your app or a recovery code works
 instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
@@ -1130,7 +1131,7 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
 [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
 
 A route added without a role is admin-only, and a test fails until it gets one. That

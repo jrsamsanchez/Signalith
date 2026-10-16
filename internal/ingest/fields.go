@@ -334,6 +334,10 @@ var knownFields = func() map[string]string {
 	for _, k := range gcpMapped {
 		m[k] = kw
 	}
+	// Okta System Log events (okta.go): the event's own fields.
+	for _, k := range oktaMapped {
+		m[k] = kw
+	}
 	// The fields the shipped cloud rules read (rulefields.go).
 	for _, k := range cloudRuleFields {
 		m[k] = kw

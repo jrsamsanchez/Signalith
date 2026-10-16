@@ -695,6 +695,26 @@ func TestConvertSigmaWorkspace(t *testing.T) {
 	}
 }
 
+// Okta's rules name the LogEvent's own fields, and a target's without
+// its list's {}.
+func TestConvertSigmaOkta(t *testing.T) {
+	rule := "title: Admin console\nlogsource:\n  product: okta\n  service: okta\ndetection:\n  sel:\n    eventType: policy.evaluate_sign_on\n    target.displayName: Okta Admin Console\n    securityContext.isProxy: 'true'\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sourcetype=OktaIM2:log", "eventType=policy.evaluate_sign_on", `target{}.displayName="Okta Admin Console"`,
+		"securityContext.isProxy=true"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "target.displayName", "TargetImage", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field Okta does not have converted")
+	}
+}
+
 func TestConvertSigmaSecurityLog(t *testing.T) {
 	logon := "title: RDP logon\nlogsource:\n  product: windows\n  service: security\ndetection:\n  sel:\n    EventID: 4624\n    LogonType: 10\n    LogonProcessName: User32\n  condition: sel\nlevel: medium\n"
 	res, err := ConvertSigmaWith([]byte(logon), SigmaOptions{Strict: true})

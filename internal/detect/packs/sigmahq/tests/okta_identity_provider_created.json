@@ -1,0 +1,4 @@
+{"rule": "969c7590-8c19-4797-8c1b-23155de6e7ac", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.create"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}
