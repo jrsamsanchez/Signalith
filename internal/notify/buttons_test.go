@@ -161,9 +161,9 @@ func (o oneConversation) Conversation(_ context.Context, channel string) (Conver
 
 func TestTeamsAppSend(t *testing.T) {
 	f := newFakeTeams(t)
-	conv := &Conversation{Channel: "t", ConversationID: "19:a@thread.tacv2", ServiceURL: f.ts.URL + "/amer/", TenantID: "x"}
+	conv := &Conversation{Channel: "t", ConversationID: "19:a@thread.tacv2", ServiceURL: "https://smba.trafficmanager.net/amer/", TenantID: "x"}
 	s := &Senders{TeamsLogin: f.ts.URL, Conversations: oneConversation{conv},
-		ServiceURLOK: func(u *url.URL) bool { return strings.HasPrefix(u.String(), f.ts.URL) }}
+		Transport: toFake{f.ts.URL}}
 	c := Channel{ID: "t", Name: "SOC", Type: TypeTeamsApp, AppID: "11111111-2222-3333-4444-555555555555",
 		TenantID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", AppPassword: "client-secret", AllowLoopback: true, ApproveInChat: true}
 	m := Message{Kind: KindFinding, Title: "Brute force", FindingID: "f1", Created: time.Now()}
@@ -200,7 +200,9 @@ func TestTeamsAppSend(t *testing.T) {
 	}
 
 	// A Bot Connector address that is not Microsoft's gets no token.
-	s3 := &Senders{TeamsLogin: f.ts.URL, Conversations: oneConversation{conv}}
+	foreign := *conv
+	foreign.ServiceURL = f.ts.URL + "/amer/"
+	s3 := &Senders{TeamsLogin: f.ts.URL, Conversations: oneConversation{&foreign}}
 	before := f.tokens.Load()
 	if err := s3.Send(t.Context(), c, m); err == nil || !strings.Contains(err.Error(), "not Microsoft's") || f.tokens.Load() != before {
 		t.Errorf("foreign service URL = %v", err)
@@ -216,6 +218,11 @@ func TestServiceURLAllowed(t *testing.T) {
 		"https://smba.trafficmanager.net:8443/":            false,
 		"https://teams.microsoft.com.evil.example/":        false,
 		"https://x@smba.trafficmanager.net/":               false,
+		"https://smba.trafficmanager.net:443/amer/":        true,
+		"https://smba.trafficmanager.net/amer/?x=1":        false,
+		"https://smba.trafficmanager.net/a/../b":           false,
+		"https://smba.trafficmanager.net/amer/#f":          false,
+		"https://bot.botframework.com.evil.example/":       false,
 	} {
 		u, _ := url.Parse(raw)
 		if ServiceURLAllowed(u) != ok {
@@ -283,4 +290,19 @@ func FuzzParseButton(f *testing.F) {
 			t.Fatalf("accepted %q, which signs as %q", v, SignButton(c, b))
 		}
 	})
+}
+
+// toFake is a transport that sends every request to the fake server at
+// target, whatever host it names, as a real service's address would be
+// reached in production.
+type toFake struct{ target string }
+
+func (f toFake) RoundTrip(r *http.Request) (*http.Response, error) {
+	u, err := url.Parse(f.target)
+	if err != nil {
+		return nil, err
+	}
+	r = r.Clone(r.Context())
+	r.URL.Scheme, r.URL.Host, r.Host = u.Scheme, u.Host, u.Host
+	return http.DefaultTransport.RoundTrip(r)
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -109,12 +110,12 @@ func parseSlack(body []byte) (slackPayload, error) {
 // SlackResponseURLAllowed reports whether a response_url is Slack's, so
 // an answer (which may hold a link to Signalith) only goes to Slack.
 func SlackResponseURLAllowed(u *url.URL) bool {
-	if u == nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
-		return false
-	}
-	h := strings.ToLower(u.Hostname())
-	return h == "hooks.slack.com" || h == "hooks.slack-gov.com"
+	return u != nil && slackResponseURL.MatchString(u.String())
 }
+
+// slackResponseURL matches the response_url Slack sends with a click, as
+// in https://hooks.slack.com/actions/T0123/4567/AbCd.
+var slackResponseURL = regexp.MustCompile(`^https://hooks\.slack(-gov)?\.com(:443)?(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)+$`)
 
 // slackButtonPrefix starts the action_id of Signalith's buttons.
 const slackButtonPrefix = "signalith_"

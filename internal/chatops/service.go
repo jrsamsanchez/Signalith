@@ -78,15 +78,10 @@ type Service struct {
 	// PublicURL returns server.public_url, for the links to Signalith.
 	PublicURL func() string
 	// HTTP posts Slack answers to their response_url; nil is a client with
-	// a timeout that follows the proxy settings and no redirects.
+	// a timeout that follows the proxy settings and no redirects. Tests
+	// give it a transport to a fake Slack.
 	HTTP *http.Client
-	// SlackURLOK reports whether Slack answers may go to a response_url;
-	// nil is SlackResponseURLAllowed. Tests allow others.
-	SlackURLOK func(*url.URL) bool
-	// ServiceURLOK reports whether a Teams activity's Bot Connector
-	// address is allowed; nil is notify.ServiceURLAllowed.
-	ServiceURLOK func(*url.URL) bool
-	Log          *slog.Logger
+	Log  *slog.Logger
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
 
@@ -445,8 +440,14 @@ func (s *Service) ServeSlack(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "The click is from another Slack workspace.", http.StatusForbidden)
 		return
 	}
-	ru, err := url.Parse(p.ResponseURL)
-	if err != nil || !s.slackURLOK(ru) {
+	respURL := p.ResponseURL
+	if !slackResponseURL.MatchString(respURL) {
+		s.refuse(r, Slack, c.Name, errors.New("the response_url is not Slack's"))
+		http.Error(w, "the response_url is not Slack's", http.StatusBadRequest)
+		return
+	}
+	ru, err := url.Parse(respURL)
+	if err != nil {
 		s.refuse(r, Slack, c.Name, errors.New("the response_url is not Slack's"))
 		http.Error(w, "the response_url is not Slack's", http.StatusBadRequest)
 		return
@@ -484,13 +485,6 @@ func (s *Service) ServeSlack(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		s.answerSlack(ru, s.act(ctx, c, who, b), p)
 	}()
-}
-
-func (s *Service) slackURLOK(u *url.URL) bool {
-	if s.SlackURLOK != nil {
-		return s.SlackURLOK(u)
-	}
-	return SlackResponseURLAllowed(u)
 }
 
 func (s *Service) httpClient() *http.Client {
@@ -606,7 +600,7 @@ func (s *Service) ServeTeams(w http.ResponseWriter, r *http.Request) {
 		s.refuse(r, Teams, c.Name, fmt.Errorf("the activity is from tenant %q, not the channel's", a.tenant()))
 		http.Error(w, "The activity is from another Microsoft Entra tenant.", http.StatusForbidden)
 		return
-	case err != nil || !s.serviceURLOK(su):
+	case err != nil || !notify.ServiceURLAllowed(su):
 		s.refuse(r, Teams, c.Name, errors.New("the Bot Connector address is not Microsoft's"))
 		http.Error(w, "The Bot Connector address is not Microsoft's.", http.StatusForbidden)
 		return
@@ -641,13 +635,6 @@ func (s *Service) ServeTeams(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusOK)
 	}
-}
-
-func (s *Service) serviceURLOK(u *url.URL) bool {
-	if s.ServiceURLOK != nil {
-		return s.ServiceURLOK(u)
-	}
-	return notify.ServiceURLAllowed(u)
 }
 
 // teamsWho is who sent an activity.

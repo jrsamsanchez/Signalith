@@ -56,8 +56,8 @@ func chatServer(t *testing.T) (*httptest.Server, *Server, *chatops.Memory, chan 
 		s.Playbooks = &Playbooks{Manager: &playbooks.Manager{}, Runs: runs}
 		s.Chat = &Chat{Store: store}
 		svc := &chatops.Service{Store: store, Desk: chatDesk{s}, Channels: notes.Settings, Log: s.Log,
-			PublicURL:  func() string { return s.conf().Server.PublicURL },
-			SlackURLOK: func(u *url.URL) bool { return strings.HasPrefix(u.String(), slack.URL) }}
+			PublicURL: func() string { return s.conf().Server.PublicURL },
+			HTTP:      &http.Client{Transport: chatToFake{slack.URL}}}
 		s.Chat.Service = svc
 	})
 	now := time.Now().UTC()
@@ -73,7 +73,7 @@ func chatServer(t *testing.T) (*httptest.Server, *Server, *chatops.Memory, chan 
 	// A Slack account with a link waiting to be confirmed.
 	_ = store.SaveToken(t.Context(), chatops.Token{ID: chatops.TokenID(strings.Repeat("ab", 32)), System: chatops.Slack, Team: "T1", TeamName: "acme",
 		ChatUser: "U1", ChatName: "andy.s", Channel: "soc", Expires: now.Add(chatops.TokenLife)})
-	return ts, srv, store, answers, slack.URL + "/actions/T1/1/x"
+	return ts, srv, store, answers, "https://hooks.slack.com/actions/T1/1/x"
 }
 
 // slackClick posts a signed Slack click to the server.
@@ -301,4 +301,19 @@ func TestChatCodeAndTeamsApp(t *testing.T) {
 			t.Errorf("channel %v: chat_url %v interactive %v", c["id"], c["chat_url"], c["interactive"])
 		}
 	}
+}
+
+// chatToFake is a transport that sends every request to the fake server at
+// target, whatever host it names, as a real service's address would be
+// reached in production.
+type chatToFake struct{ target string }
+
+func (f chatToFake) RoundTrip(r *http.Request) (*http.Response, error) {
+	u, err := url.Parse(f.target)
+	if err != nil {
+		return nil, err
+	}
+	r = r.Clone(r.Context())
+	r.URL.Scheme, r.URL.Host, r.Host = u.Scheme, u.Host, u.Host
+	return http.DefaultTransport.RoundTrip(r)
 }

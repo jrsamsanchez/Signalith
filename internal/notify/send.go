@@ -44,9 +44,9 @@ type Senders struct {
 	// TeamsLogin is where Teams app channels get their bot's token; ""
 	// is MicrosoftLogin. Tests point it elsewhere.
 	TeamsLogin string
-	// ServiceURLOK reports whether Teams app channels may post to a Bot
-	// Connector address; nil is ServiceURLAllowed. Tests allow others.
-	ServiceURLOK func(*url.URL) bool
+	// Transport, when set, carries Teams app channels' requests instead
+	// of the guarded client. Tests send them to fake Microsoft servers.
+	Transport http.RoundTripper
 
 	tokens botTokens
 }

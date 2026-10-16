@@ -3,14 +3,14 @@ package notify
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -81,25 +81,25 @@ const botScope = "https://api.botframework.com/.default"
 // chat requests are checked too (package chatops), so this is a second
 // line.
 func ServiceURLAllowed(u *url.URL) bool {
-	if u == nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
-		return false
-	}
-	h := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
-	if h == "smba.trafficmanager.net" {
-		return true
-	}
-	for _, suffix := range []string{".botframework.com", ".teams.microsoft.com", ".teams.microsoft.us", ".botframework.azure.us"} {
-		if strings.HasSuffix(h, suffix) {
-			return true
-		}
-	}
-	return false
+	return u != nil && botConnector.MatchString(u.String())
 }
 
-// botToken is a token for a bot, kept until shortly before it expires.
+// botConnector matches the Bot Connector addresses Teams uses:
+// https://smba.trafficmanager.net/<region>/, and the botframework.com,
+// teams.microsoft.com and teams.microsoft.us hosts of the government
+// clouds.
+var botConnector = regexp.MustCompile(`^https://(smba\.trafficmanager\.net|([a-z0-9-]+\.)+(botframework\.com|teams\.microsoft\.com|teams\.microsoft\.us|botframework\.azure\.us))(:443)?(/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*/?$`)
+
+// teamsID matches a Teams conversation or activity ID, as in
+// 19:abc@thread.tacv2;messageid=1712 or a:1Zx-Q.
+var teamsID = regexp.MustCompile(`^[A-Za-z0-9:@._;=!+-]{1,512}$`)
+
+// botToken is a token for a bot, kept until shortly before it expires,
+// with the client secret it was got with.
 type botToken struct {
 	value   string
 	expires time.Time
+	secret  string
 }
 
 // botTokens keeps one token per bot and secret.
@@ -108,16 +108,15 @@ type botTokens struct {
 	m  map[string]botToken
 }
 
-func tokenKey(c Channel) string {
-	sum := sha256.Sum256([]byte(c.TenantID + "|" + c.AppID + "|" + c.AppPassword))
-	return hex.EncodeToString(sum[:])
-}
+func tokenKey(c Channel) string { return c.TenantID + "|" + c.AppID }
 
 func (t *botTokens) get(c Channel, now time.Time) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	tok, ok := t.m[tokenKey(c)]
-	if !ok || !now.Before(tok.expires) {
+	// A token got with another secret is not used: the secret may have
+	// been changed because the old one leaked.
+	if !ok || !now.Before(tok.expires) || subtle.ConstantTimeCompare([]byte(tok.secret), []byte(c.AppPassword)) != 1 {
 		return ""
 	}
 	return tok.value
@@ -129,7 +128,7 @@ func (t *botTokens) put(c Channel, tok botToken) {
 	if t.m == nil {
 		t.m = map[string]botToken{}
 	}
-	// A bot whose secret changed leaves an old entry; there are few.
+	tok.secret = c.AppPassword
 	t.m[tokenKey(c)] = tok
 }
 
@@ -176,7 +175,7 @@ func (s *Senders) botToken(ctx context.Context, c Channel) (string, error) {
 	if err := s.Protected.check(u, c.AllowLoopback); err != nil {
 		return "", err
 	}
-	client, err := httpClient(c, s.Protected)
+	client, err := s.client(c)
 	if err != nil {
 		return "", err
 	}
@@ -263,15 +262,19 @@ func (s *Senders) TeamsPost(ctx context.Context, c Channel, conv Conversation, r
 }
 
 func (s *Senders) teamsPost(ctx context.Context, c Channel, conv Conversation, replyTo string, activity any) (string, error) {
-	su, err := url.Parse(conv.ServiceURL)
-	if err != nil || !s.serviceURLOK(su) {
+	base := conv.ServiceURL
+	if !botConnector.MatchString(base) {
 		return "", &SendError{Msg: "Teams named a Bot Connector address that is not Microsoft's, so Signalith does not post there. Remove the app from the Teams channel and add it again."}
 	}
-	path := "v3/conversations/" + url.PathEscape(conv.ConversationID) + "/activities"
+	id := conv.ConversationID
+	if !teamsID.MatchString(id) || replyTo != "" && !teamsID.MatchString(replyTo) {
+		return "", &SendError{Msg: "Teams named a conversation Signalith cannot post to. Remove the app from the Teams channel and add it again."}
+	}
+	path := "v3/conversations/" + url.PathEscape(id) + "/activities"
 	if replyTo != "" {
 		path += "/" + url.PathEscape(replyTo)
 	}
-	target, err := url.Parse(strings.TrimRight(conv.ServiceURL, "/") + "/" + path)
+	target, err := url.Parse(strings.TrimRight(base, "/") + "/" + path)
 	if err != nil {
 		return "", errBadURL
 	}
@@ -287,7 +290,7 @@ func (s *Senders) teamsPost(ctx context.Context, c Channel, conv Conversation, r
 		if err != nil {
 			return "", err
 		}
-		client, err := httpClient(c, s.Protected)
+		client, err := s.client(c)
 		if err != nil {
 			return "", err
 		}
@@ -324,9 +327,10 @@ func (s *Senders) teamsPost(ctx context.Context, c Channel, conv Conversation, r
 	}
 }
 
-func (s *Senders) serviceURLOK(u *url.URL) bool {
-	if s.ServiceURLOK != nil {
-		return s.ServiceURLOK(u)
+// client returns the HTTP client a Teams app channel's requests use.
+func (s *Senders) client(c Channel) (*http.Client, error) {
+	if s.Transport != nil {
+		return &http.Client{Transport: s.Transport, Timeout: SendTimeout}, nil
 	}
-	return ServiceURLAllowed(u)
+	return httpClient(c, s.Protected)
 }

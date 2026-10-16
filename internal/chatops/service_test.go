@@ -93,10 +93,10 @@ func newSlackFixture(t *testing.T) *slackFixture {
 	f.store = NewMemory()
 	f.svc = &Service{
 		Store: f.store, Desk: f.desk, Log: slog.New(slog.DiscardHandler),
-		Channels:   func() (notify.Settings, error) { return notify.Settings{Channels: []notify.Channel{f.channel}}, nil },
-		PublicURL:  func() string { return "https://siem.example.com/" },
-		SlackURLOK: func(u *url.URL) bool { return strings.HasPrefix(u.String(), f.answer.URL) },
-		Now:        func() time.Time { return f.now },
+		Channels:  func() (notify.Settings, error) { return notify.Settings{Channels: []notify.Channel{f.channel}}, nil },
+		PublicURL: func() string { return "https://siem.example.com/" },
+		HTTP:      &http.Client{Transport: toFake{f.answer.URL}},
+		Now:       func() time.Time { return f.now },
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/chat/slack/{channel}", f.svc.ServeSlack)
@@ -113,7 +113,7 @@ func (f *slackFixture) click(t *testing.T, user, trigger, actionID, value string
 		team = "T1"
 	}
 	payload := map[string]any{
-		"type": "block_actions", "trigger_id": trigger, "response_url": f.answer.URL + "/actions/T/1/x",
+		"type": "block_actions", "trigger_id": trigger, "response_url": "https://hooks.slack.com/actions/T/1/x",
 		"user":    map[string]any{"id": "U" + user, "username": user, "team_id": team},
 		"team":    map[string]any{"id": team, "domain": "acme"},
 		"actions": []any{map[string]any{"action_id": actionID, "value": value, "action_ts": "1.2"}},
@@ -352,6 +352,10 @@ func TestSlackResponseURLMustBeSlack(t *testing.T) {
 		"https://hooks.slack.com.evil.example/": false,
 		"https://user@hooks.slack.com/":         false,
 		"https://hooks.slack.com:8443/":         false,
+		"https://hooks.slack-gov.com/actions/x": true,
+		"https://hooks.slack.com/a/../b":        false,
+		"https://hooks.slack.com/actions?x=1":   false,
+		"https://hooks.slack.com/":              false,
 	} {
 		u, _ := url.Parse(raw)
 		if SlackResponseURLAllowed(u) != ok {
@@ -454,14 +458,12 @@ func newTeamsFixture(t *testing.T) *teamsFixture {
 		AppPassword: "client-secret", ApproveInChat: true, AllowLoopback: true}
 	f.desk = &fakeDesk{users: map[string]User{"andy": {Username: "andy", Role: users.Analyst}, "ada": {Username: "ada", Role: users.Admin}}}
 	f.store = NewMemory()
-	allow := func(u *url.URL) bool { return strings.HasPrefix(u.String(), f.connector.URL) }
-	senders := &notify.Senders{TeamsLogin: f.connector.URL, ServiceURLOK: allow, Conversations: f.store}
+	senders := &notify.Senders{TeamsLogin: f.connector.URL, Transport: toFake{f.connector.URL}, Conversations: f.store}
 	f.svc = &Service{
 		Store: f.store, Desk: f.desk, Teams: senders, Log: slog.New(slog.DiscardHandler),
-		Channels:     func() (notify.Settings, error) { return notify.Settings{Channels: []notify.Channel{f.channel}}, nil },
-		PublicURL:    func() string { return "https://siem.example.com" },
-		Verifier:     &BotVerifier{Metadata: f.bf.ts.URL + "/v1/.well-known/openidconfiguration"},
-		ServiceURLOK: allow,
+		Channels:  func() (notify.Settings, error) { return notify.Settings{Channels: []notify.Channel{f.channel}}, nil },
+		PublicURL: func() string { return "https://siem.example.com" },
+		Verifier:  &BotVerifier{Metadata: f.bf.ts.URL + "/v1/.well-known/openidconfiguration"},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/chat/teams/{channel}", f.svc.ServeTeams)
@@ -472,7 +474,7 @@ func newTeamsFixture(t *testing.T) *teamsFixture {
 
 func (f *teamsFixture) claims() map[string]any {
 	return map[string]any{"iss": botIssuer, "aud": testAppID, "exp": f.now.Add(time.Hour).Unix(), "nbf": f.now.Add(-time.Minute).Unix(),
-		"serviceurl": f.connector.URL + "/amer/"}
+		"serviceurl": "https://smba.trafficmanager.net/amer/"}
 }
 
 // private makes an activity come from a one-to-one chat with the app.
@@ -490,7 +492,7 @@ func from(a map[string]any, name, objectID string) map[string]any {
 // activity is an activity from the fake Teams.
 func (f *teamsFixture) activity(kind string, extra map[string]any) map[string]any {
 	a := map[string]any{
-		"type": kind, "id": "a-" + strconv.FormatInt(time.Now().UnixNano(), 10), "channelId": "msteams", "serviceUrl": f.connector.URL + "/amer/",
+		"type": kind, "id": "a-" + strconv.FormatInt(time.Now().UnixNano(), 10), "channelId": "msteams", "serviceUrl": "https://smba.trafficmanager.net/amer/",
 		"from":         map[string]any{"id": "29:andy", "name": "Andy", "aadObjectId": "0000AAAA-0000-0000-0000-000000000001"},
 		"recipient":    map[string]any{"id": "28:" + testAppID, "name": "Signalith"},
 		"conversation": map[string]any{"id": "19:soc@thread.tacv2", "conversationType": "channel", "tenantId": testTenant},
@@ -796,4 +798,19 @@ func TestTeamsAppPackage(t *testing.T) {
 	if err != nil || len(zip) < 200 || string(zip[:2]) != "PK" {
 		t.Fatalf("package = %d bytes, %v", len(zip), err)
 	}
+}
+
+// toFake is a transport that sends every request to the fake server at
+// target, whatever host it names, as a real service's address would be
+// reached in production.
+type toFake struct{ target string }
+
+func (f toFake) RoundTrip(r *http.Request) (*http.Response, error) {
+	u, err := url.Parse(f.target)
+	if err != nil {
+		return nil, err
+	}
+	r = r.Clone(r.Context())
+	r.URL.Scheme, r.URL.Host, r.Host = u.Scheme, u.Host, u.Host
+	return http.DefaultTransport.RoundTrip(r)
 }
