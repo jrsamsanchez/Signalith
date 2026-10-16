@@ -32,6 +32,14 @@ function nbSetHash(id) {
 }
 
 // ---------- markdown ----------
+// mdEl builds one element of a rendered note and appends its children
+// after it is made, so note text only ever lands in text nodes.
+function mdEl(tag, attrs, kids) {
+  const n = el(tag, attrs);
+  for (const k of kids) n.append(k instanceof Node ? k : showText(String(k)));
+  return n;
+}
+
 // mdRender turns a note's Markdown into DOM nodes. Only text nodes are
 // made from the note, never HTML, so a note cannot run script or inject
 // markup; links work only for http(s), mailto and pages of this app.
@@ -44,7 +52,7 @@ function mdRender(text, depth = 0) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   let para = [];
   const flush = () => {
-    if (para.length) out.push(el('p', {}, ...mdInline(para.join(' '))));
+    if (para.length) out.push(mdEl('p', {}, mdInline(para.join(' '))));
     para = [];
   };
   for (let i = 0; i < lines.length; i++) {
@@ -63,7 +71,7 @@ function mdRender(text, depth = 0) {
       const level = h[1].length;
       const tag = level === 1 ? 'h3' : level === 2 ? 'h4' : level === 3 ? 'h5' : 'h6';
       const cls = level === 1 ? 'nb-md__h1' : level === 2 ? 'nb-md__h2' : 'nb-md__h3';
-      out.push(el(tag, { class: cls }, ...mdInline(h[2])));
+      out.push(mdEl(tag, { class: cls }, mdInline(h[2])));
       continue;
     }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); out.push(el('hr', {})); continue; }
@@ -72,7 +80,7 @@ function mdRender(text, depth = 0) {
       const body = [];
       for (; i < lines.length && /^\s*>/.test(lines[i]); i++) body.push(lines[i].replace(/^\s*>\s?/, ''));
       i--;
-      out.push(el('blockquote', {}, ...mdRender(body.join('\n'), depth + 1)));
+      out.push(mdEl('blockquote', {}, mdRender(body.join('\n'), depth + 1)));
       continue;
     }
     const li = line.match(/^\s*([-*+]|\d{1,9}[.)])\s+(.*)$/);
@@ -90,7 +98,7 @@ function mdRender(text, depth = 0) {
       i--;
       const attrs = {};
       if (ordered) { const start = parseInt(li[1], 10); if (start > 1) attrs.start = String(start); }
-      out.push(el(ordered ? 'ol' : 'ul', attrs, ...items.map((t) => el('li', {}, ...mdInline(t)))));
+      out.push(mdEl(ordered ? 'ol' : 'ul', attrs, items.map((t) => mdEl('li', {}, mdInline(t)))));
       continue;
     }
     if (!line.trim()) { flush(); continue; }
@@ -130,10 +138,10 @@ function mdInline(text, depth = 0) {
     else if (m[2] != null) {
       const href = mdSafeHref(m[3]);
       if (!href) out.push(m[0]);
-      else if (href.startsWith('#')) out.push(el('a', { href }, ...mdInline(m[2], depth + 1)));
-      else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, ...mdInline(m[2], depth + 1)));
-    } else if (m[4] != null || m[5] != null) out.push(el('strong', {}, ...mdInline(m[4] ?? m[5], depth + 1)));
-    else out.push(el('em', {}, ...mdInline(m[6] ?? m[7], depth + 1)));
+      else if (href.startsWith('#')) out.push(mdEl('a', { href }, mdInline(m[2], depth + 1)));
+      else out.push(mdEl('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, mdInline(m[2], depth + 1)));
+    } else if (m[4] != null || m[5] != null) out.push(mdEl('strong', {}, mdInline(m[4] ?? m[5], depth + 1)));
+    else out.push(mdEl('em', {}, mdInline(m[6] ?? m[7], depth + 1)));
     rest = rest.slice(m.index + m[0].length);
   }
   return out;
@@ -484,7 +492,7 @@ function nbCell(c, i) {
     { icon: 'trash-2', label: c.kind === 'search' ? 'Delete search' : 'Delete note', danger: true, run: () => nbRemoveCell(c) }] : [];
   if (c.kind === 'markdown') {
     const items = editItems.filter((x) => x && x !== 'sep' || x === 'sep').slice(1);
-    const body = el('div', { class: 'nb-md' }, ...mdRender(c.text));
+    const body = mdEl('div', { class: 'nb-md' }, mdRender(c.text));
     if (rights.edit) body.addEventListener('dblclick', () => nbEdit(c));
     return el('div', { class: 'nb-cell nb-cell--note' }, body,
       items.length ? el('div', { class: 'nb-cell__corner' }, dxMenu('Note actions', items)) : null);
