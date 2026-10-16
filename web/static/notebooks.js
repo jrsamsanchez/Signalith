@@ -113,6 +113,21 @@ function mdSafeHref(url) {
   return null;
 }
 
+// mdLink makes a note's link. The target never becomes an href attribute:
+// the link opens it from a click, so note text is never read back as markup.
+function mdLink(href, children) {
+  const go = (e) => {
+    e.preventDefault();
+    if (href.startsWith('#')) location.hash = href;
+    else window.open(href, '_blank', 'noopener,noreferrer');
+  };
+  return el('a', {
+    class: 'nb-link', role: 'link', tabindex: '0', title: href,
+    onclick: go,
+    onkeydown: (e) => { if (e.key === 'Enter') go(e); },
+  }, ...children);
+}
+
 // mdInline renders one line's code spans, links, bold and italic.
 function mdInline(text, depth = 0) {
   const out = [];
@@ -127,8 +142,7 @@ function mdInline(text, depth = 0) {
     else if (m[2] != null) {
       const href = mdSafeHref(m[3]);
       if (!href) out.push(m[0]);
-      else if (href.startsWith('#')) out.push(el('a', { href }, ...mdInline(m[2], depth + 1)));
-      else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, ...mdInline(m[2], depth + 1)));
+      else out.push(mdLink(href, mdInline(m[2], depth + 1)));
     } else if (m[4] != null || m[5] != null) out.push(el('strong', {}, ...mdInline(m[4] ?? m[5], depth + 1)));
     else out.push(el('em', {}, ...mdInline(m[6] ?? m[7], depth + 1)));
     rest = rest.slice(m.index + m[0].length);
