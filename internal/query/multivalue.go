@@ -26,6 +26,15 @@ type MakeMV struct {
 // Reverse turns the rows' order around.
 type Reverse struct{}
 
+// Tail keeps the last N rows, last first.
+type Tail struct{ N int }
+
+// Uniq drops rows that repeat the row just before them exactly.
+type Uniq struct{}
+
+func (*Tail) Name() string { return "tail" }
+func (*Uniq) Name() string { return "uniq" }
+
 // AddTotals adds each row's numeric fields up into a Total field, and with
 // Col a last row adding up each column: addtotals, addtotals fieldname=sum
 // bytes_*, or addcoltotals labelfield=host.

@@ -954,12 +954,24 @@ func goReplacement(s string) string {
 // the result grows, so a pattern that matches everywhere (such as "")
 // cannot build a huge string before the check.
 func (ev *evaluator) replace(re *regexp.Regexp, s, template string) any {
+	return ev.replaceNth(re, s, template, 0)
+}
+
+// replaceNth is replace for only the nth match when nth > 0.
+func (ev *evaluator) replaceNth(re *regexp.Regexp, s, template string, nth int) any {
 	refs := strings.Count(template, "${")
 	var out []byte
 	last := 0
-	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
+	limit := -1
+	if nth > 0 {
+		limit = nth
+	}
+	for i, m := range re.FindAllStringSubmatchIndex(s, limit) {
 		if !ev.step() {
 			return nil
+		}
+		if nth > 0 && i != nth-1 {
+			continue
 		}
 		// A group's text lies within its match.
 		if !ev.fits(len(out) + m[0] - last + len(template) + refs*(m[1]-m[0])) {
@@ -1210,6 +1222,9 @@ func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
 }
 
 func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
+	if c.Sed != "" {
+		return applySed(ctx, res, c)
+	}
 	re, err := regexp.Compile(c.Pattern)
 	if err != nil {
 		return &QueryError{Msg: fmt.Sprintf("rex pattern: %v", err)}

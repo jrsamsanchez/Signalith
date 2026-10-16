@@ -252,6 +252,8 @@ func FuzzStreamCommands(f *testing.F) {
 		`top 2 useother=t countfield=c g by n | search c>1 OR g=o*`, `rename * as x_* | rename x_g as v`,
 		`eval m=split("a,b,,c", ",") | mvexpand m limit=2 | makemv delim="b" m | reverse`,
 		`eval s="a1b22c" | makemv tokenizer="(\d+)" s | addtotals col=t labelfield=g v n | addcoltotals`,
+		`eval u="A\\b" | rex field=u mode=sed "s/(\w)\\\\(\w)/\2&/g" | rex field=g mode=sed "y/oe/OE/"`,
+		`eval t=n*86400, d="1+00:00:05" | convert timeformat="%Y-%m-%d" ctime(t) AS day, dur2sec(d), num(*), none(g) | tail 4 | uniq`,
 	} {
 		f.Add(s)
 	}

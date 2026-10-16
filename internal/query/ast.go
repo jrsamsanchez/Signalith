@@ -377,6 +377,12 @@ func CommandString(c Command) string {
 		return makeMVString(c)
 	case *Reverse:
 		return "reverse"
+	case *Tail:
+		return "tail " + strconv.Itoa(c.N)
+	case *Uniq:
+		return "uniq"
+	case *Convert:
+		return convertString(c)
 	case *AddTotals:
 		return addTotalsString(c)
 	case *Rename:

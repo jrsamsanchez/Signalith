@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -513,6 +513,23 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseMakeMV(t)
 	case "reverse":
 		return &Reverse{}, p.endCommand()
+	case "convert":
+		return p.parseConvert(t)
+	case "tail":
+		n := 10
+		if nt := p.peek(); nt.kind == tokWord {
+			at := nt.pos
+			var err error
+			if n, err = p.int(); err != nil {
+				return nil, err
+			}
+			if n < 1 {
+				return nil, errorf(at, "tail keeps at least 1 row")
+			}
+		}
+		return &Tail{N: n}, p.endCommand()
+	case "uniq":
+		return &Uniq{}, p.endCommand()
 	case "addtotals", "addcoltotals":
 		return p.parseAddTotals(t)
 	case "spath":

@@ -132,6 +132,21 @@ func (q *Query) Drilldown() *Drill {
 			}
 		case *MVExpand:
 			delete(fields, c.Field)
+		case *Convert:
+			for _, f := range c.Funcs {
+				if strings.Contains(f.Field, "*") {
+					for col := range fields {
+						if MatchField(f.Field, col) {
+							delete(fields, col)
+						}
+					}
+				} else if f.Func != "none" {
+					delete(fields, f.Field)
+				}
+				if f.As != "" {
+					delete(fields, f.As)
+				}
+			}
 		case *MakeMV:
 			delete(fields, c.Field)
 		case *AddTotals:

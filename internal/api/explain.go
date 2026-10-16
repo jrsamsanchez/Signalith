@@ -233,6 +233,9 @@ func describeCommand(c query.Command) string {
 		}
 		return "Set " + strings.Join(parts, ", then ") + "."
 	case *query.Rex:
+		if c.Sed != "" {
+			return "Change the text of " + c.Field + " with the sed expression " + c.Sed + "."
+		}
 		re, err := regexp.Compile(c.Pattern)
 		var names []string
 		if err == nil {
@@ -355,6 +358,20 @@ func describeCommand(c query.Command) string {
 		return "Split " + c.Field + " into values at each space."
 	case *query.Reverse:
 		return "Turn the order of the rows around."
+	case *query.Tail:
+		return fmt.Sprintf("Keep the last %d rows, last first.", c.N)
+	case *query.Uniq:
+		return "Drop rows that repeat the row before them exactly."
+	case *query.Convert:
+		parts := make([]string, 0, len(c.Funcs))
+		for _, f := range c.Funcs {
+			s := f.Func + "(" + f.Field + ")"
+			if f.As != "" {
+				s += " into " + f.As
+			}
+			parts = append(parts, s)
+		}
+		return "Convert " + strings.Join(parts, ", ") + "."
 	case *query.AddTotals:
 		var parts []string
 		what := "the numeric fields"

@@ -3,6 +3,7 @@ package query
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -46,6 +47,7 @@ var fuzzSeeds = []string{
 	`* | spath | spath input=body output="a b" path="x.y{}.z" | chart count, dc(user) by "by"`,
 	`search index=* user=adm* | search count>2 OR "a b" | top 3 countfield=n percentfield="p c" showperc=f useother=t otherstr=rest user by host`,
 	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
+	`* | rex field=u mode=sed "s|^CORP\\\\|\\1&|g" | rex mode=sed "y/ab/cd/" | convert timeformat="%Y" ctime(*Time), dur2sec(d) AS secs, none(lastTime) | tail 3 | uniq`,
 	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
@@ -102,5 +104,27 @@ func FuzzParse(f *testing.F) {
 		if s3, ok := FromQuery(q3); !ok || !reflect.DeepEqual(s3, want) {
 			t.Fatalf("builder round trip for %q via %q:\n got %+v (%v)\nwant %+v", src, btext, s3, ok, want)
 		}
+	})
+}
+
+// FuzzParseSed reads any rex mode=sed expression: it fails with an error
+// or gives a regular expression that compiles and a template.
+func FuzzParseSed(f *testing.F) {
+	for _, s := range []string{`s/a/b/`, `s/(\w+)@(\S+)/\2 \1/g`, `s|x\|y|&&|3`, `y/abc/xyz/`, `s/a/\\\&$/`, `s#é#ü#`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, expr string) {
+		s, err := ParseSed(expr)
+		if err != nil {
+			return
+		}
+		if s.Y {
+			return
+		}
+		re, err := regexp.Compile(s.Find)
+		if err != nil {
+			t.Fatalf("ParseSed(%q) gave a pattern that does not compile: %v", expr, err)
+		}
+		_ = re.ExpandString(nil, s.GoTemplate(), "ab", []int{0, 2})
 	})
 }
