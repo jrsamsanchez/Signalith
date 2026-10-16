@@ -1185,7 +1185,14 @@ func applyEval(ctx context.Context, res *Result, c *query.Eval) error {
 		}
 		// Each assignment sees the ones before it, as in SPL.
 		for _, a := range c.Assigns {
+			before := ev.produced
 			v := ev.safeEval(a.Expr, r)
+			// A value the expression passed on rather than built (c=b,
+			// if(x, b, b)) is charged too: each copy is written out in
+			// full with the result.
+			if extra := valueSize(v) - (ev.produced - before); extra > 0 && ev.err == nil {
+				ev.charge(extra)
+			}
 			if ev.err != nil {
 				return ev.err
 			}

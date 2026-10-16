@@ -583,12 +583,12 @@ func TestUpgradeCheckSays(t *testing.T) {
 		st, _, _ := v.server("siem-b")
 		return ok && st == cluster.StateReady
 	})
-	// The heartbeat copied below must be caught up with the shared
-	// settings, which may have changed while siem-b was paused.
-	waitUntil(t, 60*time.Second, "upgrade-check is safe with siem-b back", func() bool {
-		code, _, r := upgradeCheck(t, a, b.next)
+	// The shared settings may have changed while siem-b was paused: the
+	// heartbeat copied below must be one that has caught up.
+	waitUntil(t, 60*time.Second, "siem-b to catch up on the shared settings", func() bool {
+		code, out, r := upgradeCheck(t, a, b.next)
 		raw = r
-		return code == 0
+		return code == 0 && !out.has("config_behind")
 	})
 
 	// A restart in place by request ends within a second, faster than

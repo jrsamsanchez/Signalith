@@ -224,6 +224,45 @@ func TestCacheWriterWritesAfterChanges(t *testing.T) {
 	}
 }
 
+// A write that fails is tried again after CacheEvery, not dropped until
+// the next change.
+func TestCacheWriterRetriesAFailedWrite(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a, _ := e.hub("siem-a")
+	da := NewDoc[testBody](a, "retention", "retention", 1)
+	state := t.TempDir()
+	// A file where the cache's folder goes makes the write fail.
+	blocker := filepath.Join(state, "shared")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := Cache{Path: filepath.Join(blocker, "cache.enc"), Master: secrets.NewKeyring(state), Prefix: testPrefix}
+	w := NewCacheWriter(a, c)
+	done := make(chan struct{})
+	go func() {
+		w.Run(ctx)
+		close(done)
+	}()
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "first"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return w.Err() != nil })
+	// The CacheRefresh timer and the CacheEvery wait after the failure.
+	waitFor(t, func() bool { return e.clock.Waiting() == 2 })
+	if err := os.Remove(blocker); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(DefaultTiming.CacheEvery)
+	waitFor(t, func() bool {
+		d, err := c.Read(e.clock.Now())
+		return err == nil && len(d.Docs) == 1
+	})
+	cancel()
+	<-done
+}
+
 func waitFor(t *testing.T, ok func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

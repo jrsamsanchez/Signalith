@@ -34,3 +34,15 @@ func TestExplainNewCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestExplainStatsFunctions(t *testing.T) {
+	q, err := query.Parse(`* | stats median(bytes), p95(duration) as slow, perc1(x), stdev(bytes), values(user), latest(src) by dest`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(Explain(q), "\n")
+	want := "Calculate the median bytes, the 95th percentile of duration (as slow), the 1st percentile of x, the standard deviation of bytes, the distinct values of user, the newest src for each dest."
+	if !strings.Contains(got, want) {
+		t.Errorf("Explain = %s\nwant %s", got, want)
+	}
+}

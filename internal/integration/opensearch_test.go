@@ -246,6 +246,27 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("rows = %v", res.Rows)
 		}
 	})
+	t.Run("percentiles, spread and values", func(t *testing.T) {
+		res := run(t, eng, `datamodel=Authentication src=203.0.113.9 | stats median(src_port) as med, perc95(src_port) as p95, stdev(src_port) as sd, range(src_port) as r, values(user) as users, latest(user) as newest, earliest(user) as oldest`)
+		r := res.Rows[0]
+		med, _ := r["med"].(float64)
+		if m, ok := r["med"].(int64); ok {
+			med = float64(m)
+		}
+		if med < 40105 || med > 40107 || r["r"] != int64(11134) || r["sd"] == nil || r["p95"] == nil {
+			t.Errorf("row = %v", r)
+		}
+		if users, ok := r["users"].([]any); !ok || len(users) != 2 {
+			t.Errorf("users = %#v", r["users"])
+		}
+		if r["newest"] == r["oldest"] || r["oldest"] != "oracle" {
+			t.Errorf("newest = %v, oldest = %v", r["newest"], r["oldest"])
+		}
+		res = run(t, eng, `datamodel=Authentication action=failure | stats latest(user) as newest, list(user) as all by src | sort src`)
+		if len(res.Rows) != 2 || res.Rows[0]["newest"] != "root" {
+			t.Errorf("rows = %v", res.Rows)
+		}
+	})
 	t.Run("plain-English questions run", func(t *testing.T) {
 		ip, err := nlq.Translate("failed logins from 203.0.113.9", nil)
 		if err != nil {

@@ -656,11 +656,17 @@ func (t *translator) ruleAgg() int {
 		return t.distinctAfter(0)
 	}
 	fn := map[string]string{"total": "sum", "sum": "sum", "average": "avg", "avg": "avg", "mean": "avg",
-		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min"}[w]
+		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min", "median": "median"}[w]
+	k := 1
+	// "95th percentile", "standard deviation of"
+	if n, ok := percentileWord(w); ok && (t.low(1) == "percentile" || t.low(1) == "pct") {
+		fn, k = "perc"+strconv.Itoa(n), 2
+	} else if w == "standard" && t.low(1) == "deviation" {
+		fn, k = "stdev", 2
+	}
 	if fn == "" {
 		return 0
 	}
-	k := 1
 	if t.low(k) == "of" {
 		k++
 	}
@@ -668,18 +674,48 @@ func (t *translator) ruleAgg() int {
 	if nk == 0 || !nn.numeric {
 		return 0
 	}
-	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min"}[fn] + "_" + nn.field}
+	prefix := map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min", "median": "median", "stdev": "stdev"}[fn]
+	name := map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum", "median": "median", "stdev": "standard deviation"}[fn]
+	if prefix == "" { // a percentile
+		prefix = "p" + strings.TrimPrefix(fn, "perc")
+		name = ordinalWord(query.Percentile(fn)) + " percentile"
+	}
+	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: prefix + "_" + nn.field}
 	if t.mode == "" {
 		t.mode = "stats"
 	}
 	t.hintModel(nn)
-	return t.note(k+nk, "%s of %s", map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum"}[fn], nn.name)
+	return t.note(k+nk, "%s of %s", name, nn.name)
 }
 
 func (t *translator) countMode() {
 	if t.mode == "" {
 		t.mode = "stats"
 	}
+}
+
+// percentileWord reads "95th" or "99th" as a percentile.
+func percentileWord(w string) (int, bool) {
+	for _, suf := range []string{"th", "st", "nd", "rd"} {
+		if d, ok := strings.CutSuffix(w, suf); ok {
+			n, err := strconv.Atoi(d)
+			return n, err == nil && n >= 1 && n <= 99
+		}
+	}
+	return 0, false
+}
+
+func ordinalWord(n int) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		return strconv.Itoa(n) + "st"
+	case n%10 == 2:
+		return strconv.Itoa(n) + "nd"
+	case n%10 == 3:
+		return strconv.Itoa(n) + "rd"
+	}
+	return strconv.Itoa(n) + "th"
 }
 
 // distinctAfter handles "distinct users" starting at offset k.

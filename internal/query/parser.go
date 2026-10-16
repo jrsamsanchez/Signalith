@@ -8,8 +8,25 @@ import (
 // Commands lists every pipe command, for autocomplete and error messages.
 var Commands = []string{"stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "enrich", "intel", "threatmatch"}
 
-// AggFuncs lists the aggregation functions stats, timechart and top accept.
-var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max"}
+// AggFuncs lists the aggregation functions stats, eventstats and timechart
+// accept. perc95 stands for every percentile from perc1 to perc99.
+var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "var", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
+
+// aggAliases are other names for aggregation functions.
+var aggAliases = map[string]string{"distinct_count": "dc", "mean": "avg"}
+
+// Percentile returns N for percN (perc95, or p95 written short), or 0.
+func Percentile(fn string) int {
+	digits := strings.TrimPrefix(fn, "perc")
+	if digits == fn {
+		digits = strings.TrimPrefix(fn, "p")
+	}
+	if digits == fn || !allDigits(digits) || len(digits) > 2 || digits[0] == '0' {
+		return 0
+	}
+	n, _ := strconv.Atoi(digits)
+	return n
+}
 
 type parser struct {
 	toks []token
@@ -515,6 +532,9 @@ func (p *parser) int() (int, error) {
 }
 
 func isAggFunc(s string) bool {
+	if Percentile(s) > 0 {
+		return strings.HasPrefix(s, "perc")
+	}
 	for _, f := range AggFuncs {
 		if f == s {
 			return true
@@ -532,14 +552,14 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 		}
 		p.next()
 		a := Agg{Func: strings.ToLower(t.text)}
-		if a.Func == "distinct_count" {
-			a.Func = "dc"
+		if f, ok := aggAliases[a.Func]; ok {
+			a.Func = f
 		}
-		if a.Func == "mean" {
-			a.Func = "avg"
+		if n := Percentile(a.Func); n > 0 {
+			a.Func = "perc" + strconv.Itoa(n)
 		}
 		if !isAggFunc(a.Func) {
-			return nil, errorf(t.pos, "unknown function %q; available: %s", t.text, strings.Join(AggFuncs, ", "))
+			return nil, errorf(t.pos, "unknown function %q; available: %s (and perc1 to perc99)", t.text, strings.Join(AggFuncs, ", "))
 		}
 		if p.peek().kind == tokLParen {
 			p.next()

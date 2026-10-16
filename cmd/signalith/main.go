@@ -1734,6 +1734,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
+			HolderFingerprints: func(holder string, fp cluster.Fingerprints) cluster.Fingerprints {
+				return holderFingerprints(fp, holder, r.shared, sharedOn)
+			},
 			Indexed:    pipeline.LastIndexed,
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
