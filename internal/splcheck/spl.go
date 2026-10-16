@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/query"
 	"regexp"
 	"slices"
 	"strings"
@@ -66,6 +67,11 @@ type Rule struct {
 	Linux bool `yaml:"-"`
 	// Threshold is set for a rule that counts the events Where selects.
 	Threshold *Threshold `yaml:"-"`
+	// Post is the search's later stages that do more than filter, in
+	// Signalith's search language, to run after the filter ("" for
+	// none); post is the same, parsed.
+	Post string          `yaml:"-"`
+	post []query.Command `yaml:"-"`
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -206,7 +212,8 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
 	}
 	var present []Expr
-	for _, s := range stages[1:] {
+	var post []string
+	for i, s := range stages[1:] {
 		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
 			t, err := tstatsThreshold(r.Node, m[1], m[5], limits)
 			if err != nil {
@@ -233,7 +240,27 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 			continue
 		}
 		if !harmlessRe.MatchString(s) && !filterRe.MatchString(s) {
-			return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+			if r.Threshold != nil {
+				return nil, fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+			}
+			// This stage and the ones after it run as written.
+			post = stages[1+i:]
+			break
+		}
+	}
+	if post != nil {
+		group, err := tstatsGroup(m[1], m[5])
+		if err != nil {
+			return nil, err
+		}
+		field := func(f string) (string, bool) {
+			if !slices.Contains(fields, f) {
+				return "", false
+			}
+			return nodeField(r.Node, f), true
+		}
+		if err := r.postCommands(post, field, group); err != nil {
+			return nil, err
 		}
 	}
 	where, err := ParseWhere(m[4], r.Node, macros)
@@ -536,6 +563,70 @@ const xmlkvSuffix = "+xmlkv"
 // (Without fillnull, Splunk's stats also drops events that miss one of
 // its by fields; Signalith keeps them, so it finds those too.)
 func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
+	orig := *r
+	out, err := parseRawStages(r, source, terms, later, macros)
+	if err == nil || !strings.Contains(err.Error(), laterStage) {
+		return out, err
+	}
+	// The stages from the first that does more than filter run as
+	// written, after the filter the stages before it make.
+	k := filterStages(later, source)
+	if k == len(later) {
+		return nil, err
+	}
+	*r = orig
+	if _, err := parseRawStages(r, source, terms, later[:k], macros); err != nil {
+		return nil, err
+	}
+	cs, cloud := cloudSourceOf(source)
+	field := func(f string) (string, bool) {
+		switch {
+		case cloud:
+			return cs.field(f, nil)
+		case r.Node == AuditdNode:
+			return ingest.AuditdField(f)
+		case r.Node == CloudTrailNode:
+			return cloudTrailField(f)
+		}
+		name, ok := RawFields[r.Node][f]
+		return name, ok
+	}
+	if err := r.postCommands(later[k:], field, ""); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// laterStage begins the error of a search with a stage Signalith does not
+// read.
+const laterStage = "search has a later stage Signalith does not run"
+
+// filterStages is how many of a raw search's later stages, from the
+// first, only filter its events, which the filter Signalith runs does
+// too: regex and where match() stages, and searches after xmlkv or on a
+// cloud record's fields.
+func filterStages(later []string, source string) int {
+	_, cloud := cloudSourceOf(source)
+	xml := false
+	any := func(f string) (string, error) { return f, nil }
+	for i, s := range later {
+		switch {
+		case harmlessRe.MatchString(s) || filterRe.MatchString(s):
+		case xmlkvRe.MatchString(s) && !xml:
+			xml = true
+		case searchRe.MatchString(s) && (xml || cloud):
+		default:
+			if _, ok, err := regexStage(s, any); ok && err == nil {
+				continue
+			}
+			return i
+		}
+	}
+	return len(later)
+}
+
+// parseRawStages is parseRaw with no later stages run as written.
+func parseRawStages(r *Rule, source, terms string, later []string, macros map[string]*Macro) (*Rule, error) {
 	filled, counted, xml, renamed := false, false, false, false
 	cs, cloud := cloudSourceOf(source)
 	// An Azure or Microsoft 365 search's renames, and its search stages

@@ -843,7 +843,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 		for _, c := range cs {
 			doc, model := Stored(c)
 			c.Source = "synthesized"
-			c.Expect = InModel(r.Node, model) && Eval(r.Where, View(doc))
+			c.Expect = InModel(r.Node, model) && Eval(r.Where, View(doc)) && r.Keeps(doc)
 			out = append(out, c)
 		}
 	}
@@ -959,6 +959,12 @@ const AttackDataSource = "attack_data"
 // Reads reports whether Splunk's rule finds an event: one of its node's
 // events whose stored fields match the where clause.
 func Reads(r *Rule, c sigmacheck.Case) bool {
+	doc, _ := Stored(c)
+	return reads(r, c) && r.Keeps(doc)
+}
+
+// reads is Reads without the rule's later stages.
+func reads(r *Rule, c sigmacheck.Case) bool {
 	doc, model := Stored(c)
 	if r.Node == AuditdNode {
 		// Every audit record type.
@@ -1037,15 +1043,15 @@ func InModel(node, model string) bool {
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the
 // Splunk where clause (Eval) and by the detection's filter
-// (search.MatchDoc), and as the test file says. It returns every
-// disagreement.
+// (search.MatchDoc), and as the test file says. A rule's later stages
+// (Post) run after both. It returns every disagreement.
 func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFile) []error {
 	var errs []error
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
 		doc, model := Stored(c)
 		inModel := InModel(r.Node, model)
-		if got := inModel && Eval(r.Where, View(doc)); got != c.Expect {
+		if got := inModel && Eval(r.Where, View(doc)) && r.Keeps(doc); got != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the Splunk rule says %v for %s", where, got, sigmacheck.String(View(doc))))
 			continue
 		}
@@ -1060,6 +1066,8 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 			errs = append(errs, fmt.Errorf("%s: %v", where, err))
 			continue
 		}
+		// The detection runs the rule's later stages after its filter.
+		m = m && r.Keeps(doc)
 		if m != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the detection says %v for %s", where, m, sigmacheck.String(c.Data)))
 		}
