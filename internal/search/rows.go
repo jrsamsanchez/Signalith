@@ -171,6 +171,14 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyReplace(ctx, res, c)
 	case *query.XMLKV:
 		return applyXMLKV(ctx, res, c)
+	case *query.Accum:
+		return applyAccum(ctx, res, c)
+	case *query.Delta:
+		return applyDelta(ctx, res, c)
+	case *query.AutoRegress:
+		return applyAutoRegress(ctx, res, c)
+	case *query.FieldSummary:
+		return applyFieldSummary(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
