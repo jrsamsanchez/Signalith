@@ -131,3 +131,21 @@ func TestDrilldownMissingValueParses(t *testing.T) {
 		}
 	}
 }
+
+func TestDrilldownAfterRoundThreeCommands(t *testing.T) {
+	for src, want := range map[string]map[string]string{
+		`* | stats count by user, bytes | bin span=100 bytes`:               {"user": "user"},
+		`* | stats count by user, src | streamstats count as src`:           {"user": "user"},
+		`* | stats count by user, src | eventstats dc(user) as src`:         {"user": "user"},
+		`* | stats count by user | appendpipe [stats sum(count) as count]`:  nil,
+		`* | stats count by user | append [search * | stats count by user]`: nil,
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := q.Drilldown().Fields; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: fields = %v, want %v", src, got, want)
+		}
+	}
+}
