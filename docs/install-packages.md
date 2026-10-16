@@ -82,7 +82,7 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
 
 Double-click `signalith-0.1.0-x64.msi` and follow the steps (it asks for administrator
 rights). When it finishes, Signalith is running as the **Signalith** service. Open
-**Signalith** from the Start menu (https://localhost:8080) and sign in as `admin`. To see
+**Signalith** from the Start menu (https://localhost:9000) and sign in as `admin`. To see
 the first password, open PowerShell **as Administrator** and run:
 
 ```powershell
@@ -106,7 +106,7 @@ It puts `signalith.exe` in `C:\Program Files\Signalith` (and on the system `PATH
 runs the same `install.ps1` as a manual install: the config and state go to
 `C:\ProgramData\Signalith`, which only SYSTEM, Administrators and the service can read;
 the service runs as its own account, `NT SERVICE\Signalith`; and firewall rules open
-the web UI and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
+the web UI, agent and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
 
 To upgrade, run the newer `.msi`: it stops the service, replaces the program, keeps the
 config, and starts the service again. **Settings > Apps** uninstalls it; that removes

@@ -1,0 +1,27 @@
+id: starter-discovery
+title: Discovery after a break-in
+description: Spot an account running several reconnaissance commands in a row, such as whoami, net, nltest and systeminfo.
+techniques: [T1033, T1087, T1082, T1016, T1069]
+time_range: 7d
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      Right after getting in, an attacker finds out **who they are, where they are and who the admins are**. One person rarely runs four or five of these tools in a few minutes; an attacker usually does.
+  - kind: search
+    title: Accounts running several discovery tools on one host
+    query: |
+      datamodel=Endpoint process_name IN (whoami.exe, net.exe, net1.exe, nltest.exe, systeminfo.exe, ipconfig.exe, quser.exe, tasklist.exe, dsquery.exe, arp.exe)
+      | stats dc(process_name) as tools, count, values(process_name) as tool_names, min(_time) as first_seen by dest, user
+      | where tools >= 3
+      | sort -tools
+  - kind: search
+    title: Domain and group lookups
+    query: |
+      datamodel=Endpoint process_name IN (net.exe, net1.exe, nltest.exe, dsquery.exe)
+      process IN ("*group*", "*domain*", "*dclist*", "*trusts*")
+      | table _time, dest, user, process
+  - kind: markdown
+    text: |
+      ## Next steps
+      Look at what the same account did in the hour before and after on that host, and whether it signed in to other hosts next (**Authentication**, `logon_type=3`).

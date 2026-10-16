@@ -10,7 +10,7 @@ site_url: https://signalith.io/docs/
 repo_url: https://github.com/jrsamsanchez/Signalith
 repo_name: jrsamsanchez/Signalith
 edit_uri: edit/main/docs/
-copyright: Signalith is open source under the Apache License 2.0.
+copyright: 'Signalith is open source under the Apache License 2.0. Not affiliated with or endorsed by Splunk; see <a href="/docs/#trademarks">Trademarks</a>.'
 
 docs_dir: docs
 exclude_docs: |
@@ -130,11 +130,13 @@ nav:
       - Google Cloud: google-cloud.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
+      - Any other log: custom-logs.md
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md
       - Lookup tables: lookups.md
       - Detections: detections.md
+      - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
       - AI tools (MCP): ai-tools.md
       - Threat intel: threat-intel.md

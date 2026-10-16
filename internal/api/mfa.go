@@ -82,7 +82,7 @@ func (s *Server) noteMFA(p *principal) {
 // right: the code, when p has two-step sign-in. Signing in with a
 // password over the API (Basic) is refused to anyone who has or needs
 // it. It returns why it refused, for the log.
-func (s *Server) secondStep(ctx context.Context, p *principal, method, code string) (string, error) {
+func (s *Server) secondStep(r *http.Request, ctx context.Context, p *principal, method string, step secondFactor) (string, error) {
 	if p.breakGlass || !mfaSource(p.Source) {
 		// The password signalith passwd -local wrote on this server, for
 		// when the shared settings, and so the code, cannot be read.
@@ -102,6 +102,14 @@ func (s *Server) secondStep(ctx context.Context, p *principal, method, code stri
 	if !on {
 		return "", nil
 	}
+	if step.Passkey != nil {
+		if _, err := s.checkPasskey(r, ceremonyStep, p.Username, "", step.Passkey); err != nil {
+			return "passkey not accepted: " + err.Error(), err
+		}
+		p.codeUsed = &users.CodeResult{Kind: users.CodePasskey}
+		return "", nil
+	}
+	code := step.Code
 	if strings.TrimSpace(code) == "" {
 		return "", errMFANeeded
 	}
@@ -133,27 +141,80 @@ func (s *Server) mfaWritable(w http.ResponseWriter, p *principal) bool {
 	return s.usersWritable(w)
 }
 
-// mfaView is a user's two-step sign-in for the account menu.
-func (s *Server) mfaView(p *principal) map[string]any {
+// mfaView is a user's two-step sign-in for the account menu, as seen
+// from request r.
+func (s *Server) mfaView(p *principal, r *http.Request) map[string]any {
+	here, _ := s.passkeyPlace(r)
+	return s.mfaViewAt(p, here)
+}
+
+// mfaViewAt is mfaView where passkeys work at here.
+func (s *Server) mfaViewAt(p *principal, here passkeyHere) map[string]any {
 	m, ok := s.userStore().MFA(p.Username)
 	v := map[string]any{
 		"on":       ok && m.On(),
+		"app":      ok && m.AppOn(),
 		"required": s.mfaRequired(p),
 		"possible": mfaSource(p.Source),
+		"passkeys": []map[string]any{},
+		// Directory users give their password before their passkey.
+		"passkey_alone": p.Source == users.SourceLocal || p.Source == users.SourceBuiltin,
+	}
+	if here.rpID == "" {
+		v["passkey_problem"] = "Passkeys work only when Signalith is opened by its name over HTTPS (such as https://siem.example.com)."
+	} else {
+		v["passkey_host"] = here.rpID
+	}
+	if ok {
+		keys := make([]map[string]any, 0, len(m.Passkeys))
+		for _, k := range m.Passkeys {
+			keys = append(keys, passkeyView(k, here))
+		}
+		v["passkeys"] = keys
 	}
 	if ok && m.On() {
 		v["since"] = m.Since
 		v["recovery_left"] = len(m.Recovery)
 		if m.Problem != "" {
-			v["problem"] = "The key of your authenticator app cannot be decrypted here, so codes from the app and recovery codes are refused. " +
+			v["problem"] = "The key that checks your authenticator app's codes and your recovery codes cannot be decrypted here, so both are refused. " +
 				"Ask an admin to reset your two-step sign-in, then set it up again."
 		}
 	}
 	return v
 }
 
+// stepNeeded is the answer to a right password that needs a second step:
+// what it can be, with a passkey challenge when p has passkeys here.
+func (s *Server) stepNeeded(r *http.Request, p *principal) map[string]any {
+	m, _ := s.userStore().MFA(p.Username)
+	v := map[string]any{"code": errMFANeeded.code, "error": errMFANeeded.msg, "app": m.AppOn(), "recovery": len(m.Recovery) > 0}
+	if len(m.Passkeys) == 0 {
+		return v
+	}
+	here, why := s.passkeyPlace(r)
+	opts, err := s.assertionOptions(here, ceremonyStep, p.Username, "", m)
+	switch {
+	case why == "" && err == nil && opts != nil:
+		v["passkey"] = opts
+		if m.AppOn() {
+			v["error"] = "Use your passkey, or enter the code from your authenticator app."
+		} else {
+			v["error"] = "Use your passkey to finish signing in."
+		}
+	case err != nil:
+		s.Log.Warn("no passkey challenge could be made", "user", p.Username, "err", err)
+	default:
+		// Passkeys work only where they were made.
+		v["passkey_hosts"] = passkeyHosts(m)
+		if !m.AppOn() {
+			v["error"] = "Your passkeys work only at " + strings.Join(passkeyHosts(m), ", ") + ". Open Signalith there, or enter a recovery code."
+		}
+	}
+	return v
+}
+
 func (s *Server) handleGetMFA(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.mfaView(principalOf(r)))
+	writeJSON(w, http.StatusOK, s.mfaView(principalOf(r), r))
 }
 
 // handleSetupMFA starts setting up two-step sign-in: a new key, as a QR
@@ -208,21 +269,23 @@ func (s *Server) handleConfirmMFA(w http.ResponseWriter, r *http.Request) {
 	ended := s.renewSession(w, r, p)
 	s.audit(r, "two-step sign-in turned on", "user", p.Username, "other_sessions_ended", ended)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes, "mfa": s.mfaView(p)})
+	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes, "mfa": s.mfaView(p, r)})
 }
 
 // handleNewRecoveryCodes replaces the user's recovery codes, once a code
-// shows they still have their app (or a recovery code).
+// or a passkey shows they still have their app, passkey or a recovery
+// code.
 func (s *Server) handleNewRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	var req struct {
-		Code string `json:"code"`
+		Code    string         `json:"code"`
+		Passkey *passkeyAnswer `json:"passkey"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if !s.mfaWritable(w, p) || !s.checkOwnCode(w, r, p, req.Code) {
+	if !s.mfaWritable(w, p) || !s.checkOwnCode(w, r, p, secondFactor{Code: req.Code, Passkey: req.Passkey}) {
 		return
 	}
 	codes, err := s.userStore().NewRecoveryCodes(changeContext(r), p.Username)
@@ -232,16 +295,18 @@ func (s *Server) handleNewRecoveryCodes(w http.ResponseWriter, r *http.Request) 
 	}
 	s.audit(r, "new recovery codes made", "user", p.Username)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes, "mfa": s.mfaView(p)})
+	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes, "mfa": s.mfaView(p, r)})
 }
 
-// handleMFAOff turns the user's two-step sign-in off, once a code shows
-// they have their app (or a recovery code). Where it is required, they
-// are asked to set it up again at once.
+// handleMFAOff turns the user's authenticator app off, once a code or a
+// passkey shows they have their app, a passkey or a recovery code.
+// Passkeys stay; without any, two-step sign-in is off, and where it is
+// required they are asked to set it up again at once.
 func (s *Server) handleMFAOff(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	var req struct {
-		Code string `json:"code"`
+		Code    string         `json:"code"`
+		Passkey *passkeyAnswer `json:"passkey"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -250,38 +315,67 @@ func (s *Server) handleMFAOff(w http.ResponseWriter, r *http.Request) {
 	if !s.mfaWritable(w, p) {
 		return
 	}
-	if !s.userStore().MFAOn(p.Username) {
+	store := s.userStore()
+	m, _ := store.MFA(p.Username)
+	if !m.AppOn() {
 		// Stopping a set-up that was never confirmed needs no code.
-		if _, err := s.userStore().RemoveMFA(changeContext(r), p.Username); err != nil {
+		if _, err := store.RemoveApp(changeContext(r), p.Username); err != nil {
 			s.writeMFAError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"mfa": s.mfaView(p)})
+		writeJSON(w, http.StatusOK, map[string]any{"mfa": s.mfaView(p, r)})
 		return
 	}
-	if !s.checkOwnCode(w, r, p, req.Code) {
+	if !s.checkOwnCode(w, r, p, secondFactor{Code: req.Code, Passkey: req.Passkey}) {
 		return
 	}
-	if _, err := s.userStore().RemoveMFA(changeContext(r), p.Username); err != nil {
+	if _, err := store.RemoveApp(changeContext(r), p.Username); err != nil {
 		s.writeMFAError(w, err)
 		return
 	}
-	s.audit(r, "two-step sign-in turned off", "user", p.Username)
-	writeJSON(w, http.StatusOK, map[string]any{"mfa": s.mfaView(p)})
+	if store.MFAOn(p.Username) {
+		s.audit(r, "authenticator app turned off", "user", p.Username)
+	} else {
+		s.audit(r, "two-step sign-in turned off", "user", p.Username)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mfa": s.mfaView(p, r)})
 }
 
-// checkOwnCode checks a code the signed-in user p entered to change their
-// own two-step sign-in. A wrong one counts toward the sign-in limits,
-// like a wrong code at sign-in; it answers and returns false when the
-// code is not right.
-func (s *Server) checkOwnCode(w http.ResponseWriter, r *http.Request, p *principal, code string) bool {
+// checkOwnCode checks a code, or a passkey, the signed-in user p gave to
+// change their own two-step sign-in. A wrong one counts toward the
+// sign-in limits, like a wrong one at sign-in; it answers and returns
+// false when it is not right.
+func (s *Server) checkOwnCode(w http.ResponseWriter, r *http.Request, p *principal, step secondFactor) bool {
 	from := s.client(r)
 	attempt, err := s.beginAttempt(r, from, p.Username, sessionBrowser(p))
 	if err != nil {
 		writeSignInError(w, err)
 		return false
 	}
-	res, err := s.userStore().UseMFACode(changeContext(r), p.Username, code)
+	if step.Passkey != nil {
+		_, err := s.checkPasskey(r, ceremonyCheck, p.Username, p.token, step.Passkey)
+		var se *signInError
+		switch {
+		case errors.Is(err, errPasskeyWrong), errors.Is(err, errPasskeyCloned):
+			f := attempt.Fail()
+			s.Log.Warn("passkey refused", append(append([]any{"audit", true, "user", p.Username}, from.logAttrs()...),
+				"locked_out", f.LockedOut())...)
+			s.noteFailure(from, f)
+			writeSignInError(w, err)
+			return false
+		case errors.As(err, &se):
+			attempt.Done()
+			writeSignInError(w, err)
+			return false
+		case err != nil:
+			attempt.Done()
+			writeError(w, http.StatusInternalServerError, err)
+			return false
+		}
+		attempt.Succeed()
+		return true
+	}
+	res, err := s.userStore().UseMFACode(changeContext(r), p.Username, step.Code)
 	switch {
 	case errors.Is(err, users.ErrWrongCode):
 		f := attempt.Fail()

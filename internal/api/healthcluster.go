@@ -101,7 +101,7 @@ func later(a, b *time.Time) *time.Time {
 // they reach another: with two or more ready servers, some server had an
 // agent batch in the last 10 minutes, and a server running for 15 minutes
 // or more had none in that time. That server is missing from the load
-// balancer or the DNS name agents send to. Times are compared on each
+// balancer or the DNS name agents send to. Scanners are left out. Times are compared on each
 // server's own clock (its heartbeat time), so clocks that differ between
 // servers do not matter.
 func agentTrafficWarnings(st cluster.Status) []string {
@@ -114,7 +114,8 @@ func agentTrafficWarnings(st cluster.Status) []string {
 	anyRecent := false
 	for _, sv := range st.Servers {
 		d := sv.Detail
-		if sv.State != cluster.StateReady || d == nil || d.Traffic == nil {
+		// A scanner only scans its zone: agents never send to it.
+		if sv.State != cluster.StateReady || d == nil || d.Traffic == nil || d.Role == cluster.RoleScanner {
 			continue
 		}
 		t := d.Traffic

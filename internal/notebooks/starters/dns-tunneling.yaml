@@ -1,0 +1,34 @@
+id: starter-dns-tunneling
+title: DNS tunneling and odd lookups
+description: Find long, random-looking DNS names used to smuggle data out, bursts of failed lookups, and rare domains.
+techniques: [T1071.004, T1048.003, T1568.002]
+time_range: 7d
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      DNS gets through almost every firewall, so attackers hide data **inside the names they look up** (tunneling), or let malware try many generated names until one answers (domain generation).
+
+      Needs DNS data in **Network_Resolution**, from a network sensor or DNS server logs.
+  - kind: search
+    title: Hosts looking up long names
+    query: |
+      datamodel=Network_Resolution
+      | eval length=len(query)
+      | where length >= 50
+      | stats count, dc(query) as names, max(length) as longest by src
+      | sort -names
+  - kind: search
+    title: Hosts with the most failed lookups
+    query: |
+      datamodel=Network_Resolution reply_code=NXDomain
+      | stats count, dc(query) as names by src
+      | sort -count
+      | head 10
+  - kind: search
+    title: Rarest domains looked up
+    query: datamodel=Network_Resolution | rare limit=25 query
+  - kind: markdown
+    text: |
+      ## Next steps
+      Group the long names by their parent domain: a tunnel uses one domain with thousands of different first labels. Check that domain in **Threat intel** and block it at your DNS servers if it is not yours.

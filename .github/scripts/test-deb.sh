@@ -6,17 +6,22 @@ set -eu
 prev=$(realpath "$1"); new=$(realpath "$2"); want=$3
 tmp=$(mktemp -d)
 
+# The web port: 9000, or 8080 for a config written before 0.3, which an
+# upgrade keeps.
+port=''
 up() {
   systemctl is-active --quiet signalith || { sudo journalctl -u signalith --no-pager | tail -50; exit 1; }
   for i in $(seq 1 30); do
-    curl -skf -o /dev/null https://localhost:8080/livez && return 0
+    for p in 9000 8080; do
+      curl -skf -o /dev/null "https://localhost:$p/livez" && { port=$p; return 0; }
+    done
     sleep 2
   done
-  echo "Signalith does not answer on https://localhost:8080"; sudo journalctl -u signalith --no-pager | tail -50; exit 1
+  echo "Signalith does not answer on https://localhost:9000 (or 8080)"; sudo journalctl -u signalith --no-pager | tail -50; exit 1
 }
 signin() {
   curl -skf -o /dev/null -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg p "$1" '{username: "admin", password: $p}')" https://localhost:8080/api/login
+    -d "$(jq -n --arg p "$1" '{username: "admin", password: $p}')" "https://localhost:$port/api/login"
 }
 
 echo "== Install $prev"

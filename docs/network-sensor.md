@@ -54,7 +54,7 @@ everywhere else, sends both programs' logs to Signalith over HTTPS.
   own (with **Allow management operating system to share this network adapter** turned off),
   and Hyper-V must be set to pass that port's mirrored traffic on to the virtual machine,
   which takes extra PowerShell settings. A mini PC is usually simpler.
-- **Outbound HTTPS** from the sensor to Signalith (port 8080 by default), and to the package
+- **Outbound HTTPS** from the sensor to Signalith's agent port (7779 by default), and to the package
   repositories and the rules site for updates. Nothing needs to reach the sensor: it opens no
   ports.
 
@@ -209,7 +209,7 @@ that token, so anyone with it can send data as this sensor: don't share it. Past
 new machine, as a user who can use `sudo`:
 
 ```
- f=$(mktemp) && curl -fsSk --proto '=https' https://siem.example.com:8080/api/sensor/install.sh -o "$f" && echo "<sha-256>  $f" | sha256sum -c --quiet && echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem.example.com:8080 --ca-sha256 <fingerprint> --version 1.6.0 --token -
+ f=$(mktemp) && curl -fsSk --proto '=https' https://siem.example.com:7779/api/sensor/install.sh -o "$f" && echo "<sha-256>  $f" | sha256sum -c --quiet && echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem.example.com:7779 --ca-sha256 <fingerprint> --version 1.6.0 --token -
 ```
 
 It downloads the sensor install script from Signalith, checks it against the SHA-256 in the
@@ -283,7 +283,7 @@ so on `--uninstall`). It never changes the machine's network settings files.
 | Option | What it does |
 | --- | --- |
 | `--role sensor` | What to build. The only role for now. |
-| `--from <address>` | Signalith's address, which the sensor sends to. |
+| `--from <address>` | Signalith's address on its [agent port](sending-data.md#the-agent-port), which the sensor sends to, such as `https://siem.example.com:7779`. |
 | `--ca-sha256 <hex>` | SHA-256 of Signalith's certificate authority; the script refuses any other. |
 | `--next-ca-sha256 <hex>` | The new certificate authority, while Signalith switches to it. |
 | `--version <v>` | Signalith's version, shown on the Endpoints page. |
@@ -688,8 +688,10 @@ when a sensor reports Zeek or Suricata stopped, its capture port down or idle, r
 tuning failing or old, or a full disk, and when it goes silent: one finding per sensor and
 problem a day. A search cannot find what did not arrive, so the server that runs the
 background jobs writes a `sensor:health` event ("Sensor silent") when a sensor with a status
-line stops sending, and again each day it stays silent. Packet loss has its own detection,
-`network-sensor-packet-loss`.
+line stops sending, and again each day it stays silent. It believes only status lines sent
+with a network sensor's token and the silent events Signalith writes itself, so another
+agent's token cannot raise findings for hosts of its choosing. Packet loss has its own
+detection, `network-sensor-packet-loss`.
 
 ## Rule tuning from Signalith
 
@@ -946,9 +948,15 @@ sensor**, with when it last sent. If it is not there, check Fluent Bit's log on 
 - with Docker: `sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml logs fluent-bit`;
 - on a sensor you set up yourself: `journalctl -u fluent-bit -n 50`.
 
-Common causes are a wrong address under **Agents send to**, a firewall blocking port 8080, a
+Common causes are a wrong address under **Agents send to**, a firewall blocking the agent port (7779), a
 revoked token, or a wrong log path (Fluent Bit says it found no files). The **Health** page
 shows problems with incoming data.
+
+**The script says OISF's Suricata repository could not be read.** On Ubuntu, Suricata
+comes from OISF's PPA, because Ubuntu's own older Suricata has no `suricata-update` and so
+never loads rules. When the PPA does not answer, the script tries three times and then
+stops before installing anything from Ubuntu instead. Run the line again later, or install
+with `--docker`. A sensor already running keeps its Suricata.
 
 **Zeek events are in `sourcetype=zeek:unknown`.** Zeek is writing tab-separated logs: turn
 on JSON logs (see [Zeek's JSON logs](#zeeks-json-logs)). Lines written before the change stay

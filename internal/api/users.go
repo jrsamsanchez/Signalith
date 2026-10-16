@@ -20,6 +20,7 @@ func (s *Server) routeUsers(api *router) {
 	api.self("GET /api/me", s.handleMe)
 	api.self("POST /api/me/password", s.handleChangeOwnPassword)
 	s.routeMFA(api)
+	s.routePasskeys(api)
 	s.routeRecheck(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
@@ -555,6 +556,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
+	s.releaseNotebooks(r.Context(), u.Username, userOf(r))
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
 }
 
@@ -597,9 +599,19 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
+	// A passkey signs in without the password, so someone who added one
+	// would keep their way in past the reset.
+	n, keyErr := s.userStore().RemovePasskeys(changeContext(r), u.Username)
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "password reset", "user", u.Username, "sessions_ended", ended)
 	resp := map[string]any{"user": s.viewUser(u, userOf(r))}
+	switch {
+	case keyErr != nil:
+		s.Log.Error("passkeys not removed after a password reset", "user", u.Username, "err", keyErr)
+		resp["warning"] = "The password was reset, but their passkeys could not be removed, so they still sign in. Reset their two-step sign-in too."
+	case n > 0:
+		s.audit(r, "passkeys removed", "user", u.Username, "count", n, "reason", "password reset")
+	}
 	if generated != "" {
 		resp["temporary_password"] = generated
 	}

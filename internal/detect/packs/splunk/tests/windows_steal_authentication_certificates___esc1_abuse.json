@@ -1,0 +1,8 @@
+{"rule": "cbe761fc-d945-4c8c-a71d-e26d12255d32", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4886","data":{"Attributes":"x SAN: upn x x CertificateTemplate: x","RequestId":"42","Requester":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4887","data":{"Attributes":"x SAN: upn x x CertificateTemplate: x","Disposition":"3","RequestId":"42","Requester":"CORP\\tester","Subject":"CN=tester","SubjectKeyIdentifier":"-"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4886","data":{"Attributes":"x SAN: upn x x CertificateTemplate: y","RequestId":"42","Requester":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4887","data":{"Attributes":"x SAN: upn x x CertificateTemplate: y","Disposition":"3","RequestId":"42","Requester":"CORP\\tester","Subject":"CN=tester","SubjectKeyIdentifier":"-"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4886","data":{"Attributes":"CertificateTemplate:User","RequestId":"42","Requester":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4887","data":{"Attributes":"CertificateTemplate:User","Disposition":"3","RequestId":"42","Requester":"CORP\\tester","Subject":"CN=tester","SubjectKeyIdentifier":"-"}}
+]}

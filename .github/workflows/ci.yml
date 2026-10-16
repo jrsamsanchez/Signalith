@@ -8,7 +8,31 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the runs of its older pushes. Every
+# push to main runs to the end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Which of the slower jobs that aren't required checks a pull request
+  # needs, from the files it changes. On main they all run.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      fuzz: ${{ steps.c.outputs.fuzz }}
+      packages: ${{ steps.c.outputs.packages }}
+      lab: ${{ steps.c.outputs.lab }}
+      sensor: ${{ steps.c.outputs.sensor }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - id: c
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: .github/scripts/ci-changes.sh "$BASE" | tee -a "$GITHUB_OUTPUT"
+
   test:
     strategy:
       matrix:
@@ -131,18 +155,18 @@ jobs:
           # it, then check every request against it.
           for i in $(seq 1 30); do
             $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
-              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 2
           done
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
             -H 'Content-Type: application/json' \
             -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" \
-            https://localhost:8080/api/login > /dev/null
+            https://localhost:9000/api/login > /dev/null
           # OpenSearch loads its security settings a moment after it starts
           # answering, so the health may say "not initialized" at first.
           for i in $(seq 1 60); do
-            health=$(curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health) &&
+            health=$(curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/health) &&
               echo "$health" | jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
             sleep 2
           done
@@ -150,7 +174,7 @@ jobs:
           # The public example password from earlier versions is refused.
           code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
             -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
-            https://localhost:8080/api/login)
+            https://localhost:9000/api/login)
           test "$code" = 401
       - name: Check Nmap runs in the image for vulnerability scans
         run: |
@@ -158,7 +182,7 @@ jobs:
           # unprivileged user, read-only and with no capabilities.
           $COMPOSE exec -T signalith nmap --version | head -n 1
           curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
-            "https://localhost:8080/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
+            "https://localhost:9000/api/vulns/setup?fresh=1" > "$RUNNER_TEMP/vulns-setup.json"
           jq -c '.report.checks[] | {id, state, detail}' "$RUNNER_TEMP/vulns-setup.json"
           jq -e '[.report.checks[] | select(.id == "nmap" or .id == "nmap_runs") | .state] == ["ok", "ok"]' "$RUNNER_TEMP/vulns-setup.json"
       - name: Check a new install refuses the old example ingest token
@@ -168,15 +192,19 @@ jobs:
           # this one started new, so it is a wrong token, over plain HTTP too.
           $COMPOSE cp signalith:/var/lib/signalith/docker-upgrade.json "$RUNNER_TEMP/docker-upgrade.json"
           jq -e '.upgraded == false' "$RUNNER_TEMP/docker-upgrade.json"
-          for url in http://localhost:8080/api/ingest https://localhost:8080/api/ingest; do
+          for url in http://localhost:7779/api/ingest https://localhost:7779/api/ingest; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
               -H 'Authorization: Bearer change-this-ingest-token' -d '[{"log":"forged"}]' "$url")
             test "$code" = 401
           done
-          # The install's own token works over HTTPS.
+          # The install's own token works over HTTPS, on the agent port.
           code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
-            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:8080/api/ingest)
+            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:7779/api/ingest)
           test "$code" = 200
+          # The web port takes no agents on a new install: 503, which agents retry.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
+            -H "Authorization: Bearer $(cat "$RUNNER_TEMP/signalith-secrets/ingest-token")" -d '[{"log":"hello"}]' https://localhost:9000/api/ingest)
+          test "$code" = 503
       - name: Check OpenSearch refuses anyone without Signalith's certificate
         run: |
           ca="$RUNNER_TEMP/signalith-secrets/opensearch-ca.pem"
@@ -201,10 +229,10 @@ jobs:
           grep -q 'assistant.api_key *encrypted' "$RUNNER_TEMP/secrets-status.txt"
           grep -q ' 0 plain text' "$RUNNER_TEMP/secrets-status.txt"
           for i in $(seq 1 30); do
-            curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+            curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 2
           done
-          curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem
+          curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem
       - name: End-to-end tests against the secured OpenSearch
         env:
           SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
@@ -273,8 +301,10 @@ jobs:
   # crash or hang on odd input is caught before it merges. The nightly
   # fuzz workflow runs them for longer.
   fuzz:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    if: needs.changes.outputs.fuzz == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -311,14 +341,17 @@ jobs:
   # Builds the .deb, .rpm and .msi packages and tests installing,
   # upgrading from the latest release and removing each one.
   packages:
-    needs: test
+    needs: [changes, test]
+    if: needs.changes.outputs.packages == 'true'
     uses: ./.github/workflows/packages.yml
 
   # The cloud test lab (deploy/lab): shellcheck of its scripts, and
   # Terraform's format and validate. Not a required check.
   lab:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: needs.changes.outputs.lab == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Shellcheck the setup and end-to-end test scripts
@@ -337,8 +370,10 @@ jobs:
   # serves, and its dry runs on every system it supports. Not a required
   # check.
   sensor-script:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    if: needs.changes.outputs.sensor == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -383,10 +418,12 @@ jobs:
   # port; then run again, and uninstalled. It installs from the vendors'
   # repositories, so it needs them up. Not a required check.
   sensor-install:
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml
+    if: needs.changes.outputs.sensor == 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Start the Docker quick start and sign in
@@ -396,20 +433,20 @@ jobs:
           $COMPOSE up -d --build
           for i in $(seq 1 60); do
             $COMPOSE cp signalith:/var/lib/signalith/tls/ca.pem "$RUNNER_TEMP/signalith-ca.pem" 2>/dev/null &&
-              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/tls/ca.pem && break
+              curl -sf -o /dev/null --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/tls/ca.pem && break
             sleep 3
           done
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:8080/api/login > /dev/null
+            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:9000/api/login > /dev/null
           for i in $(seq 1 60); do
-            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:8080/api/health |
+            curl -sf -b "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" https://localhost:9000/api/health |
               jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"' > /dev/null && break
             sleep 3
           done
       - name: Install a sensor, send it traffic, run it again, uninstall
         env:
-          SIGNALITH: https://localhost:8080
+          SIGNALITH: https://localhost:9000
           SIGNALITH_CA: ${{ runner.temp }}/signalith-ca.pem
           COOKIES: ${{ runner.temp }}/cookies
         run: .github/scripts/sensor-install-ci.sh

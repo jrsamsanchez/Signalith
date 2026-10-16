@@ -160,6 +160,7 @@ func TestIndexParameterStaysInsideSignalith(t *testing.T) {
 			{"POST", "/api/search", string(body)},
 			{"POST", "/api/explain", string(body)},
 			{"POST", "/api/detections/test", string(detection)},
+			{"POST", "/api/detections/backtest", `{"detection":` + string(detection) + `}`},
 			{"POST", "/api/detections", string(detection)},
 			{"POST", "/api/cases/" + caseID + "/entries", string(entry)},
 		} {

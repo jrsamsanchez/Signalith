@@ -115,6 +115,9 @@ type Config struct {
 	keys *secrets.Keyring
 	// layers records where each setting's value came from.
 	layers *layers
+	// agentListenDerived is true when server.agent_listen was empty and
+	// was worked out from the listen address (see AgentsOnWebPort).
+	agentListenDerived bool
 	// publicURLDerived is true when server.public_url was empty and
 	// Validate worked it out from the listen address.
 	publicURLDerived bool
@@ -168,9 +171,15 @@ type layers struct {
 
 // Server controls the web UI and API listener.
 type Server struct {
-	// Listen is host:port. The default binds to localhost only; use
-	// 0.0.0.0:8080 to accept agents from other machines.
+	// Listen is host:port for the web page and API. The default binds to
+	// localhost only; use 0.0.0.0:9000 to accept browsers from other
+	// machines.
 	Listen string `yaml:"listen"`
+	// AgentListen is host:port for agents (ingest, OTLP, osquery and the
+	// network sensor), kept apart from the web page. Empty means Listen's
+	// host on port 7779; "off" serves agents on the web port, as before
+	// 0.3. SIGNALITH_AGENT_LISTEN overrides it. See AgentsOnWebPort.
+	AgentListen string `yaml:"agent_listen,omitempty"`
 	// PublicURL is the address agents and browsers use to reach this
 	// server: scheme, host and optional port, no path. It goes into the
 	// agent configs Signalith generates. SIGNALITH_PUBLIC_URL overrides it.
@@ -1023,7 +1032,7 @@ func (s *Syslog) problems(server Server) []string {
 		}
 	}
 	// TCP listeners cannot share a port with each other or the web server.
-	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
+	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"server.agent_listen", server.AgentAddr()}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
 	for i := range tcp {
 		for j := i + 1; j < len(tcp); j++ {
 			if sameListener(tcp[i].addr, tcp[j].addr) {
@@ -1468,7 +1477,7 @@ func (c *Config) DetectionsCatchUp() time.Duration {
 // Default returns a config with every default filled in.
 func Default() *Config {
 	return &Config{
-		Server:     Server{Listen: "127.0.0.1:8080"},
+		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
 		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000},
 		Retention:  Retention{Days: 90},
@@ -2069,6 +2078,10 @@ func (c *Config) applyEnv() error {
 		c.Server.Listen = v
 		c.fromEnv("server.listen", "SIGNALITH_LISTEN")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_AGENT_LISTEN")); v != "" {
+		c.Server.AgentListen = v
+		c.fromEnv("server.agent_listen", "SIGNALITH_AGENT_LISTEN")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_PUBLIC_URL")); v != "" {
 		if _, err := agents.ParseServerURL(v); err != nil {
 			return fmt.Errorf("SIGNALITH_PUBLIC_URL %q: %v", v, err)
@@ -2319,10 +2332,11 @@ func (c *Config) JoinedCluster() bool {
 func (c *Config) Validate() error {
 	var p []string
 	if _, port, err := net.SplitHostPort(c.Server.Listen); err != nil {
-		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:8080", c.Server.Listen))
+		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:9000", c.Server.Listen))
 	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		p = append(p, fmt.Sprintf("server.listen port %q must be 1-65535", port))
 	}
+	p = append(p, c.agentListenProblems()...)
 	if c.Server.MaxConnections < 0 {
 		p = append(p, "server.max_connections cannot be negative (0 uses the default, 10000)")
 	}
@@ -2858,7 +2872,9 @@ const header = `# Signalith configuration.
 # pasted in works too, and "signalith secrets encrypt" encrypts it (see
 # docs/encryption.md).
 #
-# server.listen      address the UI/API binds to (0.0.0.0:8080 for all interfaces)
+# server.listen      address the web page and API bind to (0.0.0.0:9000 for all interfaces)
+# server.agent_listen  address agents send to (default: listen's host, port 7779;
+#                    "off" serves agents on the web port as before 0.3)
 # server.public_url  URL agents use to reach this server (or SIGNALITH_PUBLIC_URL)
 # server.tls.mode    auto: HTTPS with a certificate Signalith makes and renews itself
 #                    (browsers warn until you trust its CA; see docs/https.md);
@@ -2873,8 +2889,9 @@ const header = `# Signalith configuration.
 # server.client_header  x-forwarded-for or forwarded: the header those proxies
 #                    write each person's address into, for the sign-in limits and
 #                    the log; empty counts everyone behind them as one shared address
-# server.max_connections  open connections allowed at once (default 10000); one
-#                    client may hold a tenth of them
+# server.max_connections  open connections allowed at once (default 10000), on the
+#                    web port and again on the agent port; one client may hold a
+#                    tenth of them
 # server.shared_addresses  IPs or CIDRs of a proxy, load balancer or NAT that many
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address

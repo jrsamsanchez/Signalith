@@ -156,3 +156,16 @@ bug reports and ideas are welcome on
 [Contributing](https://github.com/jrsamsanchez/Signalith/blob/main/CONTRIBUTING.md) to help
 out, and the [security policy](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md)
 to report a weakness privately.
+
+## Trademarks
+
+Signalith is an independent project. It is not affiliated with, endorsed by or sponsored
+by Splunk or Cisco, and contains no Splunk software code. Its optional Splunk Security
+Content pack ships detection rules from Splunk's open-source
+[security_content](https://github.com/splunk/security_content) project under the Apache
+License 2.0 (see
+[NOTICE](https://github.com/jrsamsanchez/Signalith/blob/main/NOTICE)). Splunk, Splunk
+Enterprise Security and SPL are trademarks or registered trademarks of Splunk LLC, a Cisco
+company, in the United States and other countries; they are named here only to describe the
+rules Signalith can run and its search syntax. OpenSearch, Fluent Bit, Sigma and MITRE
+ATT&CK are trademarks of their respective owners.

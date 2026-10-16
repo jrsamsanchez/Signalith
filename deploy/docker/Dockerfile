@@ -1,4 +1,4 @@
-FROM golang:1.26.9@sha256:d7722066f0b60ceccb6c0643cbed1f5f9e15506ac237146c95333504d7805d89 AS build
+FROM golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -30,8 +30,8 @@ ENV SIGNALITH_STATE_DIR=/var/lib/signalith \
     SIGNALITH_LOOKUPS_DIR=/var/lib/signalith/lookups \
     SIGNALITH_DASHBOARDS_DIR=/var/lib/signalith/dashboards \
     SIGNALITH_ARCHIVE_DIR=/var/lib/signalith/archive
-# Web UI and API (HTTPS), syslog, and syslog over TLS (see
+# Web UI and API (HTTPS), agents (HTTPS), syslog, and syslog over TLS (see
 # deploy/docker/signalith.yaml).
-EXPOSE 8080 5514/udp 5514/tcp 6514/tcp
+EXPOSE 9000 7779 5514/udp 5514/tcp 6514/tcp
 ENTRYPOINT ["/usr/local/bin/signalith"]
 CMD ["serve", "-c", "/etc/signalith/signalith.yaml"]
