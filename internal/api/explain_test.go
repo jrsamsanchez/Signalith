@@ -15,7 +15,8 @@ func TestExplainNewCommands(t *testing.T) {
 | dedup 2 host keepempty=true
 | fillnull value=none user
 | eventstats count by host
-| rare limit=5 process_name`)
+| rare limit=5 process_name
+| lookup owners host AS dest OUTPUTNEW owner, team AS owner_team`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +29,7 @@ func TestExplainNewCommands(t *testing.T) {
 		"Fill missing values in user with none.",
 		"Add the number of events for each host to every row, keeping the rows.",
 		"List the 5 least common values of process_name",
+		"Look up dest (as the table's host) in the lookup table owners and add owner, team as owner_team from the matching rows, only where the field is not already set.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Explain is missing %q in:\n%s", want, got)

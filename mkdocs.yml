@@ -131,6 +131,7 @@ nav:
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md
+      - Lookup tables: lookups.md
       - Detections: detections.md
       - Investigate with AI: investigate.md
       - AI tools (MCP): ai-tools.md

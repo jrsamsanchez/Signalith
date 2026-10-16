@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -46,6 +47,8 @@ type Engine struct {
 	Assets *assets.Store
 	// Intel backs the intel and threatmatch commands; nil makes them errors.
 	Intel *intel.Store
+	// Lookups backs the lookup command; nil makes it an error.
+	Lookups *lookuptables.Store
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -180,7 +183,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup
 
 	transform query.Command
 	post      []query.Command
@@ -245,8 +248,30 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	p, err := e.compile(q)
+	if err != nil {
+		return nil, err
+	}
+	// A subsearch that does not compile fails the search before it runs.
+	for _, c := range p.post {
+		if j, ok := c.(*query.Join); ok {
+			if _, err := e.Compile(subsearch(j, q)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return p, nil
+}
+
+func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
+	if len(cmds) > 0 {
+		if c, ok := cmds[0].(*query.InputLookup); ok {
+			// The rows come from a lookup table, not from OpenSearch.
+			return &Plan{Mode: "inputlookup", transform: c, post: cmds[1:]}, nil
+		}
+	}
 
 	// where commands before any transforming command filter raw events, so
 	// they run inside OpenSearch.
@@ -407,7 +432,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		switch c.(type) {
 		case *query.Head:
 			return false
-		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats:
+		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction:
 			return true
 		}
 	}
@@ -419,7 +444,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		switch c := c.(type) {
 		case *query.Head:
 			return c.N, true
-		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull:
+		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup:
 			continue
 		}
 		return 0, false
@@ -498,14 +523,30 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.fetch(ctx, p)
+	res, err := e.run(withEvaluator(ctx), q, p)
+	if err != nil {
+		return nil, err
+	}
+	res.TookMS = time.Since(start).Milliseconds()
+	return res, nil
+}
+
+// run gets a compiled query's rows and runs its commands over them. A
+// join's subsearch runs here too, within the search's slot and limits.
+func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, error) {
+	var res *Result
+	var err error
+	if c, ok := p.transform.(*query.InputLookup); ok {
+		res, err = e.inputLookup(c)
+	} else {
+		res, err = e.fetch(ctx, p)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	ctx = withEvaluator(ctx)
 	for _, c := range p.post {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -514,6 +555,10 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		switch c := c.(type) {
 		case *query.Enrich:
 			err = e.enrich(res, c)
+		case *query.Lookup:
+			err = e.lookup(ctx, res, c)
+		case *query.Join:
+			err = e.join(ctx, res, c, q)
 		case *query.Intel:
 			err = e.intelEnrich(res, c)
 		default:
@@ -523,7 +568,6 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 			return nil, err
 		}
 	}
-	res.TookMS = time.Since(start).Milliseconds()
 	return res, nil
 }
 
