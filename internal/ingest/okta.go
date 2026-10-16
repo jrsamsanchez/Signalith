@@ -66,6 +66,16 @@ var oktaObjects = []string{
 	"debugContext", "request",
 }
 
+// oktaStored is the name an event keeps a LogEvent object's fields
+// under: its own, but okta_device for device, as Signalith's device
+// field holds text and cannot also hold an object.
+func oktaStored(obj string) string {
+	if obj == "device" {
+		return "okta_device"
+	}
+	return obj
+}
+
 // oktaFields are the fields of an event kept by name whenever it has
 // them, before the rest of its objects' fields (oktaMaxLeaves).
 var oktaFields = []string{
@@ -182,7 +192,7 @@ func ParseOkta(r map[string]any) Event {
 	}
 	for _, k := range oktaObjects {
 		if v, ok := r[k]; ok {
-			flattenO365(k, v, flat)
+			flattenO365(oktaStored(k), v, flat)
 		}
 	}
 	f := map[string]any{"sourcetype": OktaSourcetype, "vendor_product": OktaVendor}
@@ -199,7 +209,8 @@ func ParseOkta(r map[string]any) Event {
 			leaves++
 		}
 	}
-	if raw, err := json.Marshal(r); err == nil {
+	raw, rawErr := json.Marshal(r)
+	if rawErr == nil {
 		f["message"] = truncateUTF8(string(raw), MaxRecordBytes)
 	}
 	set := func(k, v string) {
@@ -270,9 +281,11 @@ func ParseOkta(r map[string]any) Event {
 	if t, err := time.Parse(time.RFC3339Nano, str(r, "published")); err == nil {
 		ev.Time = t.UTC()
 	}
-	// The same event, read twice from the API, is stored once.
-	if id := str(r, "uuid"); id != "" {
-		ev.ID = sensorDocID("okta", id)
+	// The same event, read twice from the API, is stored once. The ID
+	// covers the whole event, not just its uuid, so an event sent with a
+	// real event's uuid before the poller reads it cannot take its place.
+	if id := str(r, "uuid"); id != "" && rawErr == nil {
+		ev.ID = sensorDocID("okta", id+"\n"+string(raw))
 	}
 	switch m := OktaModel(eventType); m {
 	case "Authentication":
@@ -365,13 +378,14 @@ var oktaSchema = func() map[string]string {
 // OktaField reports whether an Okta event keeps a field of a LogEvent by
 // its own name: a top-level field (eventType), or one under the
 // LogEvent's objects (outcome.result, debugContext.debugData.behaviors,
-// target{}.alternateId).
+// target{}.alternateId, okta_device.name).
 func OktaField(name string) bool {
 	if slices.Contains(oktaTop, name) {
 		return true
 	}
 	return validFieldName(name) &&
 		slices.ContainsFunc(oktaObjects, func(obj string) bool {
+			obj = oktaStored(obj)
 			return strings.HasPrefix(name, obj+".") || strings.HasPrefix(name, obj+"{}.") || name == obj
 		})
 }
@@ -383,6 +397,9 @@ func OktaField(name string) bool {
 func OktaSigmaField(name string) (string, bool) {
 	if f, ok := oktaSchema[strings.ToLower(name)]; ok {
 		return f, true
+	}
+	if rest, ok := strings.CutPrefix(name, "device."); ok {
+		name = oktaStored("device") + "." + rest
 	}
 	for _, list := range []string{"target", "request.ipChain"} {
 		if rest, ok := strings.CutPrefix(name, list+"."); ok {

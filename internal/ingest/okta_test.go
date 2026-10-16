@@ -235,3 +235,51 @@ func TestOktaRecord(t *testing.T) {
 		t.Errorf("CommandLine is %s", f)
 	}
 }
+
+// Okta Verify sign-ins name the device they came from.
+const oktaFastPass = `{"actor": {"id": "00u1", "type": "User", "alternateId": "jdoe@example.com", "displayName": "Jane Doe"},
+	"client": {"ipAddress": "203.0.113.7", "device": "Computer"},
+	"device": {"id": "guo1", "name": "JDOE-LAPTOP", "os_platform": "WINDOWS", "os_version": "10.0.19045",
+		"managed": true, "registered": true, "disk_encryption_type": "ALL_INTERNAL_VOLUMES"},
+	"authenticationContext": {"credentialType": "OKTA_VERIFY_PUSH"},
+	"debugContext": {"debugData": {"threatSuspected": "false", "risk": "{level=LOW}"}},
+	"eventType": "user.authentication.auth_via_mfa", "outcome": {"result": "SUCCESS"},
+	"published": "2026-10-11T12:00:00Z", "severity": "INFO", "uuid": "8b7c8a3e-6c7f-11f0-9f3a-0b1c2d3e4f53", "target": []}`
+
+// No field an Okta event keeps sits under a name the index template maps
+// as a value, where OpenSearch would refuse the document.
+func TestOktaFieldsUnderNoMappedValue(t *testing.T) {
+	for _, s := range []string{oktaSignInFailed, oktaFactorDeactivated, oktaThreat, oktaFastPass} {
+		ev := Normalize(OktaTag, decode(t, s), now)
+		for k := range ev.Fields {
+			name := strings.ReplaceAll(k, "{}", "")
+			for i := range len(name) {
+				if name[i] == '.' {
+					if typ, ok := knownFields[name[:i]]; ok && typ != "object" {
+						t.Errorf("%s is under %s, mapped as %s", k, name[:i], typ)
+					}
+				}
+			}
+		}
+	}
+	ev := Normalize(OktaTag, decode(t, oktaFastPass), now)
+	expect(t, ev.Document(), map[string]any{"okta_device.name": "JDOE-LAPTOP", "okta_device.os_platform": "WINDOWS",
+		"authenticationContext.credentialType": "OKTA_VERIFY_PUSH", "debugContext.debugData.risk": "{level=LOW}"})
+	if f, ok := OktaSigmaField("device.name"); !ok || f != "okta_device.name" {
+		t.Errorf("device.name is %s, %v", f, ok)
+	}
+}
+
+// An event with another event's uuid but other content is stored as its
+// own, and the same event read twice once.
+func TestOktaDocumentID(t *testing.T) {
+	a := Normalize(OktaTag, decode(t, oktaThreat), now)
+	if again := Normalize(OktaTag, decode(t, oktaThreat), now); again.ID != a.ID || a.ID == "" {
+		t.Errorf("IDs %q and %q", a.ID, again.ID)
+	}
+	forged := decode(t, oktaThreat)
+	forged["displayMessage"] = "nothing to see"
+	if Normalize(OktaTag, forged, now).ID == a.ID {
+		t.Error("a changed copy took the event's ID")
+	}
+}

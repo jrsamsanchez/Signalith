@@ -31,7 +31,9 @@ token is its own with a key it makes for itself and never stores.
 - An Okta admin who can add apps and assign admin roles: a Super Administrator, or an
   Application Administrator together with someone who can assign roles.
 - The Signalith server must reach your Okta domain (such as `example.okta.com`) over
-  HTTPS. Set `HTTPS_PROXY` if it goes through a proxy.
+  HTTPS. Set `HTTPS_PROXY` if it goes through a proxy. Signalith only connects to
+  internet addresses for Okta, so a domain that leads to this machine or the local
+  network is refused.
 
 ## Set it up
 
@@ -108,6 +110,7 @@ flattened into dotted names:
 | `securityContext.isProxy`, `securityContext.asOrg` | `true` for an anonymizing proxy, the network's owner |
 | `debugContext.debugData.behaviors`, `.risk`, `.threatSuspected` | what Okta's risk engine saw |
 | `target{}.type`, `target{}.alternateId`, `target{}.displayName` | each thing the event acted on, as Splunk's add-on names them |
+| `okta_device.name`, `okta_device.os_platform`, `okta_device.managed` | the device an Okta Verify or FastPass sign-in came from (Okta's `device` object, renamed because Signalith's `device` field holds text) |
 
 Every value is kept as text, because Okta's debug data uses names of its own whose values
 differ from one event type to the next. Each event also gets the data model fields of

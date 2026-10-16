@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -91,13 +90,14 @@ type Client struct {
 }
 
 // NewHTTPClient is the client the poller calls Okta with: through the
-// proxy the environment names, with time limits on each step. A call's
-// whole time limit is its context's.
+// proxy the environment names, to public addresses only (see dial.go),
+// with time limits on each step. A call's whole time limit is its
+// context's.
 func NewHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			DialContext:           newPublicDialer().DialContext,
 			TLSHandshakeTimeout:   15 * time.Second,
 			ResponseHeaderTimeout: 2 * time.Minute,
 			MaxIdleConns:          4,
@@ -168,10 +168,10 @@ func readError(resp *http.Response, now time.Time) *APIError {
 		}
 	}
 	if e.Message == "" && e.Code == "" {
-		e.Message = strings.TrimSpace(string(b))
-		if e.Message == "" {
-			e.Message = http.StatusText(resp.StatusCode)
-		}
+		// Only Okta's own error fields are passed on: a body of any other
+		// shape is not Okta's, and is not repeated to whoever reads the
+		// error.
+		e.Message = http.StatusText(resp.StatusCode)
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		e.RetryAt = rateReset(resp.Header, now)
