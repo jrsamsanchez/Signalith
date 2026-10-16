@@ -74,7 +74,7 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
   own, tenants cannot be added and provider users cannot switch; the next version lifts
   this.
 - Directory (LDAP) and single sign-on users are provider users.
-- Syslog, Microsoft 365, vulnerability scans, network sensors, osquery hosts, API tokens and
+- Syslog, Microsoft 365, Okta, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the
   default tenant; tenants get the detections built into Signalith.
 - Custom log parsers are the provider's: only provider admins change them, and they read every

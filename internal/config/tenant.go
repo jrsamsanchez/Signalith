@@ -34,14 +34,14 @@ func (c *Config) TenantDir(id string) string { return tenants.Dir(c.StateDir(), 
 //     hold by reference, so no change to one tenant's reaches another's.
 var (
 	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster"}
-	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Notify", "Response", "Playbooks"}
+	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Okta", "Notify", "Response", "Playbooks"}
 )
 
 // ForTenant returns a copy of c for tenant id's data: its own index prefix
 // (tenants.Prefix) and its own folders under TenantDir, whatever c names
 // for the default tenant's files. What c gives agents and devices to send
-// with, the ingest tokens of signalith.yaml and the environment, syslog
-// and Microsoft 365, stays with the default tenant: a tenant's agents send
+// with, the ingest tokens of signalith.yaml and the environment, syslog,
+// Microsoft 365 and Okta, stays with the default tenant: a tenant's agents send
 // with tokens made in that tenant. So do the intel feeds signalith.yaml
 // lists: a tenant adds its own. The default tenant's copy is c itself.
 func (c *Config) ForTenant(id string) *Config {
@@ -64,6 +64,7 @@ func (c *Config) ForTenant(id string) *Config {
 	t.Dashboards.Dir = filepath.Join(dir, "dashboards")
 	t.Intel = Intel{AllowLoopbackFeeds: c.Intel.AllowLoopbackFeeds}
 	t.M365 = M365{}
+	t.Okta = Okta{}
 	t.Notify = Notify{}
 	t.Response = Response{ScriptsDir: filepath.Join(dir, "scripts")}
 	t.Playbooks = Playbooks{}
