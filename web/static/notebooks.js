@@ -100,11 +100,15 @@ function mdRender(text, depth = 0) {
 // mdSafeHref returns a link target a note may use, or null.
 function mdSafeHref(url) {
   const u = String(url || '').trim();
-  if (/^#[a-z][\w?=&.-]*$/i.test(u)) return u;
-  if (/^mailto:[^\s<>"]+$/i.test(u)) return u;
+  // Each kind of link is rebuilt behind its own fixed scheme, so what the
+  // note wrote can never choose the scheme (javascript:, data: ...).
+  if (/^#[a-z][\w?=&.-]*$/i.test(u)) return '#' + u.slice(1);
+  if (/^mailto:[^\s<>"]+$/i.test(u)) return 'mailto:' + u.slice(7);
   try {
     const p = new URL(u);
-    if (p.protocol === 'https:' || p.protocol === 'http:') return p.href;
+    const rest = p.host + p.pathname + p.search + p.hash;
+    if (p.protocol === 'https:') return 'https://' + rest;
+    if (p.protocol === 'http:') return 'http://' + rest;
   } catch (_) { /* not a URL */ }
   return null;
 }
