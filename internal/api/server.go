@@ -349,6 +349,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSample(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeVulnLogins(api)
 	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)

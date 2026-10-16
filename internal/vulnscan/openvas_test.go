@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -37,6 +38,8 @@ const gmpReport = `<get_reports_response status="200" status_text="OK"><report i
 type fakeGVMD struct {
 	mu       sync.Mutex
 	commands []string
+	raw      map[string]string // the last of each command, as sent
+	creds    int
 	polls    int
 	password string
 	noFeed   atomic.Bool // the feed is still loading
@@ -55,6 +58,7 @@ func (f *fakeGVMD) serve(c net.Conn) {
 		var cmd struct {
 			XMLName  xml.Name
 			Password string `xml:"credentials>password"`
+			Inner    string `xml:",innerxml"`
 		}
 		if err := dec.Decode(&cmd); err != nil {
 			return
@@ -62,6 +66,12 @@ func (f *fakeGVMD) serve(c net.Conn) {
 		name := cmd.XMLName.Local
 		f.mu.Lock()
 		f.commands = append(f.commands, name)
+		if f.raw == nil {
+			f.raw = map[string]string{}
+		}
+		f.raw[name] = cmd.Inner
+		f.creds += map[bool]int{true: 1}[name == "create_credential"]
+		n := f.creds
 		f.mu.Unlock()
 		var out string
 		switch name {
@@ -73,6 +83,8 @@ func (f *fakeGVMD) serve(c net.Conn) {
 			}
 		case "get_version":
 			out = `<get_version_response status="200" status_text="OK"><version>22.5</version></get_version_response>`
+		case "create_credential":
+			out = fmt.Sprintf(`<create_credential_response status="201" status_text="OK, resource created" id="c%d"/>`, n)
 		case "create_target":
 			out = `<create_target_response status="201" status_text="OK, resource created" id="t1"/>`
 		case "create_task":
@@ -120,7 +132,7 @@ func TestOpenVASScan(t *testing.T) {
 		t.Fatalf("version %q %v", v, err)
 	}
 	var progress []float64
-	found, err := ov.Scan(ctx, target("192.0.2.0/24"), "Signalith test", func(p float64) { progress = append(progress, p) })
+	found, err := ov.Scan(ctx, target("192.0.2.0/24"), "Signalith test", ScanLogins{}, func(p float64) { progress = append(progress, p) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +153,30 @@ func TestOpenVASScan(t *testing.T) {
 	// The task and target are removed after.
 	if s := f.sent(); !strings.HasSuffix(s, "get_reports,stop_task,delete_task,delete_target") {
 		t.Errorf("commands = %s", s)
+	}
+	// With logins: made before the target, named in it, removed after it.
+	ssh := &Login{Kind: LoginSSH, Username: "scan", Auth: AuthKey, Port: 2222, Secret: "-----BEGIN KEY-----", Passphrase: "phrase"}
+	smb := &Login{Kind: LoginSMB, Username: `CORP\scan`, Auth: AuthPassword, Secret: "win-pass"}
+	f.commands = nil
+	f.polls = 0
+	if _, err := ov.Scan(ctx, target("192.0.2.0/24"), "Signalith test", ScanLogins{SSH: ssh, SMB: smb}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.sent(); !strings.HasPrefix(s, "authenticate,get_configs,create_credential,create_credential,create_target,") ||
+		!strings.HasSuffix(s, "delete_target,delete_credential,delete_credential") {
+		t.Errorf("commands with logins = %s", s)
+	}
+	f.mu.Lock()
+	tgt, cred := f.raw["create_target"], f.raw["create_credential"]
+	f.mu.Unlock()
+	if !strings.Contains(tgt, `<ssh_credential id="c1"><port>2222</port></ssh_credential>`) || !strings.Contains(tgt, `<smb_credential id="c2">`) {
+		t.Errorf("target = %s", tgt)
+	}
+	if !strings.Contains(cred, "<type>up</type><login>CORP\\scan</login><password>win-pass</password>") {
+		t.Errorf("windows login = %s", cred)
+	}
+	if fmt.Sprint(ssh) != "ssh login scan" || strings.Contains(fmt.Sprintf("%v %+v", ssh, smb), "pass") {
+		t.Errorf("a login prints its secret: %v %+v", ssh, smb)
 	}
 	ov.Password = "wrong"
 	if _, err := ov.Version(ctx); err == nil || !strings.Contains(err.Error(), "refused the user name or password") {
@@ -224,7 +260,7 @@ func TestOpenVASCheck(t *testing.T) {
 	if ck := c.openVASCheck(ctx, []Target{tg}); ck.State != CheckWarn || !strings.Contains(ck.Detail, "still loading") {
 		t.Errorf("feed loading = %+v", ck)
 	}
-	if _, err := c.OpenVAS.Scan(ctx, tg, "x", nil); !errors.Is(err, ErrFeedLoading) {
+	if _, err := c.OpenVAS.Scan(ctx, tg, "x", ScanLogins{}, nil); !errors.Is(err, ErrFeedLoading) {
 		t.Errorf("scan while the feed loads: %v", err)
 	}
 	if strings.Contains(f.sent(), "create_target") {

@@ -192,6 +192,8 @@ To set it up on a scanning server:
 
 4. Restart Signalith. **Settings > Scanners** shows whether OpenVAS answered.
 5. Edit a network on the Vulnerabilities page and turn on **Also scan with OpenVAS**.
+6. Optional but worth it: give OpenVAS logins to sign in to the hosts with
+   ([Credentialed OpenVAS scans](#credentialed-openvas-scans)).
 
 Signalith makes a target and a task in OpenVAS for each scan and removes both when the
 scan ends; stopping the scan in Signalith stops it in OpenVAS too. OpenVAS findings are
@@ -218,6 +220,88 @@ patch without changing the version), so they fall under the 70% cut. Signalith's
 scan covers that case: it reads the version and matches it to the NVD's CVEs, which list
 CVE-2021-41773 for Apache 2.4.49. The two find different things, which is why a network
 can use both.
+
+### Credentialed OpenVAS scans
+
+From outside, OpenVAS sees only what a host's open ports show. Signed in, it reads the
+installed packages, patches and settings, and finds far more: missing security updates,
+old kernels, weak configuration. Give it a login for the Linux hosts (SSH) and one for the
+Windows hosts (SMB) of a network:
+
+1. Make a scan account on the hosts, with the least access it needs (below).
+2. Open **Settings > Scanners**, find **Scan logins for OpenVAS** and click **Add a login**.
+   Pick the kind, enter a name, the user name and the SSH private key or password, and save.
+3. On **Vulnerabilities > Networks**, edit the network, keep **Also scan with OpenVAS** on,
+   and pick the logins under **Sign in to Linux hosts with** and **Sign in to Windows hosts with**.
+4. Click **Scan now**. In the results, OpenVAS findings from the signed-in checks are named
+   for the package or patch, such as "Ubuntu: Security Advisory (USN-…)".
+
+#### A Linux scan account (SSH key)
+
+A plain user is enough: the package checks read `dpkg`, `rpm` and `uname` output, which
+any user can. Do not give it `sudo` or add it to `wheel`, `sudo` or `adm`.
+
+```sh
+# On the scanning server, make a key pair just for scanning.
+ssh-keygen -t ed25519 -f signalith-scan -C signalith-scan -N ''
+
+# On each Linux host (or with your configuration tool):
+sudo useradd --create-home --shell /bin/sh signalith-scan
+sudo install -d -m 700 -o signalith-scan -g signalith-scan ~signalith-scan/.ssh
+echo 'from="10.0.5.20",no-port-forwarding,no-agent-forwarding,no-X11-forwarding '"$(cat signalith-scan.pub)" |
+  sudo tee ~signalith-scan/.ssh/authorized_keys
+sudo chown signalith-scan: ~signalith-scan/.ssh/authorized_keys
+sudo chmod 600 ~signalith-scan/.ssh/authorized_keys
+```
+
+`useradd` gives the account no password, so it cannot sign in with one. Put the scanning
+server's address in `from=`, so the key works from there only. Paste the
+private key file, `signalith-scan`, into the login and then delete that file: Signalith
+keeps it encrypted. An `ed25519` key is best; RSA keys of 3072 bits or more work too. A key
+with a passphrase works; enter the passphrase with it. An SSH password works where keys
+cannot be used, but a key is safer: it cannot be guessed and does not work from elsewhere.
+
+#### A Windows scan account (SMB)
+
+Windows keeps the patch and software lists that OpenVAS checks in the registry and WMI,
+which only members of the local Administrators group can read remotely. So the account must
+be a local administrator on the hosts it scans, and nothing more:
+
+1. In Active Directory, make a user such as `svc-signalith-scan` with a long random
+   password, and a group such as `Signalith scanners` with only that user in it. Do not add
+   it to Domain Admins or any other admin group.
+2. With a Group Policy Object linked to the computers to scan (not to the domain
+   controllers), add `Signalith scanners` to the local Administrators group
+   (**Computer Configuration > Preferences > Control Panel Settings > Local Users and Groups**).
+3. In the same GPO, under **User Rights Assignment**, add the group to **Deny log on
+   locally** and **Deny log on through Remote Desktop Services**: it signs in over the
+   network only.
+4. Allow **File and Printer Sharing (SMB-In)** (TCP 445) from the scanning server in
+   Windows Defender Firewall, and set the **Remote Registry** service to Manual so it can
+   start when asked.
+
+Enter the user name as `CORP\svc-signalith-scan`. For a computer outside a domain, a
+local account works too (its name alone), but Windows then also needs
+`LocalAccountTokenFilterPolicy` set to 1 for remote admin access, which weakens that
+computer's defenses; prefer a domain account. Change the password every few months: edit
+the login and enter the new one.
+
+#### How Signalith keeps the logins
+
+- Keys, passphrases and passwords are encrypted (AES-256-GCM) before they are stored, each
+  bound to its login, and never sent back to the browser, written to a log or put in an
+  event. Editing a login keeps the saved key or password unless you enter a new one.
+- Only admins can see the list of logins, add, change or remove them, or pick them for a
+  network. Each change is in the audit log (`vulnerability scan login saved` or
+  `removed`), with the login's name, user name and whether its key or password changed.
+- A login is decrypted only on the server that scans the network, when a scan starts. It is
+  handed to OpenVAS for that scan alone, and removed from OpenVAS when the scan ends.
+- Servers that share their settings encrypt the logins with the cluster key, so every
+  scanner can use them. A login saved on a single server, before it joined a cluster, is
+  encrypted with that server's own key: the list then marks it **Enter again**, and scans
+  run without OpenVAS until you edit it and enter its key or password again.
+- A login in use by a network cannot be removed: pick another one, or None, for the network
+  first. Remove the account from your hosts as well when you no longer need it.
 
 ## Results in Search, detections and assets
 

@@ -437,6 +437,15 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if err := s.Vulns.Store.CheckLogins(r.Context(), req.Settings); err != nil {
+		var bad *vulnscan.InputError
+		if errors.As(err, &bad) {
+			writeError(w, http.StatusBadRequest, err)
+		} else {
+			writeError(w, http.StatusBadGateway, err)
+		}
+		return
+	}
 	set, err := s.Vulns.Store.SaveSettings(r.Context(), req.Settings, cur, userOf(r))
 	if err != nil {
 		var bad *vulnscan.InputError

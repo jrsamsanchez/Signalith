@@ -175,6 +175,30 @@ type gmpCreateTarget struct {
 	PortRange    string   `xml:"port_range,omitempty"`
 	PortList     *gmpRef  `xml:"port_list,omitempty"`
 	AliveTests   string   `xml:"alive_tests"`
+	SSHLogin     *gmpSSH  `xml:"ssh_credential,omitempty"`
+	SMBLogin     *gmpRef  `xml:"smb_credential,omitempty"`
+}
+
+type gmpSSH struct {
+	ID   string `xml:"id,attr"`
+	Port int    `xml:"port"`
+}
+
+// gmpCreateCredential makes the login OpenVAS signs in to hosts with:
+// type up is a user name and password, usk a user name and SSH key.
+type gmpCreateCredential struct {
+	XMLName  xml.Name `xml:"create_credential"`
+	Name     string   `xml:"name"`
+	Comment  string   `xml:"comment"`
+	Type     string   `xml:"type"`
+	Login    string   `xml:"login"`
+	Password string   `xml:"password,omitempty"`
+	Key      *gmpKey  `xml:"key,omitempty"`
+}
+
+type gmpKey struct {
+	Private string `xml:"private"`
+	Phrase  string `xml:"phrase,omitempty"`
 }
 
 type gmpCreateTask struct {
@@ -220,10 +244,11 @@ type gmpTasks struct {
 }
 
 type gmpDelete struct {
-	XMLName  xml.Name
-	TaskID   string `xml:"task_id,attr,omitempty"`
-	TargetID string `xml:"target_id,attr,omitempty"`
-	Ultimate string `xml:"ultimate,attr"`
+	XMLName      xml.Name
+	TaskID       string `xml:"task_id,attr,omitempty"`
+	TargetID     string `xml:"target_id,attr,omitempty"`
+	CredentialID string `xml:"credential_id,attr,omitempty"`
+	Ultimate     string `xml:"ultimate,attr"`
 }
 
 type gmpGetReports struct {
@@ -335,9 +360,10 @@ type Finding struct {
 }
 
 // Scan scans t with OpenVAS's "Full and fast" configuration and returns
-// what it found. progress, when set, is called with the percent done. The
-// task and target it makes are removed afterwards, whatever happens.
-func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, progress func(float64)) ([]Finding, error) {
+// what it found, signing in to the hosts with the logins given. progress,
+// when set, is called with the percent done. The task, target and logins
+// it makes in OpenVAS are removed afterwards, whatever happens.
+func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLogins, progress func(float64)) ([]Finding, error) {
 	g, err := o.open(ctx)
 	if err != nil {
 		return nil, err
@@ -359,11 +385,9 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, progress func
 		tgt.PortRange = "T:" + t.Ports
 	}
 	var created gmpCreated
-	if err := g.do(ctx, tgt, &created); err != nil {
-		return nil, err
-	}
-	targetID := created.ID
+	var credIDs []string
 	// Clean up on a fresh connection when ctx ended.
+	var targetID string
 	cleanup := func(taskID string) {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
@@ -381,8 +405,42 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, progress func
 			_ = c.do(cctx, gmpStopTask{TaskID: taskID}, &st)
 			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_task"}, TaskID: taskID, Ultimate: "1"}, &st)
 		}
-		_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_target"}, TargetID: targetID, Ultimate: "1"}, &st)
+		if targetID != "" {
+			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_target"}, TargetID: targetID, Ultimate: "1"}, &st)
+		}
+		// The logins last: a target that uses one cannot go before it.
+		for _, id := range credIDs {
+			_ = c.do(cctx, gmpDelete{XMLName: xml.Name{Local: "delete_credential"}, CredentialID: id, Ultimate: "1"}, &st)
+		}
 	}
+	for _, l := range []*Login{logins.SSH, logins.SMB} {
+		if l == nil {
+			continue
+		}
+		cred := gmpCreateCredential{Name: name + " " + l.Kind, Comment: tgt.Comment, Type: "up", Login: l.Username, Password: l.Secret}
+		if l.Auth == AuthKey {
+			cred.Type, cred.Password, cred.Key = "usk", "", &gmpKey{Private: l.Secret, Phrase: l.Passphrase}
+		}
+		if err := g.do(ctx, cred, &created); err != nil {
+			cleanup("")
+			return nil, fmt.Errorf("the %s login was not taken: %w", loginWord(l.Kind), err)
+		}
+		credIDs = append(credIDs, created.ID)
+		if l.Kind == LoginSSH {
+			port := l.Port
+			if port == 0 {
+				port = 22
+			}
+			tgt.SSHLogin = &gmpSSH{ID: created.ID, Port: port}
+		} else {
+			tgt.SMBLogin = &gmpRef{ID: created.ID}
+		}
+	}
+	if err := g.do(ctx, tgt, &created); err != nil {
+		cleanup("")
+		return nil, err
+	}
+	targetID = created.ID
 	task := gmpCreateTask{Name: name, Comment: tgt.Comment, Config: gmpRef{ID: gvmConfigFullAndFast},
 		Target: gmpRef{ID: targetID}, Scanner: gmpRef{ID: gvmScannerOpenVAS}}
 	if err := g.do(ctx, task, &created); err != nil {
@@ -419,6 +477,13 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, progress func
 		case <-time.After(poll):
 		}
 	}
+}
+
+func loginWord(kind string) string {
+	if kind == LoginSMB {
+		return "Windows"
+	}
+	return "SSH"
 }
 
 func (o *OpenVAS) results(ctx context.Context, g *gmpConn, reportID string) ([]Finding, error) {

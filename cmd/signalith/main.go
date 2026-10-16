@@ -1297,6 +1297,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// their scanner; the server that runs the background jobs runs the
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	// The SSH and Windows logins OpenVAS signs in with, encrypted.
+	vstore.Keys = newLoginKeys(c, r.clusterKey)
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })

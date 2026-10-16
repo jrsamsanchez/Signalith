@@ -571,9 +571,16 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 		case !ov.Configured():
 			ovErr = "OpenVAS is not set up on " + s.Server + ", so only Nmap ran. Settings > Scanners says how to set it up."
 		default:
-			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID)
+			logins, lerr := s.Store.loginsFor(ctx, t)
+			if lerr != nil {
+				ovErr = "OpenVAS did not run: " + lerr.Error()
+				s.log().Warn("vulnerability scan: OpenVAS scan skipped; the Nmap results are kept", "network", t.Name, "scan", sc.ID, "err", lerr)
+				break
+			}
+			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID,
+				"ssh_login", logins.SSH != nil, "windows_login", logins.SMB != nil)
 			var oerr error
-			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, func(p float64) {
+			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, logins, func(p float64) {
 				pmu.Lock()
 				prog.Task, prog.Percent, prog.ETA = "OpenVAS", p, time.Time{}
 				pmu.Unlock()
