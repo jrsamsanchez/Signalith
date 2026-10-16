@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -320,6 +322,12 @@ func (s *Server) handlePutNotebook(w http.ResponseWriter, r *http.Request) {
 	if sharedFrom != "" {
 		s.Log.Info("hunting notebook sharing changed", "audit", true, "by", user, "notebook", n.ID, "from", sharedFrom, "to", n.Sharing)
 	}
+	if !n.IsOwner(user) {
+		// The owner's own edits are routine; someone else changing their
+		// hunt (an admin, or an analyst on a notebook shared to edit) is
+		// recorded.
+		s.Log.Info("hunting notebook changed by someone other than its owner", "audit", true, "by", user, "notebook", n.ID, "owner", n.Owner)
+	}
 	s.writeNotebook(w, r, http.StatusOK, n)
 }
 
@@ -560,12 +568,17 @@ func (s *Server) handleLinkNotebookCase(w http.ResponseWriter, r *http.Request) 
 				if cell.Kind != notebooks.KindSearch || cell.Result == nil || cell.Result.Error != "" {
 					continue
 				}
-				e := cases.Entry{Kind: cases.KindSearch, Text: cell.Title, Query: cell.Query, Earliest: cell.Result.Earliest,
+				e := cases.Entry{Kind: cases.KindSearch, Text: cell.Title, Query: cell.Query, Earliest: cell.Result.Earliest, NotebookID: n.ID,
 					Result: cell.Result.Kind, Columns: cell.Result.Columns, Matched: cell.Result.Matched,
 					Truncated: cell.Result.Truncated || len(cell.Result.Rows) > cases.MaxRows}
 				e.Rows = slices.Clone(cell.Result.Rows[:min(len(cell.Result.Rows), cases.MaxRows)])
 				if e.Rows == nil {
 					e.Rows = []map[string]any{}
+				}
+				// Linking again adds only results that changed since the
+				// last link, so repeated links cannot fill the case.
+				if slices.ContainsFunc(c.Entries, func(x cases.Entry) bool { return sameCopiedResult(x, e) }) {
+					continue
 				}
 				if _, err := c.AddEntry(e, user, now); err != nil {
 					return false, badRequest{err}
@@ -581,6 +594,21 @@ func (s *Server) handleLinkNotebookCase(w http.ResponseWriter, r *http.Request) 
 	}
 	s.Log.Info("hunting notebook linked to a case", "audit", true, "by", user, "notebook", n.ID, "case", caseID, "with_results", req.WithResults)
 	writeJSON(w, http.StatusOK, map[string]any{"notebook": n, "version": notebookVersion(n), "can": rightsOf(r, n), "case": map[string]any{"id": c.ID, "title": c.Title}})
+}
+
+// sameCopiedResult reports whether case entry x is a copy of the same
+// notebook search result as e.
+func sameCopiedResult(x, e cases.Entry) bool {
+	if x.Kind != cases.KindSearch || x.NotebookID != e.NotebookID || x.Query != e.Query || x.Earliest != e.Earliest ||
+		x.Text != e.Text || x.Matched != e.Matched || x.Result != e.Result || len(x.Rows) != len(e.Rows) {
+		return false
+	}
+	if len(x.Rows) == 0 {
+		return true // nil and empty rows are the same result
+	}
+	a, err1 := json.Marshal(x.Rows)
+	b, err2 := json.Marshal(e.Rows)
+	return err1 == nil && err2 == nil && bytes.Equal(a, b)
 }
 
 // handleUnlinkNotebookCase unlinks a notebook from a case and takes the
@@ -619,5 +647,34 @@ func (s *Server) handleUnlinkNotebookCase(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	s.Log.Info("hunting notebook unlinked from a case", "audit", true, "by", userOf(r), "notebook", n.ID, "case", caseID)
 	s.writeNotebook(w, r, http.StatusOK, n)
+}
+
+// releaseNotebooks clears the owner of a deleted user's notebooks, so an
+// account made later with the same name does not inherit them. Private
+// ones are then seen only by admins, who can share, hand on or delete them.
+func (s *Server) releaseNotebooks(ctx context.Context, username, by string) {
+	if s.Notebooks == nil || username == "" {
+		return
+	}
+	list, _, err := s.Notebooks.Search(ctx, notebooks.Filter{Admin: true, Owner: username, Limit: 10000})
+	if err != nil {
+		s.Log.Warn("could not release the deleted user's hunting notebooks", "user", username, "err", err)
+		return
+	}
+	for _, sum := range list {
+		_, err := s.Notebooks.Modify(ctx, sum.ID, func(n *notebooks.Notebook) (bool, error) {
+			if !n.IsOwner(username) {
+				return false, nil
+			}
+			n.Owner = ""
+			return true, nil
+		})
+		if err != nil {
+			s.Log.Warn("could not release a deleted user's hunting notebook", "user", username, "notebook", sum.ID, "err", err)
+			continue
+		}
+		s.Log.Info("hunting notebook owner removed with their account", "audit", true, "by", by, "notebook", sum.ID, "former_owner", username)
+	}
 }

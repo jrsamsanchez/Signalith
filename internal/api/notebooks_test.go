@@ -281,9 +281,12 @@ func TestNotebookLinksToCase(t *testing.T) {
 	if kinds[cases.KindNotebook] != 1 || kinds[cases.KindSearch] != 3 {
 		t.Errorf("case entries %v", kinds)
 	}
-	// Linking again adds nothing; the notebook entry comes off the case
-	// only by unlinking.
+	// Linking again adds nothing, even with results, until a result
+	// changes; the notebook entry comes off the case only by unlinking.
 	nb(t, ts, "andy", "POST", path+"/cases", `{"case_id":"`+caseID+`"}`, "")
+	for range 3 {
+		nb(t, ts, "andy", "POST", path+"/cases", `{"case_id":"`+caseID+`","with_results":true}`, "")
+	}
 	if c, _ := s.Cases.Get(context.Background(), caseID); len(c.Entries) != 4 {
 		t.Errorf("relink added entries: %d", len(c.Entries))
 	}
@@ -300,5 +303,28 @@ func TestNotebookLinksToCase(t *testing.T) {
 	c, _ = s.Cases.Get(context.Background(), caseID)
 	if len(c.Entries) != 3 {
 		t.Errorf("after unlink the case has %d entries; the copied searches stay", len(c.Entries))
+	}
+}
+
+// A deleted user's notebooks lose their owner, so a new account with the
+// same name does not inherit them; admins still see them.
+func TestNotebookOwnerDeleted(t *testing.T) {
+	ts, s := newNotebookServer(t)
+	_, body, _, _ := nb(t, ts, "bea", "POST", "/api/notebooks", `{"title":"Bea's private hunt"}`, "")
+	id := notebookOf(t, body).ID
+	if code, _, _, _ := nb(t, ts, "admin", "DELETE", "/api/users/bea", "", ""); code != 200 {
+		t.Fatalf("delete user = %d", code)
+	}
+	if n, _ := s.Notebooks.Get(context.Background(), id); n.Owner != "" {
+		t.Errorf("owner = %q", n.Owner)
+	}
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "Bea", Role: users.Analyst, Password: "role-password"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _, _ := nb(t, ts, "bea", "GET", "/api/notebooks/"+id, "", ""); code != 404 {
+		t.Errorf("new bea opened the old notebook: %d", code)
+	}
+	if code, _, _, _ := nb(t, ts, "admin", "GET", "/api/notebooks/"+id, "", ""); code != 200 {
+		t.Errorf("admin = %d", code)
 	}
 }

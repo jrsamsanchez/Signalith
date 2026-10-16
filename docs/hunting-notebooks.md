@@ -99,6 +99,16 @@ Notes are shown as plain text with Markdown formatting only: HTML in a note is
 shown as text, never run, and links work only for `http`, `https`, `mailto` and
 pages of Signalith. Links to other sites open in a new tab with no referrer.
 
+**Download as Markdown** writes notes and titles exactly as their authors wrote them.
+Values from events are escaped, so an event cannot add a link, an image or HTML to the
+file.
+
+When a user is deleted (on the Users page or through SCIM), their notebooks lose their
+owner, so a new account with the same name does not get them. Shared ones stay
+shared; private ones are seen only by admins, who can share, copy or delete them.
+Unlinking a case and changes made by someone other than the owner are also written
+to the audit log.
+
 ## API
 
 | Method and path | Role | What it does |

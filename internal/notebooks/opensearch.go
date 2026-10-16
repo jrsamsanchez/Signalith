@@ -187,6 +187,9 @@ func filterQuery(f Filter) map[string]any {
 			map[string]any{"terms": map[string]any{"sharing": []string{Read, Edit}}},
 		}}})
 	}
+	if f.Owner != "" {
+		fs = append(fs, map[string]any{"term": map[string]any{"owner_key": strings.ToLower(f.Owner)}})
+	}
 	if f.Case != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"cases": f.Case}})
 	}

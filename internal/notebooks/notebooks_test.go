@@ -207,10 +207,12 @@ func TestMarkdownExport(t *testing.T) {
 	n.Cases = []string{"CASE-1"}
 	n.Cells[1].Query = "datamodel=Endpoint ```x```"
 	n.Cells[1].Result = &Result{RanAt: time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC), Kind: "table", Columns: []string{"user", "cmd"},
-		Rows: []map[string]any{{"user": "a|b", "cmd": "<script>alert(1)</script>\n| x |"}}}
+		Rows: []map[string]any{{"user": "a|b", "cmd": "<script>alert(1)</script>\n| x |"},
+			{"user": "[Reset your password](https://evil.example/login)", "cmd": "![](https://evil.example/p.png) **x** www.evil.example"}}}
 	md := string(Markdown(n, 10))
 	for _, want := range []string{"# Hunt\n", "**ATT&CK:** T1059.001", "**Investigations:** CASE-1", "````spl\ndatamodel=Endpoint ```x```\n````",
-		"| user | cmd |", `| a\|b | &lt;script&gt;alert(1)&lt;/script&gt; \| x \| |`} {
+		"| user | cmd |", `| a\|b | &lt;script&gt;alert\(1\)&lt;/script&gt; \| x \| |`,
+		`| \[Reset your password\]\(https\://evil\.example/login\) | \!\[\]\(https\://evil\.example/p\.png\) \*\*x\*\* www\.evil\.example |`} {
 		if !strings.Contains(md, want) {
 			t.Errorf("no %q in\n%s", want, md)
 		}

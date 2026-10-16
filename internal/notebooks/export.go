@@ -130,12 +130,23 @@ func valueText(v any) string {
 
 // cell makes text safe inside a Markdown table cell: one line, pipes and
 // HTML escaped so no table, link or markup can be injected from event data.
+// cellEscaper keeps a value from the data plain text in a Markdown table:
+// line breaks become spaces, < > & become entities and every other
+// character Markdown gives a meaning gets a backslash, so a value cannot
+// make a link, an image, emphasis or a new table cell.
+var cellEscaper = func() *strings.Replacer {
+	pairs := []string{"\r\n", " ", "\n", " ", "\r", " ", "<", "&lt;", ">", "&gt;", "&", "&amp;"}
+	for _, c := range "\\`*_{}[]()#+-.!|~:" {
+		pairs = append(pairs, string(c), "\\"+string(c))
+	}
+	return strings.NewReplacer(pairs...)
+}()
+
 func cell(s string) string {
-	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\\", "\\\\", "|", "\\|", "<", "&lt;", ">", "&gt;", "`", "\\`").Replace(s)
 	if len(s) > 300 {
 		s = cutUTF8(s, 300) + "…"
 	}
-	return s
+	return cellEscaper.Replace(s)
 }
 
 // cutUTF8 cuts s to at most n bytes on a character boundary.

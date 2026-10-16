@@ -423,7 +423,9 @@ type Filter struct {
 	// sub-techniques.
 	Technique string
 	// Case keeps notebooks linked to it.
-	Case  string
+	Case string
+	// Owner keeps notebooks owned by this user name (without case).
+	Owner string
 	Limit int
 }
 
@@ -436,6 +438,9 @@ func (f Filter) Matches(n *Notebook) bool {
 		return false
 	}
 	if f.Case != "" && !slices.Contains(n.Cases, f.Case) {
+		return false
+	}
+	if f.Owner != "" && !n.IsOwner(f.Owner) {
 		return false
 	}
 	if t := strings.ToUpper(strings.TrimSpace(f.Technique)); t != "" &&

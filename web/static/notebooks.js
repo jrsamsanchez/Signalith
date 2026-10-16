@@ -36,8 +36,10 @@ function nbSetHash(id) {
 // made from the note, never HTML, so a note cannot run script or inject
 // markup; links work only for http(s), mailto and pages of this app.
 // Supported: headings, paragraphs, lists, quotes, code, bold, italic,
-// inline code, links and rules.
-function mdRender(text) {
+// inline code, links and rules. Quotes nest at most MD_MAX_DEPTH deep;
+// deeper > marks stay as text, so no note can exhaust the stack.
+const MD_MAX_DEPTH = 8;
+function mdRender(text, depth = 0) {
   const out = [];
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   let para = [];
@@ -62,12 +64,12 @@ function mdRender(text) {
       continue;
     }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); out.push(el('hr', {})); continue; }
-    if (/^\s*>/.test(line)) {
+    if (depth < MD_MAX_DEPTH && /^\s*>/.test(line)) {
       flush();
       const body = [];
       for (; i < lines.length && /^\s*>/.test(lines[i]); i++) body.push(lines[i].replace(/^\s*>\s?/, ''));
       i--;
-      out.push(el('blockquote', {}, ...mdRender(body.join('\n'))));
+      out.push(el('blockquote', {}, ...mdRender(body.join('\n'), depth + 1)));
       continue;
     }
     const li = line.match(/^\s*([-*+]|\d{1,9}[.)])\s+(.*)$/);
@@ -108,8 +110,9 @@ function mdSafeHref(url) {
 }
 
 // mdInline renders one line's code spans, links, bold and italic.
-function mdInline(text) {
+function mdInline(text, depth = 0) {
   const out = [];
+  if (depth >= MD_MAX_DEPTH) return [text];
   const re = /`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|__(.+?)__|\*([^*\s][^*]*?)\*|(?<![\w])_([^_\s][^_]*?)_(?![\w])/;
   let rest = text;
   while (rest) {
@@ -120,10 +123,10 @@ function mdInline(text) {
     else if (m[2] != null) {
       const href = mdSafeHref(m[3]);
       if (!href) out.push(m[0]);
-      else if (href.startsWith('#')) out.push(el('a', { href }, ...mdInline(m[2])));
-      else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, ...mdInline(m[2])));
-    } else if (m[4] != null || m[5] != null) out.push(el('strong', {}, ...mdInline(m[4] ?? m[5])));
-    else out.push(el('em', {}, ...mdInline(m[6] ?? m[7])));
+      else if (href.startsWith('#')) out.push(el('a', { href }, ...mdInline(m[2], depth + 1)));
+      else out.push(el('a', { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, ...mdInline(m[2], depth + 1)));
+    } else if (m[4] != null || m[5] != null) out.push(el('strong', {}, ...mdInline(m[4] ?? m[5], depth + 1)));
+    else out.push(el('em', {}, ...mdInline(m[6] ?? m[7], depth + 1)));
     rest = rest.slice(m.index + m[0].length);
   }
   return out;
@@ -360,7 +363,7 @@ function renderNotebook() {
   const n = nbState.nb;
   if (!n) return;
   document.title = visibleText(n.title) + ' · Notebooks · Signalith';
-  const cells = el('ol', { class: 'nb-cells', 'aria-label': 'Cells' }, ...n.cells.map((c, i) => el('li', { class: 'nb-cells__item', 'data-id': c.id }, nbCell(c, i))));
+  const cells = el('ol', { class: 'nb-cells', 'aria-label': 'Cells' }, ...n.cells.map((c, i) => el('li', { class: 'nb-cells__item', 'data-id': c.id }, nbSafeCell(c, i))));
   fill($('nb-view'), nbBack(), nbHead(n),
     n.starter ? el('div', { class: 'callout nb-starter' }, icon('sparkles'), el('div', {},
       el('b', {}, 'A starter hunt. '), 'Run it to see what it finds in your data. ',
@@ -405,7 +408,7 @@ function nbHead(n) {
 
   const meta = [nbSharingBadge(n)];
   if (!n.starter) {
-    meta.push(el('span', { class: 'nb-head__who' }, el('span', { title: 'Owner' }, icon('user', 'icon--xs'), n.owner)));
+    meta.push(el('span', { class: 'nb-head__who' }, el('span', { title: n.owner ? 'Owner' : 'Its owner’s account was deleted; admins decide what happens to it' }, icon('user', 'icon--xs'), n.owner || 'No owner')));
     meta.push(el('span', { class: 'nb-head__when', title: fullTime(n.updated) }, `Updated ${ago(n.updated)}` + (n.updated_by ? ` by ${n.updated_by}` : '')));
   }
   if ((n.cases || []).length) {
@@ -450,6 +453,16 @@ function nbAddBar() {
 }
 
 // ---------- cells ----------
+// nbSafeCell draws one cell; a cell that cannot be drawn shows its text
+// plainly instead of taking the whole notebook down with it.
+function nbSafeCell(c, i) {
+  try { return nbCell(c, i); } catch (e) {
+    console.error('notebook cell', c.id, e);
+    return el('div', { class: 'nb-cell nb-cell--note' }, el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
+      el('div', {}, 'This cell could not be shown as formatted text. ', el('pre', { class: 'nb-query' }, c.kind === 'search' ? c.query : c.text))));
+  }
+}
+
 function nbCell(c, i) {
   if (nbState.editing === c.id) return nbEditor(c, c.kind);
   const n = nbState.nb;
