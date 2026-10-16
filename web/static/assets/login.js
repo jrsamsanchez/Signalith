@@ -223,9 +223,9 @@
     }
     setBusy(false);
     if (data.code === 'mfa_required') {
-      // The password was right: the code is next. The password stays in
-      // this page's memory only, to send with the code.
-      showCode({ username: user.value.trim(), password: pass.value, remember: remember.checked });
+      // The password was right: the code or passkey is next. The password
+      // stays in this page's memory only, to send with it.
+      showCode({ username: user.value.trim(), password: pass.value, remember: remember.checked }, data);
       return;
     }
     if (resp.status === 429) {
@@ -241,6 +241,62 @@
     // the button, which was disabled while signing in.
     if (wrong) pass.select();
     else submit.focus();
+  });
+
+  // ---- Passkeys -----------------------------------------------------------
+  // A passkey signs local users in on its own (the server says who may),
+  // and is the second step after the password for anyone who added one.
+  const PK = window.SignalithPasskey;
+  const pkOK = !!(PK && PK.supported());
+  const PASSKEY_REFUSED = {
+    passkey_wrong: ['That passkey didn’t work.', 'Try again, or sign in with your password.'],
+    passkey_expired: ['That took too long.', 'Try the passkey again.'],
+    passkey_cloned: ['That passkey was refused.', 'It may have been copied. Sign in another way, then remove it from your account.'],
+    passkey_password: ['Enter your password first.', 'Your account signs in with your directory password, then your passkey.'],
+    passkey_unavailable: ['Passkeys can’t be used here.', 'Open Signalith by its name over HTTPS, such as https://siem.example.com.'],
+    disabled: REFUSED_DISABLED,
+  };
+  const pkBtn = $('passkey-btn');
+  $('passkey-signin').hidden = !pkOK;
+  pkBtn.addEventListener('click', async () => {
+    if (pkBtn.disabled) return;
+    pkBtn.disabled = true;
+    $('passkey-label').textContent = 'Waiting for your passkey…';
+    const done = () => { pkBtn.disabled = false; $('passkey-label').textContent = 'Sign in with a passkey'; };
+    setView('');
+    let resp;
+    let data;
+    try {
+      resp = await send('api/login/passkey/options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        done();
+        const m = PASSKEY_REFUSED[data.code];
+        showError(m ? m[0] : 'Passkeys can’t be used here.', m ? m[1] : sentence(data.error));
+        return;
+      }
+      let ans;
+      try {
+        ans = await PK.get(data);
+      } catch (e) {
+        done();
+        const why = PK.problem(e);
+        if (why) showError('No passkey was used.', why);
+        return;
+      }
+      $('passkey-label').textContent = 'Signing in…';
+      resp = await send('api/login/passkey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ans, remember: remember.checked }) });
+      data = await resp.json().catch(() => ({}));
+    } catch (_) {
+      done();
+      showError('Could not reach the Signalith server.', 'Check your connection and try again.');
+      return;
+    }
+    done();
+    if (resp.ok) { signedIn(data, ''); return; }
+    if (resp.status === 429) { locked(data.error, resp.headers.get('Retry-After')); return; }
+    const m = PASSKEY_REFUSED[data.code] || REFUSED[data.code];
+    showError(m ? m[0] : 'Sign-in failed.', m ? m[1] : sentence(data.error) || 'Try again.');
   });
 
   // signedIn goes on after a sign-in the server accepted: to choose a new
@@ -270,6 +326,8 @@
   let pending = null; // { username, password, remember } until the code is accepted
   let recoveryMode = false;
   let codeTimer = null;
+  let step = { app: true }; // what the second step can be: the server's answer
+  let stepOpts = null; // its passkey challenge, when the user has a passkey here
 
   function codeError(title, text) {
     $('code-error-title').textContent = title;
@@ -289,22 +347,99 @@
     code.placeholder = on ? 'xxxxx-xxxxx' : '123456';
     $('code-label').textContent = on ? 'Recovery code' : 'Code';
     $('code-hint').textContent = on ? 'Each recovery code works once.' : 'The code changes every 30 seconds.';
-    $('code-sub').textContent = on ? 'Enter one of the recovery codes you saved when you set up two-step sign-in.' : 'Enter the 6-digit code from your authenticator app.';
+    $('code-sub').textContent = codeSub(on);
     $('code-recovery').textContent = on ? 'Use a code from the app instead' : 'Use a recovery code instead';
+    // Without an app, a recovery code is the only code there is.
+    $('code-recovery').hidden = on && !step.app;
+    $('code-entry').hidden = !on && !step.app;
+    $('code-or').hidden = !step.app && !on;
     $('code-error').hidden = true;
     code.removeAttribute('aria-invalid');
-    code.focus();
+    if (!$('code-entry').hidden) code.focus();
   }
 
-  function showCode(p) {
-    pending = p;
-    showOnly(codeForm);
-    setRecoveryMode(false);
-    document.title = 'Two-step sign-in · Signalith';
+  function codeSub(recovery) {
+    if (stepOpts && step.app) return 'Use your passkey, or enter the 6-digit code from your authenticator app.';
+    if (stepOpts) return recovery ? 'Use your passkey, or one of the recovery codes you saved.' : 'Use your passkey to finish signing in.';
+    if (!step.app) return sentence(step.error) || 'Enter one of the recovery codes you saved when you set up two-step sign-in.';
+    return recovery ? 'Enter one of the recovery codes you saved when you set up two-step sign-in.' : 'Enter the 6-digit code from your authenticator app.';
   }
+
+  function showCode(p, answer) {
+    pending = p;
+    step = { app: answer.app !== false, error: answer.error };
+    stepOpts = pkOK && answer.passkey ? answer.passkey : null;
+    showOnly(codeForm);
+    $('code-passkey').hidden = !stepOpts;
+    $('code-mark').setAttribute('href', stepOpts ? '#i-fingerprint' : '#i-smartphone');
+    $('code-lost').textContent = stepOpts ? 'Lost your passkey?' : 'Lost your phone?';
+    // No app and no passkey here: only a recovery code is left.
+    setRecoveryMode(!step.app && !stepOpts);
+    document.title = 'Two-step sign-in · Signalith';
+    if (stepOpts) {
+      $('code-passkey-btn').focus();
+      // Straight away, while the click on Sign in still counts; the
+      // button is there when the browser wants a click of its own.
+      usePasskeyStep(true);
+    }
+  }
+
+  let stepBusy = false;
+  async function usePasskeyStep(auto) {
+    if (!stepOpts || !pending || stepBusy) return;
+    stepBusy = true;
+    const btn = $('code-passkey-btn');
+    btn.disabled = true;
+    $('code-passkey-label').textContent = 'Waiting for your passkey…';
+    const done = () => { stepBusy = false; btn.disabled = false; $('code-passkey-label').textContent = 'Use your passkey'; };
+    let ans;
+    try {
+      ans = await PK.get(stepOpts);
+    } catch (e) {
+      done();
+      const why = PK.problem(e);
+      if (why && !auto) codeError('No passkey was used.', why);
+      return;
+    }
+    $('code-passkey-label').textContent = 'Signing in…';
+    let resp;
+    try {
+      resp = await send('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...pending, passkey: ans }) });
+    } catch (_) {
+      done();
+      codeError('Could not reach the Signalith server.', 'Check your connection and try again.');
+      return;
+    }
+    const data = await resp.json().catch(() => ({}));
+    done();
+    if (resp.ok) {
+      const typed = pending.password;
+      pending = null;
+      signedIn(data, typed);
+      return;
+    }
+    if (resp.status === 429) { codeError('Sign-in is paused.', sentence(data.error) || 'Too many tries. Try again later.'); return; }
+    if (data.code === 'wrong_credentials') {
+      backToSignIn();
+      showError('That username and password don’t match.', 'Sign in again.', pass);
+      return;
+    }
+    if (data.code === 'passkey_expired') {
+      // A new challenge comes with the password alone.
+      try {
+        const again = await send('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pending) });
+        const a = await again.json().catch(() => ({}));
+        if (a.passkey) stepOpts = a.passkey;
+      } catch (_) { /* the message below says to try again */ }
+    }
+    const m = PASSKEY_REFUSED[data.code];
+    codeError(m ? m[0] : 'Sign-in failed.', m ? m[1] : sentence(data.error) || 'Try again.');
+  }
+  $('code-passkey-btn').addEventListener('click', () => usePasskeyStep(false));
 
   function backToSignIn() {
     pending = null;
+    stepOpts = null;
     clearTimeout(codeTimer);
     codeSubmit.disabled = false;
     code.value = '';
@@ -334,6 +469,7 @@
     ev.preventDefault();
     if (codeSubmit.disabled || !pending) return;
     const value = code.value.trim();
+    if ($('code-entry').hidden) { usePasskeyStep(false); return; }
     if (!value) { codeError(recoveryMode ? 'Enter a recovery code.' : 'Enter the 6-digit code.'); code.focus(); return; }
     if (!recoveryMode && !/^\d{6}$/.test(value)) { codeError('Enter all 6 digits.'); code.focus(); return; }
     codeSubmit.disabled = true;
@@ -427,7 +563,49 @@
     $('mfa-qr-wait').hidden = true;
   }
 
+  // A passkey instead of the app: the browser makes one, and the first
+  // turns two-step sign-in on, with recovery codes as for the app.
+  $('mfa-passkey-btn').addEventListener('click', async () => {
+    const btn = $('mfa-passkey-btn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    $('mfa-passkey-label').textContent = 'Waiting for your passkey…';
+    const done = () => { btn.disabled = false; $('mfa-passkey-label').textContent = 'Use a passkey instead'; };
+    $('mfa-error').hidden = true;
+    try {
+      let resp = await send('api/me/passkeys/options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      let data = await resp.json().catch(() => ({}));
+      if (resp.status === 403 && data.code === 'recheck_required') {
+        try { await send('api/logout', { method: 'POST' }); } catch (_) { /* it ends anyway */ }
+        done();
+        backToSignIn();
+        showError('Sign in again to set up two-step sign-in.', 'Setting it up needs a sign-in from the last few minutes.');
+        return;
+      }
+      if (!resp.ok) { done(); mfaError('A passkey can’t be added here.', sentence(data.error)); return; }
+      let ans;
+      try {
+        ans = await PK.create(data);
+      } catch (e) {
+        done();
+        const why = PK.problem(e, true);
+        if (why) mfaError('No passkey was made.', why);
+        return;
+      }
+      resp = await send('api/me/passkeys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ans, name: PK.guessName() }) });
+      data = await resp.json().catch(() => ({}));
+      done();
+      if (!resp.ok) { mfaError('The passkey was not added.', sentence(data.error)); return; }
+      if (data.recovery_codes) { showCodes(data.recovery_codes); return; }
+      location.replace(nextPath());
+    } catch (_) {
+      done();
+      mfaError('Could not reach the Signalith server.', 'Check your connection and try again.');
+    }
+  });
+
   function showSetup(me) {
+    $('mfa-passkey').hidden = !pkOK;
     const who = me && (me.name || me.username);
     $('mfa-sub').textContent = (who ? who + ', your' : 'Your') + ' Signalith admin asks for a code from an authenticator app each time you sign in. It takes a minute.';
     $('mfa-error').hidden = true;

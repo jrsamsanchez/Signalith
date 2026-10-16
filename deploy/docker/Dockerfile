@@ -30,8 +30,8 @@ ENV SIGNALITH_STATE_DIR=/var/lib/signalith \
     SIGNALITH_LOOKUPS_DIR=/var/lib/signalith/lookups \
     SIGNALITH_DASHBOARDS_DIR=/var/lib/signalith/dashboards \
     SIGNALITH_ARCHIVE_DIR=/var/lib/signalith/archive
-# Web UI and API (HTTPS), syslog, and syslog over TLS (see
+# Web UI and API (HTTPS), agents (HTTPS), syslog, and syslog over TLS (see
 # deploy/docker/signalith.yaml).
-EXPOSE 8080 5514/udp 5514/tcp 6514/tcp
+EXPOSE 9000 7779 5514/udp 5514/tcp 6514/tcp
 ENTRYPOINT ["/usr/local/bin/signalith"]
 CMD ["serve", "-c", "/etc/signalith/signalith.yaml"]

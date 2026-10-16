@@ -157,8 +157,8 @@ Write your own the same way, for example
 
 ## Exceptions
 
-An exception tunes a detection without editing its query, like a suppression in
-Splunk Enterprise Security: results that match it raise no finding and add no risk,
+An exception tunes a detection without editing its query, so that
+results that match it raise no finding and add no risk,
 and every other result still alerts. Use one for a vulnerability scanner that trips
 a brute force rule, an admin script that looks like an attack, or a maintenance
 window.
@@ -241,7 +241,7 @@ To see everything a scan found on a host, search
 
 Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
 these built-in detections. Those marked *risk only* add risk to the host and raise no
-finding by themselves, like Splunk's anomaly detections: they are signals that are
+finding by themselves: they are signals that are
 common on their own and matter when they add up (see [Risk](#risk)).
 
 | ID | Severity | Fires when | Default |
@@ -744,7 +744,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,138 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,144 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -804,7 +804,7 @@ when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
 `a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
 syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
 (`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
-add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk score
+add risk, as their authors intend. Severity follows the rule's risk score
 (TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
@@ -986,14 +986,19 @@ Other later stages (`eval`, `rex`, `stats`, `eventstats`, `dedup`, `fillnull`, a
 converted filter. Before them, each field they name by Splunk's name is copied from the
 field Signalith keeps it as (`eval TargetUserName=user`), and a `tstats` search's own
 grouping comes first, with the data model's missing fields as `unknown`, as in the CIM.
+A raw search's `stats ... by` gets the same for the fields it groups by that Signalith
+keeps none of (fields Splunk's add-ons add, such as `process_exec`), so an event without
+them still makes a row.
 A test event is one the rule finds when the filter matches it and the later stages keep a
 row for it; a rule ships only when some test event comes through. A rule that counts
 (`stats count`, `dc`) keeps no row for one event, so its test is the same event
 repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
 with a field it counts distinct values of different each time (`"vary"`), next to a
-smaller repeat that the rule must not find. Where the two
-languages read a stage differently, the rule is left out: a `where` that compares two
-fields (`where process_name != service_process`), or text with a `*`, since Signalith's
+smaller repeat that the rule must not find. A `where` that compares two fields
+(`where process_name != service_process`) has both quoted (`'process_name' !=
+'service_process'`), so Signalith compares the two fields' values, as Splunk does. Where
+the two languages read a stage differently, the rule is left out: a `where` that compares
+a field with text that has a `*`, or with bare words in `IN (...)`, since Signalith's
 `where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
 (`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
@@ -1018,7 +1023,7 @@ Licence: the rules are © Splunk Inc. under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
 is in the pack folder and the attribution in `NOTICE`). Findings credit the rule's
 authors and link to the rule at the pinned commit. Signalith is not affiliated with
-or endorsed by Splunk.
+or endorsed by Splunk; see [Trademarks](index.md#trademarks).
 
 To refresh the pack from a newer commit:
 
@@ -1072,6 +1077,46 @@ signalith content remove
 
 Restart Signalith after `install` or `remove` so a running server uses the change, or
 upload on the Detections page instead.
+
+## Describe a detection in plain English
+
+On the Detections page, **Describe a detection** turns a sentence such as
+"more than 10 failed logins from the same source in 5 minutes" into a whole
+rule: the search, how often it runs and how far back it looks, severity,
+ATT&CK techniques, risk and how repeats are grouped. The draft opens in the
+editor turned off, with a note on how each part was chosen, and is
+backtested straight away.
+
+- **Offline by default.** The draft uses the same translator as the Ask
+  box, a table of common attack behaviours (brute force, encoded
+  PowerShell, log clearing, admin group changes and so on) for severity and
+  ATT&CK, and a time window in the sentence ("in 5 minutes", "within an
+  hour") for the lookback. Say "high severity" or "priority: low" to set
+  the severity yourself.
+- **Similar detections.** The draft lists detections already in the
+  library that look like the description, so you can turn one of those on
+  instead. When the translator understands little and the library has a
+  close match, the draft starts as a copy of it.
+- **With an AI model.** When an AI model is set up (Settings, AI
+  assistant), it writes the draft instead, and the offline draft is used if
+  the model fails. The model sees only the description, never your events.
+  Every model draft is checked like any detection, and ATT&CK IDs that are
+  not in the matrix are dropped.
+
+### Backtest
+
+**Backtest** in the editor runs the detection over the past 7, 30 or 90
+days the way its scheduled runs would have, and shows how many findings it
+would have raised, a bar per search, the users and systems that raised the
+most, and the newest titles. Exceptions and the repeat grouping apply.
+Nothing is written: no findings, risk or throttle records.
+
+A backtest runs at most 60 searches, each bounded by the usual search
+limits. Each search covers the lookback, or more when the window needs
+more than 60 of them; a stats detection is then marked approximate, since
+counting over a longer span can cross a threshold that live runs would
+not. Each person runs one backtest at a time, the server at most two, and
+a backtest stops after 3 minutes with what it has so far.
 
 ## Sigma rules
 
@@ -1138,6 +1183,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET`, `PUT`, `DELETE /api/detections/{id}` | Read, save, delete or revert |
 | `GET /api/detections/{id}/yaml` | Export as YAML |
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
+| `POST /api/detections/draft` | `{"description": "...", "mode": "auto"}`: draft a detection from plain English (admin). `mode` is `auto` (the AI model when one is set up), `rules` (offline) or `ai`. Returns the draft with its steps, warnings and similar detections; nothing is saved |
+| `POST /api/detections/backtest` | `{"detection": {...}, "window": "30d"}`: what an unsaved detection would have raised over a past window of 1h to 90d (admin; 429 while one of yours runs). Raises nothing |
 | `POST /api/detections/{id}/run` | Run now on this server and raise findings (admin). Searches the lookback up to now, does not change the schedule, and is recorded as the detection's last Run now with who ran it |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |

@@ -27,7 +27,7 @@ var readOnlyPosts = map[string]bool{
 // sends GET requests, and POST requests only to readOnlyPosts, so nothing
 // it does can change Signalith, whatever the user's role allows.
 type Client struct {
-	// BaseURL is the server's web address, such as https://siem:8080.
+	// BaseURL is the server's web address, such as https://siem:9000.
 	BaseURL  *url.URL
 	User     string
 	Password string

@@ -14,7 +14,7 @@ vendor: Signalith
 homepage: https://signalith.io
 license: Apache-2.0
 description: |-
-  Open-source SIEM inspired by Splunk Enterprise Security.
+  Free, open-source SIEM that is easy to set up, easy to query and ready for AI.
   Signalith stores events in OpenSearch, collects them with Fluent Bit,
   and adds a pipe-based query language, detections with a findings queue,
   Sigma import, risk-based alerting, threat intel and investigation cases.

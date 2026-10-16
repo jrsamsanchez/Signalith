@@ -222,7 +222,7 @@ var Sections = []Section{
 var Registry = []Setting{
 	{Key: "server.public_url", Scope: ScopeCluster, Section: "general", Label: "Public address", Type: TypeURL,
 		Help:        "The address agents and links use to reach this server. With HTTPS on it starts with https://, and Signalith's own certificate is made to cover its host.",
-		Placeholder: "https://siem.example.com:8080", EmptyMeans: "worked out from the listen address",
+		Placeholder: "https://siem.example.com:9000", EmptyMeans: "worked out from the listen address",
 		Env: "SIGNALITH_PUBLIC_URL", WaitsFor: []string{"server.listen", "server.tls.mode", "server.tls_cert", "server.tls_key"}},
 	{Key: "auth.session_timeout", Scope: ScopeCluster, Section: "general", Label: "Sign out after", Type: TypeDuration,
 		Help:        "Signs people out of the web page after this long without use, unless they ticked Keep me signed in. At least 5m. NIST SP 800-63B (AAL2) asks for at most 1h.",
@@ -251,10 +251,16 @@ var Registry = []Setting{
 
 	{Key: "server.listen", Scope: ScopeServer, Section: "web", Label: "Listen address", Type: TypeAddress, Restart: true,
 		Help:        "The address and port the web page and API listen on. 0.0.0.0 accepts other computers; 127.0.0.1 only this one.",
-		Placeholder: "0.0.0.0:8080", Env: "SIGNALITH_LISTEN",
-		Confirm: "After the restart Signalith answers only at the new address. Agents and bookmarks that use the old one stop working until they are changed."},
+		Placeholder: "0.0.0.0:9000", Env: "SIGNALITH_LISTEN",
+		Confirm: "After the restart the web page answers only at the new address. Bookmarks that use the old one stop working until they are changed."},
+	{Key: "server.agent_listen", Scope: ScopeServer, Section: "web", Label: "Agent address", Type: TypeAddress, Restart: true,
+		Help: "The address and port agents send events to, kept apart from the web page: Fluent Bit, the OpenTelemetry Collector, osquery and network sensors. " +
+			"off sends agents to the web port, as before Signalith 0.3.",
+		Placeholder: "0.0.0.0:7779", EmptyMeans: "the listen address on port 7779; the web port also accepts agents set up before 0.3",
+		Env:     "SIGNALITH_AGENT_LISTEN",
+		Confirm: "After the restart agents must send to the new address. Agents that use the old one stop sending until they are set up again from Add data."},
 	{Key: "server.max_connections", Scope: ScopeServer, Section: "web", Label: "Most connections", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(1000000),
-		Help:       "The most connections open at once from browsers, agents and the API. One computer may use a tenth of them.",
+		Help:       "The most connections open at once from browsers, agents and the API, on the web port and again on the agent port. One computer may use a tenth of them.",
 		EmptyMeans: "10000"},
 	{Key: "server.shared_addresses", Scope: ScopeServer, Section: "web", Label: "Proxies and gateways", Type: TypeList, Restart: true,
 		Help:        "IP addresses or ranges of a reverse proxy, load balancer or NAT gateway that many people and agents reach Signalith through. They are not limited like one computer: wrong passwords from them count against each account, and never pause sign-ins from the whole address.",
@@ -266,7 +272,7 @@ var Registry = []Setting{
 	{Key: "server.node_url", Scope: ScopeServer, Section: "web", Label: "Address for other servers", Type: TypeURL, SharedOnly: true,
 		Help: "The address the other Signalith servers that share this OpenSearch reach this one at, shown on the Servers page. " +
 			"In a container set it, since a container cannot know the address it is reached at.",
-		Placeholder: "https://10.0.0.5:8080", EmptyMeans: "worked out from the listen address and this computer's name",
+		Placeholder: "https://10.0.0.5:9000", EmptyMeans: "worked out from the listen address and this computer's name",
 		Env: "SIGNALITH_NODE_URL", check: noSecretIn("an address for other servers needs no password")},
 
 	{Key: "server.tls.mode", Scope: ScopeServer, Section: "https", Label: "HTTPS", Type: TypeChoice, Restart: true,
@@ -759,6 +765,10 @@ func (c *Config) Value(key string) any {
 		if c.httpPublicURL != "" {
 			return c.httpPublicURL
 		}
+	case "server.agent_listen":
+		if c.agentListenDerived {
+			return ""
+		}
 	case "server.tls.mode":
 		return c.Server.TLSMode()
 	case "server.tls.plaintext_ingest":
@@ -801,8 +811,11 @@ func (c *Config) SetValue(key string, val any) error {
 	}
 	v, _ = fieldToSet(c, key)
 	v.Set(nv)
-	if key == "server.public_url" {
+	switch key {
+	case "server.public_url":
 		c.publicURLDerived, c.httpPublicURL = false, ""
+	case "server.agent_listen":
+		c.agentListenDerived = false
 	}
 	return nil
 }
@@ -825,6 +838,8 @@ func (c *Config) CopyValue(key string, from *Config) error {
 	switch key {
 	case "server.public_url":
 		c.publicURLDerived, c.httpPublicURL = from.publicURLDerived, from.httpPublicURL
+	case "server.agent_listen":
+		c.agentListenDerived = from.agentListenDerived
 	case "cluster.leader_eligible", "detections.scheduler":
 		// Two names for one setting (see syncEligible).
 		v := from.LeaderEligible()

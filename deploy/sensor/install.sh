@@ -6,9 +6,9 @@
 # Add data > Network sensor > Set up a new sensor gives one line that
 # downloads this script from Signalith, checks its SHA-256, and runs it:
 #
-#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:8080/api/sensor/install.sh -o "$f" &&
+#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:7779/api/sensor/install.sh -o "$f" &&
 #   echo '<sha-256>  '"$f" | sha256sum -c --quiet &&
-#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:8080 \
+#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:7779 \
 #     --ca-sha256 <hex> --version 1.6.0 --token -
 #
 # "--token -" reads the sensor's agent token from the standard input, so it
@@ -140,7 +140,7 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:8080
+Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
          [--name <name>] [--interface <port>] [--networks <cidr,...>]
          [--no-zeek | --no-suricata] [--suricata-protocols] [--local-rules <file>]
@@ -268,7 +268,7 @@ common_args() {
   esac
   hostport=${from#https://}
   case "$hostport" in
-    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:8080 (no path)." ;;
+    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:7779 (no path)." ;;
   esac
   [ -z "$ca_sha" ] || ca_sha=$(hex64 --ca-sha256 "$ca_sha")
   [ -z "$next_ca_sha" ] || next_ca_sha=$(hex64 --next-ca-sha256 "$next_ca_sha")
@@ -910,7 +910,7 @@ common_repos() {
     fi
     key_add "Fluent Bit" https://packages.fluentbit.io/fluentbit.key "$KEY_FPR_FLUENTBIT" /etc/apt/keyrings/signalith-fluentbit.gpg
     repo_list /etc/apt/sources.list.d/signalith-fluent-bit.list "deb [signed-by=/etc/apt/keyrings/signalith-fluentbit.gpg] https://packages.fluentbit.io/$fb_repo $codename main"
-    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+    apt_update_repos
   else
     pkg_tools ca-certificates gnupg2 ethtool iproute
     if [ "$os_id" = rhel ]; then
@@ -944,6 +944,45 @@ gpgkey=file:///etc/pki/rpm-gpg/signalith-fluentbit.asc
 enabled=1
 REPO
   fi
+}
+
+# apt_update_repos reads the repositories again, with the new ones. apt
+# only warns when a repository cannot be read (a mirror answering 503),
+# and would then install the system's own, older packages instead: on
+# Ubuntu, Suricata 7 without suricata-update, so no rules ever load. So it
+# tries three times until OISF's PPA offers Suricata, then stops.
+apt_update_repos() {
+  tries=0
+  while :; do
+    tries=$((tries + 1))
+    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+    if [ -n "$dryrun" ] || [ "$suricata" != yes ] || [ "$os_id" != ubuntu ] || suricata_from_ppa; then
+      return 0
+    fi
+    if [ "$tries" -ge 3 ]; then
+      fail "OISF's Suricata repository (ppa.launchpadcontent.net) could not be read, so only Ubuntu's older Suricata is offered, which cannot update its rules." \
+        "Run the line again later; if it fails again, check that this machine reaches ppa.launchpadcontent.net, or install with --docker."
+    fi
+    printf '    OISF'"'"'s Suricata repository could not be read; trying again.\n'
+    sleep $((tries * 10))
+  done
+}
+
+# suricata_from_ppa says whether apt would install Suricata from OISF's
+# PPA, or a Suricata with suricata-update is here already (run again while
+# the PPA is down, it keeps that one).
+suricata_from_ppa() {
+  if pkg_has suricata && command -v suricata-update >/dev/null 2>&1; then return 0; fi
+  apt-cache policy suricata 2>/dev/null | grep -q 'ppa.launchpadcontent.net/oisf/suricata-stable'
+}
+
+# suricata_check stops when the Suricata installed has no suricata-update,
+# without which no rules ever load.
+suricata_check() {
+  [ -z "$dryrun" ] || return 0
+  command -v suricata-update >/dev/null 2>&1 && return 0
+  fail "Suricata $(pkg_version suricata) was installed without suricata-update, so it cannot download any rules." \
+    "Run the line again later, so the publisher's Suricata is installed; or install with --docker."
 }
 
 # mask_vendor stops and masks a package's own unit, so there is never a
@@ -1006,6 +1045,9 @@ sensor_packages() {
     else
       pkg_upgrade suricata suricata
     fi
+    # After the upgrade: run again once the PPA is back, a Suricata 7
+    # installed from Ubuntu is upgraded to OISF's.
+    suricata_check
   fi
   pkg_upgrade agent fluent-bit
 }

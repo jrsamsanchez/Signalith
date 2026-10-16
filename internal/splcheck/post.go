@@ -54,12 +54,22 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		if m := searchRe.FindStringSubmatch(s); m != nil {
 			s = "where " + m[1]
 		} else if m := whereRe.FindStringSubmatch(s); m != nil {
-			s = "where " + quoteDotted(m[1])
-			if err := splunkWhere(m[1]); err != nil {
+			cond := quoteCompared(quoteDotted(m[1]))
+			s = "where " + cond
+			if err := splunkWhere(cond); err != nil {
 				return err
 			}
 		} else if m := postEvalRe.FindStringSubmatch(s); m != nil {
 			s = "eval " + quoteDotted(m[1])
+		}
+		// A raw search's stats keeps no row for an event without a field
+		// it groups by. Splunk's add-ons give every event the fields they
+		// define; a field Signalith keeps none of is "unknown" instead, as
+		// a tstats search's missing fields are.
+		if group == "" {
+			if fill := missingGroups(s, parts, field); len(fill) > 0 {
+				parts = append(parts, "fillnull value=unknown "+strings.Join(fill, " "))
+			}
 		}
 		parts = append(parts, s)
 	}
@@ -109,9 +119,10 @@ var positionRe = regexp.MustCompile(`^at position \d+: `)
 // plainFieldRe is a field an eval names without quotes.
 var plainFieldRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
-// quoteField is a field as an eval names it.
-func quoteField(f string) string {
-	if plainFieldRe.MatchString(f) {
+// quoteField is a field as an eval names it, quoted when always is set
+// (as a where must, to read it as a field).
+func quoteField(f string, always ...bool) string {
+	if plainFieldRe.MatchString(f) && len(always) == 0 {
 		return f
 	}
 	return "'" + f + "'"
@@ -281,6 +292,72 @@ func splunkWhere(cond string) error {
 		}
 	}
 	return nil
+}
+
+// missingGroups are the fields a stats stage groups by that neither
+// Signalith keeps (field) nor an earlier stage makes.
+func missingGroups(stage string, earlier []string, field func(string) (string, bool)) []string {
+	if !strings.HasPrefix(stage, "stats ") {
+		return nil
+	}
+	q, err := query.Parse("* | " + stage)
+	if err != nil {
+		return nil
+	}
+	st, ok := q.Commands[0].(*query.Stats)
+	if !ok {
+		return nil
+	}
+	made := strings.Join(earlier, "\n")
+	var out []string
+	for _, f := range st.By {
+		if _, kept := field(f); kept || strings.HasPrefix(f, "_") || strings.Contains(made, f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// fieldCmpRe is a comparison of a field with a bare word, which Splunk's
+// where reads as another field (process_name != parent_process_name).
+var fieldCmpRe = regexp.MustCompile(`('[^']+'|\b[A-Za-z_]\w*|\))(\s*(?:!=|==|<=|>=|=|<|>)\s*)([A-Za-z_]\w*)(\s*\(?)`)
+
+// whereWords are the bare words of a where condition that are not fields.
+var whereWords = []string{"and", "or", "not", "in", "like", "true", "false", "null"}
+
+// quotedRe is a double-quoted string.
+var quotedRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+
+// quoteCompared quotes both fields of each comparison of two fields in a
+// where condition, which Signalith then reads as an expression, as Splunk
+// does: the two fields' values compared exactly. Quoted text is left as
+// it is.
+func quoteCompared(cond string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range quotedRe.FindAllStringIndex(cond, -1) {
+		b.WriteString(quoteComparedText(cond[last:loc[0]]))
+		b.WriteString(cond[loc[0]:loc[1]])
+		last = loc[1]
+	}
+	b.WriteString(quoteComparedText(cond[last:]))
+	return b.String()
+}
+
+func quoteComparedText(cond string) string {
+	return fieldCmpRe.ReplaceAllStringFunc(cond, func(m string) string {
+		p := fieldCmpRe.FindStringSubmatch(m)
+		left, op, right, after := p[1], p[2], p[3], p[4]
+		if strings.HasSuffix(after, "(") || slices.Contains(whereWords, strings.ToLower(right)) ||
+			slices.Contains(whereWords, strings.ToLower(left)) {
+			return m
+		}
+		if left != ")" {
+			left = quoteField(strings.Trim(left, "'"), true)
+		}
+		return left + op + quoteField(right, true) + after
+	})
 }
 
 // postEvalRe is an eval stage.

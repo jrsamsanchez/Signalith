@@ -36,7 +36,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
 - Content packs of tested community rules: 2,478 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,138 from Splunk Security Content,
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,144 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 
@@ -52,6 +52,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Investigation cases that collect findings, notes, searches and evidence, and
   [Investigate with AI](investigate.md) for a first verdict on a finding.
+- [Hunting notebooks](hunting-notebooks.md): saved, shareable hunts of notes and searches
+  tagged to ATT&CK, with seven starter hunts.
 - [Notifications](notifications.md) to email, webhooks, Slack and Microsoft Teams, and
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.

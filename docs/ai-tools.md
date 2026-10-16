@@ -81,7 +81,7 @@ examples below.
 In PowerShell:
 
 ```powershell
-$env:SIGNALITH_URL = "https://siem.example.com:8080"
+$env:SIGNALITH_URL = "https://siem.example.com:9000"
 $env:SIGNALITH_TOKEN = "sgl_api_..."
 C:\Tools\signalith.exe mcp -check
 ```
@@ -89,7 +89,7 @@ C:\Tools\signalith.exe mcp -check
 On Linux:
 
 ```sh
-SIGNALITH_URL=https://siem.example.com:8080 SIGNALITH_TOKEN=sgl_api_... signalith mcp -check
+SIGNALITH_URL=https://siem.example.com:9000 SIGNALITH_TOKEN=sgl_api_... signalith mcp -check
 ```
 
 It prints the name and role it reads as (`api-token:<name>` for a token), or says what
@@ -110,7 +110,7 @@ Add Signalith under `mcpServers`:
       "command": "C:\\Tools\\signalith.exe",
       "args": ["mcp"],
       "env": {
-        "SIGNALITH_URL": "https://siem.example.com:8080",
+        "SIGNALITH_URL": "https://siem.example.com:9000",
         "SIGNALITH_TOKEN": "sgl_api_..."
       }
     }
@@ -127,7 +127,7 @@ logins in Signalith in the last day?"
 
 ```sh
 claude mcp add signalith \
-  -e SIGNALITH_URL=https://siem.example.com:8080 \
+  -e SIGNALITH_URL=https://siem.example.com:9000 \
   -e SIGNALITH_TOKEN=sgl_api_... \
   -- signalith mcp
 ```
@@ -152,7 +152,7 @@ storage, so it is not saved in the file:
       "command": "signalith",
       "args": ["mcp"],
       "env": {
-        "SIGNALITH_URL": "https://siem.example.com:8080",
+        "SIGNALITH_URL": "https://siem.example.com:9000",
         "SIGNALITH_TOKEN": "${input:signalith-token}"
       }
     }
@@ -171,7 +171,7 @@ Open **Cursor Settings > MCP > Add new MCP server**, or edit `~/.cursor/mcp.json
       "command": "signalith",
       "args": ["mcp"],
       "env": {
-        "SIGNALITH_URL": "https://siem.example.com:8080",
+        "SIGNALITH_URL": "https://siem.example.com:9000",
         "SIGNALITH_TOKEN": "sgl_api_..."
       }
     }
@@ -202,7 +202,7 @@ Each setting can be a flag or an environment variable.
 
 | Flag | Environment variable | Meaning |
 | --- | --- | --- |
-| `-url` | `SIGNALITH_URL` | Signalith's web address, such as `https://siem.example.com:8080`. Plain `http://` is refused except to `localhost`, since it would send the token or password unencrypted |
+| `-url` | `SIGNALITH_URL` | Signalith's web address, such as `https://siem.example.com:9000`. Plain `http://` is refused except to `localhost`, since it would send the token or password unencrypted |
 | | `SIGNALITH_TOKEN` | An [API token](#api-tokens) to read with |
 | `-token-file` | `SIGNALITH_TOKEN_FILE` | A file holding the token, instead of `SIGNALITH_TOKEN` |
 | `-user` | `SIGNALITH_USER` | Or, without a token, the Signalith user to read as |
@@ -226,7 +226,7 @@ the command:
            "-e", "SIGNALITH_URL", "-e", "SIGNALITH_TOKEN",
            "ghcr.io/jrsamsanchez/signalith:main", "mcp"],
   "env": {
-    "SIGNALITH_URL": "https://siem.example.com:8080",
+    "SIGNALITH_URL": "https://siem.example.com:9000",
     "SIGNALITH_TOKEN": "sgl_api_..."
   }
 }
@@ -234,7 +234,7 @@ the command:
 
 To trust Signalith's CA, mount it and name it:
 `"-v", "C:\\Users\\you\\Downloads\\signalith-ca.crt:/ca.crt:ro", "-e", "SIGNALITH_CA_FILE=/ca.crt"`.
-A Signalith server on the same computer is `https://host.docker.internal:8080` from
+A Signalith server on the same computer is `https://host.docker.internal:9000` from
 inside the container.
 
 ## API tokens
@@ -260,7 +260,7 @@ admin makes and revokes them on **Settings > API tokens**.
 To use a token from your own scripts, send it as a bearer token:
 
 ```sh
-curl -H "Authorization: Bearer sgl_api_..." https://siem.example.com:8080/api/me
+curl -H "Authorization: Bearer sgl_api_..." https://siem.example.com:9000/api/me
 ```
 
 ## Security

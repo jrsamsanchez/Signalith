@@ -1,0 +1,2 @@
+{"timestamp":"2026-10-16T14:05:09Z","event":"login","user":{"name":"alice"},"client":{"ip":"198.51.100.20"},"outcome":"failed","reason":"bad password","app":"portal"}
+{"timestamp":"2026-10-16T14:05:12Z","event":"login","user":{"name":"alice"},"client":{"ip":"198.51.100.20"},"outcome":"success","app":"portal"}

@@ -72,6 +72,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	// The servers a test starts side by side take agents on their web
+	// ports, rather than all on the default agent port.
+	os.Setenv("SIGNALITH_AGENT_LISTEN", "off")
 	code := m.Run()
 	if buildDir != "" {
 		os.RemoveAll(buildDir)
