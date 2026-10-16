@@ -502,7 +502,7 @@
     const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Reset password');
     d.onclose = () => focusRow(u.username);
     const form = el('form', { novalidate: '' },
-      modalHead('u-dialog', `Reset ${u.username}’s password`, 'They are signed out everywhere and must choose a new password at their next sign-in.', close),
+      modalHead('u-dialog', `Reset ${u.username}’s password`, 'They are signed out everywhere, their passkeys are removed, and they must choose a new password at their next sign-in.', close),
       el('div', { class: 'modal__body' }, err, pw.node),
       footer(cancelButton(d), submit));
     form.addEventListener('submit', async (ev) => {
@@ -1302,7 +1302,12 @@
         return;
       }
       close();
-      toast('Other browsers signed in as you were signed out.', null, { title: 'Password changed' });
+      // Passkeys sign in without the password, so say they still work.
+      let keys = 0;
+      try { keys = ((await api('api/me/mfa')).passkeys || []).length; } catch { /* the toast still helps */ }
+      toast(keys
+        ? `Other browsers signed in as you were signed out. Your ${keys === 1 ? 'passkey still signs' : `${keys} passkeys still sign`} you in: remove any you don’t recognize under Two-step sign-in.`
+        : 'Other browsers signed in as you were signed out.', null, { title: 'Password changed' });
     });
     fill(d, form);
     d.showModal();

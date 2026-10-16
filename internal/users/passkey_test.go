@@ -90,21 +90,53 @@ func TestPasskeys(t *testing.T) {
 	}
 
 	// Counters move on, never back; zero means none is kept.
-	if k, err := s.UsePasskey(ctx, "jdoe", key.ID, PasskeyUse{SignCount: 5, BackupState: true}); err != nil || k.SignCount != 5 || !k.BackupState || !k.LastUsed.Equal(clock.t) {
+	n := 0
+	use := func(count uint32) PasskeyUse {
+		n++
+		return PasskeyUse{SignCount: count, Challenge: []byte{'c', byte(n)}, ChallengeUntil: clock.t.Add(6 * time.Minute)}
+	}
+	first := use(5)
+	first.BackupState = true
+	if k, err := s.UsePasskey(ctx, "jdoe", key.ID, first); err != nil || k.SignCount != 5 || !k.BackupState || !k.LastUsed.Equal(clock.t) {
 		t.Errorf("use: %+v %v", k, err)
 	}
-	for _, n := range []uint32{5, 4, 0} {
-		if _, err := s.UsePasskey(ctx, "jdoe", key.ID, PasskeyUse{SignCount: n}); !errors.Is(err, ErrPasskeyCloned) {
-			t.Errorf("counter %d: %v", n, err)
+	for _, c := range []uint32{5, 4, 0} {
+		if _, err := s.UsePasskey(ctx, "jdoe", key.ID, use(c)); !errors.Is(err, ErrPasskeyCloned) {
+			t.Errorf("counter %d: %v", c, err)
 		}
 	}
-	for range 2 {
-		if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, PasskeyUse{}); err != nil {
-			t.Errorf("no counter: %v", err)
-		}
+	// A passkey that keeps no counter (a synced one) still answers each
+	// challenge once, whichever server checks it.
+	synced := use(0)
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, synced); err != nil {
+		t.Errorf("no counter: %v", err)
 	}
-	if _, err := s.UsePasskey(ctx, "jdoe", []byte("gone"), PasskeyUse{SignCount: 9}); !errors.Is(err, ErrPasskeyUnknown) {
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, synced); !errors.Is(err, ErrPasskeyReplayed) {
+		t.Errorf("same challenge again: %v", err)
+	}
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, use(0)); err != nil {
+		t.Errorf("next challenge: %v", err)
+	}
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, PasskeyUse{}); !errors.Is(err, ErrPasskeyReplayed) {
+		t.Errorf("no challenge: %v", err)
+	}
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte("gone"), use(9)); !errors.Is(err, ErrPasskeyUnknown) {
 		t.Errorf("unknown: %v", err)
+	}
+	// Spent challenges are forgotten once they expire.
+	clock.t = clock.t.Add(7 * time.Minute)
+	if _, err := s.UsePasskey(ctx, "jdoe", []byte{'k', 2}, use(0)); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := s.MFA("jdoe"); len(m.Spent) != 1 {
+		t.Errorf("%d spent challenges kept", len(m.Spent))
+	}
+	// Another account cannot register the same credential.
+	if _, err := s.Create(ctx, newUser("mroe", Analyst)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddPasskey(ctx, "mroe", s.PasskeyHandle("mroe"), Passkey{ID: key.ID}); !errors.Is(err, ErrPasskeyExists) {
+		t.Errorf("another account's credential: %v", err)
 	}
 
 	// An app set up alongside keeps the recovery codes and the passkeys.
@@ -143,6 +175,31 @@ func TestPasskeys(t *testing.T) {
 		t.Errorf("users file:\n%s", data)
 	}
 
+	// A password reset removes them all, keeping the app.
+	if _, err := s.BeginMFA(ctx, "jdoe"); err != nil {
+		t.Fatal(err)
+	}
+	clock.t = clock.t.Add(time.Minute)
+	if _, err := s.ConfirmMFA(ctx, "jdoe", code(t, m.Secret, clock.t)); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.RemovePasskeys(ctx, "jdoe"); n != MaxPasskeys || err != nil {
+		t.Fatalf("remove all: %d %v", n, err)
+	}
+	if m, _ := s.MFA("jdoe"); !m.AppOn() || len(m.Passkeys) != 0 {
+		t.Errorf("after removing all: %+v", m)
+	}
+	if n, err := s.RemovePasskeys(ctx, "jdoe"); n != 0 || err != nil {
+		t.Errorf("remove all again: %d %v", n, err)
+	}
+	if _, err := s.RemoveApp(ctx, "jdoe"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 2; i++ {
+		if _, err := s.AddPasskey(ctx, "jdoe", handle, Passkey{ID: []byte{'r', byte(i)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Removing the last one turns two-step sign-in off.
 	m, _ = s.MFA("jdoe")
 	for _, k := range m.Passkeys {
@@ -153,7 +210,7 @@ func TestPasskeys(t *testing.T) {
 	if _, ok := s.MFA("jdoe"); ok || s.MFAOn("jdoe") {
 		t.Error("still on with no passkeys and no app")
 	}
-	if _, err := s.RemovePasskey(ctx, "jdoe", key.ID); !errors.Is(err, ErrPasskeyUnknown) {
+	if _, err := s.RemovePasskey(ctx, "jdoe", []byte{'r', 1}); !errors.Is(err, ErrPasskeyUnknown) {
 		t.Errorf("remove again: %v", err)
 	}
 

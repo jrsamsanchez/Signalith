@@ -101,7 +101,8 @@ must choose their own password before they can do anything else.
 **Change a user.** Edit their name and email, change their role, disable or enable
 them, reset their password (they get a new temporary password and must change it at
 the next sign-in), or delete them. Disabling, deleting or resetting a password signs
-that user out everywhere at once.
+that user out everywhere at once. Resetting a password also removes their
+[passkeys](#passkeys).
 
 To stop anyone locking everyone out:
 
@@ -354,7 +355,10 @@ may sign in. Single sign-on users sign in at their identity provider.
 
 **Remove one** from the same menu (**Remove** on its row). Removing the last passkey
 without an app turns two-step sign-in off. An admin's **Reset two-step sign-in**
-removes every passkey too.
+removes every passkey too, and so does an admin's **Reset password**: a passkey signs
+in without the password, so whoever added one must not keep a way in past the reset.
+Changing your own password keeps your passkeys (it signs other browsers out), and
+says how many you have: if you don't recognize one, remove it.
 
 Things to know:
 
@@ -367,6 +371,8 @@ Things to know:
 - A passkey that syncs (iCloud Keychain, Google Password Manager, a password manager)
   is marked **Synced** in the menu: it is on every device of that account, which is
   convenient, and as safe as that account. A security key never leaves the key.
+- Each answer from a passkey is accepted once, on whichever server checks it, and
+  only at the address its challenge was made for.
 - If a passkey's signature counter goes backwards, it may have been copied, so it is
   refused (`passkey_cloned`) and logged. Sign in another way and remove it.
 - Signalith keeps each passkey's public key, name, address and last use with your
@@ -375,7 +381,7 @@ Things to know:
 
 | `code` | When |
 | --- | --- |
-| `passkey_wrong` (401) | The passkey was not accepted: unknown, made for another address, without your fingerprint, face or PIN when signing in with it alone, or already used for this challenge |
+| `passkey_wrong` (401) | The passkey was not accepted: unknown, made for another address, without your fingerprint, face or PIN when signing in with it alone or confirming it's you, or already used for this challenge |
 | `passkey_expired` (401) | The challenge was older than 5 minutes, or made for something else; ask for a new one |
 | `passkey_cloned` (401) | The passkey's counter went backwards |
 | `passkey_password` (401) | A directory user tried to sign in with a passkey alone; enter the password first |
@@ -940,6 +946,7 @@ the Settings page and restarts are logged the same way; see
 | `authenticator app turned off` | `by`, `user` (passkeys stay on) |
 | `passkey added` | `by`, `user`, `passkey` (its name), `host`, `synced` |
 | `passkey removed` | `by`, `user`, `passkey`, `host` |
+| `passkeys removed` | `by` (the admin), `user`, `count`, `reason` (`password reset`) |
 | `passkey refused` | `user`, `client`, `locked_out`; with `passkey` when its counter went backwards |
 | `two-step sign-in reset` | `by` (the admin), `user` |
 | `new recovery codes made` | `by`, `user` |

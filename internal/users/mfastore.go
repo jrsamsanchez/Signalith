@@ -23,6 +23,8 @@ type StoredMFA struct {
 	// is no secret.
 	Handle   []byte    `json:"handle,omitempty"`
 	Passkeys []Passkey `json:"passkeys,omitempty"`
+	// Spent are digests of passkey challenges answered lately.
+	Spent []SpentChallenge `json:"spent,omitempty"`
 }
 
 // MFAKeys encrypts and decrypts authenticator keys: the master key for
@@ -55,7 +57,7 @@ func (m *StoredMFA) Open(keys MFAKeys, field string) *MFA {
 		return nil
 	}
 	out := (&MFA{Pending: m.Pending, NoApp: m.NoApp, Recovery: m.Recovery, Since: m.Since, LastStep: m.LastStep,
-		Handle: m.Handle, Passkeys: m.Passkeys}).clone()
+		Handle: m.Handle, Passkeys: m.Passkeys, Spent: m.Spent}).clone()
 	if secrets.IsSealed(m.Secret) {
 		out.Sealed = m.Secret
 	}
@@ -78,7 +80,7 @@ func SealMFA(keys MFAKeys, field string, m *MFA) (*StoredMFA, error) {
 	}
 	c := m.clone()
 	out := &StoredMFA{Pending: m.Pending, NoApp: m.NoApp, Recovery: c.Recovery, Since: m.Since.UTC(), LastStep: m.LastStep,
-		Handle: c.Handle, Passkeys: c.Passkeys}
+		Handle: c.Handle, Passkeys: c.Passkeys, Spent: c.Spent}
 	switch {
 	case m.Secret == "":
 		out.Secret = m.Sealed

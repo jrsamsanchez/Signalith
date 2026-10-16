@@ -196,26 +196,27 @@ func (s *Server) sealCeremony(purpose string, sd *webauthn.SessionData) (string,
 }
 
 // openCeremony returns what sealCeremony sealed, if the token is good
-// for purpose and has not expired.
-func (s *Server) openCeremony(purpose, token string) (webauthn.SessionData, error) {
+// for purpose, has not expired, and was made for the host here.
+func (s *Server) openCeremony(purpose, token string, here passkeyHere) (webauthn.SessionData, error) {
 	var sd webauthn.SessionData
 	b, ok := s.browserKey().OpenState(purpose, token, time.Now())
 	if !ok {
 		return sd, errPasskeyExpired
 	}
-	if err := json.Unmarshal(b, &sd); err != nil {
+	if err := json.Unmarshal(b, &sd); err != nil || sd.RelyingPartyID != here.rpID {
 		return sd, errPasskeyExpired
 	}
 	return sd, nil
 }
 
 // challengeSet remembers the challenges answered on this server until
-// they expire, so an answer seen once is refused after. Another server of
-// a cluster does not know them; the passkey's counter (users.UsePasskey)
-// and the short wait still bound a replay there.
+// they expire, so an answer seen once is refused after. It is a quick
+// first check: the user's record (users.UsePasskey) is what refuses an
+// answer on every server, and after a restart.
 type challengeSet struct {
-	mu   sync.Mutex
-	used map[string]time.Time
+	mu     sync.Mutex
+	used   map[string]time.Time
+	pruned time.Time
 }
 
 // spend reports whether challenge was not answered yet, and remembers it
@@ -227,7 +228,8 @@ func (c *challengeSet) spend(challenge string, until time.Time) bool {
 	if c.used == nil {
 		c.used = map[string]time.Time{}
 	}
-	if len(c.used) > 10000 {
+	if now.Sub(c.pruned) > time.Minute {
+		c.pruned = now
 		for k, t := range c.used {
 			if now.After(t) {
 				delete(c.used, k)
@@ -241,6 +243,10 @@ func (c *challengeSet) spend(challenge string, until time.Time) bool {
 	return true
 }
 
+// spentUntil is how long an answered challenge is remembered: past the
+// end of any token that can carry it, whenever that was made.
+func spentUntil() time.Time { return time.Now().Add(passkeyWait + time.Minute) }
+
 // assertionOptions begins a passkey check for name (one of their
 // passkeys made here), for a ceremony of kind in session.
 func (s *Server) assertionOptions(here passkeyHere, kind, name, session string, m users.MFA) (map[string]any, error) {
@@ -252,7 +258,13 @@ func (s *Server) assertionOptions(here passkeyHere, kind, name, session string, 
 	if len(u.keys) == 0 {
 		return nil, nil
 	}
-	opts, sd, err := wa.BeginLogin(u, webauthn.WithUserVerification(protocol.VerificationPreferred))
+	// Confirming it's you stands in for the password, so the passkey must
+	// check who is there, as signing in with one alone does.
+	uv := protocol.VerificationPreferred
+	if kind == ceremonyCheck {
+		uv = protocol.VerificationRequired
+	}
+	opts, sd, err := wa.BeginLogin(u, webauthn.WithUserVerification(uv))
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +283,7 @@ func (s *Server) checkPasskey(r *http.Request, kind, name, session string, a *pa
 	if why != "" || a == nil || len(a.Credential) > passkeyAnswerMax {
 		return users.Passkey{}, errPasskeyWrong
 	}
-	sd, err := s.openCeremony(ceremonyPurpose(kind, name, session), a.Token)
+	sd, err := s.openCeremony(ceremonyPurpose(kind, name, session), a.Token, here)
 	if err != nil {
 		return users.Passkey{}, err
 	}
@@ -294,18 +306,19 @@ func (s *Server) checkPasskey(r *http.Request, kind, name, session string, a *pa
 // usePasskey records a passkey use that checked out: the challenge is
 // spent, and the counter moves on.
 func (s *Server) usePasskey(r *http.Request, name string, sd webauthn.SessionData, parsed *protocol.ParsedCredentialAssertionData) (users.Passkey, error) {
-	if !s.passkeyChallenges.spend(sd.Challenge, sd.Expires.Add(time.Minute)) {
+	if !s.passkeyChallenges.spend(sd.Challenge, spentUntil()) {
 		return users.Passkey{}, errPasskeyWrong
 	}
 	flags := parsed.Response.AuthenticatorData.Flags
 	k, err := s.userStore().UsePasskey(changeContext(r), name, parsed.RawID,
-		users.PasskeyUse{SignCount: parsed.Response.AuthenticatorData.Counter, BackupState: flags.HasBackupState()})
+		users.PasskeyUse{SignCount: parsed.Response.AuthenticatorData.Counter, BackupState: flags.HasBackupState(),
+			Challenge: []byte(sd.Challenge), ChallengeUntil: spentUntil()})
 	switch {
 	case errors.Is(err, users.ErrPasskeyCloned):
 		s.Log.Warn("passkey refused: its counter went backwards, so it may have been copied",
 			append([]any{"audit", true, "user", name, "passkey", passkeyID(parsed.RawID)}, s.client(r).logAttrs()...)...)
 		return users.Passkey{}, errPasskeyCloned
-	case errors.Is(err, users.ErrPasskeyUnknown):
+	case errors.Is(err, users.ErrPasskeyUnknown), errors.Is(err, users.ErrPasskeyReplayed):
 		return users.Passkey{}, errPasskeyWrong
 	case err != nil:
 		return users.Passkey{}, errMFAUnavailable
@@ -410,7 +423,7 @@ func (s *Server) handleAddPasskey(w http.ResponseWriter, r *http.Request) {
 	refuse := func(msg string) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "passkey_wrong", "error": msg})
 	}
-	sd, err := s.openCeremony(ceremonyPurpose(ceremonyAdd, p.Username, p.token), req.Token)
+	sd, err := s.openCeremony(ceremonyPurpose(ceremonyAdd, p.Username, p.token), req.Token, here)
 	if err != nil {
 		refuse("That took too long. Add the passkey again.")
 		return
@@ -438,7 +451,7 @@ func (s *Server) handleAddPasskey(w http.ResponseWriter, r *http.Request) {
 		refuse("The passkey could not be checked. Add it again.")
 		return
 	}
-	if !s.passkeyChallenges.spend(sd.Challenge, sd.Expires.Add(time.Minute)) {
+	if !s.passkeyChallenges.spend(sd.Challenge, spentUntil()) {
 		refuse("That passkey was added already.")
 		return
 	}
@@ -599,7 +612,7 @@ func (s *Server) passkeySignIn(r *http.Request, a *passkeyAnswer) (*principal, e
 	if why != "" || len(a.Credential) > passkeyAnswerMax {
 		return nil, errPasskeyWrong
 	}
-	sd, err := s.openCeremony(ceremonyPurpose(ceremonyLogin, "", ""), a.Token)
+	sd, err := s.openCeremony(ceremonyPurpose(ceremonyLogin, "", ""), a.Token, here)
 	if err != nil {
 		return nil, err
 	}

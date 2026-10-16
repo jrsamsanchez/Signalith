@@ -42,3 +42,18 @@ func TestCeremonyState(t *testing.T) {
 		}
 	}
 }
+
+// FuzzOpenState feeds the ceremony token reader anything: it must refuse
+// what this key did not seal, never panic.
+func FuzzOpenState(f *testing.F) {
+	k := NewBrowserKey()
+	now := time.Unix(1_800_000_000, 0)
+	f.Add("passkey\x00login", k.SealState("passkey\x00login", []byte(`{"challenge":"abc"}`), now.Add(time.Minute)))
+	f.Add("x", "1.")
+	f.Add("", "1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	f.Fuzz(func(t *testing.T, purpose, token string) {
+		if data, ok := k.OpenState(purpose, token, now); ok && len(data) > stateMax {
+			t.Fatalf("%d bytes of data", len(data))
+		}
+	})
+}

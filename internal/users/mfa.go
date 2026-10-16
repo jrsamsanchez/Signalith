@@ -53,6 +53,9 @@ type MFA struct {
 	Handle []byte
 	// Passkeys are the user's passkeys.
 	Passkeys []Passkey
+	// Spent are the passkey challenges answered lately, until they
+	// expire: an answer is accepted once, on whichever server.
+	Spent []SpentChallenge
 	// Recovery holds the digest of each recovery code not used yet.
 	Recovery []string
 	// Since is when it was turned on, or when setting it up began.
@@ -77,6 +80,7 @@ func (m *MFA) clone() *MFA {
 	c := *m
 	c.Recovery = slices.Clone(m.Recovery)
 	c.Handle = slices.Clone(m.Handle)
+	c.Spent = slices.Clone(m.Spent)
 	c.Passkeys = make([]Passkey, len(m.Passkeys))
 	for i, k := range m.Passkeys {
 		c.Passkeys[i] = k.clone()

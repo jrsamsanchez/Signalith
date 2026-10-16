@@ -39,6 +39,9 @@ type vkey struct {
 	key    *ecdsa.PrivateKey
 	handle []byte
 	count  uint32
+	// synced keys keep no counter (it stays 0), as iCloud, Google and
+	// password managers do.
+	synced bool
 }
 
 func newAuthenticator(t *testing.T) *authenticator {
@@ -110,7 +113,9 @@ func (a *authenticator) create(opts map[string]any) (map[string]any, *vkey) {
 func (a *authenticator) get(opts map[string]any, k *vkey) map[string]any {
 	a.t.Helper()
 	pk := opts["publicKey"].(map[string]any)
-	k.count++
+	if !k.synced {
+		k.count++
+	}
 	ad := a.authData(a.rpID, a.flags(), k.count, nil)
 	cd := a.clientData("webauthn.get", pk["challenge"].(string), a.origin)
 	sum := sha256.Sum256(cd)
@@ -133,6 +138,12 @@ func (a *authenticator) get(opts map[string]any, k *vkey) map[string]any {
 // plain HTTP.
 func pkCall(t *testing.T, ts *httptest.Server, method, path string, body any, cookies ...*http.Cookie) (int, map[string]any, []*http.Cookie) {
 	t.Helper()
+	return pkCallAt(t, ts, "localhost", method, path, body, cookies...)
+}
+
+// pkCallAt is pkCall with the browser at host.
+func pkCallAt(t *testing.T, ts *httptest.Server, host, method, path string, body any, cookies ...*http.Cookie) (int, map[string]any, []*http.Cookie) {
+	t.Helper()
 	var r *strings.Reader
 	switch b := body.(type) {
 	case string:
@@ -142,7 +153,7 @@ func pkCall(t *testing.T, ts *httptest.Server, method, path string, body any, co
 		r = strings.NewReader(string(j))
 	}
 	req, _ := http.NewRequest(method, ts.URL+path, r)
-	req.Host = "localhost"
+	req.Host = host
 	req.Header.Set("Content-Type", "application/json")
 	for _, c := range cookies {
 		req.AddCookie(c)
@@ -252,6 +263,12 @@ func TestPasskeys(t *testing.T) {
 	if code, out, _ := login(map[string]any{"username": "ann", "password": "Harbor-maple-63", "passkey": map[string]any{"token": stepOpts["token"], "credential": ans}}); code != 401 || out["code"] != "passkey_wrong" {
 		t.Errorf("replay = %d %v", code, out)
 	}
+	// Nor on another server, or after a restart, which have not seen it:
+	// the user's record has.
+	s.passkeyChallenges = challengeSet{}
+	if code, out, _ := login(map[string]any{"username": "ann", "password": "Harbor-maple-63", "passkey": map[string]any{"token": stepOpts["token"], "credential": ans}}); code != 401 || out["code"] != "passkey_wrong" {
+		t.Errorf("replay elsewhere = %d %v", code, out)
+	}
 	// A wrong password with the passkey signs nobody in.
 	if code, out, _ := login(map[string]any{"username": "ann", "password": "nope", "passkey": map[string]any{"token": stepOpts["token"], "credential": a.get(stepOpts, key)}}); code != 401 || out["code"] != "wrong_credentials" {
 		t.Errorf("wrong password = %d %v", code, out)
@@ -275,6 +292,33 @@ func TestPasskeys(t *testing.T) {
 	code, out, sess = passwordless()
 	if code != 200 || sess == nil || out["username"] != "ann" {
 		t.Fatalf("passwordless = %d %v", code, out)
+	}
+	{
+		// A synced passkey keeps no counter: its answer is still good
+		// once only, on any server.
+		_, ao, _ := pkCall(t, ts, "POST", "/api/me/passkeys/options", "{}", sess)
+		cred, synced := a.create(ao)
+		synced.synced = true
+		if code, out, _ := pkCall(t, ts, "POST", "/api/me/passkeys", map[string]any{"name": "Phone", "token": ao["token"], "credential": cred}, sess); code != 200 {
+			t.Fatalf("add synced = %d %v", code, out)
+		}
+		_, lo, _ := pkCall(t, ts, "POST", "/api/login/passkey/options", "{}")
+		body := map[string]any{"token": lo["token"], "credential": a.get(lo, synced)}
+		if code, out, _ := pkCall(t, ts, "POST", "/api/login/passkey", body); code != 200 {
+			t.Fatalf("no counter = %d %v", code, out)
+		}
+		s.passkeyChallenges = challengeSet{}
+		if code, out, _ := pkCall(t, ts, "POST", "/api/login/passkey", body); code != 401 || out["code"] != "passkey_wrong" {
+			t.Errorf("no counter, replayed elsewhere = %d %v", code, out)
+		}
+		// A challenge made for one host is no good at another.
+		_, lo, _ = pkCall(t, ts, "POST", "/api/login/passkey/options", "{}")
+		if code, out, _ := pkCallAt(t, ts, "x.localhost", "POST", "/api/login/passkey", map[string]any{"token": lo["token"], "credential": a.get(lo, key)}); code != 401 || out["code"] != "passkey_expired" {
+			t.Errorf("other host = %d %v", code, out)
+		}
+		if code, out, _ := pkCall(t, ts, "DELETE", "/api/me/passkeys/"+b64.EncodeToString(synced.id), "", sess); code != 200 {
+			t.Fatalf("remove synced = %d %v", code, out)
+		}
 	}
 	a.uv = false
 	if code, out, _ := passwordless(); code != 401 || out["code"] != "passkey_wrong" {
@@ -439,4 +483,38 @@ func setUpMFAAt(t *testing.T, ts *httptest.Server, c *http.Cookie) (string, []st
 		codes = append(codes, v.(string))
 	}
 	return secret, codes
+}
+
+// An admin's password reset removes the user's passkeys: whoever added
+// one must not keep a way in past the new password.
+func TestPasswordResetRemovesPasskeys(t *testing.T) {
+	ts, s := newUsersServer(t, nil)
+	ctx := context.Background()
+	for _, u := range []users.NewUser{
+		{Username: "boss", Role: users.Admin, Password: "Harbor-maple-63"},
+		{Username: "cara", Role: users.Analyst, Password: "Quartz-meadow-28"},
+	} {
+		if _, err := s.Users.Create(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := newAuthenticator(t)
+	_, _, cs := pkCall(t, ts, "POST", "/api/login", map[string]any{"username": "cara", "password": "Quartz-meadow-28"})
+	cara := sessionOf(cs)
+	_, opts, _ := pkCall(t, ts, "POST", "/api/me/passkeys/options", "{}", cara)
+	cred, key := a.create(opts)
+	if code, out, _ := pkCall(t, ts, "POST", "/api/me/passkeys", map[string]any{"token": opts["token"], "credential": cred}, cara); code != 200 {
+		t.Fatalf("add = %d %v", code, out)
+	}
+	_, _, cs = pkCall(t, ts, "POST", "/api/login", map[string]any{"username": "boss", "password": "Harbor-maple-63"})
+	if code, out, _ := pkCall(t, ts, "POST", "/api/users/cara/password", "{}", sessionOf(cs)); code != 200 {
+		t.Fatalf("reset = %d %v", code, out)
+	}
+	if mm, ok := s.Users.MFA("cara"); ok {
+		t.Errorf("after reset: %+v", mm)
+	}
+	_, lo, _ := pkCall(t, ts, "POST", "/api/login/passkey/options", "{}")
+	if code, out, _ := pkCall(t, ts, "POST", "/api/login/passkey", map[string]any{"token": lo["token"], "credential": a.get(lo, key)}); code != 401 || out["code"] != "passkey_wrong" {
+		t.Errorf("passkey after reset = %d %v", code, out)
+	}
 }

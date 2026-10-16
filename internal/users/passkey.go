@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"slices"
 	"strings"
@@ -74,6 +75,9 @@ var (
 	ErrPasskeyExists = errors.New("this passkey is added already")
 	// ErrTooManyPasskeys refuses a passkey past MaxPasskeys.
 	ErrTooManyPasskeys = errors.New("an account can have at most 10 passkeys; remove one first")
+	// ErrPasskeyReplayed refuses an answer to a challenge answered
+	// already.
+	ErrPasskeyReplayed = errors.New("this passkey answer was used already")
 	// ErrPasskeyCloned refuses a passkey whose signature counter went
 	// backwards: someone may have copied it.
 	ErrPasskeyCloned = errors.New("this passkey's counter went backwards, so it may have been copied")
@@ -146,6 +150,30 @@ func (s *Store) PasskeyOwner(handle []byte) (string, bool) {
 	return "", false
 }
 
+// passkeyTaken reports whether someone other than name has a passkey
+// with id. A credential belongs to one account (WebAuthn, step 22 of
+// registering one).
+func (s *Store) passkeyTaken(name string, id []byte) bool {
+	has := func(m *MFA) bool {
+		return m != nil && slices.ContainsFunc(m.Passkeys, func(p Passkey) bool { return bytes.Equal(p.ID, id) })
+	}
+	s.fresh()
+	if b := s.builtinName(); b != "" && !strings.EqualFold(b, name) {
+		if bb, ok := s.b.(builtinMFABackend); ok && has(bb.BuiltinMFA()) {
+			return true
+		}
+	}
+	key := NormalizeUsername(name)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for n, m := range s.mfa {
+		if n != key && has(m) {
+			return true
+		}
+	}
+	return false
+}
+
 // AddPasskey adds k to name's passkeys, made for user handle handle. The
 // first passkey of someone without two-step sign-in turns it on: the
 // recovery codes it returns are shown once, and every session of the
@@ -160,6 +188,9 @@ func (s *Store) AddPasskey(ctx context.Context, name string, handle []byte, k Pa
 	now := s.now()
 	k = k.clone()
 	k.Name, k.Created = PasskeyName(k.Name), now
+	if s.passkeyTaken(name, k.ID) {
+		return nil, ErrPasskeyExists
+	}
 	err = s.changeMFA(ctx, name, func(cur *MFA) (*MFA, bool, error) {
 		if !cur.On() {
 			// A first second step. An app being set up is dropped; it can
@@ -218,11 +249,59 @@ func (s *Store) RemovePasskey(ctx context.Context, name string, id []byte) (Pass
 	return gone, err
 }
 
-// PasskeyUse is what an authenticator said when a passkey was used.
+// RemovePasskeys removes all of name's passkeys, as an admin's password
+// reset does: whoever added one must not keep a way in that skips the
+// new password. Without an app, that turns two-step sign-in off. It
+// returns how many there were.
+func (s *Store) RemovePasskeys(ctx context.Context, name string) (int, error) {
+	n := 0
+	release, err := s.hold()
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	err = s.changeMFA(ctx, name, func(cur *MFA) (*MFA, bool, error) {
+		if cur == nil || len(cur.Passkeys) == 0 {
+			return nil, false, ErrNoChange
+		}
+		n = len(cur.Passkeys)
+		if cur.NoApp {
+			return nil, false, nil
+		}
+		next := cur.clone()
+		next.Passkeys, next.Spent = nil, nil
+		return next, false, nil
+	})
+	if errors.Is(err, ErrNoChange) {
+		err = nil
+	}
+	return n, err
+}
+
+// PasskeyUse is what an authenticator said when a passkey was used,
+// and the challenge it answered.
 type PasskeyUse struct {
 	SignCount   uint32
 	BackupState bool
+	// Challenge is the challenge answered, accepted once until
+	// ChallengeUntil. Synced passkeys keep no counter, so this is what
+	// stops a copied answer being sent again to another server.
+	Challenge      []byte
+	ChallengeUntil time.Time
 }
+
+// SpentChallenge is a passkey challenge answered already: its SHA-256,
+// and until when it could be answered.
+type SpentChallenge struct {
+	Digest []byte    `json:"d"`
+	Until  time.Time `json:"u"`
+}
+
+// maxSpent bounds the challenges kept per user. Each is answered with a
+// real passkey within passkeyWait, and sign-ins are rate limited, so
+// reaching it means something is wrong: further uses are refused until
+// some expire.
+const maxSpent = 256
 
 // UsePasskey records that name's passkey id was just used: its counter,
 // which must have moved on unless the authenticator keeps none (zero),
@@ -240,6 +319,13 @@ func (s *Store) UsePasskey(ctx context.Context, name string, id []byte, use Pass
 			return nil, false, ErrPasskeyUnknown
 		}
 		next := cur.clone()
+		next.Spent = slices.DeleteFunc(next.Spent, func(c SpentChallenge) bool { return !now.Before(c.Until) })
+		sum := sha256.Sum256(use.Challenge)
+		if len(use.Challenge) == 0 || len(next.Spent) >= maxSpent ||
+			slices.ContainsFunc(next.Spent, func(c SpentChallenge) bool { return bytes.Equal(c.Digest, sum[:]) }) {
+			return nil, false, ErrPasskeyReplayed
+		}
+		next.Spent = append(next.Spent, SpentChallenge{Digest: sum[:], Until: use.ChallengeUntil.UTC()})
 		k := &next.Passkeys[i]
 		if (use.SignCount != 0 || k.SignCount != 0) && use.SignCount <= k.SignCount {
 			return nil, false, ErrPasskeyCloned
