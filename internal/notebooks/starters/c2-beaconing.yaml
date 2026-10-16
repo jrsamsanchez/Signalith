@@ -1,0 +1,36 @@
+id: starter-c2-beaconing
+title: Command-and-control beaconing
+description: Find hosts that call out to the same address at regular intervals with small amounts of data, and traffic on unusual ports.
+techniques: [T1071, T1573, T1571]
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      Malware on a host **checks in** with its controller on a schedule: many short connections, each sending little data, to the same destination.
+
+      Needs connection data from a firewall or a network sensor (Zeek or Suricata) in **Network_Traffic**.
+  - kind: search
+    title: Many small, short connections to one destination
+    query: |
+      datamodel=Network_Traffic direction=outbound transport=tcp
+      | stats count, dc(src_port) as connections, max(bytes_out) as max_bytes_out, max(duration) as max_duration, min(_time) as first_seen, max(_time) as last_seen by src, dest, dest_port
+      | where connections >= 12 AND max_bytes_out <= 5000 AND max_duration <= 60
+      | sort -connections
+  - kind: search
+    title: Outbound traffic on unusual ports
+    query: |
+      datamodel=Network_Traffic direction=outbound NOT dest_port IN (53, 80, 123, 443, 993, 587)
+      | stats count, sum(bytes_out) as bytes_out by src, dest, dest_port
+      | sort -count
+      | head 25
+  - kind: search
+    title: Hosts sending the most data out
+    query: |
+      datamodel=Network_Traffic direction=outbound
+      | stats sum(bytes_out) as bytes_out, dc(dest) as destinations by src
+      | sort -bytes_out
+      | head 10
+  - kind: markdown
+    text: |
+      ## Ruling things out
+      Update services, antivirus and monitoring agents also check in regularly. Look up the destination with **Threat intel** and the `enrich` command before deciding, and compare with other hosts: a beacon from one host only is more suspicious than one from every host.

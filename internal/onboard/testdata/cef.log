@@ -1,0 +1,2 @@
+CEF:0|Acme|Gateway|1.0|100|Blocked connection|5|src=10.0.0.5 dst=203.0.113.9 spt=5000 dpt=445 proto=TCP act=blocked
+CEF:0|Acme|Gateway|1.0|101|Allowed connection|2|src=10.0.0.6 dst=203.0.113.10 spt=5001 dpt=443 proto=TCP act=allowed

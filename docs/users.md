@@ -20,7 +20,7 @@ Each role can do everything the roles above it can.
 | Role | For | Can |
 | --- | --- | --- |
 | **Viewer** | Managers, auditors, other teams | Run searches and see dashboards, findings, investigations, detections, risk and intel. Cannot change anything. |
-| **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards, use **Ask** and add or remove intel indicators by hand. |
+| **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards and hunting notebooks, use **Ask** and add or remove intel indicators by hand. |
 | **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md) and [API tokens](ai-tools.md#api-tokens), manage users and set up directory sign-in, and change server settings. |
 
 By area:
@@ -1042,7 +1042,10 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/compliance`,
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/notebooks`,
+`GET /api/notebooks/{id}`, `GET /api/notebooks/{id}/markdown`, `POST /api/notebooks/{id}/run`
+([hunting notebooks](hunting-notebooks.md) shared with everyone and the starter hunts; a
+viewer's run is not saved), `GET /api/compliance`,
 `GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
@@ -1056,8 +1059,11 @@ clicks still need the Analyst role), and the web UI.
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
 `POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
-`DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
-`POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
+`DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
+`PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
+`POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes
+their own notebooks and ones shared for editing; only the owner or an admin changes the sharing
+or deletes one), `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
 `GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
 `GET /api/vulns`, `GET /api/vulns/hosts/{id}` (what [vulnerability scans](vulnerabilities.md) found),
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
@@ -1085,6 +1091,8 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
+`GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
+`PUT /api/parsers/{name}`, `DELETE /api/parsers/{name}` ([custom log parsers](custom-logs.md)),
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,

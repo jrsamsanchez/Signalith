@@ -90,6 +90,10 @@ type Pipeline struct {
 	// byte until they have been written (default DefaultMaxReceiving); one
 	// sender may hold a quarter of it. See ReadBody.
 	MaxReceiving int64
+	// Custom parses the records sent under a custom parser's tag
+	// (CustomTagPrefix); nil leaves them to the built-in parsers. Set it
+	// before the pipeline takes records.
+	Custom CustomParsers
 	// Log, when set, gets a warning (at most once a minute per kind) when
 	// events are refiled under their arrival time or lose fields.
 	Log *slog.Logger
@@ -282,7 +286,12 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		end := min(start+batchEvents, len(records))
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
-			events = append(events, Normalize(tag, r, p.now()))
+			if ev, drop := p.normalize(tag, r, p.now()); !drop {
+				events = append(events, ev)
+			}
+		}
+		if len(events) == 0 {
+			continue
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {
@@ -352,7 +361,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		nReserved := p.dropReserved(ev.Fields, &reserved)
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
-		// carries its own marker instead.
+		// carries its own marker instead, and the origin an event of it
+		// names (as a sensor's token would send it), so detections that
+		// believe only such events fire on the sample too.
 		if p.SampleMark == "" {
 			o := ev.Origin
 			if o.IsZero() {
@@ -360,6 +371,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+		} else {
+			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
