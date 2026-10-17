@@ -18,10 +18,15 @@ import (
 // others wait, no tenant holds more than half the workers. Current slots
 // go before catch-up, and catch-up always leaves one worker free.
 //
-// When OpenSearch is overloaded (it refuses a search as busy, or does not
-// answer in time) or the runs' p95 time doubles over that of the 15
-// minutes before, the pool halves its workers, then gets one back a
-// minute; catch-up waits until it has them all again.
+// When a tenant's runs show OpenSearch overloaded (it refuses a search as
+// busy, or does not answer in time) or their p95 time doubles over that of
+// the 15 minutes before, that tenant alone is held to fewer workers: its
+// cap halves, and grows back one a minute. Only when two or more tenants
+// show it within poolSignalWindow, or a single tenant runs here, is
+// OpenSearch taken to be slow for everyone: the pool halves its workers,
+// then gets one back a minute, and runs a single catch-up at a time until
+// it has them all again. So one tenant's heavy rules slow only its own
+// detections.
 type Pool struct {
 	// Mono is a monotonic clock; time.Since when nil.
 	Mono func() time.Duration
@@ -39,6 +44,19 @@ type Pool struct {
 	held            map[string]int
 	waiting         []*poolWaiter
 	last            string
+	tenants         map[string]*poolTenant
+}
+
+// poolTenant is what the pool knows of one tenant's runs.
+type poolTenant struct {
+	// seen is when the tenant last asked for a worker; signal when its
+	// runs last showed OpenSearch overloaded.
+	seen, signal time.Duration
+	signalled    bool
+	// cap, when above 0, is how many workers the tenant may hold while
+	// its own runs are the slow ones; cutAt and raisedAt as for the pool.
+	cap             int
+	cutAt, raisedAt time.Duration
 	samples         []poolSample
 	checkedAt       time.Duration
 }
@@ -69,12 +87,15 @@ const (
 	poolBaseline   = 15 * time.Minute
 	poolMinSamples = 10
 	poolMaxSamples = 4096
+	// poolSignalWindow is how close together two tenants' signals must be
+	// for the whole pool to halve.
+	poolSignalWindow = 2 * time.Minute
 )
 
 // NewPool makes a pool of size workers.
 func NewPool(size int) *Pool {
 	size = max(size, 1)
-	return &Pool{size: size, limit: size, held: map[string]int{}}
+	return &Pool{size: size, limit: size, held: map[string]int{}, tenants: map[string]*poolTenant{}}
 }
 
 func (p *Pool) mono() time.Duration {
@@ -136,7 +157,9 @@ func (p *Pool) Stats() PoolStats {
 func (p *Pool) Acquire(ctx context.Context, tenant string, current bool) (done func(took time.Duration, err error), err error) {
 	w := &poolWaiter{tenant: tenant, current: current, ready: make(chan struct{})}
 	p.mu.Lock()
-	p.raise(p.mono())
+	now := p.mono()
+	p.raise(now)
+	p.tenant(tenant).seen = now
 	p.waiting = append(p.waiting, w)
 	p.grant()
 	p.mu.Unlock()
@@ -169,9 +192,18 @@ func (p *Pool) release(w *poolWaiter, took time.Duration, err error) {
 		p.catchUp--
 	}
 	now := p.mono()
-	p.record(now, took, err)
+	p.record(w.tenant, now, took, err)
 	p.raise(now)
 	p.grant()
+}
+
+func (p *Pool) tenant(id string) *poolTenant {
+	t := p.tenants[id]
+	if t == nil {
+		t = &poolTenant{}
+		p.tenants[id] = t
+	}
+	return t
 }
 
 // grant hands free workers to waiting runs: current slots first, then
@@ -179,7 +211,7 @@ func (p *Pool) release(w *poolWaiter, took time.Duration, err error) {
 func (p *Pool) grant() {
 	for p.busy < p.limit {
 		w := p.pick(true)
-		if w == nil && !p.cut && p.catchUp < max(p.limit-1, 1) {
+		if w == nil && p.catchUpRoom() {
 			w = p.pick(false)
 		}
 		if w == nil {
@@ -197,6 +229,15 @@ func (p *Pool) grant() {
 	}
 }
 
+// catchUpRoom reports whether a catch-up run may start: it always leaves
+// a worker free, and runs one at a time while the pool backs off.
+func (p *Pool) catchUpRoom() bool {
+	if p.cut {
+		return p.limit >= 2 && p.catchUp < 1
+	}
+	return p.catchUp < max(p.limit-1, 1)
+}
+
 // pick returns the first waiting run of the class (current or catch-up)
 // of the next tenant in turn that may have another worker, or nil.
 func (p *Pool) pick(current bool) *poolWaiter {
@@ -206,7 +247,9 @@ func (p *Pool) pick(current bool) *poolWaiter {
 	for _, w := range p.waiting {
 		// For current slots, only other tenants' current slots limit a
 		// tenant; for catch-up, any waiting run does.
-		if current && w.current || !current {
+		// A tenant held to its own cap does not count: it could not take
+		// the worker anyway.
+		if (current && w.current || !current) && !p.atCap(w.tenant) {
 			others[w.tenant] = true
 		}
 		if w.current == current && first[w.tenant] == nil {
@@ -230,6 +273,9 @@ func (p *Pool) pick(current bool) *poolWaiter {
 		if waitingOthers && p.held[t] >= limit {
 			continue
 		}
+		if p.atCap(t) {
+			continue
+		}
 		return first[t]
 	}
 	return nil
@@ -240,46 +286,93 @@ func overloaded(err error) bool {
 	return err != nil && (store.RefusalOf(err) == store.RefusedBusy || store.NoAnswer(err))
 }
 
-// record notes a finished run, and halves the pool when it shows
-// OpenSearch overloaded.
-func (p *Pool) record(now, took time.Duration, err error) {
-	if overloaded(err) {
-		p.halve(now, "OpenSearch is too busy")
-		return
+// record notes a finished run of tenant, and holds back that tenant, or
+// the whole pool, when it shows OpenSearch overloaded.
+func (p *Pool) record(tenant string, now, took time.Duration, err error) {
+	t := p.tenant(tenant)
+	switch {
+	case overloaded(err):
+		p.overload(tenant, t, now, "OpenSearch is too busy")
+	case took > 0 && t.slowed(now, took):
+		p.overload(tenant, t, now, "detection searches take twice as long as before")
 	}
-	if took <= 0 {
-		return
-	}
-	p.samples = append(p.samples, poolSample{at: now, took: took})
+}
+
+// slowed adds a run's time and reports whether the tenant's recent runs
+// take twice as long as before.
+func (t *poolTenant) slowed(now, took time.Duration) bool {
+	t.samples = append(t.samples, poolSample{at: now, took: took})
 	old := 0
-	for old < len(p.samples) && now-p.samples[old].at > poolRecent+poolBaseline {
+	for old < len(t.samples) && now-t.samples[old].at > poolRecent+poolBaseline {
 		old++
 	}
-	if extra := len(p.samples) - old - poolMaxSamples; extra > 0 {
+	if extra := len(t.samples) - old - poolMaxSamples; extra > 0 {
 		old += extra
 	}
-	p.samples = p.samples[old:]
-	if now-p.checkedAt < poolCutGap {
-		return
+	t.samples = t.samples[old:]
+	if now-t.checkedAt < poolCutGap {
+		return false
 	}
-	p.checkedAt = now
+	t.checkedAt = now
 	var recent, base []time.Duration
-	for _, s := range p.samples {
+	for _, s := range t.samples {
 		if now-s.at <= poolRecent {
 			recent = append(recent, s.took)
 		} else {
 			base = append(base, s.took)
 		}
 	}
-	if len(recent) < poolMinSamples || len(base) < poolMinSamples {
+	if len(recent) < poolMinSamples || len(base) < poolMinSamples || p95(recent) <= 2*p95(base) {
+		return false
+	}
+	// The slow runs become the next baseline, so one slowdown counts
+	// once, not again every check while it lasts.
+	t.samples = nil
+	return true
+}
+
+// overload handles a sign of overload in tenant's runs: the whole pool
+// halves when another tenant showed one too within poolSignalWindow, or
+// no other tenant runs here; otherwise only tenant's cap does.
+func (p *Pool) overload(tenant string, t *poolTenant, now time.Duration, why string) {
+	t.signal, t.signalled = now, true
+	served, signalled := 0, 0
+	for id, o := range p.tenants {
+		if id == tenant || now-o.seen <= poolRecent+poolBaseline {
+			served++
+		}
+		if id != tenant && o.signalled && now-o.signal <= poolSignalWindow {
+			signalled++
+		}
+	}
+	if served <= 1 || signalled > 0 {
+		p.halve(now, why)
 		return
 	}
-	if p95(recent) > 2*p95(base) {
-		// The slow runs become the next baseline, so the pool halves
-		// once for a slowdown, not again every check while it lasts.
-		p.samples = nil
-		p.halve(now, "detection searches take twice as long as before")
+	if t.cap > 0 && now-t.cutAt < poolCutGap {
+		return
 	}
+	was := t.cap
+	if was <= 0 {
+		was = max(p.limit/2, 1)
+	}
+	t.cap = max(was/2, 1)
+	t.cutAt, t.raisedAt = now, now
+	p.log().Warn("running fewer of one tenant's detections at once while its searches are slow", "tenant", tenant, "why", why, "workers", t.cap)
+}
+
+// atCap reports whether tenant id is held back and holds all it may.
+func (p *Pool) atCap(id string) bool {
+	c := p.tenants[id]
+	return c != nil && c.cap > 0 && p.held[id] >= c.cap
+}
+
+// inUse reports whether tenant id holds or waits for a worker.
+func (p *Pool) inUse(id string) bool {
+	if p.held[id] > 0 {
+		return true
+	}
+	return slices.ContainsFunc(p.waiting, func(w *poolWaiter) bool { return w.tenant == id })
 }
 
 func p95(d []time.Duration) time.Duration {
@@ -299,8 +392,23 @@ func (p *Pool) halve(now time.Duration, why string) {
 	}
 }
 
-// raise gives a backing-off pool one worker back a minute.
+// raise gives a backing-off pool, and each held-back tenant, one worker
+// back a minute.
 func (p *Pool) raise(now time.Duration) {
+	for id, t := range p.tenants {
+		for t.cap > 0 && now-t.raisedAt >= poolRaiseEvery {
+			t.cap++
+			t.raisedAt += poolRaiseEvery
+			if t.cap >= max(p.limit/2, 1) {
+				t.cap = 0
+				p.log().Info("running a tenant's detections at the full rate again", "tenant", id)
+			}
+		}
+		if t.cap <= 0 && !p.inUse(id) && now-t.seen > poolRecent+poolBaseline && (!t.signalled || now-t.signal > poolSignalWindow) {
+			// A tenant gone for long is forgotten.
+			delete(p.tenants, id)
+		}
+	}
 	for p.cut && now-p.raisedAt >= poolRaiseEvery {
 		p.limit++
 		p.raisedAt += poolRaiseEvery

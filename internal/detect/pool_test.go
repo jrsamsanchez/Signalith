@@ -168,6 +168,8 @@ func TestPoolBacksOff(t *testing.T) {
 	if s := tp.Stats(); s.Limit != 2 {
 		t.Fatalf("after another refusal later: %+v, want 2", s)
 	}
+	// One catch-up runs at a time while backing off.
+	first := tp.take(t, "a", false)
 	got := make(chan granted, 1)
 	tp.wait(t, context.Background(), "catch-up", "a", false, got)
 	tp.advance(poolRaiseEvery)
@@ -177,9 +179,10 @@ func TestPoolBacksOff(t *testing.T) {
 	tp.take(t, "a", true)(time.Second, nil)
 	select {
 	case <-got:
-		t.Fatal("catch-up ran while backing off")
+		t.Fatal("a second catch-up ran while backing off")
 	default:
 	}
+	first(time.Second, nil)
 	tp.advance(5 * poolRaiseEvery)
 	if s := tp.Stats(); s.Limit != 8 || s.Backoff {
 		t.Fatalf("after backing off: %+v", s)
@@ -265,5 +268,58 @@ func TestPoolResize(t *testing.T) {
 	tp.SetSize(2)
 	if s := tp.Stats(); s.Limit != 2 || s.Backoff {
 		t.Fatalf("%+v", s)
+	}
+}
+
+// TestPoolOneTenantSlow: when only one tenant's runs time out, only that
+// tenant is held back; another tenant keeps its workers and its
+// catch-up. When a second tenant's runs show it too, the pool halves.
+func TestPoolOneTenantSlow(t *testing.T) {
+	tp := newTestPool(8)
+	busy := &store.Error{Status: 429, Body: "rejected_execution_exception"}
+	tp.take(t, "b", true)(time.Second, nil)
+	for range 4 {
+		tp.take(t, "a", true)(time.Second, busy)
+		tp.advance(poolCutGap + time.Second)
+	}
+	if s := tp.Stats(); s.Limit != 8 || s.Backoff {
+		t.Fatalf("one tenant's timeouts held every tenant back: %+v", s)
+	}
+	if c := tp.tenants["a"].cap; c != 1 {
+		t.Fatalf("a may still hold %d workers", c)
+	}
+	// b gets workers and catch-up as before.
+	var held []func(time.Duration, error)
+	for range 4 {
+		held = append(held, tp.take(t, "b", true))
+	}
+	held = append(held, tp.take(t, "b", false))
+	// a gets its one worker, and waits for a second though workers are
+	// free.
+	held = append(held, tp.take(t, "a", true))
+	got := make(chan granted, 1)
+	tp.wait(t, context.Background(), "a2", "a", true, got)
+	held = append(held, tp.take(t, "b", true))
+	select {
+	case g := <-got:
+		t.Fatalf("%s got a worker past a's cap", g.name)
+	default:
+	}
+	for _, d := range held {
+		d(time.Second, nil)
+	}
+	next(t, got).done(time.Second, nil)
+	// A second tenant overloaded soon after: OpenSearch is slow for all.
+	tp.take(t, "b", true)(time.Second, busy)
+	if s := tp.Stats(); s.Limit != 4 || !s.Backoff {
+		t.Fatalf("two tenants overloaded but the pool kept %+v", s)
+	}
+	// Backing off, one catch-up still runs.
+	tp.take(t, "b", false)
+	// a's cap comes back one a minute.
+	tp.advance(3 * poolRaiseEvery)
+	tp.Stats()
+	if c := tp.tenants["a"]; c.cap != 0 {
+		t.Errorf("a still held to %d workers after three minutes", c.cap)
 	}
 }
