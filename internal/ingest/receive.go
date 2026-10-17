@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/netip"
+	"time"
 )
 
 // DefaultMaxReceiving is how much memory request bodies may hold at once,
@@ -121,11 +122,18 @@ var (
 func (l *Limits) reserve(tenant string, sender netip.Addr, n int64) error {
 	l.recvMu.Lock()
 	defer l.recvMu.Unlock()
-	if l.recvUsed+n > l.recvMax {
-		return errReceiveFull
+	now := time.Now
+	if l.now != nil {
+		now = l.now
 	}
 	own := l.recvTenant[tenant]
-	if own+n > l.recvMax/2 && l.recvUsed > own {
+	if l.recvUsed+n > l.recvMax {
+		if l.recvUsed > own {
+			l.recvContended = now().Add(recvContendedFor)
+		}
+		return errReceiveFull
+	}
+	if own+n > l.recvMax/2 && (l.recvUsed > own || now().Before(l.recvContended)) {
 		return errReceiveTenant
 	}
 	k := recvKey{tenant, sender}

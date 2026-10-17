@@ -262,3 +262,34 @@ func TestTenantPipelinesShareReceiveBudget(t *testing.T) {
 		t.Errorf("after every release: %d held (%v, %v)", l.recvUsed, l.recvBy, l.recvTenant)
 	}
 }
+
+func TestTenantFillingBudgetAloneMakesRoom(t *testing.T) {
+	l := NewLimits(0, 1<<20)
+	clock := time.Unix(0, 0)
+	l.now = func() time.Time { return clock }
+	// Tenant a fills the budget alone, which it may.
+	if err := l.reserve("a", netip.Addr{}, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	// A newcomer is turned away, and that holds a to half for a while.
+	if err := l.reserve("b", netip.Addr{}, 1); !errors.Is(err, errReceiveFull) {
+		t.Fatalf("newcomer with the budget full: %v", err)
+	}
+	l.unreserve("a", netip.Addr{}, 1<<20)
+	if err := l.reserve("a", netip.Addr{}, 600<<10); !errors.Is(err, errReceiveTenant) {
+		t.Errorf("a past half right after: %v", err)
+	}
+	if err := l.reserve("a", netip.Addr{}, 512<<10); err != nil {
+		t.Errorf("a up to half: %v", err)
+	}
+	if err := l.reserve("b", netip.Addr{}, 64<<10); err != nil {
+		t.Errorf("newcomer once a is held to half: %v", err)
+	}
+	l.unreserve("a", netip.Addr{}, 512<<10)
+	l.unreserve("b", netip.Addr{}, 64<<10)
+	// Once the time is up, a alone may fill it again.
+	clock = clock.Add(recvContendedFor + time.Second)
+	if err := l.reserve("a", netip.Addr{}, 1<<20); err != nil {
+		t.Errorf("a alone later: %v", err)
+	}
+}

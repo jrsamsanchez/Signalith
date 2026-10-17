@@ -23,7 +23,16 @@ type Limits struct {
 	recvUsed   int64
 	recvTenant map[string]int64
 	recvBy     map[recvKey]int64
+	// recvContended is until when every tenant is held to half the
+	// budget, set when a tenant is refused because others fill it: else a
+	// tenant that fills the budget alone would turn every newcomer away.
+	recvContended time.Time
+	now           func() time.Time // for tests; nil is time.Now
 }
+
+// recvContendedFor is how long a tenant turned away for a full budget
+// holds the others to half of it.
+const recvContendedFor = 10 * time.Second
 
 type recvKey struct {
 	tenant string
