@@ -543,19 +543,29 @@ func lookupString(c *Lookup) string {
 }
 
 // InputLookup starts a search with the rows of a lookup table instead of
-// events: | inputlookup [max=N] owners.
+// events: | inputlookup [max=N] owners. With append=true it can come
+// later and adds the table's rows after the rows so far.
 type InputLookup struct {
-	Table string
-	Max   int // the most rows to read; 0 means the search's event limit
+	Table  string
+	Max    int // the most rows to read; 0 means the search's event limit
+	Append bool
 }
 
 func (*InputLookup) Name() string { return "inputlookup" }
 
 func (p *parser) parseInputLookup() (Command, error) {
 	c := &InputLookup{}
-	for p.isKeywordFold("max") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+	for (p.isKeywordFold("max") || p.isKeywordFold("append")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		key := strings.ToLower(p.next().text)
 		p.next()
-		p.next()
+		if key == "append" {
+			b, err := parseBool(p.next())
+			if err != nil {
+				return nil, err
+			}
+			c.Append = b
+			continue
+		}
 		at := p.peek().pos
 		n, err := p.int()
 		if err != nil {
@@ -579,10 +589,14 @@ func (p *parser) parseInputLookup() (Command, error) {
 }
 
 func inputLookupString(c *InputLookup) string {
-	if c.Max > 0 {
-		return "inputlookup max=" + strconv.Itoa(c.Max) + " " + c.Table
+	s := "inputlookup "
+	if c.Append {
+		s += "append=true "
 	}
-	return "inputlookup " + c.Table
+	if c.Max > 0 {
+		s += "max=" + strconv.Itoa(c.Max) + " "
+	}
+	return s + c.Table
 }
 
 // Regex keeps rows whose field matches a regular expression, or with !=

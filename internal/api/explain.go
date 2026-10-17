@@ -214,6 +214,12 @@ func ordinal(n int) string {
 
 func describeCommand(c query.Command) string {
 	switch c := c.(type) {
+	case *query.InputLookup:
+		s := "Add the rows of the lookup table " + c.Table
+		if c.Max > 0 {
+			s += fmt.Sprintf(", at most %d", c.Max)
+		}
+		return s + ", after the rows so far."
 	case *query.OutputLookup:
 		s := "Write the rows to the lookup table " + c.Table
 		switch {

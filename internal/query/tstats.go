@@ -182,6 +182,7 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 			return nil, errorf(toks[i].pos, "unexpected %s in tstats; it expects: %s", describe(toks[i]), example)
 		}
 		wp := sub(toks[i+1 : byAt])
+		wp.src, wp.base = p.src, p.base // for "Node.field"=value
 		var wq Query
 		if err := wp.parseSearch(&wq); err != nil {
 			return nil, err

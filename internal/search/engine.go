@@ -793,6 +793,13 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.join(ctx, res, c, q)
 		case *query.Append:
 			err = e.appendSearch(ctx, res, c, q)
+		case *query.InputLookup:
+			// inputlookup append=true, after the first command.
+			var sub *Result
+			if sub, err = e.inputLookup(c); err == nil {
+				appendRows(res, sub.Rows, sub.Columns, sub.Kind)
+				res.Truncated = res.Truncated || sub.Truncated
+			}
 		case *query.Union:
 			for _, s := range c.Subs {
 				if err = e.appendSearch(ctx, res, &query.Append{Sub: s}, q); err != nil {

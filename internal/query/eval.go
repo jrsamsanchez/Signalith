@@ -533,6 +533,31 @@ func (p *evalParser) binary(prec int) (EvalExpr, error) {
 		return nil, err
 	}
 	for {
+		if prec == precCompare && p.keyword("IN") && p.toks[p.i+1].kind == etLParen {
+			// x IN (a, b) is in(x, a, b).
+			if err := p.node(); err != nil {
+				return nil, err
+			}
+			p.next()
+			p.next() // (
+			c := &Call{Func: "in", Args: []EvalExpr{l}}
+			for {
+				a, err := p.expr()
+				if err != nil {
+					return nil, err
+				}
+				c.Args = append(c.Args, a)
+				t := p.next()
+				if t.kind == etRParen {
+					break
+				}
+				if t.kind != etComma {
+					return nil, errorf(t.pos, `expected "," or ")" in IN list`)
+				}
+			}
+			l = c
+			continue
+		}
 		op, opPrec := p.binaryOp()
 		if op == "" || opPrec != prec {
 			return l, nil

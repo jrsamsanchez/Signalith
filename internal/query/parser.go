@@ -103,7 +103,9 @@ func parseAt(src string, base, depth int) (*Query, error) {
 		if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
 			switch cmd.(type) {
 			case *InputLookup:
-				return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners")
+				if !cmd.(*InputLookup).Append {
+					return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners, or with append=true adds its rows later")
+				}
 			case *MakeResults:
 				return nil, errorf(at, "makeresults makes rows instead of searching events, so it starts the search: | makeresults count=3")
 			case *MultiSearch:
@@ -303,6 +305,19 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 	switch t.kind {
 	case tokString:
 		p.next()
+		if nt := p.peek(); search && nt.kind == tokOp && p.followsQuote(nt) && t.text != "" && FormatValue(t.text) == t.text {
+			// "a.b"=x, a field name in quotes, as Splunk takes it.
+			p.next()
+			v, err := p.value()
+			if err != nil {
+				return nil, err
+			}
+			return &Compare{Field: t.text, Op: nt.text, Value: v}, nil
+		}
+		if nt := p.peek(); search && nt.kind == tokWord && nt.text == "IN" && p.peekAt(1).kind == tokLParen && t.text != "" && FormatValue(t.text) == t.text {
+			p.next()
+			return p.parseIn(t.text)
+		}
 		if search {
 			return &Text{Value: t.text}, nil
 		}
@@ -362,6 +377,10 @@ func (p *parser) parseIn(field string) (Expr, error) {
 		}
 		if t.kind != tokComma {
 			return nil, errorf(t.pos, `expected "," or ")" in IN list`)
+		}
+		if p.peek().kind == tokRParen {
+			p.next() // a comma before ")", as Splunk allows
+			return in, nil
 		}
 	}
 }
@@ -480,6 +499,11 @@ func (p *parser) parseCommand() (Command, error) {
 				k.Desc, k.Field = true, k.Field[1:]
 			} else if strings.HasPrefix(k.Field, "+") {
 				k.Field = k.Field[1:]
+			}
+			if f := p.peek(); k.Field == "" && (nt.text == "-" || nt.text == "+") && f.kind == tokWord && !strings.HasPrefix(f.text, "-") && !strings.HasPrefix(f.text, "+") && !isDigits(f.text) {
+				// sort - count, with a space after the sign.
+				p.next()
+				k.Field = p.fieldSuffix(f.text)
 			}
 			if k.Field == "" {
 				return nil, errorf(nt.pos, "sort field name is missing")
@@ -699,6 +723,11 @@ func (p *parser) parseCommand() (Command, error) {
 			fromName := from.text
 			if from.kind == tokWord {
 				fromName = p.fieldSuffix(from.text)
+			} else if n := p.peek(); n.kind == tokWord && p.followsQuote(n) {
+				// "All_Traffic".* is one name, as Splunk reads quoted
+				// and bare text that touch: drop_dm_object_name's form.
+				p.next()
+				fromName += n.text
 			}
 			if !p.isKeywordFold("as") {
 				return nil, errorf(p.peek().pos, `expected "as" in rename`)
@@ -940,6 +969,13 @@ func (p *parser) parseWhereUnary() (Expr, error) {
 
 // fieldSuffix glues "dc" "(" "user" ")" into the column name "dc(user)" so
 // stats output columns can be referenced by later commands.
+// followsQuote reports whether t starts right after a closing quote,
+// with no space between.
+func (p *parser) followsQuote(t token) bool {
+	i := t.pos - p.base
+	return i > 0 && i <= len(p.src) && p.src[i-1] == '"'
+}
+
 func (p *parser) fieldSuffix(name string) string {
 	if p.peek().kind == tokLParen && p.peekAt(1).kind == tokWord && p.peekAt(2).kind == tokRParen && isAggFunc(strings.ToLower(name)) {
 		inner := p.peekAt(1).text
@@ -1029,4 +1065,13 @@ func (p *parser) flushEvals(cmds *[]Command, cmd Command, at int) error {
 	}
 	*cmds = append(*cmds, &Eval{Assigns: evals})
 	return nil
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }

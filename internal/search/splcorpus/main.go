@@ -26,6 +26,7 @@ import (
 var (
 	splunkDir = flag.String("splunk", "", "security_content checkout")
 	out       = flag.String("out", "internal/search/testdata/splunk_corpus.json.gz", "corpus file")
+	tablesOut = flag.String("tables", "internal/search/testdata/splunk_lookups.json", "lookup table columns file")
 )
 
 // Search is one search of the corpus.
@@ -147,7 +148,56 @@ func main() {
 	if err := f.Close(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%d searches\n", len(corpus))
+	tables := lookupColumns()
+	raw, err := json.MarshalIndent(tables, "", " ")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile(*tablesOut, append(raw, '\n'), 0o644); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%d searches, %d lookup tables\n", len(corpus), len(tables))
+}
+
+// lookupColumns returns the columns of each lookup table the checkout
+// defines, by name: a CSV table's header row, or a KV store
+// collection's fields. The test makes empty tables of them, so searches
+// that read them can run.
+func lookupColumns() map[string][]string {
+	tables := map[string][]string{}
+	for _, kind := range []string{"csv", "kvstore"} {
+		files, _ := filepath.Glob(filepath.Join(*splunkDir, "lookups", kind, "*.yml"))
+		for _, f := range files {
+			var y struct {
+				Name     string   `yaml:"name"`
+				Fields   []string `yaml:"fields"`
+				Filename string   `yaml:"filename"`
+			}
+			if err := readYAML(f, &y); err != nil {
+				log.Fatal(err)
+			}
+			cols := y.Fields
+			if kind == "csv" {
+				csvFile := strings.TrimSuffix(f, ".yml") + ".csv"
+				if y.Filename != "" {
+					csvFile = filepath.Join(filepath.Dir(f), y.Filename)
+				}
+				raw, err := os.ReadFile(csvFile)
+				if err != nil {
+					continue
+				}
+				head, _, _ := strings.Cut(strings.TrimPrefix(string(raw), "\ufeff"), "\n")
+				cols = nil
+				for _, c := range strings.Split(strings.TrimRight(head, "\r"), ",") {
+					cols = append(cols, strings.Trim(c, `"`))
+				}
+			}
+			if y.Name != "" && len(cols) > 0 {
+				tables[y.Name] = cols
+			}
+		}
+	}
+	return tables
 }
 
 func readYAML(path string, v any) error {
