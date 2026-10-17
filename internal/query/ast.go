@@ -413,6 +413,8 @@ func CommandString(c Command) string {
 		return "append [search " + c.Sub.String() + "]"
 	case *Union:
 		return unionString(c)
+	case *Geostats:
+		return geostatsString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:
