@@ -210,7 +210,7 @@
 <!-- Strip of facts -->
 <section class="facts" aria-label="At a glance">
   <div class="wrap facts__in">
-    <div><b>3,600+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
+    <div><b>3,700+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
     <div><b>ATT&amp;CK</b><span>mapping on every rule, with a coverage map</span></div>
     <div><b>2</b><span>platforms: Windows and Linux packages</span></div>
     <div><b>$0</b><span>license cost, Apache 2.0</span></div>
@@ -255,12 +255,12 @@
       <article class="card" data-clip="detections">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,497 SigmaHQ and 1,156 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
+        <p>2,524 SigmaHQ and 1,185 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
       </article>
       <article class="card" data-clip="findings">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
         <h3>Findings and risk-based alerting</h3>
-        <p>A triage queue with owners, statuses and bulk actions. Weak signals add risk to users and hosts instead of flooding it, and exceptions and maintenance windows keep noisy rules quiet.</p>
+        <p>A triage queue with owners, statuses and bulk actions. Weak signals add risk to users and hosts instead of flooding it, behavior baselines add risk for first-seen and rare activity, and exceptions and maintenance windows keep noisy rules quiet.</p>
       </article>
       <article class="card" data-clip="investigate">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>
@@ -275,7 +275,7 @@
       <article class="card" data-clip="response">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
         <h3>Response actions and playbooks</h3>
-        <p>Block an IP, disable a directory account or isolate a host from a finding. Chain steps into playbooks that wait for an analyst&rsquo;s approval, and send alerts to Slack, Teams, email or a webhook.</p>
+        <p>Block an IP, disable a directory account or isolate a host from a finding. Chain steps into playbooks that wait for an analyst&rsquo;s approval, and send alerts to Slack, Teams, email or a webhook, with buttons to acknowledge a finding or approve a step from chat.</p>
       </article>
       <article class="card" data-clip="servers">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
@@ -325,7 +325,7 @@
       <article class="card" data-clip="data">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
         <h3>Easy data collection</h3>
-        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF, OpenTelemetry logs, web server logs, and cloud logs from AWS, Microsoft 365, Entra ID, Okta, Google Cloud and Google Workspace. For any other log, a guided page builds the parser with you. Or load sample data in one click.</p>
+        <p>Ready Fluent Bit setups for Windows and Linux, syslog and CEF, OpenTelemetry logs, web server logs, and audit logs from AWS, Microsoft 365, Entra ID, Okta, Google Cloud, Google Workspace, GitHub and Kubernetes. For any other log, a guided page builds the parser with you. Or load sample data in one click.</p>
       </article>
       <article class="card" data-clip="compliance">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
@@ -335,7 +335,7 @@
       <article class="card" data-clip="signin">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
         <h3>Sign in your way</h3>
-        <p>Local users, Active Directory or LDAP, or single sign-on with OpenID Connect and SCIM provisioning. Two-step sign-in with a passkey or an authenticator app, or a passkey alone with no password.</p>
+        <p>Local users, Active Directory or LDAP, or single sign-on with OpenID Connect or SAML 2.0 and SCIM provisioning. Two-step sign-in with a passkey or an authenticator app, or a passkey alone with no password.</p>
       </article>
     </div>
   </div>
@@ -420,9 +420,11 @@
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Secrets encrypted at rest</b> with a master key, DPAPI on Windows.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>No default passwords.</b> The Docker setup makes its own, and OpenSearch runs with security on.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Two-step sign-in</b> with passkeys or an authenticator app, and the password asked again before sensitive changes.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and single sign-on:</b> viewer, analyst and admin, from AD, LDAP or OpenID Connect groups.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and single sign-on:</b> viewer, analyst and admin, from AD, LDAP, OpenID Connect or SAML groups.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Passwords checked against NIST 800-63B:</b> about 2,000 commonly used passwords are refused, and sessions have a time limit.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent</b> on a port of its own, apart from the web page, so one lost machine is revoked without touching the rest.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Tamper-evident audit log:</b> every change is chained and signed, and API tokens expire.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>AI that reads logs as data:</b> text from events is fenced off from the AItext in an event can&rsquo;t give the AI instructions, and its searches are read-only.rsquo;s instructions, and its searches are read-only.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
@@ -503,12 +505,12 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
     </div>
     <div class="soon">
       <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span>
-        <div><h3>SAML sign-in</h3><p>Single sign-on with SAML 2.0 identity providers, next to OpenID Connect.</p></div>
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
+        <div><h3>Tickets in Jira and ServiceNow</h3><p>Open a Jira or ServiceNow ticket from a finding or a playbook.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
-        <div><h3>Separate teams on one install</h3><p>Tenants that keep each team&rsquo;s or customer&rsquo;s data, users and detections apart on the same servers.</p></div>
+        <div><h3>Separate teams on one install</h3><p>Tenants that keep each team&rsquo;s or customer&rsquo;s data, users and detections apart. The first step is in; a Settings page and a tenant picker come next.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-package"/></svg></span>
