@@ -159,14 +159,21 @@ func xpathAttrsMatch(n *xnode, want [][2]string) bool {
 	return true
 }
 
-// xnodeText is all the text in n and below it.
-func xnodeText(n *xnode, b *strings.Builder, limit int) {
+// xnodeText writes the text in n and below it to b, up to about limit
+// bytes, a step for each element; false means the budget ran out.
+func xnodeText(ev *evaluator, n *xnode, b *strings.Builder, limit int) bool {
+	if !ev.step() {
+		return false
+	}
 	if b.Len() < limit {
 		b.WriteString(n.text.String())
 	}
 	for _, c := range n.children {
-		xnodeText(c, b, limit)
+		if !xnodeText(ev, c, b, limit) {
+			return false
+		}
 	}
+	return true
 }
 
 // applyXPath sets c.OutField to the text of what c.Path selects in each
@@ -216,11 +223,15 @@ func applyXPath(ctx context.Context, res *Result, c *query.XPath) error {
 						v = n.text.String()
 					default:
 						var b strings.Builder
-						xnodeText(n, &b, maxEvalValue)
+						if !xnodeText(ev, n, &b, maxEvalValue) {
+							return ev.err
+						}
 						v = b.String()
 					}
 					v = strings.TrimFunc(v, unicode.IsSpace)
-					if !ev.fits(len(v)) {
+					// Charged as it is made: nested matches each copy
+					// the text below them.
+					if !ev.fits(len(v)) || !ev.charge(len(v)+fieldOverhead) {
 						return ev.err
 					}
 					vals = append(vals, v)
@@ -232,9 +243,12 @@ func applyXPath(ctx context.Context, res *Result, c *query.XPath) error {
 				continue
 			}
 			vals = []any{c.Default}
+			if !ev.charge(len(c.Default)) {
+				return ev.err
+			}
 		}
 		v := mvOut(vals)
-		if !ev.newField(r, c.OutField) || !ev.charge(valueSize(v)) {
+		if !ev.newField(r, c.OutField) {
 			return ev.err
 		}
 		r[c.OutField] = v
