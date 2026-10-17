@@ -41,13 +41,22 @@ func TestIPLocation(t *testing.T) {
 		t.Errorf("row 1 = %v", r)
 	}
 	r = res.Rows[1]
-	if r["Country"] != "Testland" || r["City"] != nil || r["lat"] != 1.5 {
+	// A located address gets every field, "" where the database has none.
+	if r["Country"] != "Testland" || r["City"] != "" || r["Region"] != "" || r["lat"] != 1.5 {
 		t.Errorf("row 2 = %v", r)
 	}
 	for _, r := range res.Rows[2:] {
 		if r["Country"] != nil || r["City"] != nil || r["lat"] != nil {
 			t.Errorf("row = %v", r)
 		}
+	}
+	// A field name in single quotes, as Splunk's content writes some.
+	res, err = e.Run(context.Background(), `| makeresults | eval "a{}"="81.2.69.1" | iplocation 'a{}'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["City"] != "London" {
+		t.Errorf("quoted field row = %v", r)
 	}
 	res, err = e.Run(context.Background(), `| makeresults | eval ip=split("2001:db8::1,81.2.69.1", ",") | iplocation prefix=ip_ allfields=true lang=de ip`)
 	if err != nil {
@@ -93,4 +102,14 @@ func brokenDir(t *testing.T) string {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "x.mmdb"), []byte("junk"), 0o600)
 	return dir
+}
+
+// TestIPLocationLoadingError checks that a still-loading database can be
+// told from a bad query, so the detection scheduler tries again.
+func TestIPLocationLoadingError(t *testing.T) {
+	err := errGeoIPLoading()
+	var qe *QueryError
+	if !errors.As(err, &qe) || !errors.Is(err, geoip.ErrLoading) {
+		t.Fatalf("%v is not a QueryError wrapping geoip.ErrLoading", err)
+	}
 }

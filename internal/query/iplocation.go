@@ -77,6 +77,11 @@ func (p *parser) parseIPLocation(cmd token) (Command, error) {
 		if (t.kind == tokWord || t.kind == tokString) && t.text != "" && c.Field == "" {
 			p.next()
 			c.Field = t.text
+			// 'sourceIPs{}', a field name in eval's quotes, as Splunk's
+			// content writes some.
+			if n := len(c.Field); t.kind == tokWord && n > 2 && c.Field[0] == '\'' && c.Field[n-1] == '\'' {
+				c.Field = c.Field[1 : n-1]
+			}
 			continue
 		}
 		return nil, errorf(t.pos, "unexpected %s; iplocation expects: iplocation [prefix=name] [allfields=true] [lang=code] <field>", describe(t))
