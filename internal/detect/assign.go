@@ -280,6 +280,11 @@ func (s *Scheduler) ownsRule(id string) (int64, bool) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.ownsRuleLocked(id)
+}
+
+// ownsRuleLocked is ownsRule with s.mu held, in spread mode.
+func (s *Scheduler) ownsRuleLocked(id string) (int64, bool) {
 	b := BucketOf(s.Tenant, id)
 	ep, ok := s.own.buckets[b]
 	if lost, gone := s.own.lost[b]; ok && gone && lost == ep {
