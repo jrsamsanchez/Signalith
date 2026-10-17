@@ -2,7 +2,7 @@
 # variable, never from a file in this folder.
 
 variable "size" {
-  description = "full: every machine (about $0.10 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour). loadtest: the terabyte-a-day load test's machines (about $0.12 an hour; see docs/cloud-lab.md)."
+  description = "full: every machine (about $0.10 an hour). minimal: one Signalith server, one OpenSearch node and one Linux endpoint (about $0.03 an hour). loadtest: the terabyte-a-day load test's machines (about $0.12 an hour with one Signalith server; see docs/cloud-lab.md)."
   type        = string
   default     = "full"
   validation {
@@ -15,6 +15,32 @@ variable "loadtest_volume_gb" {
   description = "The size of each OpenSearch node's volume in the load test, in GB."
   type        = number
   default     = 500
+}
+
+variable "loadtest_servers" {
+  description = "How many Signalith servers the load test has (1 to 3): signalith-2 and signalith-3 join signalith-1, so detections can be spread over them (sudo lab-loadtest spread). With 2 or 3, use loadtest_opensearch_type = cx33 unless the account's core limit was raised."
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.loadtest_servers >= 1 && var.loadtest_servers <= 3 && floor(var.loadtest_servers) == var.loadtest_servers
+    error_message = "loadtest_servers is 1, 2 or 3."
+  }
+}
+
+variable "loadtest_opensearch_type" {
+  description = "The Hetzner machine type of the load test's two OpenSearch nodes: cx43 (8 cores, 16 GB), or cx33 (4 cores, 8 GB) to fit two or three Signalith servers in 20 cores."
+  type        = string
+  default     = "cx43"
+  validation {
+    condition     = contains(["cx23", "cx33", "cx43", "cx53"], var.loadtest_opensearch_type)
+    error_message = "loadtest_opensearch_type is cx23, cx33, cx43 or cx53."
+  }
+}
+
+variable "vcpu_limit" {
+  description = "The most cores the Hetzner account may have (20 on a new account). The load test's machines must fit in it; raise it once Hetzner has raised the limit."
+  type        = number
+  default     = 20
 }
 
 variable "location" {
