@@ -153,7 +153,7 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 			}
 			cmds = cmds[1:]
 		case *Dedup:
-			if c.N != 1 || c.KeepEmpty || c.Consecutive {
+			if c.N != 1 || c.KeepEmpty || c.Consecutive || len(c.SortBy) > 0 {
 				return s, false
 			}
 			s.Mode, s.By = "latest", c.Fields
