@@ -144,7 +144,7 @@ func applyContingency(ctx context.Context, res *Result, c *query.Contingency) er
 		}
 	}
 	byCount := func(m map[string]int64, max int) []string {
-		keys := make([]string, 0, len(m))
+		var keys []string
 		for k := range m {
 			keys = append(keys, k)
 		}
@@ -165,7 +165,7 @@ func applyContingency(ctx context.Context, res *Result, c *query.Contingency) er
 	if c.UseTotal {
 		used[c.TotalStr] = true
 	}
-	cols := make([]string, 0, len(colVals))
+	var cols []string
 	for _, v := range colVals {
 		name := v
 		for n := 2; used[name]; n++ {
@@ -178,7 +178,7 @@ func applyContingency(ctx context.Context, res *Result, c *query.Contingency) er
 	if c.UseTotal {
 		width++
 	}
-	rows := make([]Row, 0, len(rowVals)+1)
+	var rows []Row
 	for _, rv := range rowVals {
 		if !ev.stepN(width) || !ev.charge(width*(fieldOverhead+8)+len(rv)) {
 			return ev.err
