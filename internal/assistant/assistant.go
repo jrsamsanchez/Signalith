@@ -378,6 +378,9 @@ func QueryReference() string {
   outlier [action=transform|remove] [param=2.5] [uselower=t] bytes   clamps (or removes rows with) numbers far above the 75th percentile; gauge count 0 50 100 makes one row x, y1, y2, ... for a gauge
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
+  | multisearch [search action=failure] [search action=lockout]   starts a search with the events of two or more subsearches, newest first
+  timechart span=1h count | timewrap 1d [series=short]   one column per day (count_latest_day, count_1day_before, ...) to compare days
+  cluster [field=_raw] [t=0.8] [showcount=t] [labelonly=t]   groups events with alike text, keeping one per group with cluster_label (and cluster_count)
   union [search datamodel=Authentication] [search datamodel=Change]   adds each subsearch's rows after the results
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)

@@ -567,6 +567,27 @@ func describeCommand(c query.Command) string {
 			s += ", one column per " + c.By
 		}
 		return s + "."
+	case *query.MultiSearch:
+		parts := make([]string, 0, len(c.Subs))
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		return "Start with the rows of these subsearches together, newest first. " + strings.Join(parts, " ")
+	case *query.Timewrap:
+		s := "Lay each " + c.Span + " of the chart side by side: one column per series and period, with the rows at the times of the latest period"
+		if c.Now {
+			s += ", which ends now"
+		}
+		return s + "."
+	case *query.Cluster:
+		s := fmt.Sprintf("Group rows whose %s is at least %s alike (%s) and number the groups in %s", c.Field, strconv.FormatFloat(c.Threshold, 'f', -1, 64), c.Match, c.LabelField)
+		if !c.LabelOnly {
+			s += ", keeping the first row of each"
+		}
+		if c.ShowCount {
+			s += "; " + c.CountField + " is each group's size"
+		}
+		return s + "."
 	case *query.Union:
 		parts := make([]string, 0, len(c.Subs))
 		for i, s := range c.Subs {

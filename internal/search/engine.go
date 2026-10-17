@@ -282,7 +282,11 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 		return nil, err
 	}
 	// A subsearch that does not compile fails the search before it runs.
-	if err := e.compileSubsearches(p.post, q); err != nil {
+	cmds := p.post
+	if ms, ok := p.transform.(*query.MultiSearch); ok {
+		cmds = append([]query.Command{ms}, cmds...)
+	}
+	if err := e.compileSubsearches(cmds, q); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -297,6 +301,12 @@ func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error 
 		case *query.Append:
 			sub = c.Sub
 		case *query.Union:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
+		case *query.MultiSearch:
 			for _, s := range c.Subs {
 				if _, err := e.Compile(subsearch(s, q)); err != nil {
 					return err
@@ -326,6 +336,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		if c, ok := cmds[0].(*query.MakeResults); ok {
 			return &Plan{Mode: "makeresults", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.MultiSearch); ok {
+			// The rows come from the subsearches.
+			return &Plan{Mode: "multisearch", transform: c, post: cmds[1:]}, nil
 		}
 	}
 
@@ -519,7 +533,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster:
 			return true
 		}
 	}
@@ -657,6 +671,8 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 		res, err = e.inputLookup(c)
 	case *query.MakeResults:
 		res = makeResults(c)
+	case *query.MultiSearch:
+		res, err = e.multiSearch(ctx, c, q)
 	default:
 		res, err = e.fetch(ctx, p)
 	}
