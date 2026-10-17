@@ -136,6 +136,33 @@ func TestFleetGivesUpWhenTheDrainEnds(t *testing.T) {
 	}
 }
 
+func TestFleetCapsBufferedBatches(t *testing.T) {
+	// A server that never answers: every batch stays buffered.
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	f := newFleet("run1", "tok", []string{srv.URL}, srv.Client(), newMetrics())
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	// Batches of about 100 KB against a 1 MB cap.
+	f.Run(ctx, AgentLoad{N: 4, Rate: 10000, Batch: 100, EventBytes: 1000, BufferMB: 1})
+	if got := f.buffered.Load(); got > 1<<20+200<<10 {
+		t.Errorf("buffered %d bytes past a 1 MB cap", got)
+	}
+	if f.dropped.Load() == 0 {
+		t.Error("nothing dropped once the buffer was full")
+	}
+	f.StopRetrying()
+	close(block)
+	f.Close()
+	if got := f.buffered.Load(); got != 0 {
+		t.Errorf("%d bytes still counted after Close", got)
+	}
+}
+
 func TestBatchBody(t *testing.T) {
 	f := newFleet("abc", "tok", []string{"http://x"}, nil, newMetrics())
 	a := &simAgent{id: 42, host: "agent-0042", next: 7}

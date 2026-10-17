@@ -370,6 +370,8 @@ func QueryReference() string {
   fieldsummary [maxvals=N] [fields]   one row per field: count, distinct_count, min, max, mean, stdev, top values
   transpose [N] [header_field=f] [column_name=c]   turns the first N rows (default 5) into columns; filldown [fields] fills missing values from the row before
   trendline sma5(f) [AS n] ema10(f) wma3(f)   moving averages; addinfo adds info_min_time, info_max_time, info_search_time (epoch seconds)
+  concurrency duration=dur [start=_time] [output=concurrency]   how many rows were in progress when each started
+  contingency [maxrows=N] [maxcols=N] [usetotal=f] src_ip action   counts each pair of values in a table with totals; format [maxresults=N] turns rows into a search string in field search
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]

@@ -293,6 +293,12 @@ func describeCommand(c query.Command) string {
 			names = append(names, t.Name())
 		}
 		return "Add the moving averages " + strings.Join(names, ", ") + "."
+	case *query.Concurrency:
+		return fmt.Sprintf("Set %s to how many rows were in progress when each started, using %s as the start and %s as the duration in seconds.", c.Output, c.Start, c.Duration)
+	case *query.Contingency:
+		return "Count each pair of " + c.RowField + " and " + c.ColField + " values in a table, one row per " + c.RowField + " and one column per " + c.ColField + "."
+	case *query.Format:
+		return "Turn the rows into one search that matches them, in a field named search."
 	case *query.FieldSummary:
 		return "Describe each field: how many rows have it, its distinct and most common values, and for numbers min, max, mean and stdev."
 	case *query.Map:

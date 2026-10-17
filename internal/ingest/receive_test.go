@@ -9,14 +9,19 @@ import (
 	"testing"
 )
 
+// receiving returns the receive budget in use in all, and what each
+// sender address of the pipeline's tenant holds of it.
 func (p *Pipeline) receiving() (total int64, by map[netip.Addr]int64) {
-	p.recvMu.Lock()
-	defer p.recvMu.Unlock()
+	l := p.limits()
+	l.recvMu.Lock()
+	defer l.recvMu.Unlock()
 	by = map[netip.Addr]int64{}
-	for k, v := range p.recvBy {
-		by[k] = v
+	for k, v := range l.recvBy {
+		if k.tenant == p.Tenant {
+			by[k.addr] = v
+		}
 	}
-	return p.recvUsed, by
+	return l.recvUsed, by
 }
 
 // TestSlowBodiesHoldOnlyWhatArrived: a sender that announces a large body

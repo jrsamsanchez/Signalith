@@ -158,6 +158,10 @@ type AgentLoad struct {
 	// agent behind DNS round robin may; by default an agent keeps its
 	// target, as Fluent Bit with one Host does.
 	SwitchOnError bool `yaml:"switch_on_error"`
+	// BufferMB caps the memory all agents' unsent batches hold together;
+	// past it new batches are dropped and counted, as Fluent Bit's
+	// Mem_Buf_Limit does. Default 512.
+	BufferMB int `yaml:"buffer_mb"`
 }
 
 // SyslogLoad is simulated syslog devices.

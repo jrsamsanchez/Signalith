@@ -350,6 +350,10 @@ func (s *Server) handleSCIMCreate(w http.ResponseWriter, r *http.Request) {
 		scimFail(w, http.StatusBadRequest, "invalidValue", "userName is required")
 		return
 	}
+	if err := s.releaseBeforeCreate(r.Context(), in.UserName, scimActor, true); err != nil {
+		scimFail(w, http.StatusServiceUnavailable, "", err.Error())
+		return
+	}
 	u, err := s.userStore().Provision(r.Context(), provisionedOf(in))
 	if err != nil {
 		scimUserError(w, err)
