@@ -2090,6 +2090,10 @@ rules:
     rule_id: 7cd853e9-d370-412f-965d-a2bcff2a2908
     file: o365_multiple_mailboxes_accessed_via_api.yml
     path: detections/cloud/o365_multiple_mailboxes_accessed_via_api.yml
+  - id: splunk-o365-multiple-os-vendors-authenticating-from-user
+    rule_id: 3451e58a-9457-4985-a600-b616b0cbfda1
+    file: o365_multiple_os_vendors_authenticating_from_user.yml
+    path: detections/cloud/o365_multiple_os_vendors_authenticating_from_user.yml
   - id: splunk-o365-multiple-service-principals-created-by-sp
     rule_id: ef4c3f20-d1ad-4ad1-a3f4-d5f391c005fe
     file: o365_multiple_service_principals_created_by_sp.yml

@@ -709,16 +709,17 @@ Compliance Center an alert's name) and `status` (success or failure), which read
 `ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
 `sourcetype=o365:management:activity`.
 
-The Splunk pack adds 19 Microsoft 365 detections (see
+The Splunk pack adds 54 Microsoft 365 detections (see
 [Splunk Security Content](#splunk-security-content)): MFA turned off, service principals
 added or given new credentials, mail security settings changed, content searches
 exported, mailboxes read through EWS or Microsoft Graph, malware in SharePoint, and
 counts that catch password spraying and MFA fatigue. They name a record's own fields and
-the CIM fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, and a
-sign-in's `UserAgent` is `user_agent`). A field must be one Microsoft's audit record
-schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
-`Parameters{}.Value`, so rules that name one as a field (`Role=ApplicationImpersonation`)
-are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
+the fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, a sign-in's
+`UserAgent` is `user_agent`, and its `OS`, the `DeviceProperties` item of that name, is `os`).
+A field must be one Microsoft's audit record schema has: an Exchange cmdlet's parameters
+are only in `Parameters{}.Name` and `Parameters{}.Value`, so rules that name one as a
+field (`Role=ApplicationImpersonation`) are left out, with rules whose later stages
+Signalith would read differently from Splunk. To read
 the audit log, see [Microsoft 365](microsoft-365.md).
 
 ### Okta
@@ -826,7 +827,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,272 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,273 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
