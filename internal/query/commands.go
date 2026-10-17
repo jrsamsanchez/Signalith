@@ -467,6 +467,19 @@ func (p *parser) lookupFields() ([]LookupField, error) {
 }
 
 func (p *parser) parseLookup(cmd token) (Command, error) {
+	// Splunk's local= (run on the search head) and update= (reload the
+	// table) change nothing here: tables are on this server and always
+	// current.
+	for {
+		t := p.peek()
+		if !(p.isKeywordFold("local") || p.isKeywordFold("update")) || p.peekAt(1).kind != tokOp || p.peekAt(1).text != "=" {
+			break
+		}
+		p.option()
+		if _, err := parseBool(p.next()); err != nil {
+			return nil, errorf(t.pos, "lookup %s= takes true or false", strings.ToLower(t.text))
+		}
+	}
 	t := p.peek()
 	if t.kind != tokWord && t.kind != tokString {
 		return nil, errorf(t.pos, "lookup needs a table name, for example: lookup owners host OUTPUT owner")

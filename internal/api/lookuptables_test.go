@@ -30,6 +30,19 @@ func TestLookupTablesAPI(t *testing.T) {
 	if code, body := do(t, ts, "PUT", "/api/lookuptables/dup", "a,a\n", true); code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "twice") {
 		t.Errorf("PUT bad CSV = %d %v", code, body)
 	}
+	if code, body := do(t, ts, "PUT", "/api/lookuptables/paths?wildcard=path,%20path&case_sensitive=false", "path,note\n*.exe,x\n", true); code != http.StatusOK ||
+		body["ignore_case"] != true || len(body["wildcard"].([]any)) != 1 {
+		t.Errorf("PUT with options = %d %v", code, body)
+	}
+	if code, body := do(t, ts, "PUT", "/api/lookuptables/paths?wildcard=nope", "path\n*.exe\n", true); code != http.StatusBadRequest {
+		t.Errorf("PUT unknown wildcard column = %d %v", code, body)
+	}
+	if code, body := do(t, ts, "PUT", "/api/lookuptables/paths?case_sensitive=maybe", "path\n*.exe\n", true); code != http.StatusBadRequest {
+		t.Errorf("PUT bad case_sensitive = %d %v", code, body)
+	}
+	if code, _ := do(t, ts, "DELETE", "/api/lookuptables/paths", "", true); code != http.StatusNoContent {
+		t.Errorf("DELETE paths = %d", code)
+	}
 	code, body := do(t, ts, "GET", "/api/lookuptables", "", true)
 	if tables, _ := body["tables"].([]any); code != http.StatusOK || len(tables) != 1 {
 		t.Fatalf("GET list = %d %v", code, body)

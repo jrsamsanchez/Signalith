@@ -17,8 +17,9 @@ func noTable(name string) error {
 const maxLookupMatches = 100
 
 // lookup adds columns from a lookup table to the rows whose fields match
-// its key columns. Values match exactly, as text; a row with no match is
-// left as it is. Several matching table rows give multivalue fields.
+// its key columns. Values match as text, exactly unless the table has
+// wildcard columns or ignores case; a row with no match is left as it is.
+// Several matching table rows give multivalue fields.
 func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error {
 	if e.Lookups == nil {
 		return &QueryError{Msg: "lookup tables are not available on this server"}
@@ -71,7 +72,11 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 			// A multivalue field matches each of its values.
 			for _, v := range asList(r[c.Keys[0].Field()]) {
 				if s, ok := evStr(v); ok && s != "" {
-					matched = append(matched, idx[s]...)
+					m, ok := idx.Match(t, []string{s}, maxLookupMatches-len(matched), ev.stepN)
+					if !ok {
+						return ev.err
+					}
+					matched = append(matched, m...)
 				}
 				if len(matched) >= maxLookupMatches {
 					break
@@ -92,7 +97,9 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 				}
 			}
 			if ok {
-				matched = idx[lookuptables.Key(vals)]
+				if matched, ok = idx.Match(t, vals, maxLookupMatches, ev.stepN); !ok {
+					return ev.err
+				}
 			}
 		}
 		if len(matched) == 0 {

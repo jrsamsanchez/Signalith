@@ -31,7 +31,9 @@ Admins add tables on **Settings > Lookups**:
 2. Pick the CSV file. Its first line names the columns.
 3. Check the name (taken from the file name). Searches use this name, so it is
    lower-case letters, digits, `-` and `_`.
-4. Select **Add table**.
+4. Optionally, under **Matching**, name the **Wildcard columns** and turn on
+   **Ignore case** (see [Wildcards and case](#wildcards-and-case)).
+5. Select **Add table**.
 
 Searches and detections use the table right away. **Replace…** in a table's menu
 uploads a new file over all its rows, **View** shows the first rows, **Download
@@ -84,9 +86,13 @@ lookup <table> <column> [AS <field>] [, ...] [OUTPUT | OUTPUTNEW <column> [AS <f
 - `OUTPUTNEW` adds only fields an event does not have already. `OUTPUT` replaces
   them.
 
-Matching is exact, case included: `WEB-01` does not match `web-01`. Use
-`eval host=lower(host)` before `lookup` when the case differs. An event whose field
-is missing or empty, or that matches no row, is left as it is.
+Matching is exact, case included, unless the table says otherwise (see
+[Wildcards and case](#wildcards-and-case)): `WEB-01` does not match `web-01`. An
+event whose field is missing or empty, or that matches no row, is left as it is.
+
+`local=true` and `update=true` before the table name are accepted for searches
+written for Splunk and change nothing: tables are on the server that runs the
+search and always current.
 
 When several rows match, each added field holds the values of all of them (up to
 100). A multivalue field, such as one from `rex max_match=0`, looks up each of its
@@ -105,6 +111,25 @@ datamodel=Endpoint
 | lookup approved_software process_name OUTPUTNEW approved
 | where isnull(approved)
 ```
+
+### Wildcards and case
+
+A table can match like Splunk's `match_type = WILDCARD(<column>)` and
+`case_sensitive_match = false`, which many published detections' lookups need:
+
+- In a **wildcard column**, `*` in a cell matches any text, including none:
+  `*\psexec*.exe` matches `C:\Tools\PsExec64.exe` (with **Ignore case**). A
+  cell without `*` still matches exactly. Every other character, `?` included,
+  matches itself.
+- **Ignore case** makes every key column match whatever the case.
+
+Rows without patterns are found at once; rows with patterns are tried one by one
+for each event, in table order and after the exact matches, so a table of many
+thousand patterns makes searches slower. Each try counts toward the search's work
+limit.
+
+Set both when adding or replacing the table. Replacing a table sets them again
+from the form, which starts with the table's current choices.
 
 ## The inputlookup command
 
@@ -162,10 +187,10 @@ tables but cannot change them, and the API answers changes with `409 Conflict`.
 
 | Route | Role | What it does |
 | --- | --- | --- |
-| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change |
+| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change, and `wildcard` and `ignore_case` when set |
 | `GET /api/lookuptables/{name}` | viewer | One table and its first 1,000 rows |
 | `GET /api/lookuptables/{name}.csv` | viewer | The whole table as CSV |
-| `PUT /api/lookuptables/{name}` | admin | Adds or replaces a table; the body is the CSV file |
+| `PUT /api/lookuptables/{name}` | admin | Adds or replaces a table; the body is the CSV file. `?wildcard=col1,col2` names wildcard columns and `?case_sensitive=false` ignores case; without them the table matches exactly |
 | `DELETE /api/lookuptables/{name}` | admin | Deletes a table |
 
 API tokens can only read, so changes come from a signed-in admin.
