@@ -229,7 +229,8 @@ func TestBuildParseExplain(t *testing.T) {
 	if len(steps) != 3 || !strings.Contains(steps[0].(string), "24 hours ago") || !strings.Contains(steps[1].(string), "distinct user") {
 		t.Errorf("steps = %v", steps)
 	}
-	if body["index"] != "signalith-authentication-*" {
+	// Only the days of the last 24 hours (see search.narrowToDays).
+	if ix, _ := body["index"].(string); !strings.HasPrefix(ix, "signalith-authentication-") || !strings.Contains(ix, time.Now().UTC().Format("2006.01.02")) {
 		t.Errorf("index = %v", body["index"])
 	}
 }

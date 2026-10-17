@@ -60,7 +60,7 @@ func asJSON(v any) string {
 
 func TestCompileSearch(t *testing.T) {
 	p := compile(t, `datamodel=Authentication action=failure user=adm* NOT src=10.0.0.1 dest_port>=1024 "failed password" earliest=-7d@d`)
-	if p.Index != "signalith-authentication-*" {
+	if !namesDays(p.Index, "signalith-authentication-") {
 		t.Errorf("index = %s", p.Index)
 	}
 	got := asJSON(p.Body["query"])

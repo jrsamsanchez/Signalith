@@ -466,6 +466,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	if from, to, ok := searchSpan(earliest, q.Latest, time.Now()); ok {
+		index = narrowToDays(index, o.IndexPrefix, from, to)
+	}
 	if err := checkPatterns(q); err != nil {
 		return nil, err
 	}
