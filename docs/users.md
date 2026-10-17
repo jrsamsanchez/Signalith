@@ -1031,7 +1031,7 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
-`POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
+`POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
 [endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
