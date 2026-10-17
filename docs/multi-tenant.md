@@ -52,9 +52,16 @@ configured index prefix and folders, so nothing moves when you upgrade.
   with `tenant=<id>`, and so is every log line of that tenant's server, searches
   included.
 - **Users.** A tenant's admins see and manage only their tenant's users, and the users
-  they add belong to their tenant. Only provider users add provider users. User names are
-  unique across the install. A tenant's admins do not count toward the install's last
+  they add belong to their tenant. Only provider users add provider users. A tenant
+  user's name always ends in `@` and the tenant ID: typing `alice` in tenant `acme` adds
+  `alice@acme`, who signs in as `alice@acme`. So no tenant's admin can take, or find out
+  about, a name the provider or another tenant uses. For the same reason, provider users
+  (local, directory, single sign-on or SCIM) cannot be added with a name that ends in `@`
+  and a word with no dot, like `bob@acme`; full email addresses such as
+  `bob@example.com` are fine. A tenant's admins do not count toward the install's last
   admin.
+- **File locations.** Pages that name a file on the server, like Response actions and
+  Playbooks, show tenant users only the file's name, never where it is on the server.
 - **Requests to other addresses.** Threat intel feeds, notification channels, response
   action settings and [Jira and ServiceNow connections](ticketing.md#multi-tenant-installs)
   make the server send requests to addresses someone types in. They are
