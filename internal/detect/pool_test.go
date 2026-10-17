@@ -309,17 +309,58 @@ func TestPoolOneTenantSlow(t *testing.T) {
 		d(time.Second, nil)
 	}
 	next(t, got).done(time.Second, nil)
-	// A second tenant overloaded soon after: OpenSearch is slow for all.
+	// b's run timing out once while a is held to one worker holds back b
+	// alone.
 	tp.take(t, "b", true)(time.Second, busy)
-	if s := tp.Stats(); s.Limit != 4 || !s.Backoff {
-		t.Fatalf("two tenants overloaded but the pool kept %+v", s)
+	if s := tp.Stats(); s.Limit != 8 || tp.tenants["b"].cap == 0 {
+		t.Fatalf("b overloaded once: pool %+v, b's cap %d", s, tp.tenants["b"].cap)
 	}
-	// Backing off, one catch-up still runs.
-	tp.take(t, "b", false)
 	// a's cap comes back one a minute.
 	tp.advance(3 * poolRaiseEvery)
 	tp.Stats()
 	if c := tp.tenants["a"]; c.cap != 0 {
 		t.Errorf("a still held to %d workers after three minutes", c.cap)
+	}
+}
+
+// TestPoolOneTenantKeepsSignalling: a tenant whose runs always time out,
+// with other tenants' runs timing out once each now and then, does not
+// halve the pool: only the tenants whose runs timed out are held back.
+func TestPoolOneTenantKeepsSignalling(t *testing.T) {
+	tp := newTestPool(8)
+	busy := &store.Error{Status: 429, Body: "rejected_execution_exception"}
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		tp.take(t, id, true)(time.Second, nil)
+	}
+	blips := map[int]string{2: "b", 4: "c", 6: "d"}
+	for i := range 8 {
+		tp.take(t, "a", true)(time.Second, busy)
+		if id, ok := blips[i]; ok {
+			tp.take(t, id, true)(time.Second, busy)
+			if tp.tenants[id].cap == 0 {
+				t.Errorf("%s was not held back", id)
+			}
+		}
+		tp.advance(poolCutGap + time.Second)
+	}
+	if s := tp.Stats(); s.Limit != 8 || s.Backoff {
+		t.Fatalf("the pool was held back: %+v", s)
+	}
+	if c := tp.tenants["a"].cap; c != 1 {
+		t.Errorf("a may hold %d workers", c)
+	}
+	if c := tp.tenants["e"]; c.cap != 0 {
+		t.Errorf("e was held back to %d", c.cap)
+	}
+	// Later, most tenants slow at once: OpenSearch is slow for all.
+	tp.advance(5 * poolRaiseEvery)
+	for _, id := range []string{"b", "c", "d", "e"} {
+		tp.take(t, id, true)(time.Second, nil)
+	}
+	for _, id := range []string{"c", "d", "e"} {
+		tp.take(t, id, true)(time.Second, busy)
+	}
+	if s := tp.Stats(); s.Limit != 4 {
+		t.Errorf("most tenants overloaded but the pool kept %+v", s)
 	}
 }

@@ -22,8 +22,8 @@ import (
 // busy, or does not answer in time) or their p95 time doubles over that of
 // the 15 minutes before, that tenant alone is held to fewer workers: its
 // cap halves, and grows back one a minute. Only when two or more tenants
-// show it within poolSignalWindow, or a single tenant runs here, is
-// OpenSearch taken to be slow for everyone: the pool halves its workers,
+// show it within poolSignalWindow (most of those it runs), or a single
+// tenant runs here, is OpenSearch taken to be slow for everyone: the pool halves its workers,
 // then gets one back a minute, and runs a single catch-up at a time until
 // it has them all again. So one tenant's heavy rules slow only its own
 // detections.
@@ -331,21 +331,26 @@ func (t *poolTenant) slowed(now, took time.Duration) bool {
 	return true
 }
 
-// overload handles a sign of overload in tenant's runs: the whole pool
-// halves when another tenant showed one too within poolSignalWindow, or
-// no other tenant runs here; otherwise only tenant's cap does.
+// overload handles a sign of overload in tenant's runs. The whole pool
+// halves when it runs a single tenant, or when most tenants served show
+// it within poolSignalWindow (at least two); otherwise only tenant's cap
+// does. A tenant already held to one worker does not count toward that:
+// its slow runs are its own, and it could keep signalling forever.
 func (p *Pool) overload(tenant string, t *poolTenant, now time.Duration, why string) {
-	t.signal, t.signalled = now, true
 	served, signalled := 0, 0
+	if t.cap != 1 {
+		signalled++
+	}
+	t.signal, t.signalled = now, true
 	for id, o := range p.tenants {
 		if id == tenant || now-o.seen <= poolRecent+poolBaseline {
 			served++
 		}
-		if id != tenant && o.signalled && now-o.signal <= poolSignalWindow {
+		if id != tenant && o.signalled && now-o.signal < poolSignalWindow && o.cap != 1 {
 			signalled++
 		}
 	}
-	if served <= 1 || signalled > 0 {
+	if served <= 1 || signalled >= max(2, served/2+1) {
 		p.halve(now, why)
 		return
 	}

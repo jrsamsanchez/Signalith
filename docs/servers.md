@@ -169,9 +169,9 @@ half of a server's searches while another waits. Left empty, it is half the
 searches OpenSearch's data nodes can run at once. When a tenant's searches are
 refused as too busy, do not answer in time, or take twice as long as over the 15
 minutes before, that tenant alone runs fewer at once for a while, so one tenant's
-heavy rules do not slow the others. When two tenants' searches show it within two
-minutes, or a server runs a single tenant, OpenSearch is taken to be slow for
-everyone: the server halves how many it runs and gets one back a minute; the
+heavy rules do not slow the others. When most of the tenants a server runs (at
+least two) show it within two minutes, or it runs a single tenant, OpenSearch is
+taken to be slow for everyone: the server halves how many it runs and gets one back a minute; the
 current runs go first, and missed runs are made up one at a time until it is back
 to its share.
 
