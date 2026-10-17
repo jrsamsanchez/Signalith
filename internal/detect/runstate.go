@@ -411,8 +411,20 @@ func (s *Scheduler) readStatus(ctx context.Context) (map[string]DetState, map[st
 // still returned.
 func (s *Scheduler) StatusCtx(ctx context.Context) (map[string]RunState, error) {
 	det, man, err := s.readStatus(ctx)
+	if s.Owned != nil {
+		s.gen() // this server's buckets as the assignment says now
+	}
 	s.mu.Lock()
 	for id, e := range s.det {
+		// In spread mode the copy holds every rule as read when this
+		// server's buckets last changed, but only the rules of its own
+		// buckets are kept up to date here: the others' servers write
+		// theirs.
+		if s.Owned != nil {
+			if _, mine := s.ownsRuleLocked(id); !mine {
+				continue
+			}
+		}
 		det[id] = e.doc
 	}
 	flags := maps.Clone(s.flags)

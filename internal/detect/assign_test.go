@@ -343,3 +343,74 @@ func TestSpreadSharedPool(t *testing.T) {
 		t.Errorf("pool left %+v", st)
 	}
 }
+
+// TestSpreadStatusShowsOtherServersRuns: a spread scheduler's status shows
+// the runs other servers made of their buckets' rules, not its copy of
+// them read when its own buckets last changed.
+func TestSpreadStatusShowsOtherServersRuns(t *testing.T) {
+	const tenant = "acme"
+	var rules []*Detection
+	used := map[int]bool{}
+	for i := range 24 {
+		id := fmt.Sprintf("spread-%d", i)
+		rules = append(rules, &Detection{ID: id, Title: id, Query: fmt.Sprintf("user=s%d", i), Enabled: true, Schedule: "5m", Lookback: "5m"})
+		used[BucketOf(tenant, id)] = true
+	}
+	lib := OnlyRules(t, rules...)
+	run := &recRunner{rows: map[string][]search.Row{}}
+	clock := &fakeClock{t: t0}
+	rs := NewMemoryRunStore()
+	fs := findings.NewMemory()
+	c := &spreadCluster{views: map[string]*Assignment{}}
+	a := validAssignment(tenant, []string{"a", "b"})
+	server := func(node string) *Scheduler {
+		s := newTestScheduler(lib, run, clock)
+		s.Runtime, s.Findings, s.NodeID, s.Tenant, s.Owned = rs, fs, node, tenant, c.owned(node)
+		c.set(node, a)
+		return s
+	}
+	sa, sb := server("a"), server("b")
+	ctx := context.Background()
+	sa.RunDue(ctx)
+	sb.RunDue(ctx)
+
+	// a is given an empty bucket of b's, so it reads every rule's run
+	// state again, b's rules' too.
+	free := -1
+	for b := range Buckets {
+		if !used[b] && a.Owners[b].Node == "b" {
+			free = b
+			break
+		}
+	}
+	if free < 0 {
+		t.Fatal("no bucket of b's without rules")
+	}
+	more := *a
+	more.Owners = append([]BucketOwner(nil), a.Owners...)
+	more.Owners[free] = BucketOwner{Node: "a", DetEpoch: FirstEpoch(3) + 5, State: BucketRun}
+	c.set("a", &more)
+	sa.RunDue(ctx)
+
+	// b runs its rules' next slot; a's status shows that run.
+	clock.Add(5 * time.Minute)
+	sb.RunDue(ctx)
+	status, err := sa.StatusCtx(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, d := range rules {
+		if a.Owners[BucketOf(tenant, d.ID)].Node != "b" {
+			continue
+		}
+		checked++
+		want := storedState(t, sb, d.ID)
+		if got := status[d.ID]; !got.LastSlot.Equal(want.LastSlot) || got.Node != "b" {
+			t.Errorf("%s: a's status says last slot %s by %q, b ran %s", d.ID, got.LastSlot.Format("15:04"), got.Node, want.LastSlot.Format("15:04"))
+		}
+	}
+	if checked == 0 {
+		t.Fatal("b runs none of the rules; the test proves nothing")
+	}
+}
