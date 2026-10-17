@@ -29,12 +29,13 @@ func (c *Config) TenantDir(id string) string { return tenants.Dir(c.StateDir(), 
 //     people in, talks to an AI model, scans and joins a cluster. A
 //     tenant's config shares them with the default tenant's, read only.
 //   - tenantSections are the tenant's own: its folders, retention, intel
-//     feeds, notifications, response actions and playbooks, and what it
-//     receives events with. ForTenant sets them, and copies what they
-//     hold by reference, so no change to one tenant's reaches another's.
+//     feeds, notifications, response actions, playbooks and ticketing
+//     connections, and what it receives events with. ForTenant sets
+//     them, and copies what they hold by reference, so no change to one
+//     tenant's reaches another's.
 var (
 	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster"}
-	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Okta", "Notify", "Response", "Playbooks"}
+	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Okta", "Notify", "Response", "Playbooks", "Ticketing"}
 )
 
 // ForTenant returns a copy of c for tenant id's data: its own index prefix
@@ -68,6 +69,9 @@ func (c *Config) ForTenant(id string) *Config {
 	t.Notify = Notify{}
 	t.Response = Response{ScriptsDir: filepath.Join(dir, "scripts")}
 	t.Playbooks = Playbooks{}
+	// Its Jira and ServiceNow connections are in its own folder, never
+	// the file ticketing.file names for the default tenant.
+	t.Ticketing = Ticketing{}
 	// Nothing a tenant section holds by reference is the default tenant's.
 	tv := reflect.ValueOf(&t).Elem()
 	for _, n := range tenantSections {

@@ -424,3 +424,21 @@ func TestFingerprintLeavesSecretsOut(t *testing.T) {
 		t.Error("a rename does not change the fingerprint")
 	}
 }
+
+// A name with a trailing dot is the same name: "localhost." is this
+// machine too, which matters when a proxy (HTTPS_PROXY) resolves it.
+func TestLocalhostWithTrailingDot(t *testing.T) {
+	for _, h := range []string{"localhost", "localhost.", "LOCALHOST..", "app.localhost.", "127.0.0.1", "[::1]"} {
+		if !isLocalhost(h) {
+			t.Errorf("isLocalhost(%q) = false", h)
+		}
+	}
+	for _, h := range []string{"example.com.", "localhost.example.com", "notlocalhost."} {
+		if isLocalhost(h) {
+			t.Errorf("isLocalhost(%q) = true", h)
+		}
+	}
+	if checkURL("https://localhost.:9000/hook", false) == "" {
+		t.Error("localhost. was allowed")
+	}
+}

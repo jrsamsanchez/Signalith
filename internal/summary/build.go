@@ -44,6 +44,10 @@ const (
 	// maxChunkBytes caps the values one chunk's rows hold; a chunk with
 	// more is a gap, as one with too many rows is.
 	maxChunkBytes = 64 << 20
+	// maxPageResponse caps one page's answer, read before it is decoded:
+	// a page sized on short values that comes back full of long ones
+	// makes its chunk a gap instead of a huge answer to decode.
+	maxPageResponse = 16 << 20
 	// A bulk request carries at most bulkSize rows or bulkBytes of
 	// values.
 	bulkSize  = 5000
@@ -539,11 +543,15 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 	}
 	var out []row
 	total := 0
+	pctx := store.WithMaxResponse(ctx, maxPageResponse)
 	for {
-		resp, err := b.Client.Search(ctx, rawPattern(b.Prefix, model), body)
+		resp, err := b.Client.Search(pctx, rawPattern(b.Prefix, model), body)
 		if err != nil {
 			if isNotFound(err) {
 				return out, nil
+			}
+			if errors.Is(err, store.ErrResponseTooLarge) {
+				return nil, errTooMany
 			}
 			return nil, err
 		}
