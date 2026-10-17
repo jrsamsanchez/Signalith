@@ -175,6 +175,22 @@ func (a *Assignment) RunsOn(node string) map[int]int64 {
 	return out
 }
 
+// Holds returns the buckets node holds under a, with their detection
+// epochs: those it runs and those it is handing over, whose runs in
+// flight may still write their run state.
+func (a *Assignment) Holds(node string) map[int]int64 {
+	out := map[int]int64{}
+	if a == nil || node == "" {
+		return out
+	}
+	for i, o := range a.Owners {
+		if o.Node == node {
+			out[i] = o.DetEpoch
+		}
+	}
+	return out
+}
+
 // owned is the spread mode's view: the buckets this server runs, as
 // Owned last returned them, and how many times that changed.
 type owned struct {
@@ -222,6 +238,28 @@ func (s *Scheduler) loseBucket(id string) {
 		}
 		s.own.lost[b] = ep
 	}
+}
+
+// startsRule reports whether this server starts new slots of rule id:
+// it holds its bucket, and is not handing it over.
+func (s *Scheduler) startsRule(id string) bool {
+	if _, mine := s.ownsRule(id); !mine {
+		return false
+	}
+	return s.Moving == nil || !s.Moving(BucketOf(s.Tenant, id))
+}
+
+// BucketBusy reports whether a run of a rule of bucket b is running or
+// waiting for a worker here.
+func (s *Scheduler) BucketBusy(b int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.flags {
+		if BucketOf(s.Tenant, id) == b {
+			return true
+		}
+	}
+	return false
 }
 
 // ownsRule reports whether this server runs rule d now, in spread mode,

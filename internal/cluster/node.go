@@ -90,6 +90,10 @@ type Settings struct {
 	// the files its detections use, for its heartbeat; nil has none. It
 	// must not call the node.
 	DetTenants func() map[string]string
+	// DetReleased returns, per tenant, the detection buckets this server
+	// released (see Heartbeat.DetReleased); nil has none. It must not
+	// call the node.
+	DetReleased func() map[string]map[int]int64
 	// Busy names a step of the background jobs that must not be cut
 	// short, such as "retention run", while one runs, for the hand-over
 	// of the jobs to a newer version and for upgrade-check; nil is never
@@ -871,11 +875,15 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		}
 	}
 	n.mu.Lock()
-	trafficFn, detFn := n.settings.Traffic, n.settings.DetTenants
+	trafficFn, detFn, relFn := n.settings.Traffic, n.settings.DetTenants, n.settings.DetReleased
 	n.mu.Unlock()
 	var detTenants map[string]string
 	if detFn != nil {
 		detTenants = detFn()
+	}
+	var detReleased map[string]map[int]int64
+	if relFn != nil {
+		detReleased = relFn()
 	}
 	var restartNeeded, refused []string
 	if pendingFn != nil {
@@ -889,7 +897,7 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		AgentListen: n.settings.AgentListen, Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
-		Features:   features, DetTenants: detTenants}
+		Features:   features, DetTenants: detTenants, DetReleased: detReleased}
 	if n.lastErr != "" {
 		hb.OpenSearch.Problem = store.Problem(n.lastErrRaw)
 	}

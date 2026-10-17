@@ -24,6 +24,9 @@ type SpreadServer struct {
 	// ClockOffsetMS is OpenSearch's clock minus its own; nil when not
 	// measured.
 	ClockOffsetMS *int64
+	// Released is, per bucket of this tenant it is handing over and has
+	// no run of in flight, the detection epoch it held it under.
+	Released map[int]int64
 }
 
 // MaxSpreadSkew is how far a server's clock may be from OpenSearch's for
@@ -51,7 +54,13 @@ type Assigner struct {
 	// fingerprints filled in.
 	Servers func() []SpreadServer
 	Now     func() time.Time
-	Log     *slog.Logger
+	// Mono is a monotonic clock for MoveTimeout and JoinDelay;
+	// time.Since when nil.
+	Mono func() time.Duration
+	// MoveTimeout and JoinDelay: DefaultMoveTimeout and DefaultJoinDelay
+	// when zero.
+	MoveTimeout, JoinDelay time.Duration
+	Log                    *slog.Logger
 	// Resume is called each time the leader's own scheduler may run the
 	// tenant's rules again, before LeaderRuns turns true: it drops the
 	// scheduler's copy of the run state, so the scheduler takes a fresh
@@ -60,6 +69,11 @@ type Assigner struct {
 
 	mu         sync.Mutex
 	leaderRuns bool
+	// Step's own: when each bucket being handed over started to be, and
+	// since when each server could run buckets. Only Run's goroutine
+	// steps.
+	movingSince map[int]time.Duration
+	liveSince   map[string]time.Duration
 }
 
 // LeaderRuns reports whether the leader's own scheduler may run the
@@ -113,31 +127,75 @@ func (a *Assigner) Run(ctx context.Context, tick time.Duration) {
 	}
 }
 
-// owners works out who should own each bucket: nobody when spreading is
-// off or no server may run the tenant.
-func (a *Assigner) owners(on bool) []string {
-	out := make([]string, Buckets)
-	if !on {
-		return out
+// Default timings of graceful moves (see Assigner).
+const (
+	// DefaultMoveTimeout is how long a bucket being handed over waits for
+	// its owner to release it before it moves anyway: longer than the
+	// longest run (MaxRunTimeout) plus the fence time, so any run the
+	// owner started has ended or fenced itself off by then.
+	DefaultMoveTimeout = MaxRunTimeout + DefaultFollowMaxAge + 40*time.Second
+	// DefaultJoinDelay is how long a server must stay able to run buckets
+	// before it is given new ones, so one that starts and stops again
+	// does not move buckets back and forth.
+	DefaultJoinDelay = time.Minute
+)
+
+func (a *Assigner) mono() time.Duration {
+	if a.Mono != nil {
+		return a.Mono()
 	}
-	servers := a.Servers()
+	return time.Since(monoStart)
+}
+
+// candidate reports whether s may run the tenant's buckets now, given
+// mine, the job holder's own fingerprint.
+func candidate(s SpreadServer, mine string) bool {
+	if !s.Live || !s.Spread || !s.Eligible || s.Fingerprint == "" || s.Fingerprint != mine || s.ClockOffsetMS == nil {
+		return false
+	}
+	off := time.Duration(*s.ClockOffsetMS) * time.Millisecond
+	return off <= MaxSpreadSkew && off >= -MaxSpreadSkew
+}
+
+// owners works out who should own each bucket: nobody when spreading is
+// off or no server may run the tenant. A server that became able to run
+// buckets less than JoinDelay ago gets none unless it already holds some.
+func (a *Assigner) owners(on bool, servers []SpreadServer, cur *Assignment, now time.Duration) []string {
+	out := make([]string, Buckets)
 	var mine string
 	for _, s := range servers {
 		if s.ID == a.Self {
 			mine = s.Fingerprint
 		}
 	}
+	join := a.JoinDelay
+	if join <= 0 {
+		join = DefaultJoinDelay
+	}
+	// On the first step, the servers already able to run buckets count
+	// as having been for long: this Assigner just could not see them yet.
+	first := a.liveSince == nil
+	seen := map[string]time.Duration{}
 	var ids []string
 	for _, s := range servers {
-		if !s.Live || !s.Spread || !s.Eligible || s.Fingerprint == "" || s.Fingerprint != mine || s.ClockOffsetMS == nil {
+		if !candidate(s, mine) {
 			continue
 		}
-		if off := time.Duration(*s.ClockOffsetMS) * time.Millisecond; off > MaxSpreadSkew || off < -MaxSpreadSkew {
-			continue
+		since, ok := a.liveSince[s.ID]
+		switch {
+		case first:
+			since = now - join
+		case !ok:
+			since = now
 		}
-		ids = append(ids, s.ID)
+		seen[s.ID] = since
+		holds := cur != nil && len(cur.Holds(s.ID)) > 0
+		if now-since >= join || holds {
+			ids = append(ids, s.ID)
+		}
 	}
-	if len(ids) == 0 {
+	a.liveSince = seen
+	if !on || len(ids) == 0 {
 		return out
 	}
 	for b := range out {
@@ -148,11 +206,11 @@ func (a *Assigner) owners(on bool) []string {
 
 // spreadWanted reports whether spreading is wanted and every live server
 // can take part: while one cannot, the leader runs every rule itself.
-func (a *Assigner) spreadWanted() bool {
+func (a *Assigner) spreadWanted(servers []SpreadServer) bool {
 	if a.On == nil || !a.On() {
 		return false
 	}
-	for _, s := range a.Servers() {
+	for _, s := range servers {
 		if s.Live && !s.Spread {
 			return false
 		}
@@ -160,20 +218,18 @@ func (a *Assigner) spreadWanted() bool {
 	return true
 }
 
-// Step brings the tenant's assignment document up to date.
+// Step brings the tenant's assignment document up to date. A bucket
+// whose owner is live is handed over gracefully: it is marked moving, the
+// owner starts no new slot of it, and once the owner's heartbeat says it
+// released it (no run of it in flight), or MoveTimeout passed, it goes to
+// its new owner under a fresh detection epoch. A bucket whose owner is
+// gone moves at once, as does every bucket when spreading turns off (the
+// leader's scheduler then takes a bigger epoch than all of them).
 func (a *Assigner) Step(ctx context.Context) error {
 	if a.Allowed != nil && !a.Allowed() {
 		return nil
 	}
 	lease := a.Lease()
-	on := a.spreadWanted()
-	want := a.owners(on)
-	spread := slices.ContainsFunc(want, func(n string) bool { return n != "" })
-	if spread {
-		// The leader's own scheduler stops before buckets are handed out,
-		// so it takes no new detection epoch above theirs.
-		a.setLeaderRuns(false)
-	}
 	id := AssignmentID(a.Tenant)
 	raw, ver, found, err := a.Runtime.Get(ctx, a.RuntimeIndex, id)
 	if err != nil {
@@ -189,15 +245,54 @@ func (a *Assigner) Step(ctx context.Context) error {
 			return fmt.Errorf("%w (a newer holder wrote the assignment)", ErrNotAllowed)
 		}
 	}
+	servers := a.Servers()
+	byID := map[string]SpreadServer{}
+	for _, s := range servers {
+		byID[s.ID] = s
+	}
+	now := a.mono()
+	want := a.owners(a.spreadWanted(servers), servers, cur, now)
+	spread := slices.ContainsFunc(want, func(n string) bool { return n != "" })
+	if spread {
+		// The leader's own scheduler stops before buckets are handed out,
+		// so it takes no new detection epoch above theirs.
+		a.setLeaderRuns(false)
+	}
+	timeout := a.MoveTimeout
+	if timeout <= 0 {
+		timeout = DefaultMoveTimeout
+	}
+	if a.movingSince == nil {
+		a.movingSince = map[int]time.Duration{}
+	}
 	next := &Assignment{Kind: kindDetAssign, Tenant: a.Tenant, LeaseEpoch: lease, Owners: make([]BucketOwner, Buckets)}
 	var moved []int
 	for b, node := range want {
+		var o BucketOwner
+		if cur != nil {
+			o = cur.Owners[b]
+		}
+		owner, live := byID[o.Node]
 		switch {
 		case node == "":
-		case cur != nil && cur.Owners[b].Node == node && cur.Owners[b].State == BucketRun:
-			next.Owners[b] = cur.Owners[b]
-		default:
+			// Spreading is off, or nobody may run the tenant.
+		case o.Node == "":
 			moved = append(moved, b)
+		case o.Node == node:
+			next.Owners[b] = BucketOwner{Node: o.Node, DetEpoch: o.DetEpoch, State: BucketRun}
+		case !live || !owner.Live:
+			// Its owner is gone: nothing to wait for.
+			moved = append(moved, b)
+		case o.State == BucketMoving && (owner.Released[b] == o.DetEpoch || a.waited(b, now) >= timeout):
+			moved = append(moved, b)
+		default:
+			a.waited(b, now)
+			next.Owners[b] = BucketOwner{Node: o.Node, DetEpoch: o.DetEpoch, State: BucketMoving, To: node}
+		}
+	}
+	for b := range a.movingSince {
+		if next.Owners[b].State != BucketMoving {
+			delete(a.movingSince, b)
 		}
 	}
 	if len(moved) > 0 {
@@ -207,6 +302,7 @@ func (a *Assigner) Step(ctx context.Context) error {
 		}
 		for i, b := range moved {
 			next.Owners[b] = BucketOwner{Node: want[b], DetEpoch: first + int64(i), State: BucketRun}
+			delete(a.movingSince, b)
 		}
 	}
 	if cur != nil && cur.LeaseEpoch == lease && slices.Equal(cur.Owners, next.Owners) || !found && !spread {
@@ -239,6 +335,17 @@ func (a *Assigner) Step(ctx context.Context) error {
 		a.setLeaderRuns(true)
 	}
 	return nil
+}
+
+// waited returns how long bucket b has been being handed over, as this
+// Assigner saw it (from now, the first time).
+func (a *Assigner) waited(b int, now time.Duration) time.Duration {
+	since, ok := a.movingSince[b]
+	if !ok {
+		a.movingSince[b] = now
+		return 0
+	}
+	return now - since
 }
 
 func (a *Assigner) now() time.Time {
@@ -276,7 +383,8 @@ type Follower struct {
 	Log  *slog.Logger
 
 	mu     sync.Mutex
-	runs   map[int]int64
+	holds  map[int]int64
+	moving map[int]bool
 	readAt time.Duration
 	read   bool
 }
@@ -301,39 +409,79 @@ func (f *Follower) Read(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runs := map[int]int64{}
+	holds, moving := map[int]int64{}, map[int]bool{}
 	if found {
 		a, err := DecodeAssignment(raw, f.Tenant)
 		if err != nil {
-			f.set(runs, sent)
+			f.set(holds, moving, sent)
 			return err
 		}
-		runs = a.RunsOn(f.Self)
+		holds = a.Holds(f.Self)
+		for b := range holds {
+			moving[b] = a.Owners[b].State == BucketMoving
+		}
 	}
-	f.set(runs, sent)
+	f.set(holds, moving, sent)
 	return nil
 }
 
-func (f *Follower) set(runs map[int]int64, at time.Duration) {
+func (f *Follower) set(holds map[int]int64, moving map[int]bool, at time.Duration) {
 	f.mu.Lock()
-	f.runs, f.readAt, f.read = runs, at, true
+	f.holds, f.moving, f.readAt, f.read = holds, moving, at, true
 	f.mu.Unlock()
 }
 
-// Owned returns the buckets this server runs, with their detection
-// epochs, while the last good read is recent enough.
-func (f *Follower) Owned() (map[int]int64, bool) {
+// fresh reports whether the last good read is recent enough; f.mu held.
+func (f *Follower) fresh() bool {
 	maxAge := f.MaxAge
 	if maxAge <= 0 {
 		maxAge = DefaultFollowMaxAge
 	}
-	now := f.mono()
+	return f.read && f.mono()-f.readAt < maxAge
+}
+
+// Owned returns the buckets this server holds, with their detection
+// epochs, while the last good read is recent enough: those it runs and
+// those it is handing over (Moving), whose runs in flight may finish.
+func (f *Follower) Owned() (map[int]int64, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.read || now-f.readAt >= maxAge {
+	if !f.fresh() {
 		return nil, false
 	}
-	return f.runs, true
+	return f.holds, true
+}
+
+// Moving reports whether this server is handing bucket b over.
+func (f *Follower) Moving(b int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.moving[b]
+}
+
+// Released returns the buckets this server is handing over and has no
+// run of in flight (busy reports one), with their detection epochs: its
+// heartbeat says so, and the server running the background jobs then
+// gives them to their new owner without waiting longer.
+func (f *Follower) Released(busy func(bucket int) bool) map[int]int64 {
+	f.mu.Lock()
+	var mv []int
+	if f.fresh() {
+		for b, m := range f.moving {
+			if m {
+				mv = append(mv, b)
+			}
+		}
+	}
+	holds := f.holds
+	f.mu.Unlock()
+	out := map[int]int64{}
+	for _, b := range mv {
+		if !busy(b) {
+			out[b] = holds[b]
+		}
+	}
+	return out
 }
 
 // Run reads the document every tick until ctx ends.

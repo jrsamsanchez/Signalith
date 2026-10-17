@@ -52,7 +52,7 @@ type detSpread struct {
 func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligible bool, leader, spread *detect.Scheduler, prints *detPrints, files func() string, log *slog.Logger) *detSpread {
 	ds := &detSpread{sched: spread, tenant: tenant, prints: prints, files: files}
 	ds.follower = &detect.Follower{Tenant: tenant, Self: node.ID(), Runtime: spread.Runtime, RuntimeIndex: spread.RuntimeIndex, Log: log}
-	spread.Tenant, spread.Owned = tenant, ds.follower.Owned
+	spread.Tenant, spread.Owned, spread.Moving = tenant, ds.follower.Owned, ds.follower.Moving
 	spread.NodeID, spread.ClusterNow, spread.Epoch = node.ID(), node.ClusterNow, node.Lease().Epoch
 	// A server cut off from the others stops running its buckets by
 	// itself, as the job holder stops its jobs.
@@ -65,7 +65,7 @@ func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligibl
 			var out []detect.SpreadServer
 			for _, s := range node.DetectionServers() {
 				out = append(out, detect.SpreadServer{ID: s.NodeID, Spread: s.Spread, Eligible: s.Eligible, Live: s.Live,
-					Fingerprint: s.Tenants[tenant], ClockOffsetMS: s.ClockOffsetMS})
+					Fingerprint: s.Tenants[tenant], ClockOffsetMS: s.ClockOffsetMS, Released: s.Released[tenant]})
 			}
 			return out
 		},
@@ -90,11 +90,20 @@ func (ds *detSpread) follow(ctx context.Context, jobs *sync.WaitGroup) {
 // given some, so a tenant whose indices could not be made, or that
 // stopped, gets none here.
 func (ds *detSpread) publish(ctx context.Context, jobs *sync.WaitGroup) {
-	e := ds.prints.set(ds.tenant, ds.files)
+	e := ds.prints.set(ds.tenant, ds.files, ds.released)
 	jobs.Go(func() {
 		<-ctx.Done()
 		ds.prints.drop(ds.tenant, e)
 	})
+}
+
+// released is the tenant's buckets this server released, for the
+// heartbeat.
+func (ds *detSpread) released() map[int]int64 {
+	if ds.follower == nil {
+		return nil
+	}
+	return ds.follower.Released(ds.sched.BucketBusy)
 }
 
 // assign is the job holder's job keeping the assignment.
@@ -109,20 +118,22 @@ type detPrints struct {
 }
 
 type detPrint struct {
-	// files returns the fingerprint of the tenant's files.
-	files func() string
-	fp    string
-	at    time.Time
+	// files returns the fingerprint of the tenant's files, and released
+	// the buckets this server released.
+	files    func() string
+	released func() map[int]int64
+	fp       string
+	at       time.Time
 }
 
 func newDetPrints() *detPrints { return &detPrints{tenants: map[string]*detPrint{}} }
 
 // set publishes tenant's fingerprint, worked out by files, and returns
 // its entry for drop.
-func (p *detPrints) set(tenant string, files func() string) *detPrint {
+func (p *detPrints) set(tenant string, files func() string, released func() map[int]int64) *detPrint {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	e := &detPrint{files: files}
+	e := &detPrint{files: files, released: released}
 	p.tenants[tenant] = e
 	return e
 }
@@ -135,6 +146,29 @@ func (p *detPrints) drop(tenant string, e *detPrint) {
 	if p.tenants[tenant] == e {
 		delete(p.tenants, tenant)
 	}
+}
+
+// released returns, per tenant, the buckets this server released and
+// has not been told have moved on yet.
+func (p *detPrints) released() map[string]map[int]int64 {
+	p.mu.Lock()
+	fns := map[string]func() map[int]int64{}
+	for id, e := range p.tenants {
+		if e.released != nil {
+			fns[id] = e.released
+		}
+	}
+	p.mu.Unlock()
+	var out map[string]map[int]int64
+	for id, fn := range fns {
+		if r := fn(); len(r) > 0 {
+			if out == nil {
+				out = map[string]map[int]int64{}
+			}
+			out[id] = r
+		}
+	}
+	return out
 }
 
 // all returns every tenant's fingerprint, hashing a tenant's files again

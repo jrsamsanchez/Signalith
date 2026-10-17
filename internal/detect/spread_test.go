@@ -3,6 +3,8 @@ package detect
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +22,25 @@ type testAssigner struct {
 	servers []SpreadServer
 	on      bool
 	lease   int64
+	clock   time.Duration
+}
+
+// advance moves the test Assigner's monotonic clock on.
+func (ta *testAssigner) advance(d time.Duration) {
+	ta.mu.Lock()
+	ta.clock += d
+	ta.mu.Unlock()
+}
+
+// setServer changes server id as change says.
+func (ta *testAssigner) setServer(id string, change func(s *SpreadServer)) {
+	ta.mu.Lock()
+	defer ta.mu.Unlock()
+	for i := range ta.servers {
+		if ta.servers[i].ID == id {
+			change(&ta.servers[i])
+		}
+	}
 }
 
 func newTestAssigner(rs RunStore) *testAssigner {
@@ -33,7 +54,8 @@ func newTestAssigner(rs RunStore) *testAssigner {
 			defer ta.mu.Unlock()
 			return append([]SpreadServer(nil), ta.servers...)
 		},
-		Now: func() time.Time { return t0 },
+		Now:  func() time.Time { return t0 },
+		Mono: func() time.Duration { ta.mu.Lock(); defer ta.mu.Unlock(); return ta.clock },
 	}
 	return ta
 }
@@ -90,29 +112,127 @@ func TestAssignerSpreadsAndMoves(t *testing.T) {
 		t.Error("an unchanged assignment was written again")
 	}
 
-	// c joins: only the buckets moving to c change, each with a bigger epoch.
+	// c joins: nothing moves before it has been able to run buckets for
+	// the join delay.
 	ta.mu.Lock()
 	ta.servers = append(ta.servers, server("c"))
 	ta.mu.Unlock()
-	if err := ta.Step(ctx); err != nil {
-		t.Fatal(err)
+	step := func() *Assignment {
+		t.Helper()
+		if err := ta.Step(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return readAssignment(t, rs)
 	}
+	if got := step(); !slicesEqual(got.Owners, first.Owners) {
+		t.Fatal("buckets moved to a server that just joined")
+	}
+	ta.advance(DefaultJoinDelay)
+
+	// Then c's buckets are handed over: marked moving, under the same
+	// epoch, their owners still holding them.
+	toC := map[int]bool{}
+	moving := step()
+	for b, o := range moving.Owners {
+		want := Rendezvous([]string{"a", "b", "c"}, "acme", b)
+		was := first.Owners[b]
+		switch {
+		case want == was.Node:
+			if o != was {
+				t.Errorf("bucket %d changed without moving: %+v", b, o)
+			}
+		case o.Node != was.Node || o.DetEpoch != was.DetEpoch || o.State != BucketMoving || o.To != "c":
+			t.Errorf("bucket %d for c: %+v", b, o)
+		default:
+			toC[b] = true
+		}
+	}
+	if len(toC) == 0 {
+		t.Fatal("no bucket moves to c")
+	}
+
+	// a releases its buckets; b has a run in flight. Only a's move on,
+	// each with a bigger epoch.
 	var top int64
 	for _, o := range first.Owners {
 		top = max(top, o.DetEpoch)
 	}
-	second := readAssignment(t, rs)
-	for b, o := range second.Owners {
-		switch want := Rendezvous([]string{"a", "b", "c"}, "acme", b); {
-		case o.Node != want:
-			t.Errorf("bucket %d owned by %s, not %s", b, o.Node, want)
-		case o.Node == first.Owners[b].Node && o != first.Owners[b]:
-			t.Errorf("bucket %d changed without moving", b)
-		case o.Node != first.Owners[b].Node && o.DetEpoch <= top:
-			t.Errorf("bucket %d moved with epoch %d, not above %d", b, o.DetEpoch, top)
+	ta.setServer("a", func(s *SpreadServer) {
+		s.Released = map[int]int64{}
+		for b := range toC {
+			if moving.Owners[b].Node == "a" {
+				s.Released[b] = moving.Owners[b].DetEpoch
+			}
+		}
+	})
+	third := step()
+	for b := range toC {
+		o, from := third.Owners[b], moving.Owners[b].Node
+		switch {
+		case from == "a" && (o.Node != "c" || o.State != BucketRun || o.DetEpoch <= top):
+			t.Errorf("bucket %d released by a: %+v", b, o)
+		case from == "b" && o != moving.Owners[b]:
+			t.Errorf("bucket %d moved before b released it: %+v", b, o)
+		}
+	}
+
+	// b never releases: its buckets move once the move timeout passed.
+	ta.advance(DefaultMoveTimeout)
+	last := step()
+	for b, o := range last.Owners {
+		if want := Rendezvous([]string{"a", "b", "c"}, "acme", b); o.Node != want || o.State != BucketRun {
+			t.Errorf("bucket %d after the timeout: %+v, not %s", b, o, want)
 		}
 	}
 }
+
+// TestAssignerCrashMovesAtOnce: a bucket whose owner is gone moves at
+// once, without the handover or the join delay.
+func TestAssignerCrashMovesAtOnce(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	ta := newTestAssigner(rs)
+	ta.servers = []SpreadServer{server("a"), server("b")}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ta.setServer("b", func(s *SpreadServer) { s.Live = false })
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs); len(got.Holds("b")) != 0 || len(got.RunsOn("a")) != Buckets {
+		t.Errorf("b still holds %d buckets", len(got.Holds("b")))
+	}
+}
+
+// TestAssignerMoveCancelled: a bucket whose move is no longer wanted
+// runs on with its owner, under the same epoch.
+func TestAssignerMoveCancelled(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	ta := newTestAssigner(rs)
+	ta.servers = []SpreadServer{server("a"), server("b")}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before := readAssignment(t, rs)
+	ta.setServer("b", func(s *SpreadServer) { s.Eligible = false })
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs); len(got.Holds("b")) == 0 || len(got.RunsOn("b")) != 0 {
+		t.Fatal("b's buckets are not being handed over")
+	}
+	ta.setServer("b", func(s *SpreadServer) { s.Eligible = true })
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs); !slicesEqual(got.Owners, before.Owners) {
+		t.Error("a cancelled move changed the assignment")
+	}
+}
+
+func slicesEqual(a, b []BucketOwner) bool { return slices.Equal(a, b) }
 
 func TestAssignerLeavesOut(t *testing.T) {
 	ctx := context.Background()
@@ -305,5 +425,60 @@ func TestLostBucket(t *testing.T) {
 	s.gen()
 	if got, mine := s.ownsRule("r1"); !mine || got != 7 {
 		t.Error("the bucket did not run again under its new epoch")
+	}
+}
+
+// TestFollowerMoving: a bucket being handed over is still held (its runs
+// in flight may write) but starts no new slot, and is released once no
+// run of it is in flight.
+func TestFollowerMoving(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	a := validAssignment("acme", []string{"b"})
+	a.Owners[7] = BucketOwner{Node: "b", DetEpoch: 42, State: BucketMoving, To: "c"}
+	if _, err := rs.Create(ctx, "rt", AssignmentID("acme"), a, true); err != nil {
+		t.Fatal(err)
+	}
+	f := &Follower{Tenant: "acme", Self: "b", Runtime: rs, RuntimeIndex: "rt"}
+	if err := f.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := f.Owned(); !ok || m[7] != 42 || len(m) != Buckets {
+		t.Errorf("held: %d buckets, bucket 7 at %d", len(m), m[7])
+	}
+	if !f.Moving(7) || f.Moving(8) {
+		t.Error("moving buckets")
+	}
+	busy := true
+	if r := f.Released(func(int) bool { return busy }); len(r) != 0 {
+		t.Errorf("released with a run in flight: %v", r)
+	}
+	busy = false
+	if r := f.Released(func(int) bool { return busy }); len(r) != 1 || r[7] != 42 {
+		t.Errorf("released: %v", r)
+	}
+
+	// The scheduler starts no slot of it.
+	s := &Scheduler{Tenant: "acme", Owned: f.Owned, Moving: f.Moving}
+	s.gen()
+	var in7, in8 string
+	for i := 0; in7 == "" || in8 == ""; i++ {
+		id := fmt.Sprintf("r%d", i)
+		switch BucketOf("acme", id) {
+		case 7:
+			in7 = id
+		case 8:
+			in8 = id
+		}
+	}
+	if s.startsRule(in7) || !s.startsRule(in8) {
+		t.Error("a moving bucket's rule starts, or another's does not")
+	}
+	if _, mine := s.ownsRule(in7); !mine {
+		t.Error("a moving bucket's run in flight cannot write")
+	}
+	s.setFlags(in7, runFlags{running: true})
+	if !s.BucketBusy(7) || s.BucketBusy(8) {
+		t.Error("busy buckets")
 	}
 }

@@ -19,6 +19,8 @@ type DetectionServer struct {
 	// ClockOffsetMS is OpenSearch's clock minus its own, nil when not
 	// measured.
 	ClockOffsetMS *int64
+	// Released is, per tenant, the buckets it released.
+	Released map[string]map[int]int64
 }
 
 // DetectionServers returns this server and the others, as their last
@@ -29,7 +31,7 @@ func (n *Node) DetectionServers() []DetectionServer {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	out := []DetectionServer{{NodeID: n.ID(), Spread: true, Eligible: self.LeaderEligible, Live: fresh,
-		Tenants: self.DetTenants, ClockOffsetMS: self.ClockOffsetMS}}
+		Tenants: self.DetTenants, ClockOffsetMS: self.ClockOffsetMS, Released: self.DetReleased}}
 	now := n.clock.Mono()
 	for id, m := range n.members {
 		if id == n.ID() {
@@ -37,7 +39,7 @@ func (n *Node) DetectionServers() []DetectionServer {
 		}
 		out = append(out, DetectionServer{NodeID: id, Spread: slices.Contains(m.hb.Features, FeatureDetectionSpread),
 			Eligible: m.hb.LeaderEligible, Live: m.hb.State == StateReady && now-m.since < n.timing.Takeover,
-			Tenants: m.hb.DetTenants, ClockOffsetMS: m.hb.ClockOffsetMS})
+			Tenants: m.hb.DetTenants, ClockOffsetMS: m.hb.ClockOffsetMS, Released: m.hb.DetReleased})
 	}
 	slices.SortFunc(out, func(a, b DetectionServer) int {
 		switch {

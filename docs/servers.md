@@ -150,11 +150,15 @@ or while it cannot write its heartbeat for 20 seconds (it then stops its share b
 itself).
 
 When a group moves, its new server takes over from where the last run of each rule
-ended, so no time is skipped or searched twice. The two servers are kept apart the
-same way two servers holding the jobs are: each group carries a number that grows
-with every move, and OpenSearch refuses the old server's run state, so the old
-server stops that group at its next write. A rule's findings are not raised twice;
-a risk-only rule's risk events of the one run that overlapped can be.
+ended, so no time is skipped or searched twice. A server that is still running hands
+its groups over first: it starts no new run of them, finishes the runs it has going,
+and says so in its heartbeat, and only then does the new server start them (or after
+6 minutes, longer than any run may take, if it never says so). A server that stopped
+or lost contact gives its groups up at once. A server that just started gets groups
+only once it has been running for a minute, so one that restarts quickly does not
+move them back and forth. Each group also carries a number that grows with every
+move, and OpenSearch refuses run state written under an older one, so two servers
+never both record a run of the same rule.
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
