@@ -283,8 +283,9 @@ func (e *Engine) Compile(q *query.Query) (*Plan, error) {
 	}
 	// A subsearch that does not compile fails the search before it runs.
 	cmds := p.post
-	if ms, ok := p.transform.(*query.MultiSearch); ok {
-		cmds = append([]query.Command{ms}, cmds...)
+	switch t := p.transform.(type) {
+	case *query.MultiSearch, *query.Set:
+		cmds = append([]query.Command{t}, cmds...)
 	}
 	if err := e.compileSubsearches(cmds, q); err != nil {
 		return nil, err
@@ -307,6 +308,12 @@ func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error 
 				}
 			}
 		case *query.MultiSearch:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
+		case *query.Set:
 			for _, s := range c.Subs {
 				if _, err := e.Compile(subsearch(s, q)); err != nil {
 					return err
@@ -340,6 +347,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		if c, ok := cmds[0].(*query.MultiSearch); ok {
 			// The rows come from the subsearches.
 			return &Plan{Mode: "multisearch", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.Set); ok {
+			return &Plan{Mode: "set", transform: c, post: cmds[1:]}, nil
 		}
 	}
 
@@ -533,7 +543,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict:
 			return true
 		}
 	}
@@ -548,7 +558,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
 			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation,
-			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo, *query.Extract, *query.XPath, *query.Abstract, *query.Highlight:
+			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo, *query.Extract, *query.XPath, *query.Abstract, *query.Highlight, *query.SetFields:
 			continue
 		}
 		return 0, false
@@ -673,6 +683,8 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 		res = makeResults(c)
 	case *query.MultiSearch:
 		res, err = e.multiSearch(ctx, c, q)
+	case *query.Set:
+		res, err = e.setSearch(ctx, c, q)
 	default:
 		res, err = e.fetch(ctx, p)
 	}

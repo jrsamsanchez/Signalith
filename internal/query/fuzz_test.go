@@ -64,6 +64,8 @@ var fuzzSeeds = []string{
 	`| multisearch [search a=1 | head 2] [search b="x y"] [search index=* | stats count by c] | timewrap 1d | timewrap 2h align=now series=short | cluster | cluster field="m s" t=0.5 match=ngramset showcount=t countfield="n c" labelfield=l labelonly=1`,
 	`* | xpath "//Event/System/EventID" | xpath field=m outfield="o f" default="" "/a//b[@n='x'][2]/@v" | xpath "*/c/text()" | abstract | excerpt maxterms=5 maxlines=2 | highlight a, "b c"`,
 	`* | anomalydetection | anomalydetection method=zscore action=annotate pthresh=0.05 bytes, "a=b" "c d" | anomalydetection action=summary | correlate | correlate a "b c"`,
+	`* | timechart count | predict count | predict count AS p, "a b" algorithm=llt future_timespan=0 holdback=3 period=7 | predict x upper90=hi lower80="lo w" | setfields a=1, b="c d" e=""`,
+	`| set diff [search a=1 | fields user] [search b="]" | stats count by user] | setfields x=y`, `| set union [x] [y]`, `| SET Intersect [search z | head 1] [w]`,
 	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }

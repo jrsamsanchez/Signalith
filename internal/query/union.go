@@ -43,11 +43,16 @@ func (p *parser) subsearchGroups(cmd token, name, example string) ([]*Query, err
 	if raw.kind != tokRaw {
 		return nil, errorf(cmd.pos, "%s needs subsearches in [ ], for example: %s", name, example)
 	}
+	return p.subsearchesIn(cmd, raw.text, raw.pos, name, example)
+}
+
+// subsearchesIn reads the [ ] subsearches that make up body, which starts
+// at byte pos of the query.
+func (p *parser) subsearchesIn(cmd token, body string, pos int, name, example string) ([]*Query, error) {
 	if p.depth+1 > maxSubsearchDepth {
-		return nil, errorf(raw.pos, "subsearches can be at most %d deep", maxSubsearchDepth)
+		return nil, errorf(pos, "subsearches can be at most %d deep", maxSubsearchDepth)
 	}
 	var subs []*Query
-	body := raw.text
 	i := 0
 	for {
 		for i < len(body) && isSpace(rune(body[i])) {
@@ -57,13 +62,13 @@ func (p *parser) subsearchGroups(cmd token, name, example string) ([]*Query, err
 			break
 		}
 		if body[i] != '[' {
-			return nil, errorf(raw.pos+i, "%s takes only subsearches in [ ], for example: %s", name, example)
+			return nil, errorf(pos+i, "%s takes only subsearches in [ ], for example: %s", name, example)
 		}
 		end := subsearchEnd(body, i)
 		if body[end-1] != ']' || subsearchEnd(body[i:end], 0) != end-i {
-			return nil, errorf(raw.pos+i, "%s needs subsearches in [ ], for example: %s", name, example)
+			return nil, errorf(pos+i, "%s needs subsearches in [ ], for example: %s", name, example)
 		}
-		sub, err := p.parseSubsearch(body[i+1:end-1], raw.pos+i+1)
+		sub, err := p.parseSubsearch(body[i+1:end-1], pos+i+1)
 		if err != nil {
 			return nil, err
 		}

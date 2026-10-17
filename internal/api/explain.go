@@ -588,6 +588,32 @@ func describeCommand(c query.Command) string {
 		return s + "."
 	case *query.Correlate:
 		return "Show, for each pair of fields, the share of rows that have both."
+	case *query.Predict:
+		var names []string
+		for _, f := range c.Fields {
+			names = append(names, f.Field)
+		}
+		s := fmt.Sprintf("Forecast %s with %s, with %d%% and %d%% bounds", strings.Join(names, ", "), predictAlgorithm(c.Algorithm), c.Upper, c.Lower)
+		if c.Holdback > 0 {
+			s += fmt.Sprintf(", learning from all but the last %d rows", c.Holdback)
+		}
+		if c.FutureTimespan > c.Holdback {
+			s += fmt.Sprintf(", and add %d future rows", c.FutureTimespan-c.Holdback)
+		}
+		return s + "."
+	case *query.Set:
+		var parts []string
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		which := map[string]string{"union": "the rows of either", "diff": "the rows only one of them has", "intersect": "the rows both have"}[c.Op]
+		return "Start with " + which + " of these two subsearches. " + strings.Join(parts, " ")
+	case *query.SetFields:
+		var parts []string
+		for _, v := range c.Values {
+			parts = append(parts, fmt.Sprintf("%s to %q", v.Field, v.Value))
+		}
+		return "Set " + strings.Join(parts, ", ") + " on every row."
 	case *query.XPath:
 		s := "Set " + c.OutField + " to the text of " + c.Path + " in the XML of " + c.Field
 		if c.HasDefault {
@@ -683,4 +709,17 @@ func describeCommand(c query.Command) string {
 			"threat_match_value, threat_source and threat_weight describing the match."
 	}
 	return query.CommandString(c)
+}
+
+// predictAlgorithm says what a predict algorithm models.
+func predictAlgorithm(a string) string {
+	switch a {
+	case "LL":
+		return "a moving level"
+	case "LLT":
+		return "a level and trend"
+	case "LLP":
+		return "a level and repeating season"
+	}
+	return "a level, trend and repeating season"
 }
