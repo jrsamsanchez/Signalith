@@ -221,8 +221,13 @@ func applyCluster(ctx context.Context, res *Result, c *query.Cluster) error {
 		}
 		found := -1
 		for g, gr := range groups {
-			if !ev.stepN(len(terms) + 1) {
+			// A comparison costs a map lookup per term, so it counts as
+			// several steps, and a long scan checks the deadline.
+			if !ev.stepN(4*len(terms) + 1) {
 				return ev.err
+			}
+			if g%checkEvery == checkEvery-1 && ctx.Err() != nil {
+				return ctx.Err()
 			}
 			if clusterAlike(terms, set, gr.terms, gr.set, c.Match) >= c.Threshold {
 				found = g
