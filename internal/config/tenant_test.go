@@ -24,6 +24,7 @@ func TestForTenant(t *testing.T) {
 	c.M365.TenantID = "contoso"
 	c.Notify.File = "/etc/signalith/notify.yaml"
 	c.Ticketing.File = "/etc/signalith/tickets.yaml"
+	tickets := c.TicketingFile()
 	if c.ForTenant("default") != c || c.ForTenant("") != c {
 		t.Fatal("the default tenant's config is not the config itself")
 	}
@@ -54,7 +55,7 @@ func TestForTenant(t *testing.T) {
 	}
 	// The default tenant keeps the ticketing file it had, and another
 	// tenant's is its own.
-	if c.TicketingFile() != "/etc/signalith/tickets.yaml" {
+	if c.TicketingFile() != tickets {
 		t.Errorf("the default tenant's ticketing file moved to %q", c.TicketingFile())
 	}
 	if b := c.ForTenant("beta"); b.TicketingFile() == a.TicketingFile() {
