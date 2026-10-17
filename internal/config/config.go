@@ -1107,6 +1107,10 @@ type Detections struct {
 	// background work, each rule on one of them, instead of all on the
 	// server running the background jobs. Off by default.
 	Spread bool `yaml:"spread,omitempty"`
+	// SearchBudget is how many detection searches every server together
+	// runs at once while detections are spread; 0 means half the searches
+	// OpenSearch's data nodes run at once.
+	SearchBudget int `yaml:"search_budget,omitempty"`
 	// ContentUpdates is how newer content pack rules arrive: manual (an
 	// admin checks or uploads on the Detections page) or daily (checked
 	// and installed every day). Empty means manual.
@@ -2633,6 +2637,9 @@ func (c *Config) Validate() error {
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
+	}
+	if c.Detections.SearchBudget < 0 || c.Detections.SearchBudget > detect.MaxSearchBudget {
+		p = append(p, fmt.Sprintf("detections.search_budget must be between 0 (automatic) and %d", detect.MaxSearchBudget))
 	}
 	if v := strings.TrimSpace(c.Detections.CatchUp); v != "" && v != "0" {
 		if d, err := detect.ParseDuration(v); err != nil || d < 0 || d > detect.MaxCatchUp {

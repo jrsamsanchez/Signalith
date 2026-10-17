@@ -161,6 +161,21 @@ move them back and forth. Each group also carries a number that grows with every
 move, and OpenSearch refuses run state written under an older one, so two servers
 never both record a run of the same rule.
 
+Every server's detection searches go to the same OpenSearch, so adding servers adds
+room to run rules, not room to search. While detections are spread, all servers
+together run at most **Detection searches at once** (`detections.search_budget`)
+searches; each server runs the share that matches its groups, at least one, for all
+tenants together, taking turns between tenants so a busy one cannot hold more than
+half of a server's searches while another waits. Left empty, it is half the
+searches OpenSearch's data nodes can run at once. When a tenant's searches are
+refused as too busy, do not answer in time, or take twice as long as over the 15
+minutes before, that tenant alone runs fewer at once for a while, so one tenant's
+heavy rules do not slow the others. When most of the tenants a server runs (at
+least two) show it within two minutes, or it runs a single tenant, OpenSearch is
+taken to be slow for everyone: the server halves how many it runs and gets one back a minute; the
+current runs go first, and missed runs are made up one at a time until it is back
+to its share.
+
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
 and Threat intel feed settings can be changed on any server. Notifications and Playbooks settings,

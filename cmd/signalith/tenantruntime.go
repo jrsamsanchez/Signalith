@@ -395,6 +395,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		}
 		s.SetCatchUp(c.DetectionsCatchUp())
 		s.SetSpread(c.Detections.Spread)
+		s.SetSearchBudget(c.Detections.SearchBudget)
 		return s
 	}
 	sched := newSched()
@@ -532,7 +533,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 		if t.r.shared != nil {
 			sched.Counter = t.r.shared.DetectionEpochs
-			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints,
+			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints, t.r.detPool, cl.SearchThreads,
 				func() string { return detFilesFingerprint(c, t.r.shared, t.sharedOK != nil, false) }, log)
 			srv.SpreadScheduler = spread.sched
 			spread.views = t.r.detViews

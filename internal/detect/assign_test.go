@@ -299,3 +299,47 @@ func TestSpreadRunsEachRuleOnce(t *testing.T) {
 		t.Errorf("a ran %d searches without an assignment", len(run.calls)-calls)
 	}
 }
+
+// TestSpreadSharedPool: two tenants' spread schedulers on one server take
+// their workers from one pool, and every rule of both runs.
+func TestSpreadSharedPool(t *testing.T) {
+	var rules []*Detection
+	rows := map[string][]search.Row{}
+	for i := range 6 {
+		id := fmt.Sprintf("pool-%d", i)
+		q := fmt.Sprintf("user=p%d", i)
+		rules = append(rules, &Detection{ID: id, Title: id, Query: q, Enabled: true, Schedule: "5m", Lookback: "5m"})
+		rows[q] = []search.Row{{"user": fmt.Sprintf("p%d", i)}}
+	}
+	lib := OnlyRules(t, rules...)
+	run := &recRunner{rows: rows}
+	clock := &fakeClock{t: t0}
+	pool := NewPool(1)
+	var scheds []*Scheduler
+	for _, tenant := range []string{"acme", "beta"} {
+		runs := validAssignment(tenant, []string{"a"}).RunsOn("a")
+		s := newTestScheduler(lib, run, clock)
+		s.Runtime, s.NodeID, s.Tenant, s.Pool = NewMemoryRunStore(), "a", tenant, pool
+		s.Owned = func() (map[int]int64, bool) { return runs, true }
+		scheds = append(scheds, s)
+	}
+	ctx := context.Background()
+	for range 2 {
+		var wg sync.WaitGroup
+		for _, s := range scheds {
+			wg.Go(func() { s.RunDue(ctx) })
+		}
+		wg.Wait()
+		clock.Add(5 * time.Minute)
+	}
+	for _, s := range scheds {
+		for _, d := range rules {
+			if st := storedState(t, s, d.ID); st.LastRun.IsZero() {
+				t.Errorf("%s: %s did not run", s.Tenant, d.ID)
+			}
+		}
+	}
+	if st := pool.Stats(); st.Busy != 0 || st.Waiting != 0 {
+		t.Errorf("pool left %+v", st)
+	}
+}

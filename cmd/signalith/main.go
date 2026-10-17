@@ -1455,6 +1455,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 		s.SetCatchUp(c.DetectionsCatchUp())
 		s.SetSpread(c.Detections.Spread)
+		s.SetSearchBudget(c.Detections.SearchBudget)
 		return s
 	}
 	sched := newSched()
@@ -1975,7 +1976,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		if r.shared != nil {
 			sched.Counter = r.shared.DetectionEpochs
-			spread = newDetSpread(r.node, r.shared, tenants.Default, c.LeaderEligible(), sched, newSched(), r.detPrints,
+			spread = newDetSpread(r.node, r.shared, tenants.Default, c.LeaderEligible(), sched, newSched(), r.detPrints, r.detPool, cl.SearchThreads,
 				func() string { return detFilesFingerprint(c, r.shared, sharedOn, true) }, log)
 			srv.SpreadScheduler = spread.sched
 			spread.views = r.detViews
