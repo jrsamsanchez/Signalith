@@ -448,6 +448,8 @@ func CommandString(c Command) string {
 		return mapString(c)
 	case *Accum, *Delta, *AutoRegress, *FieldSummary:
 		return seqString(c)
+	case *Transpose, *FillDown, *AddInfo, *Trendline:
+		return rowCmdString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

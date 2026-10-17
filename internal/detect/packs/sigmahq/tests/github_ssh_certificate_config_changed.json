@@ -1,0 +1,4 @@
+{"rule": "2f575940-d85e-4ddc-af13-17dad6f1a0ef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"ssh_certificate_requirement.disable"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

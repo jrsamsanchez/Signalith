@@ -178,6 +178,26 @@ func (q *Query) Drilldown() *Drill {
 			for _, f := range c.Names() {
 				delete(fields, f)
 			}
+		case *Trendline:
+			for _, t := range c.Trends {
+				delete(fields, t.Name())
+			}
+		case *FillDown:
+			// A filled-in value is from another event.
+			if len(c.Fields) == 0 {
+				clear(fields)
+			}
+			for f := range fields {
+				for _, p := range c.Fields {
+					if MatchField(p, f) {
+						delete(fields, f)
+					}
+				}
+			}
+		case *AddInfo:
+			delete(fields, AddInfoMinTime)
+			delete(fields, AddInfoMaxTime)
+			delete(fields, AddInfoSearchTime)
 		case *IPLocation:
 			// Places are in no event.
 			for _, f := range c.Fields() {
@@ -201,7 +221,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

@@ -1,0 +1,4 @@
+{"rule": "8622c92d-c00e-463c-b09d-fd06166f6794", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.advanced_security_disabled_for_new_repos"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

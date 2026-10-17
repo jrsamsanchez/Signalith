@@ -386,6 +386,10 @@ func (c *sigmaConv) anyModel() bool {
 		// And Kubernetes's: changes to objects are Change events,
 		// requests without credentials Authentication and reads Other.
 		return true
+	case ingest.GitHubService:
+		// And GitHub's: changes are Change events, sign-ins
+		// Authentication and the rest Other.
+		return true
 	}
 	// And Google Workspace's, which are Google Cloud's in all but name.
 	return slices.Contains(ingest.WorkspaceServices, c.category)
@@ -570,6 +574,12 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.OktaService) {
 		// Okta's System Log, each field by the LogEvent's name.
 		category = ingest.OktaService
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.GitHubProduct) {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "audit") {
+			// GitHub's audit log, each field by GitHub's name.
+			category = ingest.GitHubService
+		}
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
 		// Microsoft 365's audit log, whatever the service: each field by
@@ -762,6 +772,10 @@ func productScope(ls map[string]any, category string) query.Expr {
 				&query.Compare{Field: "source", Op: "=", Value: ingest.KubernetesSource},
 			})
 		}
+	case ingest.GitHubProduct:
+		if category == ingest.GitHubService {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GitHubSourcetype}
+		}
 	case "gcp":
 		if category == ingest.GCPService || slices.Contains(ingest.WorkspaceServices, category) {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GCPSourcetype}
@@ -868,6 +882,14 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.KubernetesSigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Kubernetes audit field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.GitHubService {
+		f, ok := ingest.GitHubField(name)
+		if !ok {
+			c.approx("field %s is not a GitHub field Signalith keeps", name)
 			return name
 		}
 		return f

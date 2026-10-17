@@ -859,3 +859,68 @@ func FuzzKubernetesRecord(f *testing.F) {
 		}
 	})
 }
+
+func FuzzGitHubEvent(f *testing.F) {
+	f.Add(githubRepoDestroy)
+	f.Add(githubDisable2FA)
+	f.Add("[" + githubFailedLogin + "," + githubDisable2FA + "]")
+	f.Add(strings.ReplaceAll(githubDisable2FA, "\n", "") + "\n" + strings.ReplaceAll(githubFailedLogin, "\n", ""))
+	f.Add(`{"action": "a.b", "created_at": "x", "org": {"a": [1, {"b": [{"c": 2}]}, null]}, "actor": {"x": 1}, "src": {"y": 2}, "github_actor": [1], "": 3, "a.b": 4, "_": 5, "@": 6}`)
+	f.Add(`{"action": "repo.create", "@timestamp": 1e300, "created_at": -1, "business": 1, "user": {"login": "x"}, "user_agent": [{"a": 1}]}`)
+	f.Add(`{"action": "repo.create", "created_at": 1, "org": ` + strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := GitHubRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		for _, r := range recs {
+			ev := Normalize(GitHubTag, r, now)
+			if !isGitHubEvent(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != GitHubSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k, v := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+				if _, isMap := v.(map[string]any); isMap || knownObjects[k] {
+					t.Fatalf("field %s holds a value where an object is mapped", k)
+				}
+				// ({} is part of a name: config{} is not config.)
+				for i := range len(k) {
+					if k[i] != '.' {
+						continue
+					}
+					if typ, ok := knownFields[k[:i]]; ok && typ != "object" {
+						t.Fatalf("%s is under %s, mapped as %s", k, k[:i], typ)
+					}
+					if _, ok := ev.Fields[k[:i]]; ok {
+						t.Fatalf("%s is under the field %s", k, k[:i])
+					}
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them.
+		for _, e := range githubFromOTLP(msg) {
+			if !IsGitHubRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
+	})
+}

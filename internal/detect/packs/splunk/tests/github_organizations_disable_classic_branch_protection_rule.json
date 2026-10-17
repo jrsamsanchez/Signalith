@@ -1,0 +1,5 @@
+{"rule": "33cffee0-41ee-402e-a238-d37825f2d788", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"protected_branch.destroy"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"protected_branch.destroz"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}
