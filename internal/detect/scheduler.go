@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -116,7 +117,9 @@ type Scheduler struct {
 	// loadedCounter whether it came from the detepoch document.
 	detEpoch      int64
 	loadedCounter bool
-	own           owned
+	// spread is detections.spread.
+	spread atomic.Bool
+	own    owned
 	// firstStart says the run state, when last read, had no detstate
 	// documents at all: the dispatch after that read starts each enabled
 	// rule at its current slot rather than its next one.
@@ -326,6 +329,13 @@ func (s *Scheduler) SetMaxFindingsPerRun(n int) {
 	defer s.mu.Unlock()
 	s.MaxFindingsPerRun = n
 }
+
+// SetSpread sets detections.spread, which the leader's Assigner reads
+// (SpreadOn).
+func (s *Scheduler) SetSpread(on bool) { s.spread.Store(on) }
+
+// SpreadOn reports detections.spread as last set.
+func (s *Scheduler) SpreadOn() bool { return s.spread.Load() }
 
 // SetCatchUp changes how far back missed slots are run, from the next
 // tick on, as detections.catch_up says: zero turns catching up off.

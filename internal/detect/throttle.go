@@ -111,6 +111,9 @@ func (s *Scheduler) claim(ctx context.Context, d *Detection, key string, slot, n
 			return false, nil
 		}
 		if !slot.IsZero() && cur.Slot != manualSlot && fenceOf(cur.Epoch, cur.DetEpoch) > ep {
+			if s.Owned != nil {
+				s.loseBucket(d.ID)
+			}
 			return false, errStaleEpoch
 		}
 		_, err = rs.PutIf(ctx, idx, id, doc, ver, false)

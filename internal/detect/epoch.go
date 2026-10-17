@@ -55,10 +55,20 @@ func (s *Scheduler) counter() bool { return s.Counter != nil && s.Counter() }
 // runs the schedule now, so this one must not get a bigger number than
 // it.
 func (s *Scheduler) claimEpoch(ctx context.Context, lease int64) (int64, error) {
+	rs, idx := s.runStore()
+	return claimEpochs(ctx, rs, idx, lease, s.NodeID, s.now(), 1)
+}
+
+// claimEpochs takes the next n detection epochs under lease epoch lease
+// from the detepoch document in idx, and returns the first: they are
+// first, first+1, ... first+n-1. It is refused as claimEpoch is.
+func claimEpochs(ctx context.Context, rs RunStore, idx string, lease int64, node string, now time.Time, n int) (int64, error) {
 	if lease <= 0 || lease >= 1<<(62-epochShift) {
 		return 0, fmt.Errorf("the job lease epoch %d cannot give a detection epoch", lease)
 	}
-	rs, idx := s.runStore()
+	if n < 1 || n > Buckets {
+		return 0, fmt.Errorf("cannot take %d detection epochs at once", n)
+	}
 	for range 3 {
 		raw, ver, found, err := rs.Get(ctx, idx, detEpochID)
 		if err != nil {
@@ -73,7 +83,8 @@ func (s *Scheduler) claimEpoch(ctx context.Context, lease int64) (int64, error) 
 		if cur.Lease > lease {
 			return 0, errStaleEpoch
 		}
-		doc := epochDoc{Kind: kindDetEpoch, Epoch: max(cur.Epoch+1, FirstEpoch(lease)), Lease: lease, Node: s.NodeID, At: s.now().UTC()}
+		first := max(cur.Epoch+1, FirstEpoch(lease))
+		doc := epochDoc{Kind: kindDetEpoch, Epoch: first + int64(n) - 1, Lease: lease, Node: node, At: now.UTC()}
 		if found {
 			_, err = rs.PutIf(ctx, idx, detEpochID, doc, ver, true)
 		} else {
@@ -85,7 +96,7 @@ func (s *Scheduler) claimEpoch(ctx context.Context, lease int64) (int64, error) 
 		if err != nil {
 			return 0, fmt.Errorf("could not write the detection epoch: %w", err)
 		}
-		return doc.Epoch, nil
+		return first, nil
 	}
 	return 0, fmt.Errorf("the detection epoch kept changing while it was taken; trying again")
 }

@@ -180,6 +180,11 @@ func (a *Assignment) RunsOn(node string) map[int]int64 {
 type owned struct {
 	buckets map[int]int64
 	gen     int64
+	// lost holds the buckets a refused write showed another server runs
+	// under a newer epoch, with the epoch this server had for them: none
+	// of their rules runs here again until the assignment gives the
+	// bucket a different epoch.
+	lost map[int]int64
 }
 
 // gen is the generation the scheduler's copy of the run state is read
@@ -198,8 +203,25 @@ func (s *Scheduler) gen() int64 {
 	defer s.mu.Unlock()
 	if !maps.Equal(m, s.own.buckets) {
 		s.own.buckets, s.own.gen = maps.Clone(m), s.own.gen+1
+		maps.DeleteFunc(s.own.lost, func(b int, ep int64) bool { return m[b] != ep })
 	}
 	return s.own.gen
+}
+
+// loseBucket marks the bucket of rule id lost after a write of it was
+// refused (spread mode): a newer epoch than this server's is in use for
+// it, so it has moved on, and its other rules stop now rather than each
+// when its own write fails.
+func (s *Scheduler) loseBucket(id string) {
+	b := BucketOf(s.Tenant, id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ep, ok := s.own.buckets[b]; ok {
+		if s.own.lost == nil {
+			s.own.lost = map[int]int64{}
+		}
+		s.own.lost[b] = ep
+	}
 }
 
 // ownsRule reports whether this server runs rule d now, in spread mode,
@@ -211,6 +233,10 @@ func (s *Scheduler) ownsRule(id string) (int64, bool) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ep, ok := s.own.buckets[BucketOf(s.Tenant, id)]
+	b := BucketOf(s.Tenant, id)
+	ep, ok := s.own.buckets[b]
+	if lost, gone := s.own.lost[b]; ok && gone && lost == ep {
+		return ep, false
+	}
 	return ep, ok
 }

@@ -386,13 +386,19 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		log.Error("notifications are not sent until the notifications file is fixed", "err", err)
 	}
 	runtimeIndex := cluster.RuntimeIndex(prefix)
-	sched := &detect.Scheduler{
-		Library: lib, Engine: eng, Findings: fstore, Log: log,
-		Risk: &risk.Store{Client: cl, Prefix: prefix}, Assets: lists,
-		MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
-		Runtime:           cl, RuntimeIndex: runtimeIndex,
+	newSched := func() *detect.Scheduler {
+		s := &detect.Scheduler{
+			Library: lib, Engine: eng, Findings: fstore, Log: log,
+			Risk: &risk.Store{Client: cl, Prefix: prefix}, Assets: lists,
+			MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
+			Runtime:           cl, RuntimeIndex: runtimeIndex,
+		}
+		s.SetCatchUp(c.DetectionsCatchUp())
+		s.SetSpread(c.Detections.Spread)
+		return s
 	}
-	sched.SetCatchUp(c.DetectionsCatchUp())
+	sched := newSched()
+	var spread *detSpread
 	server, nodeID := "", ""
 	if t.r.node != nil {
 		server, nodeID = t.r.node.Name(), t.r.node.ID()
@@ -526,6 +532,9 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 		if t.r.shared != nil {
 			sched.Counter = t.r.shared.DetectionEpochs
+			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints,
+				func() string { return detFilesFingerprint(c, t.r.shared, t.sharedOK != nil, false) }, log)
+			srv.SpreadScheduler = spread.sched
 		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
@@ -571,9 +580,17 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			log.Error("could not create the tenant's indices; its detections, feeds, notifications and playbooks do not run until it is started again")
 			return
 		}
+		if spread != nil && c.LeaderEligible() {
+			spread.follow(ctx, &ti.jobs)
+		}
 		runWhileLeader(ctx, t.leader, []cluster.Job{
 			{Name: "summaries", Run: sumBuilder.Run},
 			{Name: "detections", Run: sched.Start},
+			{Name: "detection assignment", Run: func(ctx context.Context) {
+				if spread != nil {
+					spread.assign(ctx)
+				}
+			}},
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
 			{Name: "playbooks", Run: pbRunner.Run},
