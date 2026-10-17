@@ -1157,6 +1157,7 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
 `POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
@@ -1192,7 +1193,7 @@ four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/
 itself rather than one tenant's data are refused to tenants' users, whatever their role:
 every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
 `/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
-`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat` and `/api/baselines` route. So are the routes
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat`, `/api/baselines` and `/api/summaries` route. So are the routes
 that make the server send requests to addresses a user gives, though they change a
 tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,

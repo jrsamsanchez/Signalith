@@ -191,6 +191,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyContingency(ctx, res, c)
 	case *query.Format:
 		return applyFormat(ctx, res, c)
+	case *query.Return:
+		return applyReturn(ctx, res, c)
+	case *query.MakeContinuous:
+		return applyMakeContinuous(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

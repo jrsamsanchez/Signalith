@@ -213,6 +213,9 @@
   // ---------- the list ----------
   pageHooks.push((name) => {
     if (name !== 'users') return;
+    // Directory users are the provider's, so a tenant's admins have no
+    // Directory sign-in tab (data-provider-only).
+    if (inTenant()) U.tab = 'users';
     selectTab(U.tab, false);
     loadUsers({ quiet: !!U.data });
     if (U.tab === 'directory') loadDirectory();
@@ -348,7 +351,8 @@
     if (local) bits.push(`${local} local`);
     if (dirUsers) bits.push(`${dirUsers} from the directory`);
     let note = null;
-    if (users.length === 1 && !directory.enabled) {
+    // A tenant's admins have no built-in admin or directory sign-in.
+    if (users.length === 1 && !directory.enabled && !inTenant()) {
       note = el('span', {}, 'Only the built-in admin can sign in. Add a user for each person, or ',
         el('button', { type: 'button', class: 'link-btn', onclick: () => selectTab('directory', true) }, 'set up directory sign-in'), '.');
     } else if (directory.enabled) {
@@ -375,9 +379,10 @@
   $('u-find').addEventListener('input', () => { if (U.data) renderUsers(); });
 
   // The Audit page, with the records about users: who added, changed or
-  // removed them, and sign-ins.
+  // removed them, and sign-ins. It is about the server itself, so a
+  // tenant's admins don't have it (data-provider-only).
   {
-    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'u-audit' }, icon('scroll-text'), 'Audit');
+    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'u-audit', 'data-provider-only': '' }, icon('scroll-text'), 'Audit');
     btn.addEventListener('click', () => window.openAudit && window.openAudit({ q: 'user' }));
     $('u-add').before(btn);
   }
@@ -627,7 +632,7 @@
     if (b && currentPage === 'users') b.focus();
   };
   document.querySelector('.u-tabs').addEventListener('keydown', (ev) => {
-    if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
+    if ((ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') || inTenant()) return;
     const next = TABS[(TABS.indexOf(U.tab) + 1) % TABS.length];
     selectTab(next, true);
     $('u-tab-' + next).focus();

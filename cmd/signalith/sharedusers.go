@@ -62,6 +62,7 @@ type usersParts struct {
 	locks    *clusterauth.Locks
 	seen     *clusterauth.LastSeen
 	recheck  *clusterauth.Recheck
+	spent    *clusterauth.Spent
 	browsers *auth.BrowserKey
 	node     *cluster.Node
 }
@@ -123,6 +124,7 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 	locks.Follow()
 	jobs.Go(func() { locks.Run(ctx) })
 	p := &usersParts{store: st, dir: dir, sessions: sess, locks: locks, seen: seen, node: node, browsers: legacyBrowsers,
+		spent:   &clusterauth.Spent{Docs: ua.docs, Client: client, Node: node.ID()},
 		recheck: &clusterauth.Recheck{Docs: ua.docs, Store: st, Users: ub, Directory: dir, Sessions: sess, Log: log}}
 	// A browser known on one server is known on every one.
 	if k := rt.Hub().Keys().Active(); k != nil {
@@ -275,7 +277,7 @@ func (ua *sharedUsers) builtinSetHere(c *config.Config) func(context.Context) {
 func (p *usersParts) api(c *config.Config) *api.SharedUsers {
 	local := &localHash{dir: c.StateDir()}
 	return &api.SharedUsers{Docs: p.sessions.Docs, Seen: p.seen, LocalHash: local.get,
-		WritesRefused: p.node.WritesRefused, MayDegrade: p.sessions.MayDegrade}
+		WritesRefused: p.node.WritesRefused, MayDegrade: p.sessions.MayDegrade, Spent: p.spent}
 }
 
 // localHashFor is how long the hash signalith passwd -local wrote is used
@@ -322,6 +324,9 @@ func (p *usersParts) housekeep(ctx context.Context, log *slog.Logger) {
 	}
 	if _, err := p.locks.Housekeep(ctx); err != nil {
 		log.Debug("could not delete sign-in lockouts that ended", "err", err)
+	}
+	if _, err := p.spent.Housekeep(ctx); err != nil {
+		log.Debug("could not delete the records of used sign-ins that ended", "err", err)
 	}
 	// The last sign-ins of deleted users; the built-in admin is a user
 	// document too.

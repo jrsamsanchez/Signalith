@@ -227,13 +227,6 @@ func applyFormat(ctx context.Context, res *Result, c *query.Format) error {
 		rows = rows[:c.MaxResults]
 	}
 	p := c.Parts
-	quoted := func(name string, v any) (string, bool) {
-		s, ok := evStr(v)
-		if !ok {
-			return "", false
-		}
-		return query.FormatValue(name) + `="` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`, true
-	}
 	var b strings.Builder
 	wrote := 0
 	for i, r := range rows {
@@ -257,7 +250,7 @@ func applyFormat(ctx context.Context, res *Result, c *query.Format) error {
 					if !ev.step() {
 						return ev.err
 					}
-					if q, ok := quoted(f, e); ok {
+					if q, ok := searchTerm(f, e); ok {
 						alts = append(alts, q)
 					}
 				}
@@ -265,7 +258,7 @@ func applyFormat(ctx context.Context, res *Result, c *query.Format) error {
 					continue
 				}
 				t = "( " + strings.Join(alts, " "+c.MVSep+" ") + " )"
-			} else if q, ok := quoted(f, v); ok {
+			} else if q, ok := searchTerm(f, v); ok {
 				t = q
 			} else {
 				continue
@@ -295,4 +288,18 @@ func applyFormat(ctx context.Context, res *Result, c *query.Format) error {
 	}
 	res.Rows, res.Columns, res.Kind = []Row{{query.FormatField: out}}, []string{query.FormatField}, "table"
 	return nil
+}
+
+// searchTerm writes name="value" so a search reads it back as that
+// field and value.
+func searchTerm(name string, v any) (string, bool) {
+	s, ok := evStr(v)
+	if !ok {
+		return "", false
+	}
+	return query.FormatValue(name) + `="` + searchEscape(s) + `"`, true
+}
+
+func searchEscape(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`)
 }

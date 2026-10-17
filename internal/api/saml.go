@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/saml"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -312,6 +313,19 @@ func (s *Server) handleSAMLACS(w http.ResponseWriter, r *http.Request) {
 	if !s.samlReplays.Use(idp.EntityID+" "+a.ID, a.Expires, now) {
 		s.ssoFail(w, r, "replay", a.NameID, "the SAML assertion "+oidcText(a.ID)+" was used before")
 		return
+	}
+	// With several servers, the assertion is spent on all of them; when
+	// that cannot be recorded, another server may have taken it already.
+	if su := s.SharedUsers; su != nil && su.Spent != nil {
+		err := su.Spent.Use(ctx, "saml", idp.EntityID+" "+a.ID, a.Expires)
+		if errors.Is(err, clusterauth.ErrSpent) {
+			s.ssoFail(w, r, "replay", a.NameID, "the SAML assertion "+oidcText(a.ID)+" was used before, on another server")
+			return
+		}
+		if err != nil {
+			s.ssoFail(w, r, "store", a.NameID, "the SAML assertion could not be recorded as used for the other servers: "+err.Error())
+			return
+		}
 	}
 	set := c.SAMLSettings()
 	u, matched, code, reason := samlIdentityOf(set, idp.EntityID, a)

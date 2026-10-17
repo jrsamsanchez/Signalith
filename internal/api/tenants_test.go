@@ -130,6 +130,14 @@ func TestProviderSwitchesTenants(t *testing.T) {
 	if code != 200 || list["active"] != tenants.Default || list["enabled"] != true || len(list["tenants"].([]any)) != 2 {
 		t.Fatalf("tenants = %d %v", code, list)
 	}
+	// Settings > Tenants shows when each was added; only admins are told
+	// whether tenants can be added.
+	if acme := list["tenants"].([]any)[1].(map[string]any); acme["created"] == nil || acme["created_by"] != "test" {
+		t.Errorf("acme = %v", acme)
+	}
+	if _, ok := list["off"]; ok {
+		t.Errorf("an analyst is told whether tenants can be added: %v", list)
+	}
 	if code, _, _ := call(t, ts, "GET", "/api/findings", "", "", "", cookie); code != 200 {
 		t.Errorf("findings in the default tenant: %d", code)
 	}

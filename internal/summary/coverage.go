@@ -21,6 +21,9 @@ type Coverage struct {
 
 	mu     sync.RWMutex
 	ranges map[string][]Range
+	states map[string]State
+	read   time.Time
+	err    error
 }
 
 const refreshEvery = 30 * time.Second
@@ -54,14 +57,35 @@ func (c *Coverage) Refresh(ctx context.Context) {
 		c.Log.Debug("summaries: could not read their state", "error", err)
 	}
 	c.mu.Lock()
-	c.ranges = out
+	c.ranges, c.states, c.err = out, sts, err
+	if err == nil {
+		c.read = time.Now()
+	}
 	c.mu.Unlock()
+}
+
+// Status returns each data model's state as last read, when it was read,
+// and why the last read failed, for Settings > Search.
+func (c *Coverage) Status() (states map[string]State, read time.Time, err error) {
+	if c == nil {
+		return nil, time.Time{}, nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.states, c.read, c.err
 }
 
 // Set replaces the covered ranges, for tests.
 func (c *Coverage) Set(ranges map[string][]Range) {
 	c.mu.Lock()
 	c.ranges = ranges
+	c.mu.Unlock()
+}
+
+// SetStates replaces the states as if just read, for tests.
+func (c *Coverage) SetStates(states map[string]State) {
+	c.mu.Lock()
+	c.states, c.read, c.err = states, time.Now(), nil
 	c.mu.Unlock()
 }
 
