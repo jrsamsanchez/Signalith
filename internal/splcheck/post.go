@@ -45,6 +45,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	// lookup's fields without its table and columns.
 	var scan []string
 	multi := map[string]bool{}
+	lists := map[string]bool{}
 	outs := map[string]*lookupOut{}
 	grouped := group != ""
 	var groupStages []string
@@ -84,6 +85,11 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 				return err
 			}
 			s = "search " + m[1]
+			if w, ok, err := listSearch(m[1]); err != nil {
+				return err
+			} else if ok {
+				s = w
+			}
 		} else if m := whereRe.FindStringSubmatch(s); m != nil {
 			cond := inStarCompared(quoteCompared(quoteDotted(m[1])))
 			s = "where " + cond
@@ -99,6 +105,9 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		// a tstats search's missing fields are.
 		expand, err := multiUse(nodeFieldRe.ReplaceAllString(s, "$1"), outs)
 		if err != nil {
+			return err
+		}
+		if err := listGroups(s, lists); err != nil {
 			return err
 		}
 		parts = append(parts, expand...)
@@ -228,6 +237,174 @@ func multiIn(stage string, multi map[string]bool) (string, bool) {
 	}
 	f := quoteField(m[1])
 	return "where in(mvmap(" + f + ", lower(" + f + ")), " + strings.Join(vals, ", ") + ")", true
+}
+
+// listGroups returns an error for a stats that groups by a field that
+// holds the values spath takes from a JSON list ({}.EntitlementId, or a
+// rename or copy of one), noting in lists the fields stage makes so.
+// Splunk's stats groups an event by each of a field's values, and Splunk
+// does not say how it counts one that holds the same value twice;
+// Signalith's groups by the values as one.
+func listGroups(stage string, lists map[string]bool) error {
+	q, err := query.Parse("* | " + stage)
+	if err != nil || len(q.Commands) != 1 {
+		return nil // reported when the stages are parsed
+	}
+	isList := func(f string) bool { return strings.HasPrefix(f, "{}") || lists[f] }
+	var by []string
+	switch c := q.Commands[0].(type) {
+	case *query.Rename:
+		for _, p := range c.Pairs {
+			if !strings.Contains(p[0], "*") {
+				lists[p[1]] = isList(p[0])
+			}
+		}
+	case *query.Eval:
+		for _, a := range c.Assigns {
+			f, copied := a.Expr.(*query.Field)
+			lists[a.Field] = copied && isList(f.Name)
+		}
+	case *query.Stats:
+		by = c.By
+	case *query.EventStats:
+		by = c.By
+	}
+	for _, f := range by {
+		if isList(f) {
+			return fmt.Errorf("search has a later stage Signalith reads differently: %s groups by %s, which holds a list's values", firstWords(stage), f)
+		}
+	}
+	return nil
+}
+
+// adjacentQuotedRe is a quoted string right after another, with no space
+// between ("a""b"="c").
+var adjacentQuotedRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*""`)
+
+// listSearch writes a later search that names a field of a list (one
+// with {} in its name, as spath and a record's lists make, which may
+// hold several values) as the where Signalith reads the same way.
+// Splunk's search keeps the row when one of the field's values matches,
+// ignoring case, and drops it when the field has no value; Signalith's
+// search compares the values as one, so each field=value of such a field
+// is in() over its values in lower case, and the terms keep their AND
+// and OR. A list's field compared other than with = to text without a *
+// (a number, which a search may read as one), or under NOT, is refused.
+// ok is false for a search that names no list's field.
+func listSearch(terms string) (where string, ok bool, err error) {
+	if !strings.Contains(terms, "{}") {
+		return "", false, nil
+	}
+	q, perr := query.Parse("* | search " + terms)
+	if perr != nil || len(q.Commands) != 1 {
+		return "", false, nil // reported when the stages are parsed
+	}
+	w, isWhere := q.Commands[0].(*query.Where)
+	if !isWhere {
+		return "", false, nil
+	}
+	list := false
+	walkFilter(w.Expr, func(e query.Expr) {
+		switch x := e.(type) {
+		case *query.Compare:
+			list = list || strings.Contains(x.Field, "{}")
+		case *query.In:
+			list = list || strings.Contains(x.Field, "{}")
+		}
+	})
+	if !list {
+		return "", false, nil
+	}
+	if adjacentQuotedRe.MatchString(terms) {
+		return "", false, fmt.Errorf("search has a later stage Signalith reads differently: search %s has two terms with no space between them", firstWords(terms))
+	}
+	refuse := func(why string) error {
+		return fmt.Errorf("search has a later stage Signalith reads differently: search %s %s", firstWords(terms), why)
+	}
+	text := func(v string) (string, error) {
+		if v == "" || strings.ContainsAny(v, `*"\`) {
+			return "", refuse("compares a list's field with " + v)
+		}
+		if _, err := strconv.ParseFloat(v, 64); err == nil {
+			return "", refuse("compares a list's field with the number " + v)
+		}
+		return `"` + strings.ToLower(v) + `"`, nil
+	}
+	var write func(e query.Expr) (string, error)
+	join := func(kids []query.Expr, op string) (string, error) {
+		var parts []string
+		for _, k := range kids {
+			s, err := write(k)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, s)
+		}
+		return "(" + strings.Join(parts, " "+op+" ") + ")", nil
+	}
+	write = func(e query.Expr) (string, error) {
+		switch x := e.(type) {
+		case *query.And:
+			return join(x.Children, "AND")
+		case *query.Or:
+			// Tests of one field joined by OR are one test of it against
+			// all their values (f=a OR f=b is f IN (a, b)).
+			var kids []query.Expr
+			byField := map[string]*query.In{}
+			for _, k := range x.Children {
+				var in *query.In
+				switch c := k.(type) {
+				case *query.Compare:
+					if c.Op == "=" {
+						in = &query.In{Field: c.Field, Values: []string{c.Value}}
+					}
+				case *query.In:
+					in = &query.In{Field: c.Field, Values: slices.Clone(c.Values)}
+				}
+				if in == nil {
+					kids = append(kids, k)
+				} else if had := byField[in.Field]; had != nil {
+					had.Values = append(had.Values, in.Values...)
+				} else {
+					byField[in.Field] = in
+					kids = append(kids, in)
+				}
+			}
+			if len(kids) == 1 {
+				return write(kids[0])
+			}
+			return join(kids, "OR")
+		case *query.Compare:
+			if x.Op != "=" {
+				return "", refuse("compares " + x.Field + " with " + x.Op)
+			}
+			v, err := text(x.Value)
+			if err != nil {
+				return "", err
+			}
+			f := quoteField(x.Field, true)
+			return "in(mvmap(" + f + ", lower(" + f + ")), " + v + ")", nil
+		case *query.In:
+			var vals []string
+			for _, s := range x.Values {
+				v, err := text(s)
+				if err != nil {
+					return "", err
+				}
+				vals = append(vals, v)
+			}
+			f := quoteField(x.Field, true)
+			return "in(mvmap(" + f + ", lower(" + f + ")), " + strings.Join(vals, ", ") + ")", nil
+		case *query.Not:
+			return "", refuse("tests a list's field under NOT")
+		}
+		return "", refuse(fmt.Sprintf("has the term %s", e))
+	}
+	s, err := write(w.Expr)
+	if err != nil {
+		return "", false, err
+	}
+	return "where " + s, true, nil
 }
 
 // laterSearch returns an error for a later search's terms that Signalith

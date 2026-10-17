@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -104,6 +105,36 @@ func TestHintsSkipNegatedAndSedTests(t *testing.T) {
 	c := hs[0].(*Cmp)
 	if c.Field != "script_block_text" || !c.Regex || c.Values[0] != "(?i)virtualalloc" {
 		t.Errorf("hint %#v", c)
+	}
+}
+
+// A number a later where compares a rex's group with is a hint of the
+// rex's field: the pattern with that number for the group.
+func TestHintsOfARexGroupsNumber(t *testing.T) {
+	r, err := Parse(rule("`wineventlog_security` EventCode=4723 TargetSid IN (\"*500*\", \"*512*\")\n"+
+		"| rex field=TargetSid \"-(?<target_rid>\\d+)$\"\n| rex field=SubjectUserSid \"-(?<subject_rid>\\d+)$\"\n"+
+		"| where tonumber(target_rid)=500 OR tonumber(target_rid) IN (512)\n| where tonumber(subject_rid) >= 1000\n| where subject_rid != target_rid\n"+
+		"| stats count by dest TargetSid SubjectUserSid"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vals []string
+	for _, h := range r.hints() {
+		if c := h.(*Cmp); c.Regex && !strings.Contains(c.Values[0], "<") {
+			vals = append(vals, c.Field+" "+c.Values[0])
+		}
+	}
+	if want := `object_sid -(?:500)$, object_sid -(?:512)$, user_sid -(?:1000)$`; strings.Join(vals, ", ") != want {
+		t.Errorf("hints %v, want %s", vals, want)
+	}
+	pos := found(Cases(r))
+	if len(pos) == 0 {
+		t.Fatal("no test event is found")
+	}
+	for _, c := range pos {
+		if !regexp.MustCompile(`-(500|512)$`).MatchString(c.Data["TargetSid"]) {
+			t.Errorf("found with target %s", c.Data["TargetSid"])
+		}
 	}
 }
 
