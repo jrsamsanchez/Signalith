@@ -41,6 +41,7 @@ var fieldTokenRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'([^']+)'|([A-Za-z_][\w
 // ("" for a raw search).
 func (r *Rule) postCommands(stages []string, field func(string) (string, bool), group string) error {
 	var parts []string
+	multi := map[string]bool{}
 	for _, s := range stages {
 		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
 		if s == "" {
@@ -48,6 +49,9 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		}
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+		}
+		if err := multiFilter(s, multi); err != nil {
+			return err
 		}
 		// A later search filters the rows as a where of the same terms
 		// does in Signalith: case-insensitive, with wildcards.
@@ -109,6 +113,40 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	r.Post = text
 	r.post = q.Commands
+	r.postField = field
+	return nil
+}
+
+// makemvRe is a makemv stage, with the field it splits; splitEvalRe an
+// eval that sets a field to a split of text.
+var (
+	makemvRe    = regexp.MustCompile(`(?is)^makemv\b.*?\s([A-Za-z_][\w.]*)\s*$`)
+	splitEvalRe = regexp.MustCompile(`(?i)(?:^eval\s+|,\s*)([A-Za-z_][\w.]*)\s*=\s*split\s*\(`)
+)
+
+// multiFilter returns an error for a later search or where that filters
+// on a field an earlier stage made multivalue (makemv, split), noting
+// the fields stage makes so in multi. Splunk keeps the row when any of
+// the values matches; Signalith's filter does not.
+func multiFilter(stage string, multi map[string]bool) error {
+	if m := makemvRe.FindStringSubmatch(stage); m != nil {
+		multi[m[1]] = true
+		return nil
+	}
+	for _, m := range splitEvalRe.FindAllStringSubmatch(stage, -1) {
+		multi[m[1]] = true
+	}
+	cond := ""
+	if m := searchRe.FindStringSubmatch(stage); m != nil {
+		cond = m[1]
+	} else if m := whereRe.FindStringSubmatch(stage); m != nil {
+		cond = m[1]
+	}
+	for _, m := range fieldTokenRe.FindAllStringSubmatch(cond, -1) {
+		if f := m[1] + m[2]; multi[f] {
+			return fmt.Errorf("search has a later stage Signalith reads differently: %s filters the values of multivalue %s", firstWords(stage), f)
+		}
+	}
 	return nil
 }
 
@@ -178,8 +216,9 @@ var burstSizes = []int{1, 2, 3, 4, 6, 11, 21, 26, 31, 51, 101, 201}
 
 // bursts returns, for an event the rule's filter matches but its later
 // stages drop, the smallest repeat of it that they keep (with one or
-// none of its fields different each time), and the largest smaller one
-// tried, which they drop; nil when no repeat comes through.
+// none of its fields different each time, or failing that every field
+// they count distinct values of), and the largest smaller one tried,
+// which they drop; nil when no repeat comes through.
 func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
 	// Splunk's stats drops events that miss a field it groups by, so the
 	// event gets each one it misses (the record's own names, as a cloud
@@ -204,6 +243,19 @@ func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
 			varies = append(varies, []string{k})
 		}
 	}
+	if out := r.burst(c, varies); out != nil {
+		return out
+	}
+	if len(counted) > 1 {
+		// A count of several fields' distinct values (addresses and
+		// browsers): all of them different each time.
+		return r.burst(c, [][]string{counted})
+	}
+	return nil
+}
+
+// burst is bursts with the fields each repeat varies.
+func (r *Rule) burst(c sigmacheck.Case, varies [][]string) []sigmacheck.Case {
 	for i, n := range burstSizes {
 		for _, vary := range varies {
 			if n == 1 && vary != nil {

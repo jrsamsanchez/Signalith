@@ -1,6 +1,7 @@
 package splcheck
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
@@ -38,33 +39,52 @@ var o365CIM = map[string]string{
 // (ModifiedProperties{}.NewValue). An Exchange cmdlet's parameters are
 // only in Parameters{}.Name and Parameters{}.Value, not by their own
 // names (Role, AccessRights), as Splunk's add-on extracts them.
-var o365Fields = map[string]bool{
-	// The common schema.
-	"Id": true, "RecordType": true, "CreationTime": true, "Operation": true, "OrganizationId": true, "UserType": true,
-	"UserKey": true, "Workload": true, "ResultStatus": true, "ObjectId": true, "UserId": true, "ClientIP": true,
+var o365Fields = map[string]bool{}
+
+// o365FieldGroups are those fields by the workload whose records carry
+// them ("" for the common schema, DLPRuleMatch for data loss prevention
+// matches), which a test record gets only when it is of that workload.
+var o365FieldGroups = map[string][]string{
+	"": {"Id", "RecordType", "CreationTime", "Operation", "OrganizationId", "UserType", "UserKey", "Workload",
+		"ResultStatus", "ObjectId", "UserId", "ClientIP"},
 	// Entra ID, and its sign-ins.
-	"AzureActiveDirectoryEventType": true, "ActorContextId": true, "ActorIpAddress": true, "InterSystemsId": true,
-	"IntraSystemId": true, "TargetContextId": true, "ApplicationId": true, "Client": true, "ErrorNumber": true,
-	"LogonError": true, "Actor{}.ID": true, "Actor{}.Type": true, "Target{}.ID": true, "Target{}.Type": true,
-	"ModifiedProperties{}.Name": true, "ModifiedProperties{}.NewValue": true, "ModifiedProperties{}.OldValue": true,
-	"ExtendedProperties{}.Name": true, "ExtendedProperties{}.Value": true,
+	"AzureActiveDirectory": {"AzureActiveDirectoryEventType", "ActorContextId", "ActorIpAddress", "InterSystemsId",
+		"IntraSystemId", "TargetContextId", "ApplicationId", "Client", "ErrorNumber", "LogonError", "Actor{}.ID",
+		"Actor{}.Type", "Target{}.ID", "Target{}.Type", "ModifiedProperties{}.Name", "ModifiedProperties{}.NewValue",
+		"ModifiedProperties{}.OldValue", "ExtendedProperties{}.Name", "ExtendedProperties{}.Value"},
 	// Exchange: admin cmdlets and mailbox access.
-	"OrganizationName": true, "OriginatingServer": true, "ExternalAccess": true, "Parameters{}.Name": true,
-	"Parameters{}.Value": true, "AppId": true, "ClientAppId": true, "ClientInfoString": true, "ClientIPAddress": true,
-	"ClientProcessName": true, "ClientVersion": true, "LogonType": true, "MailboxOwnerUPN": true, "OperationCount": true,
-	"OperationProperties{}.Name": true, "OperationProperties{}.Value": true, "Folder.Path": true,
-	"Item.ParentFolder.Path": true, "Item.ParentFolder.MemberUpn": true, "Item.ParentFolder.MemberRights": true,
-	"Item.Subject": true, "InternetMessageId": true,
+	"Exchange": {"OrganizationName", "OriginatingServer", "ExternalAccess", "Parameters{}.Name", "Parameters{}.Value",
+		"AppId", "ClientAppId", "ClientInfoString", "ClientIPAddress", "ClientProcessName", "ClientVersion", "LogonType",
+		"MailboxOwnerUPN", "OperationCount", "OperationProperties{}.Name", "OperationProperties{}.Value", "Folder.Path",
+		"Item.ParentFolder.Path", "Item.ParentFolder.MemberUpn", "Item.ParentFolder.MemberRights", "Item.Subject",
+		"InternetMessageId"},
 	// SharePoint and OneDrive.
-	"SiteUrl": true, "SourceFileName": true, "SourceFileExtension": true, "SourceRelativeUrl": true, "EventSource": true,
-	"ItemType": true, "EventData": true, "VirusInfo": true, "VirusVendor": true, "CorrelationId": true,
+	"SharePoint": {"SiteUrl", "SourceFileName", "SourceFileExtension", "SourceRelativeUrl", "EventSource", "ItemType",
+		"EventData", "VirusInfo", "VirusVendor", "CorrelationId"},
 	// The Security & Compliance Center's alerts.
-	"AlertId": true, "AlertType": true, "AlertEntityId": true, "EntityType": true, "Name": true, "PolicyId": true,
-	"Severity": true, "Category": true, "Source": true, "Data": true,
+	"SecurityComplianceCenter": {"AlertId", "AlertType", "AlertEntityId", "EntityType", "Name", "PolicyId", "Severity",
+		"Category", "Source", "Data"},
 	// Defender for Office 365's email records.
-	"DeliveryAction": true, "Directionality": true, "DetectionMethod": true, "DetectionType": true,
-	"LatestDeliveryLocation": true, "OriginalDeliveryLocation": true, "NetworkMessageId": true, "P1Sender": true,
-	"P2Sender": true, "SenderIp": true, "Recipients{}": true, "Subject": true, "Verdict": true,
+	"ThreatIntelligence": {"DeliveryAction", "Directionality", "DetectionMethod", "DetectionType",
+		"LatestDeliveryLocation", "OriginalDeliveryLocation", "NetworkMessageId", "P1Sender", "P2Sender", "SenderIp",
+		"Recipients{}", "Subject", "Verdict"},
+}
+
+func init() {
+	for _, fs := range o365FieldGroups {
+		for _, f := range fs {
+			o365Fields[f] = true
+		}
+	}
+}
+
+// o365Carries reports whether a record of a workload has a field of
+// Microsoft's schema.
+func o365Carries(workload, field string) bool {
+	if workload == "OneDrive" {
+		workload = "SharePoint"
+	}
+	return slices.Contains(o365FieldGroups[""], field) || slices.Contains(o365FieldGroups[workload], field)
 }
 
 // o365Field is the stored field of a Microsoft 365 search's field.
@@ -99,7 +119,9 @@ func o365Record(ev map[string]string) sigmacheck.Case {
 		}
 	}
 	for k, v := range ev {
-		if _, cim := o365CIM[k]; !cim && o365Fields[k] {
+		// A record's own field: one a search may name, or a list a later
+		// stage reads (ModifiedProperties, written as JSON).
+		if _, cim := o365CIM[k]; !cim && (o365Fields[k] || ingest.O365Field(k) && strings.HasPrefix(v, "[{")) {
 			data[k] = v
 		}
 	}

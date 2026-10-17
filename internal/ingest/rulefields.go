@@ -32,9 +32,13 @@ var cloudRuleFields = []string{
 	"ModifiedProperties{}.NewValue", "Item.ParentFolder.MemberRights", "Item.ParentFolder.MemberUpn", "SessionId",
 	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name", "ClientIPAddress",
 	"MailboxOwnerUPN",
+	// A stats group of Microsoft 365 rules that the records lack ("unknown").
+	"authentication_service",
 	// Google Workspace: an admin event's parameters.
 	"event_parameters.new_value", "event_parameters.setting_name",
 	// Okta: what an event's debugData says, whose names vary by event.
 	"debugContext.debugData.behaviors", "debugContext.debugData.factor", "debugContext.debugData.logOnlySecurityData",
-	"debugContext.debugData.url",
+	"debugContext.debugData.url", "debugContext.debugData.dtHash",
+	// Okta: the client and device of a sign-on, read by later stages.
+	"client.geographicalContext.city", "client.userAgent.browser", "client.userAgent.os", "device.os_platform",
 }

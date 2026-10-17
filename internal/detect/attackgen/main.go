@@ -1,9 +1,11 @@
 // Command attackgen checks the Splunk pack against the real attack
 // recordings its rules name (tests.attack_data in each rule, from
-// https://github.com/splunk/attack_data): each recorded Windows event goes
-// through Signalith's parser, and the converted detection must read it as
-// the rule's where clause does, and find at least one event, as Splunk
-// does on that data.
+// https://github.com/splunk/attack_data): each recorded Windows event,
+// Linux audit record or cloud record (CloudTrail, Entra ID and Azure,
+// Microsoft 365, Okta) goes through Signalith's parser, and the converted
+// detection must read it as the rule's where clause does, and find at
+// least one event, as Splunk does on that data. -extra checks rules of a
+// security_content checkout that the pack leaves out too.
 //
 //	go run ./internal/detect/attackgen -splunk ../security_content
 package main
@@ -39,7 +41,17 @@ var (
 	only     = flag.String("only", "", "check only rule files containing this")
 	write    = flag.Bool("write", false, "add up to two recorded events each rule finds to its test file")
 	list     = flag.String("list", "", "check only the rule files this file lists, one a line")
+	splunk   = flag.String("splunk", "", "security_content checkout, for -extra")
+	extra    = flag.String("extra", "", "also check the rules of the -splunk checkout this file lists (detections/cloud/x.yml), one a line")
 )
+
+// cloudChannels are the channels of the cloud recordings' sourcetypes:
+// each line of a recording is one record, as it was sent.
+var cloudChannels = map[string]string{
+	"aws:cloudtrail": sigmacheck.CloudTrailChannel, "azure:monitor:aad": sigmacheck.AzureChannel,
+	"azure:monitor:activity": sigmacheck.AzureChannel, "o365:management:activity": sigmacheck.O365Channel,
+	"OktaIM2:log": sigmacheck.OktaChannel,
+}
 
 type manifest struct {
 	Rules []struct {
@@ -111,16 +123,47 @@ func main() {
 			listed[l] = true
 		}
 	}
-	fired, silent, noData, wrong := 0, []string{}, 0, []string{}
+	type ruleFile struct{ File, Path, Src string }
+	var rules []ruleFile
 	for _, r := range m.Rules {
 		if *only != "" && !strings.Contains(r.File, *only) || listed != nil && !listed[r.File] {
 			continue
 		}
-		src, err := os.ReadFile(filepath.Join(*packDir, "rules", r.File))
+		rules = append(rules, ruleFile{r.File, r.Path, filepath.Join(*packDir, "rules", r.File)})
+	}
+	if *extra != "" {
+		// Rules the pack leaves out, with the checkout's own macros.
+		files, _ := filepath.Glob(filepath.Join(*splunk, "macros", "*.yml"))
+		for _, f := range files {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if mc, err := splcheck.ParseMacro(src); err == nil {
+				if _, ok := macros[mc.Name]; !ok {
+					macros[mc.Name] = mc
+				}
+			}
+		}
+		b, err := os.ReadFile(*extra)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, l := range strings.Fields(string(b)) {
+			rules = append(rules, ruleFile{filepath.Base(l), l, filepath.Join(*splunk, l)})
+		}
+	}
+	fired, silent, noData, wrong := 0, []string{}, 0, []string{}
+	for _, r := range rules {
+		src, err := os.ReadFile(r.Src)
 		if err != nil {
 			log.Fatal(err)
 		}
 		rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path)})
+		if err != nil && r.Src != filepath.Join(*packDir, "rules", r.File) {
+			fmt.Printf("does not convert: %s: %v\n", r.File, err)
+			continue
+		}
 		if err != nil {
 			log.Fatalf("%s: %v", r.File, err)
 		}
@@ -138,6 +181,9 @@ func main() {
 				case strings.HasPrefix(a.Sourcetype, "XmlWinEventLog"):
 				case a.Sourcetype == "auditd":
 					read = auditdRecording
+				case cloudChannels[a.Sourcetype] != "":
+					ch := cloudChannels[a.Sourcetype]
+					read = func(url string) ([]sigmacheck.Case, error) { return cloudRecording(url, ch) }
 				default:
 					continue
 				}
@@ -195,7 +241,7 @@ func main() {
 		if rule.Threshold != nil && hits > 0 {
 			fmt.Printf("count: %s: the recording reaches the limits: %v\n", r.File, splcheck.Reaches(rule.Threshold, found))
 		}
-		if *write {
+		if *write && r.Src == filepath.Join(*packDir, "rules", r.File) {
 			if err := keep(r.File, found); err != nil {
 				log.Fatal(err)
 			}
@@ -207,7 +253,7 @@ func main() {
 		}
 	}
 	sort.Strings(silent)
-	fmt.Printf("fired %d, silent %d, no Windows recording %d, disagreements %d\n", fired, len(silent), noData, len(wrong))
+	fmt.Printf("fired %d, silent %d, no recording %d, disagreements %d\n", fired, len(silent), noData, len(wrong))
 	for _, s := range silent {
 		fmt.Println("silent:", s)
 	}
@@ -324,6 +370,39 @@ func auditdRecording(url string) ([]sigmacheck.Case, error) {
 			continue
 		}
 		out = append(out, sigmacheck.Case{Source: "attack_data", Channel: sigmacheck.AuditdChannel, EventID: rec.Type, Data: map[string]string{"_raw": line}})
+	}
+	return out, nil
+}
+
+// cloudRecording reads a recorded cloud log (one JSON record a line, as
+// it was sent). Each record is kept as it is.
+func cloudRecording(url, channel string) ([]sigmacheck.Case, error) {
+	path := filepath.Join(*cacheDir, strings.NewReplacer("https://", "", "/", "_").Replace(url))
+	if _, err := os.Stat(path); err != nil {
+		if err := download(url, path); err != nil {
+			return nil, err
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > *maxBytes {
+		b = b[:*maxBytes]
+	}
+	// The event ID test events of the channel have: an Okta event is a
+	// System Log event; the others' are not read.
+	id := "record"
+	if channel == sigmacheck.OktaChannel {
+		id = "log"
+	}
+	var out []sigmacheck.Case
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		out = append(out, sigmacheck.Case{Source: "attack_data", Channel: channel, EventID: id, Data: map[string]string{"_raw": line}})
 	}
 	return out, nil
 }

@@ -72,6 +72,9 @@ type Rule struct {
 	// none); post is the same, parsed.
 	Post string          `yaml:"-"`
 	post []query.Command `yaml:"-"`
+	// postField is the Signalith field of a field the later stages name
+	// (false for none).
+	postField func(string) (string, bool) `yaml:"-"`
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
