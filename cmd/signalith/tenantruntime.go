@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -187,6 +188,9 @@ func (ti *tenantInstance) stop() {
 	ti.jobs.Wait()
 }
 
+// tenantFolderID matches the IDs tenants.ValidID allows.
+var tenantFolderID = regexp.MustCompile(`^[a-z][a-z0-9]{1,23}$`)
+
 // start builds tenant id's server, as runner.start builds the default
 // tenant's, from the tenant's own config. What a tenant cannot have yet
 // is left out (see docs/multi-tenant.md): syslog, Microsoft 365,
@@ -195,6 +199,11 @@ func (ti *tenantInstance) stop() {
 func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	if err := tenants.ValidID(id); err != nil {
 		return nil, err
+	}
+	// The same rule as a pattern, which CodeQL can see: the ID names the
+	// tenant's folder, and every file its server reads is in it.
+	if !tenantFolderID.MatchString(id) {
+		return nil, fmt.Errorf("tenant ID %q cannot name a folder", id)
 	}
 	// The settings in use now, with those applied at once since start.
 	c := t.front.Running().ForTenant(id)
