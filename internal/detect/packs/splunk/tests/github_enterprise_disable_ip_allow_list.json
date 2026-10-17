@@ -1,0 +1,5 @@
+{"rule": "afed020e-edcd-4913-a675-cebedf81d4fb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"ip_allow_list.disable"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"ip_allow_list.disablf"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

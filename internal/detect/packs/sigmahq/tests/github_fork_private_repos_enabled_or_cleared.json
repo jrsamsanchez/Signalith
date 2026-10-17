@@ -1,0 +1,4 @@
+{"rule": "69b3bd1e-b38a-462f-9a23-fbdbf63d2294", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"private_repository_forking.enable"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

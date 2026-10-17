@@ -179,6 +179,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyAutoRegress(ctx, res, c)
 	case *query.FieldSummary:
 		return applyFieldSummary(ctx, res, c)
+	case *query.Transpose:
+		return applyTranspose(ctx, res, c)
+	case *query.FillDown:
+		return applyFillDown(ctx, res, c)
+	case *query.Trendline:
+		return applyTrendline(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

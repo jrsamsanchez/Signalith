@@ -130,6 +130,7 @@ nav:
       - Microsoft 365: microsoft-365.md
       - Okta: okta.md
       - Kubernetes audit logs: kubernetes-audit.md
+      - GitHub audit log: github-audit-log.md
       - Google Cloud: google-cloud.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
@@ -139,6 +140,7 @@ nav:
       - Query language: query-language.md
       - Lookup tables: lookups.md
       - Detections: detections.md
+      - Behavior baselines: baselines.md
       - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
       - AI tools (MCP): ai-tools.md

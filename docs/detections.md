@@ -152,6 +152,9 @@ runs `* | threatmatch` every 5 minutes over the last 10, raises one finding per
 indicator and target system per day, and adds 60 risk times the indicator's weight
 to `threat_target` and `user`. See [threat-intel.md](threat-intel.md).
 
+[Behavior baselines](baselines.md) add risk the same way for first-seen and rare
+activity, such as a sign-in from a new country.
+
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 
@@ -330,7 +333,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,512 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,524 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -340,8 +343,8 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
-[Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), and 15 Kubernetes rules (see
-[Kubernetes](#kubernetes)):
+[Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), 15 Kubernetes rules (see
+[Kubernetes](#kubernetes)), and 12 GitHub rules (see [GitHub](#github)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -367,6 +370,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
 | `product: okta`, `service: okta` | Okta System Log events (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
 | `product: kubernetes`, `service: audit` | Kubernetes audit events (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
+| `product: github`, `service: audit` | GitHub audit log events (see [GitHub](#github)) | Change, Authentication or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -766,6 +770,25 @@ names, one that compares the country, the Falco rule, the metrics and Splunk Con
 Kubernetes object rules, and experimental and hunting rules are left out. To send the
 audit log, see [Kubernetes audit logs](kubernetes-audit.md).
 
+### GitHub
+
+SigmaHQ's 12 tested GitHub audit log rules ship. They name the event's own `action`
+(`repo.destroy`, `org.disable_two_factor_requirement`), which Signalith keeps as
+`vendor_action`, as Splunk's add-on for GitHub does, since `action` is the CIM field.
+Every rule searches `sourcetype=github:cloud:audit`. `github_new_org_member` is
+informational, and `github_pages_site_changed_to_public` and
+`github_repository_archive_status_changed` are experimental, so they are left out.
+
+The Splunk pack adds 18 GitHub detections (see
+[Splunk Security Content](#splunk-security-content)): the 12 `github_enterprise` searches,
+which name GitHub's own fields (`action`, `actor`, `reason`) as audit log streaming sends
+them, and the 6 `github_organizations` searches, which name GitHub's action
+`vendor_action` as Splunk's add-on for GitHub does. GitHub's `actor`, `user`, `reason`,
+`name` and `user_agent` are kept as `github_actor`, `github_user` and so on, and
+`action` as `vendor_action`, so both macros' searches read the same events, limited to
+`sourcetype=github:cloud:audit`. To send the audit log, see
+[GitHub audit log](github-audit-log.md).
+
 ### Google Cloud
 
 SigmaHQ's 16 tested Google Cloud audit log rules ship. Most name a call's method as
@@ -797,8 +820,8 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,167 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta and Kubernetes detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,185 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -850,6 +873,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `okta` `` (raw search) | Okta System Log events, by Okta's own field names and the CIM fields Splunk's add-on for Okta Identity Cloud gives them (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
 | `Authentication.Authentication`, `Change.All_Changes` (rules whose only data source is Okta) | Okta System Log events of that data model (see [Okta](#okta)) | Authentication or Change |
 | `` `kube_audit` `` (raw search) | Kubernetes audit events, by the Event's own field names (`user.` is `kube_user.`) and the CIM fields Signalith gives them (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
+| `` `github_enterprise` ``, `` `github_organizations` `` (raw search) | GitHub audit log events, by GitHub's own field names (GitHub's action, `action` in `github_enterprise`'s searches and `vendor_action` in `github_organizations`', is `vendor_action`; `actor` is `github_actor`) and the CIM fields Signalith gives them (see [GitHub](#github)) | Change, Authentication or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 

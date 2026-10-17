@@ -1,0 +1,4 @@
+{"rule": "f8ed0e8f-7438-4b79-85eb-f358ef2fbebd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.runner_group_created"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}
