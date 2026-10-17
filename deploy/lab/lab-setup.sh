@@ -220,6 +220,13 @@ cluster.initial_cluster_manager_nodes: [${managers%, }]"
     script "$n" NAME="$n" IP="$(ip_of "$n")" VERSION="$OPENSEARCH_VERSION" DISCOVERY="$discovery" <<'EOF'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# The load test's nodes keep their data on a volume of their own.
+vol=$(ls /dev/disk/by-id/scsi-0HC_Volume_* 2>/dev/null | head -n 1 || true)
+if [ -n "$vol" ] && ! mountpoint -q /var/lib/opensearch; then
+  mkdir -p /var/lib/opensearch
+  grep -q " /var/lib/opensearch " /etc/fstab || echo "$vol /var/lib/opensearch ext4 discard,nofail,defaults 0 0" >>/etc/fstab
+  mount /var/lib/opensearch
+fi
 if ! dpkg -s opensearch >/dev/null 2>&1; then
   curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt stable main" >/etc/apt/sources.list.d/opensearch-2.x.list
@@ -230,6 +237,7 @@ if ! dpkg -s opensearch >/dev/null 2>&1; then
     apt-get install -y -q "opensearch=$VERSION"
 fi
 systemctl stop opensearch 2>/dev/null || true
+chown opensearch:opensearch /var/lib/opensearch
 # The package puts its demo certificates next to opensearch.yml even when
 # told not to set them up, and the security plugin refuses to start while
 # they are there.
@@ -588,6 +596,27 @@ sensor() {
     fail "The sensor did not install. Its output is above."
 }
 
+# ---- 8. the load test's generator ----
+
+# loadgen puts signalith-loadgen on the load generator, with what its
+# scenarios read in /root/loadtest (root's only): the CA, an agent token
+# and the admin's password.
+loadgen() {
+  local token
+  cd "$LAB/src"
+  CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -o "$LAB/signalith-loadgen" ./cmd/signalith-loadgen
+  # The API asks for the first password to be replaced first (api does).
+  api /api/me >/dev/null
+  token=$(sg tokens create -purpose linux "Load test $(date +%m%d-%H%M%S)")
+  on loadgen 'install -d -m 700 /root/loadtest'
+  scp -q -i "$LAB/id_lab" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$LAB/known_hosts" -o LogLevel=ERROR \
+    "$LAB/signalith-loadgen" "$LAB/src/loadtest/tb-day.yaml" /var/lib/signalith/tls/ca.pem "root@$(ip_of loadgen):/root/loadtest/"
+  printf '%s\n' "$token" | on loadgen 'umask 077 && cat >/root/loadtest/token.txt'
+  { printf 'admin:'; admin_password; } | on loadgen 'umask 077 && cat >/root/loadtest/admin.txt'
+  on loadgen 'chmod 600 /root/loadtest/*; chmod 700 /root/loadtest/signalith-loadgen; /root/loadtest/signalith-loadgen check /root/loadtest/tb-day.yaml' >/dev/null
+  install -m 755 "$LAB/src/deploy/lab/lab-loadtest.sh" /usr/local/sbin/lab-loadtest
+}
+
 # ---- run ----
 
 say "Signalith lab setup: $SIZE lab, Signalith $REF"
@@ -601,7 +630,8 @@ step opensearch-ca opensearch_ca
 if have signalith-2; then step signalith-2 join signalith-2; fi
 if have scanner; then step scanner join scanner scanner; fi
 if have scanner && [ "$OPENVAS" = true ]; then step openvas openvas; fi
-step endpoints endpoints
+if [ -n "$(names linux)" ]; then step endpoints endpoints; fi
+if have loadgen; then step loadgen loadgen; fi
 if have sensor; then
   step mirror mirror
   step sensor sensor
@@ -623,6 +653,6 @@ cat <<MSG
   Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md
   (Windows, the scan networks, single sign-on).
-  To test everything: sudo lab-e2e
+  To test everything: sudo lab-e2e$(have loadgen && printf '\n  To run the load test: sudo lab-loadtest (see docs/cloud-lab.md)')
 
 MSG
