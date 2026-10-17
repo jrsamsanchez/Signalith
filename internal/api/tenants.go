@@ -194,10 +194,15 @@ func (s *Server) dispatchTo(rt route, p *principal) (t *Server, other bool) {
 // does): the agent is told to send again later, as its batch would
 // otherwise be refused and lost.
 func (s *Server) agentTenant(r *http.Request) (t *Server, wait bool) {
+	return s.tokenTenant(bearerToken(r))
+}
+
+// tokenTenant is agentTenant for an agent token however the request
+// carries it.
+func (s *Server) tokenTenant(tok string) (t *Server, wait bool) {
 	if s.TenantID != "" || s.TenantRuntime == nil {
 		return nil, false
 	}
-	tok := bearerToken(r)
 	if tok == "" {
 		return nil, false
 	}
