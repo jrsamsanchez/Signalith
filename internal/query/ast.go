@@ -190,7 +190,13 @@ type Timechart struct {
 	Span string
 	Aggs []Agg
 	By   string
+	// Limit is how many of the by field's values become series: 0 the
+	// default of 10, NoTimechartLimit as many as Signalith charts.
+	Limit int
 }
+
+// NoTimechartLimit is timechart limit=0.
+const NoTimechartLimit = -1
 
 // Top returns the most common values: top limit=10 src by dest.
 type Top struct {
@@ -334,6 +340,12 @@ func CommandString(c Command) string {
 		s := "timechart"
 		if c.Span != "" {
 			s += " span=" + optionValue(c.Span)
+		}
+		switch {
+		case c.Limit == NoTimechartLimit:
+			s += " limit=0"
+		case c.Limit > 0 && c.Limit != 10:
+			s += " limit=" + strconv.Itoa(c.Limit)
 		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {

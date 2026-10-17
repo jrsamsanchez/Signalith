@@ -16,6 +16,9 @@ func Explain(q *query.Query) []string {
 	if len(q.Commands) > 0 {
 		if c, ok := q.Commands[0].(*query.InputLookup); ok {
 			first := "Read the rows of the lookup table " + c.Table
+			if c.Where != nil {
+				first += " where " + describeExpr(c.Where)
+			}
 			if c.Max > 0 {
 				first += fmt.Sprintf(", at most %d", c.Max)
 			}
@@ -218,6 +221,9 @@ func describeCommand(c query.Command) string {
 	switch c := c.(type) {
 	case *query.InputLookup:
 		s := "Add the rows of the lookup table " + c.Table
+		if c.Where != nil {
+			s += " where " + describeExpr(c.Where)
+		}
 		if c.Max > 0 {
 			s += fmt.Sprintf(", at most %d", c.Max)
 		}

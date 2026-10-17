@@ -370,6 +370,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			}
 			switch op {
 			case "+", "-", "*", "/", "%", ".", "=", "==", "!=", "<", "<=", ">", ">=":
+			case "!":
+				// !x is NOT x, as Splunk's eval takes it.
+				toks = append(toks, evalTok{etIdent, "NOT", base + start})
+				i++
+				continue
 			default:
 				return nil, errorf(base+start, "unexpected %q in expression", op)
 			}

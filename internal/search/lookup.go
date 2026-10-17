@@ -136,7 +136,7 @@ func (e *Engine) lookup(ctx context.Context, res *Result, c *query.Lookup) error
 
 // inputLookup returns the rows of a lookup table, up to c.Max or the
 // search's event limit; a cell left empty is a missing field.
-func (e *Engine) inputLookup(c *query.InputLookup) (*Result, error) {
+func (e *Engine) inputLookup(ctx context.Context, c *query.InputLookup) (*Result, error) {
 	if e.Lookups == nil {
 		return nil, &QueryError{Msg: "lookup tables are not available on this server"}
 	}
@@ -148,17 +148,51 @@ func (e *Engine) inputLookup(c *query.InputLookup) (*Result, error) {
 	if c.Max > 0 {
 		limit = min(limit, c.Max)
 	}
+	if c.Where != nil {
+		return inputLookupWhere(ctx, t, c, limit)
+	}
 	n := min(len(t.Rows), limit)
 	res := &Result{Kind: "table", Matched: int64(len(t.Rows)), Truncated: n < len(t.Rows) && (c.Max == 0 || c.Max > limit)}
 	res.Columns = append([]string{}, t.Columns...)
 	for _, r := range t.Rows[:n] {
-		row := make(Row, len(r))
-		for i, v := range r {
-			if v != "" {
-				row[t.Columns[i]] = v
-			}
+		res.Rows = append(res.Rows, tableRow(t, r))
+	}
+	return res, nil
+}
+
+// tableRow is a lookup table row as a search row; a cell left empty is a
+// missing field.
+func tableRow(t *lookuptables.Table, r []string) Row {
+	row := make(Row, len(r))
+	for i, v := range r {
+		if v != "" {
+			row[t.Columns[i]] = v
 		}
-		res.Rows = append(res.Rows, row)
+	}
+	return row
+}
+
+// inputLookupWhere returns the rows of t that match c.Where, up to limit.
+func inputLookupWhere(ctx context.Context, t *lookuptables.Table, c *query.InputLookup, limit int) (*Result, error) {
+	res := &Result{Kind: "table", Columns: append([]string{}, t.Columns...)}
+	m := &matcher{ctx: ctx}
+	for i, r := range t.Rows {
+		if i%checkEvery == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		row := tableRow(t, r)
+		if !m.eval(c.Where, row) {
+			if m.err != nil {
+				return nil, m.err
+			}
+			continue
+		}
+		res.Matched++
+		if len(res.Rows) < limit {
+			res.Rows = append(res.Rows, row)
+		} else if c.Max == 0 || c.Max > limit {
+			res.Truncated = true
+		}
 	}
 	return res, nil
 }
