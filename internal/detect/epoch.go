@@ -31,11 +31,13 @@ const (
 )
 
 // epochDoc is the detepoch document: the last number taken, the lease
-// epoch it was taken under, and by which server.
+// epoch it was taken under, and by which server. The number is not in an
+// "epoch" field: the lease takes the highest of those for its own epoch
+// when it is made again (cluster.maxEpoch).
 type epochDoc struct {
 	Kind  string    `json:"kind"`
-	Epoch int64     `json:"epoch"`
-	Lease int64     `json:"lease"`
+	Epoch int64     `json:"det_epoch"`
+	Lease int64     `json:"lease_epoch"`
 	Node  string    `json:"node,omitempty"`
 	At    time.Time `json:"at,omitzero"`
 }
@@ -89,14 +91,16 @@ func (s *Scheduler) claimEpoch(ctx context.Context, lease int64) (int64, error) 
 }
 
 // fenceEpoch is the detection epoch writes made now carry: the one taken
-// for the leader's copy, while it was read under the current lease epoch,
-// else the lease epoch itself.
-func (s *Scheduler) fenceEpoch() int64 {
-	ep := s.epoch()
+// for the leader's copy, while it was read under the current lease epoch.
+// Without such a copy it is the lease epoch, and ok is false when the
+// counter is on: the lease epoch is then not a detection epoch, and a
+// scheduled run must not write with it.
+func (s *Scheduler) fenceEpoch() (ep int64, ok bool) {
+	ep, counter := s.epoch(), s.counter()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.det != nil && s.loadedEpoch == ep {
-		return s.detEpoch
+		return s.detEpoch, true
 	}
-	return ep
+	return ep, !counter
 }

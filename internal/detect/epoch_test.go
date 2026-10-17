@@ -68,8 +68,8 @@ func TestDetectionEpochCounter(t *testing.T) {
 	// Before the level: the lease epoch, as before.
 	a := newEpochServer(t, lib, run, clock, rs, "a", 5, false)
 	a.RunDue(ctx)
-	if st := storedState(t, a.Scheduler, "rule-n"); st.Epoch != 5 {
-		t.Fatalf("before the level: epoch %d", st.Epoch)
+	if st := storedState(t, a.Scheduler, "rule-n"); st.Epoch != 5 || st.DetEpoch != 0 {
+		t.Fatalf("before the level: epoch %d/%d", st.Epoch, st.DetEpoch)
 	}
 
 	// The level rises: the same holder reads the state again under a
@@ -78,8 +78,8 @@ func TestDetectionEpochCounter(t *testing.T) {
 	clock.Add(5 * time.Minute)
 	a.RunDue(ctx)
 	st := storedState(t, a.Scheduler, "rule-n")
-	if st.Epoch != FirstEpoch(5) || st.Node != "a" {
-		t.Fatalf("after the level: epoch %d node %q, want %d", st.Epoch, st.Node, FirstEpoch(5))
+	if st.Epoch != 5 || st.DetEpoch != FirstEpoch(5) || st.Node != "a" {
+		t.Fatalf("after the level: epoch %d/%d node %q, want 5/%d", st.Epoch, st.DetEpoch, st.Node, FirstEpoch(5))
 	}
 	if doc := storedEpoch(t, a.Scheduler); doc.Epoch != FirstEpoch(5) || doc.Lease != 5 || doc.Node != "a" {
 		t.Errorf("detepoch %+v", doc)
@@ -89,8 +89,8 @@ func TestDetectionEpochCounter(t *testing.T) {
 		t.Fatalf("no throttle: %v", err)
 	}
 	var th throttleDoc
-	if err := json.Unmarshal(raw, &th); err != nil || th.Epoch != FirstEpoch(5) {
-		t.Errorf("throttle epoch %d, %v", th.Epoch, err)
+	if err := json.Unmarshal(raw, &th); err != nil || th.Epoch != 5 || th.DetEpoch != FirstEpoch(5) {
+		t.Errorf("throttle epoch %d/%d, %v", th.Epoch, th.DetEpoch, err)
 	}
 
 	// Taking another number under the same lease gives the next one.
@@ -102,8 +102,8 @@ func TestDetectionEpochCounter(t *testing.T) {
 	b := newEpochServer(t, lib, run, clock, rs, "b", 6, true)
 	clock.Add(5 * time.Minute)
 	b.RunDue(ctx)
-	if st := storedState(t, b.Scheduler, "rule-n"); st.Epoch != FirstEpoch(6) || st.Node != "b" {
-		t.Fatalf("after the takeover: epoch %d node %q", st.Epoch, st.Node)
+	if st := storedState(t, b.Scheduler, "rule-n"); st.DetEpoch != FirstEpoch(6) || st.Node != "b" {
+		t.Fatalf("after the takeover: epoch %d node %q", st.DetEpoch, st.Node)
 	}
 
 	// a, still thinking it holds lease 5, can neither take a number nor
@@ -129,13 +129,13 @@ func TestDetectionEpochCounter(t *testing.T) {
 	before := storedState(t, b.Scheduler, "rule-n")
 	clock.Add(5 * time.Minute)
 	c.RunDue(ctx)
-	if st := storedState(t, c.Scheduler, "rule-n"); st.Epoch != before.Epoch || st.Node != "b" {
+	if st := storedState(t, c.Scheduler, "rule-n"); st.DetEpoch != before.DetEpoch || st.Node != "b" {
 		t.Errorf("a server below the level wrote: %+v", st)
 	}
 	// Once it sees the level, it runs and catches up.
 	c.counter.Store(true)
 	c.RunDue(ctx)
-	if st := storedState(t, c.Scheduler, "rule-n"); st.Epoch != FirstEpoch(7) || st.Node != "c" || !st.LastSlot.After(before.LastSlot) {
+	if st := storedState(t, c.Scheduler, "rule-n"); st.DetEpoch != FirstEpoch(7) || st.Node != "c" || !st.LastSlot.After(before.LastSlot) {
 		t.Errorf("after c sees the level: %+v", st)
 	}
 }
@@ -157,5 +157,22 @@ func TestDetectionEpochLimits(t *testing.T) {
 	}
 	if _, err := s.claimEpoch(ctx, 1); err == nil {
 		t.Error("an unreadable detepoch document was written over")
+	}
+}
+
+// TestScheduledThrottleNeedsADetectionEpoch: with the counter on, a
+// scheduled run whose copy was not read under the current lease cannot
+// claim a throttle with the plain lease epoch; Run now still can.
+func TestScheduledThrottleNeedsADetectionEpoch(t *testing.T) {
+	d := &Detection{ID: "rule-t", Title: "T", Query: "user=t", Enabled: true, Schedule: "5m", Lookback: "5m",
+		Throttle: Throttle{Window: "1h", Fields: []string{"user"}}}
+	clock := &fakeClock{t: t0}
+	s := newEpochServer(t, OnlyRules(t, d), &recRunner{}, clock, NewMemoryRunStore(), "a", 3, true)
+	ctx := context.Background()
+	if _, err := s.claim(ctx, d, "k", t0, t0, time.Hour, "f1", nil); !errors.Is(err, errStaleEpoch) {
+		t.Errorf("a scheduled claim without a detection epoch: %v", err)
+	}
+	if ok, err := s.claim(ctx, d, "k", time.Time{}, t0, time.Hour, "f2", nil); err != nil || !ok {
+		t.Errorf("a Run now claim: %v, %v", ok, err)
 	}
 }

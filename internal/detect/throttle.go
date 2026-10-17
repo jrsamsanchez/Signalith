@@ -31,8 +31,10 @@ type throttleDoc struct {
 	Slot        string    `json:"slot"`
 	Until       time.Time `json:"until"`
 	FindingID   string    `json:"finding_id,omitempty"`
-	Epoch       int64     `json:"epoch"`
-	Node        string    `json:"node,omitempty"`
+	// Epoch and DetEpoch are as in DetState.
+	Epoch    int64  `json:"epoch"`
+	DetEpoch int64  `json:"det_epoch,omitempty"`
+	Node     string `json:"node,omitempty"`
 }
 
 // throttleID is the throttle document ID of a rule's group key.
@@ -62,9 +64,18 @@ func (s *Scheduler) claim(ctx context.Context, d *Detection, key string, slot, n
 	if !slot.IsZero() {
 		end = slot
 	}
-	ep := s.fenceEpoch()
+	lease := s.epoch()
+	ep, ok := s.fenceEpoch()
+	if !ok && !slot.IsZero() {
+		// A scheduled run whose copy of the run state was not read under
+		// the current lease: it no longer runs the schedule.
+		return false, errStaleEpoch
+	}
 	doc := throttleDoc{Kind: kindThrottle, DetectionID: d.ID, GroupKey: key, Slot: slotString(slot),
-		Until: end.Add(w).UTC(), FindingID: findingID, Epoch: ep, Node: s.NodeID}
+		Until: end.Add(w).UTC(), FindingID: findingID, Epoch: lease, Node: s.NodeID}
+	if ep != lease {
+		doc.DetEpoch = ep
+	}
 	asked := false
 	for range 3 {
 		raw, ver, found, err := rs.Get(ctx, idx, id)
@@ -99,7 +110,7 @@ func (s *Scheduler) claim(ctx context.Context, d *Detection, key string, slot, n
 		if cur.Until.After(end) {
 			return false, nil
 		}
-		if !slot.IsZero() && cur.Slot != manualSlot && cur.Epoch > ep {
+		if !slot.IsZero() && cur.Slot != manualSlot && fenceOf(cur.Epoch, cur.DetEpoch) > ep {
 			return false, errStaleEpoch
 		}
 		_, err = rs.PutIf(ctx, idx, id, doc, ver, false)
