@@ -571,6 +571,26 @@ func (c *Client) DataNodes(ctx context.Context) (int, error) {
 	return out.N, err
 }
 
+// SearchThreads returns the size of the search thread pool summed over
+// the data nodes: how many searches OpenSearch runs at once.
+func (c *Client) SearchThreads(ctx context.Context) (int, error) {
+	var out struct {
+		Nodes map[string]struct {
+			ThreadPool struct {
+				Search struct {
+					Size int `json:"size"`
+				} `json:"search"`
+			} `json:"thread_pool"`
+		} `json:"nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_nodes/data:true/thread_pool?filter_path=nodes.*.thread_pool.search.size", nil, &out)
+	n := 0
+	for _, nd := range out.Nodes {
+		n += nd.ThreadPool.Search.Size
+	}
+	return n, err
+}
+
 // BulkItemError describes one rejected document in a bulk request.
 type BulkItemError struct {
 	Index  string

@@ -1187,6 +1187,9 @@ func (s *Server) useLive(next *config.Config, applied []string) {
 		if changed("detections.spread") {
 			sched.SetSpread(next.Detections.Spread)
 		}
+		if changed("detections.search_budget") {
+			sched.SetSearchBudget(next.Detections.SearchBudget)
+		}
 	}
 	if changed("assistant.") {
 		s.liveAI.Store(&liveModel{c: next.AssistantClient()})

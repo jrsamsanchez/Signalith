@@ -16,13 +16,21 @@ const (
 	errBadGeoIP = "iplocation could not read the GeoIP database; the server log says why"
 )
 
+// errGeoIPLoading wraps geoip.ErrLoading, so the detection scheduler can
+// tell a database that is still loading, and try again, from a bad query.
+func errGeoIPLoading() error {
+	return &QueryError{Msg: "iplocation's GeoIP database is still loading; try again in a few seconds", Err: geoip.ErrLoading}
+}
+
 // maxIPCache caps the addresses one iplocation remembers, so rows that
 // repeat an address look it up once.
 const maxIPCache = 10_000
 
 // ipLocation adds where each row's address is, from the GeoIP database.
 // A row whose field holds no address, or one the database does not list,
-// such as a private address, gets no fields.
+// such as a private address, gets no fields. A row with an address it
+// lists gets every field, "" where the database has no value, as in
+// Splunk.
 func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocation) error {
 	if e.GeoIP == nil {
 		return &QueryError{Msg: "iplocation is not available on this server"}
@@ -34,7 +42,7 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 			return &QueryError{Msg: errNoGeoIP}
 		}
 		if errors.Is(err, geoip.ErrLoading) {
-			return &QueryError{Msg: "iplocation's GeoIP database is still loading; try again in a few seconds"}
+			return errGeoIPLoading()
 		}
 		return &QueryError{Msg: errBadGeoIP}
 	}
@@ -74,7 +82,7 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 		if !ok {
 			loc, found, err := e.GeoIP.Lookup(ip, lang)
 			if errors.Is(err, geoip.ErrLoading) {
-				return &QueryError{Msg: "iplocation's GeoIP database is still loading; try again in a few seconds"}
+				return errGeoIPLoading()
 			}
 			if err != nil {
 				slog.Warn("iplocation could not read the GeoIP database", "err", err)
@@ -102,8 +110,8 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 		}
 		for j, name := range names {
 			val := vals[j]
-			if val == nil || val == "" {
-				continue
+			if val == nil {
+				val = ""
 			}
 			if !ev.newField(r, name) || !ev.charge(valueSize(val)) {
 				return ev.err

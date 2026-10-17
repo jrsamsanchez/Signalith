@@ -89,10 +89,16 @@ var ErrBusy = errors.New("Signalith is busy running other searches; try again in
 
 // QueryError is a query that cannot run as written, such as one naming an
 // index outside Signalith's events, as opposed to OpenSearch failing; the
-// API answers it with 400.
-type QueryError struct{ Msg string }
+// API answers it with 400. Err, when set, is the cause callers can test
+// with errors.Is, such as geoip.ErrLoading, which passes.
+type QueryError struct {
+	Msg string
+	Err error
+}
 
 func (e *QueryError) Error() string { return e.Msg }
+
+func (e *QueryError) Unwrap() error { return e.Err }
 
 type backgroundKey struct{}
 

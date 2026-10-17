@@ -60,6 +60,9 @@ type Scheduler struct {
 	// OpenSearch's clock as this server measures it, so every server
 	// agrees on them. Nil uses Now.
 	ClusterNow func() time.Time
+	// Pool, when set, is the server's detection workers shared by every
+	// tenant's spread scheduler, used instead of Workers.
+	Pool *Pool
 	// Workers is how many detections run at once (default 4), so one slow
 	// detection cannot hold up the others.
 	Workers int
@@ -124,6 +127,8 @@ type Scheduler struct {
 	loadedCounter bool
 	// spread is detections.spread.
 	spread atomic.Bool
+	// budget is detections.search_budget.
+	budget atomic.Int64
 	own    owned
 	// firstStart says the run state, when last read, had no detstate
 	// documents at all: the dispatch after that read starts each enabled
@@ -339,6 +344,13 @@ func (s *Scheduler) SetMaxFindingsPerRun(n int) {
 // (SpreadOn).
 func (s *Scheduler) SetSpread(on bool) { s.spread.Store(on) }
 
+// SetSearchBudget sets detections.search_budget (0: automatic), which
+// the leader's Assigner reads.
+func (s *Scheduler) SetSearchBudget(n int) { s.budget.Store(int64(n)) }
+
+// SearchBudgetSetting reports detections.search_budget as last set.
+func (s *Scheduler) SearchBudgetSetting() int { return int(s.budget.Load()) }
+
 // SpreadOn reports detections.spread as last set.
 func (s *Scheduler) SpreadOn() bool { return s.spread.Load() }
 
@@ -520,38 +532,60 @@ func (s *Scheduler) runBatch(ctx context.Context, b batch, epoch int64, workers,
 			case <-ctx.Done():
 				return
 			}
-			select {
-			case spare <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
 		}
-		select {
-		case workers <- struct{}{}:
-		case <-ctx.Done():
-			if !b.current {
-				<-spare
-			}
+		done, ok := s.worker(ctx, b.current, workers, spare)
+		if !ok {
 			return
 		}
 		if b.current {
 			got()
 		}
-		ok := ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && s.startsRule(b.d.ID)
+		ok = ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && s.startsRule(b.d.ID)
 		var err error
+		var took time.Duration
 		if ok {
 			s.setFlags(b.d.ID, runFlags{running: true})
+			start := time.Now()
 			err = s.runSlot(ctx, b.d, b.sched, slot, !b.current, epoch)
+			took = time.Since(start)
 			s.setFlags(b.d.ID, runFlags{queued: true})
 		}
-		<-workers
-		if !b.current {
-			<-spare
-		}
+		done(took, err)
 		if !ok || err != nil {
 			return
 		}
 	}
+}
+
+// worker waits for a worker for a run: from the server's shared Pool when
+// set, else from the scheduler's own, where catch-up first takes one of
+// the spare places. done gives it back.
+func (s *Scheduler) worker(ctx context.Context, current bool, workers, spare chan struct{}) (done func(time.Duration, error), ok bool) {
+	if s.Pool != nil {
+		done, err := s.Pool.Acquire(ctx, s.Tenant, current)
+		return done, err == nil
+	}
+	if !current {
+		select {
+		case spare <- struct{}{}:
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
+	select {
+	case workers <- struct{}{}:
+	case <-ctx.Done():
+		if !current {
+			<-spare
+		}
+		return nil, false
+	}
+	return func(time.Duration, error) {
+		<-workers
+		if !current {
+			<-spare
+		}
+	}, true
 }
 
 // plan works out the slots of d that are due at now (cluster time). It
