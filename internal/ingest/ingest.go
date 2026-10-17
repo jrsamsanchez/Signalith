@@ -112,6 +112,9 @@ type Pipeline struct {
 	// loader sets it, on a pipeline of its own: every other pipeline
 	// removes the marker from what senders send (see Reserved).
 	SampleMark string
+	// Rollover, when set, picks the part of a busy day's index events go
+	// to (see Rollover); nil writes every event to its day's index.
+	Rollover *Rollover
 	// Servers returns how many servers share each day's field-name
 	// budgets: those that stored events in the last 10 minutes (see
 	// cluster.Node.IndexingServers). nil is this server alone.
@@ -392,7 +395,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Model = "Other"
 		}
 		day := dayOf(ev.Time)
-		index := datamodel.IndexName(prefix, ev.Model, day)
+		index := p.Rollover.Index(datamodel.IndexName(prefix, ev.Model, day))
 		isFull, asked := full[index]
 		if !asked && hasUnknown(ev.Fields) {
 			isFull = p.mappingFull(ctx, index)

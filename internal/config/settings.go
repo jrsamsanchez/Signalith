@@ -367,10 +367,13 @@ var Registry = []Setting{
 			"Or enter a number: 0 for none. Days already stored keep the copies they have.",
 		Placeholder: "auto", EmptyMeans: "auto", check: checkReplicas},
 	{Key: "opensearch.shards", Scope: ScopeCluster, Section: "opensearch", Label: "Shards", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxShards),
-		Help: "Primary shards for each new day's events, per data model. One, the default, suits a few GB a day. Give more to a system whose busiest data model stores tens of GB a day, " +
-			"about one shard per OpenSearch data node, so a day is spread over the nodes and no shard grows past about 50 GB. More shards than data nodes are not used. " +
-			"Days already stored keep theirs; a day restored from an archive gets this setting.",
-		Placeholder: "1", EmptyMeans: "1"},
+		Help: "Primary shards for each new day's events, per data model. Automatic (empty or 0), the default, gives one per OpenSearch data node, up to 8, so every node writes and merges a share of each day. " +
+			"Enter a number to fix it; more shards than data nodes are not used. Days already stored keep theirs; a day restored from an archive gets this setting.",
+		Placeholder: "auto", EmptyMeans: "automatic"},
+	{Key: "opensearch.rollover_gb", Scope: ScopeCluster, Section: "opensearch", Label: "Rollover size (GB per shard)", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxRolloverGB),
+		Help: "How large a day's index of one data model may grow, per primary shard, before that day's events continue in a new index (such as signalith-network-2026.10.17-2). " +
+			"Smaller shards merge, move and recover faster. Searches, retention and archives treat the parts of a day as that day.",
+		Placeholder: "40", EmptyMeans: "40"},
 	{Key: "cluster.opensearch_url", Scope: ScopeCluster, Section: "opensearch", Label: "Address for new servers", Type: TypeURL, SharedOnly: true,
 		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +
 			"each server's own Address above may be, for one, 127.0.0.1.",

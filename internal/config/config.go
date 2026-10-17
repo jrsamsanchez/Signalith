@@ -555,11 +555,40 @@ type OpenSearch struct {
 	// on other nodes: "auto" (the default) or a whole number.
 	Replicas Replicas `yaml:"replicas"`
 	// Shards is how many primary shards each new day's event indices
-	// get: 0 or 1 is one, the default. More spread a data model that
-	// stores tens of GB a day over the OpenSearch nodes; at most one
-	// per data node is used. Days already stored keep theirs; a day
-	// restored from an archive gets the current setting.
+	// get. 0, the default, is automatic: one per OpenSearch data node, up
+	// to ingest.MaxAutoShards, so a day's events are written and merged
+	// on every node. A number fixes it; at most one per data node is
+	// used. Days already stored keep theirs; a day restored from an
+	// archive gets the current setting.
 	Shards int `yaml:"shards,omitempty"`
+	// RolloverGB is how large, in GB per primary shard, a day's index of
+	// a data model may grow before that day's events continue in a new
+	// index (signalith-network-2026.10.17-2, and so on). 0 is
+	// DefaultRolloverGB.
+	RolloverGB int `yaml:"rollover_gb,omitempty"`
+}
+
+// DefaultRolloverGB is opensearch.rollover_gb when it is not set: shards
+// of 30 to 50 GB are what OpenSearch recommends for logs, big enough not
+// to waste the per-shard cost and small enough to merge, move and
+// recover quickly.
+const DefaultRolloverGB = 40
+
+// MinRolloverGB and MaxRolloverGB bound opensearch.rollover_gb. Below
+// 10 GB a busy day would make enough indices to crowd the cluster's shard
+// limit; above 200 GB a shard takes hours to move to another node.
+const (
+	MinRolloverGB = 10
+	MaxRolloverGB = 200
+)
+
+// RolloverBytes returns opensearch.rollover_gb in bytes, or the default.
+func (o *OpenSearch) RolloverBytes() int64 {
+	gb := o.RolloverGB
+	if gb <= 0 {
+		gb = DefaultRolloverGB
+	}
+	return int64(gb) << 30
 }
 
 // Replicas is opensearch.replicas: "auto", or a whole number of extra
@@ -610,11 +639,16 @@ func (r Replicas) IndexSettings() map[string]any {
 const MaxShards = 64
 
 // EventIndexSettings returns the index settings each new day's event
-// indices get: the replicas settings (see Replicas.IndexSettings) and,
-// when opensearch.shards asks for more than one, number_of_shards.
+// indices get: the replicas settings (see Replicas.IndexSettings) and
+// number_of_shards: store.AutoShards when opensearch.shards is 0, which
+// ingest.PutIndexTemplate sizes from the data nodes, or the number when
+// it asks for more than one.
 func (o *OpenSearch) EventIndexSettings() map[string]any {
 	s := o.Replicas.IndexSettings()
-	if o.Shards > 1 {
+	switch {
+	case o.Shards == 0:
+		s["number_of_shards"] = store.AutoShards
+	case o.Shards > 1:
 		s["number_of_shards"] = o.Shards
 	}
 	return s
@@ -2510,7 +2544,10 @@ func (c *Config) Validate() error {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
 	if c.OpenSearch.Shards < 0 || c.OpenSearch.Shards > MaxShards {
-		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 to %d (0 and 1 both mean one shard)", MaxShards))
+		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 (automatic) to %d", MaxShards))
+	}
+	if g := c.OpenSearch.RolloverGB; g != 0 && (g < MinRolloverGB || g > MaxRolloverGB) {
+		p = append(p, fmt.Sprintf("opensearch.rollover_gb: enter a number of GB from %d to %d, or leave it empty for %d", MinRolloverGB, MaxRolloverGB, DefaultRolloverGB))
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")

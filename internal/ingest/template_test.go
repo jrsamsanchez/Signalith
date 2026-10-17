@@ -271,3 +271,70 @@ func TestNoFieldUnderAValue(t *testing.T) {
 		}
 	}
 }
+
+// Automatic opensearch.shards gives each new day's index one primary per
+// data node, up to MaxAutoShards, and one while the cluster already holds
+// more than half the shards it allows.
+func TestPutIndexTemplateAutoShards(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		nodes, used, want int
+	}{
+		{1, 0, 1},
+		{2, 0, 2},
+		{3, 100, 3},
+		{12, 0, MaxAutoShards},
+		{3, 1501, 1}, // 3 nodes allow 3,000 shards
+	} {
+		os := ostest.New(t)
+		os.SetDataNodes(tc.nodes)
+		os.SetShardsUsed(tc.used)
+		cl := store.New(store.Config{URL: os.URL})
+		auto := map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": store.AutoShards}
+		if err := PutIndexTemplate(ctx, cl, "sig", auto, nil); err != nil {
+			t.Fatal(err)
+		}
+		var stored map[string]any
+		if err := json.Unmarshal(os.Template("sig"), &stored); err != nil {
+			t.Fatal(err)
+		}
+		if !sameReplicas(stored, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": tc.want}) {
+			t.Errorf("%d nodes, %d shards in use: stored %v, want %d shards", tc.nodes, tc.used, stored["template"].(map[string]any)["settings"], tc.want)
+		}
+		if strings.Contains(string(os.Template("sig")), store.AutoShards+`"`) {
+			t.Errorf("%d nodes: the template kept %q: %s", tc.nodes, store.AutoShards, os.Template("sig"))
+		}
+	}
+}
+
+// With automatic shards, the check every few minutes follows the data
+// nodes: a node added gives the next days a shard on it too, without a
+// restart. A fixed number is left as the server that wrote it set it.
+func TestRestoreIndexTemplateFollowsDataNodes(t *testing.T) {
+	ctx := context.Background()
+	os := ostest.New(t)
+	os.SetDataNodes(2)
+	cl := store.New(store.Config{URL: os.URL})
+	auto := map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": store.AutoShards}
+	if err := PutIndexTemplate(ctx, cl, "sig", auto, nil); err != nil {
+		t.Fatal(err)
+	}
+	if put, err := RestoreIndexTemplate(ctx, cl, "sig", auto, nil); err != nil || put {
+		t.Errorf("same nodes: put %v, %v", put, err)
+	}
+	os.SetDataNodes(3)
+	if put, err := RestoreIndexTemplate(ctx, cl, "sig", auto, nil); err != nil || !put {
+		t.Errorf("a node added: put %v, %v", put, err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(os.Template("sig"), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if !sameReplicas(stored, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}) {
+		t.Errorf("stored %v, want 3 shards", stored["template"].(map[string]any)["settings"])
+	}
+	fixed := map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 2}
+	if put, err := RestoreIndexTemplate(ctx, cl, "sig", fixed, nil); err != nil || put {
+		t.Errorf("fixed shards: put %v, %v", put, err)
+	}
+}
