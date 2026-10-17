@@ -219,7 +219,30 @@ const serverPanels = [];
       if (/^detections\.scheduler is off/.test(why)) why = (s.shared && s.shared.settings_rev ? 'May run background jobs' : 'Run detections on schedule') + ' is off';
       if (why) body.push(el('div', { class: 'sv-sub' }, cap(why)));
     }
+    const spread = spreadText(s, d);
+    if (spread) body.push(el('div', { class: 'sv-sub' }, icon('shield', 'icon--sm'), el('span', {}, spread)));
     return el('td', { 'data-col': 'jobs' }, ...body);
+  }
+
+  // spreadText says, while detections are spread over the servers
+  // (detections.spread), how many of the rule groups server s runs, and
+  // how many it is handing over to another server; '' otherwise.
+  function spreadText(s, d) {
+    const views = d.detections || [];
+    if (!views.length) return '';
+    let run = 0, moving = 0, total = 0;
+    for (const v of views) {
+      total += v.buckets || 0;
+      const c = (v.servers || {})[s.node_id];
+      if (c) {
+        run += c.run || 0;
+        moving += c.moving || 0;
+      }
+    }
+    if (!run && !moving) return gone(s) ? '' : 'Runs no detection groups';
+    let text = `Runs ${run} of ${total} detection groups`;
+    if (moving) text += `, handing ${moving} over`;
+    return text;
   }
 
   // CONFIG names how a server uses the shared settings (its mode), and
