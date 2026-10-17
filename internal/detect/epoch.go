@@ -95,12 +95,22 @@ func (s *Scheduler) claimEpoch(ctx context.Context, lease int64) (int64, error) 
 // Without such a copy it is the lease epoch, and ok is false when the
 // counter is on: the lease epoch is then not a detection epoch, and a
 // scheduled run must not write with it.
-func (s *Scheduler) fenceEpoch() (ep int64, ok bool) {
-	ep, counter := s.epoch(), s.counter()
+//
+// In spread mode it is the epoch of the rule's bucket, and ok is false
+// when this server does not run the bucket or its copy is not current.
+func (s *Scheduler) fenceEpoch(id string) (ep int64, ok bool) {
+	g, counter := s.gen(), s.counter()
+	if s.Owned != nil {
+		s.mu.Lock()
+		loaded := s.det != nil && s.loadedEpoch == g
+		s.mu.Unlock()
+		de, mine := s.ownsRule(id)
+		return de, mine && loaded
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.det != nil && s.loadedEpoch == ep {
+	if s.det != nil && s.loadedEpoch == g {
 		return s.detEpoch, true
 	}
-	return ep, !counter
+	return g, !counter
 }

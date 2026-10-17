@@ -65,7 +65,7 @@ func (s *Scheduler) claim(ctx context.Context, d *Detection, key string, slot, n
 		end = slot
 	}
 	lease := s.epoch()
-	ep, ok := s.fenceEpoch()
+	ep, ok := s.fenceEpoch(d.ID)
 	if !ok && !slot.IsZero() {
 		// A scheduled run whose copy of the run state was not read under
 		// the current lease: it no longer runs the schedule.
