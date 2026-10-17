@@ -58,7 +58,7 @@ func (q *Query) Drilldown() *Drill {
 			if _, expr := c.Expr.(*Cond); expr {
 				d.Where = true
 			}
-		case *ThreatMatch, *Table, *Sort:
+		case *ThreatMatch, *Table, *Sort, *Highlight:
 		case *Head, *Dedup:
 			// They pick which events a summary counts, so a filter must
 			// come after them; without a summary a filter only finds one
@@ -220,6 +220,10 @@ func (q *Query) Drilldown() *Drill {
 		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace, *Extract:
 			// Its fields can overwrite any column.
 			clear(fields)
+		case *XPath:
+			delete(fields, c.OutField)
+		case *Abstract:
+			delete(fields, "_raw")
 		case *Bin:
 			// Buckets are in no event.
 			if c.As != "" {
