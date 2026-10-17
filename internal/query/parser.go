@@ -303,6 +303,19 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 func (p *parser) parseAtom(search bool) (Expr, error) {
 	t := p.peek()
 	switch t.kind {
+	case tokSubsearch:
+		if !search {
+			break
+		}
+		p.next()
+		if p.depth+1 > maxSubsearchDepth {
+			return nil, errorf(t.pos, "subsearches can be at most %d deep", maxSubsearchDepth)
+		}
+		q, err := p.parseSubsearch(t.text, t.pos)
+		if err != nil {
+			return nil, err
+		}
+		return &Subsearch{Query: q}, nil
 	case tokString:
 		p.next()
 		if nt := p.peek(); search && nt.kind == tokOp && p.followsQuote(nt) && t.text != "" && FormatValue(t.text) == t.text {

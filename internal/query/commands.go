@@ -555,26 +555,8 @@ func (*InputLookup) Name() string { return "inputlookup" }
 
 func (p *parser) parseInputLookup() (Command, error) {
 	c := &InputLookup{}
-	for (p.isKeywordFold("max") || p.isKeywordFold("append")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
-		key := strings.ToLower(p.next().text)
-		p.next()
-		if key == "append" {
-			b, err := parseBool(p.next())
-			if err != nil {
-				return nil, err
-			}
-			c.Append = b
-			continue
-		}
-		at := p.peek().pos
-		n, err := p.int()
-		if err != nil {
-			return nil, err
-		}
-		if n < 1 {
-			return nil, errorf(at, "max must be at least 1")
-		}
-		c.Max = n
+	if err := p.inputLookupOptions(c); err != nil {
+		return nil, err
 	}
 	t := p.peek()
 	if t.kind != tokWord && t.kind != tokString {
@@ -585,7 +567,36 @@ func (p *parser) parseInputLookup() (Command, error) {
 		return nil, errorf(t.pos, "%q is not a lookup table name; names use lower-case letters, digits, - and _", t.text)
 	}
 	c.Table = t.text
+	// Splunk takes the options after the name too.
+	if err := p.inputLookupOptions(c); err != nil {
+		return nil, err
+	}
 	return c, p.endCommand()
+}
+
+func (p *parser) inputLookupOptions(c *InputLookup) error {
+	for (p.isKeywordFold("max") || p.isKeywordFold("append")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		key := strings.ToLower(p.next().text)
+		p.next()
+		if key == "append" {
+			b, err := parseBool(p.next())
+			if err != nil {
+				return err
+			}
+			c.Append = b
+			continue
+		}
+		at := p.peek().pos
+		n, err := p.int()
+		if err != nil {
+			return err
+		}
+		if n < 1 {
+			return errorf(at, "max must be at least 1")
+		}
+		c.Max = n
+	}
+	return nil
 }
 
 func inputLookupString(c *InputLookup) string {

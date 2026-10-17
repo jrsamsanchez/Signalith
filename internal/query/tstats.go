@@ -1,6 +1,7 @@
 package query
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -198,6 +199,25 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 		}
 		ts.q.Index, ts.q.Earliest, ts.q.Latest = wq.Index, wq.Earliest, wq.Latest
 		ts.q.Search = renameFields(wq.Search, field)
+		if node != "" {
+			// A subsearch's rows name fields as tstats does
+			// (Processes.process_name); its terms use Signalith's.
+			ren := &Rename{}
+			var keys []string
+			for k := range renamed {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				ren.Pairs = append(ren.Pairs, [2]string{node + "." + k, renamed[k]})
+			}
+			ren.Pairs = append(ren.Pairs, [2]string{node + ".*", "*"})
+			WalkSubsearches(ts.q.Search, func(s *Subsearch) {
+				sq := *s.Query
+				sq.Commands = append(append([]Command{}, sq.Commands...), ren)
+				s.Query = &sq
+			})
+		}
 	}
 	var by []string
 	span := ""

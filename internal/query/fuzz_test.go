@@ -46,6 +46,7 @@ var fuzzSeeds = []string{
 	`| tstats count where index=* by index, sourcetype | chart limit=3 sum(count) over index by sourcetype | untable index st c | xyseries index, st, c`,
 	`| tstats fillnull_value=null count from datamodel=Web by Web.user | search *`,
 	`"a.b"=x "c{}" IN (a, b,) | rename "P".* as * | sort - count | eval s=if(t IN ("A"), 1, 0) | inputlookup append=t max=2 owners`,
+	`user=x NOT [inputlookup t | fields a] | search [| makeresults | eval user="b"] | tstats count from datamodel=Web where [search a=1 | fields Web.user] by Web.user`,
 	`* | spath | spath input=body output="a b" path="x.y{}.z" | chart count, dc(user) by "by"`,
 	`search index=* user=adm* | search count>2 OR "a b" | top 3 countfield=n percentfield="p c" showperc=f useother=t otherstr=rest user by host`,
 	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
