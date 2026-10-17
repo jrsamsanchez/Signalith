@@ -11,6 +11,7 @@ Each host reports:
 | What | Data model | When |
 | --- | --- | --- |
 | Files created, changed, renamed or deleted in the watched folders, with their SHA-256 on Linux and macOS | Filesystem | within a minute |
+| Every program started on macOS, with its arguments, parent and account (see [macOS program starts](detections.md#macos-program-starts-osquery)) | Endpoint (sourcetype `osquery:process_start`) | within a minute |
 | Listening ports and the program behind each | Inventory (`inventory_type=port`) | every 10 minutes |
 | Operating system, installed software, accounts, services and startup items, as they are added or removed | Inventory (`inventory_type=os`, `software`, `user`, `service`, `startup`) | every hour (adjustable) |
 | Configuration checks, when a result changes | Configuration_Check | every hour (adjustable) |
@@ -31,7 +32,9 @@ Hosts found this way are also added to the asset list (**Risk and context**), as
    - Windows, in an elevated PowerShell:
      `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Downloads\signalith-osquery-setup.ps1"`
 4. On macOS, give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk
-   Access, add `/opt/osquery/lib/osquery.app`).
+   Access, add `/opt/osquery/lib/osquery.app`). File changes and program starts
+   (EndpointSecurity) need it. A Mac set up before Signalith collected program starts
+   needs the setup script run again, since its flags turn EndpointSecurity on.
 
 The script saves three files next to osquery (`/etc/osquery` on Linux, `/var/osquery` on
 macOS, `C:\Program Files\osquery` on Windows): Signalith's CA certificate, the enroll

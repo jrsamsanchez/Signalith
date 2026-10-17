@@ -1,0 +1,5 @@
+{"rule": "85de3a19-b675-4a51-bfc6-b11a5186c971", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-perm -o w","path":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/find","path":"/find"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-perm -o w","path":"/usr/local/bin/helper"}}
+]}

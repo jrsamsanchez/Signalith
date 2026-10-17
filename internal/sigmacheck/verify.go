@@ -153,6 +153,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		// Sigma's CloudTrail rules name the record's own fields, and its
 		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
+	case c.Channel == MacOSChannel:
+		// An osquery program start's columns.
+		return macOSView(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -243,6 +246,11 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}
+	if c.Channel == MacOSChannel {
+		var rec map[string]any
+		_ = json.Unmarshal(OsqueryLine(host, t, c.Data), &rec)
+		return OsqueryTag, rec
+	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
 	}
@@ -290,6 +298,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 
 // Stored is a case's event after the real parser.
 func (c Case) Stored(host string, t time.Time) ingest.Event {
+	if c.Channel == MacOSChannel {
+		return macOSStored(host, t, c.Data)
+	}
 	tag, rec := c.Record(host, t)
 	return ingest.Normalize(tag, rec, t)
 }

@@ -1,0 +1,5 @@
+{"rule": "5de06a6f-673a-4fc0-8d48-bcfe3837b033", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-productName","path":"/sw_vers"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/sw_vers","path":"/sw_vers"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-productName","path":"/usr/local/bin/helper"}}
+]}

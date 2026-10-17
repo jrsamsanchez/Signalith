@@ -233,6 +233,11 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 		// sensor's.
 		return e, nil
 	}
+	if r.MacOS && r.Node == "Processes" {
+		// A macOS program start, as osquery reads it from
+		// EndpointSecurity.
+		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: macProcessSourcetype}, e}), nil
+	}
 	sourcetype := windowsSourcetypes
 	if r.Linux {
 		sourcetype = ingest.SysmonLinuxSourcetype

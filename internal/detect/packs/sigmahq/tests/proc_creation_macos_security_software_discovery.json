@@ -1,0 +1,7 @@
+{"rule": "0ed75b9c-c73b-424d-9e7d-496cd565fbe0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"packetbeat","path":"/usr/bin/grep"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"LittleSnitch","path":"/usr/bin/grep"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/bin/grep","path":"/usr/bin/grep"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"packetbeat","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"LittleSnitch","path":"/usr/local/bin/helper"}}
+]}

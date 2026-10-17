@@ -1,0 +1,7 @@
+{"rule": "51c43b7b-e406-45d2-9bad-5c67f07e6528", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x chflags  x x  hidden x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x xattr  x x  -wx  x x com.apple.FinderInfo x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x chflags  x x  hidden y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x xattr  x x  -wx  x x com.apple.FinderInfo y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}}
+]}

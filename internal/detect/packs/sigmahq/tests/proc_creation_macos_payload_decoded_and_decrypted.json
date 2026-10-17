@@ -1,0 +1,5 @@
+{"rule": "234dc5df-40b5-49d1-bf53-0d44ce778eca", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -d -base64enc/Volumes/","path":"/openssl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/openssl","path":"/openssl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -d -base64enc/Volumes/","path":"/usr/local/bin/helper"}}
+]}

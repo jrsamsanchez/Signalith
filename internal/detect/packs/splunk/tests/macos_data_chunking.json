@@ -1,0 +1,9 @@
+{"rule": "7f1c8bed-9bd4-40b0-a1df-c262cbade0fc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x /dd  x x  if= x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"dd  x x  if= x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x split  x x  -b  x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x /dd  x x  if= y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"dd  x x  if= y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x split  x x  -b  y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}}
+]}

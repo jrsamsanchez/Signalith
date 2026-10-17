@@ -1,0 +1,5 @@
+{"rule": "6ff08e55-ea53-4f27-94a1-eff92e6d9d5c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"kern.","path":"/sysctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/sysctl","path":"/sysctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"kern.","path":"/usr/local/bin/helper"}}
+]}

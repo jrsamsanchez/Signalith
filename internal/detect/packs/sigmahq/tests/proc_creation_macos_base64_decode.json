@@ -1,0 +1,5 @@
+{"rule": "719c22d7-c11a-4f2c-93a6-2cfdd5412f68", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-d","path":"/usr/bin/base64"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/bin/base64","path":"/usr/bin/base64"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-d","path":"/usr/local/bin/helper"}}
+]}

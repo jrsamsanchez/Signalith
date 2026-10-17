@@ -1,0 +1,5 @@
+{"rule": "65d506d3-fcfe-4071-b4b2-bcefe721bbbb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"trueLaunchDaemonsRunAtLoad","path":"/PlistBuddy"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/PlistBuddy","path":"/PlistBuddy"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"trueLaunchDaemonsRunAtLoad","path":"/usr/local/bin/helper"}}
+]}
