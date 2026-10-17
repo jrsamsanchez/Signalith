@@ -593,7 +593,11 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 		if d.ID != "" {
 			meta["_id"] = d.ID
 		}
-		if err := enc.Encode(map[string]any{"create": meta}); err != nil {
+		action := "create"
+		if d.Replace {
+			action = "index"
+		}
+		if err := enc.Encode(map[string]any{action: meta}); err != nil {
 			return nil, err
 		}
 		if err := enc.Encode(d.Doc); err != nil {
@@ -634,6 +638,9 @@ type IndexedDoc struct {
 	// refused as a conflict (409) instead of storing it twice.
 	ID  string
 	Doc map[string]any
+	// Replace writes the document over one stored with the same ID
+	// instead of refusing it.
+	Replace bool
 }
 
 // PutIndexTemplate creates or replaces a composable index template.

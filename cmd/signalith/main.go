@@ -66,6 +66,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/summary"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -803,6 +804,7 @@ func newEngine(c *config.Config, s store.Searcher) *search.Engine {
 		IndexPrefix:     c.OpenSearch.IndexPrefix,
 		DefaultEarliest: c.Search.DefaultEarliest,
 		MaxEvents:       c.Search.MaxEvents,
+		SummaryDays:     c.Search.SummaryDays,
 	}}
 }
 
@@ -1261,6 +1263,21 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	log.Info("asset and identity lists loaded", "assets", len(lists.Assets()), "identities", len(lists.Identities()), "dir", c.LookupsDir())
 	eng.Assets = lists
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
+	// Every server reads which slots summary indexes cover; the server
+	// that runs the background jobs keeps them (the summaries job).
+	coverage := &summary.Coverage{Client: cl, Runtime: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix), Log: log}
+	eng.Summaries = coverage
+	in.jobs.Go(func() { coverage.Run(ctx) })
+	sumBuilder := &summary.Builder{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
+		Days: eng.SummaryDays, KeepDays: func(model string) int {
+			s, err := ret.Settings()
+			if err != nil {
+				return 0
+			}
+			p, _ := s.For(strings.ToLower(model))
+			return p.KeepDays
+		},
+		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log}
 	// Likewise a damaged lookup table is left out, and the rest load.
 	tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir()))
 	if err != nil {
@@ -1756,6 +1773,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{chatOK, chats.Index, nil, chats.Replicate},
 			})
 		}},
+		{Name: "summaries", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			sumBuilder.Run(ctx)
+		}},
 		{Name: "detections", Run: func(ctx context.Context) {
 			if !ready(ctx) || !findingsOK {
 				return
@@ -1857,6 +1880,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
 		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)

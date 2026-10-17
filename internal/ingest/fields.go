@@ -592,3 +592,11 @@ func onlyKnown(f map[string]any) int {
 
 // dayOf is the index day of a time.
 func dayOf(t time.Time) string { return t.UTC().Format("2006.01.02") }
+
+// FieldType returns the OpenSearch type the index template maps a field
+// Signalith produces to (keyword, long, double, ip, date, text or
+// wildcard), and false for a name it leaves to dynamic mapping.
+func FieldType(name string) (string, bool) {
+	t, ok := knownFields[name]
+	return t, ok
+}

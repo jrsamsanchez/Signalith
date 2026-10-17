@@ -1143,7 +1143,7 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 		s.sessions().SetMaxAge(next.SessionMaxAge())
 	}
 	if changed("search.") && s.Engine != nil {
-		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
+		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents, next.Search.SummaryDays)
 	}
 	if changed("detections.max_findings_per_run") && s.Scheduler != nil {
 		s.Scheduler.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
