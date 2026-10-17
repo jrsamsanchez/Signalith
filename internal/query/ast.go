@@ -415,6 +415,18 @@ func CommandString(c Command) string {
 		return unionString(c)
 	case *Geostats:
 		return geostatsString(c)
+	case *Extract:
+		return extractString(c)
+	case *Outlier:
+		return outlierString(c)
+	case *Gauge:
+		return gaugeString(c)
+	case *MultiSearch:
+		return multiSearchString(c)
+	case *Timewrap:
+		return timewrapString(c)
+	case *Cluster:
+		return clusterString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:

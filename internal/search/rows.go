@@ -197,6 +197,16 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyMakeContinuous(ctx, res, c)
 	case *query.Geostats:
 		return applyGeostats(ctx, res, c)
+	case *query.Extract:
+		return applyExtract(ctx, res, c)
+	case *query.Outlier:
+		return applyOutlier(ctx, res, c)
+	case *query.Gauge:
+		return applyGauge(ctx, res, c)
+	case *query.Timewrap:
+		return applyTimewrap(ctx, res, c)
+	case *query.Cluster:
+		return applyCluster(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
