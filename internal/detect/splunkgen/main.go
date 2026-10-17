@@ -57,6 +57,7 @@ var windowsSources = []string{
 	"Windows Event Log Security 4887", "Windows Event Log Security 4662", "Windows Event Log Security 4723",
 	"Windows Event Log Security 4724", "Windows Event Log Security 4722", "Windows Event Log Security 4725",
 	"Windows Event Log Security 5447", "Windows Event Log Security 4728", "Windows Event Log Security 4719",
+	"Windows Event Log Security 5140", "Windows Event Log Security 4731", "Windows Event Log Security 4756",
 	// Linux audit records, which Signalith reads from the audit log.
 	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
 	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",

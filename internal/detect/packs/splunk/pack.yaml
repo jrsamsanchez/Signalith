@@ -1850,6 +1850,10 @@ rules:
     rule_id: 127c8d08-25ff-11ec-9223-acde48001122
     file: malicious_inprocserver32_modification.yml
     path: detections/endpoint/malicious_inprocserver32_modification.yml
+  - id: splunk-malicious-powershell-executed-as-a-service
+    rule_id: 8e204dfd-cae0-4ea8-a61d-e972a1ff2ff8
+    file: malicious_powershell_executed_as_a_service.yml
+    path: detections/endpoint/malicious_powershell_executed_as_a_service.yml
   - id: splunk-malicious-powershell-process-execution-policy-bypass
     rule_id: 9be56c82-b1cc-4318-87eb-d138afaaca39
     file: malicious_powershell_process___execution_policy_bypass.yml
@@ -2766,6 +2770,10 @@ rules:
     rule_id: 69934363-e1dd-4c49-8651-9d7663dd4d2f
     file: windows_account_discovery_for_sam_account_name.yml
     path: detections/endpoint/windows_account_discovery_for_sam_account_name.yml
+  - id: splunk-windows-ad-cross-domain-sid-history-addition
+    rule_id: 41bbb371-28ba-439c-bb5c-d9930c28365d
+    file: windows_ad_cross_domain_sid_history_addition.yml
+    path: detections/endpoint/windows_ad_cross_domain_sid_history_addition.yml
   - id: splunk-windows-ad-dsrm-account-changes
     rule_id: 08cb291e-ea77-48e8-a95a-0799319bf056
     file: windows_ad_dsrm_account_changes.yml
@@ -2790,6 +2798,10 @@ rules:
     rule_id: bd3b0187-189b-46c0-be45-f52da2bae67f
     file: windows_adfind_exe.yml
     path: detections/endpoint/windows_adfind_exe.yml
+  - id: splunk-windows-administrative-shares-accessed-on-multiple-hosts
+    rule_id: d92f2d95-05fb-48a7-910f-4d3d61ab8655
+    file: windows_administrative_shares_accessed_on_multiple_hosts.yml
+    path: detections/endpoint/windows_administrative_shares_accessed_on_multiple_hosts.yml
   - id: splunk-windows-advanced-installer-msix-with-ai-stubs-execution
     rule_id: 56b2e58c-5909-49a3-998e-1f4815186ec2
     file: windows_advanced_installer_msix_with_ai_stubs_execution.yml
@@ -3890,6 +3902,10 @@ rules:
     rule_id: a27db3c5-1a9a-46df-a577-765d3f1a3c24
     file: windows_msiexec_unregister_dllregisterserver.yml
     path: detections/endpoint/windows_msiexec_unregister_dllregisterserver.yml
+  - id: splunk-windows-msmpeng-writing-to-system32
+    rule_id: dc615235-1241-411a-b170-b34a4c8924aa
+    file: windows_msmpeng_writing_to_system32.yml
+    path: detections/endpoint/windows_msmpeng_writing_to_system32.yml
   - id: splunk-windows-mstsc-rdp-commandline
     rule_id: 3718549b-867e-4084-b770-790e8dab6ab8
     file: windows_mstsc_rdp_commandline.yml
@@ -4346,6 +4362,10 @@ rules:
     rule_id: 3b4e18cb-497f-4073-85ad-1ada7c2107ab
     file: windows_registry_sip_provider_modification.yml
     path: detections/endpoint/windows_registry_sip_provider_modification.yml
+  - id: splunk-windows-remote-access-software-brc4-loaded-dll
+    rule_id: 73cf5dcb-cf36-4167-8bbe-384fe5384d05
+    file: windows_remote_access_software_brc4_loaded_dll.yml
+    path: detections/endpoint/windows_remote_access_software_brc4_loaded_dll.yml
   - id: splunk-windows-remote-access-software-rms-registry
     rule_id: e5b7b5a9-e471-4be8-8c5d-4083983ba329
     file: windows_remote_access_software_rms_registry.yml
@@ -4614,6 +4634,14 @@ rules:
     rule_id: ac520039-21f1-4567-b528-5b7133dba76f
     file: windows_ssh_proxy_command.yml
     path: detections/endpoint/windows_ssh_proxy_command.yml
+  - id: splunk-windows-steal-authentication-certificates-certificate-iss
+    rule_id: 9b1a5385-0c31-4c39-9753-dc26b8ce64c2
+    file: windows_steal_authentication_certificates_certificate_issued.yml
+    path: detections/endpoint/windows_steal_authentication_certificates_certificate_issued.yml
+  - id: splunk-windows-steal-authentication-certificates-certificate-req
+    rule_id: 747d7800-2eaa-422d-b994-04d8bb9e06d0
+    file: windows_steal_authentication_certificates_certificate_request.yml
+    path: detections/endpoint/windows_steal_authentication_certificates_certificate_request.yml
   - id: splunk-windows-steal-authentication-certificates-certutil-backup
     rule_id: bac85b56-0b65-4ce5-aad5-d94880df0967
     file: windows_steal_authentication_certificates_certutil_backup.yml

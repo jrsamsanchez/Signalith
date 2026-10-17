@@ -414,7 +414,8 @@ logs each event only with its audit policy setting on:
 | 4768, 4769 (Kerberos tickets, on domain controllers) | Authentication | Audit Kerberos Authentication Service, Audit Kerberos Service Ticket Operations |
 | 4697 (service installed) | Change | Audit Security System Extension |
 | 4698, 4699, 4701, 4702 (scheduled task created, deleted, disabled, updated) | Change | Audit Other Object Access Events |
-| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted) | Change | Audit User Account Management, Audit Security Group Management |
+| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted), 4727, 4731, 4744, 4749, 4754, 4759 (group created), 4756 (member added to a universal group) | Change | Audit User Account Management, Audit Security Group Management |
+| 4783, 4790 (basic application and LDAP query group created) | Change | Audit Application Group Management |
 | 1102 (Security log cleared) | Change | Always logged |
 | 4719 (audit policy changed) | Change | Audit Audit Policy Change |
 | 4706 (domain trust created), 4794 (DSRM password set) | Change | Audit Authentication Policy Change, Audit User Account Management |
@@ -820,7 +821,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,235 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,242 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -857,11 +858,12 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
 | `` `wineventlog_security` EventCode=5136 `` (raw search) | Security 5136 (directory object changed) | Change |
-| `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
+| `` `wineventlog_security` EventCode=5145 `` or `5140` (raw search) | Security 5145 (network share access) and 5140 (share accessed, once per session) | Filesystem |
 | `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
 | `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
 | `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
+| `` `wineventlog_security` EventCode=4731 ``, `4744`, `4749`, `4754`, `4759`, `4783`, `4790` or `4756` (raw search) | Security 4731, 4744, 4749, 4754 and 4759 (local, global and universal group created), 4783 and 4790 (application and LDAP query group created), 4756 (member added to a universal group) | Change |
 | `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
 | `` `wineventlog_security` EventCode=4662 ``, `4728`, `4722`, `4723`, `4724` or `4725` (raw search) | Security 4662 (operation on a directory object), 4728 (member added to a global group), 4722 and 4725 (account enabled or disabled), 4723 and 4724 (password changed or reset) | Change |
 | `` `wineventlog_security` EventCode=5447 `` (raw search) | Security 5447 (Windows Filtering Platform filter changed; each value by its name, `FilterName` is `security_filter_name`) | Other |
@@ -919,6 +921,16 @@ is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationTyp
 (`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
 search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
 `share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
+
+A raw search may name only its event code: it reads every event of that code, and
+its later stages, run as written, keep what they keep (a `stats` with no `by` fields
+is refused: Splunk counts every event into one row). A search may name codes of
+events that are read differently when one node reads them all, with the fields
+stored the same in each: Sysmon 11 and 15 (a file created and a stream written),
+Security 4738 and 4742 (a user and a computer account changed), and a group created
+(4727 and the like) with a member added (4728, 4732, 4756). In Sysmon 5, Splunk's
+`ProcessID` is the Sysmon process that logged the event, which Signalith does not
+keep, so a rule that counts by it is left out.
 
 Kerberos rules (Security 4768 for a ticket-granting ticket, 4769 for a service
 ticket) search the account (`TargetUserName` is `user`), the service

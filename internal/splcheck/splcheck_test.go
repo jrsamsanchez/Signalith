@@ -79,7 +79,7 @@ func TestParse(t *testing.T) {
 func TestParseRefuses(t *testing.T) {
 	for search, want := range map[string]string{
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process=* by Processes.dest | sendemail to=x": "later stage",
-		"`sysmon` EventCode=10 | stats count":                                                                              "besides its event code",
+		"`sysmon` EventCode=10 | stats count":                                                                              "must count by fields",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.dest=x by Processes.dest":                        "no Signalith mapping",
 		"| tstats count from datamodel=Endpoint.Processes where Filesystem.file_name=x by Processes.dest":                  "not a field of",
 		"| tstats count from datamodel=Endpoint.Processes where `nope` by Processes.dest":                                  "not defined",
@@ -333,6 +333,49 @@ func TestParseDirectoryShareAndKerberos(t *testing.T) {
 		if pos == 0 {
 			t.Errorf("%s: no test event matches", node)
 		}
+	}
+}
+
+// A search may name only its event code, and its codes may be of nodes
+// that one node reads together (UnionNodes).
+func TestParseEventCodeOnlyAndUnions(t *testing.T) {
+	for src, want := range map[string]struct {
+		node string
+		ids  []string
+	}{
+		"`wineventlog_security` EventCode=4887\n| stats count by dest, Requester":                                                 {"CertRequest", []string{"4887"}},
+		"`sysmon` (EventID=15 OR EventID=11) Image=\"*\\\\MsMpEng.exe\"\n| stats count by Computer TargetFilename":                {"FileOrStream", []string{"15", "11"}},
+		"`wineventlog_security` EventCode IN (4742, 4738) NOT SidHistory IN (\"%%1793\", -)\n| stats count by TargetUserName":     {"UserOrComputerChanged", []string{"4742", "4738"}},
+		"`wineventlog_security` EventCode IN (4731, 4756) TargetUserName=\"Domain Admins\"\n| stats count by dest TargetUserName": {"GroupChangedOrMemberAdded", []string{"4731", "4756"}},
+		"`wineventlog_security` EventCode=5140 OR EventCode=5145 ShareName=\"\\\\\\\\*\\\\C$\"\n| stats count by dest IpAddress":  {"ShareAccess", []string{"5140", "5145"}},
+	} {
+		r, err := Parse(rule(src), nil)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if r.Node != want.node {
+			t.Fatalf("%s: node %s, want %s", src, r.Node, want.node)
+		}
+		found := map[string]bool{}
+		for _, c := range Cases(r) {
+			if c.Expect {
+				found[c.EventID] = true
+			}
+			if c.Expect != Reads(r, c) {
+				t.Errorf("%s case %+v: Reads disagrees", want.node, c)
+			}
+		}
+		for _, id := range want.ids {
+			if !found[id] {
+				t.Errorf("%s: no test event %s matches", src, id)
+			}
+		}
+	}
+	// The fields a union node reads are stored the same in each of its
+	// nodes; a field of one alone is not one of the union's.
+	if _, err := Parse(rule("`sysmon` EventCode IN (11, 15) Contents=\"*x*\"\n| stats count by dest"), nil); err == nil ||
+		!strings.Contains(err.Error(), "not a field of") {
+		t.Errorf("a stream's contents on a file created: err = %v", err)
 	}
 }
 
