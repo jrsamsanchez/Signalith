@@ -17,6 +17,11 @@ type Query struct {
 	Latest    string // latest=now (empty: now)
 
 	Commands []Command
+
+	// EventsOnly makes the search read events, never summary indexes:
+	// detections must see events that arrived late at once, not when
+	// the summaries are next checked. Set by callers, not parsed.
+	EventsOnly bool
 }
 
 // Expr is a boolean filter expression.

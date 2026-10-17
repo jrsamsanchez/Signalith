@@ -128,6 +128,7 @@ func (w *SourceWatch) Check(ctx context.Context) error {
 		if !to.IsZero() {
 			q.Latest = to.Format(time.RFC3339Nano)
 		}
+		q.EventsOnly = true // it raises findings, as detections do
 		return w.Engine.Execute(ctx, q)
 	}
 	// The last block runs to now: a source heard in it before the cutoff

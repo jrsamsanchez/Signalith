@@ -18,6 +18,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	sumidx "github.com/jrsamsanchez/signalith/internal/summary"
 )
 
 // Options tune query execution.
@@ -34,6 +35,9 @@ type Options struct {
 	// QueueWait is how long a search waits for its turn before failing
 	// with ErrBusy (default 15s).
 	QueueWait time.Duration
+	// SummaryDays is search.summary_days: how far back summary indexes
+	// reach, 0 for none (searches then read events only).
+	SummaryDays int
 }
 
 // maxEventsLimit bounds MaxEvents however it is set.
@@ -52,6 +56,9 @@ type Engine struct {
 	Lookups *lookuptables.Store
 	// GeoIP backs the iplocation command; nil makes it an error.
 	GeoIP *geoip.Store
+	// Summaries says which slots summary indexes cover; nil reads
+	// events only.
+	Summaries *sumidx.Coverage
 
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
@@ -59,12 +66,20 @@ type Engine struct {
 	perUser map[string]chan struct{}
 }
 
-// SetDefaults changes the default time range and the most events a
-// search fetches, for searches that start after it returns.
-func (e *Engine) SetDefaults(earliest string, maxEvents int) {
+// SetDefaults changes the default time range, the most events a search
+// fetches and how far back summaries reach, for searches that start
+// after it returns.
+func (e *Engine) SetDefaults(earliest string, maxEvents, summaryDays int) {
 	e.optMu.Lock()
 	defer e.optMu.Unlock()
-	e.Opt.DefaultEarliest, e.Opt.MaxEvents = earliest, maxEvents
+	e.Opt.DefaultEarliest, e.Opt.MaxEvents, e.Opt.SummaryDays = earliest, maxEvents, summaryDays
+}
+
+// SummaryDays returns search.summary_days as last set.
+func (e *Engine) SummaryDays() int {
+	e.optMu.RLock()
+	defer e.optMu.RUnlock()
+	return e.Opt.SummaryDays
 }
 
 // ErrBusy is returned when MaxSearches searches are already running and
@@ -178,6 +193,9 @@ type Result struct {
 	Rows      []Row    `json:"rows"`
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
+	// Summaries lists the data models whose summary indexes answered
+	// whole 5-minute slots of the search.
+	Summaries []string `json:"summaries,omitempty"`
 	TookMS    int64    `json:"took_ms"`
 	// Drill finds the events behind the numbers in a summary; the search
 	// API sets it.
@@ -191,9 +209,14 @@ type Plan struct {
 	Body  map[string]any `json:"body"`
 	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
 
+	// Summaries lists the data models whose summary indexes the search
+	// reads for whole 5-minute slots.
+	Summaries []string `json:"summaries,omitempty"`
+
 	transform query.Command
 	post      []query.Command
 	threat    *query.ThreatMatch
+	sum       *summaryUse
 }
 
 func (e *Engine) opts() Options {
@@ -348,6 +371,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if threatDSL != nil {
 		fs = append(fs, threatDSL)
 	}
+	var sum *summaryUse
+	if threat == nil && len(cmds) > 0 {
+		first := cmds[0]
+		if c, ok := first.(*query.Chart); ok {
+			first = chartCommands(c)[0]
+		}
+		sum = e.summaryPlan(q, filters, first, earliest, time.Now().UTC())
+	}
 	timeRange := map[string]any{}
 	if earliest != "" && earliest != "0" {
 		timeRange["gte"] = toDateMath(earliest)
@@ -355,7 +386,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if q.Latest != "" {
 		timeRange["lte"] = toDateMath(q.Latest)
 	}
-	if len(timeRange) > 0 {
+	switch {
+	case sum != nil:
+		fs = append(fs, sum.timeFilter(), sum.clause())
+	case len(timeRange) > 0:
 		fs = append(fs, map[string]any{"range": map[string]any{TimeField: timeRange}})
 	}
 	var dsl map[string]any
@@ -372,9 +406,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if err := checkPatterns(q); err != nil {
 		return nil, err
 	}
-	p := &Plan{Index: index, threat: threat}
+	p := &Plan{Index: index, threat: threat, sum: sum}
 	body := map[string]any{"query": dsl, "track_total_hits": true}
 	p.Body = body
+	summed := sum != nil
+	if summed {
+		p.Index += "," + sumidx.IndexPattern(o.IndexPrefix)
+		p.Summaries = sum.models()
+	}
 
 	if len(cmds) > 0 {
 		if c, ok := cmds[0].(*query.Chart); ok {
@@ -386,7 +425,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			p.Mode, p.transform, p.post = "stats", c, cmds[1:]
 			body["size"] = 0
 			if len(c.By) == 0 {
-				aggs, err := metricAggs(c.Aggs)
+				aggs, err := metricAggsFor(c.Aggs, summed)
 				if err != nil {
 					return nil, err
 				}
@@ -394,12 +433,13 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 					body["aggs"] = aggs
 				}
 			} else {
-				comp, err := compositeAgg(c.By, c.Aggs, o.MaxBuckets)
+				comp, err := compositeAggFor(c.By, c.Aggs, o.MaxBuckets, summed)
 				if err != nil {
 					return nil, err
 				}
 				body["aggs"] = map[string]any{"groups": comp}
 			}
+			addEventsAgg(body, summed)
 			return p, nil
 		case *query.Top:
 			p.Mode, p.transform, p.post = "top", c, cmds[1:]
@@ -425,13 +465,20 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			for k, v := range interval {
 				hist[k] = v
 			}
-			sub, err := metricAggs(c.Aggs)
+			sub, err := metricAggsFor(c.Aggs, summed)
 			if err != nil {
 				return nil, err
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
-				by := map[string]any{"terms": map[string]any{"field": storedField(c.By), "size": 10}}
+				terms := map[string]any{"field": storedField(c.By), "size": 10}
+				if summed {
+					// A summary row stands for many events: the
+					// largest values are those with the most events,
+					// not the most rows.
+					terms["order"] = map[string]any{"m0": "desc"}
+				}
+				by := map[string]any{"terms": terms}
 				if len(sub) > 0 {
 					by["aggs"] = sub
 				}
@@ -440,6 +487,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 				ts["aggs"] = sub
 			}
 			body["aggs"] = map[string]any{"time": ts}
+			addEventsAgg(body, summed)
 			return p, nil
 		}
 	}
@@ -487,9 +535,17 @@ func leadingHead(cmds []query.Command) (int, bool) {
 	return 0, false
 }
 
-func metricAggs(aggs []query.Agg) (map[string]any, error) {
+func metricAggs(aggs []query.Agg) (map[string]any, error) { return metricAggsFor(aggs, false) }
+
+// metricAggsFor is metricAggs for a search that may read summary rows
+// (summed), where a bare count is a sum of the events each stands for.
+func metricAggsFor(aggs []query.Agg, summed bool) (map[string]any, error) {
 	out := map[string]any{}
 	for i, a := range aggs {
+		if summed && a.Func == "count" && a.Field == "" {
+			out[fmt.Sprintf("m%d", i)] = countAgg()
+			continue
+		}
 		m, err := metricAgg(a)
 		if err != nil {
 			return nil, err
@@ -501,14 +557,32 @@ func metricAggs(aggs []query.Agg) (map[string]any, error) {
 	return out, nil
 }
 
+// addEventsAgg adds, to a search that reads summary rows, the count of
+// the events it matched (hits counts rows as one each).
+func addEventsAgg(body map[string]any, summed bool) {
+	if !summed {
+		return
+	}
+	aggs, _ := body["aggs"].(map[string]any)
+	if aggs == nil {
+		aggs = map[string]any{}
+		body["aggs"] = aggs
+	}
+	aggs[eventsAgg] = countAgg()
+}
+
 func compositeAgg(by []string, aggs []query.Agg, maxBuckets int) (map[string]any, error) {
+	return compositeAggFor(by, aggs, maxBuckets, false)
+}
+
+func compositeAggFor(by []string, aggs []query.Agg, maxBuckets int, summed bool) (map[string]any, error) {
 	var sources []any
 	for i, f := range by {
 		sources = append(sources, map[string]any{fmt.Sprintf("k%d", i): map[string]any{"terms": map[string]any{"field": storedField(f)}}})
 	}
 	size := min(maxBuckets, 10000)
 	comp := map[string]any{"composite": map[string]any{"size": size, "sources": sources}}
-	sub, err := metricAggs(aggs)
+	sub, err := metricAggsFor(aggs, summed)
 	if err != nil {
 		return nil, err
 	}
@@ -659,7 +733,12 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Matched: totalHits(resp)}
+	res := &Result{Matched: totalHits(resp), Summaries: p.Summaries}
+	summed := p.sum != nil
+	if summed {
+		aggs, _ := resp["aggregations"].(map[string]any)
+		res.Matched = summedCount(aggs, eventsAgg)
+	}
 	switch p.Mode {
 	case "events":
 		res.Kind = "events"
@@ -675,6 +754,9 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			for i, a := range st.Aggs {
 				if a.Func == "count" && a.Field == "" {
 					row[a.Column()] = res.Matched
+					if summed {
+						row[a.Column()] = summedCount(aggs, fmt.Sprintf("m%d", i))
+					}
 				} else {
 					row[a.Column()] = aggValue(a, aggs, fmt.Sprintf("m%d", i))
 				}
@@ -690,9 +772,12 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
 			for i, a := range st.Aggs {
-				if a.Func == "count" && a.Field == "" {
+				switch {
+				case a.Func == "count" && a.Field == "" && summed:
+					row[a.Column()] = summedCount(b, fmt.Sprintf("m%d", i))
+				case a.Func == "count" && a.Field == "":
 					row[a.Column()] = toNumber(b["doc_count"])
-				} else {
+				default:
 					row[a.Column()] = aggValue(a, b, fmt.Sprintf("m%d", i))
 				}
 			}
@@ -719,7 +804,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 	case "timechart":
 		res.Kind = "timechart"
 		tc := p.transform.(*query.Timechart)
-		res.Rows, res.Columns = timechartRows(resp, tc)
+		res.Rows, res.Columns = timechartRows(resp, tc, summed)
 		return res, nil
 	}
 	return nil, fmt.Errorf("unknown plan mode %q", p.Mode)
@@ -900,7 +985,7 @@ func flatten(prefix string, m map[string]any, out Row) {
 	}
 }
 
-func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
+func timechartRows(resp map[string]any, tc *query.Timechart, summed bool) ([]Row, []string) {
 	aggs, _ := resp["aggregations"].(map[string]any)
 	ts, _ := aggs["time"].(map[string]any)
 	bs, _ := ts["buckets"].([]any)
@@ -912,9 +997,12 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 			bm, _ := b.(map[string]any)
 			row := Row{"_time": bm["key_as_string"]}
 			for i, a := range tc.Aggs {
-				if a.Func == "count" && a.Field == "" {
+				switch {
+				case a.Func == "count" && a.Field == "" && summed:
+					row[a.Column()] = summedCount(bm, fmt.Sprintf("m%d", i))
+				case a.Func == "count" && a.Field == "":
 					row[a.Column()] = toNumber(bm["doc_count"])
-				} else {
+				default:
 					row[a.Column()] = aggValue(a, bm, fmt.Sprintf("m%d", i))
 				}
 			}
@@ -934,9 +1022,12 @@ func timechartRows(resp map[string]any, tc *query.Timechart) ([]Row, []string) {
 			vm, _ := vb.(map[string]any)
 			name := fmt.Sprint(normalize(vm["key"]))
 			var val any
-			if a.Func == "count" && a.Field == "" {
+			switch {
+			case a.Func == "count" && a.Field == "" && summed:
+				val = summedCount(vm, "m0")
+			case a.Func == "count" && a.Field == "":
 				val = toNumber(vm["doc_count"])
-			} else {
+			default:
 				val = aggValue(a, vm, "m0")
 			}
 			row[name] = val
