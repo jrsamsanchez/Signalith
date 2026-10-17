@@ -429,6 +429,9 @@ type Fingerprints struct {
 	Notify string `json:"notify,omitempty"`
 	// Playbooks is the playbooks; "" when a server has none.
 	Playbooks string `json:"playbooks,omitempty"`
+	// Ticketing is the Jira and ServiceNow connections; "" when a
+	// server has none.
+	Ticketing string `json:"ticketing,omitempty"`
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
@@ -459,6 +462,10 @@ func (f Fingerprints) Combined() string {
 		h.Write([]byte("playbooks:" + f.Playbooks))
 		h.Write([]byte{0})
 	}
+	if f.Ticketing != "" {
+		h.Write([]byte("ticketing:" + f.Ticketing))
+		h.Write([]byte{0})
+	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
@@ -484,7 +491,7 @@ func differWords(what, a, b string) string {
 
 // Differ lists the parts that differ between f and o, in words: "retention
 // policies", "threat intel feeds", "detections folder", "notification
-// channels", "playbooks", "archive folder".
+// channels", "playbooks", "ticketing connections", "archive folder".
 func (f Fingerprints) Differ(o Fingerprints) []string {
 	var out []string
 	if f.Retention != o.Retention {
@@ -501,6 +508,9 @@ func (f Fingerprints) Differ(o Fingerprints) []string {
 	}
 	if f.Playbooks != o.Playbooks {
 		out = append(out, "playbooks")
+	}
+	if f.Ticketing != o.Ticketing {
+		out = append(out, "ticketing connections")
 	}
 	if f.Archives != o.Archives {
 		out = append(out, "archive folder")

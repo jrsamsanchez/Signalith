@@ -213,3 +213,63 @@ func httpClient(c Channel, protected Protected) (*http.Client, error) {
 }
 
 var errRedirect = errors.New("the receiver redirected to another address; Signalith only follows redirects on the same server. Check the URL")
+
+// ClientOptions are the settings of a client made with NewClient, for
+// other packages that call services an admin names, such as the
+// ticketing connections.
+type ClientOptions struct {
+	// AllowLoopback lets the client reach this server's own addresses,
+	// as Channel.AllowLoopback does.
+	AllowLoopback bool
+	// CAPEM holds extra certificate authorities, in PEM, as
+	// Channel.CAPEM does.
+	CAPEM string
+	// Protected are services the client must never reach.
+	Protected Protected
+	// Timeout bounds one request in all; 0 is SendTimeout.
+	Timeout time.Duration
+}
+
+// NewClient returns a client with the protections channels get: the
+// proxy from HTTPS_PROXY, HTTP_PROXY and NO_PROXY, only allowed addresses
+// after DNS, certificates always checked, and a time limit. Unlike a
+// channel's client it never follows a redirect: the caller gets the
+// redirect as the answer, since an API that redirects is not set up as
+// it was entered.
+func NewClient(o ClientOptions) (*http.Client, error) {
+	conf, err := tlsConfig(Channel{CAPEM: o.CAPEM}, "")
+	if err != nil {
+		return nil, err
+	}
+	timeout := o.Timeout
+	if timeout <= 0 {
+		timeout = SendTimeout
+	}
+	d := newDialer(o.AllowLoopback, o.Protected)
+	tr := &http.Transport{
+		Proxy: func(req *http.Request) (*url.URL, error) {
+			u, err := http.ProxyFromEnvironment(req)
+			p := ""
+			if err == nil && u != nil {
+				p = hostPort(u)
+			}
+			d.setProxy(p)
+			return u, err
+		},
+		DialContext:           d.DialContext,
+		TLSClientConfig:       conf,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          2,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+	}
+	return &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}, nil
+}
+
+// Check refuses a URL whose host:port is protected, or whose host is an
+// address a client made with NewClient may not reach, before a request
+// is sent to it. The dialer checks again after DNS.
+func (p Protected) Check(u *url.URL, allowLoopback bool) error { return p.check(u, allowLoopback) }
