@@ -538,6 +538,12 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Union:
+		parts := make([]string, 0, len(c.Subs))
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		return "Add the rows of each subsearch after these. " + strings.Join(parts, " ")
 	case *query.AppendPipe:
 		parts := make([]string, len(c.Commands))
 		for i, cmd := range c.Commands {

@@ -375,6 +375,7 @@ func QueryReference() string {
   return [N] src [ip=dest] [$user]   the first N rows' fields as search terms in field search; makecontinuous [_time] span=1h adds empty rows for missing buckets
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
+  union [search datamodel=Authentication] [search datamodel=Change]   adds each subsearch's rows after the results
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)

@@ -170,6 +170,11 @@ func lex(src string) ([]token, error) {
 				end := subsearchEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end
+			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe && strings.EqualFold(w, "union") {
+				// union takes several subsearches, one [ ] after another.
+				end := unionEnd(src, i)
+				toks = append(toks, token{tokRaw, src[i:end], i})
+				i = end
 			}
 		}
 	}
