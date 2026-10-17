@@ -376,7 +376,7 @@ var Registry = []Setting{
 	{Key: "search.max_events", Scope: ScopeCluster, Section: "search", Label: "Events per search", Type: TypeNumber, Min: intp(1), Max: intp(100000),
 		Help: "The most events a search fetches to sort, filter or count after searching. More uses more memory."},
 	{Key: "dashboards.stale_after", Scope: ScopeCluster, Section: "search", Label: "Quiet data source after", Type: TypeDuration,
-		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long. At least 5m.",
+		Help:        "The Posture dashboard lists a host and source type as stopped when nothing arrives from it for this long, and the detection Data source stopped sending fires for one that sent all day before. At least 5m.",
 		Placeholder: "2h"},
 
 	{Key: "syslog.udp", Scope: ScopeServer, Section: "syslog", Label: "UDP address", Type: TypeAddress, Restart: true,
@@ -454,7 +454,7 @@ var Registry = []Setting{
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
 		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
-			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work. " +
+			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work, and a field covers its subfields: user also masks user.name. " +
 			"Passwords, tokens, keys and cookies are always masked.",
 		Placeholder: "user, _raw", EmptyMeans: "only passwords, tokens, keys and cookies"},
 	{Key: "assistant.request_timeout", Scope: ScopeCluster, Section: "assistant", Label: "Answer time limit", Type: TypeDuration,

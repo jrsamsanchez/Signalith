@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -19,6 +20,8 @@ type SessionStore interface {
 	// SetVersion records which password a session's user has now (see
 	// auth.Session.Version).
 	SetVersion(ctx context.Context, token, version string)
+	// SetTenant moves a session to another tenant (auth.Session.Tenant).
+	SetTenant(ctx context.Context, token, tenant string) error
 	// Delete ends a session.
 	Delete(ctx context.Context, token string)
 	// EndUser ends every session of a user except the one with token keep
@@ -54,6 +57,13 @@ func (m memorySessions) Lookup(_ context.Context, token string, used bool) (auth
 
 func (m memorySessions) SetVersion(_ context.Context, token, version string) {
 	m.s.SetVersion(token, version)
+}
+
+func (m memorySessions) SetTenant(_ context.Context, token, tenant string) error {
+	if !m.s.SetTenant(token, tenant) {
+		return errors.New("the session has ended")
+	}
+	return nil
 }
 
 func (m memorySessions) Delete(_ context.Context, token string) { m.s.Delete(token) }

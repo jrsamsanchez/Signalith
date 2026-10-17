@@ -464,7 +464,7 @@ func needsAllEvents(cmds []query.Command) bool {
 		case *query.Head:
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
-			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine:
+			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary:
 			return true
 		}
 	}
@@ -478,7 +478,8 @@ func leadingHead(cmds []query.Command) (int, bool) {
 			return c.N, true
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
-			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation:
+			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation,
+			*query.Accum, *query.Delta, *query.AutoRegress:
 			continue
 		}
 		return 0, false
@@ -638,6 +639,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.intelEnrich(res, c)
 		case *query.IPLocation:
 			err = e.ipLocation(ctx, res, c)
+		case *query.Map:
+			err = e.mapSearch(ctx, res, c, q)
 		default:
 			err = applyCommand(ctx, res, c)
 		}

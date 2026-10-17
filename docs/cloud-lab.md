@@ -42,9 +42,10 @@ script warns about it and carries on).
 
 The machines talk over a private network (`10.0.1.0/24`) and know each other by name
 (`signalith-1.lab.internal` and so on). Agents and the sensor send to
-`https://siem.lab.internal:8080`, the load balancer, which has no public address.
+`https://siem.lab.internal:7779`, the agent port of the load balancer, which has no public
+address. The web page is on port 9000.
 
-The firewall lets in only your own internet address, on SSH (22), the web page (8080)
+The firewall lets in only your own internet address, on SSH (22), the web page (9000)
 and Windows remote desktop (3389).
 
 Cloud networks have no mirror port, so each Linux endpoint sends a copy of its traffic to
@@ -92,9 +93,11 @@ terraform output -raw watch_setup
 It prints `ssh root@<signalith-1 address> tail -f /var/log/lab-setup.log`: copy it and run it
 (the first time, ssh asks whether to continue connecting: type `yes`). It ends with `Lab ready.` Press Ctrl+C to stop watching. Then:
 
-1. Open the `signalith` address it printed, such as `https://203.0.113.10:8080`.
+1. Open the `signalith` address it printed, such as `https://203.0.113.10:9000`.
 2. Sign in as `admin`, with the password from the `admin_password` line:
-   `ssh root@<signalith-1 address> cat /etc/signalith/initial-admin-password`.
+   `ssh root@<signalith-1 address> cat /root/lab/admin-password`. Signalith asks the admin
+   for a new password before anything else, so the setup replaces the first one with a
+   random password and keeps it there.
 3. The browser warns about the certificate: trust Signalith's own CA from the sign-in
    page, as on any new install (see [HTTPS](https.md)).
 
@@ -173,8 +176,29 @@ It ends with how many checks passed and failed, and writes the report to
 scp root@<signalith-1 address>:/root/lab/e2e/latest/report.md .
 ```
 
-If you changed the admin password, give it to the test:
+The test signs in with the password in `/root/lab/admin-password`. A lab whose admin
+still has the first password Signalith made gets a new random one there, as a new lab
+does. If you changed the admin password yourself, give it to the test:
 `sudo E2E_PASSWORD='<password>' lab-e2e`.
+
+## A lab made before the port change
+
+Labs set up before Signalith moved to ports 9000 (web page) and 7779 (agents) still use 8080
+for both. Change the servers' settings first, while the page is still on 8080; the new ports
+are used from each server's restart:
+
+1. In **Settings**, for each server (**Settings of**, at the top of the page), set
+   **Listen address** to `0.0.0.0:9000` and **Agent address** to `0.0.0.0:7779`, and change
+   the `:8080` in **Address for other servers** to `:9000`. These are each server's own
+   settings: in a lab with more than one server they are kept with the shared settings, so
+   editing `/etc/signalith/signalith.yaml` does not change them.
+2. Change the `:8080` in **Public address** to `:9000`. It is shared by all servers.
+3. Run `terraform apply` with this version, which moves the firewall and the load balancer
+   to 9000 and 7779. Add `-var windows=false` if you have not made windows-1, or it is
+   made too.
+4. Restart the servers one at a time, the one that runs background jobs last.
+5. Get new agent configurations from **Add data** for linux-1 and the sensor; they now send
+   to port 7779.
 
 ## After the setup
 
@@ -194,7 +218,7 @@ and you install Windows Server once:
 4. Give it the lab's names: in PowerShell as Administrator,
    `Add-Content C:\Windows\System32\drivers\etc\hosts "10.0.1.5 siem.lab.internal"`.
 5. In Signalith, **Add data** > **Windows**, and follow the steps. The agent sends to
-   `https://siem.lab.internal:8080`.
+   `https://siem.lab.internal:7779`.
 
 Windows runs without a license key: it is not activated, which is fine for a lab that is
 deleted again. Use your own key if you have one.
@@ -220,7 +244,7 @@ Single sign-on needs an identity provider; neither needs any machine in the lab.
 [Microsoft Entra ID](https://www.microsoft.com/security/business/microsoft-entra-pricing)
 tenant comes with any Microsoft Azure account, and [Okta](https://developer.okta.com/signup/)
 has a free developer account. Set it up as [Users and sign-in](users.md) describes, with
-`https://<signalith-1 address>:8080` as the address people sign in at.
+`https://<signalith-1 address>:9000` as the address people sign in at.
 
 ## If something fails
 

@@ -49,6 +49,10 @@ app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end }}
 
+{{/* The agent port: server.agentPort, or 7779 when an upgrade with
+--reuse-values kept values from before it existed. */}}
+{{- define "signalith.agentPort" -}}{{ .Values.server.agentPort | default 7779 | int }}{{- end }}
+
 {{- define "signalith.secretsName" -}}{{ include "signalith.fullname" . }}-secrets{{- end }}
 {{- define "signalith.opensearchName" -}}{{ include "signalith.fullname" . }}-opensearch{{- end }}
 
@@ -88,7 +92,7 @@ capabilities:
 {{- if $v.server.tls.existingSecret -}}
 {{- $tls = dict "mode" "files" -}}
 {{- end -}}
-{{- $server := dict "listen" (printf "0.0.0.0:%d" $port) "public_url" $public "tls" $tls -}}
+{{- $server := dict "listen" (printf "0.0.0.0:%d" $port) "agent_listen" (printf "0.0.0.0:%d" (int (include "signalith.agentPort" $ctx))) "public_url" $public "tls" $tls -}}
 {{- if $v.server.tls.existingSecret -}}
 {{- $_ := set $server "tls_cert" "/run/signalith/tls/tls.crt" -}}
 {{- $_ := set $server "tls_key" "/run/signalith/tls/tls.key" -}}

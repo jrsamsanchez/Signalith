@@ -444,6 +444,10 @@ func CommandString(c Command) string {
 		return xmlkvString(c)
 	case *IPLocation:
 		return ipLocationString(c)
+	case *Map:
+		return mapString(c)
+	case *Accum, *Delta, *AutoRegress, *FieldSummary:
+		return seqString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

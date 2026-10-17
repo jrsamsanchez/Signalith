@@ -17,6 +17,8 @@ import (
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 )
 
 // Where a user's password is checked.
@@ -43,6 +45,11 @@ type User struct {
 	Email    string `json:"email,omitempty"`
 	Role     Role   `json:"role"`
 	Source   string `json:"source"`
+	// Tenant is the tenant a tenant user belongs to and may only ever act
+	// in; empty for the provider's own users (the built-in admin, and
+	// directory and single sign-on users), who work in the default tenant
+	// and may switch to any (see docs/multi-tenant.md).
+	Tenant string `json:"tenant,omitempty"`
 	// Disabled users cannot sign in, and their sessions end.
 	Disabled bool `json:"disabled,omitempty"`
 	// MustChangePassword sends the user to choose a new password right
@@ -86,6 +93,9 @@ type NewUser struct {
 	Role               Role
 	Password           string
 	MustChangePassword bool
+	// Tenant makes a tenant user (see User.Tenant); empty for a provider
+	// user.
+	Tenant string
 }
 
 // Change edits a user; nil fields stay as they are.
@@ -475,6 +485,11 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
 	}
+	if in.Tenant != "" {
+		if err := tenants.ValidID(in.Tenant); err != nil {
+			return User{}, fieldError("tenant", err)
+		}
+	}
 	if err := CheckNewPassword(name, in.Password); err != nil {
 		return User{}, fieldError("password", err)
 	}
@@ -488,7 +503,7 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	}
 	defer release()
 	now := s.now()
-	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Name: in.Name, Email: in.Email, Role: in.Role, Source: SourceLocal,
+	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Name: in.Name, Email: in.Email, Role: in.Role, Source: SourceLocal, Tenant: in.Tenant,
 		MustChangePassword: in.MustChangePassword, Created: now, Updated: now}, Hash: hash, Epoch: 1})
 	if errors.Is(err, ErrExists) {
 		return User{}, fieldError("username", ErrExists)
@@ -526,8 +541,10 @@ func (s *Store) adminsLeft(name string, role Role, disabled bool) int {
 			r, off = role, disabled
 		}
 		// Directory users' roles depend on groups that may have changed
-		// since they last signed in, so only local admins count.
-		if u.Source == SourceLocal && r == Admin && !off {
+		// since they last signed in, so only local admins count, and
+		// only the provider's own: a tenant's admins manage only their
+		// tenant.
+		if u.Source == SourceLocal && r == Admin && !off && u.Tenant == "" {
 			n++
 		}
 	}
@@ -587,7 +604,7 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if !u.Role.Valid() {
 			return fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", u.Role))
 		}
-		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled
+		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == ""
 		if wasAdmin && (u.Role != Admin || u.Disabled) && s.adminsLeft(name, u.Role, u.Disabled) == 0 {
 			return ErrLastAdmin
 		}
@@ -628,7 +645,7 @@ func (s *Store) DeleteIf(ctx context.Context, name, etag string) (User, error) {
 	var gone User
 	err = s.b.Delete(ctx, Actor(ctx), name, etag, func(r Record) error {
 		cur := r.User
-		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && s.adminsLeft(name, Viewer, true) == 0 {
+		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == "" && s.adminsLeft(name, Viewer, true) == 0 {
 			return ErrLastAdmin
 		}
 		gone = recordUser(r)

@@ -32,15 +32,16 @@ The first start takes a few minutes. Then:
 2. Open Signalith. With the default `ClusterIP` service:
 
     ```sh
-    kubectl -n signalith port-forward service/signalith 8080:8080
+    kubectl -n signalith port-forward service/signalith 9000:9000
     ```
 
-    then <https://localhost:8080>, and sign in as `admin`. The browser warns about the
+    then <https://localhost:9000>, and sign in as `admin`. The browser warns about the
     certificate until you trust Signalith's CA ([HTTPS](https.md#trust-the-certificate)).
 
 3. So agents and devices outside the cluster can send to it, give it an address they
-   reach (below) and set `server.publicURL` to it. The Add data page puts that address
-   into each agent's configuration.
+   reach (below) and set `server.publicURL` to it. The Add data page gives agents that
+   address on the [agent port](sending-data.md#the-agent-port), 7779, which is kept apart
+   from the web page's port, 9000 (`server.agentPort` and `server.port`).
 
 The chart's settings are in its
 [values.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/helm/signalith/values.yaml),
@@ -55,23 +56,27 @@ each with a comment. Change them with a file of your own (`-f my-values.yaml`) o
 | Scanners | StatefulSet `signalith-scanner`, off unless `scanner.enabled` | [Scanners](multi-server.md#cluster-servers-and-scanners) scan networks from inside the cluster and never run the background jobs |
 | OpenSearch | StatefulSet `signalith-opensearch`, 1 or 3+ nodes | Off with `opensearch.enabled: false` |
 | Setup | A Job before each install and upgrade | Makes the secrets (below), then is deleted with its rights |
-| Services | `signalith` (web, API and agents), `signalith-syslog`, `signalith-pods`, `signalith-opensearch` | |
+| Services | `signalith` (web and API on 9000, agents on 7779), `signalith-syslog`, `signalith-pods`, `signalith-opensearch` | |
 | Network policies | Around OpenSearch and the servers | Need a network plugin that enforces them |
 
 ## Exposing Signalith
 
 The web Service is `ClusterIP` by default. To reach it from outside the cluster:
 
-- **A load balancer**: `server.service.type: LoadBalancer`. Limit who can connect with
-  `server.service.loadBalancerSourceRanges` (without it the sign-in page is open to every
-  network the load balancer is on, and the install notes warn about it), and keep each client's own address (which
-  sign-in limits and the audit log use) with `server.service.externalTrafficPolicy: Local`.
+- **A load balancer**: `server.service.type: LoadBalancer`. It takes the web page on 9000
+  and agents on 7779 at one address. Limit who can connect with
+  `server.service.loadBalancerSourceRanges`, listing the admins' and the agents' networks
+  (without it the sign-in page is open to every network the load balancer is on, and the
+  install notes warn about it), then narrow each port with the network policies below.
+  Keep each client's own address (which sign-in limits and the audit log use) with
+  `server.service.externalTrafficPolicy: Local`.
 - **Syslog**: the `signalith-syslog` Service takes UDP and TCP 514 and syslog over TLS on
   6514, with the same settings under `server.syslog.service`. `server.syslog.allow` lists
   the addresses that may send.
 - **An ingress controller**: Signalith serves HTTPS itself and agents send their own token,
   so pass connections through (TLS passthrough, such as ingress-nginx's
   `nginx.ingress.kubernetes.io/ssl-passthrough`) rather than ending TLS in the ingress.
+  Agents send to port 7779 at the same host, so expose that port too.
 
 Signalith makes and renews its own HTTPS certificate from a CA the servers share
 ([HTTPS](https.md)). To serve one of your own, such as one from cert-manager, name its
@@ -195,7 +200,9 @@ Turn on [two-factor sign-in](users.md) for every admin.
   needs a client certificate from OpenSearch's CA to sign in).
 - **Network**: OpenSearch takes connections only from the release's Signalith pods (and its
   own nodes), and connects only to its own nodes. Signalith's pods take connections only on
-  their web and syslog ports. Limit who may reach those with `networkPolicy.webFrom` and
+  their web, agent and syslog ports. Limit who may reach those with `networkPolicy.webFrom`
+  (the admins' networks), `networkPolicy.agentsFrom` (the agents' networks; when not set,
+  the same as `webFrom`) and
   `networkPolicy.syslogFrom`, and where Signalith may connect with
   `networkPolicy.serverEgress` (threat intel downloads, CVE lookups, content updates and
   notifications need the internet).
@@ -207,9 +214,12 @@ Turn on [two-factor sign-in](users.md) for every admin.
 ## Upgrading
 
 ```sh
-helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <new release> -n signalith --reuse-values
+helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <new release> -n signalith --reset-then-reuse-values
 ```
 
+`--reset-then-reuse-values` (Helm 3.14 or newer) keeps the settings you gave and takes the
+new release's defaults for the rest. With `--reuse-values` instead, settings added in the new
+release are missing and the old defaults stay, such as the web port of an earlier chart.
 The servers restart one at a time; each hands its jobs over as it stops. Read the release
 notes first: when a release moves OpenSearch to a new major version, back up its volume.
 Rolling back with `helm rollback` restarts the previous version; see

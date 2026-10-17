@@ -53,6 +53,20 @@ dashboards:
   stale_after: 6h
 ```
 
+The built-in detection **Data source stopped sending** (`data-source-stopped`)
+raises a finding when a source that sent steadily goes quiet for that long, so
+you hear about it without opening the dashboard. Steady means it sent something
+in each six-hour block of the day before, so a workstation that is off at night
+or a weekly scan never fires it. Signalith checks every 15 minutes, on the server
+that runs the background jobs, and writes one `sourcetype=source:health` event per
+silence for the detection to read (`stopped_sourcetype` names the source type that
+stopped). The detection believes only events Signalith wrote itself
+(`signalith_intake=signalith`), so a sender cannot raise it for hosts it names.
+Sample data, Signalith's own events and its vulnerability scans are left out of
+the check. A broken agent, a full disk, a firewall change and an attacker who turned
+logging off all look the same from here, so the finding's guidance says where to
+look first.
+
 Each section loads on its own: if one part fails (for example, OpenSearch rejects a
 query), that card shows the error and the rest of the dashboard still works. Cards
 with an **Open in Search** link show the exact query behind them.

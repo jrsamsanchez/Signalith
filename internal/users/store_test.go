@@ -87,6 +87,17 @@ func TestStoreLastAdminGuard(t *testing.T) {
 	s := NewMemory() // no built-in admin, so local admins are all there is
 	s.Create(context.Background(), newUser("ann", Admin))
 	s.Create(context.Background(), newUser("ben", Analyst))
+	// A tenant's admin cannot manage the install, so ann is still the
+	// last admin; and the tenant's last admin may go.
+	ta := newUser("tad", Admin)
+	ta.Tenant = "acme"
+	if _, err := s.Create(context.Background(), ta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Delete(context.Background(), "tad"); err != nil {
+		t.Errorf("delete a tenant's last admin: %v", err)
+	}
+	s.Create(context.Background(), ta)
 	viewer, off := Viewer, true
 	if _, err := s.Update(context.Background(), "ann", Change{Role: &viewer}); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("demote last admin: %v", err)

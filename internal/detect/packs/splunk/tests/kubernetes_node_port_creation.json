@@ -1,0 +1,9 @@
+{"rule": "d7fc865e-b8a1-4029-a960-cf4403b821b6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"services","requestObject.spec.type":"NodePort","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"servicet","requestObject.spec.type":"NodePort","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"requestObject.spec.type":"NodePort","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"services","requestObject.spec.type":"NodePort","verb":"creatf"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"services","requestObject.spec.type":"NodePort"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"services","requestObject.spec.type":"NodePoru","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"services","verb":"create"}}
+]}

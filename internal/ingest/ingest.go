@@ -876,6 +876,8 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 		ev = ParseGCP(r)
 	case tag == OktaTag || strings.HasPrefix(tag, OktaTag+".") || IsOktaRecord(r):
 		ev = ParseOkta(r)
+	case isKubernetesTag(tag) || IsKubernetesRecord(r):
+		ev = ParseKubernetes(kubeLine(r))
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):

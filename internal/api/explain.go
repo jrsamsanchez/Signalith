@@ -268,6 +268,16 @@ func describeCommand(c query.Command) string {
 			where = strings.Join(c.Fields, ", ")
 		}
 		return "Replace " + strings.Join(parts, ", ") + " in " + where + "."
+	case *query.Accum:
+		return "Set " + c.AccumName() + " to the running total of " + c.Field + "."
+	case *query.Delta:
+		return fmt.Sprintf("Set %s to %s minus its value %d rows with a number earlier.", c.DeltaName(), c.Field, c.P)
+	case *query.AutoRegress:
+		return "Copy " + c.Field + " from earlier rows into " + strings.Join(c.Names(), ", ") + "."
+	case *query.FieldSummary:
+		return "Describe each field: how many rows have it, its distinct and most common values, and for numbers min, max, mean and stdev."
+	case *query.Map:
+		return fmt.Sprintf("For each of the first %d rows, run the search %s with the row's values in place of its $field$ names, and keep the rows those searches find.", c.Max, strconv.Quote(c.Search))
 	case *query.IPLocation:
 		return "Add where the IP address in " + c.Field + " is, from the GeoIP database: " + strings.Join(c.Fields(), ", ") + "."
 	case *query.XMLKV:

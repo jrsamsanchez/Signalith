@@ -22,14 +22,18 @@ fullnameOverride: ""
 server:
   replicas: 1
   # The address agents, devices and browsers use to reach Signalith, such
-  # as https://siem.example.com:8080 or the load balancer's address. The
-  # Add data page puts it into agent configurations. Empty: the web
+  # as https://siem.example.com:9000 or the load balancer's address. Add
+  # data gives agents the same host on the agent port. Empty: the web
   # Service's name inside the cluster, which only agents in the cluster
   # can reach.
   publicURL: ""
-  # Web UI, API and agents, over HTTPS (plain http:// answers the health
-  # checks and redirects everything else).
-  port: 8080
+  # Web UI and API, over HTTPS (plain http:// answers the health checks
+  # and redirects everything else).
+  port: 9000
+  # Agents (Fluent Bit, the OpenTelemetry Collector, osquery), over HTTPS
+  # on a port of their own, apart from the web page and API
+  # (docs/sending-data.md#the-agent-port). The web Service carries both.
+  agentPort: 7779
   # More settings for signalith.yaml, merged over the chart's (see
   # docs/settings.md), for example:
   #   retention: { days: 180 }
@@ -162,15 +166,23 @@ setup:
   backoffLimit: 3
 
 # Network policies: OpenSearch takes connections only from Signalith's pods
-# (and its own nodes), and Signalith's pods only on their web and syslog
-# ports. Needs a network plugin that enforces them (Calico, Cilium, ...).
+# (and its own nodes), and Signalith's pods only on their web, agent and
+# syslog ports. Needs a network plugin that enforces them (Calico, Cilium, ...).
 networkPolicy:
   enabled: true
-  # Who may reach the web port (UI, API and agents). Empty: anyone. For
-  # example, only an ingress controller's namespace and one network:
+  # Who may reach the web port (UI and API). Empty: anyone. For example,
+  # only an ingress controller's namespace and the admins' network:
   #   - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
   #   - ipBlock: { cidr: 10.20.0.0/16 }
   webFrom: []
+  # Who may reach the agent port (agents still need a token). Not set
+  # (null): the same as webFrom. Empty ([]): anyone. For example, only the
+  # networks your agents are on:
+  #   - ipBlock: { cidr: 10.30.0.0/16 }
+  # or, with webFrom set, open the agent port to everyone:
+  #   - ipBlock: { cidr: 0.0.0.0/0 }
+  #   - namespaceSelector: {}
+  agentsFrom: null
   # Who may send syslog. Empty: anyone.
   syslogFrom: []
   # Limit where Signalith's pods may connect to. Empty: anywhere, which
