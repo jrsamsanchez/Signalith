@@ -15,6 +15,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -347,7 +348,13 @@ func (s *Server) principalFor(name string) *principal {
 	if u.Source == users.SourceSSO {
 		// Single sign-on users can use Signalith only while it is on, with
 		// the provider they signed in with.
-		if c := s.conf(); !c.OIDCOn() || users.SSOIssuer(u.Subject) != c.OIDCIssuer() {
+		c := s.conf()
+		iss := users.SSOIssuer(u.Subject)
+		if strings.HasPrefix(iss, config.SAMLEntityPrefix) {
+			if !s.samlIssuerOK(c, iss) {
+				return nil
+			}
+		} else if !c.OIDCOn() || iss != c.OIDCIssuer() {
 			return nil
 		}
 	}

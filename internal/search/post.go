@@ -39,6 +39,8 @@ func RunCommands(ctx context.Context, docs []map[string]any, cmds []query.Comman
 		case *query.Lookup, *query.Join, *query.Append, *query.AppendPipe, *query.InputLookup,
 			*query.Enrich, *query.Intel, *query.ThreatMatch, *query.MakeResults, *query.IPLocation, *query.Map:
 			return nil, fmt.Errorf("command %q reads other data", c.Name())
+		case *query.AddInfo:
+			return nil, fmt.Errorf("command %q needs a search's time range", c.Name())
 		}
 		if err := applyCommand(ctx, res, c); err != nil {
 			return nil, err

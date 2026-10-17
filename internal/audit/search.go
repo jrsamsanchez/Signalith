@@ -73,7 +73,7 @@ func Search(ctx context.Context, c Searcher, prefix string, q Query) (*Page, err
 	if len(q.After) > 0 {
 		body["search_after"] = q.After
 	}
-	res, err := c.Search(ctx, Pattern(prefix), body)
+	res, err := search(ctx, c, Pattern(prefix), body)
 	if missing(err) {
 		return &Page{}, nil
 	}
@@ -145,7 +145,7 @@ func filters(q Query) []any {
 // Servers returns the names of the servers with audit events, at most
 // 100 of them.
 func Servers(ctx context.Context, c Searcher, prefix string) ([]string, error) {
-	res, err := c.Search(ctx, Pattern(prefix), map[string]any{
+	res, err := search(ctx, c, Pattern(prefix), map[string]any{
 		"size": 0,
 		"aggs": map[string]any{"servers": map[string]any{"terms": map[string]any{"field": "server", "size": 100}}},
 	})
@@ -172,6 +172,34 @@ func Servers(ctx context.Context, c Searcher, prefix string) ([]string, error) {
 		names = append(names, b.Key)
 	}
 	return names, nil
+}
+
+// starting is how long a search waits for a month's audit index that the
+// first event of the month has just created: until its shard starts,
+// OpenSearch answers that all shards failed.
+var starting = 2 * time.Second
+
+// search is c.Search, tried again while the index's shards are starting.
+func search(ctx context.Context, c Searcher, index string, body map[string]any) (map[string]any, error) {
+	deadline := time.Now().Add(starting)
+	for {
+		res, err := c.Search(ctx, index, body)
+		if !unstarted(err) || !time.Now().Before(deadline) {
+			return res, err
+		}
+		select {
+		case <-ctx.Done():
+			return res, err
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// unstarted reports whether err says no shard could answer, as when an
+// index was just created.
+func unstarted(err error) bool {
+	var oe *store.Error
+	return errors.As(err, &oe) && oe.Status == http.StatusServiceUnavailable && strings.Contains(oe.Body, "search_phase_execution_exception")
 }
 
 // missing reports whether err says no audit index exists.

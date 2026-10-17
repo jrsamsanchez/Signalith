@@ -975,6 +975,8 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .auth__help { text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
 .auth__sso { display: grid; gap: 18px; }
 .auth__sso[hidden] { display: none; }
+.auth__sso-btns { display: grid; gap: 10px; }
+.auth__sso-btn[hidden] { display: none; }
 .auth__sso-btn { height: 44px; font-size: var(--fs-md); font-weight: 550; text-decoration: none; }
 .auth__or { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: var(--fs-sm); }
 .auth__passkey, .mfa-passkey, .mfa-entry { display: grid; gap: 18px; }
@@ -4220,6 +4222,10 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
 #page-sso .sso-step .icon { margin-top: 2px; flex: none; color: var(--success); }
 #page-sso .sso-step[data-ok="false"] .icon { color: var(--danger); }
 #page-sso .sso-grow { flex: 1; }
+#page-sso .sso-tabs { margin-bottom: calc(-1 * var(--sp-2)); }
+#page-sso .sso-tab__on { height: 18px; font-size: var(--fs-xs); }
+#page-sso .sso-panel { display: grid; gap: var(--sp-4); min-width: 0; }
+#page-sso .sso-panel:focus-visible { outline: none; }
 @media (max-width: 640px) {
   #page-sso .sso-status { padding: 14px 16px; }
   #page-sso .sso-status__docs { margin-left: 50px; }

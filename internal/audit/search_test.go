@@ -150,3 +150,35 @@ func (s stubSearcher) Search(_ context.Context, index string, body map[string]an
 	}
 	return s.res, s.err
 }
+
+// startingSearcher answers that all shards failed a few times, as
+// OpenSearch does while a just-created index's shard starts.
+type startingSearcher struct {
+	fails int
+	calls int
+}
+
+func (s *startingSearcher) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	s.calls++
+	if s.calls <= s.fails {
+		return nil, &store.Error{Status: 503, Body: `{"error":{"type":"search_phase_execution_exception","reason":"all shards failed"}}`}
+	}
+	return map[string]any{"aggregations": map[string]any{"servers": map[string]any{
+		"buckets": []any{map[string]any{"key": "siem-a"}}}}}, nil
+}
+
+func TestSearchWaitsForStartingShards(t *testing.T) {
+	s := &startingSearcher{fails: 2}
+	names, err := Servers(context.Background(), s, testPrefix)
+	if err != nil || len(names) != 1 || s.calls != 3 {
+		t.Fatalf("Servers = %v, %v after %d calls; want siem-a after 3", names, err, s.calls)
+	}
+
+	old := starting
+	starting = 0
+	defer func() { starting = old }()
+	s = &startingSearcher{fails: 100}
+	if _, err := Servers(context.Background(), s, testPrefix); err == nil || s.calls != 1 {
+		t.Fatalf("with no time to wait: err %v after %d calls; want the error after 1", err, s.calls)
+	}
+}
