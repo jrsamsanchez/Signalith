@@ -50,7 +50,7 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	// Changes made in acme are audited as acme's.
 	audited := false
 	for _, line := range strings.Split(rs.logs.String(), "\n") {
-		if strings.Contains(line, `msg="user created"`) && strings.Contains(line, "user=ada") {
+		if strings.Contains(line, `msg="user created"`) && strings.Contains(line, "user=ada@acme") {
 			audited = strings.Count(line, "tenant=acme") == 1 && strings.Contains(line, "audit=true")
 		}
 	}
@@ -58,12 +58,12 @@ func TestTenantsDataStaysApart(t *testing.T) {
 		t.Errorf("creating ada is not audited once as acme's:\n%s", rs.logs.String())
 	}
 	users := must("GET", "/api/users", "", 200)["users"].([]any)
-	if len(users) != 1 || users[0].(map[string]any)["username"] != "ada" {
+	if len(users) != 1 || users[0].(map[string]any)["username"] != "ada@acme" {
 		t.Errorf("acme's users: %v", users)
 	}
 	must("POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
 	for _, u := range must("GET", "/api/users", "", 200)["users"].([]any) {
-		if u.(map[string]any)["username"] == "ada" {
+		if u.(map[string]any)["username"] == "ada@acme" {
 			t.Error("acme's user is listed in the default tenant")
 		}
 	}
@@ -146,7 +146,7 @@ func TestTenantsDataStaysApart(t *testing.T) {
 		}
 		return who
 	}
-	ada := signIn("ada", "Long-pass-for-acme-9")
+	ada := signIn("ada@acme", "Long-pass-for-acme-9")
 	for _, c := range []struct {
 		method, path string
 		want         int
@@ -193,6 +193,21 @@ func TestTenantsDataStaysApart(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("no ticket sync index for acme: %v", rs.os.Indices())
 		}
+	}
+	// Acme's admin is told file names, not where on the server they are.
+	for _, path := range []string{"/api/respond/config", "/api/playbooks"} {
+		code, out, _ := ada.call("", "GET", path, "")
+		if code != 200 {
+			t.Errorf("ada GET %s: %d %v", path, code, out)
+		}
+		for _, key := range []string{"file", "scripts_dir"} {
+			if v, _ := out[key].(string); strings.ContainsAny(v, `/\`) {
+				t.Errorf("ada GET %s: %s %q shows a server path", path, key, v)
+			}
+		}
+	}
+	if out := must("GET", "/api/respond/config", "", 200); !strings.ContainsAny(fmt.Sprint(out["file"]), `/\`) {
+		t.Errorf("the provider's admin is not shown the file's path: %v", out["file"])
 	}
 
 	// Settings applied at once on the Settings page apply to every
@@ -276,7 +291,7 @@ func TestTenantsInACluster(t *testing.T) {
 	eventually(t, "the cluster keeps tenants", func() bool { return a.r.shared.Tenants() && b.r.shared.Tenants() })
 	must(a, "POST", "/api/tenants", `{"id":"acme","name":"Acme"}`, http.StatusCreated)
 	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
-	must(a, "POST", "/api/users", `{"username":"ada","role":"analyst","password":"Long-pass-for-acme-9","must_change_password":false}`, http.StatusCreated)
+	must(a, "POST", "/api/users", `{"username":"ada@acme","role":"analyst","password":"Long-pass-for-acme-9","must_change_password":false}`, http.StatusCreated)
 	token, _ := must(a, "POST", "/api/agent-tokens", `{"name":"acme agents"}`, http.StatusCreated)["secret"].(string)
 	ingest := func(rs *running) (int, string) {
 		t.Helper()
@@ -314,10 +329,10 @@ func TestTenantsInACluster(t *testing.T) {
 		if err := b.r.shared.Hub().Cycle(context.Background()); err != nil {
 			return false
 		}
-		_, ok := b.r.srv.Load().Users.Get("ada")
+		_, ok := b.r.srv.Load().Users.Get("ada@acme")
 		return ok
 	})
-	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != 200 {
+	if code := b.signInAs("ada@acme", "Long-pass-for-acme-9"); code != 200 {
 		t.Errorf("acme's user signing in on B: %d", code)
 	}
 	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
@@ -338,7 +353,7 @@ func TestTenantsInACluster(t *testing.T) {
 	if code, _ := ingest(b); code == 200 || code == http.StatusServiceUnavailable {
 		t.Errorf("B: acme's agent after acme was turned off: %d", code)
 	}
-	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != http.StatusForbidden {
+	if code := b.signInAs("ada@acme", "Long-pass-for-acme-9"); code != http.StatusForbidden {
 		t.Errorf("B: acme's user after acme was turned off: %d", code)
 	}
 	b.cookie = saved

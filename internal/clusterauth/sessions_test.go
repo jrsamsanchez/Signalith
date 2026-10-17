@@ -480,10 +480,10 @@ func TestTenantSessionsAcrossServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.cycle()
-	if u, ok := b.store.Get("ada"); !ok || u.Tenant != "acme" || ada.Tenant != "acme" {
+	if u, ok := b.store.Get("ada@acme"); !ok || u.Tenant != "acme" || ada.Tenant != "acme" {
 		t.Fatalf("ada on B: %+v %v", u, ok)
 	}
-	if err := a.sessions.SetTenant(ctx, a.signIn("ada", false), "beta"); err == nil {
+	if err := a.sessions.SetTenant(ctx, a.signIn("ada@acme", false), "beta"); err == nil {
 		t.Error("a tenant user's session switched tenants")
 	}
 	cookie := a.signIn("pat", false)

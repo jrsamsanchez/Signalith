@@ -131,26 +131,26 @@ func TestTicketingStaysInTenant(t *testing.T) {
 	}
 
 	// Beta sees none of it, and cannot use it.
-	code, body := doAs(t, front, "bea", "role-password", "GET", "/api/ticketing", "")
+	code, body := doAs(t, front, "bea@beta", "role-password", "GET", "/api/ticketing", "")
 	if code != 200 || len(body["connections"].([]any)) != 0 {
 		t.Errorf("beta's admin sees connections: %d %v", code, body)
 	}
-	code, body = doAs(t, front, "bob", "role-password", "GET", "/api/cases/case-beta/tickets", "")
+	code, body = doAs(t, front, "bob@beta", "role-password", "GET", "/api/cases/case-beta/tickets", "")
 	if code != 200 || len(body["connections"].([]any)) != 0 {
 		t.Errorf("beta's case offers connections: %d %v", code, body)
 	}
-	if code, _ := doAs(t, front, "bob", "role-password", "POST", "/api/cases/case-beta/tickets", `{"connection":"desk"}`); code != http.StatusNotFound {
+	if code, _ := doAs(t, front, "bob@beta", "role-password", "POST", "/api/cases/case-beta/tickets", `{"connection":"desk"}`); code != http.StatusNotFound {
 		t.Errorf("beta's analyst opening a ticket with acme's connection: %d, want 404", code)
 	}
 	// Nor reaches acme's cases.
-	if code, _ := doAs(t, front, "bob", "role-password", "POST", "/api/cases/case-acme/tickets", `{"connection":"desk"}`); code != http.StatusNotFound {
+	if code, _ := doAs(t, front, "bob@beta", "role-password", "POST", "/api/cases/case-acme/tickets", `{"connection":"desk"}`); code != http.StatusNotFound {
 		t.Errorf("beta's analyst opening a ticket for acme's case: %d, want 404", code)
 	}
-	if code, _ := doAs(t, front, "bob", "role-password", "GET", "/api/cases/case-acme/tickets", ""); code != http.StatusNotFound {
+	if code, _ := doAs(t, front, "bob@beta", "role-password", "GET", "/api/cases/case-acme/tickets", ""); code != http.StatusNotFound {
 		t.Errorf("beta's analyst reading acme's case's tickets: %d, want 404", code)
 	}
 	// Nor tests it.
-	if code, _ := doAs(t, front, "bea", "role-password", "POST", "/api/ticketing/test", `{"id":"desk"}`); code != http.StatusForbidden {
+	if code, _ := doAs(t, front, "bea@beta", "role-password", "POST", "/api/ticketing/test", `{"id":"desk"}`); code != http.StatusForbidden {
 		t.Errorf("beta's admin testing a connection: %d, want 403", code)
 	}
 	if n := len(requests()); n != 0 {
@@ -163,7 +163,7 @@ func TestTicketingStaysInTenant(t *testing.T) {
 	}
 
 	// Acme's analyst opens a ticket with it, for acme's case.
-	code, body = doAs(t, front, "andy", "role-password", "POST", "/api/cases/case-acme/tickets", `{"connection":"desk"}`)
+	code, body = doAs(t, front, "andy@acme", "role-password", "POST", "/api/cases/case-acme/tickets", `{"connection":"desk"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("acme's ticket: %d %v", code, body)
 	}
@@ -178,12 +178,12 @@ func TestTicketingStaysInTenant(t *testing.T) {
 
 	// Acme's own admin sees the connection, not where the file is, and
 	// neither changes nor tests it.
-	code, body = doAs(t, front, "ada", "role-password", "GET", "/api/ticketing", "")
+	code, body = doAs(t, front, "ada@acme", "role-password", "GET", "/api/ticketing", "")
 	if code != 200 || len(body["connections"].([]any)) != 1 || body["manage"] != false || body["provider_only"] != true || body["file"] != nil {
 		t.Errorf("acme's admin's view: %d %v", code, body)
 	}
 	for _, r := range [][3]string{{"PUT", "/api/ticketing", `{"connections":[]}`}, {"POST", "/api/ticketing/test", `{"id":"desk"}`}} {
-		if code, body := doAs(t, front, "ada", "role-password", r[0], r[1], r[2]); code != http.StatusForbidden || body["code"] != "provider_only" {
+		if code, body := doAs(t, front, "ada@acme", "role-password", r[0], r[1], r[2]); code != http.StatusForbidden || body["code"] != "provider_only" {
 			t.Errorf("acme's admin %s %s: %d %v", r[0], r[1], code, body)
 		}
 	}

@@ -20,6 +20,8 @@
   const roles = () => (U.data && U.data.roles) || ROLE_INFO;
   const roleLabel = (r) => ROLE_LABEL[r] || r || 'None';
   const displayName = (u) => u.name || u.username;
+  // The tenant whose users this page shows: their names end in @ and its ID.
+  const userTenantId = () => (me && (me.tenant || (me.active_tenant && me.active_tenant !== 'default' ? me.active_tenant : ''))) || '';
 
   // field wraps a control with its label and an optional hint.
   function field(label, control, hint, opts = {}) {
@@ -407,7 +409,9 @@
     const form = el('form', { novalidate: '' },
       modalHead('u-dialog', 'Add a user', 'They sign in with this username and a password you give them.', close),
       el('div', { class: 'modal__body' }, err,
-        field('Username', username, 'Used to sign in. Letters, digits, dots, dashes, underscores or @.'),
+        field('Username', username, userTenantId()
+          ? `Used to sign in, with @${userTenantId()} added. Letters, digits, dots, dashes or underscores.`
+          : 'Used to sign in. Letters, digits, dots, dashes, underscores or @.'),
         el('div', { class: 'form-grid' }, field('Name', name, null, { optional: true }), field('Email', email, null, { optional: true })),
         role, pw.node),
       footer(cancelButton(d), submit));
