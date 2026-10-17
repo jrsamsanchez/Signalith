@@ -76,9 +76,13 @@ set -u
 out=$1
 data=/
 mountpoint -q /var/lib/opensearch && data=/var/lib/opensearch
-cpu() { awk '/^cpu / { print $2+$3+$4+$7+$8+$9, $2+$3+$4+$5+$6+$7+$8+$9 }' /proc/stat; }
-wr() { awk '$3 !~ /^(loop|ram|sr)/ && $3 !~ /[0-9]p?[0-9]+$/ { s += $10 } END { print s * 512 }' /proc/diskstats; }
-net() { awk -F'[: ]+' 'NR > 2 && $2 != "lo" { r += $3; t += $11 } END { print r, t }' /proc/net/dev; }
+# The counters pass more than 2^32: awk prints them with %.0f, as print
+# would write them in exponent form, which bash cannot count with.
+cpu() { awk '/^cpu / { printf "%.0f %.0f\n", $2+$3+$4+$7+$8+$9, $2+$3+$4+$5+$6+$7+$8+$9 }' /proc/stat; }
+wr() { awk '$3 !~ /^(loop|ram|sr)/ && $3 !~ /[0-9]p?[0-9]+$/ { s += $10 } END { printf "%.0f\n", s * 512 }' /proc/diskstats; }
+# A port's name may or may not have spaces before it: split at the colon.
+net() { awk 'NR > 2 { sub(/^ +/, ""); split($0, a, ":"); if (a[1] == "lo") next; split(a[2], f, " "); r += f[1]; t += f[9] }
+  END { printf "%.0f %.0f\n", r, t }' /proc/net/dev; }
 echo time,cpu_pct,load1,mem_used_mb,mem_total_mb,disk_used_gb,disk_size_gb,disk_write_mb_s,net_rx_mb_s,net_tx_mb_s >"$out"
 read -r b0 t0 < <(cpu); w0=$(wr); read -r r0 x0 < <(net)
 while sleep 15; do
