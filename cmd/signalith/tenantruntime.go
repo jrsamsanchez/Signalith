@@ -241,6 +241,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, ti.jobs.Go)
 	ibackend := intel.NewOpenSearch(cl, prefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -398,6 +399,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
 
 	// The tenant's index template and indices, then its background jobs
@@ -424,6 +426,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			return
 		}
 		runWhileLeader(ctx, t.leader, []cluster.Job{
+			{Name: "summaries", Run: sumBuilder.Run},
 			{Name: "detections", Run: sched.Start},
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},

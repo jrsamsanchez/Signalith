@@ -801,6 +801,28 @@ func newStore(c *config.Config) *store.Client {
 	return store.New(c.OpenSearchConnection())
 }
 
+// newSummaries starts reading which slots eng's summary indexes cover,
+// and returns the builder the summaries job runs. Summaries reach back
+// no further than ret keeps each data model's events.
+func newSummaries(ctx context.Context, c *config.Config, cl *store.Client, eng *search.Engine, ret *retention.Manager, log *slog.Logger, goFn func(func())) *summary.Builder {
+	runtime := cluster.RuntimeIndex(c.OpenSearch.IndexPrefix)
+	coverage := &summary.Coverage{Client: cl, Runtime: runtime, Log: log}
+	eng.Summaries = coverage
+	goFn(func() { coverage.Run(ctx) })
+	return &summary.Builder{
+		Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: runtime, Days: eng.SummaryDays,
+		KeepDays: func(model string) int {
+			s, err := ret.Settings()
+			if err != nil {
+				return 0
+			}
+			p, _ := s.For(strings.ToLower(model))
+			return p.KeepDays
+		},
+		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log,
+	}
+}
+
 func newEngine(c *config.Config, s store.Searcher) *search.Engine {
 	return &search.Engine{Store: s, Opt: search.Options{
 		IndexPrefix:     c.OpenSearch.IndexPrefix,
@@ -1272,19 +1294,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
 	// Every server reads which slots summary indexes cover; the server
 	// that runs the background jobs keeps them (the summaries job).
-	coverage := &summary.Coverage{Client: cl, Runtime: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix), Log: log}
-	eng.Summaries = coverage
-	in.jobs.Go(func() { coverage.Run(ctx) })
-	sumBuilder := &summary.Builder{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
-		Days: eng.SummaryDays, KeepDays: func(model string) int {
-			s, err := ret.Settings()
-			if err != nil {
-				return 0
-			}
-			p, _ := s.For(strings.ToLower(model))
-			return p.KeepDays
-		},
-		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log}
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, in.jobs.Go)
 	// Likewise a damaged lookup table is left out, and the rest load.
 	tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir()))
 	if err != nil {
