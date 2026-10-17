@@ -1,0 +1,5 @@
+{"rule": "5d0fdb62-f225-42fb-8402-3dfe64da468a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -o edit  admin  -a   -t user","path":"/dseditgroup"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/dseditgroup","path":"/dseditgroup"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -o edit  admin  -a   -t user","path":"/usr/local/bin/helper"}}
+]}

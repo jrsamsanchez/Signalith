@@ -66,6 +66,7 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	}
 	var rules []ruleCases
 	records := map[string][]map[string]any{}
+	var osqueryEvents []ingest.Event
 	// On a 10-minute boundary, so a repeated case's events fall in one
 	// bucket of any span a rule counts over (bucket span=2m _time).
 	at := time.Now().Add(-15 * time.Minute).Truncate(10 * time.Minute)
@@ -128,6 +129,12 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				}
 				copies, offsets := c.Copies()
 				for k, cp := range copies {
+					if cp.Channel == sigmacheck.MacOSChannel {
+						// osquery's results come through its remote API,
+						// parsed as the API parses them.
+						osqueryEvents = append(osqueryEvents, cp.Stored(host, at.Add(offsets[k])))
+						continue
+					}
 					tag, rec := cp.Record(host, at.Add(offsets[k]))
 					records[tag] = append(records[tag], rec)
 				}
@@ -153,6 +160,13 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			if err != nil || len(res.Errors) > 0 {
 				t.Fatalf("ingest: %v %+v", err, res)
 			}
+		}
+	}
+	if len(osqueryEvents) > 0 {
+		total += len(osqueryEvents)
+		res, err := p.IngestEvents(ctx, osqueryEvents)
+		if err != nil || len(res.Errors) > 0 {
+			t.Fatalf("ingest osquery events: %v %+v", err, res)
 		}
 	}
 	if err := cl.Do(ctx, http.MethodPost, "/"+prefix+"-*/_refresh", nil, nil); err != nil {

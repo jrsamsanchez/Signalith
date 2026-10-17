@@ -321,6 +321,9 @@ func (r *Rule) records(ev map[string]string) []sigmacheck.Case {
 	if r.Linux {
 		return linuxRecords(r.Node, ev)
 	}
+	if r.MacOS {
+		return macOSRecords(r.Node, ev)
+	}
 	return records(r.Node, ev)
 }
 

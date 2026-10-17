@@ -975,6 +975,42 @@ func linuxRecords(node string, ev map[string]string) []sigmacheck.Case {
 	return nil
 }
 
+// macOSRecords turns one field-level event into the osquery program start
+// that carries it (sigmacheck.MacOSChannel): its result row's columns.
+// osquery always reports the program and its arguments, the first of
+// which is the program.
+func macOSRecords(node string, ev map[string]string) []sigmacheck.Case {
+	if node != "Processes" {
+		return nil
+	}
+	bin := func(path, name string) string {
+		switch {
+		case path != "":
+			return path
+		case name != "":
+			return "/usr/bin/" + name
+		}
+		return ""
+	}
+	s := map[string]string{"pid": "4242", "parent": "4000", "username": "tester", "uid": "501"}
+	set := func(k, v string) {
+		if v != "" {
+			s[k] = v
+		}
+	}
+	set("path", cmp.Or(bin(ev["process_path"], ev["process_name"]), "/usr/local/bin/helper"))
+	set("cmdline", cmp.Or(ev["process"], s["path"]))
+	if p := bin(ev["parent_process_path"], ev["parent_process_name"]); p != "" {
+		set("parent_path", p)
+		set("parent_cmdline", cmp.Or(ev["parent_process"], p))
+	}
+	set("username", ev["user"])
+	set("cwd", ev["process_current_directory"])
+	set("pid", ev["process_id"])
+	set("parent", ev["parent_process_id"])
+	return []sigmacheck.Case{{Channel: sigmacheck.MacOSChannel, EventID: "exec", Data: s}}
+}
+
 // Stored is a case's event as Signalith stores it, after the real Windows
 // parser, with its data model.
 func Stored(c sigmacheck.Case) (map[string]any, string) {

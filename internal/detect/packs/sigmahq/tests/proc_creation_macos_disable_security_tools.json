@@ -1,0 +1,8 @@
+{"rule": "ff39f1a6-84ac-476f-a1af-37fcdf53d7c0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"com.carbonblack.defense.daemon.plistunload","path":"/bin/launchctl"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"disable","path":"/usr/sbin/spctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/bin/launchctl","path":"/bin/launchctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"com.carbonblack.defense.daemon.plistunload","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/sbin/spctl","path":"/usr/sbin/spctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"disable","path":"/usr/local/bin/helper"}}
+]}

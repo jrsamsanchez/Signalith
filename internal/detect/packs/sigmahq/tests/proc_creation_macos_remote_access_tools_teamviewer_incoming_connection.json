@@ -1,0 +1,6 @@
+{"rule": "f459ccb4-9805-41ea-b5b2-55e279e2424a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/TeamViewer_Desktop --IPCport 5939 --Module 1","parent_cmdline":"/TeamViewer_Service","parent_path":"/TeamViewer_Service","path":"/TeamViewer_Desktop"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/TeamViewer_Desktop","parent_cmdline":"/TeamViewer_Service","parent_path":"/TeamViewer_Service","path":"/TeamViewer_Desktop"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/TeamViewer_Desktop --IPCport 5939 --Module 1","parent_cmdline":"/TeamViewer_Service","parent_path":"/TeamViewer_Service","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/TeamViewer_Desktop --IPCport 5939 --Module 1","path":"/TeamViewer_Desktop"}}
+]}

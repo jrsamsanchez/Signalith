@@ -196,8 +196,8 @@ func TestPackDetections(t *testing.T) {
 			!strings.Contains(d.Query, "sourcetype=azure:monitor:") && !strings.HasPrefix(d.Query, "sourcetype=o365:management:activity ") &&
 			!strings.HasPrefix(d.Query, "sourcetype=google:gcp:pubsub:message ") && !strings.Contains(d.Query, "sourcetype=OktaIM2:log ") &&
 			!strings.Contains(d.Query, "sourcetype=_json AND source=kubernetes") && !strings.HasPrefix(d.Query, "sourcetype=_json source=kubernetes ") &&
-			!strings.Contains(d.Query, "sourcetype=github:cloud:audit ") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server, CloudTrail, Azure, Microsoft 365, Google Cloud, Okta, Kubernetes or GitHub events: %s", d.ID, d.Query)
+			!strings.Contains(d.Query, "sourcetype=github:cloud:audit ") && !strings.HasPrefix(d.Query, "datamodel=Endpoint sourcetype=osquery:process_start ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, macOS osquery, web server, CloudTrail, Azure, Microsoft 365, Google Cloud, Okta, Kubernetes or GitHub events: %s", d.ID, d.Query)
 		}
 	}
 }

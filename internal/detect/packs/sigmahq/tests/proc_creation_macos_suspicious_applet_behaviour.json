@@ -1,0 +1,5 @@
+{"rule": "a753a6af-3126-426d-8bd0-26ebbcb92254", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"osacompile","parent_cmdline":"/applet","parent_path":"/applet","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent_cmdline":"/applet","parent_path":"/applet","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"osacompile","path":"/usr/local/bin/helper"}}
+]}

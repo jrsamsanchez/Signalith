@@ -1,0 +1,4 @@
+{"rule": "13db8d2e-7723-4c2c-93c1-a4d36994f7ef", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"osacompilecurl","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","path":"/usr/local/bin/helper"}}
+]}

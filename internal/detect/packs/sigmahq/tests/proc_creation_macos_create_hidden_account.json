@@ -1,0 +1,7 @@
+{"rule": "b22a5b36-2431-493a-8be1-0bae56c28ef3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"create UniqueID 0","path":"/dscl"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"true create IsHidden","path":"/dscl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/dscl","path":"/dscl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"create UniqueID 0","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"true create IsHidden","path":"/usr/local/bin/helper"}}
+]}

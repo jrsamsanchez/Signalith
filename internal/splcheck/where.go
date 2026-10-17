@@ -482,6 +482,11 @@ func dropPlatform(e Expr, linux bool) (Expr, error) {
 			e = &And{Kids: kids}
 		}
 	}
+	return e, refusePlatform(e)
+}
+
+// refusePlatform refuses a where clause that tests a platform field.
+func refusePlatform(e Expr) error {
 	var bad error
 	var walk func(Expr)
 	walk = func(e Expr) {
@@ -503,7 +508,7 @@ func dropPlatform(e Expr, linux bool) (Expr, error) {
 		}
 	}
 	walk(e)
-	return e, bad
+	return bad
 }
 
 // Eval reports whether an event, as field values, matches a where clause

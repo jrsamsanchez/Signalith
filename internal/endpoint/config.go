@@ -23,6 +23,8 @@ const (
 	qStartup  = "startup"
 	qFIM      = "fim"
 	qAddrs    = "addresses"
+	// qProcess is every program start on macOS, from EndpointSecurity.
+	qProcess = "process_start"
 	// qCheck starts the name of each configuration check's query, followed
 	// by the check's ID.
 	qCheck = "check_"
@@ -68,6 +70,9 @@ func schedule(platform string, set Settings) []scheduled {
 				"UNION ALL SELECT name, version || '-' || release, vendor, '' AS path, 'rpm' AS package_type FROM rpm_packages;", inv, false},
 			scheduled{qServices, "SELECT id AS name, description AS display_name, unit_file_state AS start_type, fragment_path AS path FROM systemd_units WHERE id LIKE '%.service';", inv, false})
 	}
+	if platform == Darwin {
+		qs = append(qs, scheduled{qProcess, processStartSQL, 60, false})
+	}
 	if set.FIM && len(set.FilePaths[platform]) > 0 {
 		if platform == Windows {
 			qs = append(qs, scheduled{qFIM, "SELECT action, path, old_path, time FROM ntfs_journal_events;", 60, false})
@@ -88,6 +93,17 @@ func schedule(platform string, set Settings) []scheduled {
 	}
 	return qs
 }
+
+// processStartSQL reads the programs macOS started since the last run
+// from EndpointSecurity (es_process_events, which needs osquery's
+// --disable_endpointsecurity=false and Full Disk Access), with the parent
+// process's path and command line from the running processes. A parent
+// that started after the program cannot be its parent (its process ID was
+// used again after the real parent quit), so it is left out; a parent that
+// quit before the query ran is unknown.
+const processStartSQL = "SELECT e.pid, e.path, e.cmdline, e.cwd, e.uid, e.username, e.parent, e.signing_id, e.team_id, " +
+	"e.platform_binary, e.time, p.path AS parent_path, p.cmdline AS parent_cmdline FROM es_process_events e " +
+	"LEFT JOIN processes p ON p.pid = e.parent AND p.start_time > 0 AND p.start_time <= e.time WHERE e.event_type = 'exec';"
 
 func usersSQL(platform string) string {
 	if platform == Windows {

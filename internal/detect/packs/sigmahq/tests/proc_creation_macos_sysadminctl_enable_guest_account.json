@@ -1,0 +1,5 @@
+{"rule": "d7329412-13bd-44ba-a072-3387f804a106", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x on -guestAccount","path":"/sysadminctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/sysadminctl","path":"/sysadminctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x on -guestAccount","path":"/usr/local/bin/helper"}}
+]}

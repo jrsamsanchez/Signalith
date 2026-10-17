@@ -346,7 +346,7 @@ HTTPS, checking the server's certificate with that CA. For firewalls, switches a
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
 [docs/opentelemetry.md](docs/opentelemetry.md)). To watch files, take inventory and check
-configuration on Windows, Linux and macOS hosts, pick **osquery**: Signalith becomes
+configuration on Windows, Linux and macOS hosts (and see every program a Mac starts), pick **osquery**: Signalith becomes
 osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
@@ -903,9 +903,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,560 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,283
-  Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
+- **Content packs** add community rules, off until you turn them on: 2,616 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, macOS, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,296
+  Windows, Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as

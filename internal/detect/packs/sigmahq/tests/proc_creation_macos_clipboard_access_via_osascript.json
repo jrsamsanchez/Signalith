@@ -1,0 +1,6 @@
+{"rule": "7794fa3c-edea-4cff-bec7-267dd4770fd7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -e  clipboard","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -e osascript -e clipboardset fileRefset imageData to the clipboard","parent_cmdline":"opencode","parent_path":"opencode","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/osascript","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -e  clipboard","path":"/usr/local/bin/helper"}}
+]}

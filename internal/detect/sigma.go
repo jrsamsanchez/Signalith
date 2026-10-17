@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
@@ -734,10 +735,15 @@ func (c *sigmaConv) approx(format string, args ...any) {
 // Fluent Bit and from the OpenTelemetry Collector alike.
 const windowsSourcetypes = "WinEventLog:*"
 
+// macProcessSourcetype is macOS program starts, which osquery reads from
+// EndpointSecurity for Signalith (see internal/endpoint).
+const macProcessSourcetype = endpoint.ProcessStartSourcetype
+
 // productScope limits a rule to its operating system's events: a Windows
-// rule to Windows events of its log source's event IDs, and a Linux or
-// macOS rule away from Windows events, since data models such as Endpoint
-// hold events from every system and several kinds of event.
+// rule to Windows events of its log source's event IDs, a Linux or macOS
+// rule away from Windows events, and a process creation rule to its own
+// system's program starts (macOS's are osquery's), since data models such
+// as Endpoint hold events from every system and several kinds of event.
 func productScope(ls map[string]any, category string) query.Expr {
 	if scope := sigmaNetworkScope(category); scope != nil {
 		return scope
@@ -811,6 +817,17 @@ func productScope(ls map[string]any, category string) query.Expr {
 	case "linux", "macos":
 		if category == "auditd" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
+		}
+		if category == "process_creation" {
+			// macOS program starts are osquery's (EndpointSecurity), and
+			// only macOS rules read them.
+			mac := &query.Compare{Field: "sourcetype", Op: "=", Value: macProcessSourcetype}
+			if strings.EqualFold(p, "macos") {
+				return mac
+			}
+			return &query.Not{Child: &query.Or{Children: []query.Expr{
+				&query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}, mac,
+			}}}
 		}
 		return &query.Not{Child: &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}}
 	}

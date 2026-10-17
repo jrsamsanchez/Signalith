@@ -66,6 +66,9 @@ type Rule struct {
 	Where Expr `yaml:"-"`
 	// Linux is set for a rule over Sysmon for Linux events only.
 	Linux bool `yaml:"-"`
+	// MacOS is set for a rule over osquery's results only: macOS program
+	// starts, which osquery reads from EndpointSecurity for Signalith.
+	MacOS bool `yaml:"-"`
 	// Threshold is set for a rule that counts the events Where selects.
 	Threshold *Threshold `yaml:"-"`
 	// Post is the search's later stages that do more than filter, in
@@ -196,6 +199,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	}) && !slices.ContainsFunc(r.DataSource, func(s string) bool {
 		return !strings.HasPrefix(s, "Sysmon for Linux ") && s != "Osquery Results"
 	})
+	r.MacOS = len(r.DataSource) > 0 && !slices.ContainsFunc(r.DataSource, func(s string) bool { return s != "Osquery Results" })
 	// ```text``` is a comment in SPL.
 	stages := pipes(strings.TrimSpace(commentRe.ReplaceAllString(r.Search, " ")))
 	if len(stages) == 0 {
@@ -227,6 +231,9 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	fields, ok := Nodes[r.Node]
 	if !opt.Network && IsSensorNode(r.Node) {
 		ok = false
+	}
+	if r.MacOS && r.Node != "Processes" {
+		return nil, fmt.Errorf("osquery's results are program starts on macOS, not %s.%s", m[2], r.Node)
 	}
 	if !ok || !IsSensorNode(r.Node) && ((m[2] == "Network_Traffic") != (r.Node == "All_Traffic") || strings.EqualFold(m[2], "Web") != (r.Node == "Web")) {
 		return nil, fmt.Errorf("data model node %s.%s is not supported", m[2], r.Node)
@@ -298,7 +305,13 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if err != nil {
 		return nil, err
 	}
-	if where, err = dropPlatform(where, r.Linux); err != nil {
+	if r.MacOS {
+		// A macOS rule's test of the platform is refused (dropPlatform
+		// knows Windows and Linux).
+		if err := refusePlatform(where); err != nil {
+			return nil, err
+		}
+	} else if where, err = dropPlatform(where, r.Linux); err != nil {
 		return nil, err
 	}
 	if len(present) > 0 {

@@ -333,11 +333,12 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,560 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,616 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,116 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
-[the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
+[the Linux audit log](#linux-audit-log-auditd)), 56 macOS rules (see
+[macOS program starts](#macos-program-starts-osquery)), 13 web server rules (see
 [Web server access logs](#web-server-access-logs)), 45 network rules (see
 [Network rules](#network-rules-zeek-dns-proxy-and-firewall)), 38 AWS CloudTrail rules (see
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
@@ -348,7 +349,7 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
-| `process_creation` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded | Endpoint |
+| `process_creation` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded; on macOS, a program start osquery reported | Endpoint |
 | `network_connection` | Sysmon 3 | Network_Traffic |
 | `process_access`, `create_remote_thread` | Sysmon 10, 8 | Endpoint |
 | `image_load`, `driver_load` | Sysmon 7, 6 | Image_Load |
@@ -518,6 +519,42 @@ echo '-a always,exit -F arch=b64 -S execve -k exec' | sudo tee /etc/audit/rules.
 
 The OpenTelemetry Collector runs as its own user and cannot read the audit log, so
 collect it with the Fluent Bit agent, or forward it with auditd's syslog plugin.
+
+### macOS program starts (osquery)
+
+On a Mac enrolled with Signalith's [osquery management](endpoints.md), osquery reads
+every program start from Apple's EndpointSecurity framework (`es_process_events`) and
+sends it within about a minute. Each one is an Endpoint event with sourcetype
+`osquery:process_start`:
+
+| Field | From osquery | Sigma field |
+| --- | --- | --- |
+| `process_path`, `process_name` | the program (`path`) | `Image` |
+| `process` | its arguments (`cmdline`), the first of which is the program | `CommandLine` |
+| `parent_process_path`, `parent_process_name`, `parent_process` | the parent's program and arguments, from the running processes | `ParentImage`, `ParentCommandLine` |
+| `user`, `user_id` | the account osquery names for the process's user ID (`username`, `uid`) | `User` |
+| `process_current_directory` | `cwd` | `CurrentDirectory` |
+| `process_id`, `parent_process_id` | `pid`, `parent` | `ProcessId`, `ParentProcessId` |
+
+The account is always the one the user ID belongs to, never a name read from the
+command line. The parent comes from the processes running when osquery sends the
+batch: a parent that has already quit is left out, and so is a process that started
+after the program (its process ID was used again), so rules about the parent fire only
+when osquery can still see it. The code signing identity, team ID and whether Apple
+signed the program are kept in the event's raw text.
+
+56 SigmaHQ rules (`product: macos`, `category: process_creation`) and 13 Splunk
+detections (data source Osquery Results, over `Endpoint.Processes`) read
+these events only, for example AppleScript and JavaScript for Automation run from the
+command line, keychain dumps, Gatekeeper and System Integrity Protection turned off,
+Time Machine backups deleted, accounts added to the admin group, and discovery with
+`system_profiler`, `sw_vers` and `ioreg`. Sigma's Linux rules leave these events out.
+
+To collect them, enroll the Mac with the setup script from **Add data** (osquery,
+macOS) and give osqueryd Full Disk Access, which EndpointSecurity needs. The script's
+flags turn EndpointSecurity on (`--disable_endpointsecurity=false`); a Mac enrolled
+before this release needs the script run again. A busy Mac starts hundreds of
+programs a minute, each of them an event.
 
 ### Web server access logs
 
@@ -872,8 +909,8 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,283 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,296 Windows,
+Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
@@ -891,7 +928,7 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 
 | Splunk node | Windows events | Data model |
 | --- | --- | --- |
-| `Endpoint.Processes` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded | Endpoint |
+| `Endpoint.Processes` | Sysmon 1, Security 4688; on Linux, Sysmon for Linux 1 or a program start auditd recorded; for a macOS rule (data source Osquery Results), a program start osquery reported | Endpoint |
 | `Endpoint.Filesystem` | Sysmon 11, 23 and 26 | Filesystem |
 | `Endpoint.Registry` | Sysmon 12, 13 and 14 | Registry |
 | `Network_Traffic.All_Traffic` | Sysmon 3 (`app` is the program's path, `dest_ip` and `src_ip` are `dest` and `src`) | Network_Traffic |

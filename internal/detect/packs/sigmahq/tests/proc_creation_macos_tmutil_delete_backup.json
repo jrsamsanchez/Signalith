@@ -1,0 +1,5 @@
+{"rule": "452df256-da78-427a-866f-49fa04417d74", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"delete","path":"/tmutil"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/tmutil","path":"/tmutil"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"delete","path":"/usr/local/bin/helper"}}
+]}

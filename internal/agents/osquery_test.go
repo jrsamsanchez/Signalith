@@ -66,6 +66,10 @@ func TestOsqueryWindowsAndMac(t *testing.T) {
 		!strings.Contains(strings.Join(m.Steps, "\n"), "Full Disk Access") {
 		t.Errorf("mac script:\n%s\n%v", m.Config, m.Steps)
 	}
+	// Program starts come from EndpointSecurity, which only macOS has.
+	if !strings.Contains(m.Config, "--disable_endpointsecurity=false") || strings.Contains(a.Config, "endpointsecurity") {
+		t.Errorf("EndpointSecurity flag: mac %v, other %v", strings.Contains(m.Config, "endpointsecurity"), strings.Contains(a.Config, "endpointsecurity"))
+	}
 }
 
 func TestOsqueryRefuses(t *testing.T) {
