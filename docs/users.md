@@ -1182,7 +1182,7 @@ three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/s
 itself rather than one tenant's data are refused to tenants' users, whatever their role:
 every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
 `/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
-`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat` and `/api/baselines` route. So are the routes
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers` and `/api/chat` route. So are the routes
 that make the server send requests to addresses a user gives, though they change a
 tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,
