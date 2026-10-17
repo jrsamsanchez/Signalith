@@ -439,7 +439,7 @@ func describeEval(t evalTok) string {
 	if t.kind == etQIdent {
 		return quoteSingle(t.text)
 	}
-	return `"` + t.text + `"`
+	return quote(t.text)
 }
 
 // afterValue reports whether the last token ends a value, so a . that
