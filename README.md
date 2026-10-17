@@ -661,9 +661,10 @@ are counted for each person's own address, not the proxy's. See
 | `opensearch.tls_skip_verify` | `false` | Skip OpenSearch certificate checks. Lab use only: anyone on the path can read and change traffic; Signalith warns while it is on |
 | `opensearch.proxy` | none | Proxy for OpenSearch traffic (`http://`, `https://` or `socks5://`; or `SIGNALITH_OPENSEARCH_PROXY`). `HTTP_PROXY` and `HTTPS_PROXY` are never used for OpenSearch; when one is set and OpenSearch cannot be reached, the error says so |
 | `opensearch.allow_insecure_http` | `false` | Allow `username`/`password` over plain http to another machine. Off, such a config is refused with an explanation |
-| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD` |
+| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD`, with `-2` and so on after the day for the parts of a busy day |
 | `opensearch.replicas` | `auto` | Extra copies of each new day's events on other OpenSearch nodes: `auto` (one copy once OpenSearch has more than one node, none on one node) or a whole number such as `0`. Days already stored keep theirs; applies after a restart |
-| `opensearch.shards` | `1` | Primary shards for each new day's events, per data model, up to 64 and at most one per OpenSearch data node. One suits a few GB a day; give more, about one per OpenSearch data node, when the busiest data model stores tens of GB a day. Days already stored keep theirs; applies after a restart |
+| `opensearch.shards` | automatic | Primary shards for each new day's events, per data model. Automatic (`0` or unset) is one per OpenSearch data node, up to 8, and one while OpenSearch holds more than half the shards it allows. A number fixes it, up to 64 and at most one per data node. Days already stored keep theirs; applies after a restart |
+| `opensearch.rollover_gb` | `40` | GB per primary shard after which a day's index of a data model continues in a new one (`<prefix>-<datamodel>-YYYY.MM.DD-2`, and so on), from 10 to 200. Applies after a restart |
 | `search.default_earliest` | `-24h` | Time range when a query sets none |
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |

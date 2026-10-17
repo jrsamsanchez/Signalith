@@ -165,3 +165,29 @@ func TestFieldTypesAgree(t *testing.T) {
 		check(m.Name, m.Fields)
 	}
 }
+
+func TestSplitPart(t *testing.T) {
+	for name, want := range map[string]struct {
+		day string
+		n   int
+	}{
+		"sig-network-2026.10.17":      {"sig-network-2026.10.17", 1},
+		"sig-network-2026.10.17-2":    {"sig-network-2026.10.17", 2},
+		"sig-network-2026.10.17-999":  {"sig-network-2026.10.17", 999},
+		"sig.t.acme-dns-2026.01.31-7": {"sig.t.acme-dns-2026.01.31", 7},
+	} {
+		day, n, ok := SplitPart(name)
+		if !ok || day != want.day || n != want.n {
+			t.Errorf("SplitPart(%s) = %s %d %v", name, day, n, ok)
+		}
+		if got := PartName(day, n); got != name {
+			t.Errorf("PartName(%s, %d) = %s", day, n, got)
+		}
+	}
+	for _, name := range []string{"sig-network", "sig-network-2026.10.17-1", "sig-network-2026.10.17-01", "sig-network-2026.10.17-1000",
+		"sig-network-2026.10.17-", "sig-network-2026.13.17-2", "sig-network-2026.10.17-2-2", "sig_cases", "2026.10.17", "-2026.10.17-2x"} {
+		if day, n, ok := SplitPart(name); ok {
+			t.Errorf("SplitPart(%s) accepted it: %s %d", name, day, n)
+		}
+	}
+}
