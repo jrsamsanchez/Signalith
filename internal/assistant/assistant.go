@@ -379,6 +379,8 @@ func QueryReference() string {
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   anomalydetection [method=histogram|zscore] [action=filter|annotate|summary] [pthresh=0.01] user src   keeps (or marks with isOutlier) rows with rare values or numbers far from the mean; correlate [fields] shows how often fields appear together
+  predict count [as pred] [algorithm=LL|LLT|LLP|LLP5] [future_timespan=5] [holdback=0] [period=N]   after timechart: forecasts count with prediction(count), upper95(...) and lower95(...), adding future rows
+  | set union|diff|intersect [search ...] [search ...]   starts a search with the rows of either, only one, or both subsearches; setfields f="v", g="w" sets fields on every row
   xpath outfield=user "//Data[@Name='TargetUserName']"   reads XML (in _raw unless field=) with / and // steps, [@attr='v'] and [N] predicates, and a last /@attr or /text()
   abstract [maxlines=5]   shortens _raw to its lines with the most words; highlight term ...   accepted and leaves rows as they are
   | multisearch [search action=failure] [search action=lockout]   starts a search with the events of two or more subsearches, newest first

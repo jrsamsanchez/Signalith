@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous", "union", "geostats", "extract", "outlier", "gauge", "multisearch", "timewrap", "cluster", "xpath", "abstract", "highlight", "anomalydetection", "correlate"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous", "union", "geostats", "extract", "outlier", "gauge", "multisearch", "timewrap", "cluster", "xpath", "abstract", "highlight", "anomalydetection", "correlate", "predict", "set", "setfields"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -97,6 +97,8 @@ func parseAt(src string, base, depth int) (*Query, error) {
 				return nil, errorf(at, "makeresults makes rows instead of searching events, so it starts the search: | makeresults count=3")
 			case *MultiSearch:
 				return nil, errorf(at, "multisearch runs its own subsearches, so it starts the search: %s", multiSearchExample)
+			case *Set:
+				return nil, errorf(at, "set runs its own subsearches, so it starts the search: %s", setExample)
 			}
 		}
 		q.Commands = append(q.Commands, cmd)
@@ -619,6 +621,12 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseAnomalyDetection(t)
 	case "correlate":
 		return p.parseCorrelate(t)
+	case "predict":
+		return p.parsePredict(t)
+	case "set":
+		return p.parseSet(t)
+	case "setfields":
+		return p.parseSetFields(t)
 	case "makecontinuous":
 		return p.parseMakeContinuous(t)
 	case "xmlkv":

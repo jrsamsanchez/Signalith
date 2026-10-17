@@ -44,6 +44,12 @@ func commandSubsearches(c Command) int {
 			n += 1 + countSubsearches(s)
 		}
 		return n
+	case *Set:
+		n := 0
+		for _, s := range c.Subs {
+			n += 1 + countSubsearches(s)
+		}
+		return n
 	case *MultiSearch:
 		n := 0
 		for _, s := range c.Subs {
@@ -80,6 +86,10 @@ func countMapSearches(q *Query) int {
 					walk(s.Commands)
 				}
 			case *MultiSearch:
+				for _, s := range c.Subs {
+					walk(s.Commands)
+				}
+			case *Set:
 				for _, s := range c.Subs {
 					walk(s.Commands)
 				}
