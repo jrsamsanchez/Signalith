@@ -21,7 +21,9 @@ The summaries go back `search.summary_days`, 30 days unless you change it on
 the **Settings** page (**Search** card, **Summaries go back**). The most is
 400 days and 0 turns summaries off. A data model whose retention policy keeps
 events for less time gets summaries for that long only, so summaries never
-outlive the events retention deletes.
+outlive the events retention deletes. When a day's events go before that (a
+size cap or the low disk guard deleted them early), its summaries go within a
+minute too.
 
 ## Which searches use them
 
@@ -57,6 +59,10 @@ datamodel=Authentication | timechart span=1m count
 When a search used summaries, the results show a **Summarized** badge next to
 the time it took.
 
+Detections, behavior baselines and the data source watch never read
+summaries: they always search the events, so an event that arrives late
+counts at their next run.
+
 ## Results are the same
 
 A summarized search reads summaries only for whole 5-minute slots that the
@@ -81,7 +87,8 @@ removed, and days restored from the archive.
   about a day per data model per minute. Searches read the events until a
   range is summarized.
 - An hour with more than 100,000 different combinations of a model's main
-  fields is not summarized. Searches read its events instead.
+  fields, or with very long values, is not summarized. Neither is an hour
+  that keeps failing to summarize. Searches read those hours' events instead.
 - Summaries hold the same field values as the events they count, such as user
   names and addresses. They are kept in the same OpenSearch, with the same
   protection, and anyone who can search events can search them.

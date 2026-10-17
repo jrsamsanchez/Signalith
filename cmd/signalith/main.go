@@ -811,13 +811,13 @@ func newSummaries(ctx context.Context, c *config.Config, cl *store.Client, eng *
 	goFn(func() { coverage.Run(ctx) })
 	return &summary.Builder{
 		Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: runtime, Days: eng.SummaryDays,
-		KeepDays: func(model string) int {
+		KeepDays: func(model string) (int, bool) {
 			s, err := ret.Settings()
 			if err != nil {
-				return 0
+				return 0, false
 			}
 			p, _ := s.For(strings.ToLower(model))
-			return p.KeepDays
+			return p.KeepDays, true
 		},
 		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log,
 	}

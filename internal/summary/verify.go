@@ -10,8 +10,8 @@ import (
 // due: the last recentSpan every recentEvery, the whole range every
 // fullEvery. A slot whose count differs is built again, if its day's
 // event index still exists: events that arrived late, sample data added
-// or removed, a day restored from an archive. A day retention deleted
-// keeps its summaries.
+// or removed, a day restored from an archive. Days whose event index is
+// gone are orphans' business.
 func (b *Builder) verify(ctx context.Context, h *held, now time.Time) error {
 	st := &h.st
 	var from time.Time
@@ -68,10 +68,14 @@ func (b *Builder) verify(ctx context.Context, h *held, now time.Time) error {
 		}
 		_, err := b.build(ctx, st.Model, r.From, r.To)
 		switch {
+		case errors.Is(err, errStaleEpoch):
+			return err
 		case errors.Is(err, errTooMany):
 			st.Gaps = addGap(st.Gaps, Gap(r))
 		case err != nil:
-			return err
+			// Its old rows may be wrong now: read its events instead.
+			st.Gaps = addGap(st.Gaps, Gap(r))
+			b.log().Warn("summaries: could not rebuild; searches read these events directly", "datamodel", st.Model, "from", r.From, "to", r.To, "error", err)
 		}
 		st.Rebuilt++
 	}
@@ -184,4 +188,44 @@ func (b *Builder) histogram(ctx context.Context, index string, filter map[string
 		}
 	}
 	return out, nil
+}
+
+// orphans removes the rows of covered days whose event index is gone (a
+// size cap or the disk guard deleted it before keep_days, say), so
+// summaries never outlive their events, and makes those days gaps.
+func (b *Builder) orphans(ctx context.Context, h *held) error {
+	st := &h.st
+	if !st.Through.After(st.From) {
+		return nil
+	}
+	days, err := b.dayIndices(ctx, st.Model)
+	if err != nil {
+		return err
+	}
+	rows, err := b.histogram(ctx, IndexPattern(b.Prefix), map[string]any{"term": map[string]any{ModelField: st.Model}}, st.From, st.Through, "1d", true)
+	if err != nil {
+		return err
+	}
+	var gone []time.Time
+	for _, k := range sortedKeys(rows) {
+		if d := time.UnixMilli(k).UTC(); !days[d.Format("2006.01.02")] {
+			gone = append(gone, d)
+		}
+	}
+	if len(gone) == 0 {
+		return nil
+	}
+	for _, d := range gone {
+		st.Gaps = addGap(st.Gaps, Gap{From: d, To: d.Add(24 * time.Hour)})
+	}
+	if err := b.save(ctx, h); err != nil {
+		return err
+	}
+	for _, d := range gone {
+		if err := b.deleteRows(ctx, st.Model, d, d.Add(24*time.Hour), ""); err != nil {
+			return err
+		}
+	}
+	b.log().Info("summaries: deleted the summaries of days whose events are gone", "datamodel", st.Model, "days", len(gone))
+	return nil
 }

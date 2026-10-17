@@ -13,6 +13,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/summary"
 )
 
@@ -143,6 +144,25 @@ func TestSummaries(t *testing.T) {
 	cov.Refresh(ctx)
 	same("after a late event")
 
+	// A day whose events are deleted early (a size cap, the disk guard)
+	// takes its summaries along.
+	day := now.Add(-3 * time.Hour).UTC()
+	if err := cl.DeleteIndex(ctx, prefix+"-authentication-"+day.Format("2006.01.02")); err != nil {
+		t.Fatal(err)
+	}
+	build()
+	cov.Refresh(ctx)
+	from := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	if n := summaryRows(t, cl, prefix, from, from.Add(24*time.Hour)); n != 0 {
+		t.Errorf("%d rows of a day whose events are gone are left", n)
+	}
+	for _, q := range queries {
+		want, got := run(t, raw, q), run(t, fast, q)
+		if w, g := sortedRows(want.Rows), sortedRows(got.Rows); !reflect.DeepEqual(w, g) {
+			t.Errorf("after a day was deleted: %s\n events:    %v\n summaries: %v", q, w, g)
+		}
+	}
+
 	// Summaries reach back summary_days at most: as the range moves on,
 	// rows it left behind go, and searches read those hours' events.
 	for _, ahead := range []time.Duration{22 * time.Hour, 23*time.Hour + 10*time.Minute} {
@@ -153,13 +173,8 @@ func TestSummaries(t *testing.T) {
 	if rs := cov.Ranges("Authentication"); len(rs) == 0 || rs[0].From.Before(now.Add(-2*time.Hour)) {
 		t.Fatalf("summaries still start at %v", rs)
 	}
-	resp, err := cl.Search(ctx, summary.IndexPattern(prefix), map[string]any{"size": 0, "track_total_hits": true,
-		"query": map[string]any{"range": map[string]any{"@timestamp": map[string]any{"lt": now.Add(-2 * time.Hour).Truncate(time.Hour).Format(time.RFC3339)}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n := resp["hits"].(map[string]any)["total"].(map[string]any)["value"]; fmt.Sprint(n) != "0" {
-		t.Errorf("%v rows older than the summaries' start are left", n)
+	if n := summaryRows(t, cl, prefix, time.Time{}, now.Add(-2*time.Hour).Truncate(time.Hour)); n != 0 {
+		t.Errorf("%d rows older than the summaries' start are left", n)
 	}
 	for _, q := range queries {
 		want, got := run(t, raw, q), run(t, fast, q)
@@ -177,4 +192,20 @@ func sortedRows(rows []search.Row) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// summaryRows counts the summary rows in [from, to).
+func summaryRows(t *testing.T, cl *store.Client, prefix string, from, to time.Time) int64 {
+	t.Helper()
+	r := map[string]any{"lt": to.Format(time.RFC3339)}
+	if !from.IsZero() {
+		r["gte"] = from.Format(time.RFC3339)
+	}
+	resp, err := cl.Search(context.Background(), summary.IndexPattern(prefix), map[string]any{"size": 0, "track_total_hits": true,
+		"query": map[string]any{"range": map[string]any{"@timestamp": r}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := resp["hits"].(map[string]any)["total"].(map[string]any)["value"].(float64)
+	return int64(n)
 }

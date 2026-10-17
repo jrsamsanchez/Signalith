@@ -857,6 +857,9 @@ func (s *Scheduler) prepare(d *Detection, end time.Time) (*query.Query, time.Tim
 	}
 	q.Earliest = earliest.UTC().Format(time.RFC3339)
 	q.Latest = latest.UTC().Format(time.RFC3339)
+	// Summaries count an event that arrives late only once they are next
+	// checked; a detection must count it on its next run.
+	q.EventsOnly = true
 	return q, earliest, latest, nil
 }
 

@@ -34,10 +34,20 @@ const (
 	// with more (dimensions almost unique per event) is not stored:
 	// those slots are a gap that searches read from the events.
 	DefaultMaxRows = 100000
-	// pageSize is the composite aggregation page.
-	pageSize = 5000
-	// bulkSize is the rows per bulk request.
-	bulkSize = 5000
+	// The composite aggregation's first page has firstPage rows; later
+	// pages hold about pageBytes of values, between minPage and maxPage
+	// rows, so long values (up to 8 KB each) never make a huge response.
+	firstPage = 200
+	minPage   = 100
+	maxPage   = 5000
+	pageBytes = 4 << 20
+	// maxChunkBytes caps the values one chunk's rows hold; a chunk with
+	// more is a gap, as one with too many rows is.
+	maxChunkBytes = 64 << 20
+	// A bulk request carries at most bulkSize rows or bulkBytes of
+	// values.
+	bulkSize  = 5000
+	bulkBytes = 8 << 20
 	// recentEvery and fullEvery are how often the summaries of the last
 	// recentSpan, and of the whole covered range, are checked against
 	// the events.
@@ -83,10 +93,11 @@ type Builder struct {
 	Runtime string
 	// Days is how far back summaries reach; 0 builds none.
 	Days func() int
-	// KeepDays is how long a data model's events are kept (0: forever).
-	// Summaries never reach further back, so they never outlive the
+	// KeepDays is how long a data model's events are kept (0: forever),
+	// with ok false when that cannot be read: the model's summaries then
+	// wait. Summaries never reach further back, so they never outlive the
 	// events retention deleted.
-	KeepDays func(model string) int
+	KeepDays func(model string) (days int, ok bool)
 	// Now is the cluster's clock.
 	Now func() time.Time
 	// Allowed reports whether this server still runs the jobs; Epoch
@@ -108,6 +119,7 @@ type Builder struct {
 	epoch   int64
 	created map[string]bool
 	gen     int64
+	fails   map[string]failure
 }
 
 // held is a state document and its stored version.
@@ -127,6 +139,10 @@ func (b *Builder) log() *slog.Logger {
 }
 
 func (b *Builder) allowed() bool { return b.Allowed == nil || b.Allowed() }
+
+// fenced reports whether this server still holds the lease the tick
+// started under, which every write checks first.
+func (b *Builder) fenced() bool { return b.allowed() && b.epochNow() == b.epoch }
 
 func (b *Builder) now() time.Time {
 	if b.Now != nil {
@@ -187,7 +203,11 @@ func (b *Builder) Tick(ctx context.Context) error {
 		}
 		d := days
 		if b.KeepDays != nil {
-			if k := b.KeepDays(m); k > 0 && k < d {
+			k, ok := b.KeepDays(m)
+			if !ok {
+				continue
+			}
+			if k > 0 && k < d {
 				d = k
 			}
 		}
@@ -230,7 +250,7 @@ func (b *Builder) dropMonths(ctx context.Context, starts map[string]time.Time) e
 		if err != nil || month.AddDate(0, 1, 0).After(from) {
 			continue
 		}
-		if !b.allowed() {
+		if !b.fenced() {
 			return errStaleEpoch
 		}
 		if err := b.Client.Do(ctx, http.MethodDelete, "/"+url.PathEscape(n), nil, nil); err != nil && !isNotFound(err) {
@@ -323,10 +343,17 @@ func (b *Builder) model(ctx context.Context, model string, days int) error {
 		case errors.Is(err, errTooMany):
 			st.Gaps = addGap(st.Gaps, Gap{From: st.Through, To: end})
 			b.log().Info("summaries: too many distinct values to summarize; searches read these events directly", "datamodel", model, "from", st.Through, "to", end)
-		case err != nil:
+		case errors.Is(err, errStaleEpoch):
+			return err
+		case err != nil && b.failed(model, st.Through) < maxFailures:
 			st.LastError = err.Error()
 			_ = b.save(ctx, h)
 			return err
+		case err != nil:
+			// It keeps failing (rows OpenSearch refuses, say): its
+			// events are read directly instead of building it forever.
+			st.Gaps = addGap(st.Gaps, Gap{From: st.Through, To: end})
+			b.log().Warn("summaries: could not summarize; searches read these events directly", "datamodel", model, "from", st.Through, "to", end, "error", err)
 		}
 		st.Through, st.Rows, st.LastBuild, st.LastError = end, st.Rows+int64(rows), now, ""
 		built = true
@@ -338,10 +365,37 @@ func (b *Builder) model(ctx context.Context, model string, days int) error {
 			return err
 		}
 	}
+	if err := b.orphans(ctx, h); err != nil {
+		return err
+	}
 	return b.verify(ctx, h, now)
 }
 
 var errTooMany = errors.New("too many rows")
+
+// maxFailures is how many times in a row a chunk may fail to build
+// before it becomes a gap.
+const maxFailures = 3
+
+// failed counts a failure to build model's chunk at from, and returns
+// how many times in a row it failed.
+func (b *Builder) failed(model string, from time.Time) int {
+	if b.fails == nil {
+		b.fails = map[string]failure{}
+	}
+	f := b.fails[model]
+	if !f.at.Equal(from) {
+		f = failure{at: from}
+	}
+	f.n++
+	b.fails[model] = f
+	return f.n
+}
+
+type failure struct {
+	at time.Time
+	n  int
+}
 
 // busyHours returns the hours in [from, to) where model has events or
 // summary rows.
@@ -385,6 +439,7 @@ func (b *Builder) build(ctx context.Context, model string, from, to time.Time) (
 		return 0, err
 	}
 	docs := make([]store.IndexedDoc, 0, len(rows))
+	sizes := make([]int, 0, len(rows))
 	for _, r := range rows {
 		t := r.slot
 		doc := r.fields
@@ -394,6 +449,7 @@ func (b *Builder) build(ctx context.Context, model string, from, to time.Time) (
 		doc[CountField] = r.count
 		doc[GenField] = gen
 		docs = append(docs, store.IndexedDoc{Index: indexName(b.Prefix, t), ID: rowID(model, t, r.key), Doc: doc, Replace: true})
+		sizes = append(sizes, r.size)
 	}
 	for _, ix := range uniqueIndices(docs) {
 		if err := b.ensureIndex(ctx, ix); err != nil {
@@ -401,10 +457,14 @@ func (b *Builder) build(ctx context.Context, model string, from, to time.Time) (
 		}
 	}
 	for len(docs) > 0 {
-		if !b.allowed() {
+		if !b.fenced() {
 			return 0, errStaleEpoch
 		}
-		n := min(len(docs), bulkSize)
+		n, bytes := 0, 0
+		for n < len(docs) && n < bulkSize && (n == 0 || bytes+sizes[n] <= bulkBytes) {
+			bytes += sizes[n]
+			n++
+		}
 		errs, err := b.Client.Bulk(ctx, docs[:n])
 		if err != nil {
 			return 0, err
@@ -412,7 +472,7 @@ func (b *Builder) build(ctx context.Context, model string, from, to time.Time) (
 		if len(errs) > 0 {
 			return 0, fmt.Errorf("could not store %d summary rows: %s", len(errs), errs[0].Reason)
 		}
-		docs = docs[n:]
+		docs, sizes = docs[n:], sizes[n:]
 	}
 	if len(rows) > 0 {
 		if err := b.refresh(ctx); err != nil {
@@ -442,6 +502,7 @@ type row struct {
 	key    string
 	fields map[string]any
 	count  int64
+	size   int // about the bytes of its values
 }
 
 // rowID is a row's document ID: the same slot and values get the same
@@ -458,7 +519,7 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 	for i, d := range dims {
 		sources = append(sources, map[string]any{fmt.Sprintf("d%d", i): map[string]any{"terms": map[string]any{"field": d, "missing_bucket": true}}})
 	}
-	comp := map[string]any{"size": pageSize, "sources": sources}
+	comp := map[string]any{"size": firstPage, "sources": sources}
 	body := map[string]any{
 		"size":             0,
 		"track_total_hits": false,
@@ -472,11 +533,12 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 		}
 		body["aggs"].(map[string]any)["g"].(map[string]any)["aggs"] = sub
 	}
-	max := b.MaxRows
-	if max <= 0 {
-		max = DefaultMaxRows
+	maxRows := b.MaxRows
+	if maxRows <= 0 {
+		maxRows = DefaultMaxRows
 	}
 	var out []row
+	total := 0
 	for {
 		resp, err := b.Client.Search(ctx, rawPattern(b.Prefix, model), body)
 		if err != nil {
@@ -487,6 +549,7 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 		}
 		g, _ := dig(resp, "aggregations", "g").(map[string]any)
 		buckets, _ := g["buckets"].([]any)
+		page := 0
 		for _, x := range buckets {
 			bk, _ := x.(map[string]any)
 			key, _ := bk["key"].(map[string]any)
@@ -512,8 +575,10 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 			}
 			k, _ := json.Marshal(vals)
 			r.key = string(k)
+			r.size = len(k) + 256 // the field names and the row's own fields
 			out = append(out, r)
-			if len(out) > max {
+			page += r.size
+			if total += r.size; len(out) > maxRows || total > maxChunkBytes {
 				return nil, errTooMany
 			}
 		}
@@ -522,6 +587,7 @@ func (b *Builder) aggregate(ctx context.Context, model string, from, to time.Tim
 			return out, nil
 		}
 		comp["after"] = after
+		comp["size"] = max(minPage, min(maxPage, pageBytes*len(buckets)/max(page, 1)))
 	}
 }
 
@@ -540,7 +606,7 @@ func timeRange(from, to time.Time) map[string]any {
 // deleteRows deletes model's rows in [from, to) (all of them when both
 // are zero), except those written by keepGen.
 func (b *Builder) deleteRows(ctx context.Context, model string, from, to time.Time, keepGen string) error {
-	if !b.allowed() {
+	if !b.fenced() {
 		return errStaleEpoch
 	}
 	filter := []any{map[string]any{"term": map[string]any{ModelField: model}}}

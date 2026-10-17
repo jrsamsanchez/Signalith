@@ -82,6 +82,10 @@ func TestSummaryPlanOff(t *testing.T) {
 	if p, _ := e.Compile(q); len(p.Summaries) > 0 {
 		t.Errorf("summary_days 0 still reads summaries")
 	}
+	q.EventsOnly = true
+	if p, _ := summaryEngine().Compile(q); len(p.Summaries) > 0 {
+		t.Errorf("an events-only search reads summaries")
+	}
 	if p := compile(t, src); len(p.Summaries) > 0 || strings.Contains(asJSON(p.Body), sumidx.ModelField) {
 		t.Errorf("no coverage still reads summaries: %s", asJSON(p.Body))
 	}
@@ -122,5 +126,48 @@ func TestWholeSlots(t *testing.T) {
 		if got := wholeSlots(span); got != want {
 			t.Errorf("wholeSlots(%s) = %v", span, got)
 		}
+	}
+}
+
+// A search never reads so many covered ranges that OpenSearch would
+// refuse its query: the models with the most gaps read events.
+func TestSummaryRangesCapped(t *testing.T) {
+	e := summaryEngine()
+	now := time.Now().UTC()
+	ranges := map[string][]sumidx.Range{}
+	for i, m := range sumidx.Models() {
+		n := 5
+		if i%2 == 0 {
+			n = 51
+		}
+		for j := 0; j < n; j++ {
+			from := now.Add(-time.Duration(j+2) * 2 * time.Hour).Truncate(time.Hour)
+			ranges[m] = append(ranges[m], sumidx.Range{From: from, To: from.Add(time.Hour)})
+		}
+	}
+	e.Summaries.Set(ranges)
+	q, _ := query.Parse(`earliest=-7d | stats count by host`)
+	p, err := e.Compile(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Summaries) == 0 {
+		t.Fatal("no model reads summaries")
+	}
+	if n := countRanges(p.sum.ranges); n > maxSummaryRanges {
+		t.Errorf("%d ranges", n)
+	}
+	for m, rs := range ranges {
+		if _, kept := p.sum.ranges[m]; len(rs) == 5 && !kept && m != "Risk" {
+			t.Errorf("%s, with few ranges, was dropped", m)
+		}
+	}
+}
+
+// A join's subsearch in an events-only search reads events too.
+func TestSubsearchEventsOnly(t *testing.T) {
+	outer := &query.Query{EventsOnly: true}
+	if !subsearch(&query.Query{}, outer).EventsOnly {
+		t.Error("subsearch reads summaries")
 	}
 }

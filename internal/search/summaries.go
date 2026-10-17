@@ -38,7 +38,7 @@ func (s *summaryUse) models() []string {
 // (timechart). For a search of every data model, each model qualifies
 // on its own. It returns nil when no model's summaries help.
 func (e *Engine) summaryPlan(q *query.Query, filters []query.Expr, cmd query.Command, earliest string, now time.Time) *summaryUse {
-	if e.Summaries == nil || e.SummaryDays() <= 0 || (q.Index != "" && q.Index != "*") {
+	if q.EventsOnly || e.Summaries == nil || e.SummaryDays() <= 0 || (q.Index != "" && q.Index != "*") {
 		return nil
 	}
 	var aggs []query.Agg
@@ -127,10 +127,34 @@ func (e *Engine) summaryPlan(q *query.Query, filters []query.Expr, cmd query.Com
 			use.ranges[m] = rs
 		}
 	}
+	// Each range is two clauses; OpenSearch refuses a query of more than
+	// 1,024. The models with the most ranges (the most gaps) read events.
+	for total := countRanges(use.ranges); total > maxSummaryRanges; {
+		worst := ""
+		for _, m := range use.models() {
+			if worst == "" || len(use.ranges[m]) > len(use.ranges[worst]) {
+				worst = m
+			}
+		}
+		total -= len(use.ranges[worst])
+		delete(use.ranges, worst)
+	}
 	if len(use.ranges) == 0 {
 		return nil
 	}
 	return use
+}
+
+// maxSummaryRanges caps the covered ranges one search reads summaries
+// of, keeping its query well under OpenSearch's 1,024 clauses.
+const maxSummaryRanges = 200
+
+func countRanges(rs map[string][]sumidx.Range) int {
+	n := 0
+	for _, r := range rs {
+		n += len(r)
+	}
+	return n
 }
 
 // qualifies reports whether a model's summaries hold what a search needs.
