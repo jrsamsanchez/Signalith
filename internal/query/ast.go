@@ -411,6 +411,8 @@ func CommandString(c Command) string {
 		return joinString(c)
 	case *Append:
 		return "append [search " + c.Sub.String() + "]"
+	case *Union:
+		return unionString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:

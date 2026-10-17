@@ -296,6 +296,12 @@ func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error 
 			sub = c.Sub
 		case *query.Append:
 			sub = c.Sub
+		case *query.Union:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
 		case *query.AppendPipe:
 			if err := e.compileSubsearches(c.Commands, q); err != nil {
 				return err
@@ -708,6 +714,12 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.join(ctx, res, c, q)
 		case *query.Append:
 			err = e.appendSearch(ctx, res, c, q)
+		case *query.Union:
+			for _, s := range c.Subs {
+				if err = e.appendSearch(ctx, res, &query.Append{Sub: s}, q); err != nil {
+					break
+				}
+			}
 		case *query.AppendPipe:
 			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
