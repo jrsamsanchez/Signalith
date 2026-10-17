@@ -448,6 +448,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	// A new user belongs to the tenant whose server makes it: a tenant's
 	// admins make only their tenant's users, and only the provider's
 	// users make the provider's.
+	if err := s.releaseBeforeCreate(r.Context(), req.Username, userOf(r), s.userTenant() == ""); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
 	u, err := s.userStore().Create(changeContext(r), users.NewUser{Username: req.Username, Name: req.Name, Email: req.Email, Role: req.Role,
 		Password: req.Password, MustChangePassword: mustChange, Tenant: s.userTenant()})
 	if err != nil {

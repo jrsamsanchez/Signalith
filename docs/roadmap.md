@@ -36,7 +36,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
 - Content packs of tested community rules: 2,524 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,185 from Splunk Security Content,
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,186 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 - [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain
@@ -44,7 +44,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 **Security depth**
 
-- Risk-based alerting with asset and identity context.
+- Risk-based alerting with asset and identity context, and
+  [behavior baselines](baselines.md) that add risk for first-seen and rare activity.
 - [Threat intel](threat-intel.md) feeds (lists, CSV, STIX, TAXII 2.1) matched against
   your events.
 - A security posture dashboard and [dashboards](dashboards.md) of your own, where any
@@ -57,7 +58,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   [Investigate with AI](investigate.md) for a first verdict on a finding.
 - [Hunting notebooks](hunting-notebooks.md): saved, shareable hunts of notes and searches
   tagged to ATT&CK, with seven starter hunts.
-- [Notifications](notifications.md) to email, webhooks, Slack and Microsoft Teams, and
+- [Notifications](notifications.md) to email, webhooks, Slack and Microsoft Teams, with
+  [buttons](notifications.md#buttons-in-slack-and-teams) to acknowledge findings and approve
+  playbook steps from chat, and
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
@@ -107,26 +110,28 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - HTTPS by default, a secured OpenSearch, and [encrypted](encryption.md) passwords, keys
   and archives.
 - [Users and roles](users.md), with Active Directory and LDAP sign-in,
-  [single sign-on](sso.md) with OpenID Connect and SCIM provisioning, and two-step sign-in
+  [single sign-on](sso.md) with OpenID Connect or SAML 2.0 and SCIM provisioning, and two-step sign-in
   with [passkeys](users.md#passkeys) or an authenticator app.
 - A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
   page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
-- A [security check](security.md) of how each server is set up.
+- A [security check](security.md) of how each server is set up, a
+  [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
   ISO/IEC 27001, HIPAA and SOC 2, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
 
-**SAML sign-in**
-:   Single sign-on with SAML 2.0 identity providers, next to OpenID Connect.
-
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and
-    detections.
+    detections. The first step, [multi-tenant mode](multi-tenant.md) on a single server,
+    is in; the Settings page and a tenant picker come next.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
+
+**Tickets in Jira and ServiceNow**
+:   Open a Jira or ServiceNow ticket from a finding or a playbook.
 
 **A signed Windows installer**
 :   A code-signed `.msi` (see the [code signing policy](code-signing.md)).

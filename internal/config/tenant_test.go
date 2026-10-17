@@ -23,6 +23,8 @@ func TestForTenant(t *testing.T) {
 	c.Syslog.UDP = ":514"
 	c.M365.TenantID = "contoso"
 	c.Notify.File = "/etc/signalith/notify.yaml"
+	c.Ticketing.File = "/etc/signalith/tickets.yaml"
+	tickets := c.TicketingFile()
 	if c.ForTenant("default") != c || c.ForTenant("") != c {
 		t.Fatal("the default tenant's config is not the config itself")
 	}
@@ -38,6 +40,7 @@ func TestForTenant(t *testing.T) {
 		"lookups": a.LookupsDir(), "detections": a.DetectionsDir(), "dashboards": a.DashboardsDir(),
 		"archive": a.ArchiveDir(), "scripts": a.ResponseScriptsDir(), "feeds": a.IntelFeedsFile(),
 		"notify": a.NotifyFile(), "response": a.ResponseFile(), "playbooks": a.PlaybooksFile(),
+		"ticketing": a.TicketingFile(),
 	} {
 		if !strings.HasPrefix(p, dir+string(filepath.Separator)) {
 			t.Errorf("%s: %q is outside the tenant's folder %q", name, p, dir)
@@ -49,6 +52,14 @@ func TestForTenant(t *testing.T) {
 	// The original is untouched.
 	if c.OpenSearch.IndexPrefix != "signalith" || len(c.Ingest.Tokens) != 1 || !c.Syslog.Enabled() {
 		t.Error("ForTenant changed the default tenant's config")
+	}
+	// The default tenant keeps the ticketing file it had, and another
+	// tenant's is its own.
+	if c.TicketingFile() != tickets {
+		t.Errorf("the default tenant's ticketing file moved to %q", c.TicketingFile())
+	}
+	if b := c.ForTenant("beta"); b.TicketingFile() == a.TicketingFile() {
+		t.Errorf("tenants acme and beta share the ticketing file %q", a.TicketingFile())
 	}
 }
 

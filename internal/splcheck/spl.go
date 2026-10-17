@@ -309,7 +309,8 @@ var (
 			"4648": "ExplicitLogon", "4776": "NtlmAuth", "4771": "KerberosPreAuth", "4741": "ComputerChanged",
 			"4742": "ComputerChanged", "4781": "AccountRenamed", "4727": "GroupChanged", "4730": "GroupChanged",
 			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
-			"4887": "CertRequest",
+			"4887": "CertRequest", "4662": "DirectoryAccess", "4722": "AccountChanged", "4723": "AccountChanged",
+			"4724": "AccountChanged", "4725": "AccountChanged", "5447": "FilterChanged", "4728": "GroupMemberAdded",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
@@ -481,6 +482,22 @@ var (
 			"RequestId": "cert_request_id", "Requester": "cert_requester", "Attributes": "cert_attributes",
 			"Disposition": "cert_disposition", "Subject": "cert_subject",
 		},
+		// An operation on a directory service object (4662): the object
+		// and its class, as recorded (often %{GUID}s), and the access.
+		"DirectoryAccess": {
+			"ObjectName": "object", "ObjectType": "object_type", "ObjectServer": "object_server", "SubjectUserName": "user",
+			"SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain", "SubjectLogonId": "logon_id",
+			"AccessMask": "access_mask", "AccessList": "access_list", "Properties": "object_properties", "Computer": "host",
+		},
+		// A user account enabled or disabled, or its password changed or
+		// reset.
+		"AccountChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain", "SubjectLogonId": "logon_id",
+		},
+		// A Windows Filtering Platform filter changed (5447), each value
+		// by its name (ingest.ChannelDataField).
+		"FilterChanged": securityNamedFields("5447"),
 		// A process terminated, and a drive read directly.
 		"ProcessTerminated": {
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
@@ -508,6 +525,18 @@ var (
 	fillnullValueRe = regexp.MustCompile(`(?i)^fillnull(?:\s+value\s*=\s*\S+)?$`)
 	iplocationRe    = regexp.MustCompile(`(?i)^iplocation\s+\w+$`)
 )
+
+// securityNamedFields are the data of a Security event the parser reads
+// by name, each with the field it is stored as.
+func securityNamedFields(eventID string) map[string]string {
+	out := map[string]string{}
+	for _, n := range ingest.WindowsSecurityNames(eventID) {
+		if f, ok := ingest.ChannelDataField(ingest.SecurityChannel, n); ok {
+			out[n] = f
+		}
+	}
+	return out
+}
 
 // AuditdNode is the node of Linux audit records (the linux_auditd
 // macro). A search names no event code: each record names its type, and
