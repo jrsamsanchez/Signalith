@@ -107,7 +107,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Lookup, *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
+		case *query.Lookup, *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}

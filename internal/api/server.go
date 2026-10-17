@@ -881,6 +881,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if mayWriteLookups(principalOf(r)) {
+		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
+	}
 	res, err := s.Engine.Execute(ctx, q)
 	if err != nil {
 		writeSearchError(w, err)

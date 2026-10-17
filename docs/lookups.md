@@ -146,6 +146,35 @@ search reads up to the event limit (`search.max_events`, 10,000 by default).
 It must come first, with nothing before the `|`. An empty cell is a missing
 field, so `where isnull(owner)` finds rows with no owner.
 
+## The outputlookup command
+
+`outputlookup` writes a search's rows to a table and passes them on, to keep
+a list a search builds, such as the users seen this week:
+
+```
+index=signalith-authentication-* earliest=-7d
+| stats count by user
+| outputlookup weekly_users
+```
+
+Only admins can use it, and only from their own searches on the Search page:
+detections cannot (a detection with it is refused when saved), nor can
+dashboards, the AI tools or API tokens. Each table written is in the audit
+log, with who wrote it and how many rows.
+
+A table that exists is never replaced by accident. Without `append=`, the
+command makes a new table and fails if one by that name exists; `append=t`
+adds the rows after the table's own (new fields become new columns), and
+`append=f` replaces the table. The table keeps its wildcard and case
+settings. The same limits apply as to an upload. Every field is written except
+those starting with `_`, apart from `_time`; a multivalue field is written as
+its values on separate lines.
+
+`max=N` writes at most N rows. With no rows, `create_empty=f` makes no new
+table, and `override_if_empty=f` leaves a table `append=f` would replace as
+it is. A name may end in `.csv`, which is dropped. Like uploads, it is refused
+while several servers share the data.
+
 ## GeoIP database for iplocation
 
 The search command `iplocation` adds where an IP address is (`City`, `Region`,

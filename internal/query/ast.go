@@ -407,6 +407,8 @@ func CommandString(c Command) string {
 		return inputLookupString(c)
 	case *EventCount:
 		return eventCountString(c)
+	case *OutputLookup:
+		return outputLookupString(c)
 	case *Transaction:
 		return transactionString(c)
 	case *Join:

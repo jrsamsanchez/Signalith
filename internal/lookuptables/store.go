@@ -214,6 +214,10 @@ type Store struct {
 	mu      sync.RWMutex
 	tables  map[string]*Table
 	indexes map[string]*Index // by table name and key columns
+
+	// outMu runs one Output at a time, so rows two searches append
+	// are both kept.
+	outMu sync.Mutex
 }
 
 // Open reads the tables in dir, which is created when missing. A file that

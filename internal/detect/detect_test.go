@@ -78,6 +78,11 @@ func TestValidate(t *testing.T) {
 	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "earliest") {
 		t.Errorf("earliest in query allowed: %v", err)
 	}
+	d = &Detection{ID: "ok-rule", Title: "t", Query: "user=x | append [search y | outputlookup seen]"}
+	d.Defaults()
+	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "outputlookup") {
+		t.Errorf("outputlookup in a detection allowed: %v", err)
+	}
 }
 
 func TestParseDuration(t *testing.T) {

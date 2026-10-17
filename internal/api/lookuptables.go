@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 func (s *Server) routeLookupTables(api *router) {
@@ -141,4 +142,30 @@ func (s *Server) handleDeleteLookupTable(w http.ResponseWriter, r *http.Request)
 	}
 	s.audit(r, "lookup table deleted", "table", name)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mayWriteLookups reports whether p's own searches may write lookup
+// tables with outputlookup: an admin's, as an upload is, but never with an
+// API token, which only reads.
+func mayWriteLookups(p *principal) bool {
+	return p != nil && p.Role.AtLeast(users.Admin) && p.Method != "token" && p.tokenID == ""
+}
+
+// searchLookupWriter lets an admin's search write lookup tables with
+// outputlookup, under the same rules as an upload, and audits each table
+// written.
+type searchLookupWriter struct {
+	s *Server
+	r *http.Request
+}
+
+func (w searchLookupWriter) Allowed() error {
+	if w.s.severalServers() {
+		return errLookupTablesMulti
+	}
+	return nil
+}
+
+func (w searchLookupWriter) Wrote(table string, rows, total int, mode string) {
+	w.s.audit(w.r, "lookup table written by a search", "table", table, "rows", rows, "table_rows", total, "mode", mode)
 }
