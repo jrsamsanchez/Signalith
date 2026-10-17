@@ -38,10 +38,12 @@ var (
 // CheckNewPassword checks a password someone chooses for the user named
 // username, as NIST SP 800-63B asks: long enough, not too long,
 // not a commonly used password, not a repeated or sequential run of
-// characters, and not the username or the product's name dressed up.
+// characters, and not the username or the product's name dressed up. It
+// checks the password as HashPassword keeps it, normalized.
 // username may be empty when it is not known. Passwords already set are
 // never checked again: this is for new ones only.
 func CheckNewPassword(username, pw string) error {
+	pw = NormalizePassword(pw)
 	if err := checkLength(pw); err != nil {
 		return err
 	}

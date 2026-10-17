@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 )
@@ -177,10 +178,11 @@ func validEmail(email string) error {
 // MinPasswordLength is the shortest password Signalith accepts.
 const MinPasswordLength = 8
 
-// HashPassword returns a bcrypt hash of a password, after checking its
-// length. A password someone is choosing goes through CheckNewPassword
+// HashPassword returns a bcrypt hash of a password, normalized
+// (NormalizePassword), after checking its length. A password someone is choosing goes through CheckNewPassword
 // first.
 func HashPassword(pw string) (string, error) {
+	pw = NormalizePassword(pw)
 	if err := checkLength(pw); err != nil {
 		return "", err
 	}
@@ -190,9 +192,37 @@ func HashPassword(pw string) (string, error) {
 
 // ComparePassword reports whether pw is the password hash was made from by
 // HashPassword (or by any bcrypt tool, for a password of up to 72 bytes).
+// A hash made before passwords were normalized matches the password as it
+// was typed then, so nobody whose password has such characters is locked
+// out.
 func ComparePassword(hash, pw string) bool {
-	return hash != "" && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
+	if hash == "" {
+		return false
+	}
+	n := NormalizePassword(pw)
+	if bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(n)) == nil {
+		return true
+	}
+	return n != pw && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
 }
+
+// NormalizePassword returns pw in Unicode normalization form NFKC, as NIST
+// SP 800-63B asks, so a password typed on another keyboard or system
+// that composes accents or full-width characters differently still
+// matches. A password over maxNormalizeBytes is returned as it is: it is
+// far over MaxPasswordLength, so it is refused or cannot match, and
+// normalizing a megabyte sent to the sign-in page would cost the server
+// half a second of work.
+func NormalizePassword(pw string) string {
+	if len(pw) > maxNormalizeBytes {
+		return pw
+	}
+	return norm.NFKC.String(pw)
+}
+
+// maxNormalizeBytes is the longest password NormalizePassword changes:
+// 16 KB, many times MaxPasswordLength in any script.
+const maxNormalizeBytes = 16 << 10
 
 // bcryptLimit is the most bytes of a password bcrypt reads.
 const bcryptLimit = 72
@@ -221,7 +251,14 @@ var dummyHash = sync.OnceValue(func() []byte {
 
 // WasteTime does the work of checking a password without a user, so
 // sign-in failures take the same time whatever the reason.
-func WasteTime(pw string) { _ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw)) }
+// It checks twice where ComparePassword would.
+func WasteTime(pw string) {
+	n := NormalizePassword(pw)
+	_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(n))
+	if n != pw {
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw))
+	}
+}
 
 // GeneratePassword returns a random temporary password such as
 // "kq7m-3xhp-9tvd-w2fa": 16 characters (about 79 bits) from letters and
