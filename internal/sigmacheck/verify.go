@@ -91,7 +91,7 @@ const RepeatSpan = 30 * time.Second
 
 // Copies are a case's events, each with the time offset it happens at:
 // the event itself, or each of its repeats, spread over RepeatSpan, the
-// Vary fields numbered (tester1, tester2...).
+// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...).
 func (c Case) Copies() ([]Case, []time.Duration) {
 	if c.Repeat <= 1 {
 		c.Repeat, c.Vary = 0, nil
@@ -104,7 +104,12 @@ func (c Case) Copies() ([]Case, []time.Duration) {
 		cp.Repeat, cp.Vary = 0, nil
 		cp.Data = maps.Clone(c.Data)
 		for _, f := range c.Vary {
-			cp.Data[f] += strconv.Itoa(i + 1)
+			// A computer account keeps its $ at the end (WS1$, WS2$).
+			v, dollar := strings.CutSuffix(cp.Data[f], "$")
+			cp.Data[f] = v + strconv.Itoa(i+1)
+			if dollar {
+				cp.Data[f] += "$"
+			}
 		}
 		out[i] = cp
 		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)

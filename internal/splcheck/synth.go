@@ -199,6 +199,22 @@ func assign(term []lit) (map[string]string, bool) {
 			cands = append(cands, strings.Join(parts, " "))
 			cands = append(cands, parts...)
 		}
+		// Patterns of one field may each need their own end of it (a
+		// folder and a file name): the parts in other orders.
+		if len(ps) > 1 && len(ps) <= 4 {
+			rng := rand.New(rand.NewSource(int64(len(f))))
+			parts := make([]string, len(ps))
+			for i, p := range ps {
+				parts[i] = example(p, rng)
+			}
+			for _, perm := range permutations(len(parts)) {
+				ordered := make([]string, len(perm))
+				for i, j := range perm {
+					ordered[i] = parts[j]
+				}
+				cands = append(cands, strings.Join(ordered, " "))
+			}
+		}
 		found := false
 		for _, c := range cands {
 			ok := true
@@ -225,6 +241,21 @@ func assign(term []lit) (map[string]string, bool) {
 		}
 	}
 	return ev, true
+}
+
+// permutations are the orders of n things, the identity first.
+func permutations(n int) [][]int {
+	if n == 1 {
+		return [][]int{{0}}
+	}
+	var out [][]int
+	for _, p := range permutations(n - 1) {
+		for at := len(p); at >= 0; at-- {
+			q := slices.Insert(slices.Clone(p), at, n-1)
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // Events are field-level test events for a where clause: a matching event
@@ -852,29 +883,22 @@ var wordRe = regexp.MustCompile(`^[DQ]WORD \((0x[0-9a-fA-F]+)\)$`)
 // what Eval says of the event as stored.
 func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
-	var out []sigmacheck.Case
 	bursts := 0
-	for _, ev := range append(pos, neg...) {
-		if r.Threshold != nil {
-			countable(r.Threshold, ev)
+	out := r.cases(append(pos, neg...), &bursts)
+	if !slices.ContainsFunc(out, func(c sigmacheck.Case) bool { return c.Expect }) {
+		// None is found: events that also pass the tests of the rule's
+		// later stages (hints), then those and the first events again
+		// in other folders (variants), each with repeats of its own.
+		hpos, hneg := r.hinted()
+		var moved []map[string]string
+		for _, ev := range append(slices.Clone(pos), hpos...) {
+			moved = append(moved, variants(r.Node, ev)...)
 		}
-		cs := records(r.Node, ev)
-		if r.Linux {
-			cs = linuxRecords(r.Node, ev)
-		}
-		for _, c := range cs {
-			doc, model := Stored(c)
-			c.Source = "synthesized"
-			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
-			c.Expect = matched && r.Keeps(doc)
-			out = append(out, c)
-			if matched && !c.Expect && bursts < maxBursts {
-				// The later stages may count events: the same event,
-				// repeated, may come through.
-				if b := r.bursts(c); b != nil {
-					bursts++
-					out = append(out, b...)
-				}
+		for _, evs := range [][]map[string]string{append(slices.Clone(hpos), hneg...), append(moved, hneg...)} {
+			fresh := 0
+			if extra := r.cases(evs, &fresh); slices.ContainsFunc(extra, func(c sigmacheck.Case) bool { return c.Expect }) {
+				out = append(out, extra...)
+				break
 			}
 		}
 	}
@@ -890,6 +914,35 @@ func Cases(r *Rule) []sigmacheck.Case {
 		return false
 	})
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Expect && !out[j].Expect })
+	return out
+}
+
+// cases turns field-level events into the rule's test events, with
+// repeats that its later stages count of up to maxBursts events (bursts
+// counts them).
+func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
+	var out []sigmacheck.Case
+	for _, ev := range evs {
+		if r.Threshold != nil {
+			countable(r.Threshold, ev)
+		}
+		cs := r.records(ev)
+		for _, c := range cs {
+			doc, model := Stored(c)
+			c.Source = "synthesized"
+			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
+			c.Expect = matched && r.Keeps(doc)
+			out = append(out, c)
+			if matched && !c.Expect && *bursts < maxBursts {
+				// The later stages may count events: the same event,
+				// repeated, may come through.
+				if b := r.bursts(c); b != nil {
+					*bursts++
+					out = append(out, b...)
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -1004,6 +1057,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 	doc, _ := Stored(c)
 	return reads(r, c) && r.Keeps(doc)
 }
+
+// Matches reports whether a rule's where clause reads an event as one of
+// its node's events, before the rule's later stages (Reads with them).
+func Matches(r *Rule, c sigmacheck.Case) bool { return reads(r, c) }
 
 // reads is Reads without the rule's later stages.
 func reads(r *Rule, c sigmacheck.Case) bool {

@@ -438,6 +438,10 @@ rules:
     rule_id: 10423ac4-10c9-11ec-8dc4-acde48001122
     file: control_loading_from_world_writable_directory.yml
     path: detections/endpoint/control_loading_from_world_writable_directory.yml
+  - id: splunk-create-or-delete-windows-shares-using-net-exe
+    rule_id: 743a322c-9a68-4a0f-9c17-85d9cce2a27c
+    file: create_or_delete_windows_shares_using_net_exe.yml
+    path: detections/endpoint/create_or_delete_windows_shares_using_net_exe.yml
   - id: splunk-create-remote-thread-in-shell-application
     rule_id: 10399c1e-f51e-11eb-b920-acde48001122
     file: create_remote_thread_in_shell_application.yml
@@ -526,6 +530,10 @@ rules:
     rule_id: 9b3af1e6-5b68-11eb-ae93-0242ac130002
     file: detect_mshta_url_in_command_line.yml
     path: detections/endpoint/detect_mshta_url_in_command_line.yml
+  - id: splunk-detect-path-interception-by-creation-of-program-exe
+    rule_id: cbef820c-e1ff-407f-887f-0a9240a2d477
+    file: detect_path_interception_by_creation_of_program_exe.yml
+    path: detections/endpoint/detect_path_interception_by_creation_of_program_exe.yml
   - id: splunk-detect-psexec-with-accepteula-flag
     rule_id: 27c3a83d-cada-47c6-9042-67baf19d2574
     file: detect_psexec_with_accepteula_flag.yml
@@ -818,6 +826,10 @@ rules:
     rule_id: b06a555e-dce0-417d-a2eb-28a5d8d66ef7
     file: execution_of_file_with_multiple_extensions.yml
     path: detections/endpoint/execution_of_file_with_multiple_extensions.yml
+  - id: splunk-exploit-public-facing-application-via-apache-commons-text
+    rule_id: 19a481e0-c97c-4d14-b1db-75a708eb592e
+    file: exploit_public_facing_application_via_apache_commons_text.yml
+    path: detections/web/exploit_public_facing_application_via_apache_commons_text.yml
   - id: splunk-exploit-public-facing-fortinet-fortinac-cve-2022-39952
     rule_id: 2038f5c6-5aba-4221-8ae2-ca76e2ca8b97
     file: exploit_public_facing_fortinet_fortinac_cve_2022_39952.yml
@@ -1026,6 +1038,10 @@ rules:
     rule_id: 7f398cfb-918d-41f4-8db8-2e2474e02222
     file: high_number_of_login_failures_from_a_single_source.yml
     path: detections/cloud/high_number_of_login_failures_from_a_single_source.yml
+  - id: splunk-http-request-to-reserved-name-on-iis-server
+    rule_id: 1e45e6a8-110b-4886-b815-8d69cf35bf0a
+    file: http_request_to_reserved_name_on_iis_server.yml
+    path: detections/web/http_request_to_reserved_name_on_iis_server.yml
   - id: splunk-icacls-deny-command
     rule_id: cf8d753e-a8fe-11eb-8f58-acde48001122
     file: icacls_deny_command.yml
@@ -1418,6 +1434,10 @@ rules:
     rule_id: 9b6aae5e-8d85-11ec-b2ae-acde48001122
     file: linux_dd_file_overwrite.yml
     path: detections/endpoint/linux_dd_file_overwrite.yml
+  - id: splunk-linux-decode-base64-to-shell
+    rule_id: 637b603e-1799-40fd-bf87-47ecbd551b66
+    file: linux_decode_base64_to_shell.yml
+    path: detections/endpoint/linux_decode_base64_to_shell.yml
   - id: splunk-linux-deleting-critical-directory-using-rm-command
     rule_id: 33f89303-cc6f-49ad-921d-2eaea38a6f7a
     file: linux_deleting_critical_directory_using_rm_command.yml
@@ -1934,6 +1954,10 @@ rules:
     rule_id: 1435475e-2128-4417-a34f-59770733b0d5
     file: o365_mailbox_folder_read_permission_assigned.yml
     path: detections/cloud/o365_mailbox_folder_read_permission_assigned.yml
+  - id: splunk-o365-mailbox-inbox-folder-shared-with-all-users
+    rule_id: 21421896-a692-4594-9888-5faeb8a53106
+    file: o365_mailbox_inbox_folder_shared_with_all_users.yml
+    path: detections/cloud/o365_mailbox_inbox_folder_shared_with_all_users.yml
   - id: splunk-o365-multiple-appids-and-useragents-authentication-spike
     rule_id: 66adc486-224d-45c1-8e4d-9e7eeaba988f
     file: o365_multiple_appids_and_useragents_authentication_spike.yml
@@ -1942,6 +1966,10 @@ rules:
     rule_id: fd22124e-dbac-4744-a8ce-be10d8ec3e26
     file: o365_multiple_failed_mfa_requests_for_user.yml
     path: detections/cloud/o365_multiple_failed_mfa_requests_for_user.yml
+  - id: splunk-o365-multiple-mailboxes-accessed-via-api
+    rule_id: 7cd853e9-d370-412f-965d-a2bcff2a2908
+    file: o365_multiple_mailboxes_accessed_via_api.yml
+    path: detections/cloud/o365_multiple_mailboxes_accessed_via_api.yml
   - id: splunk-o365-multiple-users-failing-to-authenticate-from-ip
     rule_id: 8d486e2e-3235-4cfe-ac35-0d042e24ecb4
     file: o365_multiple_users_failing_to_authenticate_from_ip.yml
@@ -2110,6 +2138,10 @@ rules:
     rule_id: 85bc3f30-ca28-11eb-bd21-acde48001122
     file: powershell_loading_dotnet_into_memory_via_reflection.yml
     path: detections/endpoint/powershell_loading_dotnet_into_memory_via_reflection.yml
+  - id: splunk-powershell-pinvoke-process-injection-api-chain
+    rule_id: 3f1a2b4c-d5e6-7890-abcd-ef1234567890
+    file: powershell_pinvoke_process_injection_api_chain.yml
+    path: detections/endpoint/powershell_pinvoke_process_injection_api_chain.yml
   - id: splunk-powershell-processing-stream-of-data
     rule_id: 0d718b52-c9f1-11eb-bc61-acde48001122
     file: powershell_processing_stream_of_data.yml
@@ -2446,6 +2478,10 @@ rules:
     rule_id: 9d44d649-7d67-4559-95c1-8022ff49420b
     file: spring4shell_payload_url_request.yml
     path: detections/web/spring4shell_payload_url_request.yml
+  - id: splunk-sqlite-module-in-temp-folder
+    rule_id: 0f216a38-f45f-11eb-b09c-acde48001122
+    file: sqlite_module_in_temp_folder.yml
+    path: detections/endpoint/sqlite_module_in_temp_folder.yml
   - id: splunk-suspicious-computer-account-name-change
     rule_id: 35a61ed8-61c4-11ec-bc1e-acde48001122
     file: suspicious_computer_account_name_change.yml
@@ -2546,6 +2582,10 @@ rules:
     rule_id: 7f04349c-e30d-11eb-bc7f-acde48001122
     file: uac_bypass_mmc_load_unsigned_dll.yml
     path: detections/endpoint/uac_bypass_mmc_load_unsigned_dll.yml
+  - id: splunk-uac-bypass-with-colorui-com-object
+    rule_id: 2bcccd20-fc2b-11eb-8d22-acde48001122
+    file: uac_bypass_with_colorui_com_object.yml
+    path: detections/endpoint/uac_bypass_with_colorui_com_object.yml
   - id: splunk-uninstall-app-using-msiexec
     rule_id: 1fca2b28-f922-11eb-b2dd-acde48001122
     file: uninstall_app_using_msiexec.yml
@@ -2798,6 +2838,10 @@ rules:
     rule_id: 2846089a-ffe9-4881-a2a2-43f3be2b8cc7
     file: windows_chrome_extension_allowed_registry_modification.yml
     path: detections/endpoint/windows_chrome_extension_allowed_registry_modification.yml
+  - id: splunk-windows-chromium-browser-launched-with-small-window-size
+    rule_id: 88103f56-8f5c-411f-a87f-71bee776f140
+    file: windows_chromium_browser_launched_with_small_window_size.yml
+    path: detections/endpoint/windows_chromium_browser_launched_with_small_window_size.yml
   - id: splunk-windows-chromium-browser-no-security-sandbox-process
     rule_id: 314cb263-7eeb-4d45-b693-bb21699c73d2
     file: windows_chromium_browser_no_security_sandbox_process.yml
@@ -2822,6 +2866,18 @@ rules:
     rule_id: ce245717-779b-483b-bc52-fc7a94729973
     file: windows_chromium_process_with_disabled_extensions.yml
     path: detections/endpoint/windows_chromium_process_with_disabled_extensions.yml
+  - id: splunk-windows-cisco-secure-endpoint-stop-immunet-service-via-sf
+    rule_id: 44badcb1-2e8c-4628-9537-021bbae571ad
+    file: windows_cisco_secure_endpoint_stop_immunet_service_via_sfc.yml
+    path: detections/endpoint/windows_cisco_secure_endpoint_stop_immunet_service_via_sfc.yml
+  - id: splunk-windows-cisco-secure-endpoint-unblock-file-via-sfc
+    rule_id: 9a7a490c-5581-4c95-bab5-a21e351293ef
+    file: windows_cisco_secure_endpoint_unblock_file_via_sfc.yml
+    path: detections/endpoint/windows_cisco_secure_endpoint_unblock_file_via_sfc.yml
+  - id: splunk-windows-cisco-secure-endpoint-uninstall-immunet-service-v
+    rule_id: ba6e7f4d-a85e-4a14-8e7d-41f4b82e3c9a
+    file: windows_cisco_secure_endpoint_uninstall_immunet_service_via_sfc.yml
+    path: detections/endpoint/windows_cisco_secure_endpoint_uninstall_immunet_service_via_sfc.yml
   - id: splunk-windows-clipboard-data-via-get-clipboard
     rule_id: ab73289e-2246-4de0-a14b-67006c72a893
     file: windows_clipboard_data_via_get_clipboard.yml
@@ -3146,6 +3202,10 @@ rules:
     rule_id: 355ba810-0a20-4215-8485-9ce3f87f2e38
     file: windows_excessive_usage_of_net_app.yml
     path: detections/endpoint/windows_excessive_usage_of_net_app.yml
+  - id: splunk-windows-exchange-autodiscover-ssrf-abuse
+    rule_id: d436f9e7-0ee7-4a47-864b-6dea2c4e2752
+    file: windows_exchange_autodiscover_ssrf_abuse.yml
+    path: detections/web/windows_exchange_autodiscover_ssrf_abuse.yml
   - id: splunk-windows-executable-in-loaded-modules
     rule_id: 3e27af56-fcf0-4113-988d-24969b062be7
     file: windows_executable_in_loaded_modules.yml
@@ -3470,6 +3530,10 @@ rules:
     rule_id: 02b712b6-5996-4537-b72a-cad3cb1bb3b4
     file: windows_laps_password_gathering_via_powershell_script.yml
     path: detections/endpoint/windows_laps_password_gathering_via_powershell_script.yml
+  - id: splunk-windows-large-number-of-computer-service-tickets-requeste
+    rule_id: 386ad394-c9a7-4b4f-b66f-586252de20f0
+    file: windows_large_number_of_computer_service_tickets_requested.yml
+    path: detections/endpoint/windows_large_number_of_computer_service_tickets_requested.yml
   - id: splunk-windows-ldifde-directory-object-behavior
     rule_id: 35cd29ca-f08c-4489-8815-f715c45460d3
     file: windows_ldifde_directory_object_behavior.yml
@@ -3666,6 +3730,10 @@ rules:
     rule_id: 6947c44e-be1f-4dd9-b198-bc42be5be196
     file: windows_modify_registry_valleyrat_pwn_reg_entry.yml
     path: detections/endpoint/windows_modify_registry_valleyrat_pwn_reg_entry.yml
+  - id: splunk-windows-modify-registry-with-md5-reg-key-name
+    rule_id: 4662c6b1-0754-455e-b9ff-3ee730af3ba8
+    file: windows_modify_registry_with_md5_reg_key_name.yml
+    path: detections/endpoint/windows_modify_registry_with_md5_reg_key_name.yml
   - id: splunk-windows-modify-show-compress-color-and-info-tip-registry
     rule_id: b7548c2e-9a10-11ec-99e3-acde48001122
     file: windows_modify_show_compress_color_and_info_tip_registry.yml
@@ -4210,6 +4278,10 @@ rules:
     rule_id: 8fbd2e88-4ea5-40b9-9217-fd0855e08cc0
     file: windows_remote_services_rdp_enable.yml
     path: detections/endpoint/windows_remote_services_rdp_enable.yml
+  - id: splunk-windows-renamed-python-binary-was-executed
+    rule_id: 6735153f-2da0-4eba-a428-288898613837
+    file: windows_renamed_python_binary_was_executed.yml
+    path: detections/endpoint/windows_renamed_python_binary_was_executed.yml
   - id: splunk-windows-rmm-tool-execution
     rule_id: 4afbd373-b769-4f82-8375-41e0153e46f9
     file: windows_rmm_tool_execution.yml
@@ -4250,6 +4322,10 @@ rules:
     rule_id: 72091a05-3008-4330-b43e-f5e070134ec1
     file: windows_sccm_smsexec_spawned_a_suspicious_child_process.yml
     path: detections/endpoint/windows_sccm_smsexec_spawned_a_suspicious_child_process.yml
+  - id: splunk-windows-scheduled-task-created-in-a-group-policy-object
+    rule_id: 350032cd-3d3f-4278-afc8-e01cf5c33524
+    file: windows_scheduled_task_created_in_a_group_policy_object.yml
+    path: detections/endpoint/windows_scheduled_task_created_in_a_group_policy_object.yml
   - id: splunk-windows-scheduled-task-created-via-xml
     rule_id: 7e03b682-3965-4598-8e91-a60a40a3f7e4
     file: windows_scheduled_task_created_via_xml.yml
@@ -4562,6 +4638,10 @@ rules:
     rule_id: d5f54b38-10bf-4b3a-b6fc-85949862ed50
     file: windows_time_based_evasion_via_choice_exec.yml
     path: detections/endpoint/windows_time_based_evasion_via_choice_exec.yml
+  - id: splunk-windows-tinycc-shellcode-execution
+    rule_id: fdb6774e-e465-4912-86e3-63cf9ab91491
+    file: windows_tinycc_shellcode_execution.yml
+    path: detections/endpoint/windows_tinycc_shellcode_execution.yml
   - id: splunk-windows-tor-client-execution
     rule_id: f164bc6f-ecbe-45e0-aaa6-f5c4d8c84b9a
     file: windows_tor_client_execution.yml
@@ -4578,6 +4658,14 @@ rules:
     rule_id: 36334123-077d-47a2-b70c-6c7b3cc85049
     file: windows_unsecured_outlook_credentials_access_in_registry.yml
     path: detections/endpoint/windows_unsecured_outlook_credentials_access_in_registry.yml
+  - id: splunk-windows-unsigned-dll-side-loading-in-same-process-path
+    rule_id: 3cf85c02-f9d6-4186-bf3c-e70ee99fbc7f
+    file: windows_unsigned_dll_side_loading_in_same_process_path.yml
+    path: detections/endpoint/windows_unsigned_dll_side_loading_in_same_process_path.yml
+  - id: splunk-windows-unsigned-ms-dll-side-loading
+    rule_id: 8d9e0e06-ba71-4dc5-be16-c1a46d58728c
+    file: windows_unsigned_ms_dll_side_loading.yml
+    path: detections/endpoint/windows_unsigned_ms_dll_side_loading.yml
   - id: splunk-windows-unusual-file-creation-in-confluence-directory
     rule_id: aa9d80d9-ed47-44da-aceb-2909ca4dc19e
     file: windows_unusual_file_creation_in_confluence_directory.yml

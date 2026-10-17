@@ -156,11 +156,14 @@ func main() {
 		dm := splcheck.NodeModel[rule.Node]
 		hits := 0
 		var found []sigmacheck.Case
+		var matched []map[string]any
 		for _, c := range cases {
 			doc, model := splcheck.Stored(c)
 			// The node's own events: a Processes rule does not read a
-			// process access, which is in Endpoint too.
-			splunk := splcheck.Reads(rule, c)
+			// process access, which is in Endpoint too. Each event is
+			// read by the where clause and the filter; the later stages
+			// run over the recording's matching events together, below.
+			splunk := splcheck.Matches(rule, c)
 			ours := false
 			if dm == "" || strings.EqualFold(model, dm) {
 				ours, err = search.MatchDoc(filter, doc)
@@ -174,9 +177,19 @@ func main() {
 			if ours {
 				hits++
 				if splunk {
-					c.Expect = true
-					found = append(found, c)
+					matched = append(matched, doc)
+					if splcheck.Reads(rule, c) {
+						c.Expect = true
+						found = append(found, c)
+					}
 				}
+			}
+		}
+		if rule.Post != "" && hits > 0 {
+			kept := rule.KeepsAll(matched)
+			fmt.Printf("later stages: %s: they keep a row for the recording's %d matching events: %v\n", r.File, len(matched), kept)
+			if !kept {
+				hits = 0
 			}
 		}
 		if rule.Threshold != nil && hits > 0 {

@@ -30,7 +30,8 @@ var cloudRuleFields = []string{
 	// Read by the later stages of Microsoft 365 rules (stats values(...)).
 	"DetectionMethod", "FileData.FileName", "FileData.FilePath", "FileData.FileSize", "FileData.MalwareFamily", "Id",
 	"ModifiedProperties{}.NewValue", "Item.ParentFolder.MemberRights", "Item.ParentFolder.MemberUpn", "SessionId",
-	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name",
+	"SiteUrl", "SourceFileName", "UserAgent", "ZipFileName", "AlertId", "ModifiedProperties{}.Name", "ClientIPAddress",
+	"MailboxOwnerUPN",
 	// Google Workspace: an admin event's parameters.
 	"event_parameters.new_value", "event_parameters.setting_name",
 	// Okta: what an event's debugData says, whose names vary by event.
