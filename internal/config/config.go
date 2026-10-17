@@ -60,6 +60,7 @@ type Config struct {
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
+	Ticketing  Ticketing  `yaml:"ticketing,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -1456,6 +1457,24 @@ func (c *Config) PlaybooksFile() string {
 	return filepath.Join(c.LookupsDir(), "playbooks.yaml")
 }
 
+// Ticketing sets where the Jira and ServiceNow connections set on the
+// Ticketing page are kept (see docs/ticketing.md).
+type Ticketing struct {
+	// File keeps the connections, with their tokens and passwords
+	// encrypted. Default: tickets.yaml in lookups.dir. A relative path is
+	// relative to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// TicketingFile returns the file that keeps the ticketing connections
+// set on the Ticketing page.
+func (c *Config) TicketingFile() string {
+	if c.Ticketing.File != "" {
+		return c.resolve(c.Ticketing.File)
+	}
+	return filepath.Join(c.LookupsDir(), "tickets.yaml")
+}
+
 // ResponseScriptsDir returns the folder script actions run programs from.
 func (c *Config) ResponseScriptsDir() string {
 	if c.Response.ScriptsDir != "" {
@@ -2201,6 +2220,10 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv("SIGNALITH_PLAYBOOKS_FILE"); v != "" {
 		c.Playbooks.File = v
 		c.fromEnv("playbooks.file", "SIGNALITH_PLAYBOOKS_FILE")
+	}
+	if v := os.Getenv("SIGNALITH_TICKETING_FILE"); v != "" {
+		c.Ticketing.File = v
+		c.fromEnv("ticketing.file", "SIGNALITH_TICKETING_FILE")
 	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
 		c.Response.ScriptsDir = v
@@ -3029,6 +3052,9 @@ const header = `# Signalith configuration.
 #                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
 # playbooks.file     where the Playbooks page keeps its playbooks (default
 #                    lookups.dir/playbooks.yaml; SIGNALITH_PLAYBOOKS_FILE overrides it)
+# ticketing.file     where the Ticketing page keeps its Jira and ServiceNow connections
+#                    (default lookups.dir/tickets.yaml; SIGNALITH_TICKETING_FILE
+#                    overrides it); see docs/ticketing.md
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

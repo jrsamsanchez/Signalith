@@ -101,6 +101,9 @@ type Server struct {
 	// Chat answers the buttons in Slack and Teams messages; nil disables
 	// them.
 	Chat *Chat
+	// Ticketing backs the Ticketing page and the case page's Tickets
+	// panel; nil disables them.
+	Ticketing *Ticketing
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -413,6 +416,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeChat(mux, api)
+	s.routeTicketing(api)
 	s.routeUsers(api)
 	s.routeSSO(api)
 	s.routeSAML(api)

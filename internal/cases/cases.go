@@ -64,6 +64,9 @@ type Case struct {
 	Entities   []Entity          `json:"entities,omitempty"`
 	Entries    []Entry           `json:"entries,omitempty"`
 	History    []findings.Change `json:"history,omitempty"`
+	// Tickets are the issues in Jira or ServiceNow opened for the case
+	// (package ticketing), which are kept in step with it.
+	Tickets []Ticket `json:"tickets,omitempty"`
 	// Sample marks a case the sample-data feature created, holding the
 	// load's ID, so Remove can delete it; empty for real investigations.
 	Sample    string    `json:"sample,omitempty"`
@@ -76,6 +79,32 @@ type Case struct {
 type Entity struct {
 	Field string `json:"field"`
 	Value string `json:"value"`
+}
+
+// Ticket is an issue in Jira or ServiceNow that was opened for the case.
+type Ticket struct {
+	// Connection is the ticketing connection's ID.
+	Connection string `json:"connection"`
+	// System is jira or servicenow.
+	System string `json:"system"`
+	// Key is the ticket as people name it: PROJ-12 or INC0010001.
+	Key string `json:"key"`
+	// RemoteID is the ID the system's API knows it by: Jira's issue ID
+	// or ServiceNow's sys_id.
+	RemoteID  string    `json:"remote_id,omitempty"`
+	URL       string    `json:"url,omitempty"`
+	CreatedBy string    `json:"created_by,omitempty"`
+	Created   time.Time `json:"created"`
+}
+
+// Ticket returns the case's ticket of a connection.
+func (c *Case) Ticket(connection string) (Ticket, bool) {
+	for _, t := range c.Tickets {
+		if t.Connection == connection {
+			return t, true
+		}
+	}
+	return Ticket{}, false
 }
 
 // Entry is one item on the case timeline: a note, a saved search with a
@@ -116,7 +145,11 @@ type Filter struct {
 	// marker is never empty, so a set but empty one matches no case: it
 	// never means "every case".
 	Sample *string
-	Limit  int
+	// UpdatedSince, when set, keeps only cases updated at or after it.
+	UpdatedSince time.Time
+	// Ticketed keeps only cases with a linked ticket.
+	Ticketed bool
+	Limit    int
 }
 
 // Update changes a case. Nil fields stay as they are; a non-empty Comment

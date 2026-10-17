@@ -30,7 +30,8 @@ configured index prefix and folders, so nothing moves when you upgrade.
   `index=` must start with the tenant's own prefix. `opensearch.index_prefix` may not
   contain `.t.`.
 - **Files.** Each tenant's files are in `tenants/<id>/` in the state folder: its lookups,
-  detections, dashboards, archives, response scripts and settings files.
+  detections, dashboards, archives, response scripts and settings files, its ticketing
+  connections among them.
 - **Its own server.** Signalith runs each tenant's data with a server of its own inside the
   same process, built from the tenant's own settings. Settings saved on the Settings page
   that apply at once (the AI model, search limits and so on) apply to every tenant too. A tenant's request is answered by
@@ -53,8 +54,9 @@ configured index prefix and folders, so nothing moves when you upgrade.
   they add belong to their tenant. Only provider users add provider users. User names are
   unique across the install. A tenant's admins do not count toward the install's last
   admin.
-- **Requests to other addresses.** Threat intel feeds, notification channels and response
-  action settings make the server send requests to addresses someone types in. They are
+- **Requests to other addresses.** Threat intel feeds, notification channels, response
+  action settings and [Jira and ServiceNow connections](ticketing.md#multi-tenant-installs)
+  make the server send requests to addresses someone types in. They are
   kept per tenant, but only provider users can change or test them, so a tenant's users
   can never make the server reach the provider's own network.
 - **Pages about the server.** Tenant users get `403` (code `provider_only`) from every
