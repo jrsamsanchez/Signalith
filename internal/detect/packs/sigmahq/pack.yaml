@@ -4,7 +4,7 @@ title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
 version: 42478221b1a062411b8185732c82caa439271122
-date: "2026-10-16"
+date: "2026-10-17"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -3005,6 +3005,150 @@ rules:
     rule_id: 41504465-5e3a-4a5b-a5b4-2a0baadd4463
     file: pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
     path: rules/windows/pipe_created/pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
+  - id: sigma-posh-pc-abuse-nslookup-with-dns-records
+    rule_id: 999bff6d-dc15-44c9-9f5c-e1051bfc86e1
+    file: posh_pc_abuse_nslookup_with_dns_records.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_abuse_nslookup_with_dns_records.yml
+  - id: sigma-posh-pc-delete-volume-shadow-copies
+    rule_id: 87df9ee1-5416-453a-8a08-e8d4a51e9ce1
+    file: posh_pc_delete_volume_shadow_copies.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_delete_volume_shadow_copies.yml
+  - id: sigma-posh-pc-downgrade-attack
+    rule_id: 6331d09b-4785-4c13-980f-f96661356249
+    file: posh_pc_downgrade_attack.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_downgrade_attack.yml
+  - id: sigma-posh-pc-download-via-webclient
+    rule_id: 3236fcd0-b7e3-4433-b4f8-86ad61a9af2d
+    file: posh_pc_download_via_webclient.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_download_via_webclient.yml
+  - id: sigma-posh-pc-exe-calling-ps
+    rule_id: c70e019b-1479-4b65-b0cc-cd0c6093a599
+    file: posh_pc_exe_calling_ps.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_exe_calling_ps.yml
+  - id: sigma-posh-pc-powercat
+    rule_id: c5b20776-639a-49bf-94c7-84f912b91c15
+    file: posh_pc_powercat.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_powercat.yml
+  - id: sigma-posh-pc-remote-powershell-session
+    rule_id: 60167e5c-84b2-4c95-a7ac-86281f27c445
+    file: posh_pc_remote_powershell_session.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_remote_powershell_session.yml
+  - id: sigma-posh-pc-remotefxvgpudisablement-abuse
+    rule_id: f65e22f9-819e-4f96-9c7b-498364ae7a25
+    file: posh_pc_remotefxvgpudisablement_abuse.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_remotefxvgpudisablement_abuse.yml
+  - id: sigma-posh-pc-susp-get-nettcpconnection
+    rule_id: b366adb4-d63d-422d-8a2c-186463b5ded0
+    file: posh_pc_susp_get_nettcpconnection.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_susp_get_nettcpconnection.yml
+  - id: sigma-posh-pc-susp-zip-compress
+    rule_id: 71ff406e-b633-4989-96ec-bc49d825a412
+    file: posh_pc_susp_zip_compress.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_susp_zip_compress.yml
+  - id: sigma-posh-pm-active-directory-module-dll-import
+    rule_id: 74176142-4684-4d8a-8b0a-713257e7df8e
+    file: posh_pm_active_directory_module_dll_import.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_active_directory_module_dll_import.yml
+  - id: sigma-posh-pm-alternate-powershell-hosts
+    rule_id: 64e8e417-c19a-475a-8d19-98ea705394cc
+    file: posh_pm_alternate_powershell_hosts.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_alternate_powershell_hosts.yml
+  - id: sigma-posh-pm-bad-opsec-artifacts
+    rule_id: 8d31a8ce-46b5-4dd6-bdc3-680931f1db86
+    file: posh_pm_bad_opsec_artifacts.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_bad_opsec_artifacts.yml
+  - id: sigma-posh-pm-clear-powershell-history
+    rule_id: f99276ad-d122-4989-a09a-d00904a5f9d2
+    file: posh_pm_clear_powershell_history.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_clear_powershell_history.yml
+  - id: sigma-posh-pm-get-addbaccount
+    rule_id: b140afd9-474b-4072-958e-2ebb435abd68
+    file: posh_pm_get_addbaccount.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_get_addbaccount.yml
+  - id: sigma-posh-pm-get-clipboard
+    rule_id: 4cbd4f12-2e22-43e3-882f-bff3247ffb78
+    file: posh_pm_get_clipboard.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_get_clipboard.yml
+  - id: sigma-posh-pm-hktl-evil-winrm-execution
+    rule_id: 9fe55ea2-4cd6-4491-8a54-dd6871651b51
+    file: posh_pm_hktl_evil_winrm_execution.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_hktl_evil_winrm_execution.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-compress
+    rule_id: 7034cbbb-cc55-4dc2-8dad-36c0b942e8f1
+    file: posh_pm_invoke_obfuscation_via_compress.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_compress.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-rundll
+    rule_id: a23791fe-8846-485a-b16b-ca691e1b03d4
+    file: posh_pm_invoke_obfuscation_via_rundll.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_rundll.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-stdin
+    rule_id: c72aca44-8d52-45ad-8f81-f96c4d3c755e
+    file: posh_pm_invoke_obfuscation_via_stdin.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_stdin.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-clip
+    rule_id: ebdf49d8-b89c-46c9-8fdf-2c308406f6bd
+    file: posh_pm_invoke_obfuscation_via_use_clip.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_clip.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-mhsta
+    rule_id: 07ad2ea8-6a55-4ac6-bf3e-91b8e59676eb
+    file: posh_pm_invoke_obfuscation_via_use_mhsta.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_mhsta.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-rundll32
+    rule_id: 88a22f69-62f9-4b8a-aa00-6b0212f2f05a
+    file: posh_pm_invoke_obfuscation_via_use_rundll32.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_rundll32.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-var
+    rule_id: f3c89218-8c3d-4ba9-9974-f1d8e6a1b4a6
+    file: posh_pm_invoke_obfuscation_via_var.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_var.yml
+  - id: sigma-posh-pm-remote-powershell-session
+    rule_id: 96b9f619-aa91-478f-bacb-c3e50f8df575
+    file: posh_pm_remote_powershell_session.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_remote_powershell_session.yml
+  - id: sigma-posh-pm-remotefxvgpudisablement-abuse
+    rule_id: 38a7625e-b2cb-485d-b83d-aff137d859f4
+    file: posh_pm_remotefxvgpudisablement_abuse.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_remotefxvgpudisablement_abuse.yml
+  - id: sigma-posh-pm-susp-ad-group-reco
+    rule_id: 815bfc17-7fc6-4908-a55e-2f37b98cedb4
+    file: posh_pm_susp_ad_group_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_ad_group_reco.yml
+  - id: sigma-posh-pm-susp-download
+    rule_id: de41232e-12e8-49fa-86bc-c05c7e722df9
+    file: posh_pm_susp_download.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_download.yml
+  - id: sigma-posh-pm-susp-get-nettcpconnection
+    rule_id: aff815cc-e400-4bf0-a47a-5d8a2407d4e1
+    file: posh_pm_susp_get_nettcpconnection.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_get_nettcpconnection.yml
+  - id: sigma-posh-pm-susp-invocation-generic
+    rule_id: bbb80e91-5746-4fbe-8898-122e2cafdbf4
+    file: posh_pm_susp_invocation_generic.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_invocation_generic.yml
+  - id: sigma-posh-pm-susp-invocation-specific
+    rule_id: 8ff28fdd-e2fa-4dfa-aeda-ef3d61c62090
+    file: posh_pm_susp_invocation_specific.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_invocation_specific.yml
+  - id: sigma-posh-pm-susp-local-group-reco
+    rule_id: cef24b90-dddc-4ae1-a09a-8764872f69fc
+    file: posh_pm_susp_local_group_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_local_group_reco.yml
+  - id: sigma-posh-pm-susp-reset-computermachinepassword
+    rule_id: e3818659-5016-4811-a73c-dde4679169d2
+    file: posh_pm_susp_reset_computermachinepassword.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_reset_computermachinepassword.yml
+  - id: sigma-posh-pm-susp-smb-share-reco
+    rule_id: 6942bd25-5970-40ab-af49-944247103358
+    file: posh_pm_susp_smb_share_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_smb_share_reco.yml
+  - id: sigma-posh-pm-susp-zip-compress
+    rule_id: daf7eb81-35fd-410d-9d7a-657837e602bb
+    file: posh_pm_susp_zip_compress.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_zip_compress.yml
+  - id: sigma-posh-pm-syncappvpublishingserver-exe
+    rule_id: fe5ce7eb-dad8-467c-84a9-31ec23bd644a
+    file: posh_pm_syncappvpublishingserver_exe.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_syncappvpublishingserver_exe.yml
   - id: sigma-proc-7zip-exfil-dmp-files
     rule_id: ec570e53-4c76-45a9-804d-dc3f355ff7a7
     file: proc_creation_win_7zip_exfil_dmp_files.yml

@@ -294,6 +294,13 @@ func packThrottle(category, datamodel string) []string {
 		// An Application or Code Integrity event: which program logged
 		// which one.
 		return []string{"host", "provider", "signature_id"}
+	case "ps_module":
+		// A pipeline: who ran it, from which host program.
+		return []string{"host", "user", "process"}
+	case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+		// A Windows PowerShell log event: which one, and the host
+		// program that started the engine.
+		return []string{"host", "signature_id", "process"}
 	case "firewall_as":
 		// A firewall rule or setting changed: which change, and the rule
 		// and program.
@@ -382,6 +389,8 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 			category = service
 		case service == "codeintegrity-operational":
 			category = "code_integrity"
+		case service == "powershell-classic":
+			category = "powershell_classic"
 		default:
 			if _, ok := ingest.NamedChannelServices[service]; ok {
 				category = ingest.NamedChannelCategory(service)

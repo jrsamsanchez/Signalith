@@ -333,8 +333,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,524 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,560 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,116 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
@@ -359,6 +359,8 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
+| `ps_module` | PowerShell 4103 (see [PowerShell module logging](#powershell-module-logging-and-the-windows-powershell-log)) | Script |
+| `ps_classic_start`, `ps_classic_provider_start`, `service: powershell-classic` | Windows PowerShell log 400; 600; any event | Other |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
 | `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `product: azure`, `service: signinlogs` | Entra ID sign-ins (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication |
@@ -618,6 +620,41 @@ and then the text of a script block longer than 8,191 characters cannot be searc
 The type applies to indices created after an upgrade, so from the next day's index
 on. Rules that would list more script snippets than OpenSearch allows in one search
 (1,024 clauses by default) are left out of the pack.
+
+### PowerShell module logging and the Windows PowerShell log
+
+The `ps_module` rules read event 4103, which PowerShell writes to the same
+`Microsoft-Windows-PowerShell/Operational` channel for each command a pipeline runs
+once **module logging** is on (also off by default, and much noisier than script
+block logging). Turn it on for all modules with Group Policy (Administrative
+Templates > Windows Components > Windows PowerShell > Turn on Module Logging, with
+`*` as the module name) or, in an elevated PowerShell:
+
+```powershell
+$k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging'
+New-Item -Path "$k\ModuleNames" -Force | Out-Null
+Set-ItemProperty -Path $k -Name EnableModuleLogging -Value 1
+Set-ItemProperty -Path "$k\ModuleNames" -Name '*' -Value '*'
+```
+
+A 4103 event is stored in Script: its `Payload` (the command and the values bound to
+its parameters) in `script_block_text`, and its `ContextInfo` (host program, command,
+account) in `event_data`, both wildcard fields searched for words inside. From an
+English context Signalith also takes `user` (User), `process` (Host Application,
+its first line) and `script_path` (Script Name); a context in another language is
+kept as it is, without them.
+
+The `ps_classic_start`, `ps_classic_provider_start` and `service: powershell-classic`
+rules read the classic **Windows PowerShell** log, which every Windows PowerShell 5.1
+(and 2.0) engine writes without any setting: an engine starting (400) or stopping
+(403), a provider starting (600), and, with module logging, each pipeline (800). The
+event's data values are stored one per line in `event_data` (Sigma's `Data`), in
+Other with sourcetype `WinEventLog:Windows PowerShell`; `process` is the
+`HostApplication=` line (the command line that started the engine, which is how
+the downgrade rule sees `-version 2`), `script_path` the `ScriptName=` line and,
+for 800, `user` the `UserId=` line. **Include PowerShell** on the Add data page
+collects this log too. Rules that use a case-sensitive regular expression on these
+fields, which are searched ignoring case, are left out of the pack.
 
 A rule is only shipped when:
 
@@ -1327,7 +1364,10 @@ converts a rule and shows the result for review. Supported:
   logs (and, for the log sources in the table, to their event IDs), and `linux` or
   `macos` leave them out.
 - For `ps_script`, `ScriptBlockText` maps to `script_block_text`, `ScriptBlockId` to
-  `script_block_id` and `Path` to `script_path`.
+  `script_block_id` and `Path` to `script_path`. For `ps_module`, `Payload` maps to
+  `script_block_text` and `ContextInfo` to `event_data`; for `ps_classic_start`,
+  `ps_classic_provider_start` and `service: powershell-classic`, `Data` maps to
+  `event_data`.
 - For the Sysmon log sources other than process creation, fields map by log source:
   `TargetFilename` to `file_path`; `TargetObject` to `registry_path`, `Details` to
   `registry_value_data` and `EventType` (`SetValue`, `CreateKey`...) to

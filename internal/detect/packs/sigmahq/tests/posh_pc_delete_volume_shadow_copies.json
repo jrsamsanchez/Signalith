@@ -1,0 +1,4 @@
+{"rule": "87df9ee1-5416-453a-8a08-e8d4a51e9ce1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"Win32_ShadowCopyRemove-WmiObjectGet-WmiObject"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

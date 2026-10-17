@@ -1,0 +1,4 @@
+{"rule": "daf7eb81-35fd-410d-9d7a-657837e602bb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":"Compress-Archive -Path-DestinationPath:\\Windows\\Temp\\ Compress-Archive -Path-DestinationPath\\AppData\\Local\\Temp\\ Compress-Archive -Path-DestinationPath $env:TEMP"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

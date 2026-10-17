@@ -1,0 +1,4 @@
+{"rule": "de41232e-12e8-49fa-86bc-c05c7e722df9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":"System.Net.WebClient .DownloadFile("}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

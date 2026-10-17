@@ -1,0 +1,4 @@
+{"rule": "aff815cc-e400-4bf0-a47a-5d8a2407d4e1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":"Get-NetTCPConnection"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

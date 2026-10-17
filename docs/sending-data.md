@@ -96,6 +96,7 @@ or detection covers every source of the same kind.
 | Windows Security log: 5140, 5145 network share access | Filesystem |
 | Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
+| PowerShell module logging: 4103 (same channel), and the Windows PowerShell log: 400, 403, 600, 800 (see [Detections](detections.md#powershell-module-logging-and-the-windows-powershell-log)) | Script; Other |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux audit log (auditd: audit.log, or its syslog plugin; each program start also joined into one process launch, see [Detections](detections.md#linux-audit-log-auditd)) | Other, sourcetype `linux:audit`; program starts in Endpoint |
 | Apache and Nginx access logs (/var/log/nginx, /var/log/apache2, /var/log/httpd; see [Detections](detections.md#web-server-access-logs)) | Web |
