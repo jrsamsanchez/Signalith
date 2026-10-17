@@ -845,6 +845,10 @@ func StoredCopies(c sigmacheck.Case) ([]map[string]any, string) {
 }
 
 // View is a stored event as the string field values a where clause reads.
+// A field with several values (a list's, ModifiedProperties{}.NewValue)
+// reads as its first, and its values are all kept too (under its name
+// and mvKey), which a comparison reads as Splunk does: it matches when
+// one of them does.
 func View(doc map[string]any) map[string]string {
 	out := map[string]string{}
 	for k, v := range doc {
@@ -857,6 +861,13 @@ func View(doc map[string]any) map[string]string {
 		case []any:
 			if len(x) > 0 {
 				out[k] = fmt.Sprint(x[0])
+			}
+			if len(x) > 1 {
+				vals := make([]string, len(x))
+				for i, e := range x {
+					vals[i] = fmt.Sprint(e)
+				}
+				out[k+mvKey] = strings.Join(vals, "\x00")
 			}
 		default:
 			out[k] = fmt.Sprint(x)
@@ -894,7 +905,14 @@ func Cases(r *Rule) []sigmacheck.Case {
 		for _, ev := range append(slices.Clone(pos), hpos...) {
 			moved = append(moved, variants(r.Node, ev)...)
 		}
-		for _, evs := range [][]map[string]string{append(slices.Clone(hpos), hneg...), append(moved, hneg...)} {
+		// Then events whose lists and JSON values hold what the later
+		// stages read (structured).
+		var spos, sneg []map[string]string
+		for _, ev := range append(slices.Clone(pos[:min(len(pos), maxStructured)]), hpos[:min(len(hpos), maxStructured)]...) {
+			p, n := r.structured(ev)
+			spos, sneg = append(spos, p...), append(sneg, n...)
+		}
+		for _, evs := range [][]map[string]string{append(slices.Clone(hpos), hneg...), append(moved, hneg...), append(spos, sneg...)} {
 			fresh := 0
 			if extra := r.cases(evs, &fresh); slices.ContainsFunc(extra, func(c sigmacheck.Case) bool { return c.Expect }) {
 				out = append(out, extra...)

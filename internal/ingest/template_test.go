@@ -260,3 +260,14 @@ func TestPutIndexTemplateCapsShardsAtDataNodes(t *testing.T) {
 		}
 	}
 }
+
+// TestNoFieldUnderAValue checks that no field the template maps sits
+// under another mapped field that holds a value (device and
+// device.os_platform), which OpenSearch refuses as a whole template.
+func TestNoFieldUnderAValue(t *testing.T) {
+	for name := range knownFields {
+		if parts := strings.Split(name, "."); knownPrefix(parts) {
+			t.Errorf("field %s is under a mapped field", name)
+		}
+	}
+}
