@@ -89,13 +89,22 @@ func (u jiraUser) is(me jiraUser) bool {
 		me.Name != "" && u.Name == me.Name
 }
 
+// cachedSelf is a connection's account, with the credentials it was
+// asked with.
+type cachedSelf struct {
+	me    jiraUser
+	creds string
+}
+
 // self returns the account the connection signs in as (/myself), asked
 // once and then remembered.
 func (j *jira) self(ctx context.Context) (jiraUser, error) {
-	key := j.selfKey()
+	key, creds := j.cacheKey(), j.selfCreds()
 	if j.selves != nil {
 		if v, ok := j.selves.Load(key); ok {
-			return v.(jiraUser), nil
+			if s := v.(cachedSelf); sameCreds(s.creds, creds) {
+				return s.me, nil
+			}
 		}
 	}
 	var me jiraUser
@@ -106,7 +115,7 @@ func (j *jira) self(ctx context.Context) (jiraUser, error) {
 		return jiraUser{}, &Error{Msg: "Jira did not say which account Signalith signs in as. Check the address."}
 	}
 	if j.selves != nil {
-		j.selves.Store(key, me)
+		j.selves.Store(key, cachedSelf{me: me, creds: creds})
 	}
 	return me, nil
 }

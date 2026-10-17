@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,25 +95,31 @@ type tokenCache struct {
 type cachedToken struct {
 	value   string
 	expires time.Time
+	// creds are the credentials the token was issued for: a token is
+	// only used while the connection still has them.
+	creds string
 }
 
-func (t *tokenCache) get(key string, now time.Time) string {
+func (t *tokenCache) get(key, creds string, now time.Time) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if tok, ok := t.tokens[key]; ok && now.Before(tok.expires) {
+	if tok, ok := t.tokens[key]; ok && now.Before(tok.expires) && sameCreds(tok.creds, creds) {
 		return tok.value
 	}
 	return ""
 }
 
-func (t *tokenCache) put(key, value string, expires time.Time) {
+func (t *tokenCache) put(key, creds, value string, expires time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.tokens == nil {
 		t.tokens = map[string]cachedToken{}
 	}
-	t.tokens[key] = cachedToken{value: value, expires: expires}
+	t.tokens[key] = cachedToken{value: value, expires: expires, creds: creds}
 }
+
+// sameCreds compares two credential strings in constant time.
+func sameCreds(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
 func (t *tokenCache) drop(key string) {
 	t.mu.Lock()
@@ -174,19 +179,20 @@ func (s *Service) newClient(c Connection) (*client, error) {
 // system names the connection's system for people.
 func (cl *client) system() string { return TypeLabel(cl.conn.Type) }
 
-// tokenKey identifies a connection's OAuth token in the cache: a new
+// cacheKey is a connection's key in the token and account caches.
+func (cl *client) cacheKey() string { return cl.conn.ID + ":" }
+
+// tokenCreds are what a connection's OAuth token was issued for: a new
 // client secret or address asks for a new token.
-func (cl *client) tokenKey() string {
-	sum := sha256.Sum256([]byte(cl.conn.URL + "\x00" + cl.conn.ClientID + "\x00" + cl.conn.ClientSecret))
-	return cl.conn.ID + ":" + hex.EncodeToString(sum[:8])
+func (cl *client) tokenCreds() string {
+	return cl.conn.URL + "\x00" + cl.conn.ClientID + "\x00" + cl.conn.ClientSecret
 }
 
-// selfKey identifies the account a connection signs in as: new
+// selfCreds are what decide the account a connection signs in as: new
 // credentials or a new address may be another account.
-func (cl *client) selfKey() string {
+func (cl *client) selfCreds() string {
 	c := cl.conn
-	sum := sha256.Sum256([]byte(strings.Join([]string{c.URL, c.Auth, c.Email, c.Token, c.Username, c.Password, c.ClientID, c.ClientSecret}, "\x00")))
-	return c.ID + ":" + hex.EncodeToString(sum[:8])
+	return strings.Join([]string{c.URL, c.Auth, c.Email, c.Token, c.Username, c.Password, c.ClientID, c.ClientSecret}, "\x00")
 }
 
 // request is one API call.
@@ -214,7 +220,7 @@ func (cl *client) do(ctx context.Context, r request) error {
 		case e.Code == http.StatusUnauthorized && cl.conn.Type == TypeServiceNow && cl.conn.Auth == AuthOAuth && !r.noAuth && attempt == 0:
 			// The token may have been revoked or expired early: ask for a
 			// new one, once.
-			cl.tokens.drop(cl.tokenKey())
+			cl.tokens.drop(cl.cacheKey())
 			continue
 		case !e.Until.IsZero() && attempt < 2:
 			wait := e.Until.Sub(cl.now())
@@ -349,8 +355,8 @@ func (cl *client) authorize(ctx context.Context, req *http.Request) error {
 // oauthToken returns an access token from ServiceNow's OAuth endpoint,
 // with the client credentials grant.
 func (cl *client) oauthToken(ctx context.Context) (string, error) {
-	key := cl.tokenKey()
-	if tok := cl.tokens.get(key, cl.now()); tok != "" {
+	key, creds := cl.cacheKey(), cl.tokenCreds()
+	if tok := cl.tokens.get(key, creds, cl.now()); tok != "" {
 		return tok, nil
 	}
 	var out struct {
@@ -372,7 +378,7 @@ func (cl *client) oauthToken(ctx context.Context) (string, error) {
 		life = 30 * time.Minute
 	}
 	// Renewed a minute early, so a token never expires on the way.
-	cl.tokens.put(key, out.AccessToken, cl.now().Add(life-min(time.Minute, life/2)))
+	cl.tokens.put(key, creds, out.AccessToken, cl.now().Add(life-min(time.Minute, life/2)))
 	return out.AccessToken, nil
 }
 

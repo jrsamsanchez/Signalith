@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
 )
@@ -157,5 +158,21 @@ func TestServiceNowTest(t *testing.T) {
 	conn.Table = "no_such_table"
 	if _, err := e.svc.Test(context.Background(), conn); err == nil || !strings.Contains(err.Error(), "no table no_such_table") {
 		t.Errorf("missing table: %v", err)
+	}
+}
+
+// A cached token is only used with the credentials it was issued for.
+func TestTokenCacheChecksCredentials(t *testing.T) {
+	var c tokenCache
+	now := time.Now()
+	c.put("sn:", "url\x00id\x00secret-1", "token-1", now.Add(time.Hour))
+	if got := c.get("sn:", "url\x00id\x00secret-1", now); got != "token-1" {
+		t.Errorf("same credentials: %q", got)
+	}
+	if got := c.get("sn:", "url\x00id\x00secret-2", now); got != "" {
+		t.Errorf("new secret got the old token %q", got)
+	}
+	if got := c.get("sn:", "url\x00id\x00secret-1", now.Add(2*time.Hour)); got != "" {
+		t.Errorf("expired token %q", got)
 	}
 }
