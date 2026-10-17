@@ -41,6 +41,12 @@ variable "signalith_ref" {
   default     = "main"
 }
 
+variable "opensearch_version" {
+  description = "The OpenSearch version the lab installs. Defaults to the version the Docker quick start and Helm chart use; set 2.17.1 to test upgrades from OpenSearch 2."
+  type        = string
+  default     = "3.9.0"
+}
+
 variable "windows" {
   description = "Make windows-1, a machine you install Windows Server on from the Hetzner Console (full lab only)."
   type        = bool

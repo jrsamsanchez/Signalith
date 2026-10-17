@@ -32,7 +32,8 @@ DOMAIN=$(conf .domain)
 SIEM=$(conf .siem)
 LB_IP=$(conf .lb_ip)
 SIEM_URL="https://$SIEM:9000"
-OPENSEARCH_VERSION=2.17.1
+# Labs made before the version was a setting have no "opensearch" in lab.json.
+OPENSEARCH_VERSION=$(conf '.opensearch // "3.9.0"')
 BIN=/usr/local/bin/signalith
 
 ip_of() { conf ".machines[] | select(.name == \"$1\") | .ip"; }
@@ -229,7 +230,8 @@ if [ -n "$vol" ] && ! mountpoint -q /var/lib/opensearch; then
 fi
 if ! dpkg -s opensearch >/dev/null 2>&1; then
   curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
-  echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt stable main" >/etc/apt/sources.list.d/opensearch-2.x.list
+  series="${VERSION%%.*}.x"
+  echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   # No demo security settings: the lab's own are put in place below. The
   # package still asks for a demo admin password, which is never used.
@@ -422,7 +424,14 @@ for i in $(seq 1 90); do
   sleep 10
 done
 if ! docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith; then
-  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null
+  # On first start gvmd is still loading its port lists and other built-in
+  # objects for a while, and --create-user fails if it collides with that.
+  for i in $(seq 1 60); do
+    docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null 2>&1 || true
+    docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith && break
+    [ "$i" -lt 60 ] || { echo "gvmd would not create the signalith user" >&2; exit 1; }
+    sleep 10
+  done
 else
   # Run again: the user is there, with a password this run doesn't know.
   docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --user=signalith --new-password="$PW" </dev/null >/dev/null
