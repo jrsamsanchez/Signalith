@@ -176,7 +176,8 @@ func (s *Scheduler) clusterNow() time.Time {
 // With the detepoch counter on, it first takes a detection epoch for the
 // copy; turning the counter on reads the copy again under one.
 func (s *Scheduler) loadStates(ctx context.Context) error {
-	ep, counter := s.epoch(), s.counter()
+	// In spread mode the buckets' epochs come with the assignment.
+	ep, counter := s.gen(), s.counter() && s.Owned == nil
 	s.mu.Lock()
 	if s.det != nil && s.loadedEpoch == ep && s.loadedCounter == counter {
 		s.mu.Unlock()
@@ -214,6 +215,19 @@ func (s *Scheduler) loadStates(ctx context.Context) error {
 	return nil
 }
 
+// dropStale forgets what a refused write shows to be stale: the whole
+// copy, or in spread mode only the rule's entry, since its bucket alone
+// moved on (the copy is read again when this server's buckets change).
+func (s *Scheduler) dropStale(id string) {
+	if s.Owned == nil {
+		s.dropStates()
+		return
+	}
+	s.mu.Lock()
+	delete(s.det, id)
+	s.mu.Unlock()
+}
+
 // dropStates forgets the leader's copy, so it is read again before the
 // next run.
 func (s *Scheduler) dropStates() {
@@ -244,15 +258,25 @@ func (s *Scheduler) entry(id string) (detEntry, bool) {
 // decides again.
 func (s *Scheduler) writeState(ctx context.Context, e detEntry, ep int64) (adopted bool, err error) {
 	rs, idx := s.runStore()
+	cur := s.gen()
 	s.mu.Lock()
 	de, loaded := s.detEpoch, s.det != nil && s.loadedEpoch == ep
 	s.mu.Unlock()
-	if s.epoch() != ep || !loaded || e.read > de {
-		s.dropStates()
+	if s.Owned != nil {
+		// Spread mode: the epoch of the rule's bucket, while this server
+		// still runs it.
+		var mine bool
+		if de, mine = s.ownsRule(e.doc.DetectionID); !mine {
+			loaded = false
+		}
+	}
+	if cur != ep || !loaded || e.read > de {
+		s.dropStale(e.doc.DetectionID)
 		return false, errStaleEpoch
 	}
-	e.doc.Kind, e.doc.Epoch, e.doc.DetEpoch, e.doc.Node = kindDetState, ep, 0, s.NodeID
-	if de != ep {
+	lease := s.epoch()
+	e.doc.Kind, e.doc.Epoch, e.doc.DetEpoch, e.doc.Node = kindDetState, lease, 0, s.NodeID
+	if de != lease {
 		e.doc.DetEpoch = de
 	}
 	id := detStateID(e.doc.DetectionID)
@@ -284,7 +308,7 @@ func (s *Scheduler) writeState(ctx context.Context, e detEntry, ep int64) (adopt
 			cur = DetState{}
 		}
 		if cur.fence() > de {
-			s.dropStates()
+			s.dropStale(e.doc.DetectionID)
 			return false, errStaleEpoch
 		}
 		if e.ver.IsZero() {
