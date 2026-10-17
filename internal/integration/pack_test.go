@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -32,10 +33,19 @@ import (
 func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	cl, eng, prefix := setup(t)
 	ctx := context.Background()
-	_, dets, err := detect.Packs()
+	packs, dets, err := detect.Packs()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The splunk pack's lookup stages read the tables it ships, which
+	// every lookup store has.
+	var lookups map[string]*splcheck.Lookup
+	for _, p := range packs {
+		if p.Name == "splunk" {
+			lookups = p.Lookups()
+		}
+	}
+	eng.Lookups, _ = lookuptables.Open("")
 	byID := map[string]*detect.Detection{}
 	for _, d := range dets {
 		byID[d.ID] = d
@@ -92,7 +102,7 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path)})
+				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path), Lookups: lookups})
 				if err != nil {
 					t.Fatalf("%s: %v", r.ID, err)
 				}

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -392,6 +393,15 @@ func (r *Rule) shapeOf() *shape {
 					need(resolve(name), &lit{field: "v", values: []string{strings.ReplaceAll(unquote(cond[m[6]:m[7]]), "%", "*")}})
 				case fn == "match":
 					need(resolve(name), &lit{field: "v", values: []string{unquote(cond[m[6]:m[7]])}, re: true})
+				}
+			}
+		case "lookup":
+			// A value of the table for the field it looks up.
+			for _, h := range r.lookupHints {
+				if q, err := query.Parse("* | " + s); err == nil && len(q.Commands) == 1 {
+					if c, ok := q.Commands[0].(*query.Lookup); ok && c.Table == h.lookup.Table.Name && len(c.Keys) == 1 && c.Keys[0].Field() == h.field {
+						need(resolve(h.field), &lit{field: "v", values: h.values()})
+					}
 				}
 			}
 		case "stats", "eventstats":

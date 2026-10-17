@@ -176,6 +176,45 @@ time a search uses it, and is checked before use; a damaged file, one larger tha
 512 MB, or a database of another kind (such as ASN) is not used, and the server log
 says why while searches keep the file they had.
 
+## Tables that come with content packs
+
+Some [Splunk Security Content](detections.md#splunk-security-content) rules look
+values up in a table Splunk publishes with them: known named pipes of remote access
+tools, PowerShell attack strings, vulnerable drivers and the like. The Splunk pack
+ships those tables (`internal/detect/packs/splunk/lookups`), each as
+security_content has it: the CSV and the yml that says how it matches. Only tables
+that a shipped rule reads are included.
+
+A pack's table is named after its pack: `browser_app_list` in security_content is
+`splunk-browser_app_list` in Signalith, and the converted rules look up that name.
+So a table of yours named `browser_app_list` stays yours, and a pack update never
+replaces it, nor does your table change what a pack rule finds. Names starting with
+`splunk-` are kept for the pack's tables: adding a table with such a name is
+refused. (A table of yours saved under such a name before is hidden by the pack's
+table of the same name, and is not listed; rename its file in the tables folder.)
+
+Pack tables:
+
+- are kept in memory with the pack, not in the tables folder, and don't count
+  toward the [limits](#limits) on your tables;
+- are not listed on **Settings > Lookups**, which lists your own tables, but
+  searches can read them like any table (`| inputlookup splunk-loldrivers`), and
+  `GET /api/lookuptables/splunk-loldrivers` shows one, with `"pack": "splunk"`;
+- can't be replaced or deleted; a [content update](detections.md#content-updates)
+  that brings new rules brings their tables too.
+
+Each table's yml settings are kept: `match_type: WILDCARD(<column>)` makes a
+[wildcard column](#wildcards-and-case), `case_sensitive_match: false` ignores case,
+and `min_matches: 1` with `default_match` fills the output fields of an event no
+row matches. `max_matches: 1` keeps the first matching row in the table's order, as
+Splunk does; a rule whose table has a row with a pattern before a row without one
+that it also matches is left out, since Signalith tries the rows without patterns
+first. A rule is left out too when its table's settings, or how its later stages
+read the output, could give a different result than in Splunk, for example a table
+with spaces around values (Splunk keeps them; Signalith's CSV reading drops them),
+or an output compared with a value while several rows may match. The pack's
+`REPORT.md` lists each rule left out and why.
+
 ## Several servers
 
 Each server keeps its tables in `tables` inside the folder of the asset and
@@ -187,10 +226,10 @@ tables but cannot change them, and the API answers changes with `409 Conflict`.
 
 | Route | Role | What it does |
 | --- | --- | --- |
-| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change, and `wildcard` and `ignore_case` when set |
-| `GET /api/lookuptables/{name}` | viewer | One table and its first 1,000 rows |
+| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change, and `wildcard` and `ignore_case` when set. [Content packs' tables](#tables-that-come-with-content-packs) are not listed |
+| `GET /api/lookuptables/{name}` | viewer | One table and its first 1,000 rows; a content pack's table has `pack` set |
 | `GET /api/lookuptables/{name}.csv` | viewer | The whole table as CSV |
 | `PUT /api/lookuptables/{name}` | admin | Adds or replaces a table; the body is the CSV file. `?wildcard=col1,col2` names wildcard columns and `?case_sensitive=false` ignores case; without them the table matches exactly |
-| `DELETE /api/lookuptables/{name}` | admin | Deletes a table |
+| `DELETE /api/lookuptables/{name}` | admin | Deletes a table (not a content pack's) |
 
 API tokens can only read, so changes come from a signed-in admin.

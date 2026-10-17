@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -34,6 +35,9 @@ var (
 	copyRe    = regexp.MustCompile(`(?i)(?:^|,)\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:(?:lower|upper)\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*(?:,|$)`)
 )
 
+// rexGroupRe is a named group of a regular expression.
+var rexGroupRe = regexp.MustCompile(`\(\?P?<([A-Za-z_]\w*)>`)
+
 // unquote reads a double-quoted string of the search language.
 func unquote(s string) string {
 	s = strings.TrimSuffix(strings.TrimPrefix(s, `"`), `"`)
@@ -51,7 +55,47 @@ func (r *Rule) hints() []Expr {
 	// Signalith stores.
 	alias := map[string]string{}
 	for _, s := range stages {
-		body, ok := strings.CutPrefix(strings.TrimSpace(s), "eval ")
+		s = strings.TrimSpace(s)
+		if len(r.lookupHints) > 0 {
+			// A lookup's key field may be a rename or a rex's of the
+			// field Signalith stores.
+			if q, err := query.Parse("* | " + s); err == nil && len(q.Commands) == 1 {
+				switch c := q.Commands[0].(type) {
+				case *query.Rename:
+					for _, p := range c.Pairs {
+						if !strings.Contains(p[0], "*") && p[0] != p[1] {
+							alias[p[1]] = p[0]
+						}
+					}
+				case *query.Rex:
+					for _, m := range rexGroupRe.FindAllStringSubmatch(c.Pattern, -1) {
+						if c.Field != "" && m[1] != c.Field {
+							alias[m[1]] = c.Field
+						}
+					}
+				case *query.Stats:
+					// A field's values, which one event gives as its own.
+					for _, a := range c.Aggs {
+						switch a.Func {
+						case "values", "list", "first", "last", "earliest", "latest":
+							if a.Field != "" && a.Column() != a.Field {
+								alias[a.Column()] = a.Field
+							}
+						}
+					}
+				case *query.Eval:
+					// The values joined, which is the one value of one event.
+					for _, a := range c.Assigns {
+						if x, ok := a.Expr.(*query.Call); ok && x.Func == "mvjoin" && len(x.Args) == 2 {
+							if f, ok := x.Args[0].(*query.Field); ok && f.Name != a.Field {
+								alias[a.Field] = f.Name
+							}
+						}
+					}
+				}
+			}
+		}
+		body, ok := strings.CutPrefix(s, "eval ")
 		if !ok {
 			continue
 		}
@@ -88,6 +132,12 @@ func (r *Rule) hints() []Expr {
 		}
 		seen[k] = true
 		out = append(out, e)
+	}
+	// A lookup's key field with values of its table, each a hint.
+	for _, h := range r.lookupHints {
+		for _, v := range h.values() {
+			add(&Cmp{Field: stored(h.field), Values: []string{v}})
+		}
 	}
 	for _, s := range stages {
 		s = strings.TrimSpace(s)

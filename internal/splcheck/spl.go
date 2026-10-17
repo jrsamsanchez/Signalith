@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"regexp"
 	"slices"
@@ -75,6 +76,18 @@ type Rule struct {
 	// postField is the Signalith field of a field the later stages name
 	// (false for none).
 	postField func(string) (string, bool) `yaml:"-"`
+	// Lookups are the security_content tables the later stages look
+	// values up in, by their names there.
+	Lookups []string `yaml:"-"`
+	// lookups are the tables the rule may read (ParseOptions), and
+	// lookupErrs why others do not read; lookupHints the key fields of
+	// its lookups, for test events.
+	lookups     map[string]*Lookup
+	lookupErrs  map[string]error
+	lookupHints []lookupHint
+	// lookupStore holds the tables for running the later stages over test
+	// events, made on first use.
+	lookupStore *lookuptables.Store
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -175,6 +188,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
+	r.lookups, r.lookupErrs = opt.Lookups, opt.LookupErrors
 	// osquery's results are Linux events too, which Signalith keeps in
 	// another data model; Sysmon for Linux is what the rule reads here.
 	r.Linux = slices.ContainsFunc(r.DataSource, func(s string) bool {

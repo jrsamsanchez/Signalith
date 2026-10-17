@@ -548,7 +548,7 @@ The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
 `url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
 `http_user_agent`, `cs-referer` is `http_referrer` and `c-ip` is `src`. Their keywords
 (`'${jndi:'`, `'=whoami'`) are searched in what the client sent: the target, the user
-agent and the referrer. 36 Splunk rules search the Web data model, for example
+agent and the referrer. 43 Splunk rules search the Web data model, for example
 exploitation attempts against SharePoint, Citrix, Ivanti, Confluence, Fortinet, F5 and
 TeamCity, and Spring4Shell.
 
@@ -673,7 +673,7 @@ The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSo
 `userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
 them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
 another, or that match text inside the call's parameters in a way no test record
-exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+exercises, are left out. The Splunk pack adds 33 CloudTrail detections (see
 [Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
 
 ### Entra ID and Azure
@@ -688,15 +688,15 @@ Older rules that name an audit record's operation `properties.message` read
 out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
 `sourcetype=azure:monitor:activity`.
 
-The Splunk pack adds 30 Entra ID detections (see
+The Splunk pack adds 31 Entra ID detections (see
 [Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
 off, new federated domains, guest invitations, single-factor and device code sign-ins,
 password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
 Signalith keeps too: a list's values by Splunk's name for them
 (`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
 matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
-their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
-Intune rules, are left out. To send Entra ID and Azure logs, see
+their old names. Most rules that use `eval`, `spath`, `rex` or `transaction`, and the
+Intune rules, are left out; a lookup of privileged roles reads the table the pack ships. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
 ### Microsoft 365
@@ -821,16 +821,18 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,242 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,259 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
-`tstats`, plus the PowerShell script block rules, and 5 of the 102 network detections
+`tstats`, plus the PowerShell script block rules, and 9 of the 102 network detections
 (`detections/network`), the `tstats` searches that read any source of their data
 model, a [network sensor](network-sensor.md) among them: Cisco Smart Install port
-4786, ngrok tunnels, protocol on an unusual port and Tor over `Network_Traffic` or
-`Network_Resolution`, and the F5 iControl REST exploit over `Web`. The other network
+4786, ngrok tunnels, protocol on an unusual port, Tor, Kerberos coercion through DNS,
+unusually long DNS queries and the 3CX supply chain attack's domains over
+`Network_Traffic` or `Network_Resolution`, and the F5 iControl REST exploit and
+remote management tools' user agents over `Web`. The other network
 detections use lookups, `eval` or Cisco firewall searches, are experimental or hunting
 rules, or search Sysmon's DNS and network events, which is endpoint content
 (`REPORT.md`). Signalith uses the same CIM field
@@ -892,6 +894,24 @@ add risk, as their authors intend. Severity follows the rule's risk score
 (TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
+
+Some rules look values up in a table Splunk publishes with them (`| lookup
+pua_named_pipes pua_pipe_name AS pipe_name OUTPUT tool | where isnotnull(tool)`):
+named pipes, user agents and services of known tools, PowerShell attack strings,
+vulnerable drivers, LOLBAS paths, DLLs open to hijacking and privileged Entra ID
+roles. The pack ships the 15 tables its rules read (about 250 KB, in
+`internal/detect/packs/splunk/lookups`), unchanged, each with its yml, and the rule
+looks up the pack's copy, `splunk-pua_named_pipes`, so a table of your own with the
+same name is never used or replaced (see
+[Tables that come with content packs](lookups.md#tables-that-come-with-content-packs)).
+The lookup matches as the yml says (wildcard columns, case, `max_matches`,
+`default_match`), and the rule's test events hold a value of one of the table's
+rows. A rule is left out when Signalith's lookup could give it a different answer
+than Splunk's: a table row with a pattern before a row it also matches under
+`max_matches: 1`, values with spaces around them, an output that several rows may
+give compared with a value or counted by, more matching rows than Signalith's
+lookup takes (100), more than 2,000 rows with patterns, or a table security_content
+does not ship as a CSV file (KV store lookups such as `identity_lookup_expanded`).
 
 PowerShell rules, and Sysmon image load, remote thread and process access rules,
 search the events themselves rather than a data model: their event fields become

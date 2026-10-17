@@ -255,3 +255,64 @@ func TestParseCountsMemory(t *testing.T) {
 		t.Fatalf("memory = %d, %v", tb.Memory, err)
 	}
 }
+
+// A content pack's tables are read by every store, before an admin's of
+// the same name, and an admin cannot add, replace or delete one, or take
+// a name with the pack's prefix.
+func TestPackTables(t *testing.T) {
+	pt, err := NewPackTable("splunk", "splunk-pipes", []byte("pipe,tool\n*\\psexec*,PsExec\n"), Options{Wildcard: []string{"pipe"}, IgnoreCase: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPackTable("splunk", "pipes", []byte("a\n1\n"), Options{}); err == nil {
+		t.Error("a pack table must be named with the pack's prefix")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "splunk-pipes.csv"), []byte("pipe,tool\nx,mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetPackTables([]*Table{pt})
+	t.Cleanup(func() { SetPackTables(nil) })
+	if got, ok := s.Get("splunk-pipes"); !ok || got != pt {
+		t.Errorf("Get = %v, %v; want the pack's table", got, ok)
+	}
+	tb, idx, err := s.Lookup("splunk-pipes", []string{"pipe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := idx.Match(tb, []string{`\\.\pipe\PSEXECSVC`}, 100, func(int) bool { return true }); len(m) != 1 {
+		t.Errorf("Match = %v, want the pattern row", m)
+	}
+	// The admin's table the pack's hides is listed by neither.
+	if l := s.List(); len(l) != 0 {
+		t.Errorf("List() = %+v, want none", l)
+	}
+	if l := s.PackList(); len(l) != 1 || l[0].Pack != "splunk" {
+		t.Errorf("PackList() = %+v, want the pack's table alone", l)
+	}
+	for _, name := range []string{"splunk-pipes", "splunk-other"} {
+		if _, err := s.Put(name, []byte("a\n1\n")); err == nil || !strings.Contains(err.Error(), "content pack") {
+			t.Errorf("Put(%s) err = %v, want a refusal", name, err)
+		}
+	}
+	if err := s.Delete("splunk-pipes"); !errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), "content pack") {
+		t.Errorf("Delete err = %v", err)
+	}
+	if _, err := s.Put("pipes", []byte("a\n1\n")); err != nil {
+		t.Errorf("an admin's own name: %v", err)
+	}
+	// A store for checking rules reads only the tables it is given.
+	if _, ok := NewPackStore(nil).Get("splunk-pipes"); ok {
+		t.Error("NewPackStore(nil) has the pack's table")
+	}
+	// Another content version's tables replace the index built before.
+	pt2, _ := NewPackTable("splunk", "splunk-pipes", []byte("pipe,tool\nother,x\n"), Options{})
+	SetPackTables([]*Table{pt2})
+	if tb, _, err := s.Lookup("splunk-pipes", []string{"pipe"}); err != nil || tb != pt2 {
+		t.Errorf("Lookup after SetPackTables = %v, %v", tb, err)
+	}
+}

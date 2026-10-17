@@ -1,15 +1,14 @@
 package splcheck
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
-	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -41,7 +40,16 @@ var fieldTokenRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'([^']+)'|([A-Za-z_][\w
 // ("" for a raw search).
 func (r *Rule) postCommands(stages []string, field func(string) (string, bool), group string) error {
 	var parts []string
+	// scan are the stages as they name fields, for the copies below: a
+	// lookup's fields without its table and columns.
+	var scan []string
 	multi := map[string]bool{}
+	outs := map[string]*lookupOut{}
+	grouped := group != ""
+	var groupStages []string
+	if group != "" {
+		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
+	}
 	for _, s := range stages {
 		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
 		if s == "" {
@@ -49,6 +57,18 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		}
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+		}
+		if lookupStageRe.MatchString(s) {
+			s = nodeFieldRe.ReplaceAllString(s, "$1")
+			before := append(slices.Clone(groupStages), parts...)
+			single := func(f string) bool { return fieldSingle(f, before, group == "") }
+			conv, names, err := r.lookupStage(s, strings.Join(before, "\n| "), grouped, field, single, outs)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, conv...)
+			scan = append(scan, "table "+strings.Join(names, " "))
+			continue
 		}
 		if err := multiFilter(s, multi); err != nil {
 			return err
@@ -70,24 +90,33 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		// it groups by. Splunk's add-ons give every event the fields they
 		// define; a field Signalith keeps none of is "unknown" instead, as
 		// a tstats search's missing fields are.
+		expand, err := multiUse(nodeFieldRe.ReplaceAllString(s, "$1"), outs)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, expand...)
 		if group == "" {
 			if fill := missingGroups(s, parts, field); len(fill) > 0 {
 				parts = append(parts, "fillnull value=unknown "+strings.Join(fill, " "))
 			}
 		}
 		parts = append(parts, s)
+		scan = append(scan, s)
+		grouped = grouped || strings.HasPrefix(s, "stats ") || strings.HasPrefix(s, "table ")
 	}
 	if len(parts) == 0 {
 		return nil
 	}
 	text := strings.Join(parts, "\n| ")
+	named := strings.Join(scan, "\n| ")
 	if group != "" {
 		text = group + "\n| " + nodeFieldRe.ReplaceAllString(text, "$1")
+		named = group + "\n| " + nodeFieldRe.ReplaceAllString(named, "$1")
 	}
 	// The fields the stages name, copied to Splunk's names.
 	var copies []string
 	seen := map[string]bool{}
-	for _, m := range fieldTokenRe.FindAllStringSubmatch(text, -1) {
+	for _, m := range fieldTokenRe.FindAllStringSubmatch(named, -1) {
 		name := m[1] + m[2]
 		if name == "" || seen[name] {
 			continue
@@ -107,13 +136,20 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Lookup, *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
+		case *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}
 	r.Post = text
 	r.post = q.Commands
 	r.postField = field
+	if len(r.Lookups) > 0 {
+		var ts []*lookuptables.Table
+		for _, name := range r.Lookups {
+			ts = append(ts, r.lookups[name].Table)
+		}
+		r.lookupStore = lookuptables.NewPackStore(ts)
+	}
 	return nil
 }
 
@@ -200,7 +236,7 @@ func (r *Rule) KeepsAll(docs []map[string]any) bool {
 	if len(r.post) == 0 {
 		return true
 	}
-	rows, err := search.RunCommands(context.Background(), docs, r.post)
+	rows, err := r.runPost(docs)
 	return err == nil && len(rows) > 0
 }
 
@@ -411,6 +447,9 @@ func quoteComparedText(cond string) string {
 		return left + op + quoteField(right, true) + after
 	})
 }
+
+// lookupStageRe is a lookup stage.
+var lookupStageRe = regexp.MustCompile(`(?i)^lookup\s`)
 
 // postEvalRe is an eval stage.
 var postEvalRe = regexp.MustCompile(`(?is)^eval\s+(.+)$`)

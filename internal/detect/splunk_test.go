@@ -1,10 +1,14 @@
 package detect
 
 import (
+	"context"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 func TestSplunkDetection(t *testing.T) {
@@ -91,5 +95,86 @@ search: |
 	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err != nil || !strings.Contains(d.Query, "| stats count, dc(process) as n by dest\n| where n>37") ||
 		d.Schedule != "5m" || d.Lookback != "25m" {
 		t.Errorf("distinct count = %v %+v", err, d)
+	}
+}
+
+// eventsSearcher answers every search with its events.
+type eventsSearcher []map[string]any
+
+func (s eventsSearcher) Search(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
+	hits := make([]any, len(s))
+	for i, d := range s {
+		hits[i] = map[string]any{"_source": d}
+	}
+	return map[string]any{"hits": map[string]any{"total": map[string]any{"value": len(s)}, "hits": hits}}, nil
+}
+
+// The splunk pack's rules look values up in the tables it ships, which
+// every lookup store reads under the pack's names.
+func TestSplunkPackLookups(t *testing.T) {
+	ps, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack *Pack
+	for _, p := range ps {
+		if p.Name == "splunk" {
+			pack = p
+		}
+	}
+	if pack == nil || pack.Lookups()["pua_named_pipes"] == nil {
+		t.Fatal("the splunk pack has no pua_named_pipes table")
+	}
+	store, _ := lookuptables.Open("")
+	tb, ok := store.Get("splunk-pua_named_pipes")
+	if !ok || tb.Pack != "splunk" || !tb.IgnoreCase || len(tb.Wildcard) != 1 {
+		t.Fatalf("store has %+v, %v", tb, ok)
+	}
+	var d *Detection
+	for _, x := range ds {
+		if x.ID == "splunk-windows-pua-named-pipe" {
+			d = x
+		}
+	}
+	if d == nil || !strings.Contains(d.Query, "| lookup splunk-pua_named_pipes pua_pipe_name AS pipe_name OUTPUT tool, description") {
+		t.Fatalf("detection %v", d)
+	}
+	q, err := query.Parse(d.Query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stages before the lookup run over the event, then the lookup
+	// as a search runs it, with the server's store, then the rest.
+	at := slices.IndexFunc(q.Commands, func(c query.Command) bool { _, ok := c.(*query.Lookup); return ok })
+	for pipe, want := range map[string]int{`\\.\pipe\psexesvc-x`: 1, `\\.\pipe\mojo.1`: 0} {
+		ctx := context.Background()
+		ev := map[string]any{"dest": "h", "process_path": `C:\x.exe`, "process_name": "x.exe", "signature_id": 17, "pipe_name": pipe}
+		rows, err := search.RunCommands(ctx, []map[string]any{ev}, q.Commands[:at])
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("%s: before the lookup: %v, %v", pipe, rows, err)
+		}
+		eng := &search.Engine{Store: eventsSearcher{rows[0]}, Lookups: store}
+		res, err := eng.Execute(search.Background(ctx), &query.Query{Commands: []query.Command{q.Commands[at], &query.Head{N: 2}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs := make([]map[string]any, len(res.Rows))
+		for i, r := range res.Rows {
+			docs[i] = r
+		}
+		rows, err = search.RunCommands(ctx, docs, q.Commands[at+1:])
+		if err != nil || len(rows) != want {
+			t.Errorf("%s: rows %v, %v; want %d", pipe, rows, err, want)
+		}
+	}
+	// Packs of a content update without tables leave none; going back
+	// to the built-in packs brings them back.
+	UsePacks([]*Pack{}, nil, "test")
+	if _, ok := store.Get("splunk-pua_named_pipes"); ok {
+		t.Error("a content update without the table keeps it")
+	}
+	UsePacks(nil, nil, "")
+	if _, ok := store.Get("splunk-pua_named_pipes"); !ok {
+		t.Error("the built-in packs' table is not back")
 	}
 }

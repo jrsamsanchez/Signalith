@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -57,6 +58,9 @@ type Table struct {
 	// Memory estimates what the parsed table takes in memory: each cell's
 	// text and string header, and each row's slice.
 	Memory int
+	// Pack names the content pack a table comes with ("" for a table an
+	// admin added); a pack's tables cannot be changed or deleted.
+	Pack string
 	Options
 }
 
@@ -98,12 +102,13 @@ type Info struct {
 	Rows    int       `json:"rows"`
 	Bytes   int       `json:"bytes"`
 	Updated time.Time `json:"updated"`
+	Pack    string    `json:"pack,omitempty"`
 	Options
 }
 
 // Info returns t's description.
 func (t *Table) Info() Info {
-	return Info{Name: t.Name, Columns: t.Columns, Rows: len(t.Rows), Bytes: t.Bytes, Updated: t.Updated, Options: t.Options}
+	return Info{Name: t.Name, Columns: t.Columns, Rows: len(t.Rows), Bytes: t.Bytes, Updated: t.Updated, Pack: t.Pack, Options: t.Options}
 }
 
 // Column returns the index of the named column, or -1.
@@ -118,6 +123,7 @@ type Index struct {
 	cols     []int
 	wild     []bool // which key columns hold patterns
 	fold     bool
+	table    *Table // the table it indexes
 }
 
 // fold lowercases s when the table ignores case.
@@ -207,13 +213,96 @@ const keySep = "\x00"
 // Key joins the values of several key columns into an Index key.
 func Key(values []string) string { return strings.Join(values, keySep) }
 
-// Store holds the tables, read from files in one folder.
+// Store holds the tables, read from files in one folder, and the tables
+// the content packs in use ship (SetPackTables).
 type Store struct {
 	dir string
 
 	mu      sync.RWMutex
 	tables  map[string]*Table
 	indexes map[string]*Index // by table name and key columns
+	// packs, when set, are this store's pack tables instead of the ones
+	// SetPackTables gives every store (NewPackStore).
+	packs map[string]*Table
+}
+
+// Content packs ship tables their rules' lookup stages read. Each is named
+// <pack>-<table> (splunk-browser_app_list), a name an admin cannot give a
+// table of their own, so a pack table never replaces an admin's and an
+// admin's never changes what a pack rule finds. They are kept in memory,
+// not in the folder, and do not count towards the limits on admins'
+// tables.
+var packTables atomic.Pointer[map[string]*Table]
+
+// NewPackTable reads a content pack's table from CSV, with options for
+// how its key columns match: name is the table's name (<pack>-<table>).
+func NewPackTable(pack, name string, data []byte, opts Options) (*Table, error) {
+	if !ValidName(name) || !strings.HasPrefix(name, pack+"-") {
+		return nil, fmt.Errorf("%q cannot name a table of content pack %s; it must start with %s-", name, pack, pack)
+	}
+	t, err := Parse(name, data)
+	if err != nil {
+		return nil, err
+	}
+	if err := opts.check(t); err != nil {
+		return nil, err
+	}
+	t.Options = opts
+	t.Pack = pack
+	return t, nil
+}
+
+// SetPackTables makes ts the content packs' tables every store reads,
+// in place of the ones before (a content update's, or the built-in
+// packs').
+func SetPackTables(ts []*Table) {
+	m := make(map[string]*Table, len(ts))
+	for _, t := range ts {
+		m[t.Name] = t
+	}
+	packTables.Store(&m)
+}
+
+// NewPackStore is a store with no folder whose pack tables are ts alone,
+// whatever SetPackTables gives other stores: for checking a pack's rules.
+func NewPackStore(ts []*Table) *Store {
+	s, _ := Open("")
+	s.packs = map[string]*Table{}
+	for _, t := range ts {
+		s.packs[t.Name] = t
+	}
+	return s
+}
+
+// packMap is the pack tables s reads.
+func (s *Store) packMap() map[string]*Table {
+	if s.packs != nil {
+		return s.packs
+	}
+	if m := packTables.Load(); m != nil {
+		return *m
+	}
+	return nil
+}
+
+// reserved reports whether name is a pack table's, or has the prefix of
+// a pack that ships tables, so an admin cannot use it.
+func (s *Store) reserved(name string) (string, bool) {
+	for _, t := range s.packMap() {
+		if t.Name == name || strings.HasPrefix(name, t.Pack+"-") {
+			return t.Pack, true
+		}
+	}
+	return "", false
+}
+
+// table is the table named name, a pack's first; s.mu is held.
+func (s *Store) table(name string) (*Table, bool) {
+	if t, ok := s.packMap()[name]; ok {
+		return t, true
+	}
+	t, ok := s.tables[name]
+	return t, ok
 }
 
 // Open reads the tables in dir, which is created when missing. A file that
@@ -341,12 +430,27 @@ func Parse(name string, data []byte) (*Table, error) {
 	return t, nil
 }
 
-// List describes every table, by name.
+// List describes the tables admins added, by name; PackList the content
+// packs'. A table of an admin's that a pack's of the same name hides is
+// in neither.
 func (s *Store) List() []Info {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Info, 0, len(s.tables))
-	for _, t := range s.tables {
+	packs := s.packMap()
+	for n, t := range s.tables {
+		if _, shadowed := packs[n]; !shadowed {
+			out = append(out, t.Info())
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// PackList describes the content packs' tables, by name.
+func (s *Store) PackList() []Info {
+	var out []Info
+	for _, t := range s.packMap() {
 		out = append(out, t.Info())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -357,8 +461,7 @@ func (s *Store) List() []Info {
 func (s *Store) Get(name string) (*Table, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	t, ok := s.tables[name]
-	return t, ok
+	return s.table(name)
 }
 
 // Put replaces or adds a table from CSV, after checking the limits; its
@@ -372,6 +475,9 @@ func (s *Store) Put(name string, data []byte) (*Table, error) {
 func (s *Store) PutWithOptions(name string, data []byte, opts Options) (*Table, error) {
 	if !ValidName(name) {
 		return nil, fmt.Errorf("%q cannot name a lookup table; use lower-case letters, digits, - and _ (up to 64)", name)
+	}
+	if pack, ok := s.reserved(name); ok {
+		return nil, fmt.Errorf("names starting with %s- are kept for the tables of the %s content pack; choose another name", pack, pack)
 	}
 	t, err := Parse(name, data)
 	if err != nil {
@@ -414,6 +520,9 @@ func (s *Store) PutWithOptions(name string, data []byte, opts Options) (*Table, 
 func (s *Store) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if t, ok := s.packMap()[name]; ok {
+		return fmt.Errorf("%w: %s comes with the %s content pack, whose tables cannot be deleted", ErrNotFound, name, t.Pack)
+	}
 	if _, ok := s.tables[name]; !ok {
 		return ErrNotFound
 	}
@@ -460,13 +569,13 @@ func (s *Store) dropIndexes(name string) {
 func (s *Store) Lookup(name string, keys []string) (*Table, *Index, error) {
 	ik := name + keySep + Key(keys)
 	s.mu.RLock()
-	t, ok := s.tables[name]
+	t, ok := s.table(name)
 	idx, built := s.indexes[ik]
 	s.mu.RUnlock()
 	if !ok {
 		return nil, nil, ErrNotFound
 	}
-	if built {
+	if built && idx.table == t {
 		return t, idx, nil
 	}
 	cols := make([]int, len(keys))
@@ -475,7 +584,7 @@ func (s *Store) Lookup(name string, keys []string) (*Table, *Index, error) {
 			return nil, nil, fmt.Errorf("lookup table %s has no column %q; its columns are: %s", name, k, strings.Join(t.Columns, ", "))
 		}
 	}
-	idx = &Index{Exact: map[string][]int{}, cols: cols, fold: t.IgnoreCase}
+	idx = &Index{Exact: map[string][]int{}, cols: cols, fold: t.IgnoreCase, table: t}
 	for _, c := range cols {
 		idx.wild = append(idx.wild, slices.Contains(t.Wildcard, t.Columns[c]))
 	}
@@ -498,7 +607,7 @@ rows:
 	}
 	s.mu.Lock()
 	// Keep the index only if the table did not change meanwhile.
-	if s.tables[name] == t {
+	if cur, _ := s.table(name); cur == t {
 		s.indexes[ik] = idx
 	}
 	s.mu.Unlock()
