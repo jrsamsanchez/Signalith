@@ -1,0 +1,5 @@
+{"rule": "9ff4ca95-fdae-4eea-9ffa-6d8e1c202a71", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repo.destroy"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repo.destroz"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

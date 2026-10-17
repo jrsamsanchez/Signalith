@@ -139,6 +139,8 @@ var cloudCategories = map[string][2]string{
 	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
 	// Kubernetes audit events (product: kubernetes, service: audit).
 	ingest.KubernetesService: {ingest.KubernetesService, "rules/application/kubernetes/audit"},
+	// GitHub's audit log (product: github, service: audit).
+	ingest.GitHubService: {ingest.GitHubProduct, "rules/application/github/audit"},
 }
 
 // networkCategories are the network log sources, and the folders their
@@ -295,6 +297,9 @@ func main() {
 			}
 			if cat == "m365" {
 				want["service"] = rule.Logsource["service"]
+			}
+			if cat == ingest.GitHubService {
+				want["service"] = "audit"
 			}
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"

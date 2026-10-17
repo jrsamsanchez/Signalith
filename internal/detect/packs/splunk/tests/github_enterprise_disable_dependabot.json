@@ -1,0 +1,5 @@
+{"rule": "787dd1c1-eb3a-4a31-8e8c-2ad24b214bc8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repository_vulnerability_alerts.disable"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repository_vulnerability_alerts.disablf"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}
