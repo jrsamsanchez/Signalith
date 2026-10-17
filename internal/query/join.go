@@ -3,6 +3,7 @@ package query
 import (
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Join adds the fields of a subsearch's rows to the rows that share the
@@ -191,7 +192,7 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 	// A command that makes its own rows may start it without the |, as
 	// in [inputlookup owners | fields user].
 	w := strings.TrimLeftFunc(sub, isSpace)
-	if i := strings.IndexFunc(w, isSpace); i >= 0 {
+	if i := strings.IndexFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }); i >= 0 {
 		w = w[:i]
 	}
 	if generating[strings.ToLower(w)] {
