@@ -91,7 +91,14 @@ type Assignment struct {
 	// LeaseEpoch is the job lease epoch of the server that wrote it.
 	LeaseEpoch int64         `json:"lease_epoch"`
 	Owners     []BucketOwner `json:"owners"`
+	// SearchBudget is how many detection searches every server together
+	// may run at once; each server's pool gets the share of its buckets.
+	// 0 when not known (or written by an older version).
+	SearchBudget int `json:"search_budget,omitempty"`
 }
+
+// MaxSearchBudget bounds Assignment.SearchBudget.
+const MaxSearchBudget = 4096
 
 // BucketOwner is one bucket's entry: its owner, the detection epoch the
 // owner runs it under, and its state. Detection epochs are not kept in an
@@ -129,6 +136,8 @@ func (a *Assignment) Check(tenant string) error {
 		return fmt.Errorf("the detection assignment is for another tenant")
 	case len(a.Owners) != Buckets:
 		return fmt.Errorf("the detection assignment has %d buckets, not %d", len(a.Owners), Buckets)
+	case a.SearchBudget < 0 || a.SearchBudget > MaxSearchBudget:
+		return fmt.Errorf("the detection assignment's search budget %d is not between 0 and %d", a.SearchBudget, MaxSearchBudget)
 	}
 	for i, o := range a.Owners {
 		if o.Node == "" {

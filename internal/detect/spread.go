@@ -54,6 +54,9 @@ type Assigner struct {
 	// fingerprints filled in.
 	Servers func() []SpreadServer
 	Now     func() time.Time
+	// Budget, when set, is the cluster's detection search budget, written
+	// in the assignment while the detections are spread.
+	Budget func(ctx context.Context) int
 	// Mono is a monotonic clock for MoveTimeout and JoinDelay;
 	// time.Since when nil.
 	Mono func() time.Duration
@@ -310,7 +313,10 @@ func (a *Assigner) Step(ctx context.Context) error {
 			delete(a.movingSince, b)
 		}
 	}
-	if cur != nil && cur.LeaseEpoch == lease && slices.Equal(cur.Owners, next.Owners) || !found && !spread {
+	if spread && a.Budget != nil {
+		next.SearchBudget = min(max(a.Budget(ctx), 0), MaxSearchBudget)
+	}
+	if cur != nil && cur.LeaseEpoch == lease && cur.SearchBudget == next.SearchBudget && slices.Equal(cur.Owners, next.Owners) || !found && !spread {
 		// Nothing to write (and no document is made while nothing was
 		// ever spread).
 		if !spread {
@@ -390,8 +396,15 @@ type Follower struct {
 	mu     sync.Mutex
 	holds  map[int]int64
 	moving map[int]bool
+	share  SpreadShare
 	readAt time.Duration
 	read   bool
+}
+
+// SpreadShare is a server's part of a tenant's buckets: how many it runs
+// (Mine) of those assigned (Assigned), and the cluster search budget.
+type SpreadShare struct {
+	Mine, Assigned, Budget int
 }
 
 // DefaultFollowMaxAge is Follower.MaxAge when zero.
@@ -415,25 +428,57 @@ func (f *Follower) Read(ctx context.Context) error {
 		return err
 	}
 	holds, moving := map[int]int64{}, map[int]bool{}
+	var share SpreadShare
 	if found {
 		a, err := DecodeAssignment(raw, f.Tenant)
 		if err != nil {
-			f.set(holds, moving, sent)
+			f.set(holds, moving, share, sent)
 			return err
 		}
 		holds = a.Holds(f.Self)
 		for b := range holds {
 			moving[b] = a.Owners[b].State == BucketMoving
 		}
+		share = SpreadShare{Mine: len(a.RunsOn(f.Self)), Budget: a.SearchBudget}
+		for _, o := range a.Owners {
+			if o.Node != "" && o.State == BucketRun {
+				share.Assigned++
+			}
+		}
 	}
-	f.set(holds, moving, sent)
+	f.set(holds, moving, share, sent)
 	return nil
 }
 
-func (f *Follower) set(holds map[int]int64, moving map[int]bool, at time.Duration) {
+func (f *Follower) set(holds map[int]int64, moving map[int]bool, share SpreadShare, at time.Duration) {
 	f.mu.Lock()
-	f.holds, f.moving, f.readAt, f.read = holds, moving, at, true
+	f.holds, f.moving, f.share, f.readAt, f.read = holds, moving, share, at, true
 	f.mu.Unlock()
+}
+
+// Share returns this server's part of the tenant's buckets, while the
+// last good read is recent enough.
+func (f *Follower) Share() (SpreadShare, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.fresh() {
+		return SpreadShare{}, false
+	}
+	return f.share, true
+}
+
+// PoolSize is how many workers a server's shared pool gets from its
+// shares of every tenant it runs: its part of the search budget, at least
+// one. DefaultPoolSize while no share says the budget.
+func PoolSize(shares []SpreadShare) int {
+	mine, assigned, budget := 0, 0, 0
+	for _, s := range shares {
+		mine, assigned, budget = mine+s.Mine, assigned+s.Assigned, max(budget, s.Budget)
+	}
+	if budget <= 0 || assigned <= 0 {
+		return DefaultPoolSize
+	}
+	return min(max((budget*mine+assigned-1)/assigned, 1), budget)
 }
 
 // fresh reports whether the last good read is recent enough; f.mu held.

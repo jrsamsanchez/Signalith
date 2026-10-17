@@ -41,6 +41,7 @@ type detSpread struct {
 	sched    *detect.Scheduler
 	tenant   string
 	prints   *detPrints
+	pool     *detPool
 	files    func() string
 }
 
@@ -49,8 +50,14 @@ type detSpread struct {
 // one made like it, for the buckets assigned to this server. Both read
 // and write the tenant's own runtime index, from which the follower reads
 // the tenant's assignment only.
-func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligible bool, leader, spread *detect.Scheduler, prints *detPrints, files func() string, log *slog.Logger) *detSpread {
-	ds := &detSpread{sched: spread, tenant: tenant, prints: prints, files: files}
+//
+// Every tenant's spread scheduler on this server takes its workers from
+// pool, and the leader writes the search budget from the setting, or
+// OpenSearch's search threads.
+func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligible bool, leader, spread *detect.Scheduler, prints *detPrints, pool *detPool,
+	threads func(context.Context) (int, error), files func() string, log *slog.Logger) *detSpread {
+	ds := &detSpread{sched: spread, tenant: tenant, prints: prints, pool: pool, files: files}
+	spread.Pool = pool.pool
 	ds.follower = &detect.Follower{Tenant: tenant, Self: node.ID(), Runtime: spread.Runtime, RuntimeIndex: spread.RuntimeIndex, Log: log}
 	spread.Tenant, spread.Owned, spread.Moving = tenant, ds.follower.Owned, ds.follower.Moving
 	spread.NodeID, spread.ClusterNow, spread.Epoch = node.ID(), node.ClusterNow, node.Lease().Epoch
@@ -70,6 +77,7 @@ func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligibl
 			return out
 		},
 		Now: node.ClusterNow, Log: log, Resume: leader.Forget,
+		Budget: func(ctx context.Context) int { return pool.budget(ctx, leader.SearchBudgetSetting(), threads) },
 	}
 	// The job holder's own scheduler runs the rules only while none are
 	// spread.
@@ -82,6 +90,7 @@ func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligibl
 func (ds *detSpread) follow(ctx context.Context, jobs *sync.WaitGroup) {
 	jobs.Go(func() { ds.follower.Run(ctx, followTick) })
 	jobs.Go(func() { ds.sched.Start(ctx) })
+	ds.pool.add(ctx, jobs, ds.follower)
 	ds.publish(ctx, jobs)
 }
 

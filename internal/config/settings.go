@@ -433,6 +433,10 @@ var Registry = []Setting{
 	{Key: "detections.spread", Scope: ScopeCluster, Section: "detections", Label: "Spread detections over servers", Type: TypeBool,
 		Help: "Run detections on every server that may run background work, each rule on one of them, instead of all on one server. " +
 			"Takes effect once every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
+	{Key: "detections.search_budget", Scope: ScopeCluster, Section: "detections", Label: "Detection searches at once", Type: TypeNumber, Min: intp(0), Max: intp(4096),
+		Help: "While detections are spread over servers, how many detection searches all servers together run at once; each server runs its share. " +
+			"Empty or 0 means half the searches OpenSearch can run at once. Servers run fewer for a while when OpenSearch is slow.",
+		Placeholder: "automatic", EmptyMeans: "automatic"},
 	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
 		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +

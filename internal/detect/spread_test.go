@@ -505,3 +505,56 @@ func TestFollowerMoving(t *testing.T) {
 		t.Error("busy buckets")
 	}
 }
+
+// TestAssignerSearchBudget: the assignment carries the search budget
+// while the detections are spread, and each follower reads its share.
+func TestAssignerSearchBudget(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	ta := newTestAssigner(rs)
+	budget := 12
+	ta.Budget = func(context.Context) int { ta.mu.Lock(); defer ta.mu.Unlock(); return budget }
+	ta.servers = []SpreadServer{server("a"), server("b")}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs).SearchBudget; got != 12 {
+		t.Fatalf("budget %d, want 12", got)
+	}
+	ta.mu.Lock()
+	budget = MaxSearchBudget + 1
+	ta.mu.Unlock()
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs).SearchBudget; got != MaxSearchBudget {
+		t.Fatalf("budget %d, want it capped at %d", got, MaxSearchBudget)
+	}
+	total := 0
+	for _, id := range []string{"a", "b"} {
+		f := &Follower{Tenant: "acme", Self: id, Runtime: rs, RuntimeIndex: "rt"}
+		if err := f.Read(ctx); err != nil {
+			t.Fatal(err)
+		}
+		s, ok := f.Share()
+		if !ok || s.Assigned != Buckets || s.Budget != MaxSearchBudget || s.Mine == 0 {
+			t.Fatalf("%s's share %+v", id, s)
+		}
+		total += s.Mine
+	}
+	if total != Buckets {
+		t.Errorf("shares add up to %d buckets", total)
+	}
+	ta.on = false
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAssignment(t, rs).SearchBudget; got != 0 {
+		t.Errorf("budget %d written while nothing is spread", got)
+	}
+	bad := readAssignment(t, rs)
+	bad.SearchBudget = -1
+	if err := bad.Check("acme"); err == nil {
+		t.Error("a negative budget passed the checks")
+	}
+}
