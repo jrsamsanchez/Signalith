@@ -942,6 +942,7 @@ func Cases(r *Rule) []sigmacheck.Case {
 			}
 		}
 	}
+	out = append(out, r.elsewhere(out)...)
 	// Events that differ only in a field the rule ignores may come out
 	// the same; each is tested once.
 	seen := map[string]bool{}
@@ -965,6 +966,10 @@ func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
 	for _, ev := range evs {
 		if r.Threshold != nil {
 			countable(r.Threshold, ev)
+		}
+		if f := r.iplocationField(); f != "" && ev[f] == "" {
+			// An address the test GeoIP database locates to a city.
+			ev[f] = TestIP
 		}
 		cs := r.records(ev)
 		for _, c := range cs {

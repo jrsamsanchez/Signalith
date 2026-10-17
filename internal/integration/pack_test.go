@@ -46,6 +46,9 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		}
 	}
 	eng.Lookups, _ = lookuptables.Open("")
+	// The splunk pack's iplocation rules read the GeoIP database their
+	// test events were made with.
+	eng.GeoIP = splcheck.TestGeoIP()
 	byID := map[string]*detect.Detection{}
 	for _, d := range dets {
 		byID[d.ID] = d

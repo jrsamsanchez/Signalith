@@ -234,8 +234,8 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	var present []Expr
 	var post []string
 	for i, s := range stages[1:] {
-		if IsOktaTstatsNode(r.Node) && iplocationRe.MatchString(s) {
-			// iplocation only adds columns.
+		if IsOktaTstatsNode(r.Node) && iplocationRe.MatchString(s) && !readsLocation(stages[2+i:]) {
+			// iplocation only adds columns, which no later stage reads.
 			continue
 		}
 		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
@@ -273,7 +273,14 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		}
 	}
 	if post != nil {
-		group, err := tstatsGroup(m[1], m[5])
+		aggs := m[1]
+		if IsOktaTstatsNode(r.Node) {
+			var err error
+			if aggs, err = oktaAggs(aggs, fields, post); err != nil {
+				return nil, err
+			}
+		}
+		group, err := tstatsGroup(aggs, m[5])
 		if err != nil {
 			return nil, err
 		}

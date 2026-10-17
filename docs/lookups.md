@@ -215,6 +215,20 @@ time a search uses it, and is checked before use; a damaged file, one larger tha
 512 MB, or a database of another kind (such as ASN) is not used, and the server log
 says why while searches keep the file they had.
 
+Without a database, a search that runs `iplocation` fails with "iplocation needs a
+GeoIP database" rather than returning rows without locations. That includes the
+detections that run it (the Splunk pack's rules tagged `geoip`, see
+[Detections](detections.md#geoip-and-iplocation)): each run fails, the detection shows
+the error as its last error, and that run finds nothing, so add the database before
+turning them on. Runs that start while the server is still reading its first database
+wait for it and are tried again.
+
+`iplocation` adds only the fields the database has a value for: an address it locates
+to its country only gets `Country` and no `City`, and a private address or one it does
+not list gets none. (Splunk's `iplocation` gives a located address all five fields,
+empty when the database has no value; the Splunk pack's rules are converted to do the
+same.)
+
 ## Tables that come with content packs
 
 Some [Splunk Security Content](detections.md#splunk-security-content) rules look

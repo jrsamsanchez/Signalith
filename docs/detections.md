@@ -732,15 +732,18 @@ an event's targets (`target.displayName`) reads each target's value
 `okta_password_in_alternateid_field` uses `^` inside a regular expression's
 alternatives, so they are left out.
 
-The Splunk pack adds 12 Okta detections (see
+The Splunk pack adds 13 Okta detections (see
 [Splunk Security Content](#splunk-security-content)). Five search the `okta` macro by
 Okta's field names (`eventType`, `outcome.result`) and the CIM fields Splunk's add-on
-gives an event (`user`, `src`, `signature`). Seven are `tstats` searches of the
+gives an event (`user`, `src`, `signature`). Eight are `tstats` searches of the
 Authentication or Change data model whose only data source is Okta: they read the same
 CIM fields of Okta's events (`Authentication.action`, `All_Changes.command`), limited to
-`sourcetype=OktaIM2:log`. Experimental, hunting and correlation rules, two that need
-`iplocation` to name a city and one that uses a command Signalith doesn't run are left
-out. To read the System Log, see [Okta](okta.md).
+`sourcetype=OktaIM2:log`. One of them, `okta_user_logins_from_multiple_cities`, counts
+the cities an account signs in from with `iplocation`, and needs a GeoIP database (see
+[GeoIP and iplocation](#geoip-and-iplocation)). Experimental, hunting and correlation
+rules and one that reads every field after `iplocation` and uses a syntax Signalith
+doesn't run (`okta_mismatch_between_source_and_response_for_verify_push_request`) are
+left out. To read the System Log, see [Okta](okta.md).
 
 ### Kubernetes
 
@@ -758,7 +761,7 @@ fire only when the audit policy records request bodies. Every rule searches
 `sourcetype=_json source=kubernetes`. `kubernetes_audit_potential_enumeration_activity`
 is experimental, and is left out.
 
-The Splunk pack adds 11 Kubernetes detections (see
+The Splunk pack adds 13 Kubernetes detections (see
 [Splunk Security Content](#splunk-security-content)), the production rules that search
 the `kube_audit` macro: by the Event's fields as Splunk reads its JSON (`verb`,
 `objectRef.resource`, `requestObject.spec.type`, `user.username`, which reads
@@ -766,8 +769,10 @@ the `kube_audit` macro: by the Event's fields as Splunk reads its JSON (`verb`,
 `requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration`,
 searched for `"privileged":true` and `"hostNetwork":true`. Four read an allowed list
 macro (`kube_allowed_user_agents`, `kube_allowed_images` and the like), shipped with
-Splunk's sample values. Two rules that group by the country and city `iplocation`
-names, one that compares the country, the Falco rule, the metrics and Splunk Connect for
+Splunk's sample values. Two count refused anonymous requests by the country and city
+`iplocation` names, and need a GeoIP database (see
+[GeoIP and iplocation](#geoip-and-iplocation)). One that compares the country after a
+`fillnull` of every field (`kubernetes_abuse_of_secret_by_unusual_location`), the Falco rule, the metrics and Splunk Connect for
 Kubernetes object rules, and experimental and hunting rules are left out. To send the
 audit log, see [Kubernetes audit logs](kubernetes-audit.md).
 
@@ -821,7 +826,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,269 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,272 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -912,6 +917,41 @@ than Splunk's: a table row with a pattern before a row it also matches under
 give compared with a value or counted by, more matching rows than Signalith's
 lookup takes (100), more than 2,000 rows with patterns, or a table security_content
 does not ship as a CSV file (KV store lookups such as `identity_lookup_expanded`).
+
+#### GeoIP and iplocation
+
+Three rules group or count by where an address is, with `iplocation`:
+`kubernetes_access_scanning` and `kubernetes_scanning_by_unauthenticated_ip_address`
+(more than 5 refused anonymous requests from one address, by its `Country` and
+`City`) and `okta_user_logins_from_multiple_cities` (one account signing in from more
+than one `City`). **They need a GeoIP database, which an admin adds**: Splunk ships
+one (DB-IP's IP to City Lite), Signalith doesn't. Put a City database (`.mmdb`, such
+as DB-IP's IP to City Lite or MaxMind's GeoLite2 City) in the `geoip` folder next to
+the lookup tables on each server (see
+[GeoIP database for iplocation](lookups.md#geoip-database-for-iplocation)) before
+turning them on. Without one, each run fails with "iplocation needs a GeoIP database",
+which the detection shows as its last error, and finds nothing, rather than running
+without locations; their triage guidance says so, and they are tagged `geoip`. Runs
+that start while the server is still reading the database wait and are tried again.
+
+The rules read the database as Splunk's `iplocation` does. An address the database
+locates gets `City`, `Region`, `Country`, `lat` and `lon`, each empty when the
+database has no value for it (an address located only to its country has an empty
+`City`, so `stats ... by Country City` keeps it as it does in Splunk, and `dc(City)`
+counts the empty city as one); a private address, one the database does not list, or
+text that is not an address gets none of them (so `stats ... by City` drops it), and a
+field the event already had keeps its value. Signalith's own `iplocation` adds only
+the fields that have a value, so each rule's conversion adds the empty ones. A list of
+addresses (Kubernetes' `sourceIPs`) is located by its first, the client's. What a
+rule finds still depends on the database: two versions, or DB-IP's and MaxMind's,
+place some addresses in different cities, which is true of Splunk too. Where an
+address has no country of its own, Signalith names its registered country (MaxMind's
+`registered_country`); Splunk's documentation doesn't say whether its `iplocation`
+does. An `iplocation` that no later stage reads (it only adds columns
+to the finding, as in several Okta and Entra ID rules) is left out, so those rules
+need no database. Rules whose stages after `iplocation` read every field of a row
+(`fillnull` with no fields, `values(*)`) are left out: Signalith's rows would have the
+location fields when Splunk's don't.
 
 PowerShell rules, and Sysmon image load, remote thread and process access rules,
 search the events themselves rather than a data model: their event fields become

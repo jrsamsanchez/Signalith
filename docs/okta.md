@@ -150,14 +150,17 @@ activity users reported. Two SigmaHQ Okta rules are left out: `okta_user_created
 informational, and `okta_password_in_alternateid_field` uses a regular expression
 Signalith can't read exactly.
 
-The Splunk Security Content pack has 12 Okta rules: failed MFA challenges, MFA turned
+The Splunk Security Content pack has 13 Okta rules: failed MFA challenges, MFA turned
 off, identity provider changes, many accounts locked out, many failed MFA requests for
 one user, many users failing to sign in from one address, new API tokens, new devices
 enrolled, sign-ins with only one factor, suspicious activity reported, ThreatInsight
-threats and unauthorized access to apps. Of the 21 Splunk rules for Okta, 9 are left out:
-4 are experimental, one is a hunting search and one a correlation search, two need
-`iplocation` to name a city (Signalith has no city database), and one uses a command
-Signalith doesn't run (`REPORT.md` in the pack lists each). Turn them on from each pack's
+threats, unauthorized access to apps, and one account signing in from more than one
+city. That last one names the city with `iplocation`, so it needs a GeoIP database an
+admin adds (see [GeoIP database for iplocation](lookups.md#geoip-database-for-iplocation));
+without one each run fails with an error the detection shows. Of the 21 Splunk rules
+for Okta, 8 are left out: 4 are experimental, one is a hunting search and one a
+correlation search, and the others use stages Signalith doesn't run exactly
+(`REPORT.md` in the pack lists each). Turn them on from each pack's
 page like any other rules.
 
 ## When nothing arrives
