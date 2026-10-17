@@ -179,6 +179,10 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["logon_process"] = strings.TrimSpace(at(in, 11))
 			f["process_path"] = at(in, 18)
 			f["process_name"] = baseName(at(in, 18))
+			// The account that asked for the logon, as for 4624.
+			f["src_user_sid"] = at(in, 0)
+			f["src_user"] = at(in, 1)
+			f["src_user_domain"] = at(in, 2)
 			sub := strings.ToLower(at(in, 9))
 			if reason, ok := windowsFailureReasons[sub]; ok {
 				f["reason"] = reason
@@ -452,6 +456,7 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["action"] = "modified"
 		f["object_category"] = "directory_object"
 		f["signature"] = "A directory service object was modified"
+		f["user_sid"] = at(in, 2)
 		f["user"] = at(in, 3)
 		f["user_domain"] = at(in, 4)
 		f["logon_id"] = at(in, 5)

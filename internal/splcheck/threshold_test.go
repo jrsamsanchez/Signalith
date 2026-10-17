@@ -30,6 +30,17 @@ func TestParseThreshold(t *testing.T) {
 			"`sysmon` EventCode IN (\"23\",\"26\") TargetFilename=\"*.doc\" | stats count min(_time) as firstTime, max(_time) as lastTime by action dest dvc signature signature_id user user_id vendor_product | where count >=100",
 			Threshold{By: []string{"action", "dest", "signature_id", "user"}, Aggs: []Agg{{"count", "count", ""}}, Limits: []Limit{{"count", ">=", 100}}},
 		},
+		{
+			// A bucket before a count not by _time only rounds the events'
+			// times: the count is over the whole search, as without it.
+			"`sysmon` EventCode IN (\"23\",\"26\") TargetFilename=\"*.doc\" | bin _time span=2m | stats count min(_time) as firstTime, max(_time) as lastTime by action dest dvc signature signature_id user user_id vendor_product | where count >=100",
+			Threshold{By: []string{"action", "dest", "signature_id", "user"}, Aggs: []Agg{{"count", "count", ""}}, Limits: []Limit{{"count", ">=", 100}}},
+		},
+		{
+			// A count by another name, and the subject of a failed logon.
+			"`wineventlog_security` EventCode=4625 | bucket span=5m _time | stats count as failures dc(TargetUserName) AS n BY _time, SubjectUserName | where failures >= 5 and n > 2",
+			Threshold{Span: 5 * time.Minute, By: []string{"src_user"}, Aggs: []Agg{{"failures", "count", ""}, {"n", "dc", "user"}}, Limits: []Limit{{"failures", ">=", 5}, {"n", ">", 2}}},
+		},
 	} {
 		r, err := Parse(rule(c.search), nil)
 		if err != nil {

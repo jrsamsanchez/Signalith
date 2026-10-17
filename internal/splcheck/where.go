@@ -318,6 +318,12 @@ func (p *parser) primary() (Expr, error) {
 			return nil, fmt.Errorf("%s IN needs a list", t.text)
 		}
 		p.i++
+		skip(true)
+		if p.peek().text == "," && !p.peek().macro {
+			// Splunk's content writes IN (,"a","b",) and Splunk runs it;
+			// a comma right after "(" adds no value, as one before ")".
+			p.i++
+		}
 		var vals []string
 		for {
 			skip(true)

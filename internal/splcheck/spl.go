@@ -421,11 +421,13 @@ var (
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
 			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": RawUser,
 		},
-		// A successful logon; the add-on names the logon type Logon_Type.
+		// A logon, or a failed one; the add-on names the logon type
+		// Logon_Type. Its subject is the account that asked for it.
 		"Logon": {
 			"LogonType": "logon_type", "Logon_Type": "logon_type", "TargetUserName": "user",
 			"AuthenticationPackageName": "authentication_method", "LogonProcessName": "logon_process",
 			"IpAddress": "src", "WorkstationName": "src_host", "ProcessName": "process_path",
+			"SubjectUserName": "src_user", "SubjectUserSid": "src_user_sid", "SubjectDomainName": "src_user_domain",
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 		"ObjectAccess": {
@@ -438,7 +440,7 @@ var (
 		"DirectoryChange": {
 			"ObjectDN": "object", "ObjectGUID": "ad_object_guid", "ObjectClass": "ad_object_class",
 			"AttributeLDAPDisplayName": "ad_attribute", "AttributeValue": "ad_value", "OperationType": "ad_operation",
-			"SubjectUserName": "user",
+			"SubjectUserName": "user", "SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain",
 		},
 		"ShareAccess": {
 			"ShareName": "share_name", "ShareLocalPath": "share_path", "RelativeTargetName": "share_target",
@@ -877,6 +879,13 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	} else {
 		where = top[0]
 	}
+	if source == "powershell" && countField(where, eventCode) == 0 && requires(where, rawFieldPrefix+"ScriptBlockText") {
+		// Of the events of the channels the powershell macro reads, only
+		// a script block (4104) has ScriptBlockText: a search that needs
+		// it finds only those, its code named or not.
+		top = append([]Expr{&Cmp{Field: eventCode, Values: []string{"4104"}}}, top...)
+		where = &And{Kids: top}
+	}
 	var code *Cmp
 	switch source {
 	case "linux_auditd":
@@ -1072,6 +1081,21 @@ func countField(e Expr, f string) int {
 		}
 	}
 	return n
+}
+
+// requires reports whether every event e matches has field f: a
+// comparison of f (= and != alike need the field, as in Splunk), in every
+// branch of an OR or some part of an AND.
+func requires(e Expr, f string) bool {
+	switch x := e.(type) {
+	case *And:
+		return slices.ContainsFunc(x.Kids, func(k Expr) bool { return requires(k, f) })
+	case *Or:
+		return len(x.Kids) > 0 && !slices.ContainsFunc(x.Kids, func(k Expr) bool { return !requires(k, f) })
+	case *Cmp:
+		return x.Field == f
+	}
+	return false
 }
 
 func firstWords(s string) string {
