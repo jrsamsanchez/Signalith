@@ -73,8 +73,29 @@ type Config struct {
 	MaxResponseBytes int64
 }
 
-// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes.
+// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes,
+// or than the limit WithMaxResponse put on a request.
 var ErrResponseTooLarge = errors.New("the answer is larger than OpenSearch sends here")
+
+type maxResponseKey struct{}
+
+// WithMaxResponse returns ctx with a cap on the size of each answer read
+// for requests made with it, below Config.MaxResponseBytes if that is
+// set: a request whose answer a sender's data can make huge (an
+// aggregation over their values) fails instead of filling memory.
+func WithMaxResponse(ctx context.Context, n int64) context.Context {
+	return context.WithValue(ctx, maxResponseKey{}, n)
+}
+
+// maxResponse is the cap on one answer to a request made with ctx; 0 for
+// none.
+func (c *Client) maxResponse(ctx context.Context) int64 {
+	limit := c.cfg.MaxResponseBytes
+	if n, ok := ctx.Value(maxResponseKey{}).(int64); ok && n > 0 && (limit <= 0 || n < limit) {
+		limit = n
+	}
+	return limit
+}
 
 // Client is an OpenSearch REST client.
 type Client struct {
@@ -462,14 +483,15 @@ func (c *Client) doOne(ctx context.Context, e *endpoint, method, path string, ra
 	}
 	defer resp.Body.Close()
 	var rd2 io.Reader = resp.Body
-	if limit := c.cfg.MaxResponseBytes; limit > 0 {
+	limit := c.maxResponse(ctx)
+	if limit > 0 {
 		rd2 = io.LimitReader(resp.Body, limit+1)
 	}
 	data, err := io.ReadAll(rd2)
 	if err != nil {
 		return err, failAfterSend
 	}
-	if limit := c.cfg.MaxResponseBytes; limit > 0 && int64(len(data)) > limit {
+	if limit > 0 && int64(len(data)) > limit {
 		return fmt.Errorf("%s at %s: %w", path, e.shown, ErrResponseTooLarge), failNone
 	}
 	if resp.StatusCode/100 == 3 {
