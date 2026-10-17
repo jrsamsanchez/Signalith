@@ -232,7 +232,8 @@ How a sign-in goes (the Web Browser SSO profile):
       its own (IdP-initiated) are refused, since nothing ties them to the browser.
     - the issuer, the audience (Signalith's entity ID), the recipient and destination (the
       ACS URL), and the time limits, allowing 3 minutes of clock difference.
-    - that the assertion was not used before: each is accepted once, until it expires.
+    - that the assertion was not used before: each is accepted once, on every server (see
+      [Several servers](#several-servers)).
 4. Signalith starts an ordinary session, as with OpenID Connect.
 
 Encrypted assertions are not supported; the response travels over HTTPS. SAML needs
@@ -397,9 +398,13 @@ Register the redirect URI of the address people use, normally the load balancer'
 [load-balancers.md](load-balancers.md)). The sign-in can start and finish on different
 servers. A browser that opens Signalith by another address is sent to that address first,
 so the sign-in cookie is where the provider sends the browser back. With SAML, register
-the load balancer's address the same way. Each server remembers the SAML assertions it
-accepted. Replaying one to another server would also need the HttpOnly sign-in cookie of
-the browser it was made for, since every assertion answers that browser's own request.
+the load balancer's address the same way. A SAML assertion is accepted once across every
+server. The server that accepts it records it in OpenSearch, and a record OpenSearch
+already holds refuses it on every other server, even when two servers get it at the same
+moment. If that record can't be written, for example while OpenSearch is down or refuses
+writes, the SAML sign-in is refused ("Signalith couldn't save your sign-in"). People can
+try again once OpenSearch is back. Records are deleted an hour after their assertion
+expires.
 
 ## Setting it in signalith.yaml
 

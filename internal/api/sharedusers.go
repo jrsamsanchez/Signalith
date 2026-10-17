@@ -38,6 +38,9 @@ type SharedUsers struct {
 	// APITokens says why API tokens cannot be made now (the cluster is
 	// below their level), "" when they can; nil is always.
 	APITokens func() string
+	// Spent records the sign-in proofs used once, such as SAML
+	// assertions, for every server; nil keeps only this server's record.
+	Spent *clusterauth.Spent
 }
 
 var _ SessionStore = (*clusterauth.Sessions)(nil)

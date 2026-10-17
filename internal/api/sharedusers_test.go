@@ -172,7 +172,8 @@ func (c *memberCluster) newMember(t *testing.T, name string, key *shared.Cluster
 				return *p
 			}
 			return ""
-		}, WritesRefused: m.writesRefused.Load, MayDegrade: m.sessions.MayDegrade}
+		}, WritesRefused: m.writesRefused.Load, MayDegrade: m.sessions.MayDegrade,
+			Spent: &clusterauth.Spent{Docs: m.docs, Client: c.client, Node: "n_" + name}}
 		if change != nil {
 			change(s)
 		}
