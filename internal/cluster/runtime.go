@@ -211,6 +211,11 @@ type Heartbeat struct {
 	// background jobs gives a tenant's detection buckets only to servers
 	// whose fingerprint matches its own.
 	DetTenants map[string]string `json:"det_tenants,omitempty"`
+	// DetReleased is, per tenant, the detection buckets this server is
+	// handing over and has no run of in flight, each with the detection
+	// epoch it held it under: the server running the background jobs then
+	// gives them to their new owner at once.
+	DetReleased map[string]map[int]int64 `json:"det_released,omitempty"`
 	// IndexedAt is the last time this server stored an event; nil before
 	// the first, and from versions before it was kept, which do not list
 	// FeatureIndexedAt (see Node.IndexingServers).

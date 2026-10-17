@@ -2070,11 +2070,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			HolderFingerprints: func(holder string, fp cluster.Fingerprints) cluster.Fingerprints {
 				return holderFingerprints(fp, holder, r.shared, sharedOn)
 			},
-			Indexed:    pipeline.LastIndexed,
-			TLS:        tlsStatus,
-			OSIdentity: osIdentity,
-			Busy:       jobsBusy(ret, r.shared),
-			DetTenants: r.detPrints.all,
+			Indexed:     pipeline.LastIndexed,
+			TLS:         tlsStatus,
+			OSIdentity:  osIdentity,
+			Busy:        jobsBusy(ret, r.shared),
+			DetTenants:  r.detPrints.all,
+			DetReleased: r.detPrints.released,
 		}
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {

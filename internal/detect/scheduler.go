@@ -104,6 +104,10 @@ type Scheduler struct {
 	// epoch. Tenant is the tenant the rules hash with.
 	Owned  func() (buckets map[int]int64, ok bool)
 	Tenant string
+	// Moving, when set, reports whether this server is handing bucket b
+	// over: it starts no new slot of it, while the runs in flight finish
+	// and may still write under its epoch.
+	Moving func(bucket int) bool
 
 	mu sync.Mutex
 	// flags are this server's running and waiting runs.
@@ -452,7 +456,7 @@ func (s *Scheduler) dispatch(ctx context.Context, wg *sync.WaitGroup) {
 	limit := s.CatchUpLimit()
 	var current, catchup []batch
 	for _, d := range s.Library.List() {
-		if _, mine := s.ownsRule(d.ID); !mine {
+		if !s.startsRule(d.ID) {
 			continue
 		}
 		b, ok := s.plan(ctx, d, now, limit, epoch, first)
@@ -532,8 +536,7 @@ func (s *Scheduler) runBatch(ctx context.Context, b batch, epoch int64, workers,
 		if b.current {
 			got()
 		}
-		_, mine := s.ownsRule(b.d.ID)
-		ok := ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && mine
+		ok := ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && s.startsRule(b.d.ID)
 		var err error
 		if ok {
 			s.setFlags(b.d.ID, runFlags{running: true})

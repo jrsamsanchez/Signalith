@@ -13,7 +13,7 @@ import (
 func TestDetPrints(t *testing.T) {
 	p := newDetPrints()
 	calls := 0
-	p.set("acme", func() string { calls++; return "fp1" })
+	p.set("acme", func() string { calls++; return "fp1" }, nil)
 	if got := p.all(); got["acme"] != "fp1" || calls != 1 {
 		t.Fatalf("%v, %d calls", got, calls)
 	}
@@ -21,8 +21,8 @@ func TestDetPrints(t *testing.T) {
 	if calls != 1 {
 		t.Error("the files were hashed again within a minute")
 	}
-	old := p.set("acme", func() string { return "fp1" })
-	p.set("acme", func() string { return "fp2" })
+	old := p.set("acme", func() string { return "fp1" }, nil)
+	p.set("acme", func() string { return "fp2" }, nil)
 	p.drop("acme", old)
 	if got := p.all(); got["acme"] != "fp2" {
 		t.Errorf("an earlier start's drop took the new start's fingerprint: %v", got)
