@@ -124,6 +124,8 @@ func describeExpr(e query.Expr) string {
 		return "not " + describeExpr(e.Child)
 	case *query.Text:
 		return fmt.Sprintf("the raw event contains %q", e.Value)
+	case *query.Subsearch:
+		return "the fields match a row of the subsearch [" + e.Query.String() + "]"
 	case *query.In:
 		return fmt.Sprintf("%s is one of %s", e.Field, strings.Join(e.Values, ", "))
 	case *query.Compare:

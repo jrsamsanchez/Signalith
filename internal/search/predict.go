@@ -19,6 +19,10 @@ func (e *Engine) setSearch(ctx context.Context, c *query.Set, outer *query.Query
 	var subs [2]*Result
 	for i, s := range c.Subs {
 		sq := subsearch(s, outer)
+		sq, err := e.resolveSubsearches(ctx, sq)
+		if err != nil {
+			return nil, err
+		}
 		p, err := e.compile(sq)
 		if err != nil {
 			return nil, err

@@ -25,7 +25,8 @@ const (
 	tokLParen
 	tokRParen
 	tokComma
-	tokRaw // the unlexed text of an eval or where command
+	tokRaw       // the unlexed text of an eval or where command
+	tokSubsearch // the text inside a [ ] in a search, without the brackets
 )
 
 func (k tokenKind) String() string {
@@ -48,6 +49,8 @@ func (k tokenKind) String() string {
 		return ","
 	case tokRaw:
 		return "expression"
+	case tokSubsearch:
+		return "subsearch"
 	}
 	return "?"
 }
@@ -141,6 +144,11 @@ func lex(src string) ([]token, error) {
 				return nil, errorf(start, "unterminated quoted string")
 			}
 			toks = append(toks, token{tokString, b.String(), start})
+		case c == '[' && (len(toks) == 0 || toks[len(toks)-1].kind != tokOp && toks[len(toks)-1].kind != tokComma) && bracketEnd(src, i) > 0:
+			// A subsearch: its results become terms of the search.
+			end := bracketEnd(src, i)
+			toks = append(toks, token{tokSubsearch, src[i+1 : end-1], i + 1})
+			i = end
 		default:
 			start := i
 			for i < len(src) {
@@ -279,4 +287,27 @@ func bracketsBalance(s string) bool {
 		}
 	}
 	return depth == 0
+}
+
+// bracketEnd returns the index just past the ] that closes the [ at i,
+// counting brackets outside double quotes, or -1 when none does.
+func bracketEnd(src string, i int) int {
+	depth := 0
+	for i < len(src) {
+		switch src[i] {
+		case '"':
+			if end, ok := quoteEnd(src, i, '"', false); ok {
+				i = end
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return -1
 }

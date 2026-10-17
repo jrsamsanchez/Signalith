@@ -31,6 +31,7 @@ datamodel=Authentication action=failure earliest=-24h
 | `"a.b"=value`, `"a{}" IN (x, y)` | A field name in quotes, as Splunk writes names with dots or braces |
 | `word` or `"a phrase"` | Text anywhere in the raw event (`_raw`) |
 | `NOT term`, `( ... )` | Negation and grouping |
+| `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. It may give at most 1,000 values; narrow it with `fields`, `dedup` or `head` |
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
 | `earliest=-7d@d latest=now` | Time range; overrides the UI time picker |
 

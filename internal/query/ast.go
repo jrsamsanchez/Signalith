@@ -54,6 +54,13 @@ type In struct {
 // Text is a free-text term matched against the raw event.
 type Text struct{ Value string }
 
+// Subsearch is a search in [ ] among a search's terms. It runs first,
+// and its result rows become terms: each row the AND of its fields'
+// values, the rows ORed, as Splunk's format command writes them.
+type Subsearch struct{ Query *Query }
+
+func (e *Subsearch) String() string { return "[search " + e.Query.String() + "]" }
+
 func (e *And) String() string { return "(" + joinExprs(e.Children, " AND ") + ")" }
 func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")" }
 func (e *Not) String() string { return "NOT " + e.Child.String() }

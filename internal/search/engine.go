@@ -281,6 +281,26 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	if hasSubsearchTerms(q) {
+		// The subsearches among the terms run when the search does;
+		// until then they compile on their own and match everything.
+		var bad error
+		check := func(s *query.Subsearch) {
+			if _, err := e.Compile(subsearch(s.Query, q)); err != nil && bad == nil {
+				bad = err
+			}
+		}
+		query.WalkSubsearches(q.Search, check)
+		for _, c := range q.Commands {
+			if w, ok := c.(*query.Where); ok {
+				query.WalkSubsearches(w.Expr, check)
+			}
+		}
+		if bad != nil {
+			return nil, bad
+		}
+		q = withoutSubsearches(q)
+	}
 	p, err := e.compile(q)
 	if err != nil {
 		return nil, err
@@ -712,7 +732,16 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.run(withEvaluator(ctx), q, p)
+	ctx = withEvaluator(ctx)
+	if hasSubsearchTerms(q) {
+		if q, err = e.resolveSubsearches(ctx, q); err != nil {
+			return nil, err
+		}
+		if p, err = e.Compile(q); err != nil {
+			return nil, err
+		}
+	}
+	res, err := e.run(ctx, q, p)
 	if err != nil {
 		return nil, err
 	}
