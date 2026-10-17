@@ -123,8 +123,8 @@ once, the extra requests wait their turn and then get 503, so Fluent Bit sends t
 A server writes 32 batches at once (`ingest.max_concurrent`, under Settings > Web; lower it
 on a server with little memory). While others wait, one agent token gets at most a quarter
 of them, so one busy agent cannot hold up the rest. In [multi-tenant mode](multi-tenant.md)
-each tenant currently has its own 32 slots and 256 MB, and this setting applies only to the
-default tenant.
+these slots, and the memory for batches arriving described below, are shared by all tenants,
+and no one tenant takes more than half of either while others wait.
 
 A batch is read in full before it waits for its turn, so a slow sender never holds up
 other agents. Batches still arriving may hold 256 MB of memory in all, and one sender (an

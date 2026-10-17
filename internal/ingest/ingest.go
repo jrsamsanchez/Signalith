@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,13 +82,23 @@ type Pipeline struct {
 	// MaxEventAge is how old an event's own time may be and still be its
 	// event time (zero: DefaultMaxEventAge); see TimeUsable.
 	MaxEventAge time.Duration
+	// Limits, when set, are the ingest slots and receive budget this
+	// pipeline shares with others, such as every tenant's pipeline; then
+	// MaxConcurrent and MaxReceiving are not used. nil gives the pipeline
+	// Limits of its own.
+	Limits *Limits
+	// Tenant is the tenant whose events this pipeline takes, "" for the
+	// default tenant: what its requests are counted under in Limits.
+	Tenant string
 	// MaxConcurrent caps the ingest requests Admit lets in at once
-	// (default DefaultMaxConcurrent). Memory is capped by MaxReceiving;
-	// this bounds how many bulk writes run against OpenSearch together.
+	// (default DefaultMaxConcurrent) when Limits is nil. Memory is capped
+	// by MaxReceiving; this bounds how many bulk writes run against
+	// OpenSearch together.
 	MaxConcurrent int
 	// MaxReceiving caps the memory request bodies hold, from their first
-	// byte until they have been written (default DefaultMaxReceiving); one
-	// sender may hold a quarter of it. See ReadBody.
+	// byte until they have been written (default DefaultMaxReceiving),
+	// when Limits is nil; one sender may hold a quarter of it. See
+	// ReadBody.
 	MaxReceiving int64
 	// Custom parses the records sent under a custom parser's tag
 	// (CustomTagPrefix); nil leaves them to the built-in parsers. Set it
@@ -121,20 +130,15 @@ type Pipeline struct {
 	names   fieldBudget
 	procs   ProcessTracker
 	counter fieldCounter
-	slotsMu sync.Mutex
-	slots   *slots
-	warnMu  sync.Mutex
-	warned  map[string]time.Time
+	// ownLimits are the pipeline's own Limits, when Limits is nil.
+	ownLimitsOnce sync.Once
+	ownLimits     *Limits
+	warnMu        sync.Mutex
+	warned        map[string]time.Time
 
 	// plaintext lists the agents that sent over plain HTTP, and refused
 	// the ones whose batches were turned away.
 	plaintext, refused senderLog
-
-	// recvUsed is the receive budget in use, and recvBy each sender's
-	// part of it (see ReadBody).
-	recvMu   sync.Mutex
-	recvUsed int64
-	recvBy   map[netip.Addr]int64
 }
 
 // Stats counts what the pipeline has processed since start, for the health page.

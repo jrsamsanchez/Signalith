@@ -56,6 +56,9 @@ type tenantRuntime struct {
 	// keeps tenants (shared.LevelTenants).
 	leader   func() bool
 	sharedOK func() bool
+	// limits are the ingest slots and receive budget the default tenant's
+	// pipeline uses, which every tenant's pipeline shares.
+	limits *ingest.Limits
 
 	// changing makes Changed one at a time; mu guards running, which
 	// requests read while a tenant starts.
@@ -76,8 +79,8 @@ type tenantInstance struct {
 	jobs   sync.WaitGroup
 }
 
-func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server) *tenantRuntime {
-	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, running: map[string]*tenantInstance{}}
+func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server, limits *ingest.Limits) *tenantRuntime {
+	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, limits: limits, running: map[string]*tenantInstance{}}
 	t.leader = func() bool { return r.node == nil || r.node.RunsJobs() }
 	return t
 }
@@ -310,7 +313,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Log: log}
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)

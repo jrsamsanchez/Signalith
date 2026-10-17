@@ -347,8 +347,8 @@ func TestAdmitSharesSlotsBetweenTokens(t *testing.T) {
 	for _, r := range busy[1:] {
 		r()
 	}
-	if p.slots.held != 0 || len(p.slots.per) != 0 || len(p.slots.waiting) != 0 {
-		t.Errorf("left held=%d per=%v waiting=%d", p.slots.held, p.slots.per, len(p.slots.waiting))
+	if s := p.limits().slots; s.held != 0 || len(s.per) != 0 || len(s.perTenant) != 0 || len(s.waiting) != 0 || len(s.waitingBy) != 0 {
+		t.Errorf("left %+v", p.limits().slots)
 	}
 }
 
@@ -378,9 +378,10 @@ func TestAdmitTimeoutLeavesNoSlotBehind(t *testing.T) {
 func waitFor(t *testing.T, p *Pipeline, n int) {
 	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		p.slotsMu.Lock()
-		got := len(p.slots.waiting)
-		p.slotsMu.Unlock()
+		l := p.limits()
+		l.slotsMu.Lock()
+		got := len(l.slots.waiting)
+		l.slotsMu.Unlock()
 		if got == n {
 			return
 		}
