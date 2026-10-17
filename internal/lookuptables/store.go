@@ -224,6 +224,10 @@ type Store struct {
 	// packs, when set, are this store's pack tables instead of the ones
 	// SetPackTables gives every store (NewPackStore).
 	packs map[string]*Table
+
+	// outMu runs one Output or PutWithOptions at a time, so rows a
+	// search appends are never lost to another write of the table.
+	outMu sync.Mutex
 }
 
 // Content packs ship tables their rules' lookup stages read. Each is named
@@ -473,6 +477,13 @@ func (s *Store) Put(name string, data []byte) (*Table, error) {
 // PutWithOptions replaces or adds a table from CSV with options for how
 // its key columns match.
 func (s *Store) PutWithOptions(name string, data []byte, opts Options) (*Table, error) {
+	s.outMu.Lock()
+	defer s.outMu.Unlock()
+	return s.put(name, data, opts)
+}
+
+// put is PutWithOptions for a caller that holds outMu.
+func (s *Store) put(name string, data []byte, opts Options) (*Table, error) {
 	if !ValidName(name) {
 		return nil, fmt.Errorf("%q cannot name a lookup table; use lower-case letters, digits, - and _ (up to 64)", name)
 	}

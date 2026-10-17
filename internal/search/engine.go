@@ -207,7 +207,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults, eventcount
 
 	// Summaries lists the data models whose summary indexes the search
 	// reads for whole 5-minute slots.
@@ -350,6 +350,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		if c, ok := cmds[0].(*query.Set); ok {
 			return &Plan{Mode: "set", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.EventCount); ok {
+			return e.eventCountPlan(c, cmds[1:])
 		}
 	}
 
@@ -543,7 +546,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans, *query.OutputLookup:
 			return true
 		}
 	}
@@ -685,6 +688,8 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 		res, err = e.multiSearch(ctx, c, q)
 	case *query.Set:
 		res, err = e.setSearch(ctx, c, q)
+	case *query.EventCount:
+		res, err = e.eventCount(ctx, p)
 	default:
 		res, err = e.fetch(ctx, p)
 	}
@@ -758,6 +763,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.mapSearch(ctx, res, c, q)
 		case *query.AddInfo:
 			err = e.addInfo(ctx, res, q)
+		case *query.OutputLookup:
+			err = e.outputLookup(ctx, res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}

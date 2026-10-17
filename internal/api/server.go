@@ -849,13 +849,22 @@ type searchRequest struct {
 	Query    string `json:"query"`
 	Earliest string `json:"earliest,omitempty"` // time picker; overridden by earliest= in the query
 	Latest   string `json:"latest,omitempty"`
+	// WriteLookups lets the query's outputlookup write, for an admin who
+	// ran it on purpose (the Search page's Run); re-runs leave it out.
+	WriteLookups bool `json:"write_lookups,omitempty"`
 }
 
 func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Query, bool) {
+	q, _, ok := s.parseSearchRequest(w, r)
+	return q, ok
+}
+
+// parseSearchRequest is parseRequest that also returns the request.
+func (s *Server) parseSearchRequest(w http.ResponseWriter, r *http.Request) (*query.Query, searchRequest, bool) {
 	var req searchRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		req.Query = "*"
@@ -863,7 +872,7 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	q, err := query.Parse(req.Query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if q.Earliest == "" {
 		q.Earliest = req.Earliest
@@ -871,16 +880,19 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	if q.Latest == "" {
 		q.Latest = req.Latest
 	}
-	return q, true
+	return q, req, true
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q, ok := s.parseRequest(w, r)
+	q, req, ok := s.parseSearchRequest(w, r)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if req.WriteLookups && mayWriteLookups(principalOf(r)) {
+		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
+	}
 	res, err := s.Engine.Execute(ctx, q)
 	if err != nil {
 		writeSearchError(w, err)

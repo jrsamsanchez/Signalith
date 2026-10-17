@@ -355,6 +355,7 @@ func QueryReference() string {
   bin span=1h _time [AS name]   rounds times down to the span (s m h d w); span=100 on a number gives ranges like 0-100; also bucket
   regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
   | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
+  | eventcount [index=pattern ...] [summarize=false]   starts a search with the number of stored events, or one row per index (count, index)
   append [search <query>]   adds a subsearch's rows after the results
   | tstats <aggs> from datamodel=Endpoint.Processes [where Processes.field=value ...] [by Processes.f1, _time span=1h]   Splunk's tstats: runs as the data model search plus stats; columns keep the Node. prefix; also | tstats count where index=* by sourcetype
   chart [limit=N] <aggs> over f1 [by f2]   one row per f1, one column per f2 value (also chart count by f1, f2)

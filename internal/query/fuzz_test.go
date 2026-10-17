@@ -66,6 +66,8 @@ var fuzzSeeds = []string{
 	`* | anomalydetection | anomalydetection method=zscore action=annotate pthresh=0.05 bytes, "a=b" "c d" | anomalydetection action=summary | correlate | correlate a "b c"`,
 	`* | timechart count | predict count | predict count AS p, "a b" algorithm=llt future_timespan=0 holdback=3 period=7 | predict x upper90=hi lower80="lo w" | setfields a=1, b="c d" e=""`,
 	`| set diff [search a=1 | fields user] [search b="]" | stats count by user] | setfields x=y`, `| set union [x] [y]`, `| SET Intersect [search z | head 1] [w]`,
+	`| eventcount index=signalith-* index="signalith-x-*" summarize=f report_size=false list_vix=0 | head 5`,
+	`* | stats count by user | outputlookup users | outputlookup append=t create_empty=f override_if_empty=0 max=10 "users.csv"`,
 	`* | stats avg(b) as b, count by h | kmeans | kmeans k=5 reps=3 maxiters=50 t=0.001 dt=cos showcentroid=f cfield="c n" b, "a=b" count`,
 	`* | lookup local=t update=0 tools path AS p OUTPUT note | lookup LOCAL=true owners "local" OUTPUTNEW team`,
 	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,

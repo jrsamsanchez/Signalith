@@ -45,6 +45,7 @@ Commands:
   fromjson f [prefix=p]  extract the top-level keys of the JSON in f
   strcat, rangemap, mvcombine, nomv, foreach f_* [eval <<FIELD>>=...]  as in Splunk
   | makeresults [count=N]  start with N rows holding only _time
+  | eventcount [index=pattern] [summarize=false]  start with the number of stored events, or a row per index
   enrich [fields]        add asset and identity context (priority, owner, watchlist)
   threatmatch [fields]   keep events whose fields match threat intel; must come right after the search
   intel [fields]         add threat intel context to any result

@@ -52,6 +52,9 @@ func (q *Query) Drilldown() *Drill {
 	}
 	var pipe strings.Builder
 	for _, c := range q.Commands[:cut] {
+		if _, ok := c.(*OutputLookup); ok {
+			continue // it does not change the rows, and wrote its table already
+		}
 		pipe.WriteString("\n| " + CommandString(c))
 		switch c := c.(type) {
 		case *Where:
@@ -267,7 +270,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Set, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Set, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge, *EventCount:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

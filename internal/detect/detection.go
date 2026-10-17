@@ -124,6 +124,8 @@ func (d *Detection) Validate() error {
 		p = append(p, "query: "+err.Error())
 	} else if q.Earliest != "" || q.Latest != "" {
 		p = append(p, "query must not set earliest= or latest=; use lookback instead")
+	} else if query.WritesLookups(q) {
+		p = append(p, "query must not use outputlookup; detections only read")
 	}
 	sched, err := ParseDuration(d.Schedule)
 	if err != nil {
