@@ -443,6 +443,8 @@ func CommandString(c Command) string {
 		return setString(c)
 	case *SetFields:
 		return setFieldsString(c)
+	case *KMeans:
+		return kmeansString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:

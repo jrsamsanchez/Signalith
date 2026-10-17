@@ -380,6 +380,7 @@ func QueryReference() string {
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   anomalydetection [method=histogram|zscore] [action=filter|annotate|summary] [pthresh=0.01] user src   keeps (or marks with isOutlier) rows with rare values or numbers far from the mean; correlate [fields] shows how often fields appear together
   predict count [as pred] [algorithm=LL|LLT|LLP|LLP5] [future_timespan=5] [holdback=0] [period=N]   after timechart: forecasts count with prediction(count), upper95(...) and lower95(...), adding future rows
+  kmeans [k=2] [dt=l2|l1|cos] bytes duration   groups rows into k clusters by their numbers: CLUSTERNUM and centroid_<field>
   | set union|diff|intersect [search ...] [search ...]   starts a search with the rows of either, only one, or both subsearches; setfields f="v", g="w" sets fields on every row
   xpath outfield=user "//Data[@Name='TargetUserName']"   reads XML (in _raw unless field=) with / and // steps, [@attr='v'] and [N] predicates, and a last /@attr or /text()
   abstract [maxlines=5]   shortens _raw to its lines with the most words; highlight term ...   accepted and leaves rows as they are

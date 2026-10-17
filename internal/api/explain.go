@@ -608,6 +608,16 @@ func describeCommand(c query.Command) string {
 		}
 		which := map[string]string{"union": "the rows of either", "diff": "the rows only one of them has", "intersect": "the rows both have"}[c.Op]
 		return "Start with " + which + " of these two subsearches. " + strings.Join(parts, " ")
+	case *query.KMeans:
+		which := "their numbers"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		s := fmt.Sprintf("Group rows into %d clusters by %s (k-means, %s distance, best of %d runs) and number them in %s", c.K, which, c.Distance, c.Reps, c.ClusterField)
+		if c.ShowCentroid {
+			s += ", with each cluster's centre in centroid_ fields"
+		}
+		return s + "."
 	case *query.SetFields:
 		var parts []string
 		for _, v := range c.Values {
