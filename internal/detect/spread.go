@@ -278,6 +278,11 @@ func (a *Assigner) Step(ctx context.Context) error {
 			// Spreading is off, or nobody may run the tenant.
 		case o.Node == "":
 			moved = append(moved, b)
+		case o.Node == node && o.State == BucketMoving:
+			// The move is no longer wanted: the owner keeps the bucket under
+			// a fresh epoch, so a release of the old one, still in its
+			// heartbeat, cannot end a later move while it runs slots again.
+			moved = append(moved, b)
 		case o.Node == node:
 			next.Owners[b] = BucketOwner{Node: o.Node, DetEpoch: o.DetEpoch, State: BucketRun}
 		case !live || !owner.Live:

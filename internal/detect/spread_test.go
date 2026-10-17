@@ -227,8 +227,31 @@ func TestAssignerMoveCancelled(t *testing.T) {
 	if err := ta.Step(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := readAssignment(t, rs); !slicesEqual(got.Owners, before.Owners) {
-		t.Error("a cancelled move changed the assignment")
+	after := readAssignment(t, rs)
+	stale := map[int]int64{}
+	for b, o := range after.Owners {
+		was := before.Owners[b]
+		switch {
+		case o.Node != was.Node || o.State != BucketRun:
+			t.Fatalf("bucket %d: a cancelled move gave it to %q (%s), not back to %q", b, o.Node, o.State, was.Node)
+		case was.Node == "b" && o.DetEpoch <= was.DetEpoch:
+			t.Fatalf("bucket %d: a cancelled move kept epoch %d", b, o.DetEpoch)
+		case was.Node == "a" && o.DetEpoch != was.DetEpoch:
+			t.Fatalf("bucket %d: a's bucket changed epoch", b)
+		case was.Node == "b":
+			stale[b] = was.DetEpoch
+		}
+	}
+	// b's heartbeat still says it released the old epochs: a new move
+	// waits for a release of the new ones.
+	ta.setServer("b", func(s *SpreadServer) { s.Eligible, s.Released = false, stale })
+	for range 2 {
+		if err := ta.Step(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := readAssignment(t, rs); len(got.RunsOn("a")) != Buckets-len(got.Holds("b")) || len(got.Holds("b")) != len(stale) {
+		t.Error("a stale release ended the move")
 	}
 }
 
