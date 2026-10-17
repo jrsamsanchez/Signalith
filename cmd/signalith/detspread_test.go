@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/detect"
 )
 
 func TestDetPrints(t *testing.T) {
@@ -71,5 +73,32 @@ func TestFilesHash(t *testing.T) {
 	}
 	if filesHash(filepath.Join(a, "missing")) == filesHash(a) {
 		t.Error("a missing folder fingerprints as the files")
+	}
+}
+
+func TestDetViews(t *testing.T) {
+	v := newDetViews()
+	ctx, cancel := context.WithCancel(context.Background())
+	var jobs sync.WaitGroup
+	read := func(tenant string, n int) func(context.Context) (detect.SpreadView, error) {
+		return func(context.Context) (detect.SpreadView, error) {
+			sv := detect.SpreadView{Tenant: tenant, Buckets: detect.Buckets, Servers: map[string]detect.SpreadCount{}}
+			if n > 0 {
+				sv.Servers["a"] = detect.SpreadCount{Run: n}
+			}
+			return sv, nil
+		}
+	}
+	v.add(ctx, &jobs, "zeta", read("zeta", 4))
+	v.add(ctx, &jobs, "acme", read("acme", 64))
+	v.add(ctx, &jobs, "idle", read("idle", 0))
+	got := v.all(context.Background())
+	if len(got) != 2 || got[0].Tenant != "acme" || got[1].Tenant != "zeta" {
+		t.Errorf("%+v", got)
+	}
+	cancel()
+	jobs.Wait()
+	if got := v.all(context.Background()); len(got) != 0 {
+		t.Errorf("views after the tenants stopped: %+v", got)
 	}
 }

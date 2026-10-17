@@ -147,7 +147,8 @@ features are up to date; until then, one server runs every rule as before. A ser
 does not get a share while its detection or lookup files differ from those of the
 server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
 or while it cannot write its heartbeat for 20 seconds (it then stops its share by
-itself).
+itself). While they are spread, the Servers page says under **Background jobs** how many of the
+groups each server runs, and how many it is handing over to another.
 
 When a group moves, its new server takes over from where the last run of each rule
 ended, so no time is skipped or searched twice. A server that is still running hands

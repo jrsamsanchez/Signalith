@@ -109,6 +109,9 @@ type runner struct {
 	// detPool is the detection workers every tenant's spread scheduler
 	// shares (see detpool.go).
 	detPool *detPool
+	// detViews is how each tenant's detections are spread, for the
+	// Servers page.
+	detViews *detViews
 	// audit is the process's audit spool (see sharedaudit.go); nil in
 	// some tests.
 	audit *processAudit
@@ -206,7 +209,7 @@ func newRunner(path string, log *slog.Logger) *runner {
 		path: path, log: log, started: time.Now(),
 		sessions: auth.NewSessions(config.DefaultSessionIdle), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
 		front: &front{}, agentFront: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
-		detPrints: newDetPrints(), detPool: newDetPool(log),
+		detPrints: newDetPrints(), detPool: newDetPool(log), detViews: newDetViews(),
 	}
 	r.front.ready = r.ready
 	r.front.confirmMove = r.confirmProbe

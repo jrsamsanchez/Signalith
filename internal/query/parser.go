@@ -437,8 +437,23 @@ func (p *parser) parseCommand() (Command, error) {
 		return &Stats{Aggs: aggs, By: by}, p.endCommand()
 	case "timechart":
 		tc := &Timechart{}
-		if p.isKeywordFold("span") && p.peekAt(1).kind == tokOp {
-			p.next()
+		for (p.isKeywordFold("span") || p.isKeywordFold("limit")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			if strings.EqualFold(p.next().text, "limit") {
+				p.next()
+				at := p.peek().pos
+				n, err := p.int()
+				if err != nil {
+					return nil, err
+				}
+				if n < 0 {
+					return nil, errorf(at, "timechart limit is 0 (no limit) or more")
+				}
+				tc.Limit = n
+				if n == 0 {
+					tc.Limit = NoTimechartLimit
+				}
+				continue
+			}
 			p.next()
 			v, err := p.value()
 			if err != nil {

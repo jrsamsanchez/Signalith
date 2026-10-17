@@ -393,9 +393,6 @@ On OpenSearch set up before this, do these two steps in this order.
     plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
     plugins.security.audit.config.log_request_body: false
     plugins.security.audit.config.exclude_sensitive_headers: true
-    plugins.security.audit.compliance.internal_config: true
-    plugins.security.audit.compliance.write_metadata_only: true
-    plugins.security.audit.compliance.read_metadata_only: true
     ```
 
 Loading `audit.yml` first means OpenSearch never logs request bodies, even for a moment.

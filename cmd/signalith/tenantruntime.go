@@ -536,6 +536,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints, t.r.detPool, cl.SearchThreads,
 				func() string { return detFilesFingerprint(c, t.r.shared, t.sharedOK != nil, false) }, log)
 			srv.SpreadScheduler = spread.sched
+			spread.views = t.r.detViews
 		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}

@@ -42,7 +42,9 @@ type detSpread struct {
 	tenant   string
 	prints   *detPrints
 	pool     *detPool
-	files    func() string
+	// views, when set, lists the tenant's spread on the Servers page.
+	views *detViews
+	files func() string
 }
 
 // newDetSpread wires tenant's spreading. leader is the tenant's scheduler
@@ -92,6 +94,11 @@ func (ds *detSpread) follow(ctx context.Context, jobs *sync.WaitGroup) {
 	jobs.Go(func() { ds.sched.Start(ctx) })
 	ds.pool.add(ctx, jobs, ds.follower)
 	ds.publish(ctx, jobs)
+	if ds.views != nil {
+		ds.views.add(ctx, jobs, ds.tenant, func(ctx context.Context) (detect.SpreadView, error) {
+			return detect.ReadSpread(ctx, ds.follower.Runtime, ds.follower.RuntimeIndex, ds.tenant)
+		})
+	}
 }
 
 // publish puts the tenant's fingerprint in the heartbeat while ctx lasts:

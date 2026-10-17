@@ -558,3 +558,20 @@ func TestAssignerSearchBudget(t *testing.T) {
 		t.Error("a negative budget passed the checks")
 	}
 }
+
+func TestReadSpread(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	if v, err := ReadSpread(ctx, rs, "rt", "acme"); err != nil || len(v.Servers) != 0 {
+		t.Fatalf("%+v, %v", v, err)
+	}
+	a := validAssignment("acme", []string{"a"})
+	a.Owners[3] = BucketOwner{Node: "a", DetEpoch: 9, State: BucketMoving, To: "b"}
+	if _, err := rs.Create(ctx, "rt", AssignmentID("acme"), a, true); err != nil {
+		t.Fatal(err)
+	}
+	v, err := ReadSpread(ctx, rs, "rt", "acme")
+	if err != nil || v.Servers["a"] != (SpreadCount{Run: Buckets - 1, Moving: 1}) || v.Buckets != Buckets {
+		t.Errorf("%+v, %v", v, err)
+	}
+}

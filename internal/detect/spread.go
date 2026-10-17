@@ -551,3 +551,45 @@ func (f *Follower) Run(ctx context.Context, tick time.Duration) {
 		}
 	}
 }
+
+// SpreadCount is how many of a tenant's buckets a server runs, and how
+// many it is handing over.
+type SpreadCount struct {
+	Run    int `json:"run"`
+	Moving int `json:"moving,omitempty"`
+}
+
+// SpreadView is how a tenant's detections are spread over the servers,
+// for the Servers page: per server node ID, its buckets. Empty when they
+// are not spread.
+type SpreadView struct {
+	Tenant  string                 `json:"tenant"`
+	Buckets int                    `json:"buckets"`
+	Servers map[string]SpreadCount `json:"servers"`
+}
+
+// ReadSpread reads tenant's assignment from its runtime index.
+func ReadSpread(ctx context.Context, rs RunStore, idx, tenant string) (SpreadView, error) {
+	v := SpreadView{Tenant: tenant, Buckets: Buckets, Servers: map[string]SpreadCount{}}
+	raw, _, found, err := rs.Get(ctx, idx, AssignmentID(tenant))
+	if err != nil || !found {
+		return v, err
+	}
+	a, err := DecodeAssignment(raw, tenant)
+	if err != nil {
+		return v, err
+	}
+	for _, o := range a.Owners {
+		if o.Node == "" {
+			continue
+		}
+		c := v.Servers[o.Node]
+		if o.State == BucketMoving {
+			c.Moving++
+		} else {
+			c.Run++
+		}
+		v.Servers[o.Node] = c
+	}
+	return v, nil
+}

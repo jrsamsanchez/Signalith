@@ -342,6 +342,10 @@ rules:
     rule_id: a28f0bc3-3400-4a6e-a2da-89b9e95f0d2a
     file: azure_ad_privileged_role_assigned.yml
     path: detections/cloud/azure_ad_privileged_role_assigned.yml
+  - id: splunk-azure-ad-privileged-role-assigned-to-service-principal
+    rule_id: 5dfaa3d3-e2e4-4053-8252-16d9ee528c41
+    file: azure_ad_privileged_role_assigned_to_service_principal.yml
+    path: detections/cloud/azure_ad_privileged_role_assigned_to_service_principal.yml
   - id: splunk-azure-ad-service-principal-authentication
     rule_id: 5a2ec401-60bb-474e-b936-1e66e7aa4060
     file: azure_ad_service_principal_authentication.yml
@@ -2110,6 +2114,10 @@ rules:
     rule_id: 9db0d5b0-4058-4cb7-baaf-77d8143539a2
     file: o365_oauth_app_mailbox_access_via_graph_api.yml
     path: detections/cloud/o365_oauth_app_mailbox_access_via_graph_api.yml
+  - id: splunk-o365-privileged-graph-api-permission-assigned
+    rule_id: 868f3131-d5e1-4bf1-af5b-9b0fbaaaedbb
+    file: o365_privileged_graph_api_permission_assigned.yml
+    path: detections/cloud/o365_privileged_graph_api_permission_assigned.yml
   - id: splunk-o365-privileged-role-assigned
     rule_id: db435700-4ddc-4c23-892e-49e7525d7d39
     file: o365_privileged_role_assigned.yml
@@ -2842,6 +2850,10 @@ rules:
     rule_id: bd3b0187-189b-46c0-be45-f52da2bae67f
     file: windows_adfind_exe.yml
     path: detections/endpoint/windows_adfind_exe.yml
+  - id: splunk-windows-admin-password-changed-by-non-admin
+    rule_id: 6d4c4d88-cd60-43a1-8c70-c74a9614f724
+    file: windows_admin_password_changed_by_non_admin.yml
+    path: detections/endpoint/windows_admin_password_changed_by_non_admin.yml
   - id: splunk-windows-administrative-shares-accessed-on-multiple-hosts
     rule_id: d92f2d95-05fb-48a7-910f-4d3d61ab8655
     file: windows_administrative_shares_accessed_on_multiple_hosts.yml
@@ -4398,6 +4410,10 @@ rules:
     rule_id: 1af84ac8-05ea-4f11-8541-b2d1e45a7744
     file: windows_rdp_client_launched_with_admin_session.yml
     path: detections/endpoint/windows_rdp_client_launched_with_admin_session.yml
+  - id: splunk-windows-rdp-file-execution
+    rule_id: 0b6b12b9-8ba9-48fe-b3b8-b4e3e1cd22b4
+    file: windows_rdp_file_execution.yml
+    path: detections/endpoint/windows_rdp_file_execution.yml
   - id: splunk-windows-rdp-login-session-was-established
     rule_id: 00ca7f9e-88ab-4841-a6c2-83979ab1ed29
     file: windows_rdp_login_session_was_established.yml

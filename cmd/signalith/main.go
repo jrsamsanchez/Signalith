@@ -1979,6 +1979,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			spread = newDetSpread(r.node, r.shared, tenants.Default, c.LeaderEligible(), sched, newSched(), r.detPrints, r.detPool, cl.SearchThreads,
 				func() string { return detFilesFingerprint(c, r.shared, sharedOn, true) }, log)
 			srv.SpreadScheduler = spread.sched
+			spread.views = r.detViews
+			srv.DetectionSpread = r.detViews.all
 			if c.LeaderEligible() {
 				in.jobs.Go(func() {
 					if ready(ctx) && findingsOK {
