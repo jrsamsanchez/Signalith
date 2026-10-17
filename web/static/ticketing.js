@@ -65,7 +65,9 @@
     if (d.links_error) list.push(dxAlert('warning', 'Couldn’t read the tickets kept in step.', d.links_error));
     if (!d.manage && !d.file_error) {
       const servers = el('a', { href: '#servers', 'data-page': 'servers' }, 'Servers page');
-      if (d.runs_on) {
+      if (d.provider_only) {
+        list.push(dxAlert('info', 'Your provider sets up ticketing.', d.manage_why || ''));
+      } else if (d.runs_on) {
         list.push(dxAlert('info', `Ticketing is set up on ${d.runs_on}.`, null,
           el('p', {}, `Only the server that runs the background jobs talks to Jira and ServiceNow, with its own connections. Change them on ${d.runs_on}; the `, servers, ' has its address.')));
       } else {

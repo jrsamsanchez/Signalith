@@ -1186,8 +1186,8 @@ tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,
 `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `PUT /api/notify`, `POST /api/notify/test`,
-`PUT /api/respond/config` and `POST /api/respond/test`. Every other route works on the
-tenant the request is in.
+`PUT /api/respond/config`, `POST /api/respond/test`, `PUT /api/ticketing` and
+`POST /api/ticketing/test`. Every other route works on the tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer

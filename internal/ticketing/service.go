@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -78,6 +79,37 @@ func (s *Service) sleepFunc() func(context.Context, time.Duration) error {
 			return nil
 		}
 	}
+}
+
+// Forget drops what the service remembers of connections that set no
+// longer has, or has with other credentials: their OAuth access tokens,
+// Jira accounts and refused fields. A deleted connection's last token
+// then leaves memory when the connections are saved, not at the next
+// restart. Each tenant has a Service of its own (see docs/ticketing.md),
+// so one tenant's save never touches another tenant's.
+func (s *Service) Forget(set Settings) {
+	conns := make(map[string]Connection, len(set.Connections))
+	for _, c := range set.Connections {
+		conns[c.ID+":"] = c
+	}
+	s.tokens.keepOnly(func(key, creds string) bool {
+		c, ok := conns[key]
+		return ok && sameCreds(creds, tokenCredsOf(c))
+	})
+	s.selves.Range(func(k, v any) bool {
+		c, ok := conns[k.(string)]
+		if self, isSelf := v.(cachedSelf); !ok || !isSelf || !sameCreds(self.creds, selfCredsOf(c)) {
+			s.selves.Delete(k)
+		}
+		return true
+	})
+	s.quirks.Range(func(k, _ any) bool {
+		id, _, _ := strings.Cut(k.(string), ":")
+		if _, ok := conns[id+":"]; !ok {
+			s.quirks.Delete(k)
+		}
+		return true
+	})
 }
 
 // caseLink returns the address of a case in Signalith, or "".

@@ -216,6 +216,8 @@ func (s *Service) Pass(ctx context.Context) {
 		return
 	}
 	s.problem("file", "")
+	// The connections may have changed in the file since the last pass.
+	s.Forget(set)
 	if len(set.Connections) == 0 {
 		return
 	}

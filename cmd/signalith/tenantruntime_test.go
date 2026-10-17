@@ -171,6 +171,21 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	if code, _, _ := ada.call("", "GET", "/api/parsers", ""); code != http.StatusForbidden {
 		t.Errorf("ada GET /api/parsers: %d, want 403", code)
 	}
+	// Ticketing: acme's own connections, which only the provider's users
+	// change, and its own ticket sync index next to the default tenant's.
+	if code, out, _ := ada.call("", "GET", "/api/ticketing", ""); code != 200 || out["provider_only"] != true || out["file"] != nil || len(out["connections"].([]any)) != 0 {
+		t.Errorf("acme's ticketing: %d %v", code, out)
+	}
+	for _, r := range [][2]string{{"PUT", "/api/ticketing"}, {"POST", "/api/ticketing/test"}} {
+		if code, _, _ := ada.call("", r[0], r[1], `{"connections":[]}`); code != http.StatusForbidden {
+			t.Errorf("ada %s %s: %d, want 403", r[0], r[1], code)
+		}
+	}
+	for deadline := time.Now().Add(20 * time.Second); !slices.Contains(rs.os.Indices(), "signalith.t.acme_ticket_sync"); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no ticket sync index for acme: %v", rs.os.Indices())
+		}
+	}
 
 	// Settings applied at once on the Settings page apply to every
 	// tenant, as do those of a tenant added after.

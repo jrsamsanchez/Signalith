@@ -28,6 +28,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
+	"github.com/jrsamsanchez/signalith/internal/ticketing"
 	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
@@ -59,7 +60,7 @@ func indexNames(p string) []string {
 	names := []string{
 		findings.NewOpenSearch(nil, p).Index, cases.NewOpenSearch(nil, p).Index, intel.NewOpenSearch(nil, p).Index,
 		respond.NewOpenSearch(nil, p).Index, playbooks.NewOpenSearch(nil, p).Index, notify.NewOpenSearch(nil, p).Index,
-		endpoint.NewStore(nil, p).Index, vulnscan.NewStore(nil, p).Index,
+		endpoint.NewStore(nil, p).Index, vulnscan.NewStore(nil, p).Index, ticketing.NewOpenSearch(nil, p).Index,
 		cluster.RuntimeIndex(p), shared.ConfigIndex(p), shared.SessionsIndex(p), shared.RetiredConfigIndex(p, "20261016"),
 		audit.IndexName(p, day), retention.RecordIndex(p, "findings"),
 	}

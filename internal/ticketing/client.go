@@ -127,6 +127,17 @@ func (t *tokenCache) drop(key string) {
 	delete(t.tokens, key)
 }
 
+// keepOnly drops every token keep refuses, by its key and credentials.
+func (t *tokenCache) keepOnly(keep func(key, creds string) bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for k, v := range t.tokens {
+		if !keep(k, v.creds) {
+			delete(t.tokens, k)
+		}
+	}
+}
+
 // all returns the tokens in the cache for a connection, for scrub.
 func (t *tokenCache) all(prefix string) []string {
 	t.mu.Lock()
@@ -184,14 +195,17 @@ func (cl *client) cacheKey() string { return cl.conn.ID + ":" }
 
 // tokenCreds are what a connection's OAuth token was issued for: a new
 // client secret or address asks for a new token.
-func (cl *client) tokenCreds() string {
-	return cl.conn.URL + "\x00" + cl.conn.ClientID + "\x00" + cl.conn.ClientSecret
+func (cl *client) tokenCreds() string { return tokenCredsOf(cl.conn) }
+
+func tokenCredsOf(c Connection) string {
+	return c.URL + "\x00" + c.ClientID + "\x00" + c.ClientSecret
 }
 
 // selfCreds are what decide the account a connection signs in as: new
 // credentials or a new address may be another account.
-func (cl *client) selfCreds() string {
-	c := cl.conn
+func (cl *client) selfCreds() string { return selfCredsOf(cl.conn) }
+
+func selfCredsOf(c Connection) string {
 	return strings.Join([]string{c.URL, c.Auth, c.Email, c.Token, c.Username, c.Password, c.ClientID, c.ClientSecret}, "\x00")
 }
 

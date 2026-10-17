@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
+	"github.com/jrsamsanchez/signalith/internal/ticketing"
 )
 
 // tenantRuntime runs the data of each tenant other than the default one
@@ -319,6 +320,21 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	}
 	pruns := playbooks.NewOpenSearch(cl, prefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The tenant's Jira and ServiceNow connections, in its own folder,
+	// kept in step with its own cases only; what each ticket last sent
+	// and saw is in its own <prefix>_ticket_sync. Its OAuth tokens and
+	// Jira accounts are remembered by its own Service.
+	tickets := &ticketing.Manager{File: c.TicketingFile(), Log: log}
+	if err := tickets.Load(); err != nil {
+		log.Error("tickets are not kept in step until the ticketing file is fixed", "err", err)
+	}
+	tlinks := ticketing.NewOpenSearch(cl, prefix)
+	tlinks.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	tsync := &ticketing.Service{Settings: tickets, Cases: cstore, Links: tlinks, Server: server, Log: log,
+		PublicURL: func() string { return c.Server.PublicURL }}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		tsync.Protected = notify.Protected{p}
+	}
 	// The tenant's agent tokens, in its own runtime index: no token of the
 	// default tenant's or another tenant's is accepted for its data.
 	tokens := &agenttokens.Registry{Client: cl, Prefix: prefix, Log: log, Node: func() string { return nodeID }}
@@ -366,6 +382,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Notebooks:  nstore,
 		Respond:    responder,
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Ticketing:  &api.Ticketing{Service: tsync},
 		Retention:  ret,
 		Sample:     sampleLoader,
 		Content:    updater,
@@ -397,6 +414,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Leader = func() (bool, string) { return t.r.node.RunsJobs(), t.r.node.JobHolder() }
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
+		tsync.Allowed = t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
 
@@ -414,11 +432,21 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		findingsOK := fstore.EnsureIndex(ctx) == nil
 		notifyOK := deliveries.EnsureIndex(ctx) == nil
 		playbooksOK := pruns.EnsureIndex(ctx) == nil
-		for _, e := range []interface{ EnsureIndex(context.Context) error }{cstore, nstore, estore, astore} {
+		cerr := cstore.EnsureIndex(ctx)
+		if cerr != nil {
+			log.Error("could not create an index of the tenant", "index", cstore.Index, "err", cerr)
+		}
+		casesOK := cerr == nil
+		for _, e := range []interface{ EnsureIndex(context.Context) error }{nstore, estore, astore} {
 			if err := e.EnsureIndex(ctx); err != nil {
 				log.Error("could not create an index of the tenant", "err", err)
 			}
 		}
+		terr := tlinks.EnsureIndex(ctx)
+		if terr != nil {
+			log.Error("could not create the tenant's ticket sync index; its tickets will not be opened or kept in step", "index", tlinks.Index, "err", terr)
+		}
+		ticketsOK := terr == nil
 		if !intelOK || !findingsOK || !notifyOK || !playbooksOK {
 			log.Error("could not create the tenant's indices; its detections, feeds, notifications and playbooks do not run until it is started again")
 			return
@@ -428,6 +456,12 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
 			{Name: "playbooks", Run: pbRunner.Run},
+			{Name: "ticketing", Run: func(ctx context.Context) {
+				// The tenant's own connections, cases and links only.
+				if ticketsOK && casesOK {
+					tsync.Run(ctx)
+				}
+			}},
 			{Name: "retention", Run: func(ctx context.Context) {
 				ret.Start(ctx)
 				ret.Wait()

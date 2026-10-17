@@ -252,6 +252,25 @@ If the file cannot be read, nothing syncs and the page shows the error. If a sec
 be decrypted, for example after the master key is lost, that connection does nothing until
 it is entered again; its card says which.
 
+## Multi-tenant installs
+
+On a [multi-tenant](multi-tenant.md) install each tenant has its own connections, tickets
+and sync:
+
+- A tenant's connections are kept in `tenants/<id>/lookups/tickets.yaml` in the state
+  folder; `ticketing.file` names the default tenant's file only. What each of its tickets
+  last sent and saw is in its own index, such as `signalith.t.acme_ticket_sync`.
+- The `ticketing` job runs once per tenant, with that tenant's connections, cases and
+  tickets only. A tenant's connection never opens or updates a ticket for another tenant's
+  case, and the Tickets panel of a case offers its own tenant's connections only.
+- Connections send case details to the addresses they name, so only provider users change
+  or test them (`PUT /api/ticketing` and `POST /api/ticketing/test`), while in the tenant.
+  A tenant's admins see its connections and tickets on the page; its analysts open tickets
+  from its cases as usual.
+- Changes are in the audit log with `tenant=<id>`.
+
+An install without tenants keeps its file and `<prefix>_ticket_sync` index as they were.
+
 ## API
 
 | Route | Role | What it does |

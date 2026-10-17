@@ -91,8 +91,14 @@ type linkProblem struct {
 	ErrorAt    time.Time `json:"error_at"`
 }
 
-// ticketingView is the page's data.
-func (s *Server) ticketingView(ctx context.Context, set ticketing.Settings, fileErr error) map[string]any {
+// errTicketingProvider says why a tenant's own admins see their tenant's
+// connections but do not change them.
+var errTicketingProvider = errors.New("connections send case details to the addresses they name, so only the provider's users set them up, while in this tenant")
+
+// ticketingView is the page's data, for the request's user. This server's
+// connections are its tenant's only (each tenant has a server, and a
+// Service, of its own).
+func (s *Server) ticketingView(ctx context.Context, r *http.Request, set ticketing.Settings, fileErr error) map[string]any {
 	t := s.Ticketing.Service
 	out := map[string]any{}
 	counts, failing := map[string]int{}, map[string]int{}
@@ -131,7 +137,11 @@ func (s *Server) ticketingView(ctx context.Context, set ticketing.Settings, file
 	out["connections"] = conns
 	out["problems"] = problems
 	out["revision"] = t.Settings.Revision()
-	out["file"] = fullPath(t.Settings.File)
+	// Where the file is, is how the server runs: the provider's business.
+	p := principalOf(r)
+	if p.runsServer() {
+		out["file"] = fullPath(t.Settings.File)
+	}
 	out["types"] = ticketing.Types
 	out["statuses"] = ticketing.CaseStatuses
 	out["severities"] = ticketing.Severities
@@ -144,10 +154,16 @@ func (s *Server) ticketingView(ctx context.Context, set ticketing.Settings, file
 		out["file_error"] = fileErr.Error()
 	}
 	err := s.ticketingElsewhere()
+	if p != nil && p.Tenant != "" {
+		err = errTicketingProvider
+	}
 	out["manage"] = fileErr == nil && err == nil
 	if err != nil {
 		out["manage_why"] = sentence(err.Error())
-		if s.Cluster != nil && !errors.Is(err, errTicketingNoJobs) {
+		switch {
+		case errors.Is(err, errTicketingProvider):
+			out["provider_only"] = true
+		case s.Cluster != nil && !errors.Is(err, errTicketingNoJobs):
 			out["runs_on"] = s.Cluster.JobHolder()
 		}
 	}
@@ -161,7 +177,7 @@ func (s *Server) handleTicketing(w http.ResponseWriter, r *http.Request) {
 	set, err := s.Ticketing.Service.Settings.Settings()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.ticketingView(ctx, set, err))
+	writeJSON(w, http.StatusOK, s.ticketingView(ctx, r, set, err))
 }
 
 func (s *Server) handleTicketingSave(w http.ResponseWriter, r *http.Request) {
@@ -205,11 +221,14 @@ func (s *Server) handleTicketingSave(w http.ResponseWriter, r *http.Request) {
 			replaced = append(replaced, c.Name)
 		}
 	}
+	// A connection deleted or given new secrets leaves no token or
+	// account of its own in memory.
+	s.Ticketing.Service.Forget(set)
 	s.audit(r, "ticketing connections changed", "connections", strings.Join(names, ", "), "hosts", strings.Join(hosts, ", "),
 		"auto_create", strings.Join(auto, ", "), "secret_replaced", strings.Join(replaced, ", "))
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.ticketingView(ctx, set, nil))
+	writeJSON(w, http.StatusOK, s.ticketingView(ctx, r, set, nil))
 }
 
 // handleTicketingTest checks a saved connection ({"id"}) or a connection
