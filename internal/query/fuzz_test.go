@@ -52,6 +52,7 @@ var fuzzSeeds = []string{
 	`* | map maxsearches=3 search="search user=$user$ host=\"$h$\" | eval x='$y$' | head 2" | map search="| tstats count from datamodel=Authentication by Authentication.user"`,
 	`* | accum bytes | accum b AS "t b" | delta count AS d p=3 | delta x | autoregress c p=2-4 | autoregress c AS prev p=2 | fieldsummary maxvals=5 user "src ip" | fieldsummary`,
 	`* | transpose | transpose 7 column_name="c n" header_field=h include_empty=f | filldown | filldown a, "b c" d* | addinfo | trendline sma5(x) ema10("a b") AS "e m", wma2(y) AS w`,
+	`* | concurrency duration=d | concurrency duration="d s" start=t output="c n" | contingency maxrows=5 maxcols=3 usetotal=f totalstr="All" a "b c" | contingency x y | format | format maxresults=3 mvsep=and "[" "{" "&&" "}" "||" "]"`,
 	`* | iplocation src | iplocation prefix="s c" allfields=t lang=zh-CN "src ip" | iplocation prefix=~x dest`,
 	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
 	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
