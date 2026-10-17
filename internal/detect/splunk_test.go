@@ -73,15 +73,17 @@ search: |
 	}
 	// A regular expression with word boundaries, which OpenSearch cannot
 	// search, runs after the filter, as Splunk reads it; one that must not
-	// match, or is one of several joined by OR, is refused.
+	// match, or is one of several joined by OR, is refused. The filter
+	// keeps the pattern without its boundaries, which matches every
+	// value the whole one does.
 	later := map[string]string{
-		`| regex process="(?i)\\.(key|pem)\\b"`:                              "process_name=reg.exe",
-		`| where match(process, "\\biex\\b") AND match(process_path, "^C:")`: `process_path=~^C:`,
+		`| regex process="(?i)\\.(key|pem)\\b"`:                              `process=~"(?i:\\.(KEY|PEM)(?:))"`,
+		`| where match(process, "\\biex\\b") AND match(process_path, "^C:")`: `process=~"(?:)iex(?:)" AND process_path=~^C:`,
 	}
 	for stage, want := range later {
 		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
 		d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r)
-		if err != nil || !strings.Contains(d.Query, want) || !strings.Contains(d.Query, "\n| regex process=") || strings.Contains(d.Query, "process=~") {
+		if err != nil || !strings.Contains(d.Query, want) || !strings.Contains(d.Query, "\n| regex process=") {
 			t.Errorf("%s: %v %+v", stage, err, d)
 			continue
 		}

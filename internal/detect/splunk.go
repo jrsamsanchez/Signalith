@@ -107,18 +107,26 @@ func usePackTables(ps []*Pack) {
 func SplunkSearch(r *splcheck.Rule) (query.Expr, []*query.Regex, error) {
 	var later []*query.Regex
 	var keep []splcheck.Expr
+	others := 0
 	for _, k := range conjuncts(r.Where) {
 		if re := laterRegex(k); re != nil {
 			later = append(later, re)
+			// The pattern without its word boundaries matches every
+			// value the whole one does, so the filter keeps it: the
+			// search finds only the events the regex stage may keep.
+			if loose := looseRegex(k.(*splcheck.Cmp)); loose != nil {
+				keep = append(keep, loose)
+			}
 			continue
 		}
 		keep = append(keep, k)
+		others++
 	}
 	if len(later) == 0 {
 		f, err := SplunkFilter(r)
 		return f, nil, err
 	}
-	if len(keep) == 0 {
+	if others == 0 {
 		return nil, nil, fmt.Errorf("a search of only regular expressions with word boundaries is not supported")
 	}
 	rest := *r
@@ -167,6 +175,21 @@ func laterRegex(e splcheck.Expr) *query.Regex {
 		return nil
 	}
 	return &query.Regex{Field: x.Field, Pattern: x.Values[0]}
+}
+
+// looseRegex is a regular expression term with its word boundaries left
+// out, when OpenSearch can search it (splunkRegex), or nil.
+func looseRegex(x *splcheck.Cmp) *splcheck.Cmp {
+	loose, ok := splcheck.WithoutBoundaries(x.Values[0])
+	if !ok {
+		return nil
+	}
+	c := *x
+	c.Values = []string{loose}
+	if _, err := splunkRegex(&c); err != nil {
+		return nil
+	}
+	return &c
 }
 
 // plainField is a stored field's name, not a raw or internal one.
