@@ -105,6 +105,18 @@ done
 EOF
 }
 
+# Ubuntu's automatic updates restart services, and systemd re-executing
+# itself during one stopped and restarted a run: hold them for the run.
+APT_UNITS="apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service"
+hold_updates() {
+  local m
+  for m in $(names); do on "$m" "systemctl stop $APT_UNITS 2>/dev/null; true" </dev/null; done
+}
+release_updates() {
+  local m
+  for m in $(names); do on "$m" 'systemctl start apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service 2>/dev/null; true' </dev/null; done
+}
+
 stop_samplers() {
   local m
   for m in $(names); do on "$m" 'systemctl stop lt-sample 2>/dev/null; true' </dev/null; done
@@ -222,6 +234,7 @@ finish() {
   # Stopped early: the load generator does not stop with its ssh.
   on loadgen 'pkill -INT -f "signalith-loadgen run" 2>/dev/null; true' </dev/null
   stop_samplers
+  release_updates
   local m
   for m in $(names); do on "$m" "cat $SAMPLES 2>/dev/null" </dev/null >"$OUT/$m.csv"; done
   on loadgen 'cat /root/loadtest/report.json 2>/dev/null' </dev/null >"$OUT/loadgen.json"
@@ -233,6 +246,7 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT TERM
 
+hold_updates
 for m in $(names); do
   sampler | on "$m" "cat >/root/lt-sample.sh && systemctl stop lt-sample 2>/dev/null; rm -f /root/lt-sample*.csv; systemd-run -q --unit=lt-sample --collect bash /root/lt-sample.sh $SAMPLES"
 done
