@@ -37,6 +37,16 @@ func Explain(q *query.Query) []string {
 			return steps
 		}
 	}
+	if len(q.Commands) > 0 {
+		switch q.Commands[0].(type) {
+		case *query.EventCount, *query.MultiSearch, *query.Set:
+			// The rows come from the command itself, not from a search.
+			for _, c := range q.Commands {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
+	}
 	src := "all events"
 	if q.Datamodel != "" {
 		src = q.Datamodel + " events"
@@ -536,6 +546,15 @@ func describeCommand(c query.Command) string {
 		return "Keep only rows where " + c.Field + " matches the regular expression " + c.Pattern + "."
 	case *query.MakeResults:
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
+	case *query.EventCount:
+		which := "every index a search reads"
+		if len(c.Indexes) > 0 {
+			which = "the indexes matching " + strings.Join(c.Indexes, ", ")
+		}
+		if c.Summarize {
+			return "Count the events stored in " + which + ", whatever their time."
+		}
+		return "Count the events stored in " + which + ", whatever their time, one row per index."
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
 	case *query.Extract:

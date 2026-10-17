@@ -267,7 +267,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Set, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Set, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge, *EventCount:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)
