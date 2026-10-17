@@ -397,9 +397,10 @@
     const ip = B.view.ip_database || {};
     const n = el('input', { type: 'text', id: 'bl-ipdb', class: 'input mono', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', inputmode: 'url',
       placeholder: B.view.defaults.ip_database, value: top('ip_database'), 'aria-describedby': 'bl-ipdb-help bl-ipdb-notes' });
-    if (B.saving) n.disabled = true;
+    if (B.saving || B.view.ip_database_fixed) n.disabled = true;
     n.addEventListener('input', () => { setTop('ip_database', n.value.trim()); syncBar(); });
     const notes = [];
+    if (B.view.ip_database_fixed) notes.push(el('p', { class: 'st-source' }, icon('lock', 'icon--xs'), el('span', {}, 'Set by the provider that runs Signalith.')));
     const off = String(top('ip_database')).toLowerCase() === 'off';
     const custom = ip.source && ip.source !== B.view.defaults.ip_database;
     if (off) {
