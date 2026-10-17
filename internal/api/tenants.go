@@ -34,10 +34,11 @@ var (
 	// server's scanners and OpenVAS), network sensors, the custom
 	// parsers (one set that reads every tenant's records) and the chat
 	// accounts linked for the buttons in Slack and Teams messages, whose
-	// clicks the default tenant's server answers.
+	// clicks the default tenant's server answers, and the behavior
+	// baselines, which learn from the default tenant's data only for now.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "baselines",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,
