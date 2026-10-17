@@ -567,6 +567,27 @@ func describeCommand(c query.Command) string {
 			s += ", one column per " + c.By
 		}
 		return s + "."
+	case *query.AnomalyDetection:
+		which := "every field"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		how := "few rows share"
+		if c.Method == "zscore" {
+			how = "is far from the field's mean"
+		}
+		s := fmt.Sprintf("Find rows where a value of %s %s (probability below %s)", which, how, strconv.FormatFloat(c.PThresh, 'f', -1, 64))
+		switch c.Action {
+		case "filter":
+			s += " and keep only those"
+		case "annotate":
+			s += " and mark every row with isOutlier, probable_cause and log_event_prob"
+		case "summary":
+			s += " and count them"
+		}
+		return s + "."
+	case *query.Correlate:
+		return "Show, for each pair of fields, the share of rows that have both."
 	case *query.XPath:
 		s := "Set " + c.OutField + " to the text of " + c.Path + " in the XML of " + c.Field
 		if c.HasDefault {
