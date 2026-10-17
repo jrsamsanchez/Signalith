@@ -79,8 +79,6 @@ type tenantInstance struct {
 	srv    *api.Server
 	cancel context.CancelFunc
 	jobs   sync.WaitGroup
-	// done is called once it stopped; nil for nothing.
-	done func()
 }
 
 func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server, limits *ingest.Limits) *tenantRuntime {
@@ -286,9 +284,6 @@ func (t *tenantRuntime) stop() {
 func (ti *tenantInstance) stop() {
 	ti.cancel()
 	ti.jobs.Wait()
-	if ti.done != nil {
-		ti.done()
-	}
 }
 
 // tenantFolderID matches the IDs tenants.ValidID allows.
@@ -540,7 +535,6 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints,
 				func() string { return detFilesFingerprint(c, t.r.shared, t.sharedOK != nil, false) }, log)
 			srv.SpreadScheduler = spread.sched
-			ti.done = func() { t.r.detPrints.drop(id) }
 		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}

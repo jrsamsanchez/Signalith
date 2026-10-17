@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -17,9 +19,35 @@ func TestDetPrints(t *testing.T) {
 	if calls != 1 {
 		t.Error("the files were hashed again within a minute")
 	}
-	p.drop("acme")
-	if got := p.all(); len(got) != 0 {
-		t.Errorf("a stopped tenant still has a fingerprint: %v", got)
+	old := p.set("acme", func() string { return "fp1" })
+	p.set("acme", func() string { return "fp2" })
+	p.drop("acme", old)
+	if got := p.all(); got["acme"] != "fp2" {
+		t.Errorf("an earlier start's drop took the new start's fingerprint: %v", got)
+	}
+}
+
+// TestFingerprintOnlyWhileFollowing: a tenant's fingerprint is in the
+// heartbeat only while this server follows its assignment, so a server
+// whose follower never started (its indices could not be made) or has
+// stopped is given none of its buckets: the job holder leaves servers
+// without the tenant's fingerprint out (detect.TestAssignerLeavesOut).
+func TestFingerprintOnlyWhileFollowing(t *testing.T) {
+	p := newDetPrints()
+	ds := &detSpread{tenant: "acme", prints: p, files: func() string { return "fp" }}
+	if _, ok := p.all()["acme"]; ok {
+		t.Fatal("a fingerprint before the follower started")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var jobs sync.WaitGroup
+	ds.publish(ctx, &jobs)
+	if p.all()["acme"] != "fp" {
+		t.Fatal("no fingerprint while following")
+	}
+	cancel()
+	jobs.Wait()
+	if _, ok := p.all()["acme"]; ok {
+		t.Error("a fingerprint after the follower stopped")
 	}
 }
 

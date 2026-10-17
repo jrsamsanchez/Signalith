@@ -39,6 +39,9 @@ type detSpread struct {
 	assigner *detect.Assigner
 	follower *detect.Follower
 	sched    *detect.Scheduler
+	tenant   string
+	prints   *detPrints
+	files    func() string
 }
 
 // newDetSpread wires tenant's spreading. leader is the tenant's scheduler
@@ -47,7 +50,7 @@ type detSpread struct {
 // and write the tenant's own runtime index, from which the follower reads
 // the tenant's assignment only.
 func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligible bool, leader, spread *detect.Scheduler, prints *detPrints, files func() string, log *slog.Logger) *detSpread {
-	ds := &detSpread{sched: spread}
+	ds := &detSpread{sched: spread, tenant: tenant, prints: prints, files: files}
 	ds.follower = &detect.Follower{Tenant: tenant, Self: node.ID(), Runtime: spread.Runtime, RuntimeIndex: spread.RuntimeIndex, Log: log}
 	spread.Tenant, spread.Owned = tenant, ds.follower.Owned
 	spread.NodeID, spread.ClusterNow, spread.Epoch = node.ID(), node.ClusterNow, node.Lease().Epoch
@@ -71,7 +74,6 @@ func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligibl
 	// The job holder's own scheduler runs the rules only while none are
 	// spread.
 	leader.Allowed = func() bool { return node.RunsJobs() && ds.assigner.LeaderRuns() }
-	prints.set(tenant, files)
 	return ds
 }
 
@@ -80,6 +82,19 @@ func newDetSpread(node *cluster.Node, rt *shared.Runtime, tenant string, eligibl
 func (ds *detSpread) follow(ctx context.Context, jobs *sync.WaitGroup) {
 	jobs.Go(func() { ds.follower.Run(ctx, followTick) })
 	jobs.Go(func() { ds.sched.Start(ctx) })
+	ds.publish(ctx, jobs)
+}
+
+// publish puts the tenant's fingerprint in the heartbeat while ctx lasts:
+// only a server that follows the assignment and runs its buckets may be
+// given some, so a tenant whose indices could not be made, or that
+// stopped, gets none here.
+func (ds *detSpread) publish(ctx context.Context, jobs *sync.WaitGroup) {
+	e := ds.prints.set(ds.tenant, ds.files)
+	jobs.Go(func() {
+		<-ctx.Done()
+		ds.prints.drop(ds.tenant, e)
+	})
 }
 
 // assign is the job holder's job keeping the assignment.
@@ -102,16 +117,24 @@ type detPrint struct {
 
 func newDetPrints() *detPrints { return &detPrints{tenants: map[string]*detPrint{}} }
 
-func (p *detPrints) set(tenant string, files func() string) {
+// set publishes tenant's fingerprint, worked out by files, and returns
+// its entry for drop.
+func (p *detPrints) set(tenant string, files func() string) *detPrint {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.tenants[tenant] = &detPrint{files: files}
+	e := &detPrint{files: files}
+	p.tenants[tenant] = e
+	return e
 }
 
-func (p *detPrints) drop(tenant string) {
+// drop takes tenant's fingerprint out while e, from set, is still it: a
+// later start of the tenant set its own.
+func (p *detPrints) drop(tenant string, e *detPrint) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.tenants, tenant)
+	if p.tenants[tenant] == e {
+		delete(p.tenants, tenant)
+	}
 }
 
 // all returns every tenant's fingerprint, hashing a tenant's files again
@@ -147,8 +170,8 @@ func (p *detPrints) all() map[string]string {
 }
 
 // detFilesFingerprint hashes the files a tenant's detections use: its
-// rules and their on and off choices, its asset lists and its lookup
-// tables. A part kept in the shared settings is the shared sentinel
+// rules and their on and off choices, and its lookups folder, which holds
+// its asset and identity lists, and lookup tables. A part kept in the shared settings is the shared sentinel
 // instead, the same on every server.
 func detFilesFingerprint(c *config.Config, rt *shared.Runtime, sharedOn, isDefault bool) string {
 	sentinel := ""
