@@ -215,8 +215,8 @@ type Store struct {
 	tables  map[string]*Table
 	indexes map[string]*Index // by table name and key columns
 
-	// outMu runs one Output at a time, so rows two searches append
-	// are both kept.
+	// outMu runs one Output or PutWithOptions at a time, so rows a
+	// search appends are never lost to another write of the table.
 	outMu sync.Mutex
 }
 
@@ -374,6 +374,13 @@ func (s *Store) Put(name string, data []byte) (*Table, error) {
 // PutWithOptions replaces or adds a table from CSV with options for how
 // its key columns match.
 func (s *Store) PutWithOptions(name string, data []byte, opts Options) (*Table, error) {
+	s.outMu.Lock()
+	defer s.outMu.Unlock()
+	return s.put(name, data, opts)
+}
+
+// put is PutWithOptions for a caller that holds outMu.
+func (s *Store) put(name string, data []byte, opts Options) (*Table, error) {
 	if !ValidName(name) {
 		return nil, fmt.Errorf("%q cannot name a lookup table; use lower-case letters, digits, - and _ (up to 64)", name)
 	}

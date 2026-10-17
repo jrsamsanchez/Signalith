@@ -73,7 +73,7 @@ func (s *Store) Output(name string, columns []string, rows [][]string, mode Outp
 	if err != nil {
 		return nil, err
 	}
-	return s.PutWithOptions(name, data, opts)
+	return s.put(name, data, opts)
 }
 
 // encodeCSV writes a header and rows as they are, stopping once they pass

@@ -11,9 +11,9 @@ import (
 )
 
 // LookupWriter lets the searches of one request write lookup tables with
-// outputlookup. The API gives one only to an admin's own interactive
-// searches; detections, dashboards, API tokens and every other search
-// have none, and their outputlookup fails.
+// outputlookup. The API gives one only to a search an admin ran with Run
+// on the Search page; detections, dashboards, API tokens, re-runs and
+// every other search have none, and their outputlookup fails.
 type LookupWriter interface {
 	// Allowed reports why tables cannot change right now, if they cannot.
 	Allowed() error
@@ -33,7 +33,7 @@ func WithLookupWriter(ctx context.Context, w LookupWriter) context.Context {
 func (e *Engine) outputLookup(ctx context.Context, res *Result, c *query.OutputLookup) error {
 	w, _ := ctx.Value(lookupWriterKey{}).(LookupWriter)
 	if w == nil {
-		return &QueryError{Msg: "outputlookup writes lookup tables, so only an admin's own searches on the Search page can use it, not detections, dashboards or API tokens"}
+		return &QueryError{Msg: "outputlookup writes lookup tables, so it runs only when an admin presses Run on the Search page: not in detections, dashboards, API tokens, the Ask box, or when a time change, sort, filter or drilldown runs the search again"}
 	}
 	if e.Lookups == nil {
 		return &QueryError{Msg: "lookup tables are not available on this server"}

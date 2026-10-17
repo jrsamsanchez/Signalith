@@ -157,10 +157,14 @@ index=signalith-authentication-* earliest=-7d
 | outputlookup weekly_users
 ```
 
-Only admins can use it, and only from their own searches on the Search page:
-detections cannot (a detection with it is refused when saved), nor can
-dashboards, the AI tools or API tokens. Each table written is in the audit
-log, with who wrote it and how many rows.
+Only admins can use it, and it writes only when they press **Run** (or
+Ctrl+Enter) on the Search page. Changing the time range, sorting, filtering
+on a value, drilling down or opening the Events tab runs the search again
+without writing, and so does the Ask box. Detections cannot use it (a
+detection with it is refused when saved), nor can dashboards, the AI tools or
+API tokens. Each table written is in the audit log, with who wrote it and how
+many rows. Through the API, a search writes only with `"write_lookups": true`
+in its request.
 
 A table that exists is never replaced by accident. Without `append=`, the
 command makes a new table and fails if one by that name exists; `append=t`

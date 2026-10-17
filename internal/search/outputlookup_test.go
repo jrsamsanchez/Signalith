@@ -31,7 +31,7 @@ func TestOutputLookup(t *testing.T) {
 		t.Helper()
 		return e.Run(ctx, src)
 	}
-	if _, err := run(context.Background(), `| makeresults | eval user="amy" | outputlookup users`); err == nil || !strings.Contains(err.Error(), "only an admin") {
+	if _, err := run(context.Background(), `| makeresults | eval user="amy" | outputlookup users`); err == nil || !strings.Contains(err.Error(), "presses Run") {
 		t.Fatalf("without a writer: %v", err)
 	}
 	w := &testWriter{}
@@ -121,5 +121,15 @@ func TestOutputLookupParse(t *testing.T) {
 		if got := query.WritesLookups(q); got != want {
 			t.Errorf("WritesLookups(%s) = %v", src, got)
 		}
+	}
+}
+
+func TestOutputLookupDrilldown(t *testing.T) {
+	q, err := query.Parse("* | eval a=1 | outputlookup append=f x | stats count by user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := q.Drilldown(); strings.Contains(d.Pipe, "outputlookup") || !strings.Contains(d.Pipe, "eval a=1") {
+		t.Errorf("drill pipe = %q", d.Pipe)
 	}
 }

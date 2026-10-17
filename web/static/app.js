@@ -972,7 +972,9 @@ const commandOf = (seg) => ((seg || '').trim().match(/^[a-z_]+/i) || [''])[0].to
 function eventsPart(q) {
   const segs = pipeSegments(q);
   const i = segs.findIndex((s, n) => n > 0 && ['stats', 'timechart', 'top'].includes(commandOf(s)));
-  return i < 0 ? null : segs.slice(0, i).map((s) => s.trim()).join('\n| ') || '*';
+  // The events behind the numbers; an outputlookup among them wrote its
+  // table already and is not run again.
+  return i < 0 ? null : segs.slice(0, i).filter((s, n) => n === 0 || commandOf(s) !== 'outputlookup').map((s) => s.trim()).join('\n| ') || '*';
 }
 function quoteValue(v) {
   v = String(v);
@@ -1332,7 +1334,7 @@ function acceptSuggestion(i) {
   onQueryInput();
 }
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch(); return; }
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
   if (!suggestions.length) return;
   if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
@@ -1552,8 +1554,13 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-async function runSearch() {
+// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// writeLookups, so an outputlookup in the query writes its table when the
+// user runs it, not again when a time change, sort, filter or drilldown
+// re-runs it, nor when the Ask box runs a query it wrote.
+async function runSearch(opts) {
   const query = queryBox.value.trim() || '*';
+  const writeLookups = !!(opts && opts.writeLookups);
   const earliest = timeEarliest();
   const seq = ++searchSeq;
   $('query-error').classList.add('hidden');
@@ -1562,7 +1569,7 @@ async function runSearch() {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1585,7 +1592,7 @@ async function runSearch() {
     if (seq === searchSeq) setSearching(false);
   }
 }
-$('run').addEventListener('click', runSearch);
+$('run').addEventListener('click', () => runSearch({ writeLookups: true }));
 $('time').addEventListener('change', () => {
   const v = $('time').value;
   if (v === QUERY_TIME) return;
