@@ -20,6 +20,7 @@ delete the lab when you are done, and build it again next time.
 | `full` (the default) | 9 machines and a load balancer | about $0.10 | about $74 |
 | `minimal` | signalith-1, opensearch-1, linux-1 | about $0.03 | about $21 |
 | `loadtest` | signalith-1, two 8-core OpenSearch nodes with a 500 GB volume each, the load generator ([Load test](#load-test)) | about $0.12 | about $88 |
+| `loadtest` with `loadtest_servers=3` | signalith-1 to -3, two 4-core OpenSearch nodes (`cx33`) with a 500 GB volume each, the load generator ([Detection spread](#detection-spread)) | about the same as `loadtest` | about the same |
 
 Prices from Hetzner's price list of 15 June 2026, in Nuremberg, Falkenstein or Helsinki
 (the cheaper CX machines are only offered there), before tax.
@@ -112,7 +113,11 @@ Options, each with `-var name=value` on `terraform apply` and `terraform destroy
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `size` | `full` | `minimal`: one server, one OpenSearch node and one Linux endpoint |
+| `size` | `full` | `minimal`: one server, one OpenSearch node and one Linux endpoint; `loadtest`: the [load test](#load-test)'s machines |
+| `loadtest_servers` | `1` | The load test's Signalith servers, 1 to 3 (signalith-2 at 10.0.1.12, signalith-3 at 10.0.1.13), for [Detection spread](#detection-spread) |
+| `loadtest_opensearch_type` | `cx43` | The load test's OpenSearch machine type: `cx43` (8 cores), or `cx33` (4 cores) with more than one server |
+| `vcpu_limit` | `20` | The account's core limit; the load test's machines must fit in it |
+| `loadtest_volume_gb` | `500` | The size of each load test OpenSearch node's volume |
 | `location` | `nbg1` | `fsn1` (Falkenstein) or `hel1` (Helsinki) |
 | `home_ip` | your address now | The address the firewall lets in |
 | `ssh_public_key_file` | `~/.ssh/id_ed25519.pub` | Your SSH public key |
@@ -211,11 +216,12 @@ ssh root@<signalith-1 address> lab-loadtest
 It runs in the background for about 4.5 hours; `lab-loadtest status` shows how far it
 is, and `lab-loadtest stop` stops it early. Every machine records its CPU, memory, disk
 and network every 15 seconds, and OpenSearch its stored events, each node's load and
-how far the newest event is behind the clock (the lag) every 30 seconds. The results
-are in `/root/lab/loadtest/latest/` on signalith-1: `report.md` sums them up, with the
+how far the newest event is behind the clock (the lag) every 30 seconds. The detections
+are recorded too (see [What it records about detections](#what-it-records-about-detections)).
+The results are in `/root/lab/loadtest/latest/` on signalith-1: `report.md` sums them up, with the
 load generator's own measurements (`loadgen.txt`, from
 [loadtest/tb-day.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/tb-day.yaml))
-and each sample (`*.csv`). Copy them before you delete the machines:
+and each sample (`*.csv`, `*.jsonl`, `logs-*.txt`). Copy them before you delete the machines:
 
 ```
 scp -r root@<signalith-1 address>:/root/lab/loadtest/latest loadtest-results
@@ -229,6 +235,85 @@ terraform apply -var windows=false
 ```
 
 A run costs about $1: six hours of the test's machines and volumes.
+
+### What it records about detections
+
+Every minute, while either test runs, signalith-1 also keeps:
+
+| File | What |
+| --- | --- |
+| `detstate.jsonl` | Each detection's run state, from the `detstate` documents in the runtime indices (`signalith_runtime`, and `signalith.t.<tenant>_runtime` for other tenants): `detection_id`, `last_slot`, `last_run`, `last_duration_ms`, `lag_ms`, `late_runs`, `node`, `det_epoch`, `error_kind`, `schedule` and the tenant, one JSON line per rule |
+| `detassign.jsonl` | Each tenant's `detassign` document: its `search_budget` and lease epoch |
+| `threadpool.jsonl` | OpenSearch's search thread pool per node (`_cat/thread_pool/search`: active, queue, rejected, completed, size) |
+| `cluster.jsonl` | The `detections` block of `GET /api/cluster` (buckets each server runs and is moving, per tenant), the servers and who holds the jobs |
+
+Every 10 minutes it keeps `_cat/shards` (`shards.jsonl`) and `_cat/indices/signalith-*`
+(`indices.jsonl`), at the start the detections enabled by schedule (`rules.json`), and at
+the end each Signalith server's log lines since the start that say "running fewer",
+"full rate again", "assigned to servers", "detection ran late" or "rollover size"
+(`logs-<server>.txt`). `report.md` adds, per server (and per phase in the spread test):
+run time and lag p50/p95, the 1-minute rules' lag p95, late runs, timeouts, the sum of
+run times per hour, the search pool's rejected count growth and longest queue, the
+buckets each server runs against the even share (64 / servers, within 25%), the primary
+shards of each `signalith-*` index, the rollover lines, and the enabled rules by
+schedule. With fewer than 1,500 enabled rules it says so; it does not turn more on.
+
+The API calls sign in as `admin` with `/root/lab/admin-password`, given to curl on its
+input; OpenSearch is read with the admin certificate in `/root/lab/pki`.
+
+### Detection spread
+
+`sudo lab-loadtest spread` measures detections spread over several servers
+(`detections.spread`). It needs two or three Signalith servers, so build the load test
+with `loadtest_servers`. Hetzner's first limit is 20 cores, and three 2-core servers, two
+8-core OpenSearch nodes and the load generator need 24 (two servers need 22): use 4-core
+OpenSearch nodes, or ask Hetzner to raise the limit first and give the new limit as
+`vcpu_limit`. Terraform refuses a set that does not fit before it makes anything.
+
+```powershell
+terraform apply -var size=loadtest -var loadtest_servers=3 -var loadtest_opensearch_type=cx33
+```
+
+or, with the limit raised to 24 or more, the plan's 8-core nodes:
+
+```powershell
+terraform apply -var size=loadtest -var loadtest_servers=3 -var vcpu_limit=24
+```
+
+The setup joins signalith-2 and signalith-3 to signalith-1 with join tokens, each with
+`cluster.leader_eligible` on (`SIGNALITH_LEADER_ELIGIBLE=true`), so each may run
+detections. Then, on signalith-1:
+
+```
+ssh root@<signalith-1 address> lab-loadtest spread
+```
+
+It refuses a lab with one server. It sends 10,000 events a second of about 500 bytes for
+four hours with the same 200 agents and 5 analysts as the terabyte test
+([loadtest/spread-10k.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/spread-10k.yaml)),
+the agents spread over every server's agent port (7779), and after 10 minutes of
+warming up runs these phases, 45 minutes each:
+
+1. **Spread off.** One server runs every rule. If `detections.spread` was on, the test
+   turns it off first.
+2. **Spread on.** `detections.spread` turned on in the shared settings (`PUT /api/settings`).
+3. **Graceful move.** `systemctl restart signalith` on signalith-2.
+4. **Crash.** `kill -9` of Signalith on signalith-3 (signalith-2 with two servers), down
+   10 minutes, then started again.
+
+The rest of the load is recorded as phase 5, spread on with nothing changed. Each phase's
+start and end are in `phases.csv`, and what the test did, with the times the servers were
+ready again, in `events.csv`; `report.md` has a table per phase and CPU per machine per
+phase. At the end, or when stopped, the test starts any server it left stopped and
+puts `detections.spread` back as it found it. It takes about 4.5 hours.
+
+The measurement plan's noisy tenant (phase 5) is not run: a tenant's detections search
+only its own events, and the load generator sends none to other tenants. Do it by hand
+after the run: add a tenant (**Settings** > **Tenants**), send it events with an agent
+token made in it (for example `signalith-loadgen agents` on the load generator), add 5
+detections in it that search `*` over `30d` every `1m`, and watch the "running fewer"
+lines and the other tenants' lag. The plan's other settings (OpenSearch shards, the extra
+tenants of ~300 rules, 1,500 enabled rules) are also set by hand before the run.
 
 ## A lab made before the port change
 

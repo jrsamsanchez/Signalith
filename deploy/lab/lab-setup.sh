@@ -11,7 +11,8 @@
 #   1. builds Signalith from the repository at the branch Terraform names;
 #   2. OpenSearch on opensearch-1..3 with certificates of its own CA;
 #   3. signalith-1, pointed at OpenSearch, and the CA handed to the cluster;
-#   4. signalith-2 and the scanner, joined with join tokens;
+#   4. signalith-2 (and signalith-3 in a load test with three servers)
+#      and the scanner, joined with join tokens;
 #   5. OpenVAS on the scanner;
 #   6. Fluent Bit on the Linux endpoints;
 #   7. the network sensor, fed by a copy of the endpoints' traffic.
@@ -390,6 +391,11 @@ EOF
   if [ "$role" = scanner ]; then
     on "$name" 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q nmap >/dev/null && systemctl restart signalith'
   fi
+  if [ "$SIZE" = loadtest ] && [ -z "$role" ]; then
+    # The load test spreads detections over every server (lab-loadtest
+    # spread), so each one may run them: cluster.leader_eligible on.
+    on "$name" 'mkdir -p /etc/systemd/system/signalith.service.d && printf "[Service]\nEnvironment=SIGNALITH_LEADER_ELIGIBLE=true\n" >/etc/systemd/system/signalith.service.d/lab-loadtest.conf && systemctl daemon-reload && systemctl restart signalith'
+  fi
   if [ -n "$LB_IP" ] && [ "$role" != scanner ]; then
     # Read the PROXY protocol header the load balancer sends.
     on "$name" 'mkdir -p /etc/systemd/system/signalith.service.d && printf "[Service]\nEnvironment=SIGNALITH_PROXY_PROTOCOL=true\n" >/etc/systemd/system/signalith.service.d/lab.conf && systemctl daemon-reload && systemctl restart signalith'
@@ -609,7 +615,8 @@ sensor() {
 
 # loadgen puts signalith-loadgen on the load generator, with what its
 # scenarios read in /root/loadtest (root's only): the CA, an agent token
-# and the admin's password.
+# and the admin's password, and the scenarios tb-day (sudo lab-loadtest)
+# and spread-10k (sudo lab-loadtest spread).
 loadgen() {
   local token
   cd "$LAB/src"
@@ -619,10 +626,10 @@ loadgen() {
   token=$(sg tokens create -purpose linux "Load test $(date +%m%d-%H%M%S)")
   on loadgen 'install -d -m 700 /root/loadtest'
   scp -q -i "$LAB/id_lab" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$LAB/known_hosts" -o LogLevel=ERROR \
-    "$LAB/signalith-loadgen" "$LAB/src/loadtest/tb-day.yaml" /var/lib/signalith/tls/ca.pem "root@$(ip_of loadgen):/root/loadtest/"
+    "$LAB/signalith-loadgen" "$LAB/src/loadtest/tb-day.yaml" "$LAB/src/loadtest/spread-10k.yaml" /var/lib/signalith/tls/ca.pem "root@$(ip_of loadgen):/root/loadtest/"
   printf '%s\n' "$token" | on loadgen 'umask 077 && cat >/root/loadtest/token.txt'
   { printf 'admin:'; admin_password; } | on loadgen 'umask 077 && cat >/root/loadtest/admin.txt'
-  on loadgen 'chmod 600 /root/loadtest/*; chmod 700 /root/loadtest/signalith-loadgen; /root/loadtest/signalith-loadgen check /root/loadtest/tb-day.yaml' >/dev/null
+  on loadgen 'chmod 600 /root/loadtest/*; chmod 700 /root/loadtest/signalith-loadgen; /root/loadtest/signalith-loadgen check /root/loadtest/tb-day.yaml /root/loadtest/spread-10k.yaml' >/dev/null
   install -m 755 "$LAB/src/deploy/lab/lab-loadtest.sh" /usr/local/sbin/lab-loadtest
 }
 
@@ -637,6 +644,7 @@ step opensearch-security opensearch_security
 step signalith-1 signalith_first
 step opensearch-ca opensearch_ca
 if have signalith-2; then step signalith-2 join signalith-2; fi
+if have signalith-3; then step signalith-3 join signalith-3; fi
 if have scanner; then step scanner join scanner scanner; fi
 if have scanner && [ "$OPENVAS" = true ]; then step openvas openvas; fi
 if [ -n "$(names linux)" ]; then step endpoints endpoints; fi
@@ -662,6 +670,6 @@ cat <<MSG
   Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md
   (Windows, the scan networks, single sign-on).
-  To test everything: sudo lab-e2e$(have loadgen && printf '\n  To run the load test: sudo lab-loadtest (see docs/cloud-lab.md)')
+  To test everything: sudo lab-e2e$(have loadgen && printf '\n  To run the load test: sudo lab-loadtest (see docs/cloud-lab.md)')$(have loadgen && have signalith-2 && printf '\n  To measure detections spread over the servers: sudo lab-loadtest spread')
 
 MSG
