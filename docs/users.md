@@ -1085,12 +1085,13 @@ viewer's run is not saved), `GET /api/compliance`,
 `GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
-they wait for), `POST /api/chat/link/check`, `POST /api/chat/link`, `POST /api/chat/code`,
+they wait for), `GET /api/tenants` (the tenants of a [multi-tenant](multi-tenant.md)
+install), `POST /api/chat/link/check`, `POST /api/chat/link`, `POST /api/chat/code`,
 `GET /api/chat/accounts`, `DELETE /api/chat/accounts/{id}` (linking your own Slack or Teams
 account for the [buttons in chat messages](notifications.md#buttons-in-slack-and-teams); the
 clicks still need the Analyst role), and the web UI.
 
-**Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
+**Analyst:** `POST /api/tenants/switch` (switching to another tenant's data), `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
@@ -1111,7 +1112,7 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
 ([Investigate with AI](investigate.md), once an admin turns it on).
 
-**Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
+**Admin:** `POST /api/tenants` and `PATCH /api/tenants/{id}` (adding a [tenant](multi-tenant.md), renaming it or turning it off; the provider's admins only), `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
 with a DNS check; see [load-balancers.md](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
 [network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
@@ -1174,6 +1175,19 @@ three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/s
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
+
+**Provider only:** on a [multi-tenant](multi-tenant.md) install, the routes about the server
+itself rather than one tenant's data are refused to tenants' users, whatever their role:
+every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
+`/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers` and `/api/chat` route. So are the routes
+that make the server send requests to addresses a user gives, though they change a
+tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
+`DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,
+`POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
+`POST /api/intel/taxii/collections`, `PUT /api/notify`, `POST /api/notify/test`,
+`PUT /api/respond/config` and `POST /api/respond/test`. Every other route works on the
+tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer

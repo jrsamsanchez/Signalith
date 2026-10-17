@@ -67,6 +67,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/ticketing"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -1095,6 +1096,8 @@ type instance struct {
 	cancel context.CancelFunc
 	jobs   sync.WaitGroup // what runs on every server, such as index creation
 	log    *slog.Logger
+	// tenants runs the tenants' data, when there may be tenants.
+	tenants *tenantRuntime
 }
 
 // stop ends the background jobs, retention and the syslog receiver, and
@@ -1103,6 +1106,9 @@ type instance struct {
 func (in *instance) stop() {
 	if in.node != nil {
 		in.node.SetJobs(nil)
+	}
+	if in.tenants != nil {
+		in.tenants.stop()
 	}
 	in.cancel()
 	in.jobs.Wait()
@@ -1922,8 +1928,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.node = r.node
 	}
 	srv.Install = clusterInstall()
+	// The tenants of a multi-tenant install. A list that cannot be read
+	// leaves every tenant's users unable to sign in, rather than guess.
+	if reg, err := tenants.Open(c.TenantsFile()); err != nil {
+		log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
+	} else {
+		srv.Tenants = reg
+	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
+	if srv.Tenants != nil && parts == nil {
+		// Each tenant's data, on this server only for now: tenants' users
+		// cannot be kept in the shared settings of a cluster yet.
+		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv)
+		srv.TenantRuntime, in.tenants = tr, tr
+		in.jobs.Go(tr.startAll)
+	}
 	r.srv.Store(srv)
 	if c.Server.AgentAddr() != "" {
 		in.agentHandler = srv.AgentHandler()

@@ -1143,6 +1143,33 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_max_age") {
 		s.sessions().SetMaxAge(next.SessionMaxAge())
 	}
+	s.useLive(&next, applied)
+	if changed("vulns.") && s.Vulns != nil {
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
+	}
+	if changed("server.public_url") {
+		s.coverPublicURL(&next)
+	}
+	if changed("server.tls.plaintext_ingest") {
+		s.endOldTokenLocked()
+	}
+	if changed("server.node_url") && s.NodeURLChanged != nil {
+		s.NodeURLChanged(&next)
+	}
+	// Each tenant's server works with the same settings.
+	if s.TenantRuntime != nil {
+		s.TenantRuntime.SettingsChanged()
+	}
+	return applied
+}
+
+// useLive puts the settings applied at once into use in the parts of
+// the server that keep their own copy of them and that every tenant's
+// server has.
+func (s *Server) useLive(next *config.Config, applied []string) {
+	changed := func(prefix string) bool {
+		return slices.ContainsFunc(applied, func(k string) bool { return strings.HasPrefix(k, prefix) })
+	}
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
 	}
@@ -1155,25 +1182,30 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("assistant.") {
 		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
 	}
-	if changed("vulns.") && s.Vulns != nil {
-		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
-	}
-	if changed("server.public_url") {
-		s.coverPublicURL(&next)
-	}
-	if changed("server.tls.plaintext_ingest") {
-		s.endOldTokenLocked()
-	}
 	if changed("ingest.max_event_age") && s.EventAge != nil {
-		s.EventAge.Use(&next)
+		s.EventAge.Use(next)
 	}
 	if changed("ingest.url_query") && s.Pipeline != nil {
 		s.Pipeline.SetURLQuery(next.URLQueryMode())
 	}
-	if changed("server.node_url") && s.NodeURLChanged != nil {
-		s.NodeURLChanged(&next)
+}
+
+// FollowLive makes the settings of tenant server s those of the default
+// tenant's server, front: the settings it started with and those
+// applied at once since, as they are for this tenant.
+func (s *Server) FollowLive(front *config.Config) {
+	next := front.ForTenant(s.TenantID)
+	s.followMu.Lock()
+	defer s.followMu.Unlock()
+	cur := s.conf()
+	var applied []string
+	for i := range config.Registry {
+		if k := config.Registry[i].Key; !config.SameValue(cur, next, k) {
+			applied = append(applied, k)
+		}
 	}
-	return applied
+	s.live.Store(next)
+	s.useLive(next, applied)
 }
 
 // coverPublicURL adds the public address's host to Signalith's own HTTPS

@@ -322,33 +322,43 @@ func applyRegex(ctx context.Context, res *Result, c *query.Regex) error {
 
 // applyFieldsRemove drops fields, * matching any characters, from the
 // rows and the columns.
-func applyFieldsRemove(res *Result, c *query.FieldsRemove) {
+func applyFieldsRemove(ctx context.Context, res *Result, c *query.FieldsRemove) error {
 	var globs []glob
 	for _, f := range c.Fields {
 		globs = append(globs, compileGlob(f, false))
 	}
-	drop := func(name string) bool {
+	ev := evaluatorFor(ctx)
+	drop := fieldMatcher(ev, len(globs), func(name string) bool {
 		for _, g := range globs {
 			if g.match(name) {
 				return true
 			}
 		}
 		return false
-	}
+	})
 	cols := res.Columns[:0:0]
 	for _, col := range res.Columns {
-		if !drop(col) {
+		d, ok := drop(col)
+		if !ok {
+			return ev.err
+		}
+		if !d {
 			cols = append(cols, col)
 		}
 	}
 	res.Columns = cols
 	for _, r := range res.Rows {
 		for f := range r {
-			if drop(f) {
+			d, ok := drop(f)
+			if !ok {
+				return ev.err
+			}
+			if d {
 				delete(r, f)
 			}
 		}
 	}
+	return nil
 }
 
 // makeResults returns rows that hold only the time the search ran.
