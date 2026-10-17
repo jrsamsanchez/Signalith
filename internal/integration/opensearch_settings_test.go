@@ -158,6 +158,11 @@ func startOpenSearch(t *testing.T, v, yml, certs, security string, env []string)
 			if m := refused.FindString(out.String()); m != "" {
 				return errorString(m)
 			}
+			if ready.MatchString(out.String()) {
+				// It took its settings, then stopped on a check of this
+				// computer, such as vm.max_map_count for a cluster node.
+				return nil
+			}
 			return errorString("OpenSearch stopped: " + errText(err) + "\n" + tail(out.String(), 20))
 		case <-tick.C:
 			s := out.String()
