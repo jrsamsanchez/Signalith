@@ -223,10 +223,16 @@ func (s *Scheduler) dropStale(id string) {
 		s.dropStates()
 		return
 	}
+	s.loseBucket(id)
 	s.mu.Lock()
 	delete(s.det, id)
 	s.mu.Unlock()
 }
+
+// Forget drops the scheduler's copy of the run state: it is read again,
+// under a fresh detection epoch, before the next run. The leader calls
+// it before running the rules again after they were spread.
+func (s *Scheduler) Forget() { s.dropStates() }
 
 // dropStates forgets the leader's copy, so it is read again before the
 // next run.

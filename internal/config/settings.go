@@ -430,6 +430,9 @@ var Registry = []Setting{
 	{Key: "detections.catch_up", Scope: ScopeCluster, Section: "detections", Label: "Make up missed runs", Type: TypeDuration,
 		Help:        "When detections could not run, for example while every server was stopped, how far back the missed runs are made up once they run again. Older ones are skipped and shown on the Detections page. 0 turns this off.",
 		Placeholder: "6h", EmptyMeans: "6h"},
+	{Key: "detections.spread", Scope: ScopeCluster, Section: "detections", Label: "Spread detections over servers", Type: TypeBool,
+		Help: "Run detections on every server that may run background work, each rule on one of them, instead of all on one server. " +
+			"Takes effect once every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
 	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
 		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +

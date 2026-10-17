@@ -76,7 +76,10 @@ type Server struct {
 	// findings queue; when nil those endpoints return 503.
 	Detections *detect.Library
 	Scheduler  *detect.Scheduler
-	Findings   findings.Store
+	// SpreadScheduler runs the detection buckets assigned to this server
+	// when detections are spread over servers; nil when they cannot be.
+	SpreadScheduler *detect.Scheduler
+	Findings        findings.Store
 	// Assets holds the asset and identity lists; nil disables them.
 	Assets *assets.Store
 	// Intel holds threat intel indicators and Feeds downloads them; nil
