@@ -715,10 +715,18 @@ func isLoopback(host string) bool {
 	return err == nil && a.Unmap().IsLoopback()
 }
 
+// MaxSummaryDays is the most search.summary_days takes.
+const MaxSummaryDays = 400
+
 // Search tunes the query engine.
 type Search struct {
 	DefaultEarliest string `yaml:"default_earliest"`
 	MaxEvents       int    `yaml:"max_events"`
+	// SummaryDays is how far back summary indexes start: the server
+	// that runs the background jobs keeps per-data-model counts in
+	// 5-minute slots, which stats, timechart and tstats read instead of
+	// every event (see docs/summaries.md). 0 turns summaries off.
+	SummaryDays int `yaml:"summary_days"`
 }
 
 // Retention controls how long data is kept; see docs/retention.md. Most
@@ -1513,7 +1521,7 @@ func Default() *Config {
 	return &Config{
 		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
-		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000},
+		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000, SummaryDays: 30},
 		Retention:  Retention{Days: 90},
 		Auth:       Auth{AdminUser: "admin"},
 		Detections: Detections{Dir: "detections", Scheduler: true, MaxFindingsPerRun: 100, CatchUp: "6h"},
@@ -2455,6 +2463,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")
+	}
+	if c.Search.SummaryDays < 0 || c.Search.SummaryDays > MaxSummaryDays {
+		p = append(p, fmt.Sprintf("search.summary_days must be between 0 (off) and %d", MaxSummaryDays))
 	}
 	if c.Retention.Days < 0 {
 		p = append(p, "retention.days cannot be negative (0 keeps data forever)")

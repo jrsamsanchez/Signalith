@@ -1170,7 +1170,7 @@ func (s *Server) useLive(next *config.Config, applied []string) {
 		return slices.ContainsFunc(applied, func(k string) bool { return strings.HasPrefix(k, prefix) })
 	}
 	if changed("search.") && s.Engine != nil {
-		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
+		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents, next.Search.SummaryDays)
 	}
 	if changed("detections.max_findings_per_run") && s.Scheduler != nil {
 		s.Scheduler.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)

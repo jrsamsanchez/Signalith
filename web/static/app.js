@@ -1629,6 +1629,9 @@ function renderResult() {
     el('span', { class: 'hide-sm', 'aria-hidden': 'true' }, '·'),
     el('span', { class: 'hide-sm' }, `${(res.took_ms || 0).toLocaleString()} ms`),
   ];
+  if ((res.summaries || []).length) {
+    stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
+  }
   if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
   if ((res.rows || []).length) {
     stats.push(el('button', {
