@@ -93,7 +93,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 					continue
 				}
 				ruleID = rule.ID
-				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q.Datamodel, q.Search, tf) }
+				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q, tf) }
 			} else {
 				rule, err := sigmacheck.Parse(src)
 				if err != nil {

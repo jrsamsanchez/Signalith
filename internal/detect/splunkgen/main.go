@@ -251,7 +251,7 @@ func main() {
 			c.Expect = splcheck.Reads(rule, c)
 			tf.Cases = append(tf.Cases, c)
 		}
-		if errs := splcheck.Verify(rule, q.Datamodel, q.Search, tf); len(errs) > 0 {
+		if errs := splcheck.Verify(rule, q, tf); len(errs) > 0 {
 			skip("converted detection disagrees with the rule", rel+": "+errs[0].Error())
 			continue
 		}

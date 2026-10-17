@@ -98,6 +98,103 @@ func usePackTables(ps []*Pack) {
 	lookuptables.SetPackTables(ts)
 }
 
+// SplunkSearch is a Splunk rule's filter (SplunkFilter) and the regex
+// stages that run after it: a regular expression OpenSearch cannot search
+// exactly only because of its word boundaries (\b, \B), which Signalith's
+// regex command reads as Splunk does, is left out of the filter and runs
+// on the events it finds, before the rule's later stages. Only one every
+// event must match (an AND term of the where clause) can run later.
+func SplunkSearch(r *splcheck.Rule) (query.Expr, []*query.Regex, error) {
+	var later []*query.Regex
+	var keep []splcheck.Expr
+	others := 0
+	for _, k := range conjuncts(r.Where) {
+		if re := laterRegex(k); re != nil {
+			later = append(later, re)
+			// The pattern without its word boundaries matches every
+			// value the whole one does, so the filter keeps it: the
+			// search finds only the events the regex stage may keep.
+			if loose := looseRegex(k.(*splcheck.Cmp)); loose != nil {
+				keep = append(keep, loose)
+			}
+			continue
+		}
+		keep = append(keep, k)
+		others++
+	}
+	if len(later) == 0 {
+		f, err := SplunkFilter(r)
+		return f, nil, err
+	}
+	if others == 0 {
+		return nil, nil, fmt.Errorf("a search of only regular expressions with word boundaries is not supported")
+	}
+	rest := *r
+	rest.Where = &splcheck.And{Kids: keep}
+	f, err := SplunkFilter(&rest)
+	return f, later, err
+}
+
+// conjuncts are the terms of a where clause joined by AND.
+func conjuncts(e splcheck.Expr) []splcheck.Expr {
+	a, ok := e.(*splcheck.And)
+	if !ok {
+		return []splcheck.Expr{e}
+	}
+	var out []splcheck.Expr
+	for _, k := range a.Kids {
+		out = append(out, conjuncts(k)...)
+	}
+	return out
+}
+
+// laterRegex is a regular expression term as a regex stage when only its
+// word boundaries keep OpenSearch from searching it (splunkRegex), or nil.
+// Splunk's regular expressions are PCRE's, which read \b and \B as Go's
+// do: between an ASCII letter, digit or _ and anything else, or the
+// value's start or end. Signalith's regex stage, like Splunk's, drops an
+// event without the field, and matches a field of several values when one
+// of them does, as the search would.
+func laterRegex(e splcheck.Expr) *query.Regex {
+	x, ok := e.(*splcheck.Cmp)
+	if !ok || !x.Regex || x.Neg || len(x.Values) != 1 ||
+		x.Field == splcheck.RawUser || x.Field == "user" || x.Field == "registry_value_data" ||
+		x.Field == search.StoredRawField || !plainField.MatchString(x.Field) {
+		return nil
+	}
+	if _, err := splunkRegex(x); err == nil {
+		return nil
+	}
+	// Without its word boundaries, the rest is one OpenSearch could
+	// search: nothing else Signalith reads differently from Splunk.
+	loose, ok := splcheck.WithoutBoundaries(x.Values[0])
+	if !ok {
+		return nil
+	}
+	if _, err := search.ParseRegex(loose); err != nil {
+		return nil
+	}
+	return &query.Regex{Field: x.Field, Pattern: x.Values[0]}
+}
+
+// looseRegex is a regular expression term with its word boundaries left
+// out, when OpenSearch can search it (splunkRegex), or nil.
+func looseRegex(x *splcheck.Cmp) *splcheck.Cmp {
+	loose, ok := splcheck.WithoutBoundaries(x.Values[0])
+	if !ok {
+		return nil
+	}
+	c := *x
+	c.Values = []string{loose}
+	if _, err := splunkRegex(&c); err != nil {
+		return nil
+	}
+	return &c
+}
+
+// plainField is a stored field's name, not a raw or internal one.
+var plainField = regexp.MustCompile(`^[A-Za-z][\w.]*$`)
+
 // SplunkFilter is a Splunk rule's where clause as a Signalith filter,
 // limited to the Windows events of its data model node. Field names are
 // the CIM's, which Signalith uses too. A != comparison needs the field
@@ -379,12 +476,15 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if err != nil {
 		return nil, err
 	}
-	filter, err := SplunkFilter(rule)
+	filter, later, err := SplunkSearch(rule)
 	if err != nil {
 		return nil, err
 	}
 	dm := splcheck.NodeModel[rule.Node]
 	q := &query.Query{Datamodel: dm, Search: filter}
+	for _, re := range later {
+		q.Commands = append(q.Commands, re)
+	}
 	var mitre []string
 	for _, t := range append(rule.MitreAttackID, rule.Tags.MitreAttackID...) {
 		if t = strings.ToUpper(strings.TrimSpace(t)); splunkTechnique.MatchString(t) && !slices.Contains(mitre, t) {

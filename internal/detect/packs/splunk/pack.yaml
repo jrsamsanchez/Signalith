@@ -2302,6 +2302,10 @@ rules:
     rule_id: afed80b2-d34b-11eb-a952-acde48001122
     file: powershell_enable_smb1protocol_feature.yml
     path: detections/endpoint/powershell_enable_smb1protocol_feature.yml
+  - id: splunk-powershell-environment-variable-execution
+    rule_id: 02c1d8e9-044c-401f-906c-cc95445af8bd
+    file: powershell_environment_variable_execution.yml
+    path: detections/endpoint/powershell_environment_variable_execution.yml
   - id: splunk-powershell-execute-com-object
     rule_id: 65711630-f9bf-11eb-8d72-acde48001122
     file: powershell_execute_com_object.yml
@@ -2350,6 +2354,10 @@ rules:
     rule_id: adf47620-79fa-11ec-b248-acde48001122
     file: powershell_remove_windows_defender_directory.yml
     path: detections/endpoint/powershell_remove_windows_defender_directory.yml
+  - id: splunk-powershell-script-block-with-url-chain
+    rule_id: 4a3f2a7d-6402-4e64-a76a-869588ec3b57
+    file: powershell_script_block_with_url_chain.yml
+    path: detections/endpoint/powershell_script_block_with_url_chain.yml
   - id: splunk-powershell-start-bitstransfer
     rule_id: 39e2605a-90d8-11eb-899e-acde48001122
     file: powershell_start_bitstransfer.yml
@@ -4334,6 +4342,10 @@ rules:
     rule_id: 4d0480d8-80c4-4f74-84fe-2ab7fb514c85
     file: windows_powgoop_beacon_decoding.yml
     path: detections/endpoint/windows_powgoop_beacon_decoding.yml
+  - id: splunk-windows-private-keys-discovery
+    rule_id: 5c1c2877-06c0-40ee-a1a2-db71f1372b5b
+    file: windows_private_keys_discovery.yml
+    path: detections/endpoint/windows_private_keys_discovery.yml
   - id: splunk-windows-privilege-escalation-attempt-via-msi-rollback
     rule_id: f40a5edd-8086-4ad8-868a-805270e9b167
     file: windows_privilege_escalation_attempt_via_msi_rollback.yml

@@ -827,7 +827,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,280 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,283 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1122,7 +1122,10 @@ or `where match(field, "...")` joined by AND or OR) or apply the rule's empty `_
 macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
 clause on every event. A regular expression converts when it is also valid in Go's
-syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries).
+syntax (no lookarounds) and OpenSearch can search it exactly. One that OpenSearch
+cannot search only because of its word boundaries (`\b`, `\B`), and that every event
+must match (not one of several joined by OR, and not negated), runs as a `regex`
+stage right after the search instead, which reads word boundaries as Splunk does.
 A value with a `?`, which Splunk reads literally, is searched as a regular expression
 too. An address range (`dest_ip IN ("10.0.0.0/8", ...)`) matches the addresses in it, as in Splunk. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
 `bit_and(m, 16)` and a `where` on the result being the mask, 0 or not 0) convert to a regular

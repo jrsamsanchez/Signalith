@@ -192,7 +192,16 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		}
 		q.Search = &query.And{Children: []query.Expr{q.Search, &query.In{Field: "host", Values: rc.hosts}}}
 		q.Earliest = "-1h"
-		q.Commands = []query.Command{&query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}}}
+		// The regex stages a detection runs right after its filter (a
+		// Splunk regular expression with word boundaries) stay.
+		var cmds []query.Command
+		for _, c := range q.Commands {
+			if _, ok := c.(*query.Regex); !ok {
+				break
+			}
+			cmds = append(cmds, c)
+		}
+		q.Commands = append(cmds, &query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}})
 		res, err := eng.Execute(ctx, q)
 		if err != nil {
 			t.Errorf("%s: %v", rc.det.ID, err)
