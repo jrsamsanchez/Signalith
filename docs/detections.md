@@ -821,7 +821,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,265 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,269 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1129,7 +1129,14 @@ values or none. A later `search` runs as Signalith's `search`, so its terms side
 are joined by AND, with OR before AND, as in Splunk; a bare term in it is left out. A later
 `search field IN (...)` of a field an earlier stage made multivalue (`makemv`) keeps the row
 when one of its values is in the list, ignoring case, as in Splunk, and runs as
-`where in(mvmap(field, lower(field)), ...)`. A macro in an `IN` list
+`where in(mvmap(field, lower(field)), ...)`. So does a later `search` of a list's field
+(`search "{}.ResourceAppId"="..."` after `spath`, or `targetResources{}.type`), which
+Signalith's `search` would compare as one value: each `field=value` is `in()` over its
+values in lower case, with the terms' AND and OR kept. Such a field compared with a `*`,
+a number or under `NOT`, two quoted terms with no space between them, and a `stats` that
+groups by a field `spath` takes from a JSON list (Splunk groups by each value and does not say how it counts one
+that comes twice) are left out. A number a later `where` compares a `rex` group with
+(`where tonumber(target_rid) IN (512, 513)`) makes test events whose field ends in it. A macro in an `IN` list
 (`` process_name IN (`uacbypass_process_name`) ``) stands for its values, as Splunk expands
 macros as text; a list with two values and no comma between them is left out. A `where`
 that compares two
