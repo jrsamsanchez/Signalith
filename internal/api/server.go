@@ -562,7 +562,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "token:"+who.ID)
 	if err != nil {
 		// 503 makes Fluent Bit retry later instead of dropping data.
 		w.Header().Set("Retry-After", "5")

@@ -120,6 +120,9 @@ records of at most 1 MB each, nested at most 32 levels deep; Fluent Bit's reques
 far smaller. A request over a limit is refused with 413 (400 for broken JSON) and a
 message saying what to change, and nothing from it is stored. When many agents send at
 once, the extra requests wait their turn and then get 503, so Fluent Bit sends them again.
+A server writes 32 batches at once (`ingest.max_concurrent`, under Settings > Web; lower it
+on a server with little memory). While others wait, one agent token gets at most a quarter
+of them, so one busy agent cannot hold up the rest.
 
 A batch is read in full before it waits for its turn, so a slow sender never holds up
 other agents. Batches still arriving may hold 256 MB of memory in all, and one sender (an

@@ -269,20 +269,20 @@ func TestIngestEventsKeepsSyslogDeviceTime(t *testing.T) {
 func TestAdmitLimitsConcurrentRequests(t *testing.T) {
 	p := &Pipeline{MaxConcurrent: 2}
 	ctx := context.Background()
-	r1, err1 := p.Admit(ctx, time.Second)
-	r2, err2 := p.Admit(ctx, time.Second)
+	r1, err1 := p.Admit(ctx, time.Second, "a")
+	r2, err2 := p.Admit(ctx, time.Second, "a")
 	if err1 != nil || err2 != nil {
 		t.Fatal(err1, err2)
 	}
 	start := time.Now()
-	if _, err := p.Admit(ctx, 50*time.Millisecond); !errors.Is(err, ErrBusy) || time.Since(start) < 50*time.Millisecond {
+	if _, err := p.Admit(ctx, 50*time.Millisecond, "a"); !errors.Is(err, ErrBusy) || time.Since(start) < 50*time.Millisecond {
 		t.Fatalf("third request: %v after %v", err, time.Since(start))
 	}
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		r1()
 	}()
-	r3, err := p.Admit(ctx, time.Second)
+	r3, err := p.Admit(ctx, time.Second, "a")
 	if err != nil {
 		t.Fatalf("after a slot freed: %v", err)
 	}
@@ -295,16 +295,95 @@ func TestAdmitDefaultSlots(t *testing.T) {
 	ctx := context.Background()
 	var release []func()
 	for i := 0; i < DefaultMaxConcurrent; i++ {
-		r, err := p.Admit(ctx, time.Second)
+		r, err := p.Admit(ctx, time.Second, "a")
 		if err != nil {
 			t.Fatalf("request %d: %v", i+1, err)
 		}
 		release = append(release, r)
 	}
-	if _, err := p.Admit(ctx, 10*time.Millisecond); !errors.Is(err, ErrBusy) {
+	if _, err := p.Admit(ctx, 10*time.Millisecond, "a"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("request past the default: %v", err)
 	}
 	for _, r := range release {
 		r()
 	}
+}
+
+func TestAdmitSharesSlotsBetweenTokens(t *testing.T) {
+	p := &Pipeline{MaxConcurrent: 4} // a share is 1 slot
+	ctx := context.Background()
+	// Alone, one token gets every slot.
+	var busy []func()
+	for i := 0; i < 4; i++ {
+		r, err := p.Admit(ctx, time.Second, "busy")
+		if err != nil {
+			t.Fatalf("slot %d: %v", i+1, err)
+		}
+		busy = append(busy, r)
+	}
+	// The busy token queues first, then another token: a freed slot goes
+	// to the other token, which holds less than its share.
+	got := make(chan string, 2)
+	wait := func(sender string) {
+		r, err := p.Admit(ctx, 5*time.Second, sender)
+		if err != nil {
+			got <- "error " + err.Error()
+			return
+		}
+		got <- sender
+		r()
+	}
+	go wait("busy")
+	waitFor(t, p, 1)
+	go wait("quiet")
+	waitFor(t, p, 2)
+	busy[0]()
+	if first := <-got; first != "quiet" {
+		t.Errorf("first freed slot went to %q", first)
+	}
+	if second := <-got; second != "busy" {
+		t.Errorf("then %q", second)
+	}
+	for _, r := range busy[1:] {
+		r()
+	}
+	if p.slots.held != 0 || len(p.slots.per) != 0 || len(p.slots.waiting) != 0 {
+		t.Errorf("left held=%d per=%v waiting=%d", p.slots.held, p.slots.per, len(p.slots.waiting))
+	}
+}
+
+func TestAdmitTimeoutLeavesNoSlotBehind(t *testing.T) {
+	p := &Pipeline{MaxConcurrent: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	r, _ := p.Admit(ctx, time.Second, "a")
+	done := make(chan error)
+	go func() {
+		_, err := p.Admit(ctx, 5*time.Second, "b")
+		done <- err
+	}()
+	waitFor(t, p, 1)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled wait: %v", err)
+	}
+	r()
+	if r2, err := p.Admit(context.Background(), time.Second, "c"); err != nil {
+		t.Fatalf("after the release: %v", err)
+	} else {
+		r2()
+	}
+}
+
+// waitFor waits until n requests are queued for a slot.
+func waitFor(t *testing.T, p *Pipeline, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		p.slotsMu.Lock()
+		got := len(p.slots.waiting)
+		p.slotsMu.Unlock()
+		if got == n {
+			return
+		}
+	}
+	t.Fatalf("never saw %d waiting", n)
 }

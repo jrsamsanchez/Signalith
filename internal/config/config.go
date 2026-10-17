@@ -931,6 +931,10 @@ type Ingest struct {
 	// events are stored: keep (the default), redact (keep the parameter
 	// names, hide their values) or drop. See URLQueryMode.
 	URLQuery string `yaml:"url_query,omitempty"`
+	// MaxConcurrent is how many agent batches this server decodes and
+	// writes to OpenSearch at once; more wait their turn. 0 means 32.
+	// Lower it on a server with little memory.
+	MaxConcurrent int `yaml:"max_concurrent,omitempty"`
 }
 
 // URLQueryMode returns ingest.url_query: keep, redact or drop, keep when
@@ -2382,6 +2386,9 @@ func (c *Config) Validate() error {
 	p = append(p, c.agentListenProblems()...)
 	if c.Server.MaxConnections < 0 {
 		p = append(p, "server.max_connections cannot be negative (0 uses the default, 10000)")
+	}
+	if c.Ingest.MaxConcurrent < 0 || c.Ingest.MaxConcurrent > 1024 {
+		p = append(p, "ingest.max_concurrent must be 0-1024 (0 uses the default, 32)")
 	}
 	for i, a := range c.Server.SharedAddresses {
 		if _, err := parseAllow(a); err != nil {

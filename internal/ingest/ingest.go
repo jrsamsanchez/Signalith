@@ -121,8 +121,8 @@ type Pipeline struct {
 	names   fieldBudget
 	procs   ProcessTracker
 	counter fieldCounter
-	slots   chan struct{}
 	slotsMu sync.Mutex
+	slots   *slots
 	warnMu  sync.Mutex
 	warned  map[string]time.Time
 
@@ -611,40 +611,6 @@ var ErrBusy = errors.New("Signalith is busy writing other events; send again in 
 // to about 11,000 events a second with OpenSearch mostly idle. The bodies
 // those requests hold stay capped by MaxReceiving whatever this is.
 const DefaultMaxConcurrent = 32
-
-// Admit waits up to wait for one of MaxConcurrent ingest slots and returns
-// the function that frees it, or ErrBusy. Take a slot once the request
-// body has arrived (see ReadBody) and hold it while the body is decoded
-// and written: that bounds the memory and OpenSearch writes ingest uses
-// however many agents send at once, and a slow sender cannot hold a slot.
-func (p *Pipeline) Admit(ctx context.Context, wait time.Duration) (func(), error) {
-	p.slotsMu.Lock()
-	if p.slots == nil {
-		n := p.MaxConcurrent
-		if n <= 0 {
-			n = DefaultMaxConcurrent
-		}
-		p.slots = make(chan struct{}, n)
-	}
-	slots := p.slots
-	p.slotsMu.Unlock()
-	release := func() { <-slots }
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	default:
-	}
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	case <-t.C:
-		return nil, ErrBusy
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
 
 // Document returns the OpenSearch document for an event, dropping empty
 // values so searches like user=* only match real values. The event time,
