@@ -289,3 +289,22 @@ func TestAdmitLimitsConcurrentRequests(t *testing.T) {
 	r2()
 	r3()
 }
+
+func TestAdmitDefaultSlots(t *testing.T) {
+	p := &Pipeline{}
+	ctx := context.Background()
+	var release []func()
+	for i := 0; i < DefaultMaxConcurrent; i++ {
+		r, err := p.Admit(ctx, time.Second)
+		if err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+		release = append(release, r)
+	}
+	if _, err := p.Admit(ctx, 10*time.Millisecond); !errors.Is(err, ErrBusy) {
+		t.Fatalf("request past the default: %v", err)
+	}
+	for _, r := range release {
+		r()
+	}
+}

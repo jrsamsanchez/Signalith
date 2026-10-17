@@ -84,7 +84,8 @@ type Pipeline struct {
 	// event time (zero: DefaultMaxEventAge); see TimeUsable.
 	MaxEventAge time.Duration
 	// MaxConcurrent caps the ingest requests Admit lets in at once
-	// (default 8), which bounds the memory decoding and writing use.
+	// (default DefaultMaxConcurrent). Memory is capped by MaxReceiving;
+	// this bounds how many bulk writes run against OpenSearch together.
 	MaxConcurrent int
 	// MaxReceiving caps the memory request bodies hold, from their first
 	// byte until they have been written (default DefaultMaxReceiving); one
@@ -603,6 +604,14 @@ func (p *Pipeline) warn(kind, msg string, args ...any) {
 // sender should retry shortly (Fluent Bit does on a 503).
 var ErrBusy = errors.New("Signalith is busy writing other events; send again in a few seconds")
 
+// DefaultMaxConcurrent is how many ingest requests are decoded and written
+// at once when Pipeline.MaxConcurrent is not set. Each request waits on its
+// bulk write to OpenSearch, so too few slots leave both the server's CPU
+// and OpenSearch idle: in the lab load test 8 slots held one 2-core server
+// to about 11,000 events a second with OpenSearch mostly idle. The bodies
+// those requests hold stay capped by MaxReceiving whatever this is.
+const DefaultMaxConcurrent = 32
+
 // Admit waits up to wait for one of MaxConcurrent ingest slots and returns
 // the function that frees it, or ErrBusy. Take a slot once the request
 // body has arrived (see ReadBody) and hold it while the body is decoded
@@ -613,7 +622,7 @@ func (p *Pipeline) Admit(ctx context.Context, wait time.Duration) (func(), error
 	if p.slots == nil {
 		n := p.MaxConcurrent
 		if n <= 0 {
-			n = 8
+			n = DefaultMaxConcurrent
 		}
 		p.slots = make(chan struct{}, n)
 	}
