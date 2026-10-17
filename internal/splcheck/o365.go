@@ -22,13 +22,15 @@ const o365Source = "o365_management_activity"
 // o365CIM are the CIM fields of a Microsoft 365 record, with the
 // Signalith field each is stored as. A sign-in's user agent is one of its
 // extended properties, which Splunk's add-on reads as UserAgent and
-// Signalith keeps as user_agent.
+// Signalith keeps as user_agent; its operating system one of its device
+// properties, OS to the add-on and os to Signalith.
 var o365CIM = map[string]string{
 	"action": "action", "status": "status", "user": "user", "user_id": "user", "src": "src", "src_ip": "src",
 	"dest": "dest", "signature": "signature", "command": "command", "app": "app", "user_agent": "user_agent",
 	"UserAgent": "user_agent", "reason": "reason", "vendor_account": "vendor_account", "vendor_product": "vendor_product",
 	"object": "object", "object_category": "object_category", "record_type": "record_type",
 	"authentication_method": "authentication_method", "change_type": "change_type", "sourcetype": "sourcetype",
+	"OS": "os",
 }
 
 // o365Fields are the fields of Microsoft's audit record schema that a
@@ -137,6 +139,8 @@ func o365Record(ev map[string]string) sigmacheck.Case {
 	set("OrganizationId", ev["vendor_account"])
 	set("UserAgent", ev["user_agent"])
 	set("UserAgent", ev["UserAgent"])
+	// The test record's builder makes OS a device property.
+	set("OS", ev["OS"])
 	set("LogonError", ev["reason"])
 	set("RecordType", ingest.O365RecordType(ev["record_type"]))
 	switch strings.ToLower(ev["status"]) {
