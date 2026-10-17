@@ -19,6 +19,7 @@ delete the lab when you are done, and build it again next time.
 | --- | --- | --- | --- |
 | `full` (the default) | 9 machines and a load balancer | about $0.10 | about $74 |
 | `minimal` | signalith-1, opensearch-1, linux-1 | about $0.03 | about $21 |
+| `loadtest` | signalith-1, two 8-core OpenSearch nodes with a 500 GB volume each, the load generator ([Load test](#load-test)) | about $0.12 | about $88 |
 
 Prices from Hetzner's price list of 15 June 2026, in Nuremberg, Falkenstein or Helsinki
 (the cheaper CX machines are only offered there), before tax.
@@ -180,6 +181,54 @@ The test signs in with the password in `/root/lab/admin-password`. A lab whose a
 still has the first password Signalith made gets a new random one there, as a new lab
 does. If you changed the admin password yourself, give it to the test:
 `sudo E2E_PASSWORD='<password>' lab-e2e`.
+
+## Load test
+
+The load test puts about a terabyte a day on a small setup: 25,000 events a second of
+about 500 bytes for four hours, while five analysts search and the scheduled detections
+run, and records where it saturates. It needs its own machines, which fit a new Hetzner
+account's 20 cores only without the normal lab, so delete the lab first:
+
+| Machine | Size | What it is |
+| --- | --- | --- |
+| signalith-1 | 2 cores, 4 GB | The only Signalith server. It also runs the setup and the test. |
+| opensearch-1, opensearch-2 | 8 cores, 16 GB, and a 500 GB volume each | OpenSearch, with its data on the volume |
+| loadgen | 2 cores, 4 GB | `signalith-loadgen`, which plays 200 agents and the analysts |
+
+```powershell
+cd deploy\lab
+$env:HCLOUD_TOKEN = "paste your Hetzner API token here"
+terraform destroy
+terraform apply -var size=loadtest
+```
+
+When the setup says "Lab ready" (`watch_setup`), start the test on signalith-1:
+
+```
+ssh root@<signalith-1 address> lab-loadtest
+```
+
+It runs in the background for about 4.5 hours; `lab-loadtest status` shows how far it
+is, and `lab-loadtest stop` stops it early. Every machine records its CPU, memory, disk
+and network every 15 seconds, and OpenSearch its stored events, each node's load and
+how far the newest event is behind the clock (the lag) every 30 seconds. The results
+are in `/root/lab/loadtest/latest/` on signalith-1: `report.md` sums them up, with the
+load generator's own measurements (`loadgen.txt`, from
+[loadtest/tb-day.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/tb-day.yaml))
+and each sample (`*.csv`). Copy them before you delete the machines:
+
+```
+scp -r root@<signalith-1 address>:/root/lab/loadtest/latest loadtest-results
+```
+
+Then build the normal lab again:
+
+```powershell
+terraform destroy
+terraform apply -var windows=false
+```
+
+A run costs about $1: six hours of the test's machines and volumes.
 
 ## A lab made before the port change
 

@@ -33,6 +33,9 @@ type Run struct {
 	Archived       int   `json:"archived"`
 	Deleted        int   `json:"deleted"`
 	DeletedRecords int64 `json:"deleted_records"`
+	// Days moved to cold storage, and moves that stopped finished.
+	Cold    int `json:"cold,omitempty"`
+	Mounted int `json:"mounted,omitempty"`
 	// Skipped counts steps left out because settings saved during the run
 	// no longer called for them.
 	Skipped int `json:"skipped,omitempty"`
@@ -45,7 +48,7 @@ type Run struct {
 // Action records one thing retention did, or failed to do.
 type Action struct {
 	Time     time.Time `json:"time"`
-	Action   string    `json:"action"` // compact, archive, delete, delete_records, restore
+	Action   string    `json:"action"` // compact, archive, delete, cold, mount, delete_records, restore
 	Category string    `json:"category"`
 	Index    string    `json:"index,omitempty"`
 	Day      string    `json:"day,omitempty"`
@@ -57,8 +60,11 @@ type Action struct {
 	Rule   string `json:"rule,omitempty"`
 	Reason string `json:"reason"`
 	File   string `json:"file,omitempty"`
-	By     string `json:"by,omitempty"`
-	Error  string `json:"error,omitempty"`
+	// Snapshot is the cold storage snapshot the action made, mounted or
+	// deleted.
+	Snapshot string `json:"snapshot,omitempty"`
+	By       string `json:"by,omitempty"`
+	Error    string `json:"error,omitempty"`
 	// Server is the server that took the action, when servers that share
 	// one OpenSearch keep one history.
 	Server string `json:"server,omitempty"`

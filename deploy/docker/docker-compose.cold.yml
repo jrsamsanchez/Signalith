@@ -1,0 +1,62 @@
+# Cold storage for Signalith's Docker quick start (docs/cold-storage.md):
+# days older than a category's "Move to cold storage after" setting are
+# snapshotted to a folder, deleted from OpenSearch's disk and mounted back
+# from the folder, so they stay searchable. Add this file after
+# docker-compose.yml in every command, from the Signalith folder, with the
+# folder that holds cold storage in SIGNALITH_COLD_DIR:
+#
+#   SIGNALITH_COLD_DIR=/mnt/nas/signalith-cold docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.cold.yml up -d
+#
+# (On Windows, set it first: $env:SIGNALITH_COLD_DIR = "D:\SignalithCold".)
+# Pick a folder on another disk than Docker's, such as a NAS share: cold
+# storage on the same disk saves nothing. OpenSearch's user (uid 1000)
+# must be able to write it. Put SIGNALITH_COLD_DIR in a .env file next to
+# docker-compose.yml to avoid typing it every time.
+#
+# This makes three changes:
+#   - OpenSearch also gets the warm role, so it can mount searchable
+#     snapshots, with SIGNALITH_COLD_CACHE (default 10gb) of its disk to
+#     cache what searches read from the folder;
+#   - Signalith's certificates get the signalith_cold_storage role
+#     (opensearch/security/roles_mapping.cold.yml);
+#   - the cold-storage service registers the folder as the snapshot
+#     repository signalith-cold, once OpenSearch is up.
+# For an S3 bucket instead of a folder, see docs/cold-storage.md.
+
+services:
+  opensearch:
+    environment:
+      - node.roles=cluster_manager,data,ingest,remote_cluster_client,warm
+      - node.search.cache.size=${SIGNALITH_COLD_CACHE:-10gb}
+      - path.repo=/usr/share/opensearch/cold
+    volumes:
+      - ${SIGNALITH_COLD_DIR:?Set SIGNALITH_COLD_DIR to the folder that holds cold storage (see docker-compose.cold.yml)}:/usr/share/opensearch/cold
+      - ./opensearch/security/roles_mapping.cold.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+
+  opensearch-security:
+    volumes:
+      - ./opensearch/security/roles_mapping.cold.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+
+  # Registers the folder as the snapshot repository signalith-cold, signed
+  # in with the admin certificate, then stops. Registering it again on
+  # every "up" changes nothing.
+  cold-storage:
+    image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
+    depends_on:
+      opensearch-security: { condition: service_completed_successfully }
+    user: "1000:1000"
+    entrypoint: ["sh", "-c", "curl -fsS --retry 10 --retry-all-errors --retry-delay 6 --cacert config/certs/root-ca.pem --cert config/certs/admin.pem --key config/certs/admin-key.pem -X PUT -H 'Content-Type: application/json' -d '{\"type\":\"fs\",\"settings\":{\"location\":\"/usr/share/opensearch/cold\",\"compress\":true}}' https://opensearch:9200/_snapshot/signalith-cold && echo"]
+    volumes:
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  signalith:
+    depends_on:
+      cold-storage: { condition: service_completed_successfully }
