@@ -352,7 +352,7 @@ func TestOpenSearchCerts(t *testing.T) {
 		"ca/root-ca-key.pem", "ca/root-ca.pem",
 		"opensearch/add-to-opensearch.yml",
 		"opensearch/certs/admin-key.pem", "opensearch/certs/admin.pem", "opensearch/certs/node-key.pem", "opensearch/certs/node.pem", "opensearch/certs/root-ca.pem",
-		"opensearch/opensearch-security/config.yml", "opensearch/opensearch-security/internal_users.yml",
+		"opensearch/opensearch-security/audit.yml", "opensearch/opensearch-security/config.yml", "opensearch/opensearch-security/internal_users.yml",
 		"opensearch/opensearch-security/roles.yml", "opensearch/opensearch-security/roles_mapping.yml",
 		"signalith/add-to-signalith.yaml", "signalith/opensearch-ca.pem", "signalith/opensearch-client-key.pem", "signalith/opensearch-client.pem",
 	}

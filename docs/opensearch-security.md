@@ -383,10 +383,18 @@ plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANT
 plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
 plugins.security.audit.config.log_request_body: false
 plugins.security.audit.config.exclude_sensitive_headers: true
-plugins.security.compliance.history.internal_config_enabled: true
-plugins.security.compliance.history.write.metadata_only: true
-plugins.security.compliance.history.read.metadata_only: true
+plugins.security.audit.compliance.internal_config: true
+plugins.security.audit.compliance.write_metadata_only: true
+plugins.security.audit.compliance.read_metadata_only: true
 ```
+
+Once the security settings are loaded, OpenSearch takes what it logs from `audit.yml` in
+its `opensearch-security` folder rather than from `opensearch.yml`. Signalith ships its own
+`audit.yml`, with the same choices, because the one that comes with OpenSearch logs request
+bodies. The Docker quick start and the Helm chart load it; without Docker, copy
+`opensearch/opensearch-security/audit.yml` from the files `signalith opensearch-certs` makes
+into the `opensearch-security` folder and load it with `securityadmin.sh -f audit.yml -t audit`
+(the certificates and host as when you loaded the other files).
 
 ## Renewing
 
