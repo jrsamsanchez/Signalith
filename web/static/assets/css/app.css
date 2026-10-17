@@ -975,6 +975,8 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .auth__help { text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
 .auth__sso { display: grid; gap: 18px; }
 .auth__sso[hidden] { display: none; }
+.auth__sso-btns { display: grid; gap: 10px; }
+.auth__sso-btn[hidden] { display: none; }
 .auth__sso-btn { height: 44px; font-size: var(--fs-md); font-weight: 550; text-decoration: none; }
 .auth__or { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: var(--fs-sm); }
 .auth__passkey, .mfa-passkey, .mfa-entry { display: grid; gap: 18px; }
@@ -2236,6 +2238,7 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-risk .r-timeline .timeline__text > b { font-weight: 600; }
 #page-risk .r-ev__meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); }
 #page-risk .r-ev__meta .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+#page-risk .r-ev__normal { font-size: var(--fs-sm); min-height: 0; }
 #page-risk .inspector__foot .btn { flex: none; }
 #page-risk .r-tactics { gap: 6px; }
 @media (min-width: 1360px) {
@@ -4056,148 +4059,148 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
    floats at the bottom while there are unsaved changes; the restart
    banner sits at the top. The confirm dialog lives at the end of <body>,
    so its rules are scoped by .st-dialog. */
-#page-settings, #page-sso { --st-nav-w: 184px; --st-main-w: 860px; }
-:is(#page-settings, #page-sso) .st-alerts { display: grid; gap: var(--sp-3); max-width: calc(var(--st-nav-w) + var(--sp-6) + var(--st-main-w)); }
-:is(#page-settings, #page-sso) .st-alerts:not(:empty) { margin-bottom: var(--sp-5); }
-:is(#page-settings, #page-sso) .st-alerts .alert { overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-alerts .dx-alert__body { min-width: 0; display: grid; gap: 4px; }
-:is(#page-settings, #page-sso) .st-alert-actions { margin-top: 6px; }
-:is(#page-settings, #page-sso) .st-alert-more { display: grid; gap: 4px; }
-:is(#page-settings, #page-sso) .st-alert-more .mono { font-size: var(--fs-sm); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-layout { display: grid; grid-template-columns: var(--st-nav-w) minmax(0, var(--st-main-w)); gap: var(--sp-6); align-items: start; }
-:is(#page-settings, #page-sso) .st-main { display: grid; gap: var(--sp-4); min-width: 0; }
+#page-settings, #page-sso, #page-baselines { --st-nav-w: 184px; --st-main-w: 860px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-alerts { display: grid; gap: var(--sp-3); max-width: calc(var(--st-nav-w) + var(--sp-6) + var(--st-main-w)); }
+:is(#page-settings, #page-sso, #page-baselines) .st-alerts:not(:empty) { margin-bottom: var(--sp-5); }
+:is(#page-settings, #page-sso, #page-baselines) .st-alerts .alert { overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-alerts .dx-alert__body { min-width: 0; display: grid; gap: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-alert-actions { margin-top: 6px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-alert-more { display: grid; gap: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-alert-more .mono { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-layout { display: grid; grid-template-columns: var(--st-nav-w) minmax(0, var(--st-main-w)); gap: var(--sp-6); align-items: start; }
+:is(#page-settings, #page-sso, #page-baselines) .st-main { display: grid; gap: var(--sp-4); min-width: 0; }
 
 /* the list of sections */
-:is(#page-settings, #page-sso) .st-nav { position: sticky; top: calc(var(--topbar-h) + var(--sp-4)); }
-:is(#page-settings, #page-sso) .st-nav__list { margin: 0; display: grid; gap: 1px; }
-:is(#page-settings, #page-sso) .st-nav__item {
+:is(#page-settings, #page-sso, #page-baselines) .st-nav { position: sticky; top: calc(var(--topbar-h) + var(--sp-4)); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__list { margin: 0; display: grid; gap: 1px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__item {
   position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: var(--h-md); padding: 0 10px 0 12px;
   border: 0; border-radius: var(--r-md); background: none; color: var(--text-2); font-weight: 500; text-align: left;
   transition: background var(--t-fast), color var(--t-fast);
 }
-:is(#page-settings, #page-sso) .st-nav__item > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:is(#page-settings, #page-sso) .st-nav__item:hover { background: var(--hover); color: var(--text); }
-:is(#page-settings, #page-sso) .st-nav__item[aria-current="true"] { color: var(--text); background: var(--hover); }
-:is(#page-settings, #page-sso) .st-nav__item[aria-current="true"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--accent); }
-:is(#page-settings, #page-sso) .st-nav__mark { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-:is(#page-settings, #page-sso) .st-nav__mark[data-state="changed"] { background: var(--accent); }
-:is(#page-settings, #page-sso) .st-nav__mark[data-state="problem"] { background: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__item > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__item:hover { background: var(--hover); color: var(--text); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__item[aria-current="true"] { color: var(--text); background: var(--hover); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__item[aria-current="true"]::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--accent); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__mark { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__mark[data-state="changed"] { background: var(--accent); }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__mark[data-state="problem"] { background: var(--danger); }
 
 /* section cards: the card measures itself, so rows go side by side only where they fit */
-:is(#page-settings, #page-sso) .st-card { container: st-card / inline-size; scroll-margin-top: calc(var(--topbar-h) + var(--sp-4)); overflow: clip; }
-:is(#page-settings, #page-sso) .st-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; padding: 16px 20px 14px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
-:is(#page-settings, #page-sso) .st-card__heading { flex: 1 1 260px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-card__title { font-size: var(--fs-md); font-weight: 600; letter-spacing: var(--track-tight); width: max-content; max-width: 100%; }
-:is(#page-settings, #page-sso) .st-card__title:focus { outline: none; }
-:is(#page-settings, #page-sso) .st-card__title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-:is(#page-settings, #page-sso) .st-card__desc { margin-top: 2px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; max-width: 64ch; }
-:is(#page-settings, #page-sso) .st-apply { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; }
-:is(#page-settings, #page-sso) .st-card__body { display: grid; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card { container: st-card / inline-size; scroll-margin-top: calc(var(--topbar-h) + var(--sp-4)); overflow: clip; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; padding: 16px 20px 14px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__heading { flex: 1 1 260px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__title { font-size: var(--fs-md); font-weight: 600; letter-spacing: var(--track-tight); width: max-content; max-width: 100%; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__title:focus { outline: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__desc { margin-top: 2px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; max-width: 64ch; }
+:is(#page-settings, #page-sso, #page-baselines) .st-apply { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; }
+:is(#page-settings, #page-sso, #page-baselines) .st-card__body { display: grid; }
 
-:is(#page-settings, #page-sso) .st-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 20px; }
-:is(#page-settings, #page-sso) .st-field + .st-field { box-shadow: inset 0 1px 0 var(--line-subtle); }
+:is(#page-settings, #page-sso, #page-baselines) .st-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 20px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field + .st-field { box-shadow: inset 0 1px 0 var(--line-subtle); }
 @container st-card (min-width: 620px) {
-  :is(#page-settings, #page-sso) .st-field { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 8px 32px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-field { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 8px 32px; }
 }
-:is(#page-settings, #page-sso) .st-field__text { display: grid; align-content: start; gap: 3px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-field__label { font-weight: 500; color: var(--text); width: max-content; max-width: 100%; }
-:is(#page-settings, #page-sso) .st-field__help { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
-:is(#page-settings, #page-sso) .st-field__note { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-field__meta { display: grid; gap: 2px; }
-:is(#page-settings, #page-sso) .st-field__meta:empty { display: none; }
-:is(#page-settings, #page-sso) .st-field__control { display: grid; align-content: start; gap: 8px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-field__notes { display: grid; gap: 4px; }
-:is(#page-settings, #page-sso) .st-field__notes:empty { display: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__text { display: grid; align-content: start; gap: 3px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__label { font-weight: 500; color: var(--text); width: max-content; max-width: 100%; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__help { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__note { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__meta { display: grid; gap: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__meta:empty { display: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__control { display: grid; align-content: start; gap: 8px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__notes { display: grid; gap: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__notes:empty { display: none; }
 /* a changed setting: a short accent bar at its left edge */
-:is(#page-settings, #page-sso) .st-field { position: relative; }
-:is(#page-settings, #page-sso) .st-field.is-changed::before { content: ""; position: absolute; left: 0; top: 16px; height: 20px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); }
+:is(#page-settings, #page-sso, #page-baselines) .st-field { position: relative; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field.is-changed::before { content: ""; position: absolute; left: 0; top: 16px; height: 20px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); }
 
 /* where a value comes from: quiet, one line */
-:is(#page-settings, #page-sso) .st-source { display: flex; align-items: center; flex-wrap: wrap; gap: 0 6px; margin-top: 3px; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
-:is(#page-settings, #page-sso) .st-source .icon { flex: none; }
-:is(#page-settings, #page-sso) .st-source .age { color: inherit; }
-:is(#page-settings, #page-sso) .st-source .link-btn { font-size: var(--fs-sm); min-height: 0; }
-:is(#page-settings, #page-sso) .st-source code { color: var(--text-2); font-size: var(--fs-xs); }
-:is(#page-settings, #page-sso) .st-source--env { align-items: flex-start; flex-wrap: nowrap; }
-:is(#page-settings, #page-sso) .st-source--env > span { min-width: 0; }
-:is(#page-settings, #page-sso) .st-source--env .icon { margin-top: 3px; }
-:is(#page-settings, #page-sso) .st-source--pending { color: var(--warning); }
-:is(#page-settings, #page-sso) .st-source--refused { color: var(--warning); }
-:is(#page-settings, #page-sso) .st-source--refused .icon { align-self: flex-start; margin-top: 3px; }
-:is(#page-settings, #page-sso) .st-source--refused .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .6; }
-:is(#page-settings, #page-sso) .st-hint { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-warn { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--warning); line-height: 1.45; }
-:is(#page-settings, #page-sso) .st-warn .icon { width: 14px; height: 14px; margin-top: 2px; flex: none; }
-:is(#page-settings, #page-sso) .st-warn__body { display: grid; gap: 8px; justify-items: start; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source { display: flex; align-items: center; flex-wrap: wrap; gap: 0 6px; margin-top: 3px; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source .icon { flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source .age { color: inherit; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source .link-btn { font-size: var(--fs-sm); min-height: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source code { color: var(--text-2); font-size: var(--fs-xs); }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--env { align-items: flex-start; flex-wrap: nowrap; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--env > span { min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--env .icon { margin-top: 3px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--pending { color: var(--warning); }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--refused { color: var(--warning); }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--refused .icon { align-self: flex-start; margin-top: 3px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--refused .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .6; }
+:is(#page-settings, #page-sso, #page-baselines) .st-hint { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-warn { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--warning); line-height: 1.45; }
+:is(#page-settings, #page-sso, #page-baselines) .st-warn .icon { width: 14px; height: 14px; margin-top: 2px; flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-warn__body { display: grid; gap: 8px; justify-items: start; min-width: 0; }
 /* "Use http://…": the address can be long, so it is cut at the end */
-:is(#page-settings, #page-sso) .st-use { max-width: 100%; min-width: 0; }
-:is(#page-settings, #page-sso) .st-use .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); }
+:is(#page-settings, #page-sso, #page-baselines) .st-use { max-width: 100%; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-use .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); }
 #page-settings .field-error { align-items: flex-start; line-height: 1.45; }
 #page-settings .field-error .icon { margin-top: 2px; }
 
 /* controls */
-:is(#page-settings, #page-sso) .st-input--short { max-width: 160px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-input--short { max-width: 160px; }
 #page-settings .textarea.mono, #page-settings .input.mono { font: 400 var(--fs-sm)/1.5 var(--font-mono); }
 #page-settings .input.mono { height: var(--h-md); }
 #page-settings .textarea[aria-invalid="true"], #page-settings .select[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--danger), 0 0 0 3px var(--danger-soft); }
 /* --active, not --sunken: in dark mode --sunken is the colour of a field that can be typed in */
 #page-settings .input:disabled, #page-settings .textarea:disabled, #page-settings .select:disabled { color: var(--text-2); background: var(--active); cursor: default; opacity: 1; }
-:is(#page-settings, #page-sso) .st-switch { min-height: var(--h-md); color: var(--text-2); font-size: var(--fs-base); justify-self: start; }
-:is(#page-settings, #page-sso) .st-switch:has(input:disabled) { cursor: default; }
-:is(#page-settings, #page-sso) .st-switch input:disabled { opacity: .6; cursor: default; }
-:is(#page-settings, #page-sso) .st-switch__state { min-width: 2em; }
-:is(#page-settings, #page-sso) .st-secret { display: grid; gap: 8px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-secret__saved { display: flex; align-items: center; gap: 8px; min-height: var(--h-md); padding: 0 10px; border-radius: var(--r-md); background: var(--sunken); color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-secret__saved .icon { color: var(--text-3); }
-:is(#page-settings, #page-sso) .st-secret__saved.is-removing { color: var(--danger); background: var(--danger-soft); }
-:is(#page-settings, #page-sso) .st-secret__saved.is-removing .icon { color: var(--danger); }
-:is(#page-settings, #page-sso) .st-secret__row, :is(#page-settings, #page-sso) .st-secret__input { display: flex; align-items: center; gap: 6px; }
-:is(#page-settings, #page-sso) .st-secret__row .st-secret__saved, :is(#page-settings, #page-sso) .st-secret__input .input { flex: 1; min-width: 0; }
-:is(#page-settings, #page-sso) .st-secret__saved > span { flex: 1; min-width: 0; }
-:is(#page-settings, #page-sso) .st-secret__undo { flex: none; font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-switch { min-height: var(--h-md); color: var(--text-2); font-size: var(--fs-base); justify-self: start; }
+:is(#page-settings, #page-sso, #page-baselines) .st-switch:has(input:disabled) { cursor: default; }
+:is(#page-settings, #page-sso, #page-baselines) .st-switch input:disabled { opacity: .6; cursor: default; }
+:is(#page-settings, #page-sso, #page-baselines) .st-switch__state { min-width: 2em; }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret { display: grid; gap: 8px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__saved { display: flex; align-items: center; gap: 8px; min-height: var(--h-md); padding: 0 10px; border-radius: var(--r-md); background: var(--sunken); color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__saved .icon { color: var(--text-3); }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__saved.is-removing { color: var(--danger); background: var(--danger-soft); }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__saved.is-removing .icon { color: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__row, :is(#page-settings, #page-sso, #page-baselines) .st-secret__input { display: flex; align-items: center; gap: 6px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__row .st-secret__saved, :is(#page-settings, #page-sso, #page-baselines) .st-secret__input .input { flex: 1; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__saved > span { flex: 1; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-secret__undo { flex: none; font-size: var(--fs-sm); }
 
 /* connection tests */
-:is(#page-settings, #page-sso) .st-test { display: grid; gap: 12px; padding: 14px 20px 16px; background: var(--sunken); box-shadow: inset 0 1px 0 var(--line-subtle); }
-:is(#page-settings, #page-sso) .st-test__row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
-:is(#page-settings, #page-sso) .st-test__lead { color: var(--text-3); font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-test__busy { color: var(--text-3); font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-test__out:empty { display: none; }
-:is(#page-settings, #page-sso) .st-result { display: grid; gap: 8px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-result .alert { overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-result .dx-alert__body { min-width: 0; display: grid; gap: 2px; }
-:is(#page-settings, #page-sso) .st-test__qa { display: grid; gap: 6px; margin-top: 6px; color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-test__query { margin: 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--sunken); font-size: var(--fs-sm); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-goto { margin-top: 4px; font-size: var(--fs-sm); justify-self: start; }
+:is(#page-settings, #page-sso, #page-baselines) .st-test { display: grid; gap: 12px; padding: 14px 20px 16px; background: var(--sunken); box-shadow: inset 0 1px 0 var(--line-subtle); }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__lead { color: var(--text-3); font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__busy { color: var(--text-3); font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__out:empty { display: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-result { display: grid; gap: 8px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-result .alert { overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-result .dx-alert__body { min-width: 0; display: grid; gap: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__qa { display: grid; gap: 6px; margin-top: 6px; color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-test__query { margin: 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--sunken); font-size: var(--fs-sm); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-goto { margin-top: 4px; font-size: var(--fs-sm); justify-self: start; }
 /* the HTTPS certificate in use */
-:is(#page-settings, #page-sso) .st-cert { gap: 10px; }
-:is(#page-settings, #page-sso) .st-cert .st-kv { font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-cert .btn-row { justify-content: flex-start; }
-:is(#page-settings, #page-sso) .st-fp { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-problems { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); display: grid; gap: 2px; }
-:is(#page-settings, #page-sso) .st-problems b { color: var(--text); font-weight: 600; }
+:is(#page-settings, #page-sso, #page-baselines) .st-cert { gap: 10px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-cert .st-kv { font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-cert .btn-row { justify-content: flex-start; }
+:is(#page-settings, #page-sso, #page-baselines) .st-fp { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-problems { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); display: grid; gap: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-problems b { color: var(--text); font-weight: 600; }
 /* a test result whose settings changed since: a note, the rest dimmed */
-:is(#page-settings, #page-sso) .st-stale { display: none; align-items: flex-start; gap: 8px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
-:is(#page-settings, #page-sso) .st-stale .icon { margin-top: 2px; color: var(--text-3); flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-stale { display: none; align-items: flex-start; gap: 8px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
+:is(#page-settings, #page-sso, #page-baselines) .st-stale .icon { margin-top: 2px; color: var(--text-3); flex: none; }
 #page-settings .is-stale .st-stale, #page-sso .is-stale .st-stale { display: flex; }
 #page-settings .is-stale .st-result > :not(.st-stale) { opacity: .55; }
 
 /* about this server */
-:is(#page-settings, #page-sso) .st-about__body { display: grid; gap: 20px; padding: 16px 20px 20px; }
-:is(#page-settings, #page-sso) .st-about__part { display: grid; gap: 10px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-about__part + .st-about__part, :is(#page-settings, #page-sso) .st-kv + .st-about__part { padding-top: 18px; box-shadow: inset 0 1px 0 var(--line-subtle); }
-:is(#page-settings, #page-sso) .st-about__text { color: var(--text-2); max-width: 64ch; }
-:is(#page-settings, #page-sso) .st-kv { gap: 8px 24px; }
-:is(#page-settings, #page-sso) .st-kv dt { color: var(--text-3); }
-:is(#page-settings, #page-sso) .st-kv dd { min-width: 0; overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-path { display: grid; gap: 2px; }
-:is(#page-settings, #page-sso) .st-path .mono { font-size: var(--fs-sm); color: var(--text); }
-:is(#page-settings, #page-sso) .st-path__note { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-3); }
-:is(#page-settings, #page-sso) .st-path__note code { font-size: var(--fs-xs); color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-links { margin: 0; display: grid; }
-:is(#page-settings, #page-sso) .st-links li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; padding: 6px 0; }
-:is(#page-settings, #page-sso) .st-links a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
-:is(#page-settings, #page-sso) .st-links__detail { color: var(--text-3); font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-about__body { display: grid; gap: 20px; padding: 16px 20px 20px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-about__part { display: grid; gap: 10px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-about__part + .st-about__part, :is(#page-settings, #page-sso, #page-baselines) .st-kv + .st-about__part { padding-top: 18px; box-shadow: inset 0 1px 0 var(--line-subtle); }
+:is(#page-settings, #page-sso, #page-baselines) .st-about__text { color: var(--text-2); max-width: 64ch; }
+:is(#page-settings, #page-sso, #page-baselines) .st-kv { gap: 8px 24px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-kv dt { color: var(--text-3); }
+:is(#page-settings, #page-sso, #page-baselines) .st-kv dd { min-width: 0; overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-path { display: grid; gap: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-path .mono { font-size: var(--fs-sm); color: var(--text); }
+:is(#page-settings, #page-sso, #page-baselines) .st-path__note { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-3); }
+:is(#page-settings, #page-sso, #page-baselines) .st-path__note code { font-size: var(--fs-xs); color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-links { margin: 0; display: grid; }
+:is(#page-settings, #page-sso, #page-baselines) .st-links li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; padding: 6px 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-links a { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+:is(#page-settings, #page-sso, #page-baselines) .st-links__detail { color: var(--text-3); font-size: var(--fs-sm); }
 
 /* Settings > Single sign-on: one column of cards, as wide as the Server tab's */
 #page-sso .sso-page { max-width: var(--st-main-w); }
@@ -4219,52 +4222,102 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
 #page-sso .sso-step .icon { margin-top: 2px; flex: none; color: var(--success); }
 #page-sso .sso-step[data-ok="false"] .icon { color: var(--danger); }
 #page-sso .sso-grow { flex: 1; }
+#page-sso .sso-tabs { margin-bottom: calc(-1 * var(--sp-2)); }
+#page-sso .sso-tab__on { height: 18px; font-size: var(--fs-xs); }
+#page-sso .sso-panel { display: grid; gap: var(--sp-4); min-width: 0; }
+#page-sso .sso-panel:focus-visible { outline: none; }
 @media (max-width: 640px) {
   #page-sso .sso-status { padding: 14px 16px; }
   #page-sso .sso-status__docs { margin-left: 50px; }
 }
 
+/* Settings > Behavior baselines: one column of cards, as wide as the Server tab's */
+#page-baselines .bl-page { max-width: var(--st-main-w); display: grid; gap: var(--sp-4); }
+#page-baselines .bl-status { display: grid; gap: 12px; padding: 16px 20px; }
+#page-baselines .bl-status__row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+#page-baselines .bl-status__icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; flex: none; background: var(--chip-bg); color: var(--text-3); }
+#page-baselines .bl-status__icon[data-state="on"] { background: var(--success-soft, var(--chip-bg)); color: var(--success); }
+#page-baselines .bl-status__icon[data-state="wait"] { background: var(--accent-soft-2, var(--chip-bg)); color: var(--accent); }
+#page-baselines .bl-status__icon .icon { width: 18px; height: 18px; }
+#page-baselines .bl-status__text { flex: 1 1 260px; min-width: 0; display: grid; gap: 2px; }
+#page-baselines .bl-status__text b { font-weight: 600; color: var(--text); }
+#page-baselines .bl-status__text p { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; max-width: 72ch; }
+#page-baselines .bl-check__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+#page-baselines .bl-check[data-on="false"] .st-field__label, #page-baselines .bl-check[data-on="false"] .st-field__help { color: var(--text-3); }
+#page-baselines .bl-check__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-top: 4px; font-size: var(--fs-sm); color: var(--text-2); }
+#page-baselines .bl-check .st-warn { margin-top: 4px; }
+#page-baselines .bl-check__control { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; align-content: start; justify-content: flex-start; }
+@container st-card (min-width: 620px) {
+  #page-baselines .bl-check { grid-template-columns: minmax(0, 1fr) auto; }
+  #page-baselines .bl-check__control { justify-content: flex-end; }
+}
+#page-baselines .bl-score__wrap { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); }
+#page-baselines .bl-score { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+#page-baselines .bl-unit { display: flex; align-items: center; gap: 8px; }
+#page-baselines .bl-unit__text { color: var(--text-3); font-size: var(--fs-sm); }
+#page-baselines .bl-empty { padding: 16px 20px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.5; max-width: 72ch; }
+#page-baselines .bl-ex { margin: 0; padding: 0; list-style: none; display: grid; }
+#page-baselines .bl-ex__item { display: flex; align-items: flex-start; gap: 12px; padding: 14px 20px; }
+#page-baselines .bl-ex__item + .bl-ex__item { box-shadow: inset 0 1px 0 var(--line-subtle); }
+#page-baselines .bl-ex__item[data-expired="true"] .bl-ex__main { opacity: .6; }
+#page-baselines .bl-ex__main { flex: 1; min-width: 0; display: grid; gap: 6px; }
+#page-baselines .bl-ex__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+#page-baselines .bl-ex__head b { font-weight: 500; color: var(--text); }
+#page-baselines .bl-ex__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#page-baselines .bl-ex__chip { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 2px 8px; border-radius: var(--r-sm); background: var(--chip-bg); font-size: var(--fs-sm); }
+#page-baselines .bl-ex__chip .mono { font-size: var(--fs-xs); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
+#page-baselines .bl-ex__k { color: var(--text-3); white-space: nowrap; }
+#page-baselines .bl-ex__why { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+#page-baselines .bl-ex__by { color: var(--text-3); font-size: var(--fs-xs); }
+#page-baselines .bl-grow { flex: 1; }
+#bl-ex-dialog .bl-ex-form { display: grid; gap: var(--sp-3); }
+@media (max-width: 640px) {
+  #page-baselines .bl-status { padding: 14px 16px; }
+  #page-baselines .bl-status__docs { margin-left: 50px; }
+  #page-baselines .bl-empty, #page-baselines .bl-ex__item { padding: 14px 16px; }
+}
+
 /* the save bar floats at the bottom while there are unsaved changes */
-:is(#page-settings, #page-sso) .st-savebar {
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar {
   position: sticky; bottom: var(--sp-4); z-index: 6; display: grid; gap: 10px; padding: 10px 12px 10px 16px;
   background: var(--overlay); border-radius: var(--r-lg); box-shadow: var(--elev-pop);
 }
-:is(#page-settings, #page-sso) .st-savebar__row { display: flex; align-items: center; gap: 8px; min-height: var(--h-md); }
-:is(#page-settings, #page-sso) .st-savebar__text { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; font-weight: 500; color: var(--text); }
-:is(#page-settings, #page-sso) .st-savebar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
-:is(#page-settings, #page-sso) .st-savebar__error { display: inline-flex; align-items: center; gap: 6px; color: var(--danger); }
-:is(#page-settings, #page-sso) .st-savebar__general .st-problems { margin: 0; color: var(--danger); }
-body:has(:is(#page-settings, #page-sso).active .st-savebar:not([hidden])) #toast { bottom: 88px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar__row { display: flex; align-items: center; gap: 8px; min-height: var(--h-md); }
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar__text { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; font-weight: 500; color: var(--text); }
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar__error { display: inline-flex; align-items: center; gap: 6px; color: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-savebar__general .st-problems { margin: 0; color: var(--danger); }
+body:has(:is(#page-settings, #page-sso, #page-baselines).active .st-savebar:not([hidden])) #toast { bottom: 88px; }
 
 /* restart banner: calm while waiting, a short progress state while restarting */
-:is(#page-settings, #page-sso) .st-banner {
+:is(#page-settings, #page-sso, #page-baselines) .st-banner {
   display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: var(--r-lg);
   background: var(--raised); box-shadow: var(--elev-card), inset 3px 0 0 var(--tone, var(--accent));
 }
-:is(#page-settings, #page-sso) .st-banner:focus { outline: none; }
-:is(#page-settings, #page-sso) .st-banner:focus-visible { box-shadow: var(--elev-card), inset 3px 0 0 var(--tone, var(--accent)), 0 0 0 2px var(--accent-ring); }
-:is(#page-settings, #page-sso) .st-banner > .icon { margin-top: 2px; color: var(--tone, var(--accent)); }
-:is(#page-settings, #page-sso) .st-banner[data-tone="warning"] { --tone: var(--warning); }
-:is(#page-settings, #page-sso) .st-banner[data-tone="danger"] { --tone: var(--danger); }
-:is(#page-settings, #page-sso) .st-banner__body { flex: 1; min-width: 0; display: grid; gap: 4px; }
-:is(#page-settings, #page-sso) .st-banner__body > b { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-banner__body > p { color: var(--text-2); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-banner__meta { font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-banner__error { display: flex; align-items: flex-start; gap: 6px; color: var(--danger) !important; font-size: var(--fs-sm); }
-:is(#page-settings, #page-sso) .st-banner__error .icon { margin-top: 2px; }
-:is(#page-settings, #page-sso) .st-banner__error[hidden] { display: none; }
-:is(#page-settings, #page-sso) .st-banner__actions { flex: none; display: flex; gap: 8px; }
-:is(#page-settings, #page-sso) .st-banner__details { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-banner__details summary { cursor: pointer; width: max-content; color: var(--text-3); }
-:is(#page-settings, #page-sso) .st-banner__details summary:hover { color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-changes { margin: 6px 0 0; display: grid; gap: 4px; }
-:is(#page-settings, #page-sso) .st-changes li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
-:is(#page-settings, #page-sso) .st-changes__name { color: var(--text); font-weight: 500; }
-:is(#page-settings, #page-sso) .st-changes__val, .st-dialog .st-confirm__change { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-changes__val .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-spinner { width: 16px; height: 16px; margin-top: 2px; flex: none; border-radius: 50%; border: 2px solid var(--accent-soft-2); border-top-color: var(--accent); animation: st-spin .8s linear infinite; }
-:is(#page-settings, #page-sso) .st-progress { position: relative; height: 3px; margin-top: 8px; border-radius: 2px; background: var(--track); overflow: hidden; }
-:is(#page-settings, #page-sso) .st-progress span { position: absolute; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: var(--accent); animation: st-slide 1.4s var(--ease) infinite; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner:focus { outline: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner:focus-visible { box-shadow: var(--elev-card), inset 3px 0 0 var(--tone, var(--accent)), 0 0 0 2px var(--accent-ring); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner > .icon { margin-top: 2px; color: var(--tone, var(--accent)); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner[data-tone="warning"] { --tone: var(--warning); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner[data-tone="danger"] { --tone: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__body { flex: 1; min-width: 0; display: grid; gap: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__body > b { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__body > p { color: var(--text-2); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__meta { font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__error { display: flex; align-items: flex-start; gap: 6px; color: var(--danger) !important; font-size: var(--fs-sm); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__error .icon { margin-top: 2px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__error[hidden] { display: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__actions { flex: none; display: flex; gap: 8px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__details { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__details summary { cursor: pointer; width: max-content; color: var(--text-3); }
+:is(#page-settings, #page-sso, #page-baselines) .st-banner__details summary:hover { color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-changes { margin: 6px 0 0; display: grid; gap: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-changes li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-changes__name { color: var(--text); font-weight: 500; }
+:is(#page-settings, #page-sso, #page-baselines) .st-changes__val, .st-dialog .st-confirm__change { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-changes__val .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-spinner { width: 16px; height: 16px; margin-top: 2px; flex: none; border-radius: 50%; border: 2px solid var(--accent-soft-2); border-top-color: var(--accent); animation: st-spin .8s linear infinite; }
+:is(#page-settings, #page-sso, #page-baselines) .st-progress { position: relative; height: 3px; margin-top: 8px; border-radius: 2px; background: var(--track); overflow: hidden; }
+:is(#page-settings, #page-sso, #page-baselines) .st-progress span { position: absolute; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: var(--accent); animation: st-slide 1.4s var(--ease) infinite; }
 @keyframes st-spin { to { transform: rotate(360deg); } }
 @keyframes st-slide { from { left: -30%; } to { left: 100%; } }
 
@@ -4279,60 +4332,60 @@ body:has(:is(#page-settings, #page-sso).active .st-savebar:not([hidden])) #toast
 .st-dialog .st-confirm__also { align-items: flex-start; margin-top: 2px; color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
 .st-dialog .st-confirm__also input { margin-top: 3px; flex: none; accent-color: var(--accent-fill); }
 
-:is(#page-settings, #page-sso) .st-skel .st-field__text { gap: 8px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-skel .st-field__text { gap: 8px; }
 
 /* shared settings: the server picker, the groups and their badges */
-:is(#page-settings, #page-sso) .st-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
-:is(#page-settings, #page-sso) .st-picker__label { font-weight: 500; color: var(--text-2); }
-:is(#page-settings, #page-sso) .st-picker__select { width: auto; min-width: 200px; max-width: 100%; }
-:is(#page-settings, #page-sso) .st-picker__note { flex: 1 1 240px; min-width: 0; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
-:is(#page-settings, #page-sso) .st-group { display: grid; gap: 2px; padding: var(--sp-3) 2px 0; scroll-margin-top: calc(var(--topbar-h) + var(--sp-4)); }
-:is(#page-settings, #page-sso) .st-group:first-child { padding-top: 0; }
-:is(#page-settings, #page-sso) .st-group__title { font-size: var(--fs-md); font-weight: 600; color: var(--text); letter-spacing: var(--track-tight); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-group__desc { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; max-width: 72ch; }
-:is(#page-settings, #page-sso) .st-nav__group { padding: 12px 12px 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
-:is(#page-settings, #page-sso) .st-nav__group:first-child { padding-top: 0; }
-:is(#page-settings, #page-sso) .st-field__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-scope { height: 18px; font-size: var(--fs-xs); color: var(--text-3); flex: none; }
-:is(#page-settings, #page-sso) .st-source--kept { color: var(--danger); }
-:is(#page-settings, #page-sso) .st-source--kept .icon { align-self: flex-start; margin-top: 3px; }
-:is(#page-settings, #page-sso) .st-source--kept .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-:is(#page-settings, #page-sso) .st-elsewhere { justify-content: flex-start; }
-:is(#page-settings, #page-sso) .st-parts { margin-top: 4px; }
-:is(#page-settings, #page-sso) .st-parts li[data-state="ok"] .st-changes__val { color: var(--success); }
-:is(#page-settings, #page-sso) .st-parts li[data-state="failed"] .st-changes__val { color: var(--danger); }
-:is(#page-settings, #page-sso) .st-parts li[data-state="progress"] .st-changes__val { color: var(--text); }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker__label { font-weight: 500; color: var(--text-2); }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker__select { width: auto; min-width: 200px; max-width: 100%; }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker__note { flex: 1 1 240px; min-width: 0; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; }
+:is(#page-settings, #page-sso, #page-baselines) .st-group { display: grid; gap: 2px; padding: var(--sp-3) 2px 0; scroll-margin-top: calc(var(--topbar-h) + var(--sp-4)); }
+:is(#page-settings, #page-sso, #page-baselines) .st-group:first-child { padding-top: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-group__title { font-size: var(--fs-md); font-weight: 600; color: var(--text); letter-spacing: var(--track-tight); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-group__desc { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45; max-width: 72ch; }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__group { padding: 12px 12px 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+:is(#page-settings, #page-sso, #page-baselines) .st-nav__group:first-child { padding-top: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-field__head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-scope { height: 18px; font-size: var(--fs-xs); color: var(--text-3); flex: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--kept { color: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--kept .icon { align-self: flex-start; margin-top: 3px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-source--kept .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+:is(#page-settings, #page-sso, #page-baselines) .st-elsewhere { justify-content: flex-start; }
+:is(#page-settings, #page-sso, #page-baselines) .st-parts { margin-top: 4px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-parts li[data-state="ok"] .st-changes__val { color: var(--success); }
+:is(#page-settings, #page-sso, #page-baselines) .st-parts li[data-state="failed"] .st-changes__val { color: var(--danger); }
+:is(#page-settings, #page-sso, #page-baselines) .st-parts li[data-state="progress"] .st-changes__val { color: var(--text); }
 
 @media (max-width: 1099px) {
   #page-settings { --st-nav-w: 160px; }
-  :is(#page-settings, #page-sso) .st-layout { gap: var(--sp-5); }
+  :is(#page-settings, #page-sso, #page-baselines) .st-layout { gap: var(--sp-5); }
 }
 @media (max-width: 720px) {
-  :is(#page-settings, #page-sso) .st-layout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
+  :is(#page-settings, #page-sso, #page-baselines) .st-layout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
   /* the sections become a row of chips under the top bar, scrolled sideways */
-  :is(#page-settings, #page-sso) .st-nav {
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav {
     z-index: 7; top: var(--topbar-h); margin: 0 calc(-1 * var(--sp-4)); padding: 8px var(--sp-4);
     background: var(--sheet); box-shadow: inset 0 -1px 0 var(--line-subtle);
     overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
   }
-  :is(#page-settings, #page-sso) .st-nav::-webkit-scrollbar { display: none; }
-  :is(#page-settings, #page-sso) .st-nav__list { display: flex; gap: 6px; width: max-content; }
-  :is(#page-settings, #page-sso) .st-nav__item { width: auto; height: var(--h-md); padding: 0 12px; border-radius: var(--r-full); background: var(--chip-bg); font-size: var(--fs-sm); }
-  :is(#page-settings, #page-sso) .st-nav__item[aria-current="true"] { background: var(--accent-soft-2); color: var(--accent); }
-  :is(#page-settings, #page-sso) .st-nav__item[aria-current="true"]::before { display: none; }
-  :is(#page-settings, #page-sso) .st-nav__mark:not([data-state="changed"], [data-state="problem"]) { display: none; }
-  :is(#page-settings, #page-sso) .st-nav__group { display: none; }
-  :is(#page-settings, #page-sso) .st-card { scroll-margin-top: calc(var(--topbar-h) + 60px); }
-  :is(#page-settings, #page-sso) .st-card__head, :is(#page-settings, #page-sso) .st-field, :is(#page-settings, #page-sso) .st-test, :is(#page-settings, #page-sso) .st-about__body { padding-left: 16px; padding-right: 16px; }
-  :is(#page-settings, #page-sso) .st-banner { flex-wrap: wrap; }
-  :is(#page-settings, #page-sso) .st-banner__actions { width: 100%; padding-left: 28px; }
-  :is(#page-settings, #page-sso) .st-savebar { bottom: var(--sp-3); padding: 10px 10px 10px 14px; }
-  :is(#page-settings, #page-sso) .st-savebar__row { flex-wrap: wrap; }
-  :is(#page-settings, #page-sso) .st-savebar__text { flex: 1 1 100%; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav::-webkit-scrollbar { display: none; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__list { display: flex; gap: 6px; width: max-content; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__item { width: auto; height: var(--h-md); padding: 0 12px; border-radius: var(--r-full); background: var(--chip-bg); font-size: var(--fs-sm); }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__item[aria-current="true"] { background: var(--accent-soft-2); color: var(--accent); }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__item[aria-current="true"]::before { display: none; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__mark:not([data-state="changed"], [data-state="problem"]) { display: none; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-nav__group { display: none; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-card { scroll-margin-top: calc(var(--topbar-h) + 60px); }
+  :is(#page-settings, #page-sso, #page-baselines) .st-card__head, :is(#page-settings, #page-sso, #page-baselines) .st-field, :is(#page-settings, #page-sso, #page-baselines) .st-test, :is(#page-settings, #page-sso, #page-baselines) .st-about__body { padding-left: 16px; padding-right: 16px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-banner { flex-wrap: wrap; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-banner__actions { width: 100%; padding-left: 28px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-savebar { bottom: var(--sp-3); padding: 10px 10px 10px 14px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-savebar__row { flex-wrap: wrap; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-savebar__text { flex: 1 1 100%; }
   /* the bar takes two rows here */
-  body:has(:is(#page-settings, #page-sso).active .st-savebar:not([hidden])) #toast { bottom: 136px; }
-  :is(#page-settings, #page-sso) .st-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  :is(#page-settings, #page-sso) .st-kv dd + dt { margin-top: 8px; }
+  body:has(:is(#page-settings, #page-sso, #page-baselines).active .st-savebar:not([hidden])) #toast { bottom: 136px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-kv { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  :is(#page-settings, #page-sso, #page-baselines) .st-kv dd + dt { margin-top: 8px; }
 }
 /* ==== end page:settings ==== */
 
@@ -5443,9 +5496,9 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact { display: none; }
 
 /* Settings: the AI address and model pickers, a list with Other's box below. */
-:is(#page-settings, #page-sso) .st-picker { display: grid; gap: 8px; min-width: 0; }
-:is(#page-settings, #page-sso) .st-picker .input[hidden] { display: none; }
-:is(#page-settings, #page-sso) .st-hint .icon--xs { vertical-align: -1px; }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker { display: grid; gap: 8px; min-width: 0; }
+:is(#page-settings, #page-sso, #page-baselines) .st-picker .input[hidden] { display: none; }
+:is(#page-settings, #page-sso, #page-baselines) .st-hint .icon--xs { vertical-align: -1px; }
 
 /* Features that wait for older servers (levels.js). */
 .feature-wait { display: inline-block; margin-left: var(--sp-2); color: var(--text-3); font-size: var(--fs-sm); }

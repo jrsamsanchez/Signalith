@@ -28,6 +28,10 @@ const otlpLogsRoute = "POST /api/otlp/v1/logs"
 // Failures a sender should retry (busy, OpenSearch down) are 503 with
 // Retry-After, which the Collector honours; others are not retried.
 func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
+	if t := s.agentTenant(r); t != nil {
+		t.handleOTLPLogs(w, r)
+		return
+	}
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	isJSON := ct == "application/json"
 	fail := func(status int, retry string, err error) {

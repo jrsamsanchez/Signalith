@@ -338,6 +338,10 @@ var knownFields = func() map[string]string {
 	for _, k := range oktaMapped {
 		m[k] = kw
 	}
+	// GitHub audit log events (github.go): the event's own fields.
+	for _, k := range githubMapped {
+		m[k] = kw
+	}
 	// Kubernetes audit events (kubernetes.go): the event's own fields,
 	// some deeper than a sender's names may go.
 	for _, k := range kubernetesMapped {

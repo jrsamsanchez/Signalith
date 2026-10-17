@@ -1,0 +1,4 @@
+{"rule": "16a71777-0b2e-4db7-9888-9d59cb75200b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"environment.delete"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

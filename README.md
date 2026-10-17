@@ -393,6 +393,7 @@ Supported sources in Phase 1:
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
 | Okta System Log (sign-ins, MFA, account, app and policy changes, admin roles, API tokens and ThreatInsight threats), read from Okta's System Log API with no agent ([docs/okta.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/okta.md)) | Authentication, Change, Alerts or Other |
 | Kubernetes audit logs (who created, changed, deleted, read or exec'd into which object, refused requests), posted by the API server's audit webhook or tailed from its audit log ([docs/kubernetes-audit.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes-audit.md)) | Change, Authentication or Other |
+| GitHub Enterprise Cloud and Server audit log (repositories, members, branch protection, secret scanning, Dependabot, runners and audit log streams), streamed through an Azure event hub and the OpenTelemetry Collector, or sent by a script that reads GitHub's audit log API ([docs/github-audit-log.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/github-audit-log.md)) | Change, Authentication or Other |
 | Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
@@ -899,9 +900,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,512 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta and Kubernetes rules and 1,167
-  Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta and Kubernetes detections
+- **Content packs** add community rules, off until you turn them on: 2,524 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,185
+  Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as
@@ -991,6 +992,11 @@ tactics from three detections in a week. Many weak signals about one user become
 one alert, and noisy rules (new services, scheduled tasks, discovery commands) stop
 flooding the queue.
 
+- **Behavior baselines** learn what each user and host usually does and add risk
+  for what is new or rare: a sign-in from a new country or network or at an odd
+  hour, a program almost no host has run, a new kind of change, an unusual hour of
+  uploads. Tune them, or add exceptions, under Settings > Behavior baselines. See
+  [docs/baselines.md](https://github.com/jrsamsanchez/signalith/blob/main/docs/baselines.md).
 - **Risk** lists the users and systems with the most risk, with a bar per score, the
   number of detections and tactics, and the asset or identity context. Click one to
   see every detection that added risk, oldest first.

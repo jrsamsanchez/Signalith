@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -811,6 +812,9 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// SAML is single sign-on with a SAML 2.0 identity provider, usually
+	// set on the Single sign-on tab of Settings.
+	SAML SAML `yaml:"saml,omitempty"`
 	// SCIM lets the identity provider of single sign-on provision users.
 	SCIM SCIM `yaml:"scim,omitempty"`
 	// MFARequired says who must use two-step sign-in (a code from an
@@ -2440,6 +2444,10 @@ func (c *Config) Validate() error {
 	if c.OpenSearch.IndexPrefix == "" || strings.ToLower(c.OpenSearch.IndexPrefix) != c.OpenSearch.IndexPrefix || strings.ContainsAny(c.OpenSearch.IndexPrefix, `*?"<>|, /\#`) {
 		p = append(p, "opensearch.index_prefix must be lowercase with no spaces or wildcards")
 	}
+	if err := tenants.ValidConfiguredPrefix(c.OpenSearch.IndexPrefix); err != nil {
+		p = append(p, err.Error())
+	}
+	p = append(p, c.tenantFolderProblems()...)
 	if !c.OpenSearch.Replicas.Valid() {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
@@ -2505,6 +2513,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	p = append(p, c.oidcProblems()...)
+	p = append(p, c.samlProblems()...)
 	p = append(p, c.scimProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
