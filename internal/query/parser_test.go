@@ -254,6 +254,9 @@ func TestSplunkSyntaxForms(t *testing.T) {
 		`* | timechart limit=0 span=1h count by host`:                 "*\n| timechart span=1h limit=0 count by host",
 		`* | timechart span=1h limit=5 count by host`:                 "*\n| timechart span=1h limit=5 count by host",
 		`* | eval s=case(!match(a, "x"), 1, true(), 0)`:               "*\n| eval s=case(NOT match(a, \"x\"), 1, true(), 0)",
+		`"a.b" ="x y" OR "c" = 1`:                                     "a.b=\"x y\" OR c=1",
+		`* | eval -time = _time, b=1`:                                 "*\n| eval '-time'=_time, b=1",
+		`* | transaction dest connected=false maxpause=5m`:            "*\n| transaction dest maxpause=300s",
 		`| inputlookup a | inputlookup append=true b`:                 "*\n| inputlookup a\n| inputlookup append=true b",
 	} {
 		q, err := Parse(src)
@@ -268,7 +271,7 @@ func TestSplunkSyntaxForms(t *testing.T) {
 			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
 		}
 	}
-	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | transaction dest connected=maybe`, `* | eval - time=1`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}

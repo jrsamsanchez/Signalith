@@ -190,7 +190,11 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 	}
 	// A command that makes its own rows may start it without the |, as
 	// in [inputlookup owners | fields user].
-	if w, _, _ := strings.Cut(strings.TrimLeftFunc(sub, isSpace), " "); generating[strings.ToLower(w)] {
+	w := strings.TrimLeftFunc(sub, isSpace)
+	if i := strings.IndexFunc(w, isSpace); i >= 0 {
+		w = w[:i]
+	}
+	if generating[strings.ToLower(w)] {
 		sub, base = "|"+sub, base-1
 	}
 	q, err := parseAt(sub, base, p.depth+1)

@@ -318,8 +318,9 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 		return &Subsearch{Query: q}, nil
 	case tokString:
 		p.next()
-		if nt := p.peek(); search && nt.kind == tokOp && p.followsQuote(nt) && t.text != "" && FormatValue(t.text) == t.text {
-			// "a.b"=x, a field name in quotes, as Splunk takes it.
+		if nt := p.peek(); search && nt.kind == tokOp && t.text != "" && FormatValue(t.text) == t.text {
+			// "a.b"=x or "a.b" = x, a field name in quotes, as Splunk
+			// takes it.
 			p.next()
 			v, err := p.value()
 			if err != nil {

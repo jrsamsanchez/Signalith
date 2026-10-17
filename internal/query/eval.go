@@ -464,6 +464,11 @@ func parseEvalCommand(src string, base int) (*Eval, error) {
 	c := &Eval{}
 	for {
 		t := p.next()
+		if n := p.peek(); t.kind == etOp && t.text == "-" && n.kind == etIdent && n.pos == t.pos+1 {
+			// -time=_time: Splunk takes a name that starts with -.
+			p.next()
+			t = evalTok{etQIdent, "-" + n.text, t.pos}
+		}
 		if t.kind != etIdent && t.kind != etQIdent && t.kind != etStr || t.text == "" {
 			return nil, errorf(t.pos, "eval expects name=expression, for example: eval kb=bytes/1024")
 		}
