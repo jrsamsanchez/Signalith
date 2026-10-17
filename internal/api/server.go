@@ -79,6 +79,9 @@ type Server struct {
 	// SpreadScheduler runs the detection buckets assigned to this server
 	// when detections are spread over servers; nil when they cannot be.
 	SpreadScheduler *detect.Scheduler
+	// DetectionSpread returns how each tenant's detections are spread over
+	// the servers, for GET /api/cluster; nil when they cannot be.
+	DetectionSpread func(ctx context.Context) []detect.SpreadView
 	Findings        findings.Store
 	// Assets holds the asset and identity lists; nil disables them.
 	Assets *assets.Store

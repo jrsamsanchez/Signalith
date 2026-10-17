@@ -1,6 +1,7 @@
 package splcheck
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -199,5 +200,50 @@ func TestPostRewrites(t *testing.T) {
 	}
 	if r.Keeps(map[string]any{"src": "10.0.0.1"}) {
 		t.Error("a row without the field is kept")
+	}
+}
+
+// A later search of a list's field (spath's {}.Id) keeps the row when
+// one of its values matches, ignoring case, as Splunk's search does.
+func TestLaterSearchOfAListsField(t *testing.T) {
+	r, err := Parse(rule("`o365_management_activity` Workload=AzureActiveDirectory Operation=\"Update application.\"\n"+
+		"| eval newvalue = mvindex('ModifiedProperties{}.NewValue',0)\n| spath input=newvalue\n"+
+		"| search \"{}.ResourceAppId\"=\"app-1\" \"{}.Perms{}.Id\"=\"id-1\" OR \"{}.Perms{}.Id\"=\"id-2\"\n"+
+		"| stats count by user"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(r.Post, `where (in(mvmap('{}.ResourceAppId', lower('{}.ResourceAppId')), "app-1") AND in(mvmap('{}.Perms{}.Id', lower('{}.Perms{}.Id')), "id-1", "id-2"))`) {
+		t.Errorf("post:\n%s", r.Post)
+	}
+	for nv, keep := range map[string]bool{
+		`[{"ResourceAppId":"APP-1","Perms":[{"Id":"x"},{"Id":"ID-2"}]}]`:                           true,
+		`[{"ResourceAppId":"other","Perms":[]},{"ResourceAppId":"app-1","Perms":[{"Id":"id-1"}]}]`: true,
+		`[{"ResourceAppId":"app-1","Perms":[{"Id":"id-3"}]}]`:                                      false,
+		`[{"ResourceAppId":"app-10","Perms":[{"Id":"id-1"}]}]`:                                     false,
+		`[{"ResourceAppId":"app-1"}]`:                                                              false,
+		`{"ResourceAppId":"app-1","Perms":[{"Id":"id-1"}]}`:                                        false,
+	} {
+		c := sigmacheck.Case{Channel: sigmacheck.O365Channel, EventID: "AzureActiveDirectory", Data: map[string]string{
+			"Workload": "AzureActiveDirectory", "Operation": "Update application.", "UserId": "admin@example.com",
+			"ModifiedProperties": `[{"NewValue":` + strconv.Quote(nv) + `}]`,
+		}}
+		doc, _ := Stored(c)
+		if got := r.Keeps(doc); got != keep {
+			t.Errorf("%s: keeps %v\n%s", nv, got, r.Post)
+		}
+	}
+	for search, want := range map[string]string{
+		"| search \"{}.Id\"=\"a\"\"{}.Name\"=\"b\"": "no space between",
+		"| search NOT \"{}.Id\"=\"a\"":              "under NOT",
+		"| search \"{}.Id\"=\"a*\"":                 "compares a list's field",
+		"| search \"{}.Id\"=5":                      "the number 5",
+		"| eval Ids='{}.Id' | stats count by Ids":   "groups by Ids, which holds a list's values",
+	} {
+		src := rule("`o365_management_activity` Workload=AzureActiveDirectory Operation=\"Update application.\"\n" +
+			"| eval newvalue = mvindex('ModifiedProperties{}.NewValue',0)\n| spath input=newvalue\n" + search)
+		if _, err := Parse(src, nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", search, err, want)
+		}
 	}
 }

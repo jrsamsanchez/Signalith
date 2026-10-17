@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -139,6 +140,7 @@ func (r *Rule) hints() []Expr {
 			add(&Cmp{Field: stored(h.field), Values: []string{v}})
 		}
 	}
+	groups := map[string][2]string{} // a rex's group: its field and pattern
 	for _, s := range stages {
 		s = strings.TrimSpace(s)
 		negated := func(at int) bool { return hintNotRe.MatchString(s[:at]) }
@@ -171,6 +173,66 @@ func (r *Rule) hints() []Expr {
 					continue
 				}
 				add(&Cmp{Field: stored(s[m[2]:m[3]]), Values: []string{unquote(s[m[4]:m[5]])}, Regex: true})
+			}
+		}
+		// A number a rex's group is compared with (where
+		// tonumber(target_rid) IN (512, 513)): the rex's pattern with
+		// that number for the group.
+		if m := hintRexRe.FindStringSubmatch(s); m != nil && !strings.Contains(s, "mode=sed") {
+			pat := unquote(m[2])
+			for _, g := range rexGroupRe.FindAllStringSubmatch(pat, -1) {
+				groups[g[1]] = [2]string{m[1], pat}
+			}
+		}
+		for _, n := range hintNumbers(s, negated) {
+			g, ok := groups[n[0]]
+			if !ok {
+				continue
+			}
+			if start, end := groupSpan(g[1], n[0]); start >= 0 {
+				add(&Cmp{Field: stored(g[0]), Values: []string{g[1][:start] + "(?:" + n[1] + ")" + g[1][end:]}, Regex: true})
+			}
+		}
+	}
+	return out
+}
+
+// hintNumRe is a where's comparison of a field, or its number, with a
+// number, and hintNumInRe its test against a list of numbers.
+var (
+	hintNumRe   = regexp.MustCompile(`(?i)\b(?:tonumber\(\s*'?([A-Za-z_]\w*)'?\s*\)|'?([A-Za-z_]\w*)'?)\s*(==?|>=|>)\s*(\d+)\b`)
+	hintNumInRe = regexp.MustCompile(`(?i)\b(?:tonumber\(\s*'?([A-Za-z_]\w*)'?\s*\)|'?([A-Za-z_]\w*)'?)\s+IN\s*\(([\d\s,]+)\)`)
+)
+
+// hintNumbers are the fields a where stage compares with numbers, each
+// with a number the comparison accepts.
+func hintNumbers(s string, negated func(int) bool) [][2]string {
+	if !strings.HasPrefix(strings.ToLower(s), "where ") {
+		return nil
+	}
+	var out [][2]string
+	for _, m := range hintNumRe.FindAllStringSubmatchIndex(s, -1) {
+		if negated(m[0]) {
+			continue
+		}
+		f := s[max(m[2], 0):max(m[3], 0)] + s[max(m[4], 0):max(m[5], 0)]
+		n, err := strconv.Atoi(s[m[8]:m[9]])
+		if err != nil {
+			continue
+		}
+		if s[m[6]:m[7]] == ">" {
+			n++
+		}
+		out = append(out, [2]string{f, strconv.Itoa(n)})
+	}
+	for _, m := range hintNumInRe.FindAllStringSubmatchIndex(s, -1) {
+		if negated(m[0]) {
+			continue
+		}
+		f := s[max(m[2], 0):max(m[3], 0)] + s[max(m[4], 0):max(m[5], 0)]
+		for _, v := range strings.Split(s[m[6]:m[7]], ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				out = append(out, [2]string{f, v})
 			}
 		}
 	}

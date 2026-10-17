@@ -535,7 +535,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
-				terms := map[string]any{"field": storedField(c.By), "size": 10}
+				size := 10
+				switch {
+				case c.Limit == query.NoTimechartLimit:
+					size = maxTimechartSeries
+				case c.Limit > 0:
+					size = min(c.Limit, maxTimechartSeries)
+				}
+				terms := map[string]any{"field": storedField(c.By), "size": size}
 				if summed {
 					// A summary row stands for many events: the
 					// largest values are those with the most events,
@@ -635,6 +642,9 @@ func addEventsAgg(body map[string]any, summed bool) {
 	}
 	aggs[eventsAgg] = countAgg()
 }
+
+// maxTimechartSeries bounds the series of a timechart by a field.
+const maxTimechartSeries = 100
 
 // statsFill returns the fillnull that starts cmds when stats by fields
 // follows it and every field it fills is one of those by fields: stats
@@ -756,7 +766,7 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	var err error
 	switch c := p.transform.(type) {
 	case *query.InputLookup:
-		res, err = e.inputLookup(c)
+		res, err = e.inputLookup(ctx, c)
 	case *query.MakeResults:
 		res = makeResults(c)
 	case *query.MultiSearch:
@@ -825,7 +835,7 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 		case *query.InputLookup:
 			// inputlookup append=true, after the first command.
 			var sub *Result
-			if sub, err = e.inputLookup(c); err == nil {
+			if sub, err = e.inputLookup(ctx, c); err == nil {
 				appendRows(res, sub.Rows, sub.Columns, sub.Kind)
 				res.Truncated = res.Truncated || sub.Truncated
 			}

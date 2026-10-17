@@ -549,6 +549,7 @@ type InputLookup struct {
 	Table  string
 	Max    int // the most rows to read; 0 means the search's event limit
 	Append bool
+	Where  Expr // keeps only the rows that match these search terms
 }
 
 func (*InputLookup) Name() string { return "inputlookup" }
@@ -570,6 +571,20 @@ func (p *parser) parseInputLookup() (Command, error) {
 	// Splunk takes the options after the name too.
 	if err := p.inputLookupOptions(c); err != nil {
 		return nil, err
+	}
+	if w := p.peek(); p.isKeywordFold("where") {
+		p.next()
+		var q Query
+		if err := p.parseSearch(&q); err != nil {
+			return nil, err
+		}
+		if q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" || exprSubsearches(q.Search) > 0 {
+			return nil, errorf(w.pos, "inputlookup where takes only field terms, such as where status=active")
+		}
+		if q.Search == nil {
+			return nil, errorf(w.pos, "expected terms after where, for example: | inputlookup owners where team=Web")
+		}
+		c.Where = q.Search
 	}
 	return c, p.endCommand()
 }
@@ -607,7 +622,11 @@ func inputLookupString(c *InputLookup) string {
 	if c.Max > 0 {
 		s += "max=" + strconv.Itoa(c.Max) + " "
 	}
-	return s + c.Table
+	s += c.Table
+	if c.Where != nil {
+		s += " where " + c.Where.String()
+	}
+	return s
 }
 
 // Regex keeps rows whose field matches a regular expression, or with !=
