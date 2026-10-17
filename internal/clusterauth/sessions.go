@@ -271,6 +271,13 @@ func (s *Sessions) MaxAge() time.Duration {
 // session epoch when the password changes, not through a password stamp.
 func (s *Sessions) SetVersion(context.Context, string, string) {}
 
+// SetTenant refuses to move a session to another tenant: multi-tenant
+// mode does not keep tenants in the shared settings yet, so every
+// session works in the default tenant.
+func (s *Sessions) SetTenant(context.Context, string, string) error {
+	return ErrTenantUsers
+}
+
 // unusable reports whether a write failed because OpenSearch cannot be
 // used now (unreachable, overloaded, or refusing writes), rather than
 // because of what was written.

@@ -403,7 +403,7 @@ func (s *Server) checkOwnCode(w http.ResponseWriter, r *http.Request, p *princip
 // they are: they signed in with it.
 func (s *Server) handleResetMFA(w http.ResponseWriter, r *http.Request) {
 	name := targetName(r)
-	if !s.usersWritable(w) {
+	if s.otherTenantsUser(w, name) || !s.usersWritable(w) {
 		return
 	}
 	if strings.EqualFold(name, userOf(r)) {

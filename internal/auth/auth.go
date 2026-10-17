@@ -34,6 +34,9 @@ type Session struct {
 	// Degraded marks a session made while OpenSearch could not be
 	// reached, kept by one server only until it can be written through.
 	Degraded bool
+	// Tenant is the tenant the session works in: a tenant user's own,
+	// or the one a provider user switched to ("" is the default tenant).
+	Tenant string
 }
 
 // NewSession is what a session starts with.
@@ -46,6 +49,8 @@ type NewSession struct {
 	Method  string
 	// Client is the address the user signed in from.
 	Client string
+	// Tenant is as in Session.
+	Tenant string
 }
 
 // Sessions stores sessions by a hash of their token, so the tokens
@@ -93,7 +98,7 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
-	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method, Tenant: n.Tenant}
 	s.mu.Lock()
 	if f := s.forward; f != nil {
 		s.mu.Unlock()
@@ -179,6 +184,21 @@ func (s *Sessions) SetVersion(token, version string) {
 	if ss, ok := s.byID[hash(token)]; ok {
 		ss.Version = version
 	}
+}
+
+// SetTenant moves a session to another tenant (see Session.Tenant), and
+// reports whether the session exists.
+func (s *Sessions) SetTenant(token, tenant string) bool {
+	if token == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ss, ok := s.byID[hash(token)]
+	if ok {
+		ss.Tenant = tenant
+	}
+	return ok
 }
 
 // Delete ends a session.

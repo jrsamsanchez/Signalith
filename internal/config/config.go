@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -2432,6 +2433,10 @@ func (c *Config) Validate() error {
 	if c.OpenSearch.IndexPrefix == "" || strings.ToLower(c.OpenSearch.IndexPrefix) != c.OpenSearch.IndexPrefix || strings.ContainsAny(c.OpenSearch.IndexPrefix, `*?"<>|, /\#`) {
 		p = append(p, "opensearch.index_prefix must be lowercase with no spaces or wildcards")
 	}
+	if err := tenants.ValidConfiguredPrefix(c.OpenSearch.IndexPrefix); err != nil {
+		p = append(p, err.Error())
+	}
+	p = append(p, c.tenantFolderProblems()...)
 	if !c.OpenSearch.Replicas.Valid() {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
