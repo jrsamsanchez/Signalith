@@ -44,7 +44,7 @@ func TestGlob(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	src := rule("| tstats `security_content_summariesonly` count from datamodel=Endpoint.Processes where\n" +
-		"`process_reg` AND Processes.process IN (\"*add*\", \"*HKCR\\\\*\",)\n" +
+		"`process_reg` AND Processes.process IN (,\"*add*\", \"*HKCR\\\\*\",)\n" +
 		"```a comment with a ` in it```\n" +
 		"NOT Processes.user=\"SYSTEM\" Processes.parent_process_name!=explorer.exe\n" +
 		"by Processes.dest Processes.user\n| `drop_dm_object_name(Processes)`\n| `security_content_ctime(firstTime)`\n| `test_rule_filter`")
@@ -165,12 +165,23 @@ func TestParsePowerShell(t *testing.T) {
 	if !found {
 		t.Error("no test event matches")
 	}
+	// Only a script block (4104) has ScriptBlockText, so a search that
+	// needs it may leave its code out.
+	r, err = Parse(rule("`powershell` (ScriptBlockText = \"*ShadowCopy*\" AND ScriptBlockText = \"*Delete*\")\n| fillnull | stats count BY dest"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "PowerShell" || !Eval(r.Where, map[string]string{"signature_id": "4104", "script_block_text": "ShadowCopy Delete"}) ||
+		Eval(r.Where, map[string]string{"signature_id": "4103", "script_block_text": "ShadowCopy Delete"}) {
+		t.Errorf("a search without its code: node %s, where %#v", r.Node, r.Where)
+	}
 	for search, want := range map[string]string{
-		"`powershell` ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                               "must name its event code",
-		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                "event 4103 is not supported",
-		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | sendemail to=x | stats count by dest":          "later stage",
-		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                           "no Signalith mapping",
-		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest": "once, at the top",
+		"`powershell` NOT ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                              "must name its event code",
+		"`powershell` (ScriptBlockText=\"*x*\" OR NOT ScriptBlockText=\"*y*\") | fillnull | stats count by dest": "must name its event code",
+		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                   "event 4103 is not supported",
+		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | sendemail to=x | stats count by dest":             "later stage",
+		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                              "no Signalith mapping",
+		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest":    "once, at the top",
 	} {
 		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", search, err, want)
@@ -221,8 +232,16 @@ func TestMacroInList(t *testing.T) {
 	if !Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "reg.exe"}) || Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "x.exe"}) {
 		t.Error("the macro after the list is not read as a term")
 	}
-	if _, err := ParseWhere(`Processes.process_name IN (,a.exe)`, "Processes", macros); err == nil {
-		t.Error("a list starting with a comma is read")
+	// A comma right after "(" adds no value, as one before ")" does.
+	e, err = ParseWhere(`Processes.process_name IN (,a.exe,)`, "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(e, map[string]string{"process_name": "a.exe"}) || Eval(e, map[string]string{"process_name": ""}) {
+		t.Error("a list starting with a comma is not the list of its values")
+	}
+	if _, err := ParseWhere(`Processes.process_name IN (,,a.exe)`, "Processes", macros); err == nil {
+		t.Error("a list starting with two commas is read")
 	}
 }
 

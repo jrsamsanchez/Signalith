@@ -553,6 +553,9 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "IpAddress", ev["src"])
 		set(s, "WorkstationName", ev["src_host"])
 		set(s, "ProcessName", ev["process_path"])
+		set(s, "SubjectUserName", ev["src_user"])
+		set(s, "SubjectUserSid", ev["src_user_sid"])
+		set(s, "SubjectDomainName", ev["src_user_domain"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ImageLoad":
 		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
@@ -657,6 +660,8 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "AttributeValue", ev["ad_value"])
 		set(s, "OperationType", ev["ad_operation"])
 		set(s, "SubjectUserName", ev["user"])
+		set(s, "SubjectUserSid", ev["user_sid"])
+		set(s, "SubjectDomainName", ev["user_domain"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5136", Data: s}}
 	case "ShareAccess":
 		if ev[eventCode] == "5140" {
@@ -1012,6 +1017,8 @@ func countable(t *Threshold, ev map[string]string) {
 			ev[f] = cmp.Or(ev["process_name"], "sample.exe") + " /run"
 		case "action":
 			ev[f] = "deleted"
+		case "auditd_success":
+			ev[f] = "yes"
 		}
 	}
 }

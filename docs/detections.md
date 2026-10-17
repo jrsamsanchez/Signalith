@@ -827,7 +827,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,273 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,280 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -960,7 +960,9 @@ Signalith's (`ScriptBlockText` is `script_block_text`, `ImageLoaded` is
 `loaded_file_path`, `TargetImage` is `target_process_path`, and so on), and their
 `fillnull` and `stats` stages only count the events. (Without `fillnull`, Splunk's
 `stats` also drops events that miss one of its `by` fields; Signalith keeps them.) PowerShell rules need script block logging
-turned on (**Include PowerShell** on Add data).
+turned on (**Include PowerShell** on Add data). A PowerShell search that needs
+`ScriptBlockText` in every event it finds may leave out its event code: of the events
+of the channels the `powershell` macro reads, only a script block (4104) has it.
 
 Scheduled task rules search the task's name (`TaskName` is `task_name`) and its
 XML definition (`TaskContent` is `task_content`); after `xmlkv`, the command and
@@ -979,7 +981,9 @@ Splunk. Windows logs 4663 only for objects whose auditing (SACL) asks for it, wi
 Directory change rules (Security 5136) search the object's DN (`ObjectDN` is
 `object`), `ObjectClass` (`ad_object_class`), the attribute (`AttributeLDAPDisplayName`
 is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationType`
-(`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
+(`ad_operation`, `%%14674` for a value added), and who made the change
+(`SubjectUserName` is `user`, `SubjectUserSid` `user_sid`, `SubjectDomainName`
+`user_domain`). Share access rules (Security 5145)
 search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
 `share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
 
@@ -1008,7 +1012,9 @@ the change (`SubjectUserName` is `user`), the account's `UserAccountControl` fla
 off), and the member added (`MemberSid` is `member_sid`). They are stored in Change
 with `object_category` `user` or `group`.
 
-Sign-in rules search the account (`TargetUserName` is `user`): a logon with explicit
+Sign-in rules search the account (`TargetUserName` is `user`); a logon or failed
+logon (4624, 4625) also by the account that asked for it (`SubjectUserName` is
+`src_user`, `SubjectUserSid` `src_user_sid`); a logon with explicit
 credentials (4648) by who used them (`SubjectUserName`, or the add-on's
 `Caller_User_Name`, is `src_user`), an NTLM credential check (4776) by the computer it
 came from (`Workstation` is `src_host`) and its result (`Status` is `ntlm_status`,
@@ -1125,8 +1131,10 @@ expression over the mask's hex digits.
 Rules that count events convert too: a `tstats` count `by` some fields and
 `_time span=1m` (or a raw search's `bucket span=5m _time` and `stats ... by`), then a
 `where` limit on the count (`where count >= 10`, `where unique_accounts > 30`, several
-joined by AND). The detection runs `| stats count, dc(field) as name by fields` and
-the same limit. Each run counts the rule's span plus the time since the last run
+joined by AND; the count may have a name, `count as failures`). The detection runs
+`| stats count, dc(field) as name by fields` and the same limit. A `bucket` before a
+`stats` that is not `by _time` only rounds each event's time, so that count is over
+the rule's whole search, as one without a span. Each run counts the rule's span plus the time since the last run
 (every minute for spans under 5 minutes, every 5 minutes otherwise; a count without
 a span covers an hour, as Splunk's default schedule does), so a burst Splunk finds
 in one of its fixed buckets is counted even when its events arrive a little late,
@@ -1179,7 +1187,8 @@ groups by a field `spath` takes from a JSON list (Splunk groups by each value an
 that comes twice) are left out. A number a later `where` compares a `rex` group with
 (`where tonumber(target_rid) IN (512, 513)`) makes test events whose field ends in it. A macro in an `IN` list
 (`` process_name IN (`uacbypass_process_name`) ``) stands for its values, as Splunk expands
-macros as text; a list with two values and no comma between them is left out. A `where`
+macros as text; a list with two values and no comma between them is left out. A
+comma right after `(` or right before `)` adds no value (`IN (,"*auth *","*req *",)`). A `where`
 that compares two
 fields (`where process_name != service_process`) has both quoted, so Signalith compares
 the fields' values as Splunk does. A dotted field (`userIdentity.userName`)

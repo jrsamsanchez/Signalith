@@ -186,6 +186,10 @@ rules:
     rule_id: f75b7f1a-b8eb-4975-a214-ff3e0a944757
     file: aws_high_number_of_failed_authentications_from_ip.yml
     path: detections/cloud/aws_high_number_of_failed_authentications_from_ip.yml
+  - id: splunk-aws-iam-accessdenied-discovery-events
+    rule_id: 3e1f1568-9633-11eb-a69c-acde48001122
+    file: aws_iam_accessdenied_discovery_events.yml
+    path: detections/cloud/aws_iam_accessdenied_discovery_events.yml
   - id: splunk-aws-iam-assume-role-policy-brute-force
     rule_id: f19e09b0-9308-11eb-b7ec-acde48001122
     file: aws_iam_assume_role_policy_brute_force.yml
@@ -550,6 +554,10 @@ rules:
     rule_id: e6d2dc61-a8b9-4b03-906c-da0ca75d71b8
     file: detect_certify_command_line_arguments.yml
     path: detections/endpoint/detect_certify_command_line_arguments.yml
+  - id: splunk-detect-certify-with-powershell-script-block-logging
+    rule_id: f533ca6c-9440-4686-80cb-7f294c07812a
+    file: detect_certify_with_powershell_script_block_logging.yml
+    path: detections/endpoint/detect_certify_with_powershell_script_block_logging.yml
   - id: splunk-detect-certipy-file-modifications
     rule_id: 7e3df743-b1d8-4631-8fa8-bd5819688876
     file: detect_certipy_file_modifications.yml
@@ -798,6 +806,10 @@ rules:
     rule_id: 41243735-89a7-4c83-bcdd-570aa78f00a1
     file: domain_controller_discovery_with_nltest.yml
     path: detections/endpoint/domain_controller_discovery_with_nltest.yml
+  - id: splunk-domain-group-discovery-with-adsisearcher
+    rule_id: 089c862f-5f83-49b5-b1c8-7e4ff66560c7
+    file: domain_group_discovery_with_adsisearcher.yml
+    path: detections/endpoint/domain_group_discovery_with_adsisearcher.yml
   - id: splunk-domain-group-discovery-with-dsquery
     rule_id: f0c9d62f-a232-4edd-b17e-bc409fb133d4
     file: domain_group_discovery_with_dsquery.yml
@@ -1454,6 +1466,10 @@ rules:
     rule_id: 20901256-633a-40de-8753-7b88811a460f
     file: linux_auditd_sysmon_service_stop.yml
     path: detections/endpoint/linux_auditd_sysmon_service_stop.yml
+  - id: splunk-linux-auditd-system-network-configuration-discovery
+    rule_id: 5db16825-81bd-4923-a8d6-d6a13a59832a
+    file: linux_auditd_system_network_configuration_discovery.yml
+    path: detections/endpoint/linux_auditd_system_network_configuration_discovery.yml
   - id: splunk-linux-auditd-unload-module-via-modprobe
     rule_id: 90964d6a-4b5f-409a-85bd-95e261e03fe9
     file: linux_auditd_unload_module_via_modprobe.yml
@@ -2838,6 +2854,10 @@ rules:
     rule_id: 69934363-e1dd-4c49-8651-9d7663dd4d2f
     file: windows_account_discovery_for_sam_account_name.yml
     path: detections/endpoint/windows_account_discovery_for_sam_account_name.yml
+  - id: splunk-windows-ad-computer-spn-modified-by-user-account
+    rule_id: dbe30a35-b56d-4a7a-82c4-2433da06b342
+    file: windows_ad_computer_spn_modified_by_user_account.yml
+    path: detections/endpoint/windows_ad_computer_spn_modified_by_user_account.yml
   - id: splunk-windows-ad-cross-domain-sid-history-addition
     rule_id: 41bbb371-28ba-439c-bb5c-d9930c28365d
     file: windows_ad_cross_domain_sid_history_addition.yml
@@ -3210,6 +3230,10 @@ rules:
     rule_id: 42f8f1a2-4228-11ec-aade-acde48001122
     file: windows_curl_upload_to_remote_destination.yml
     path: detections/endpoint/windows_curl_upload_to_remote_destination.yml
+  - id: splunk-windows-data-destruction-recursive-exec-files-deletion
+    rule_id: 3596a799-6320-4a2f-8772-a9e98ddb2960
+    file: windows_data_destruction_recursive_exec_files_deletion.yml
+    path: detections/endpoint/windows_data_destruction_recursive_exec_files_deletion.yml
   - id: splunk-windows-default-cobalt-strike-powershell-beacon
     rule_id: 25b6329b-d6b7-4ccd-9ac2-6ca1dfd2b0c1
     file: windows_default_cobalt_strike_powershell_beacon.yml
@@ -4018,6 +4042,10 @@ rules:
     rule_id: 7ed272a4-9c77-11eb-af22-acde48001122
     file: windows_multiple_users_failed_to_authenticate_from_host_using_ntlm.yml
     path: detections/endpoint/windows_multiple_users_failed_to_authenticate_from_host_using_ntlm.yml
+  - id: splunk-windows-multiple-users-failed-to-authenticate-from-proces
+    rule_id: 9015385a-9c84-11eb-bef2-acde48001122
+    file: windows_multiple_users_failed_to_authenticate_from_process.yml
+    path: detections/endpoint/windows_multiple_users_failed_to_authenticate_from_process.yml
   - id: splunk-windows-multiple-users-failed-to-authenticate-using-kerbe
     rule_id: 3a91a212-98a9-11eb-b86a-acde48001122
     file: windows_multiple_users_failed_to_authenticate_using_kerberos.yml
