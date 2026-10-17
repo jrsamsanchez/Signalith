@@ -426,6 +426,9 @@ func describeCommand(c query.Command) string {
 		} else {
 			s += "; rows missing one of these fields are dropped"
 		}
+		if len(c.SortBy) > 0 {
+			s += "; then sort by " + describeSortKeys(c.SortBy)
+		}
 		return s + "."
 	case *query.Fillnull:
 		what := "every column"
@@ -506,15 +509,7 @@ func describeCommand(c query.Command) string {
 		s := strings.Join(parts, " and ")
 		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
-		parts := make([]string, len(c.Keys))
-		for i, k := range c.Keys {
-			dir := "lowest first"
-			if k.Desc {
-				dir = "highest first"
-			}
-			parts[i] = k.Field + " (" + dir + ")"
-		}
-		return "Sort by " + strings.Join(parts, ", then ") + "."
+		return "Sort by " + describeSortKeys(c.Keys) + "."
 	case *query.Head:
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
 	case *query.Table:
@@ -779,4 +774,18 @@ func predictAlgorithm(a string) string {
 		return "a level and repeating season"
 	}
 	return "a level, trend and repeating season"
+}
+
+// describeSortKeys says how sort keys order rows: count (highest first),
+// then user (lowest first).
+func describeSortKeys(keys []query.SortKey) string {
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		dir := "lowest first"
+		if k.Desc {
+			dir = "highest first"
+		}
+		parts[i] = k.Field + " (" + dir + ")"
+	}
+	return strings.Join(parts, ", then ")
 }

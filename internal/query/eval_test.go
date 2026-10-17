@@ -38,7 +38,8 @@ func TestEvalPrecedence(t *testing.T) {
 		`'my.field' . "x"`:            `'my.field' . "x"`,
 		`'and' = 'x'`:                 `'and' = x`,
 		`LOWER(User)`:                 `lower(User)`,
-		`1.5e3 + .5`:                  ``, // .5 is not a number
+		`1.5e3 + .5`:                  `1.5e3 + 0.5`,
+		`"x" .5`:                      `"x" . 5`, // after a value, . joins
 		`case(a=1, "x", true(), "y")`: `case(a = 1, "x", true(), "y")`,
 	} {
 		e, err := ParseEvalExpr(src)
@@ -80,7 +81,7 @@ func TestEvalErrors(t *testing.T) {
 		`* | rex bogus=1 "(?<x>.)"`:                    "unknown rex option",
 		`* | dedup`:                                    "dedup needs at least one field",
 		`* | dedup 0 user`:                             "at least 1 row",
-		`* | dedup user sortby -_time`:                 "sortby is not supported",
+		`* | dedup sortby -_time`:                      "needs a field before sortby",
 		`* | dedup user keepempty=maybe`:               "expected true or false",
 		`* | dedup user bogus=1`:                       "unknown dedup option",
 		`* | where len(x) >`:                           "expected a value",

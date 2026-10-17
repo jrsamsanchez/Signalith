@@ -379,6 +379,9 @@ func (p *parser) parseIn(field string) (Expr, error) {
 		return nil, errorf(lp.pos, `expected "(" after IN`)
 	}
 	in := &In{Field: field}
+	if p.peek().kind == tokComma {
+		p.next() // a comma after "(", as Splunk's content has
+	}
 	for {
 		v, err := p.value()
 		if err != nil {
@@ -510,37 +513,9 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseFillnull()
 	case "sort":
 		s := &Sort{}
-		for {
-			nt := p.peek()
-			if nt.kind != tokWord {
-				break
-			}
-			if n, err := strconv.Atoi(nt.text); err == nil && n >= 0 && len(s.Keys) == 0 {
-				p.next() // "sort 10 -count": the limit is ignored, use head
-				continue
-			}
-			p.next()
-			k := SortKey{Field: p.fieldSuffix(nt.text)}
-			if strings.HasPrefix(nt.text, "-") || strings.HasPrefix(nt.text, "+") {
-				k.Field = nt.text[:1] + p.fieldSuffix(nt.text[1:])
-			}
-			if strings.HasPrefix(k.Field, "-") {
-				k.Desc, k.Field = true, k.Field[1:]
-			} else if strings.HasPrefix(k.Field, "+") {
-				k.Field = k.Field[1:]
-			}
-			if f := p.peek(); k.Field == "" && (nt.text == "-" || nt.text == "+") && f.kind == tokWord && !strings.HasPrefix(f.text, "-") && !strings.HasPrefix(f.text, "+") && !isDigits(f.text) {
-				// sort - count, with a space after the sign.
-				p.next()
-				k.Field = p.fieldSuffix(f.text)
-			}
-			if k.Field == "" {
-				return nil, errorf(nt.pos, "sort field name is missing")
-			}
-			s.Keys = append(s.Keys, k)
-			if p.peek().kind == tokComma {
-				p.next()
-			}
+		var err error
+		if s.Keys, err = p.sortKeys(true); err != nil {
+			return nil, err
 		}
 		if len(s.Keys) == 0 {
 			return nil, errorf(t.pos, "sort needs at least one field, for example: sort -count")
@@ -905,10 +880,61 @@ func (p *parser) parseBy() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// by "dest" names the field dest, as Splunk takes it: a plain name,
+	// since by fields are written back without quotes.
+	for t := p.peek(); t.kind == tokString && t.text != "" && FormatValue(t.text) == t.text; t = p.peek() {
+		p.next()
+		fields = append(fields, t.text)
+		more, err := p.fieldList(false)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, more...)
+	}
 	if len(fields) == 0 {
 		return nil, errorf(byTok.pos, `expected a field after "by"`)
 	}
 	return fields, nil
+}
+
+// sortKeys reads sort's fields, such as -count, +user, host. With
+// limit, a number before the first field (sort 10 -count) is skipped:
+// head sets the limit.
+func (p *parser) sortKeys(limit bool) ([]SortKey, error) {
+	var keys []SortKey
+	for {
+		nt := p.peek()
+		if nt.kind != tokWord {
+			break
+		}
+		if n, err := strconv.Atoi(nt.text); limit && err == nil && n >= 0 && len(keys) == 0 {
+			p.next()
+			continue
+		}
+		p.next()
+		k := SortKey{Field: p.fieldSuffix(nt.text)}
+		if strings.HasPrefix(nt.text, "-") || strings.HasPrefix(nt.text, "+") {
+			k.Field = nt.text[:1] + p.fieldSuffix(nt.text[1:])
+		}
+		if strings.HasPrefix(k.Field, "-") {
+			k.Desc, k.Field = true, k.Field[1:]
+		} else if strings.HasPrefix(k.Field, "+") {
+			k.Field = k.Field[1:]
+		}
+		if f := p.peek(); k.Field == "" && (nt.text == "-" || nt.text == "+") && f.kind == tokWord && !strings.HasPrefix(f.text, "-") && !strings.HasPrefix(f.text, "+") && !isDigits(f.text) {
+			// sort - count, with a space after the sign.
+			p.next()
+			k.Field = p.fieldSuffix(f.text)
+		}
+		if k.Field == "" {
+			return nil, errorf(nt.pos, "sort field name is missing")
+		}
+		keys = append(keys, k)
+		if p.peek().kind == tokComma {
+			p.next()
+		}
+	}
+	return keys, nil
 }
 
 // fieldList reads "a, b c" style field lists, stopping at "by", pipes and EOF.

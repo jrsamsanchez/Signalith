@@ -136,6 +136,21 @@ func quote(v string) string {
 // formatName quotes a column name in table or as rename's old name unless
 // it reads back as the same name: a bare word, or a stats column such as
 // dc(user). An alias or a new name is quoted with FormatValue.
+// sortKeysString writes sort keys as sort and dedup sortby read them.
+func sortKeysString(ks []SortKey) string {
+	keys := make([]string, len(ks))
+	for i, k := range ks {
+		if k.Desc {
+			keys[i] = "-" + k.Field
+		} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
+			keys[i] = "+" + k.Field // the sign is part of the name
+		} else {
+			keys[i] = k.Field
+		}
+	}
+	return strings.Join(keys, ", ")
+}
+
 func formatName(n string) string {
 	if i := strings.IndexByte(n, '('); i > 0 && strings.HasSuffix(n, ")") && isAggFunc(strings.ToLower(n[:i])) {
 		if inner := n[i+1 : len(n)-1]; inner != "" && FormatValue(inner) == inner {
@@ -381,17 +396,7 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
-		keys := make([]string, len(c.Keys))
-		for i, k := range c.Keys {
-			if k.Desc {
-				keys[i] = "-" + k.Field
-			} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
-				keys[i] = "+" + k.Field // the sign is part of the name
-			} else {
-				keys[i] = k.Field
-			}
-		}
-		return "sort " + strings.Join(keys, ", ")
+		return "sort " + sortKeysString(c.Keys)
 	case *Head:
 		return "head " + strconv.Itoa(c.N)
 	case *Table:
