@@ -12,7 +12,7 @@ import (
 
 // kmeansFields are the fields kmeans reads: the named ones, or every
 // column but _ fields that holds a number in some row.
-func kmeansFields(ctx context.Context, res *Result, named []string) ([]string, error) {
+func kmeansFields(ctx context.Context, ev *evaluator, res *Result, named []string) ([]string, error) {
 	if len(named) > 0 {
 		return named, nil
 	}
@@ -24,6 +24,9 @@ func kmeansFields(ctx context.Context, res *Result, named []string) ([]string, e
 		for i, r := range res.Rows {
 			if i%checkEvery == 0 && ctx.Err() != nil {
 				return nil, ctx.Err()
+			}
+			if !ev.step() {
+				return nil, ev.err
 			}
 			if _, ok := outlierNum(r[f]); ok {
 				out = append(out, f)
@@ -172,7 +175,7 @@ func kmeansRun(ev *evaluator, c *query.KMeans, pts [][]float64, seed uint64) ([]
 // in the order their first rows appear. Rows missing a number get none.
 func applyKMeans(ctx context.Context, res *Result, c *query.KMeans) error {
 	ev := evaluatorFor(ctx)
-	fields, err := kmeansFields(ctx, res, c.Fields)
+	fields, err := kmeansFields(ctx, ev, res, c.Fields)
 	if err != nil {
 		return err
 	}
