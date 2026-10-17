@@ -291,7 +291,8 @@ func lexEval(src string, base int) ([]evalTok, error) {
 		case c == ',':
 			toks = append(toks, evalTok{etComma, ",", base + i})
 			i++
-		case c >= '0' && c <= '9':
+		case c >= '0' && c <= '9', c == '.' && i+1 < len(src) && src[i+1] >= '0' && src[i+1] <= '9' && !afterValue(toks):
+			// .25 is a number where a value starts; after a value, . joins.
 			start := i
 			for i < len(src) && src[i] >= '0' && src[i] <= '9' {
 				i++
@@ -317,7 +318,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			if i < len(src) && isEvalIdentRune(src[i]) {
 				return nil, errorf(base+start, "%q is not a number or a field name; quote field names that start with a digit, like '%s'", src[start:i+1], src[start:i+1])
 			}
-			toks = append(toks, evalTok{etNum, src[start:i], base + start})
+			text := src[start:i]
+			if text[0] == '.' {
+				text = "0" + text
+			}
+			toks = append(toks, evalTok{etNum, text, base + start})
 		case c == '"' || c == '\'':
 			start := i
 			i++
@@ -435,6 +440,22 @@ func describeEval(t evalTok) string {
 		return quoteSingle(t.text)
 	}
 	return `"` + t.text + `"`
+}
+
+// afterValue reports whether the last token ends a value, so a . that
+// follows joins strings rather than starting a number.
+func afterValue(toks []evalTok) bool {
+	if len(toks) == 0 {
+		return false
+	}
+	t := toks[len(toks)-1]
+	switch t.kind {
+	case etNum, etStr, etQIdent, etRParen:
+		return true
+	case etIdent:
+		return !evalKeywords[strings.ToUpper(t.text)]
+	}
+	return false
 }
 
 // ParseEvalExpr parses a value expression on its own.

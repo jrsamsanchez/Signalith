@@ -170,4 +170,4 @@ func TestSplunkCorpus(t *testing.T) {
 
 // splunkCorpusPass is how many corpus searches passed when it was last
 // raised. Raise it when a change makes more pass.
-const splunkCorpusPass = 2084
+const splunkCorpusPass = 2089

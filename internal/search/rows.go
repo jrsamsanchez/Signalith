@@ -41,19 +41,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows = out
 	case *query.Sort:
-		sort.SliceStable(res.Rows, func(i, j int) bool {
-			for _, k := range c.Keys {
-				cmp := compareValues(res.Rows[i][k.Field], res.Rows[j][k.Field])
-				if cmp == 0 {
-					continue
-				}
-				if k.Desc {
-					return cmp > 0
-				}
-				return cmp < 0
-			}
-			return false
-		})
+		sortRows(res.Rows, c.Keys)
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -130,7 +118,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Rex:
 		return applyRex(ctx, res, c)
 	case *query.Dedup:
-		return applyDedup(ctx, res, c)
+		if err := applyDedup(ctx, res, c); err != nil {
+			return err
+		}
+		sortRows(res.Rows, c.SortBy)
 	case *query.Fillnull:
 		applyFillnull(res, c)
 	case *query.EventStats:
@@ -822,4 +813,24 @@ func checkPatterns(q *query.Query) error {
 		}
 	}
 	return err
+}
+
+// sortRows sorts rows by keys, keeping the order of rows that tie.
+func sortRows(rows []Row, keys []query.SortKey) {
+	if len(keys) == 0 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, k := range keys {
+			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			if cmp == 0 {
+				continue
+			}
+			if k.Desc {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+		return false
+	})
 }

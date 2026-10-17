@@ -22,8 +22,9 @@ type Rex struct {
 type Dedup struct {
 	N           int
 	Fields      []string
-	KeepEmpty   bool // keep rows missing a field, instead of dropping them
-	Consecutive bool // only drop rows that repeat the row just before
+	KeepEmpty   bool      // keep rows missing a field, instead of dropping them
+	Consecutive bool      // only drop rows that repeat the row just before
+	SortBy      []SortKey // sortby: the rows kept are then sorted, as in Splunk
 }
 
 // Fillnull sets missing values: fillnull value=0 bytes, packets. With no
@@ -286,7 +287,19 @@ func (p *parser) parseDedup(cmd token) (Command, error) {
 			continue
 		}
 		if t.kind == tokWord && strings.EqualFold(t.text, "sortby") {
-			return nil, errorf(t.pos, "dedup sortby is not supported; sort before dedup instead")
+			if len(d.Fields) == 0 {
+				return nil, errorf(t.pos, "dedup needs a field before sortby, for example: dedup user sortby -_time")
+			}
+			p.next()
+			keys, err := p.sortKeys(false)
+			if err != nil {
+				return nil, err
+			}
+			if len(keys) == 0 {
+				return nil, errorf(t.pos, "sortby needs at least one field, for example: sortby -_time")
+			}
+			d.SortBy = keys
+			break
 		}
 		if t.kind == tokWord && first && allDigits(t.text) {
 			p.next()
@@ -383,6 +396,9 @@ func dedupString(c *Dedup) string {
 	}
 	if c.Consecutive {
 		s += " consecutive=true"
+	}
+	if len(c.SortBy) > 0 {
+		s += " sortby " + sortKeysString(c.SortBy)
 	}
 	return s
 }

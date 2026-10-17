@@ -258,6 +258,11 @@ func TestSplunkSyntaxForms(t *testing.T) {
 		`* | eval -time = _time, b=1`:                                 "*\n| eval '-time'=_time, b=1",
 		`* | iplocation "'a'"`:                                        "*\n| iplocation \"'a'\"",
 		`* | iplocation 'a{}'`:                                        "*\n| iplocation a{}",
+		`a IN (,"x y",b,)`:                                            "a IN (\"x y\", b)",
+		`* | dedup a, b sortby +c, -d`:                                "*\n| dedup a, b sortby c, -d",
+		`* | stats count BY "dest"`:                                   "*\n| stats count by dest",
+		`* | where a >= 10 AND .25 > (s/f)`:                           "*\n| where a >= 10 AND 0.25 > s / f",
+		`* | eval x=a . .5`:                                           "*\n| eval x=a . 0.5",
 		`* | transaction dest connected=false maxpause=5m`:            "*\n| transaction dest maxpause=300s",
 		`| inputlookup a | inputlookup append=true b`:                 "*\n| inputlookup a\n| inputlookup append=true b",
 	} {
@@ -273,7 +278,7 @@ func TestSplunkSyntaxForms(t *testing.T) {
 			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
 		}
 	}
-	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | transaction dest connected=maybe`, `* | eval - time=1`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | transaction dest connected=maybe`, `* | dedup a sortby`, `* | stats count by " "`, `* | stats count by "a b"`, `a IN (,)`, `a IN (,,b)`, `* | dedup sortby x`, `* | eval - time=1`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
