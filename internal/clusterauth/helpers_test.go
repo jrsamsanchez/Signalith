@@ -117,6 +117,12 @@ func newServer(t *testing.T, o *testOS, name string, key *shared.ClusterKey, clk
 	s.rt = shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_" + name, Name: name},
 		Content: s.docs.Track, Log: s.log})
 	s.docs.Cluster = s.rt.Cluster
+	// The runtime's gate also wants the founder's files imported, which
+	// these servers have none of: the level alone decides here.
+	s.docs.Tenants = func() bool {
+		c, ok := s.docs.clusterBody()
+		return ok && c.Level >= shared.LevelTenants
+	}
 	s.rt.Use(o.cl, testPrefix, master)
 	ctx := context.Background()
 	if key == nil {

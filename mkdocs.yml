@@ -165,6 +165,7 @@ nav:
       - Cloud test lab: cloud-lab.md
       - Performance and sizing: performance.md
       - Data retention: retention.md
+      - Cold storage: cold-storage.md
       - Audit: audit.md
   - Security:
       - Security checks: security.md

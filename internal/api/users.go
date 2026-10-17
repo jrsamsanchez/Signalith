@@ -573,7 +573,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
-	s.releaseNotebooks(r.Context(), u.Username, userOf(r))
+	s.releaseNotebooks(r.Context(), u.Username, userOf(r), u.Tenant == "")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
 }
 

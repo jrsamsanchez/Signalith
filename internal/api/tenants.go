@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -109,7 +110,7 @@ func (s *Server) tenantUsable(id string) bool {
 type TenantRuntime interface {
 	// Server returns the server of tenant id while it runs, else nil.
 	Server(id string) *Server
-	// Servers returns the servers running now.
+	// Servers returns the servers running here, also while Ready fails.
 	Servers() []*Server
 	// Changed starts tenant id's server, or stops it, after the tenant
 	// was added, turned off or on.
@@ -117,6 +118,11 @@ type TenantRuntime interface {
 	// SettingsChanged has every tenant's server follow the settings
 	// applied at once on this server (see Server.FollowLive).
 	SettingsChanged()
+	// Ready says why this server cannot run tenants now, or nil.
+	Ready() error
+	// NotebookStores returns the hunting notebooks of every tenant but
+	// the default one, running or not, by tenant ID.
+	NotebookStores() map[string]notebooks.Store
 }
 
 // tenantKey is the tenant of this server's data: tenants.Default for the
@@ -167,18 +173,22 @@ func (s *Server) dispatchTo(rt route, p *principal) (t *Server, other bool) {
 // agentTenant returns the server of the tenant whose agent token the
 // request carries, or nil when it is the default tenant's (or none's,
 // which the default tenant's server refuses). Agent tokens are 256 random
-// bits, so at most one tenant has a token.
-func (s *Server) agentTenant(r *http.Request) *Server {
+// bits, so at most one tenant has a token. wait is true for a token of a
+// tenant this server does not run now (another server of the cluster
+// does): the agent is told to send again later, as its batch would
+// otherwise be refused and lost.
+func (s *Server) agentTenant(r *http.Request) (t *Server, wait bool) {
 	if s.TenantID != "" || s.TenantRuntime == nil {
-		return nil
+		return nil, false
 	}
 	tok := bearerToken(r)
 	if tok == "" {
-		return nil
+		return nil, false
 	}
 	if _, res := s.tokens().Check(tok); res == agenttokens.Valid || res == agenttokens.Revoked || res == agenttokens.Refused {
-		return nil
+		return nil, false
 	}
+	runs := s.TenantRuntime.Ready() == nil
 	// A tenant whose tokens are not read yet answers "send again later",
 	// as the default tenant's server does then.
 	var loading *Server
@@ -186,24 +196,37 @@ func (s *Server) agentTenant(r *http.Request) *Server {
 		if !s.tenantUsable(t.TenantID) {
 			continue
 		}
-		switch _, res := t.tokens().Check(tok); res {
-		case agenttokens.Valid, agenttokens.Revoked:
-			return t
-		case agenttokens.NotLoaded:
+		switch _, res := t.tokens().Check(tok); {
+		case res == agenttokens.Valid, res == agenttokens.Revoked && runs:
+			return t, !runs
+		case res == agenttokens.NotLoaded:
 			if loading == nil {
 				loading = t
 			}
 		}
 	}
-	return loading
+	if !runs {
+		return nil, loading != nil
+	}
+	return loading, false
 }
+
+// tenantAgentWait is the answer to an agent of a tenant this server does
+// not run now (see agentTenant).
+const tenantAgentWait = "This server does not run your organization's data right now; send again in a moment."
+
+// tenantAgentRetry is the Retry-After of tenantAgentWait, in seconds: a
+// server takes over the background jobs within seconds.
+const tenantAgentRetry = "10"
 
 // activeTenant returns the tenant a request of p works in: a tenant
 // user's own; for the provider's users the one their session switched
 // to, else the default tenant. lost says why the session's tenant can no
 // longer be used, when it cannot (turned off or removed, or the user may
 // no longer switch): the request is then refused (see allow), never
-// answered with the default tenant's data instead.
+// answered with the default tenant's data instead. A server that does
+// not run the tenants now (another server of a cluster) refuses the
+// tenant's requests but leaves a session of a tenant turned off as it is.
 func (s *Server) activeTenant(p *principal, session string) (active, lost string) {
 	if p.Tenant != "" {
 		return p.Tenant, ""
@@ -216,7 +239,7 @@ func (s *Server) activeTenant(p *principal, session string) (active, lost string
 		// lowered since cannot stay in the tenant.
 		return session, "Your role no longer lets you work in other tenants. You are back in the default tenant."
 	}
-	if !s.tenantUsable(session) {
+	if runs := s.TenantRuntime != nil && s.TenantRuntime.Ready() == nil; runs && !s.tenantUsable(session) {
 		return session, fmt.Sprintf("Tenant %q was turned off or removed. You are back in the default tenant.", session)
 	}
 	return session, ""
@@ -235,9 +258,13 @@ func (s *Server) tenantsWritable(w http.ResponseWriter) bool {
 	switch {
 	case s.Tenants == nil:
 		writeError(w, http.StatusServiceUnavailable, errors.New("the list of tenants cannot be read; see the server's log"))
-	case s.SharedUsers != nil || s.TenantRuntime == nil:
-		writeError(w, http.StatusConflict, errors.New("tenants need a single Signalith server for now; this one shares its users with other servers"))
+	case s.TenantRuntime == nil:
+		writeError(w, http.StatusConflict, errors.New("this server cannot run tenants"))
 	default:
+		if err := s.TenantRuntime.Ready(); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return false
+		}
 		return true
 	}
 	return false
@@ -291,7 +318,7 @@ func (s *Server) handleChangeTenant(w http.ResponseWriter, r *http.Request) {
 		writeTenantError(w, err)
 		return
 	}
-	t, err := s.Tenants.Change(id, req.Name, req.Disabled)
+	t, err := s.Tenants.Change(id, req.Name, req.Disabled, userOf(r))
 	if err != nil {
 		writeTenantError(w, err)
 		return

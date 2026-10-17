@@ -5589,7 +5589,8 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 #au-check .card { margin-bottom: var(--sp-3); }
 .au-problems { text-align: left; margin: var(--sp-2) auto 0; padding-left: 1.2em; overflow-wrap: anywhere; }
 #page-retention #rt-edit-form[data-kind="monthly"] #rt-f-cap,
-#page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact { display: none; }
+#page-retention #rt-edit-form[data-kind="monthly"] #rt-f-compact,
+#page-retention #rt-edit-form[data-kind="monthly"] #rt-f-cold { display: none; }
 
 /* Settings: the AI address and model pickers, a list with Other's box below. */
 :is(#page-settings, #page-sso, #page-baselines) .st-picker { display: grid; gap: 8px; min-width: 0; }

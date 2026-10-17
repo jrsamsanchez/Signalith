@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/ticketing"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -26,8 +27,10 @@ func (ts tenantSet) Servers() []*Server {
 	}
 	return out
 }
-func (ts tenantSet) Changed(context.Context, string) error { return nil }
-func (ts tenantSet) SettingsChanged()                      {}
+func (ts tenantSet) Changed(context.Context, string) error      { return nil }
+func (ts tenantSet) SettingsChanged()                           {}
+func (ts tenantSet) Ready() error                               { return nil }
+func (ts tenantSet) NotebookStores() map[string]notebooks.Store { return nil }
 
 // A tenant's ticketing connections, tickets and audit lines are its own:
 // set up by the provider's users while in the tenant, used by its
