@@ -417,6 +417,7 @@ func (r *hourRun) search(ctx context.Context, check, src string) ([]search.Row, 
 	q.Earliest = r.start.Format(time.RFC3339)
 	q.Latest = r.start.Add(time.Hour).Format(time.RFC3339)
 	detect.ScopeSample(q, "")
+	q.EventsOnly = true // it raises risk, as detections do
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 	res, err := r.e.Search.Execute(ctx, q)

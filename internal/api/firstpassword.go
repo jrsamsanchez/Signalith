@@ -10,10 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // firstPasswordCheck remembers whether the built-in admin's password in
@@ -64,7 +63,7 @@ func (s *Server) builtinFirstPassword() bool {
 	first := false
 	if b, err := os.ReadFile(file); err == nil {
 		if pw := strings.TrimSpace(string(b)); pw != "" {
-			first = bcrypt.CompareHashAndPassword([]byte(h), []byte(pw)) == nil
+			first = users.ComparePassword(h, pw)
 		}
 	}
 	s.firstPW.key, s.firstPW.first = key, first

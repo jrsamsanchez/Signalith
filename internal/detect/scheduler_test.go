@@ -702,3 +702,16 @@ func TestDetectionsDoNotWaitForAnalysts(t *testing.T) {
 	}
 	close(st.release)
 }
+
+// Detections read events, never summary indexes, so an event that
+// arrives late counts at the next run.
+func TestDetectionsReadEventsOnly(t *testing.T) {
+	s := &Scheduler{}
+	q, _, _, err := s.prepare(&Detection{Query: `datamodel=Authentication | stats count by src`, Lookback: "1h"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.EventsOnly {
+		t.Error("a detection's search may read summaries")
+	}
+}

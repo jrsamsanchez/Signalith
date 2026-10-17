@@ -270,3 +270,13 @@ func TestReplicateMissingIndex(t *testing.T) {
 		t.Errorf("requests %v", paths)
 	}
 }
+
+func TestTransportKeepsIdleConnections(t *testing.T) {
+	tr, err := Transport(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.MaxIdleConnsPerHost < 32 || tr.MaxIdleConns < tr.MaxIdleConnsPerHost {
+		t.Errorf("idle connections: %d per host, %d in all", tr.MaxIdleConnsPerHost, tr.MaxIdleConns)
+	}
+}

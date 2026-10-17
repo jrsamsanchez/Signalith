@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
@@ -326,5 +328,55 @@ func TestNotebookOwnerDeleted(t *testing.T) {
 	}
 	if code, _, _, _ := nb(t, ts, "admin", "GET", "/api/notebooks/"+id, "", ""); code != 200 {
 		t.Errorf("admin = %d", code)
+	}
+}
+
+// failingNotebooks fails every change while fail is set.
+type failingNotebooks struct {
+	notebooks.Store
+	fail atomic.Bool
+}
+
+func (f *failingNotebooks) Modify(ctx context.Context, id string, fn func(*notebooks.Notebook) (bool, error)) (*notebooks.Notebook, error) {
+	if f.fail.Load() {
+		return nil, errors.New("opensearch is down")
+	}
+	return f.Store.Modify(ctx, id, fn)
+}
+
+// A release that failed when the user was deleted is done before an
+// account of that name is made again, and the account waits for it.
+func TestNotebookOwnerReleasedBeforeReuse(t *testing.T) {
+	ts, s := newNotebookServer(t)
+	_, body, _, _ := nb(t, ts, "bea", "POST", "/api/notebooks", `{"title":"Bea's private hunt"}`, "")
+	id := notebookOf(t, body).ID
+	flaky := &failingNotebooks{Store: s.Notebooks}
+	s.Notebooks = flaky
+	flaky.fail.Store(true)
+	if code, _, _, _ := nb(t, ts, "admin", "DELETE", "/api/users/bea", "", ""); code != 200 {
+		t.Fatalf("delete user = %d", code)
+	}
+	if n, _ := s.Notebooks.Get(context.Background(), id); n.Owner != "bea" {
+		t.Fatalf("owner after a failed release = %q", n.Owner)
+	}
+	newBea := `{"username":"Bea","role":"analyst","password":"Quiet-river-stone-77","must_change_password":false}`
+	if code, out, _, _ := nb(t, ts, "admin", "POST", "/api/users", newBea, ""); code != http.StatusServiceUnavailable {
+		t.Fatalf("new bea made while her old notebooks could not be released: %d %v", code, out)
+	}
+	flaky.fail.Store(false)
+	if code, out, _, _ := nb(t, ts, "admin", "POST", "/api/users", newBea, ""); code != http.StatusCreated {
+		t.Fatalf("new bea: %d %v", code, out)
+	}
+	if n, _ := s.Notebooks.Get(context.Background(), id); n.Owner != "" {
+		t.Errorf("owner = %q", n.Owner)
+	}
+	// Making an account whose name is taken leaves its notebooks alone.
+	_, body, _, _ = nb(t, ts, "andy", "POST", "/api/notebooks", `{"title":"Andy's hunt"}`, "")
+	andys := notebookOf(t, body).ID
+	if code, _, _, _ := nb(t, ts, "admin", "POST", "/api/users", `{"username":"andy","role":"analyst","password":"Quiet-river-stone-77"}`, ""); code == http.StatusCreated {
+		t.Fatal("a second andy was made")
+	}
+	if n, _ := s.Notebooks.Get(context.Background(), andys); n.Owner != "andy" {
+		t.Errorf("andy's notebook owner = %q", n.Owner)
 	}
 }

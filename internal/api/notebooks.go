@@ -16,6 +16,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -656,30 +657,54 @@ func (s *Server) handleUnlinkNotebookCase(w http.ResponseWriter, r *http.Request
 // account made later with the same name does not inherit them. Private
 // ones are then seen only by admins, who can share, hand on or delete them.
 // A provider user may have made notebooks in every tenant: theirs are
-// released in each tenant's too, whether it runs or not.
-func (s *Server) releaseNotebooks(ctx context.Context, username, by string, provider bool) {
+// released in each tenant's too, whether it runs or not. It runs again
+// before an account of that name is made (releaseBeforeCreate), so a
+// release that failed at the delete is done then.
+func (s *Server) releaseNotebooks(ctx context.Context, username, by string, provider bool) error {
 	if username == "" {
-		return
+		return nil
 	}
-	releaseNotebooksIn(ctx, s.Notebooks, s.Log, username, by)
+	err := releaseNotebooksIn(ctx, s.Notebooks, s.Log, username, by)
 	if provider && s.TenantID == "" && s.TenantRuntime != nil {
 		for id, store := range s.TenantRuntime.NotebookStores() {
-			releaseNotebooksIn(ctx, store, s.Log.With("tenant", id), username, by)
+			err = errors.Join(err, releaseNotebooksIn(ctx, store, s.Log.With("tenant", id), username, by))
 		}
 	}
+	return err
 }
 
-func releaseNotebooksIn(ctx context.Context, store notebooks.Store, log *slog.Logger, username, by string) {
-	if store == nil {
-		return
+// releaseBeforeCreate releases the notebooks a former user of this name
+// still owns before an account of the name is made, and refuses the
+// account when that cannot be done.
+func (s *Server) releaseBeforeCreate(ctx context.Context, username, by string, provider bool) error {
+	if _, taken := s.userStore().Get(username); taken {
+		// The account exists: making it again fails, and its notebooks
+		// are its own.
+		return nil
 	}
-	list, _, err := store.Search(ctx, notebooks.Filter{Admin: true, Owner: username, Limit: 10000})
+	if err := s.releaseNotebooks(ctx, username, by, provider); err != nil {
+		return errors.New("the hunting notebooks of a former user with this name could not be checked; try again in a moment")
+	}
+	return nil
+}
+
+func releaseNotebooksIn(ctx context.Context, nb notebooks.Store, log *slog.Logger, username, by string) error {
+	if nb == nil {
+		return nil
+	}
+	list, _, err := nb.Search(ctx, notebooks.Filter{Admin: true, Owner: username, Limit: 10000})
+	var missing *store.Error
+	if errors.As(err, &missing) && missing.Status == http.StatusNotFound {
+		// No notebook was ever saved there.
+		return nil
+	}
 	if err != nil {
 		log.Warn("could not release the deleted user's hunting notebooks", "user", username, "err", err)
-		return
+		return err
 	}
+	var failed error
 	for _, sum := range list {
-		_, err := store.Modify(ctx, sum.ID, func(n *notebooks.Notebook) (bool, error) {
+		_, err := nb.Modify(ctx, sum.ID, func(n *notebooks.Notebook) (bool, error) {
 			if !n.IsOwner(username) {
 				return false, nil
 			}
@@ -688,8 +713,10 @@ func releaseNotebooksIn(ctx context.Context, store notebooks.Store, log *slog.Lo
 		})
 		if err != nil {
 			log.Warn("could not release a deleted user's hunting notebook", "user", username, "notebook", sum.ID, "err", err)
+			failed = errors.Join(failed, err)
 			continue
 		}
 		log.Info("hunting notebook owner removed with their account", "audit", true, "by", by, "notebook", sum.ID, "former_owner", username)
 	}
+	return failed
 }

@@ -56,6 +56,9 @@ type tenantRuntime struct {
 	// keeps tenants (shared.LevelTenants).
 	leader   func() bool
 	sharedOK func() bool
+	// limits are the ingest slots and receive budget the default tenant's
+	// pipeline uses, which every tenant's pipeline shares.
+	limits *ingest.Limits
 
 	// changing makes Changed one at a time; mu guards running, which
 	// requests read while a tenant starts.
@@ -76,8 +79,8 @@ type tenantInstance struct {
 	jobs   sync.WaitGroup
 }
 
-func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server) *tenantRuntime {
-	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, running: map[string]*tenantInstance{}}
+func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server, limits *ingest.Limits) *tenantRuntime {
+	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, limits: limits, running: map[string]*tenantInstance{}}
 	t.leader = func() bool { return r.node == nil || r.node.RunsJobs() }
 	return t
 }
@@ -310,7 +313,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Log: log}
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
@@ -334,6 +337,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, ti.jobs.Go)
 	ibackend := intel.NewOpenSearch(cl, prefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -491,6 +495,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
 	if t.sharedOK != nil && ret.Archive != nil {
 		// A tenant's archive folder is in this server's state folder,
@@ -525,6 +530,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			return
 		}
 		runWhileLeader(ctx, t.leader, []cluster.Job{
+			{Name: "summaries", Run: sumBuilder.Run},
 			{Name: "detections", Run: sched.Start},
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},

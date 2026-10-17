@@ -117,6 +117,7 @@ func (s *Scheduler) Backtest(ctx context.Context, d *Detection, window time.Dura
 	if err != nil {
 		return nil, err
 	}
+	q.EventsOnly = true // as the scheduler runs it
 	lb, _ := ParseDuration(d.Lookback)
 	end := s.clusterNow().UTC().Truncate(time.Minute)
 	start := end.Add(-window)
