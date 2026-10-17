@@ -207,7 +207,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults, eventcount
 
 	// Summaries lists the data models whose summary indexes the search
 	// reads for whole 5-minute slots.
@@ -350,6 +350,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		if c, ok := cmds[0].(*query.Set); ok {
 			return &Plan{Mode: "set", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.EventCount); ok {
+			return e.eventCountPlan(c, cmds[1:])
 		}
 	}
 
@@ -685,6 +688,8 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 		res, err = e.multiSearch(ctx, c, q)
 	case *query.Set:
 		res, err = e.setSearch(ctx, c, q)
+	case *query.EventCount:
+		res, err = e.eventCount(ctx, p)
 	default:
 		res, err = e.fetch(ctx, p)
 	}
