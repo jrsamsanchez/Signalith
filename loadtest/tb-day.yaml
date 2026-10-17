@@ -4,7 +4,8 @@
 # deploy/lab, run with sudo lab-loadtest on signalith-1), which also
 # records each machine's CPU, memory and disk and how far OpenSearch is
 # behind; see docs/cloud-lab.md. It finds where the setup saturates, so
-# its numbers are recorded rather than judged. Counting about 360 million
+# its numbers are recorded rather than judged, except events the agents
+# drop because the servers fell behind. Counting about 360 million
 # stored events one by one would take longer than the run, so it does
 # not verify them; s1-small does, at a size it can count.
 name: tb-day
@@ -31,4 +32,6 @@ criteria:
   - {name: search_p95_ms, phase: 1tb}
   - {name: page_p95_ms, phase: 1tb}
   - {name: events_undelivered}
+  # Agents that drop events mean the servers did not keep up.
+  - {name: events_dropped, max: 0}
   - {name: generator_lag_ms}

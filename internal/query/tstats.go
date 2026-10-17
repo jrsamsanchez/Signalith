@@ -119,9 +119,18 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 
 	// Options, then the functions, up to from, where or by.
 	i := 0
+	fill, hasFill := "", false
 	for i+2 < len(toks) && toks[i].kind == tokWord && toks[i+1].kind == tokOp && toks[i+1].text == "=" {
 		switch strings.ToLower(toks[i].text) {
 		case "summariesonly", "allow_old_summaries", "local", "chunk_size", "include_reduced_buckets":
+		case "fillnull_value":
+			// By fields an event lacks group under this value, where
+			// tstats would otherwise leave the event out.
+			v := toks[i+2]
+			if v.kind != tokWord && v.kind != tokString {
+				return nil, errorf(v.pos, "tstats fillnull_value= takes a value, such as fillnull_value=null")
+			}
+			fill, hasFill = v.text, true
 		case "prestats":
 			if b, err := parseBool(toks[i+2]); err != nil || b {
 				return nil, errorf(toks[i+2].pos, "tstats prestats=t is not supported")
@@ -253,6 +262,9 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 	}
 	if span != "" {
 		ts.cmds = append(ts.cmds, &Bin{Field: "_time", Span: span})
+	}
+	if hasFill && len(st.By) > 0 {
+		ts.cmds = append(ts.cmds, &Fillnull{Value: fill, Fields: append([]string{}, st.By...)})
 	}
 	ts.cmds = append(ts.cmds, st)
 	if len(ren.Pairs) > 0 {

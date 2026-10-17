@@ -220,3 +220,20 @@ func TestLexAllASCIISpaces(t *testing.T) {
 		t.Errorf("search = %s", q.Search)
 	}
 }
+
+func TestSearchStarKeepsEveryRow(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | search * | stats count`:                         "*\n| stats count",
+		`* | stats count by user | search *`:                 "*\n| stats count by user",
+		`* | search * user=x`:                                "*\n| search user=x",
+		`* | stats count | appendpipe [search * | eval a=1]`: "*\n| stats count\n| appendpipe [eval a=1]",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", src, err)
+		}
+		if got := q.String(); got != want {
+			t.Errorf("Parse(%q) = %q, want %q", src, got, want)
+		}
+	}
+}

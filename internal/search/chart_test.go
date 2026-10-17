@@ -73,6 +73,24 @@ func TestTstatsCompiles(t *testing.T) {
 	}
 }
 
+func TestTstatsFillnullValue(t *testing.T) {
+	// Events without a by field group under the fill value, in OpenSearch.
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[
+		{"key":{"k0":"amy"},"doc_count":2},{"key":{"k0":null},"doc_count":1}]}}}`}}
+	e := &Engine{Store: fs}
+	got := runRows(t, e, `| tstats fillnull_value=unknown count from datamodel=Web by Web.user`, "Web.user", "count")
+	if !reflect.DeepEqual(got, []string{"amy 2", "unknown 1"}) {
+		t.Errorf("rows = %v", got)
+	}
+	if !strings.Contains(asJSON(fs.bodies[0]), `"missing_bucket":true`) {
+		t.Errorf("body = %s", asJSON(fs.bodies[0]))
+	}
+	// A fillnull of other fields stays in memory.
+	if p := compile(t, `* | fillnull value=x host | stats count by user`); p.Mode == "stats" {
+		t.Errorf("fillnull of a non-by field ran in OpenSearch: %s", asJSON(p.Body))
+	}
+}
+
 func TestSpath(t *testing.T) {
 	const events = `{"hits":{"total":{"value":2},"hits":[
 	{"_source":{"@timestamp":"2026-10-15T11:00:00Z","message":"{\"actor\":{\"user\":\"amy\",\"roles\":[\"admin\",\"dev\"]},\"items\":[{\"id\":1},{\"id\":2}],\"ok\":true,\"n\":null}"}},

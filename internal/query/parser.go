@@ -86,6 +86,9 @@ func parseAt(src string, base, depth int) (*Query, error) {
 			q.Commands = append(commands, ts.cmds...)
 			continue
 		}
+		if _, ok := cmd.(keepAll); ok {
+			continue
+		}
 		if f, ok := cmd.(*from); ok {
 			if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
 				return nil, errorf(at, "from starts the search: %s", fromExample)
