@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
@@ -1416,6 +1417,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
 	}
 	sched.SetCatchUp(c.DetectionsCatchUp())
+	// Behavior baselines: the server that runs the background jobs learns
+	// how each user and host usually behaves, and adds risk for what is
+	// new or rare (see internal/baselines).
+	blStore := baselines.NewStore(cl, c.OpenSearch.IndexPrefix)
+	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
+		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
 	if saved, err := ret.Store.Get(); err != nil {
 		if sharedOn {
 			log.Error("the shared retention policies cannot be read from OpenSearch yet; retention is paused until they can", "err", err)
@@ -1597,6 +1604,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Endpoints:    estore,
 		SensorTuning: tuning,
 		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},
+		Baselines:    blStore,
 		Background:   r.backgroundContext(parent),
 		Assistant:    newAssistant(c),
 		Users:        people,
@@ -1652,7 +1660,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK, chatOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK, baselinesOK, chatOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1702,6 +1710,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
 		} else {
 			playbooksOK = true
+		}
+		if err := blStore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the behavior baselines index; behavior baselines will not learn", "index", blStore.Index, "err", err)
+		} else {
+			baselinesOK = true
 		}
 		if err := chats.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the chat index; buttons in Slack and Teams messages will not work", "index", chats.Index, "err", err)
@@ -1803,6 +1816,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			ret.Start(ctx)
 			ret.Wait()
 		}},
+		// The baselines learn while their settings leave them on; a change
+		// there applies at the next round.
+		{Name: "behavior baselines", Run: func(ctx context.Context) {
+			if !ready(ctx) || !baselinesOK || !findingsOK {
+				return
+			}
+			behavior.Run(ctx)
+		}},
 		// Microsoft 365's audit log is read while Settings > Microsoft 365
 		// names a tenant; a change there applies at the next round.
 		{Name: "microsoft 365 audit log", Run: func(ctx context.Context) {
@@ -1858,6 +1879,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
 		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
+		behavior.Allowed, behavior.Epoch, behavior.NodeID, behavior.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		oktaLog.Allowed, oktaLog.Epoch, oktaLog.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
@@ -2315,6 +2337,20 @@ func newFeeds(c *config.Config, indicators *intel.Store, log *slog.Logger) *inte
 		f.Protected = []string{p}
 	}
 	return f
+}
+
+// newDownloadClient returns the client of the downloads an admin picks
+// the address of, such as the behavior baselines' IP database: with the
+// rules of feed downloads, so it never reaches Signalith's own OpenSearch,
+// this machine (unless feeds may) or a cloud metadata service.
+func newDownloadClient(c *config.Config) *http.Client {
+	var protected []string
+	for _, u := range append([]string{c.OpenSearch.URL}, c.OpenSearch.URLs...) {
+		if p := intel.ProtectedAddr(u); p != "" {
+			protected = append(protected, p)
+		}
+	}
+	return intel.NewDownloadClient(c.Intel.AllowLoopbackFeeds, protected)
 }
 
 // newNotify returns the notification settings, the deliveries index and

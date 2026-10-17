@@ -25,6 +25,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
@@ -113,6 +114,9 @@ type Server struct {
 	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
 	// disables it.
 	Vulns *Vulns
+	// Baselines keeps the behavior baselines' settings and what they
+	// learned (Settings > Behavior baselines); nil disables the page.
+	Baselines *baselines.Store
 	// Content installs content pack updates; nil disables them.
 	Content *content.Updater
 	// Sample loads and removes the one-click sample data; nil disables the
@@ -387,6 +391,7 @@ func (s *Server) Handler() http.Handler {
 	api.sensitive("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
+	s.routeBaselines(api)
 	s.routeLookupTables(api)
 	s.routeParsers(api)
 	s.routeAsk(api)

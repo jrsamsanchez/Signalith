@@ -139,6 +139,7 @@ nav:
       - Query language: query-language.md
       - Lookup tables: lookups.md
       - Detections: detections.md
+      - Behavior baselines: baselines.md
       - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
       - AI tools (MCP): ai-tools.md

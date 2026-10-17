@@ -223,6 +223,13 @@ func newFeedClient(allowLoopback bool, protected []string) *http.Client {
 	return newFeedClientWith(allowLoopback, protected, http.ProxyFromEnvironment)
 }
 
+// NewDownloadClient returns an HTTP client with the rules of feed
+// downloads, for other files Signalith downloads from an address an
+// admin can set, such as the behavior baselines' IP database.
+func NewDownloadClient(allowLoopback bool, protected []string) *http.Client {
+	return newFeedClientWith(allowLoopback, protected, http.ProxyFromEnvironment)
+}
+
 func newFeedClientWith(allowLoopback bool, protected []string, proxy func(*http.Request) (*url.URL, error)) *http.Client {
 	d := newSafeDialer(allowLoopback, protected)
 	tr := &http.Transport{

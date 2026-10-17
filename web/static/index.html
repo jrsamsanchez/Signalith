@@ -216,6 +216,7 @@
       <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="nav__item" href="#baselines" data-page="baselines" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-trending-up"/></svg><span>Behavior baselines</span></a>
       <a class="nav__item" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
       <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
@@ -277,6 +278,7 @@
       <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
+      <a class="set-tab" href="#baselines" data-page="baselines" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-trending-up"/></svg><span>Behavior baselines</span></a>
       <a class="set-tab" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
       <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
       <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
@@ -1680,6 +1682,20 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div id="servers-upgrade" class="sv-page"></div>
   </section>
 
+  <!-- Behavior baselines (admins): first-seen and rare activity as risk -->
+  <section id="page-baselines" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Behavior baselines</h2>
+        <p class="page-head__desc">Learn what each user and host usually does, and add risk when they do something new or rare: a sign-in from a new country, a rare program, an unusual amount of data sent.</p>
+      </div>
+      <div class="page-head__actions">
+        <a class="btn btn--secondary" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
+      </div>
+    </div>
+    <div id="bl-page" class="st-main bl-page" aria-busy="true"></div>
+  </section>
+
   <!-- Single sign-on (admins): signing in with an OpenID Connect provider -->
   <section id="page-sso" class="page">
     <div class="page-head">
@@ -1882,6 +1898,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
 <script src="sso.js"></script>
+<script src="baselines.js"></script>
 <script src="lookuptables.js"></script>
 <script src="servers-ca.js"></script>
 <script src="servers-lifecycle.js"></script>
