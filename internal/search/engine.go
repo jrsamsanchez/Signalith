@@ -479,7 +479,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
 			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation,
-			*query.Accum, *query.Delta, *query.AutoRegress:
+			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo:
 			continue
 		}
 		return 0, false
@@ -641,6 +641,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.ipLocation(ctx, res, c)
 		case *query.Map:
 			err = e.mapSearch(ctx, res, c, q)
+		case *query.AddInfo:
+			err = e.addInfo(ctx, res, q)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
