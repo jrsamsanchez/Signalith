@@ -24,7 +24,11 @@ import (
 // the password hash in use against it. The Linux packages keep that file
 // readable by root only, so signalith init also notes in the state folder
 // the hash it gave the built-in admin (FirstPassword): while that is still
-// the hash in use, so is the first password.
+// the hash in use, so is the first password. An install made before that
+// gets it noted at every start, by the Linux unit's root step (signalith
+// initial-password -note): next to the config file, readable by the
+// service's group, since root writes nothing in the folder the service
+// owns.
 
 // InitialPasswordFileName is the file that keeps a first admin password
 // Signalith made: in the Docker quick start's secrets folder, and next to
@@ -124,10 +128,33 @@ func (c *Config) InitialPasswordFile() (file string, own bool) { return InitialP
 // as the state folder kept it when c was loaded, or "".
 func (c *Config) FirstPasswordHash() string { return c.firstPassword.Hash }
 
-// readFirstPassword reads FirstPassword from the state folder. A damaged
-// file counts as none.
+// readFirstPassword reads FirstPassword from the state folder, or the
+// hash noted next to the config file (RecordFirstPasswordNextTo) where the
+// state folder has nothing. A damaged file counts as none.
 func (c *Config) readFirstPassword() {
 	c.firstPassword, _ = ReadFirstPassword(c.StateDir())
+	if c.firstPassword.Hash == "" && c.firstPassword.Changed.IsZero() && c.path != "" {
+		if fp, err := ReadFirstPassword(filepath.Dir(c.path)); err == nil {
+			c.firstPassword.Hash = fp.Hash
+		}
+	}
+}
+
+// RecordFirstPasswordNextTo notes next to the config file at path that
+// hash, the built-in admin's password hash, is that of a first password
+// Signalith made, for a server that cannot read the file that keeps it.
+// The note can be read by the group of the config folder (the service's,
+// for the Linux packages), as the config file can: it holds a hash the
+// service has anyway.
+func RecordFirstPasswordNextTo(path, hash string) error {
+	dir := filepath.Dir(path)
+	if fp, err := ReadFirstPassword(dir); err == nil && fp.Hash == hash {
+		return shareWithGroup(FirstPasswordFileIn(dir), dir)
+	}
+	if err := writeFirstPassword(dir, FirstPassword{Hash: hash}); err != nil {
+		return err
+	}
+	return shareWithGroup(FirstPasswordFileIn(dir), dir)
 }
 
 // WithAdminHashFile returns a copy of c whose built-in admin's password
