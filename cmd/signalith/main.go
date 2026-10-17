@@ -1959,6 +1959,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		if r.shared != nil {
+			sched.Counter = r.shared.DetectionEpochs
+		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
