@@ -54,9 +54,6 @@ data:
     plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
     plugins.security.audit.config.log_request_body: false
     plugins.security.audit.config.exclude_sensitive_headers: true
-    plugins.security.compliance.history.internal_config_enabled: true
-    plugins.security.compliance.history.write.metadata_only: true
-    plugins.security.compliance.history.read.metadata_only: true
   load-security.sh: |
     {{- .Files.Get "files/load-security.sh" | nindent 4 }}
   config.yml: |
