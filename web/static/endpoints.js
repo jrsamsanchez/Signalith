@@ -184,6 +184,7 @@ window.sensorText = (function () {
   // agentPlatform guesses the agent's system from its tag and how it sends.
   function agentPlatform(a) {
     if (a.intake === 'otlp') return { os: 'otel', label: 'OpenTelemetry Collector' };
+    if (a.intake === 'hec') return { os: 'otel', label: 'Splunk HEC sender' };
     if ((a.tag || '').startsWith('win')) return { os: 'windows', label: 'Windows' };
     // Agents made from the Antivirus option need its ClamAV configuration.
     if ((a.tag || '').startsWith('linux.clamav')) return { os: 'antivirus', label: 'Antivirus (ClamAV)' };

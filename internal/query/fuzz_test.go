@@ -53,11 +53,13 @@ var fuzzSeeds = []string{
 	`* | accum bytes | accum b AS "t b" | delta count AS d p=3 | delta x | autoregress c p=2-4 | autoregress c AS prev p=2 | fieldsummary maxvals=5 user "src ip" | fieldsummary`,
 	`* | transpose | transpose 7 column_name="c n" header_field=h include_empty=f | filldown | filldown a, "b c" d* | addinfo | trendline sma5(x) ema10("a b") AS "e m", wma2(y) AS w`,
 	`* | concurrency duration=d | concurrency duration="d s" start=t output="c n" | contingency maxrows=5 maxcols=3 usetotal=f totalstr="All" a "b c" | contingency x y | format | format maxresults=3 mvsep=and "[" "{" "&&" "}" "||" "]"`,
+	`* | return src | return 3 ip=dest "5" "$a" $user, b | return 5=x | makecontinuous span=1h | makecontinuous "c n" span=10`,
 	`* | iplocation src | iplocation prefix="s c" allfields=t lang=zh-CN "src ip" | iplocation prefix=~x dest`,
 	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
 	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
 	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,
 	`* | replace "::ffff:*" WITH *, "a", WITH "b" IN src, "x y" | replace a WITH b | xmlkv | xmlkv Message maxinputs=5 | eval b=bit_and(a, 3), c=bit_shift_left(1, 4)`,
+	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 

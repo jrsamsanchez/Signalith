@@ -5,10 +5,11 @@ example as a managed security provider. Each customer is a **tenant**, with its 
 events, findings, investigations, detections, dashboards, hunting notebooks, lists, playbooks,
 notifications, retention and agent tokens, and its own users.
 
-!!! note "Being built"
-    Multi-tenant mode arrives in steps. This version runs tenants and has an API for them;
-    the Settings page and the tenant picker come next. An install without tenants works
-    exactly as before.
+An install without tenants works exactly as before. The provider's admins add, rename and
+turn off tenants in **Settings > Tenants**; once there is one, the provider's analysts and
+admins switch between tenants with the tenant picker in the top bar, which is tinted with
+the tenant's name while they work in a customer's data. Tenant users see neither, nor any
+page about the server itself.
 
 ## Who is who
 
@@ -51,9 +52,22 @@ configured index prefix and folders, so nothing moves when you upgrade.
   with `tenant=<id>`, and so is every log line of that tenant's server, searches
   included.
 - **Users.** A tenant's admins see and manage only their tenant's users, and the users
-  they add belong to their tenant. Only provider users add provider users. User names are
-  unique across the install. A tenant's admins do not count toward the install's last
+  they add belong to their tenant. Only provider users add provider users. A tenant
+  user's name always ends in `@` and the tenant ID: typing `alice` in tenant `acme` adds
+  `alice@acme`, who signs in as `alice@acme`. So no tenant's admin can take, or find out
+  about, a name the provider or another tenant uses. For the same reason, provider users
+  (local, directory, single sign-on or SCIM) cannot be added with a name that ends in `@`
+  and a word with no dot, like `bob@acme`; full email addresses such as
+  `bob@example.com` are fine. A tenant's admins do not count toward the install's last
   admin.
+
+    Users added before this rule keep their names. A tenant user added with a bare name,
+    like `ada`, still signs in as `ada`, and no one else can take that name. A provider user
+    named like a tenant user, such as `bob@acme`, also keeps working, but tenant `acme`
+    cannot then add its own `bob`. To free a name like that, rename the provider user by
+    adding them again with a full email address, then delete the old account.
+- **File locations.** Pages that name a file on the server, like Response actions and
+  Playbooks, show tenant users only the file's name, never where it is on the server.
 - **Requests to other addresses.** Threat intel feeds, notification channels, response
   action settings and [Jira and ServiceNow connections](ticketing.md#multi-tenant-installs)
   make the server send requests to addresses someone types in. They are

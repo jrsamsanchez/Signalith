@@ -70,7 +70,7 @@ func TestTenantUsersStayInTheirTenant(t *testing.T) {
 		}
 		method, path, _ := strings.Cut(rt.Pattern, " ")
 		path = wildcard.ReplaceAllString(path, "x")
-		code, body := do(method, path, "{}", "ada")
+		code, body := do(method, path, "{}", "ada@acme")
 		want := "tenant_unavailable"
 		if rt.Platform || rt.Managed {
 			want = "provider_only"
@@ -83,10 +83,10 @@ func TestTenantUsersStayInTheirTenant(t *testing.T) {
 
 func TestDisabledTenantsUsersCannotSignIn(t *testing.T) {
 	_, do := newTenantServer(t)
-	if code, body := do("GET", "/api/me", "", "otto"); code != http.StatusForbidden || body["code"] != "tenant_disabled" {
+	if code, body := do("GET", "/api/me", "", "otto@off"); code != http.StatusForbidden || body["code"] != "tenant_disabled" {
 		t.Errorf("user of a disabled tenant: %d %v", code, body)
 	}
-	if code, body := do("GET", "/api/me", "", "ada"); code != 200 || body["tenant"] != "acme" || body["active_tenant"] != "acme" {
+	if code, body := do("GET", "/api/me", "", "ada@acme"); code != 200 || body["tenant"] != "acme" || body["active_tenant"] != "acme" {
 		t.Errorf("tenant user's me: %d %v", code, body)
 	}
 	if code, body := do("GET", "/api/me", "", "pat"); code != 200 || body["tenant"] != "" || body["active_tenant"] != tenants.Default {
@@ -102,7 +102,7 @@ func TestUnknownTenantsUsersCannotSignIn(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if code, body := doAs(t, ts, "ghost", "role-password", "GET", "/api/me", ""); code != http.StatusForbidden || body["code"] != "tenant_disabled" {
+	if code, body := doAs(t, ts, "ghost@gone", "role-password", "GET", "/api/me", ""); code != http.StatusForbidden || body["code"] != "tenant_disabled" {
 		t.Errorf("user of an unknown tenant: %d %v", code, body)
 	}
 }
@@ -129,6 +129,14 @@ func TestProviderSwitchesTenants(t *testing.T) {
 	code, list, _ := call(t, ts, "GET", "/api/tenants", "", "", "", cookie)
 	if code != 200 || list["active"] != tenants.Default || list["enabled"] != true || len(list["tenants"].([]any)) != 2 {
 		t.Fatalf("tenants = %d %v", code, list)
+	}
+	// Settings > Tenants shows when each was added; only admins are told
+	// whether tenants can be added.
+	if acme := list["tenants"].([]any)[1].(map[string]any); acme["created"] == nil || acme["created_by"] != "test" {
+		t.Errorf("acme = %v", acme)
+	}
+	if _, ok := list["off"]; ok {
+		t.Errorf("an analyst is told whether tenants can be added: %v", list)
 	}
 	if code, _, _ := call(t, ts, "GET", "/api/findings", "", "", "", cookie); code != 200 {
 		t.Errorf("findings in the default tenant: %d", code)
@@ -159,7 +167,7 @@ func TestProviderSwitchesTenants(t *testing.T) {
 	if code, body := doAs(t, ts, "pat", "role-password", "POST", "/api/tenants/switch", `{"tenant":"acme"}`); code != http.StatusBadRequest || body["code"] != "session_only" {
 		t.Errorf("basic switch: %d %v", code, body)
 	}
-	_, _, adaCookie := login(t, ts, "ada", "role-password")
+	_, _, adaCookie := login(t, ts, "ada@acme", "role-password")
 	if code, body, _ := call(t, ts, "POST", "/api/tenants/switch", `{"tenant":"default"}`, "", "", adaCookie); code != http.StatusForbidden || body["code"] != "provider_only" {
 		t.Errorf("tenant user switch: %d %v", code, body)
 	}
@@ -238,10 +246,22 @@ func TestEveryRouteHasAScope(t *testing.T) {
 			t.Errorf("%s is not shared", p)
 		}
 	}
+	// Any other route outside /api/ is the provider's until it is put in
+	// a list.
+	for _, p := range []string{"GET /export", "POST /hooks/x"} {
+		if platform, _, _ := routeScope(p); !platform {
+			t.Errorf("%s is not a platform route", p)
+		}
+	}
 	patterns := map[string]bool{}
 	used := map[string]bool{}
 	for _, rt := range s.routes {
 		patterns[rt.Pattern] = true
+		// Routes for any signed-in user skip the tenant checks, so they
+		// are only about the user themselves.
+		if _, path, _ := strings.Cut(rt.Pattern, " "); rt.Anytime && path != "/api/me" && !strings.HasPrefix(path, "/api/me/") {
+			t.Errorf("route %s is for any signed-in user but outside /api/me", rt.Pattern)
+		}
 		res, ok := routeResource(rt.Pattern)
 		if !ok {
 			if !rt.Shared {
@@ -306,29 +326,29 @@ func TestTenantAdminsManageOnlyTheirUsers(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	if got := names(acmeTS, "ada"); !slices.Equal(got, []string{"ada", "bob"}) {
+	if got := names(acmeTS, "ada@acme"); !slices.Equal(got, []string{"ada@acme", "bob@acme"}) {
 		t.Errorf("acme's users = %v", got)
 	}
-	if got := names(defTS, "pat"); slices.Contains(got, "ada") || slices.Contains(got, "eve") || !slices.Contains(got, "pat") || !slices.Contains(got, def.builtinName()) {
+	if got := names(defTS, "pat"); slices.Contains(got, "ada@acme") || slices.Contains(got, "eve@beta") || !slices.Contains(got, "pat") || !slices.Contains(got, def.builtinName()) {
 		t.Errorf("the provider's users = %v", got)
 	}
-	for _, other := range []string{"pat", "eve", acme.builtinName()} {
+	for _, other := range []string{"pat", "eve@beta", acme.builtinName()} {
 		for _, req := range [][2]string{
 			{"PUT", "/api/users/" + other}, {"DELETE", "/api/users/" + other},
 			{"POST", "/api/users/" + other + "/password"}, {"DELETE", "/api/users/" + other + "/mfa"},
 		} {
-			if code, body := doAs(t, acmeTS, "ada", "role-password", req[0], req[1], `{"role":"viewer"}`); code != http.StatusNotFound {
+			if code, body := doAs(t, acmeTS, "ada@acme", "role-password", req[0], req[1], `{"role":"viewer"}`); code != http.StatusNotFound {
 				t.Errorf("acme's admin %s %s: %d %v", req[0], req[1], code, body)
 			}
 		}
 	}
-	if code, body := doAs(t, acmeTS, "ada", "role-password", "POST", "/api/users", `{"username":"carl","role":"admin","password":"a-long-enough-password-1"}`); code != http.StatusCreated {
+	if code, body := doAs(t, acmeTS, "ada@acme", "role-password", "POST", "/api/users", `{"username":"carl","role":"admin","password":"a-long-enough-password-1"}`); code != http.StatusCreated {
 		t.Fatalf("create: %d %v", code, body)
 	}
-	if u, _ := store.Get("carl"); u.Tenant != "acme" {
+	if u, _ := store.Get("carl@acme"); u.Tenant != "acme" {
 		t.Errorf("carl's tenant = %q, want acme", u.Tenant)
 	}
-	if code, _ := doAs(t, acmeTS, "ada", "role-password", "DELETE", "/api/users/bob", ""); code != 200 {
+	if code, _ := doAs(t, acmeTS, "ada@acme", "role-password", "DELETE", "/api/users/bob@acme", ""); code != 200 {
 		t.Errorf("acme's admin deleting acme's user: %d", code)
 	}
 }
@@ -359,7 +379,7 @@ func TestAddAndChangeTenants(t *testing.T) {
 		method, path, body, user string
 		want                     int
 	}{
-		{"POST", "/api/tenants", `{"id":"beta","name":"Beta"}`, "ada", http.StatusForbidden},
+		{"POST", "/api/tenants", `{"id":"beta","name":"Beta"}`, "ada@acme", http.StatusForbidden},
 		{"POST", "/api/tenants", `{"id":"beta","name":"Beta"}`, "pat", http.StatusForbidden},
 		{"POST", "/api/tenants", `{"id":"Beta!","name":"Beta"}`, "boss", http.StatusBadRequest},
 		{"POST", "/api/tenants", `{"id":"default","name":"Beta"}`, "boss", http.StatusBadRequest},
@@ -368,7 +388,7 @@ func TestAddAndChangeTenants(t *testing.T) {
 		{"PATCH", "/api/tenants/nope", `{"disabled":true}`, "boss", http.StatusNotFound},
 		{"PATCH", "/api/tenants/beta", `{"name":"Beta Inc"}`, "boss", http.StatusOK},
 		{"PATCH", "/api/tenants/beta", `{"disabled":true}`, "boss", http.StatusOK},
-		{"PATCH", "/api/tenants/acme", `{"disabled":true}`, "ada", http.StatusForbidden},
+		{"PATCH", "/api/tenants/acme", `{"disabled":true}`, "ada@acme", http.StatusForbidden},
 	} {
 		if code, body := do(c.method, c.path, c.body, c.user); code != c.want {
 			t.Errorf("%s %s %s as %s: %d %v, want %d", c.method, c.path, c.body, c.user, code, body, c.want)
@@ -436,7 +456,7 @@ func TestTenantRequestsReachOnlyTheirData(t *testing.T) {
 		}
 		return ids
 	}
-	if got := seen(doAs(t, ts, "ada", "role-password", "GET", "/api/findings", "")); !slices.Equal(got, []string{"f-acme"}) {
+	if got := seen(doAs(t, ts, "ada@acme", "role-password", "GET", "/api/findings", "")); !slices.Equal(got, []string{"f-acme"}) {
 		t.Errorf("acme's analyst sees %v", got)
 	}
 	if got := seen(doAs(t, ts, "pat", "role-password", "GET", "/api/findings", "")); !slices.Equal(got, []string{"f-default"}) {
@@ -449,14 +469,14 @@ func TestTenantRequestsReachOnlyTheirData(t *testing.T) {
 		t.Errorf("the provider's analyst in acme sees %v", got)
 	}
 	// One finding by id: never the other tenant's.
-	if code, _ := doAs(t, ts, "ada", "role-password", "GET", "/api/findings/f-default", ""); code != http.StatusNotFound {
+	if code, _ := doAs(t, ts, "ada@acme", "role-password", "GET", "/api/findings/f-default", ""); code != http.StatusNotFound {
 		t.Errorf("acme's analyst reading the default tenant's finding: %d", code)
 	}
 	if code, _ := doAs(t, ts, "pat", "role-password", "GET", "/api/findings/f-acme", ""); code != http.StatusNotFound {
 		t.Errorf("the provider's analyst reading acme's finding from the default tenant: %d", code)
 	}
 	// Searches run on the tenant's own engine.
-	if code, _ := doAs(t, ts, "ada", "role-password", "POST", "/api/search", `{"query":"search *","earliest":"-24h"}`); code != 200 {
+	if code, _ := doAs(t, ts, "ada@acme", "role-password", "POST", "/api/search", `{"query":"search *","earliest":"-24h"}`); code != 200 {
 		t.Errorf("acme's search: %d", code)
 	}
 }

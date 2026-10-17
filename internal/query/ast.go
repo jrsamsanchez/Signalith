@@ -411,6 +411,8 @@ func CommandString(c Command) string {
 		return joinString(c)
 	case *Append:
 		return "append [search " + c.Sub.String() + "]"
+	case *Union:
+		return unionString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:
@@ -457,6 +459,8 @@ func CommandString(c Command) string {
 		return rowCmdString(c)
 	case *Concurrency, *Contingency, *Format:
 		return shapeCmdString(c)
+	case *Return, *MakeContinuous:
+		return returnCmdString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

@@ -90,7 +90,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	me["search_default_earliest"] = s.conf().Search.DefaultEarliest
 	// Every page asks this first: an admin who gets here at a new web
 	// address after a restart moved it confirms that it works.
-	if p.Role == users.Admin && !p.MustChangePassword {
+	if p.runsServer() && !p.MustChangePassword {
 		s.confirmMove(r)
 	}
 	writeJSON(w, http.StatusOK, me)
@@ -442,6 +442,16 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Password = generated
 	}
 	mustChange := req.MustChangePassword == nil || *req.MustChangePassword
+	if t := s.userTenant(); t != "" {
+		// A tenant's users are kept as name@tenant, so its admins never
+		// take or learn of a name of the provider's or of another tenant.
+		full, err := users.TenantUsername(req.Username, t)
+		if err != nil {
+			writeUserError(w, &users.FieldError{Field: "username", Err: err})
+			return
+		}
+		req.Username = full
+	}
 	if s.builtinTarget(w, req.Username) || !s.usersWritable(w) {
 		return
 	}

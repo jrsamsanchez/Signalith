@@ -4,12 +4,13 @@ description: Send events to Signalith with Fluent Bit agents and syslog, what ea
 
 # Agents and syslog
 
-Signalith takes events from three kinds of senders:
+Signalith takes events from these kinds of senders:
 
 - **Fluent Bit agents** on Windows and Linux, set up from the **Add data** page;
 - **syslog** (RFC 5424, RFC 3164 and CEF) from firewalls, switches, appliances and
   servers without an agent;
-- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md)).
+- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md));
+- tools built for Splunk's HTTP Event Collector, once turned on (see [Splunk HEC senders](hec.md)).
 
 ## Agents
 
@@ -39,7 +40,7 @@ OpenTelemetry Collector (OTLP), osquery and network sensors. The web page is on 
 and agents send to port 7779, by default. Both use the same HTTPS certificate.
 
 The agent port takes only what agents need: events (`/api/ingest`, and OTLP's
-`/api/otlp/v1/logs`), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
+`/api/otlp/v1/logs`, and [HEC](hec.md)'s `/services/collector/...` when turned on), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
 (`/api/tls/ca.pem`), the sensor install script (`/api/sensor/install.sh`), and `/livez`
 and `/readyz` for load balancer health checks. It serves no web page and no API. Once
 `server.agent_listen` is set, the web port turns agents away with 503 and a message
@@ -101,6 +102,7 @@ or detection covers every source of the same kind.
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| Splunk HEC senders ([Splunk HEC senders](hec.md)) | by sourcetype: Authentication, Web and the cloud sources' models; Other for the rest |
 | Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
 | Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |

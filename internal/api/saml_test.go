@@ -364,3 +364,50 @@ func TestSAMLMetadataAndTab(t *testing.T) {
 		t.Errorf("analyst test = %d", code)
 	}
 }
+
+// With several servers, an assertion used on one is refused on the others,
+// cookie and all, and none is taken while that cannot be recorded.
+func TestSAMLReplayOnAnotherServer(t *testing.T) {
+	idp := samltest.New(t, "https://idp.example.com/adfs/services/trust", "https://idp.example.com/adfs/ls/")
+	md := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(idp.Metadata()) }))
+	t.Cleanup(md.Close)
+	yes := true
+	c := newMemberCluster(t, func(s *Server) {
+		s.Config.Auth.SAML = config.SAML{Enabled: true, Provider: saml.Okta, MetadataURL: md.URL + "/metadata",
+			AnalystGroups: []string{"soc"}, CreateUsers: &yes}
+	})
+	// Both servers answer at one public address, behind a load balancer.
+	c.a.srv.Config.Server.PublicURL = c.a.url
+	c.b.srv.Config.Server.PublicURL = c.a.url
+	ta, tb := &httptest.Server{URL: c.a.url}, &httptest.Server{URL: c.b.url}
+	respond := func() (string, string, *http.Cookie) {
+		id, relay, ck := samlStart(t, ta, "/")
+		sp := samlSP(c.a.srv.conf())
+		r := idp.Honest(sp.EntityID, sp.ACSURL, id, time.Now())
+		r.NameID = "alice@corp.example.com"
+		r.Attributes = map[string][]string{"groups": {"soc"}}
+		return idp.Respond(t, r), relay, ck
+	}
+
+	resp64, relay, ck := respond()
+	if resp, body, sess := samlPost(t, ta, resp64, relay, ck); sess == nil {
+		t.Fatalf("ACS on A = %d %s %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+	if resp, _, sess := samlPost(t, tb, resp64, relay, ck); sess != nil || samlError(resp) != "replay" {
+		t.Errorf("replay on B = %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	// While the record cannot be written, no server takes an assertion;
+	// once it can, the same one works, since none took it.
+	resp64, relay, ck = respond()
+	c.fake.FailN(1, "PUT", "/_create/spent:", 503, "unavailable_shards_exception")
+	if resp, _, sess := samlPost(t, tb, resp64, relay, ck); sess != nil || samlError(resp) != "store" {
+		t.Errorf("with the record failing = %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if !strings.Contains(c.b.logs.String(), "could not be recorded as used") {
+		t.Errorf("log = %s", c.b.logs.String())
+	}
+	if resp, body, sess := samlPost(t, ta, resp64, relay, ck); sess == nil {
+		t.Errorf("after the record works again = %d %s %s", resp.StatusCode, resp.Header.Get("Location"), body)
+	}
+}

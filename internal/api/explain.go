@@ -299,6 +299,10 @@ func describeCommand(c query.Command) string {
 		return "Count each pair of " + c.RowField + " and " + c.ColField + " values in a table, one row per " + c.RowField + " and one column per " + c.ColField + "."
 	case *query.Format:
 		return "Turn the rows into one search that matches them, in a field named search."
+	case *query.Return:
+		return fmt.Sprintf("Turn the first %d rows with a value into search terms, in a field named search.", c.Count)
+	case *query.MakeContinuous:
+		return "Add an empty row for each " + c.Span + " of " + c.Field + " that no row has, and sort the rows by " + c.Field + "."
 	case *query.FieldSummary:
 		return "Describe each field: how many rows have it, its distinct and most common values, and for numbers min, max, mean and stdev."
 	case *query.Map:
@@ -534,6 +538,12 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Union:
+		parts := make([]string, 0, len(c.Subs))
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		return "Add the rows of each subsearch after these. " + strings.Join(parts, " ")
 	case *query.AppendPipe:
 		parts := make([]string, len(c.Commands))
 		for i, cmd := range c.Commands {

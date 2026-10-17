@@ -403,6 +403,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeDetections(api)
 	s.routeRisk(api)
 	s.routeBaselines(api)
+	s.routeSummaries(api)
 	s.routeLookupTables(api)
 	s.routeParsers(api)
 	s.routeAsk(api)

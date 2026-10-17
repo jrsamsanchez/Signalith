@@ -192,13 +192,15 @@ func (t *tenantRuntime) Servers() []*api.Server {
 // Changed starts tenant id when it exists and is on, and stops it when
 // it is turned off or gone.
 func (t *tenantRuntime) Changed(_ context.Context, id string) error {
+	// The list is read under changing, so of two changes made at once the
+	// later one reads the later list, and the tenant ends as it says.
+	t.changing.Lock()
+	defer t.changing.Unlock()
 	tn, err := t.reg.Get(id)
 	if err != nil && !errors.Is(err, tenants.ErrNotFound) {
 		return err
 	}
 	want := err == nil && !tn.Disabled
-	t.changing.Lock()
-	defer t.changing.Unlock()
 	t.mu.Lock()
 	cur, stopped := t.running[id], t.stopped
 	if !want && cur != nil {

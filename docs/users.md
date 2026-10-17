@@ -176,6 +176,11 @@ A new password, chosen on the Users page, at **Change password**, with
 - not containing the username (for usernames of 3 or more characters), and not
   `signalith` with only digits or symbols added (`Signalith2026!`).
 
+Passwords are compared in Unicode normalization form NFKC, as NIST SP 800-63B asks: an
+accented letter typed as one character or as a letter plus an accent, and full-width
+characters, all match the same password, and the rules above check that form. A
+password set before this keeps working as it was typed then.
+
 These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
 symbols. Passwords set before these rules are not checked
 again; they keep working until they are changed. Temporary passwords Signalith makes
@@ -1031,7 +1036,7 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
-`POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
+`POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
 [endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
@@ -1152,6 +1157,7 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
 `POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
@@ -1187,7 +1193,7 @@ four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/
 itself rather than one tenant's data are refused to tenants' users, whatever their role:
 every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
 `/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
-`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat` and `/api/baselines` route. So are the routes
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat`, `/api/baselines` and `/api/summaries` route. So are the routes
 that make the server send requests to addresses a user gives, though they change a
 tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,

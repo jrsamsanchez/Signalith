@@ -38,6 +38,12 @@ func commandSubsearches(c Command) int {
 		return 1 + countSubsearches(c.Sub)
 	case *Append:
 		return 1 + countSubsearches(c.Sub)
+	case *Union:
+		n := 0
+		for _, s := range c.Subs {
+			n += 1 + countSubsearches(s)
+		}
+		return n
 	case *AppendPipe:
 		n := 0
 		for _, c := range c.Commands {
@@ -63,6 +69,10 @@ func countMapSearches(q *Query) int {
 				walk(c.Sub.Commands)
 			case *Append:
 				walk(c.Sub.Commands)
+			case *Union:
+				for _, s := range c.Subs {
+					walk(s.Commands)
+				}
 			case *AppendPipe:
 				walk(c.Commands)
 			}

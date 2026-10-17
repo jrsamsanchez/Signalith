@@ -155,6 +155,9 @@ func (s *Store) SeeSSOUser(ctx context.Context, d SSOUser, create bool) (User, e
 			return User{}, ErrSSONew
 		}
 		// Their first sign-in.
+		if tenantLike(name) {
+			return User{}, ErrTenantSuffix
+		}
 		r, err = s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Source: SourceSSO, Name: d.Name, Email: d.Email,
 			Role: d.Role, Subject: d.Subject, Created: now, Updated: now, LastSignIn: &now}, Epoch: 1})
 		if errors.Is(err, ErrExists) && try < 3 {
