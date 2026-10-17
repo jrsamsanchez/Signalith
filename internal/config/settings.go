@@ -243,6 +243,9 @@ var Registry = []Setting{
 	{Key: "ingest.max_event_age", Scope: ScopeCluster, Section: "general", Label: "Oldest event time", Type: TypeDuration,
 		Help:        "Events from agents and syslog that say they are older than this are filed under the time they arrived, with their own time kept in device_time. Raise it to load old logs.",
 		Placeholder: "30d", EmptyMeans: "7d, or the shortest retention period when that is shorter"},
+	{Key: "ingest.hec", Scope: ScopeCluster, Section: "general", Label: "Splunk HEC senders", Type: TypeBool,
+		Help: "Accept events from senders built for Splunk's HTTP Event Collector (HEC), such as Splunk logging libraries and the OpenTelemetry Collector's splunk_hec exporter, " +
+			"at /services/collector on the agent port, over HTTPS only. Each sender uses an agent token, sent as Authorization: Splunk <token>."},
 	{Key: "ingest.url_query", Scope: ScopeCluster, Section: "general", Label: "Query strings in web addresses", Type: TypeChoice,
 		Help: "The part of a web address after the ? can carry tokens, session IDs and passwords. As web requests are stored (from a network sensor, a web server's log or an IDS alert), " +
 			"Hide values keeps the parameter names (?user=REDACTED&token=REDACTED), and Remove keeps only the address up to the ?, in the url, uri_query and http_referrer fields and the raw event. " +
@@ -427,6 +430,9 @@ var Registry = []Setting{
 	{Key: "detections.catch_up", Scope: ScopeCluster, Section: "detections", Label: "Make up missed runs", Type: TypeDuration,
 		Help:        "When detections could not run, for example while every server was stopped, how far back the missed runs are made up once they run again. Older ones are skipped and shown on the Detections page. 0 turns this off.",
 		Placeholder: "6h", EmptyMeans: "6h"},
+	{Key: "detections.spread", Scope: ScopeCluster, Section: "detections", Label: "Spread detections over servers", Type: TypeBool,
+		Help: "Run detections on every server that may run background work, each rule on one of them, instead of all on one server. " +
+			"Takes effect once every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
 	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
 		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +

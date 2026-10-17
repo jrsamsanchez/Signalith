@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"regexp"
 	"slices"
@@ -72,6 +73,21 @@ type Rule struct {
 	// none); post is the same, parsed.
 	Post string          `yaml:"-"`
 	post []query.Command `yaml:"-"`
+	// postField is the Signalith field of a field the later stages name
+	// (false for none).
+	postField func(string) (string, bool) `yaml:"-"`
+	// Lookups are the security_content tables the later stages look
+	// values up in, by their names there.
+	Lookups []string `yaml:"-"`
+	// lookups are the tables the rule may read (ParseOptions), and
+	// lookupErrs why others do not read; lookupHints the key fields of
+	// its lookups, for test events.
+	lookups     map[string]*Lookup
+	lookupErrs  map[string]error
+	lookupHints []lookupHint
+	// lookupStore holds the tables for running the later stages over test
+	// events, made on first use.
+	lookupStore *lookuptables.Store
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -172,6 +188,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
+	r.lookups, r.lookupErrs = opt.Lookups, opt.LookupErrors
 	// osquery's results are Linux events too, which Signalith keeps in
 	// another data model; Sysmon for Linux is what the rule reads here.
 	r.Linux = slices.ContainsFunc(r.DataSource, func(s string) bool {
@@ -311,6 +328,9 @@ var (
 			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
 			"4887": "CertRequest", "4662": "DirectoryAccess", "4722": "AccountChanged", "4723": "AccountChanged",
 			"4724": "AccountChanged", "4725": "AccountChanged", "5447": "FilterChanged", "4728": "GroupMemberAdded",
+			"5140": "ShareAccess", "4756": "GroupMemberAdded", "4731": "GroupChanged", "4744": "GroupChanged",
+			"4749": "GroupChanged", "4754": "GroupChanged", "4759": "GroupChanged", "4783": "GroupChanged",
+			"4790": "GroupChanged",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
@@ -431,9 +451,10 @@ var (
 		},
 		// A user account changed, and a member added to a local group.
 		"UserChanged": {
-			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SamAccountName": "sam_account_name",
-			"UserAccountControl": "user_account_control", "AllowedToDelegateTo": "allowed_to_delegate_to",
-			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "SidHistory": "sid_history",
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SamAccountName": "sam_account_name", "UserAccountControl": "user_account_control",
+			"AllowedToDelegateTo": "allowed_to_delegate_to", "OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value",
+			"SidHistory": "sid_history",
 		},
 		"GroupMemberAdded": {
 			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
@@ -462,7 +483,7 @@ var (
 			"SubjectDomainName": "user_domain", "SamAccountName": "sam_account_name", "PrimaryGroupId": "primary_group_id",
 			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "UserAccountControl": "user_account_control",
 			"DnsHostName": "dns_host_name", "ServicePrincipalNames": "service_principal_names",
-			"AllowedToDelegateTo": "allowed_to_delegate_to",
+			"AllowedToDelegateTo": "allowed_to_delegate_to", "SidHistory": "sid_history",
 		},
 		"AccountRenamed": {
 			"OldTargetUserName": "old_object", "NewTargetUserName": "object", "TargetDomainName": "object_domain",
@@ -498,10 +519,11 @@ var (
 		// A Windows Filtering Platform filter changed (5447), each value
 		// by its name (ingest.ChannelDataField).
 		"FilterChanged": securityNamedFields("5447"),
-		// A process terminated, and a drive read directly.
+		// A process terminated, and a drive read directly. (ProcessID,
+		// as Splunk's add-on names it, is the process that logged the
+		// event, Sysmon's own, not the one that ended.)
 		"ProcessTerminated": {
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
-			"ProcessID": "process_id",
 		},
 		"RawAccessRead": {
 			"Device": "device", "Image": "process_path", "process_path": "process_path", "process_name": "process_name",
@@ -536,6 +558,53 @@ func securityNamedFields(eventID string) map[string]string {
 		}
 	}
 	return out
+}
+
+// UnionNodes are nodes that read the events of several others, for a raw
+// search whose event codes are of each: a file created and a stream
+// written (Sysmon 11 and 15), a user and a computer account changed (4738
+// and 4742), and a group created and a member added to one (4727 and the
+// like, and 4728 and the like). A field the search names must be stored
+// the same in each.
+var UnionNodes = map[string][]string{
+	"FileOrStream":              {"Filesystem", "FileStream"},
+	"UserOrComputerChanged":     {"UserChanged", "ComputerChanged"},
+	"GroupChangedOrMemberAdded": {"GroupChanged", "GroupMemberAdded"},
+}
+
+func init() {
+	for u, parts := range UnionNodes {
+		fields := map[string]string{}
+		for raw, stored := range RawFields[parts[0]] {
+			if !slices.ContainsFunc(parts[1:], func(p string) bool { return RawFields[p][raw] != stored }) {
+				fields[raw] = stored
+			}
+		}
+		RawFields[u] = fields
+		var evs []string
+		for _, p := range parts {
+			if NodeModel[p] != NodeModel[parts[0]] {
+				panic("union node " + u + " of nodes of different data models")
+			}
+			evs = append(evs, NodeEvents[p]...)
+		}
+		NodeEvents[u] = evs
+		NodeModel[u] = NodeModel[parts[0]]
+	}
+}
+
+// unionNode is the node that reads the events of nodes (one of them, or
+// a UnionNodes node of exactly them); "" for none.
+func unionNode(nodes []string) string {
+	if len(nodes) == 1 {
+		return nodes[0]
+	}
+	for u, parts := range UnionNodes {
+		if len(parts) == len(nodes) && !slices.ContainsFunc(nodes, func(n string) bool { return !slices.Contains(parts, n) }) {
+			return u
+		}
+	}
+	return ""
 }
 
 // AuditdNode is the node of Linux audit records (the linux_auditd
@@ -826,10 +895,22 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	} else if code == nil || countField(where, eventCode) != 1 {
 		return nil, fmt.Errorf("a %s search must name its event code (EventCode=...) once, at the top", source)
 	}
+	// Codes of several nodes are the node that reads them all
+	// (UnionNodes).
+	var nodes []string
 	for _, v := range codeValues(code) {
 		n := rawNodes[source][v]
-		if n == "" || (r.Node != "" && n != r.Node) {
+		if n == "" {
 			return nil, fmt.Errorf("%s event %s is not supported", source, v)
+		}
+		if !slices.Contains(nodes, n) {
+			nodes = append(nodes, n)
+		}
+	}
+	if len(nodes) > 0 {
+		n := unionNode(nodes)
+		if n == "" || (r.Node != "" && n != r.Node) {
+			return nil, fmt.Errorf("a %s search of events of %s together is not supported", source, strings.Join(nodes, " and "))
 		}
 		r.Node = n
 	}
@@ -874,8 +955,12 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	}
 	top = append(top, regexes...)
 	top = append(top, cloudSearches...)
-	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode && !cloud {
-		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
+	// A search may name only its event code: it finds every event of
+	// that code, as Splunk's does, and its later stages (run as written)
+	// filter them. A stats with no by fields is another thing: Splunk
+	// counts every event in one row, found or not, which is no event.
+	if stats != "" && !statsSplitRe.MatchString(stats) && r.Node != AuditdNode && r.Node != CloudTrailNode && !cloud {
+		return nil, fmt.Errorf("a %s search's stats must count by fields", source)
 	}
 	where = &And{Kids: top}
 	if len(top) == 1 {

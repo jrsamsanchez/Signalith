@@ -60,6 +60,10 @@ func compileExpr(e query.Expr) (map[string]any, error) {
 		}
 		return boolQuery("filter", fs), nil
 	case *query.Or:
+		if len(e.Children) == 0 {
+			// A subsearch with no rows.
+			return map[string]any{"match_none": map[string]any{}}, nil
+		}
 		var ss []any
 		for _, c := range e.Children {
 			q, err := compileExpr(c)

@@ -61,6 +61,16 @@ var (
 	tenantVisible = []string{"GET /api/cluster/features"}
 )
 
+// webUIPage reports whether a route outside /api/ is the web UI's page or
+// its versioned files, which are the same for every tenant.
+func webUIPage(pattern string) bool {
+	_, path, ok := strings.Cut(pattern, " ")
+	if !ok {
+		path = pattern
+	}
+	return path == "/" || strings.HasPrefix(path, "/v/")
+}
+
 // routeResource returns the resource of a route pattern, and false for a
 // path outside /api/.
 func routeResource(pattern string) (string, bool) {
@@ -79,15 +89,18 @@ func routeResource(pattern string) (string, bool) {
 // routeScope classifies a route pattern: platform (provider users only,
 // in the default tenant's server), managed (a tenant's data that only
 // provider users may change), shared (the same for everyone: the web UI's
-// files and tenantVisible), else the request's tenant's. An /api/ route of
-// a resource in no list is a platform route.
+// pages and files, and tenantVisible), else the request's tenant's. A
+// route of no list, inside /api/ or out, is a platform route.
 func routeScope(pattern string) (platform, managed, shared bool) {
 	if slices.Contains(tenantVisible, pattern) {
 		return false, false, true
 	}
 	res, ok := routeResource(pattern)
 	if !ok {
-		return false, false, true
+		if webUIPage(pattern) {
+			return false, false, true
+		}
+		return true, false, false
 	}
 	if !slices.Contains(tenantResources, res) {
 		return true, false, false
@@ -181,10 +194,15 @@ func (s *Server) dispatchTo(rt route, p *principal) (t *Server, other bool) {
 // does): the agent is told to send again later, as its batch would
 // otherwise be refused and lost.
 func (s *Server) agentTenant(r *http.Request) (t *Server, wait bool) {
+	return s.tokenTenant(bearerToken(r))
+}
+
+// tokenTenant is agentTenant for an agent token however the request
+// carries it.
+func (s *Server) tokenTenant(tok string) (t *Server, wait bool) {
 	if s.TenantID != "" || s.TenantRuntime == nil {
 		return nil, false
 	}
-	tok := bearerToken(r)
 	if tok == "" {
 		return nil, false
 	}

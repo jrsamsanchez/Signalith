@@ -684,15 +684,31 @@ func parseWindowsSecurityNamed(eventID string, d map[string]string, ev *Event) {
 		f["object"] = d["TargetUserName"]
 		f["object_domain"] = d["TargetDomainName"]
 		f["object_sid"] = d["TargetSid"]
-	case "4727", "4730", "4737":
-		// A security-enabled global group created, deleted or changed.
+	case "4727", "4730", "4737", "4731", "4744", "4749", "4754", "4759", "4783", "4790":
+		// A security-enabled global group created, deleted or changed,
+		// and the other kinds of group created: local, global and
+		// universal, security-enabled or not (distribution), and
+		// Authorization Manager's basic application and LDAP query
+		// groups. All of them have the data of 4727.
 		ev.Model = "Change"
 		f["object_category"] = "group"
-		f["action"] = map[string]string{"4727": "created", "4730": "deleted", "4737": "modified"}[eventID]
+		f["action"] = "created"
+		if eventID == "4730" {
+			f["action"] = "deleted"
+		} else if eventID == "4737" {
+			f["action"] = "modified"
+		}
 		f["signature"] = map[string]string{
 			"4727": "A security-enabled global group was created",
 			"4730": "A security-enabled global group was deleted",
 			"4737": "A security-enabled global group was changed",
+			"4731": "A security-enabled local group was created",
+			"4744": "A security-disabled local group was created",
+			"4749": "A security-disabled global group was created",
+			"4754": "A security-enabled universal group was created",
+			"4759": "A security-disabled universal group was created",
+			"4783": "A basic application group was created",
+			"4790": "An LDAP query group was created",
 		}[eventID]
 		subject(d, f)
 		f["object"] = d["TargetUserName"]

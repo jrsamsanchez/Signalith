@@ -944,6 +944,10 @@ type Ingest struct {
 	// writes to OpenSearch at once; more wait their turn. 0 means 32.
 	// Lower it on a server with little memory.
 	MaxConcurrent int `yaml:"max_concurrent,omitempty"`
+	// HEC turns on the intake for senders built for Splunk's HTTP Event
+	// Collector (/services/collector/event and /raw on the agent port),
+	// which take an agent token. Off by default. See docs/hec.md.
+	HEC bool `yaml:"hec,omitempty"`
 }
 
 // URLQueryMode returns ingest.url_query: keep, redact or drop, keep when
@@ -1099,6 +1103,10 @@ type Detections struct {
 	// CatchUp is how far back detection runs missed while no server ran
 	// them are made up, such as 6h; "0" turns that off. Empty means 6h.
 	CatchUp string `yaml:"catch_up,omitempty"`
+	// Spread runs each tenant's detections on every server that may run
+	// background work, each rule on one of them, instead of all on the
+	// server running the background jobs. Off by default.
+	Spread bool `yaml:"spread,omitempty"`
 	// ContentUpdates is how newer content pack rules arrive: manual (an
 	// admin checks or uploads on the Detections page) or daily (checked
 	// and installed every day). Empty means manual.

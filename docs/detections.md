@@ -414,7 +414,8 @@ logs each event only with its audit policy setting on:
 | 4768, 4769 (Kerberos tickets, on domain controllers) | Authentication | Audit Kerberos Authentication Service, Audit Kerberos Service Ticket Operations |
 | 4697 (service installed) | Change | Audit Security System Extension |
 | 4698, 4699, 4701, 4702 (scheduled task created, deleted, disabled, updated) | Change | Audit Other Object Access Events |
-| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted) | Change | Audit User Account Management, Audit Security Group Management |
+| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted), 4727, 4731, 4744, 4749, 4754, 4759 (group created), 4756 (member added to a universal group) | Change | Audit User Account Management, Audit Security Group Management |
+| 4783, 4790 (basic application and LDAP query group created) | Change | Audit Application Group Management |
 | 1102 (Security log cleared) | Change | Always logged |
 | 4719 (audit policy changed) | Change | Audit Audit Policy Change |
 | 4706 (domain trust created), 4794 (DSRM password set) | Change | Audit Authentication Policy Change, Audit User Account Management |
@@ -547,7 +548,7 @@ The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
 `url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
 `http_user_agent`, `cs-referer` is `http_referrer` and `c-ip` is `src`. Their keywords
 (`'${jndi:'`, `'=whoami'`) are searched in what the client sent: the target, the user
-agent and the referrer. 36 Splunk rules search the Web data model, for example
+agent and the referrer. 43 Splunk rules search the Web data model, for example
 exploitation attempts against SharePoint, Citrix, Ivanti, Confluence, Fortinet, F5 and
 TeamCity, and Spring4Shell.
 
@@ -672,7 +673,7 @@ The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSo
 `userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
 them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
 another, or that match text inside the call's parameters in a way no test record
-exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+exercises, are left out. The Splunk pack adds 33 CloudTrail detections (see
 [Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
 
 ### Entra ID and Azure
@@ -687,15 +688,15 @@ Older rules that name an audit record's operation `properties.message` read
 out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
 `sourcetype=azure:monitor:activity`.
 
-The Splunk pack adds 30 Entra ID detections (see
+The Splunk pack adds 31 Entra ID detections (see
 [Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
 off, new federated domains, guest invitations, single-factor and device code sign-ins,
 password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
 Signalith keeps too: a list's values by Splunk's name for them
 (`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
 matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
-their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
-Intune rules, are left out. To send Entra ID and Azure logs, see
+their old names. Most rules that use `eval`, `spath`, `rex` or `transaction`, and the
+Intune rules, are left out; a lookup of privileged roles reads the table the pack ships. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
 ### Microsoft 365
@@ -820,16 +821,18 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,186 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,265 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
-`tstats`, plus the PowerShell script block rules, and 5 of the 102 network detections
+`tstats`, plus the PowerShell script block rules, and 9 of the 102 network detections
 (`detections/network`), the `tstats` searches that read any source of their data
 model, a [network sensor](network-sensor.md) among them: Cisco Smart Install port
-4786, ngrok tunnels, protocol on an unusual port and Tor over `Network_Traffic` or
-`Network_Resolution`, and the F5 iControl REST exploit over `Web`. The other network
+4786, ngrok tunnels, protocol on an unusual port, Tor, Kerberos coercion through DNS,
+unusually long DNS queries and the 3CX supply chain attack's domains over
+`Network_Traffic` or `Network_Resolution`, and the F5 iControl REST exploit and
+remote management tools' user agents over `Web`. The other network
 detections use lookups, `eval` or Cisco firewall searches, are experimental or hunting
 rules, or search Sysmon's DNS and network events, which is endpoint content
 (`REPORT.md`). Signalith uses the same CIM field
@@ -857,11 +860,12 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
 | `` `wineventlog_security` EventCode=5136 `` (raw search) | Security 5136 (directory object changed) | Change |
-| `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
+| `` `wineventlog_security` EventCode=5145 `` or `5140` (raw search) | Security 5145 (network share access) and 5140 (share accessed, once per session) | Filesystem |
 | `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
 | `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
 | `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
+| `` `wineventlog_security` EventCode=4731 ``, `4744`, `4749`, `4754`, `4759`, `4783`, `4790` or `4756` (raw search) | Security 4731, 4744, 4749, 4754 and 4759 (local, global and universal group created), 4783 and 4790 (application and LDAP query group created), 4756 (member added to a universal group) | Change |
 | `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
 | `` `wineventlog_security` EventCode=4662 ``, `4728`, `4722`, `4723`, `4724` or `4725` (raw search) | Security 4662 (operation on a directory object), 4728 (member added to a global group), 4722 and 4725 (account enabled or disabled), 4723 and 4724 (password changed or reset) | Change |
 | `` `wineventlog_security` EventCode=5447 `` (raw search) | Security 5447 (Windows Filtering Platform filter changed; each value by its name, `FilterName` is `security_filter_name`) | Other |
@@ -891,6 +895,24 @@ add risk, as their authors intend. Severity follows the rule's risk score
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
 
+Some rules look values up in a table Splunk publishes with them (`| lookup
+pua_named_pipes pua_pipe_name AS pipe_name OUTPUT tool | where isnotnull(tool)`):
+named pipes, user agents and services of known tools, PowerShell attack strings,
+vulnerable drivers, LOLBAS paths, DLLs open to hijacking and privileged Entra ID
+roles. The pack ships the 15 tables its rules read (about 250 KB, in
+`internal/detect/packs/splunk/lookups`), unchanged, each with its yml, and the rule
+looks up the pack's copy, `splunk-pua_named_pipes`, so a table of your own with the
+same name is never used or replaced (see
+[Tables that come with content packs](lookups.md#tables-that-come-with-content-packs)).
+The lookup matches as the yml says (wildcard columns, case, `max_matches`,
+`default_match`), and the rule's test events hold a value of one of the table's
+rows. A rule is left out when Signalith's lookup could give it a different answer
+than Splunk's: a table row with a pattern before a row it also matches under
+`max_matches: 1`, values with spaces around them, an output that several rows may
+give compared with a value or counted by, more matching rows than Signalith's
+lookup takes (100), more than 2,000 rows with patterns, or a table security_content
+does not ship as a CSV file (KV store lookups such as `identity_lookup_expanded`).
+
 PowerShell rules, and Sysmon image load, remote thread and process access rules,
 search the events themselves rather than a data model: their event fields become
 Signalith's (`ScriptBlockText` is `script_block_text`, `ImageLoaded` is
@@ -919,6 +941,16 @@ is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationTyp
 (`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
 search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
 `share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
+
+A raw search may name only its event code: it reads every event of that code, and
+its later stages, run as written, keep what they keep (a `stats` with no `by` fields
+is refused: Splunk counts every event into one row). A search may name codes of
+events that are read differently when one node reads them all, with the fields
+stored the same in each: Sysmon 11 and 15 (a file created and a stream written),
+Security 4738 and 4742 (a user and a computer account changed), and a group created
+(4727 and the like) with a member added (4728, 4732, 4756). In Sysmon 5, Splunk's
+`ProcessID` is the Sysmon process that logged the event, which Signalith does not
+keep, so a rule that counts by it is left out.
 
 Kerberos rules (Security 4768 for a ticket-granting ticket, 4769 for a service
 ticket) search the account (`TargetUserName` is `user`), the service
@@ -1080,10 +1112,29 @@ row for it; a rule ships only when some test event comes through. A rule that co
 (`stats count`, `dc`) keeps no row for one event, so its test is the same event
 repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
 with a field it counts distinct values of different each time (`"vary"`), next to a
-smaller repeat that the rule must not find. Where the two
-languages read a stage differently, the rule is left out: a `where` that compares two
-fields (`where process_name != service_process`), or text with a `*`, since Signalith's
-`where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
+smaller repeat that the rule must not find. When none of the events made from the
+`where` clause comes through, the tests the later stages make of fields the clause
+leaves open (`search process IN (...)` after a `tstats`, `like()` and `match()`, a
+`rex` a later stage reads, a `regex` stage) are added to the clause to make more
+events, and failing that, the program runs from a folder other than System32 (for a
+rule that leaves System32 out), a library loads from its program's own folder, or a
+share access writes; whether the rule finds each is still what its search, run as
+written, says of the event as Signalith stores it. Where the two
+languages read a stage differently, the rule is left out: text with a `*` compared with `!=` or under `NOT`,
+since Signalith's `where` reads a plain condition as a filter. Without `NOT`, Splunk's
+`where action = "*"` compares the text exactly, so it runs as `where in('action', "*")`;
+a field in an `IN` list (`where NOT new_ace IN (old_values)`)
+is left out, since Splunk's documentation does not say how `IN` reads a field of several
+values or none. A later `search` runs as Signalith's `search`, so its terms side by side
+are joined by AND, with OR before AND, as in Splunk; a bare term in it is left out. A later
+`search field IN (...)` of a field an earlier stage made multivalue (`makemv`) keeps the row
+when one of its values is in the list, ignoring case, as in Splunk, and runs as
+`where in(mvmap(field, lower(field)), ...)`. A macro in an `IN` list
+(`` process_name IN (`uacbypass_process_name`) ``) stands for its values, as Splunk expands
+macros as text; a list with two values and no comma between them is left out. A `where`
+that compares two
+fields (`where process_name != service_process`) has both quoted, so Signalith compares
+the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
 (`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
 `spath` and the functions Signalith lacks are left out for now;
@@ -1093,7 +1144,8 @@ CI checks as the SigmaHQ pack run on it.
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).
 Every recorded Windows event goes through Signalith's parser, and the detection must
-read it as the rule does and find the attack. 715 of the 717 shipped rules with a
+read it as the rule does and find the attack (a rule's later stages run over the
+recording's matching events together, as they count across events). 715 of the 717 shipped rules with a
 Windows recording do, and up to two recorded events each rule finds are kept with
 its test events, so CI checks real events too:
 

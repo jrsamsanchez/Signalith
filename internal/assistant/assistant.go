@@ -355,6 +355,8 @@ func QueryReference() string {
   bin span=1h _time [AS name]   rounds times down to the span (s m h d w); span=100 on a number gives ranges like 0-100; also bucket
   regex field="<RE2 regex>" | regex field!="<regex>" | regex "<regex>"   keeps rows that match (or with != do not); no field means _raw
   | makeresults [count=N]   starts a search with N rows holding only _time, for trying eval
+  | eventcount [index=pattern ...] [summarize=false]   starts a search with the number of stored events, or one row per index (count, index)
+  | from datamodel:Authentication   the same as datamodel=Authentication (also Authentication.Failed_Authentication, Endpoint.Processes); | from lookup:t is | inputlookup t
   append [search <query>]   adds a subsearch's rows after the results
   | tstats <aggs> from datamodel=Endpoint.Processes [where Processes.field=value ...] [by Processes.f1, _time span=1h]   Splunk's tstats: runs as the data model search plus stats; columns keep the Node. prefix; also | tstats count where index=* by sourcetype
   chart [limit=N] <aggs> over f1 [by f2]   one row per f1, one column per f2 value (also chart count by f1, f2)
@@ -373,8 +375,21 @@ func QueryReference() string {
   concurrency duration=dur [start=_time] [output=concurrency]   how many rows were in progress when each started
   contingency [maxrows=N] [maxcols=N] [usetotal=f] src_ip action   counts each pair of values in a table with totals; format [maxresults=N] turns rows into a search string in field search
   return [N] src [ip=dest] [$user]   the first N rows' fields as search terms in field search; makecontinuous [_time] span=1h adds empty rows for missing buckets
+  geostats [latfield=lat] [longfield=lon] [binspanlat=22.5 binspanlong=45] count [by action]   counts per map square, with each square's average latitude and longitude, for maps
+  extract [pairdelim=" ,;"] [kvdelim="="] [limit=50] [mv_add=t]   reads key=value pairs from _raw into fields (kv is the same); existing fields keep their values
+  outlier [action=transform|remove] [param=2.5] [uselower=t] bytes   clamps (or removes rows with) numbers far above the 75th percentile; gauge count 0 50 100 makes one row x, y1, y2, ... for a gauge
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
+  anomalydetection [method=histogram|zscore] [action=filter|annotate|summary] [pthresh=0.01] user src   keeps (or marks with isOutlier) rows with rare values or numbers far from the mean; correlate [fields] shows how often fields appear together
+  predict count [as pred] [algorithm=LL|LLT|LLP|LLP5] [future_timespan=5] [holdback=0] [period=N]   after timechart: forecasts count with prediction(count), upper95(...) and lower95(...), adding future rows
+  kmeans [k=2] [dt=l2|l1|cos] bytes duration   groups rows into k clusters by their numbers: CLUSTERNUM and centroid_<field>
+  | set union|diff|intersect [search ...] [search ...]   starts a search with the rows of either, only one, or both subsearches; setfields f="v", g="w" sets fields on every row
+  xpath outfield=user "//Data[@Name='TargetUserName']"   reads XML (in _raw unless field=) with / and // steps, [@attr='v'] and [N] predicates, and a last /@attr or /text()
+  abstract [maxlines=5]   shortens _raw to its lines with the most words; highlight term ...   accepted and leaves rows as they are
+  | multisearch [search action=failure] [search action=lockout]   starts a search with the events of two or more subsearches, newest first
+  timechart span=1h count | timewrap 1d [series=short]   one column per day (count_latest_day, count_1day_before, ...) to compare days
+  cluster [field=_raw] [t=0.8] [showcount=t] [labelonly=t]   groups events with alike text, keeping one per group with cluster_label (and cluster_count)
+  union [search datamodel=Authentication] [search datamodel=Change]   adds each subsearch's rows after the results
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]
   join [type=left] [max=N] f1, f2 [search <query>]   adds the fields of a subsearch's rows that share f1, f2 (inner by default; the first match unless max=0 or max=N)
   fillnull [value=X] [fields]   sets missing values (default 0)

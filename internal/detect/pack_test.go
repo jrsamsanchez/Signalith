@@ -57,6 +57,9 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			if p.macros, err = loadMacros(packFS, dir); err != nil {
 				t.Fatal(err)
 			}
+			if p.lookups, err = loadLookups(packFS, dir); err != nil {
+				t.Fatal(err)
+			}
 		}
 		listed := map[string]bool{}
 		for _, r := range p.Rules {
@@ -84,7 +87,7 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			var ruleID string
 			var verify func(tf *sigmacheck.TestFile) []error
 			if p.Format == "splunk" {
-				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
+				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path), Lookups: p.lookups})
 				if err != nil {
 					t.Errorf("%s: %v", r.ID, err)
 					continue

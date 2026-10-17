@@ -1,6 +1,7 @@
 package query
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -119,9 +120,18 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 
 	// Options, then the functions, up to from, where or by.
 	i := 0
+	fill, hasFill := "", false
 	for i+2 < len(toks) && toks[i].kind == tokWord && toks[i+1].kind == tokOp && toks[i+1].text == "=" {
 		switch strings.ToLower(toks[i].text) {
 		case "summariesonly", "allow_old_summaries", "local", "chunk_size", "include_reduced_buckets":
+		case "fillnull_value":
+			// By fields an event lacks group under this value, where
+			// tstats would otherwise leave the event out.
+			v := toks[i+2]
+			if v.kind != tokWord && v.kind != tokString {
+				return nil, errorf(v.pos, "tstats fillnull_value= takes a value, such as fillnull_value=null")
+			}
+			fill, hasFill = v.text, true
 		case "prestats":
 			if b, err := parseBool(toks[i+2]); err != nil || b {
 				return nil, errorf(toks[i+2].pos, "tstats prestats=t is not supported")
@@ -173,6 +183,7 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 			return nil, errorf(toks[i].pos, "unexpected %s in tstats; it expects: %s", describe(toks[i]), example)
 		}
 		wp := sub(toks[i+1 : byAt])
+		wp.src, wp.base = p.src, p.base // for "Node.field"=value
 		var wq Query
 		if err := wp.parseSearch(&wq); err != nil {
 			return nil, err
@@ -188,6 +199,25 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 		}
 		ts.q.Index, ts.q.Earliest, ts.q.Latest = wq.Index, wq.Earliest, wq.Latest
 		ts.q.Search = renameFields(wq.Search, field)
+		if node != "" {
+			// A subsearch's rows name fields as tstats does
+			// (Processes.process_name); its terms use Signalith's.
+			ren := &Rename{}
+			var keys []string
+			for k := range renamed {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				ren.Pairs = append(ren.Pairs, [2]string{node + "." + k, renamed[k]})
+			}
+			ren.Pairs = append(ren.Pairs, [2]string{node + ".*", "*"})
+			WalkSubsearches(ts.q.Search, func(s *Subsearch) {
+				sq := *s.Query
+				sq.Commands = append(append([]Command{}, sq.Commands...), ren)
+				s.Query = &sq
+			})
+		}
 	}
 	var by []string
 	span := ""
@@ -253,6 +283,9 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 	}
 	if span != "" {
 		ts.cmds = append(ts.cmds, &Bin{Field: "_time", Span: span})
+	}
+	if hasFill && len(st.By) > 0 {
+		ts.cmds = append(ts.cmds, &Fillnull{Value: fill, Fields: append([]string{}, st.By...)})
 	}
 	ts.cmds = append(ts.cmds, st)
 	if len(ren.Pairs) > 0 {

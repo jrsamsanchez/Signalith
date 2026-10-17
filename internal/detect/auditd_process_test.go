@@ -20,6 +20,12 @@ func TestLinuxProcessRulesFireOnAuditd(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	rules, cases, all := 0, 0, 0
 	for dir, p := range readManifests(t) {
+		if p.Format == "splunk" {
+			var err error
+			if p.macros, err = loadMacros(packFS, dir); err != nil {
+				t.Fatal(err)
+			}
+		}
 		for _, r := range p.Rules {
 			if !strings.HasPrefix(r.File, "proc_creation_lnx_") && !strings.HasPrefix(r.File, "linux_") {
 				continue

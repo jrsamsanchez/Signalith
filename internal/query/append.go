@@ -67,10 +67,12 @@ func (p *parser) parseAppendPipe(cmd token) (Command, error) {
 			return nil, err
 		}
 		switch c.(type) {
-		case *InputLookup, *MakeResults, *Timechart, *ThreatMatch, *tstats:
+		case *InputLookup, *MakeResults, *EventCount, *Timechart, *ThreatMatch, *tstats, *from:
 			return nil, errorf(at, "%s cannot run inside appendpipe", c.Name())
 		}
-		a.Commands = append(a.Commands, c)
+		if _, ok := c.(keepAll); !ok {
+			a.Commands = append(a.Commands, c)
+		}
 		if sub.peek().kind != tokPipe {
 			break
 		}

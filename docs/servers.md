@@ -136,6 +136,26 @@ server's next restart. A server added as a **scanner** (its **Server role**,
 `cluster.role: scanner`) never runs them, whatever this setting says; see
 [Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
 
+**Spreading detections over the servers.** With many rules, one server can be too
+few to run them all. Turn on **Spread detections over servers**
+(`detections.spread`, on the Settings page under Detections) and every server that
+may run the jobs runs a share of each tenant's rules: the rules are split into 64
+groups, and the server running the jobs gives each group to one server, moving as
+few as it can when a server joins or leaves. It applies within seconds, and only
+once every running server is on a version that supports it and the cluster's
+features are up to date; until then, one server runs every rule as before. A server
+does not get a share while its detection or lookup files differ from those of the
+server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
+or while it cannot write its heartbeat for 20 seconds (it then stops its share by
+itself).
+
+When a group moves, its new server takes over from where the last run of each rule
+ended, so no time is skipped or searched twice. The two servers are kept apart the
+same way two servers holding the jobs are: each group carries a number that grows
+with every move, and OpenSearch refuses the old server's run state, so the old
+server stops that group at its next write. A rule's findings are not raised twice;
+a risk-only rule's risk events of the one run that overlapped can be.
+
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
 and Threat intel feed settings can be changed on any server. Notifications and Playbooks settings,

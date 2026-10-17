@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -207,7 +208,7 @@ type Result struct {
 type Plan struct {
 	Index string         `json:"index"`
 	Body  map[string]any `json:"body"`
-	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults
+	Mode  string         `json:"mode"` // events, stats, timechart, top, inputlookup, makeresults, eventcount
 
 	// Summaries lists the data models whose summary indexes the search
 	// reads for whole 5-minute slots.
@@ -217,6 +218,9 @@ type Plan struct {
 	post      []query.Command
 	threat    *query.ThreatMatch
 	sum       *summaryUse
+	// fill is a fillnull of by fields just before stats, run in
+	// OpenSearch as buckets for events that lack those fields.
+	fill *query.Fillnull
 }
 
 func (e *Engine) opts() Options {
@@ -277,12 +281,37 @@ func (e *Engine) IndexPattern(q *query.Query) (string, error) {
 
 // Compile builds the OpenSearch request for a query without running it.
 func (e *Engine) Compile(q *query.Query) (*Plan, error) {
+	if hasSubsearchTerms(q) {
+		// The subsearches among the terms run when the search does;
+		// until then they compile on their own and match everything.
+		var bad error
+		check := func(s *query.Subsearch) {
+			if _, err := e.Compile(subsearch(s.Query, q)); err != nil && bad == nil {
+				bad = err
+			}
+		}
+		query.WalkSubsearches(q.Search, check)
+		for _, c := range q.Commands {
+			if w, ok := c.(*query.Where); ok {
+				query.WalkSubsearches(w.Expr, check)
+			}
+		}
+		if bad != nil {
+			return nil, bad
+		}
+		q = withoutSubsearches(q)
+	}
 	p, err := e.compile(q)
 	if err != nil {
 		return nil, err
 	}
 	// A subsearch that does not compile fails the search before it runs.
-	if err := e.compileSubsearches(p.post, q); err != nil {
+	cmds := p.post
+	switch t := p.transform.(type) {
+	case *query.MultiSearch, *query.Set:
+		cmds = append([]query.Command{t}, cmds...)
+	}
+	if err := e.compileSubsearches(cmds, q); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -296,6 +325,24 @@ func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error 
 			sub = c.Sub
 		case *query.Append:
 			sub = c.Sub
+		case *query.Union:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
+		case *query.MultiSearch:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
+		case *query.Set:
+			for _, s := range c.Subs {
+				if _, err := e.Compile(subsearch(s, q)); err != nil {
+					return err
+				}
+			}
 		case *query.AppendPipe:
 			if err := e.compileSubsearches(c.Commands, q); err != nil {
 				return err
@@ -320,6 +367,16 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		if c, ok := cmds[0].(*query.MakeResults); ok {
 			return &Plan{Mode: "makeresults", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.MultiSearch); ok {
+			// The rows come from the subsearches.
+			return &Plan{Mode: "multisearch", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.Set); ok {
+			return &Plan{Mode: "set", transform: c, post: cmds[1:]}, nil
+		}
+		if c, ok := cmds[0].(*query.EventCount); ok {
+			return e.eventCountPlan(c, cmds[1:])
 		}
 	}
 
@@ -420,9 +477,13 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			// chart is stats, which runs in OpenSearch, then a pivot.
 			cmds = append(chartCommands(c), cmds[1:]...)
 		}
+		fill := statsFill(cmds)
+		if fill != nil {
+			cmds = cmds[1:]
+		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
-			p.Mode, p.transform, p.post = "stats", c, cmds[1:]
+			p.Mode, p.transform, p.post, p.fill = "stats", c, cmds[1:], fill
 			body["size"] = 0
 			if len(c.By) == 0 {
 				aggs, err := metricAggsFor(c.Aggs, summed)
@@ -436,6 +497,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 				comp, err := compositeAggFor(c.By, c.Aggs, o.MaxBuckets, summed)
 				if err != nil {
 					return nil, err
+				}
+				if fill != nil {
+					missingBuckets(comp, c.By, fill.Fields)
 				}
 				body["aggs"] = map[string]any{"groups": comp}
 			}
@@ -471,7 +535,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
-				terms := map[string]any{"field": storedField(c.By), "size": 10}
+				size := 10
+				switch {
+				case c.Limit == query.NoTimechartLimit:
+					size = maxTimechartSeries
+				case c.Limit > 0:
+					size = min(c.Limit, maxTimechartSeries)
+				}
+				terms := map[string]any{"field": storedField(c.By), "size": size}
 				if summed {
 					// A summary row stands for many events: the
 					// largest values are those with the most events,
@@ -513,7 +584,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans, *query.OutputLookup:
 			return true
 		}
 	}
@@ -528,7 +599,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
 			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation,
-			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo:
+			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo, *query.Extract, *query.XPath, *query.Abstract, *query.Highlight, *query.SetFields:
 			continue
 		}
 		return 0, false
@@ -570,6 +641,44 @@ func addEventsAgg(body map[string]any, summed bool) {
 		body["aggs"] = aggs
 	}
 	aggs[eventsAgg] = countAgg()
+}
+
+// maxTimechartSeries bounds the series of a timechart by a field.
+const maxTimechartSeries = 100
+
+// statsFill returns the fillnull that starts cmds when stats by fields
+// follows it and every field it fills is one of those by fields: stats
+// can then run in OpenSearch, with a bucket for the events missing each
+// field, keyed by the fill value. It returns nil otherwise.
+func statsFill(cmds []query.Command) *query.Fillnull {
+	if len(cmds) < 2 {
+		return nil
+	}
+	f, ok := cmds[0].(*query.Fillnull)
+	st, isStats := cmds[1].(*query.Stats)
+	if !ok || !isStats || len(f.Fields) == 0 || len(st.By) == 0 {
+		return nil
+	}
+	for _, x := range f.Fields {
+		if !slices.Contains(st.By, x) {
+			return nil
+		}
+	}
+	return f
+}
+
+// missingBuckets turns on the missing bucket of comp's sources for fields.
+func missingBuckets(comp map[string]any, by, fields []string) {
+	sources, _ := comp["composite"].(map[string]any)["sources"].([]any)
+	for i, f := range by {
+		if !slices.Contains(fields, f) || i >= len(sources) {
+			continue
+		}
+		src, _ := sources[i].(map[string]any)[fmt.Sprintf("k%d", i)].(map[string]any)
+		if terms, ok := src["terms"].(map[string]any); ok {
+			terms["missing_bucket"] = true
+		}
+	}
 }
 
 func compositeAgg(by []string, aggs []query.Agg, maxBuckets int) (map[string]any, error) {
@@ -633,7 +742,16 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	defer release()
-	res, err := e.run(withEvaluator(ctx), q, p)
+	ctx = withEvaluator(ctx)
+	if hasSubsearchTerms(q) {
+		if q, err = e.resolveSubsearches(ctx, q); err != nil {
+			return nil, err
+		}
+		if p, err = e.Compile(q); err != nil {
+			return nil, err
+		}
+	}
+	res, err := e.run(ctx, q, p)
 	if err != nil {
 		return nil, err
 	}
@@ -648,9 +766,15 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	var err error
 	switch c := p.transform.(type) {
 	case *query.InputLookup:
-		res, err = e.inputLookup(c)
+		res, err = e.inputLookup(ctx, c)
 	case *query.MakeResults:
 		res = makeResults(c)
+	case *query.MultiSearch:
+		res, err = e.multiSearch(ctx, c, q)
+	case *query.Set:
+		res, err = e.setSearch(ctx, c, q)
+	case *query.EventCount:
+		res, err = e.eventCount(ctx, p)
 	default:
 		res, err = e.fetch(ctx, p)
 	}
@@ -708,6 +832,19 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.join(ctx, res, c, q)
 		case *query.Append:
 			err = e.appendSearch(ctx, res, c, q)
+		case *query.InputLookup:
+			// inputlookup append=true, after the first command.
+			var sub *Result
+			if sub, err = e.inputLookup(ctx, c); err == nil {
+				appendRows(res, sub.Rows, sub.Columns, sub.Kind)
+				res.Truncated = res.Truncated || sub.Truncated
+			}
+		case *query.Union:
+			for _, s := range c.Subs {
+				if err = e.appendSearch(ctx, res, &query.Append{Sub: s}, q); err != nil {
+					break
+				}
+			}
 		case *query.AppendPipe:
 			err = e.appendPipe(ctx, res, c, q)
 		case *query.Intel:
@@ -718,6 +855,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.mapSearch(ctx, res, c, q)
 		case *query.AddInfo:
 			err = e.addInfo(ctx, res, q)
+		case *query.OutputLookup:
+			err = e.outputLookup(ctx, res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
@@ -772,6 +911,9 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		res.Truncated = truncated
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
+			if p.fill != nil {
+				applyFillnull(&Result{Rows: []Row{row}}, p.fill)
+			}
 			for i, a := range st.Aggs {
 				switch {
 				case a.Func == "count" && a.Field == "" && summed:

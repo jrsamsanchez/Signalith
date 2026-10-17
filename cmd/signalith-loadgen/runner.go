@@ -578,6 +578,11 @@ func (r *runner) measure(c Criterion) (float64, string) {
 			return 0, "no agents in the scenario"
 		}
 		return float64(r.fleet.undelivered.Load()), ""
+	case "events_dropped":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		return float64(r.fleet.dropped.Load()), ""
 	case "ingest_error_rate":
 		n := m.Count(ph, "ingest_requests")
 		if n == 0 {

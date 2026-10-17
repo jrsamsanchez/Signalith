@@ -54,6 +54,13 @@ type In struct {
 // Text is a free-text term matched against the raw event.
 type Text struct{ Value string }
 
+// Subsearch is a search in [ ] among a search's terms. It runs first,
+// and its result rows become terms: each row the AND of its fields'
+// values, the rows ORed, as Splunk's format command writes them.
+type Subsearch struct{ Query *Query }
+
+func (e *Subsearch) String() string { return "[search " + e.Query.String() + "]" }
+
 func (e *And) String() string { return "(" + joinExprs(e.Children, " AND ") + ")" }
 func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")" }
 func (e *Not) String() string { return "NOT " + e.Child.String() }
@@ -183,7 +190,13 @@ type Timechart struct {
 	Span string
 	Aggs []Agg
 	By   string
+	// Limit is how many of the by field's values become series: 0 the
+	// default of 10, NoTimechartLimit as many as Signalith charts.
+	Limit int
 }
+
+// NoTimechartLimit is timechart limit=0.
+const NoTimechartLimit = -1
 
 // Top returns the most common values: top limit=10 src by dest.
 type Top struct {
@@ -328,6 +341,12 @@ func CommandString(c Command) string {
 		if c.Span != "" {
 			s += " span=" + optionValue(c.Span)
 		}
+		switch {
+		case c.Limit == NoTimechartLimit:
+			s += " limit=0"
+		case c.Limit > 0 && c.Limit != 10:
+			s += " limit=" + strconv.Itoa(c.Limit)
+		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
 			s += " by " + c.By
@@ -405,12 +424,50 @@ func CommandString(c Command) string {
 		return lookupString(c)
 	case *InputLookup:
 		return inputLookupString(c)
+	case *EventCount:
+		return eventCountString(c)
+	case *OutputLookup:
+		return outputLookupString(c)
 	case *Transaction:
 		return transactionString(c)
 	case *Join:
 		return joinString(c)
 	case *Append:
 		return "append [search " + c.Sub.String() + "]"
+	case *Union:
+		return unionString(c)
+	case *Geostats:
+		return geostatsString(c)
+	case *Extract:
+		return extractString(c)
+	case *Outlier:
+		return outlierString(c)
+	case *Gauge:
+		return gaugeString(c)
+	case *MultiSearch:
+		return multiSearchString(c)
+	case *Timewrap:
+		return timewrapString(c)
+	case *Cluster:
+		return clusterString(c)
+	case *XPath:
+		return xpathString(c)
+	case *Abstract:
+		return abstractString(c)
+	case *Highlight:
+		return highlightString(c)
+	case *AnomalyDetection:
+		return anomalyString(c)
+	case *Correlate:
+		return correlateString(c)
+	case *Predict:
+		return predictString(c)
+	case *Set:
+		return setString(c)
+	case *SetFields:
+		return setFieldsString(c)
+	case *KMeans:
+		return kmeansString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:

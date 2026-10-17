@@ -1,0 +1,19 @@
+{"rule": "d436f9e7-0ee7-4a47-864b-6dea2c4e2752", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x autodiscover/autodiscover.json y?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"/?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x autodiscover/autodiscover.json x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"/?x x-rps-cat= x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"/?x /powershell/? x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"/?x /mapi/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x autodiscover/autodiscover.json x?x x-rps-cat= x x /powershell/? x x /mapi/ x"}}
+]}

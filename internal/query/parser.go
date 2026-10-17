@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous", "union", "geostats", "extract", "outlier", "gauge", "multisearch", "timewrap", "cluster", "xpath", "abstract", "highlight", "anomalydetection", "correlate", "predict", "set", "setfields", "kmeans", "eventcount", "outputlookup", "from"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -86,15 +86,34 @@ func parseAt(src string, base, depth int) (*Query, error) {
 			q.Commands = append(commands, ts.cmds...)
 			continue
 		}
+		if _, ok := cmd.(keepAll); ok {
+			continue
+		}
+		if f, ok := cmd.(*from); ok {
+			if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
+				return nil, errorf(at, "from starts the search: %s", fromExample)
+			}
+			*q = f.q
+			q.Commands = f.cmds
+			continue
+		}
 		if err := p.flushEvals(&q.Commands, cmd, at); err != nil {
 			return nil, err
 		}
 		if len(q.Commands) > 0 || q.Search != nil || q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" {
 			switch cmd.(type) {
 			case *InputLookup:
-				return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners")
+				if !cmd.(*InputLookup).Append {
+					return nil, errorf(at, "inputlookup reads a lookup table instead of events, so it starts the search: | inputlookup owners, or with append=true adds its rows later")
+				}
 			case *MakeResults:
 				return nil, errorf(at, "makeresults makes rows instead of searching events, so it starts the search: | makeresults count=3")
+			case *MultiSearch:
+				return nil, errorf(at, "multisearch runs its own subsearches, so it starts the search: %s", multiSearchExample)
+			case *Set:
+				return nil, errorf(at, "set runs its own subsearches, so it starts the search: %s", setExample)
+			case *EventCount:
+				return nil, errorf(at, "eventcount counts stored events instead of searching them, so it starts the search: | eventcount summarize=false")
 			}
 		}
 		q.Commands = append(q.Commands, cmd)
@@ -284,8 +303,34 @@ func (p *parser) parseUnary(search bool) (Expr, error) {
 func (p *parser) parseAtom(search bool) (Expr, error) {
 	t := p.peek()
 	switch t.kind {
+	case tokSubsearch:
+		if !search {
+			break
+		}
+		p.next()
+		if p.depth+1 > maxSubsearchDepth {
+			return nil, errorf(t.pos, "subsearches can be at most %d deep", maxSubsearchDepth)
+		}
+		q, err := p.parseSubsearch(t.text, t.pos)
+		if err != nil {
+			return nil, err
+		}
+		return &Subsearch{Query: q}, nil
 	case tokString:
 		p.next()
+		if nt := p.peek(); search && nt.kind == tokOp && p.followsQuote(nt) && t.text != "" && FormatValue(t.text) == t.text {
+			// "a.b"=x, a field name in quotes, as Splunk takes it.
+			p.next()
+			v, err := p.value()
+			if err != nil {
+				return nil, err
+			}
+			return &Compare{Field: t.text, Op: nt.text, Value: v}, nil
+		}
+		if nt := p.peek(); search && nt.kind == tokWord && nt.text == "IN" && p.peekAt(1).kind == tokLParen && t.text != "" && FormatValue(t.text) == t.text {
+			p.next()
+			return p.parseIn(t.text)
+		}
 		if search {
 			return &Text{Value: t.text}, nil
 		}
@@ -346,6 +391,10 @@ func (p *parser) parseIn(field string) (Expr, error) {
 		if t.kind != tokComma {
 			return nil, errorf(t.pos, `expected "," or ")" in IN list`)
 		}
+		if p.peek().kind == tokRParen {
+			p.next() // a comma before ")", as Splunk allows
+			return in, nil
+		}
 	}
 }
 
@@ -388,8 +437,23 @@ func (p *parser) parseCommand() (Command, error) {
 		return &Stats{Aggs: aggs, By: by}, p.endCommand()
 	case "timechart":
 		tc := &Timechart{}
-		if p.isKeywordFold("span") && p.peekAt(1).kind == tokOp {
-			p.next()
+		for (p.isKeywordFold("span") || p.isKeywordFold("limit")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			if strings.EqualFold(p.next().text, "limit") {
+				p.next()
+				at := p.peek().pos
+				n, err := p.int()
+				if err != nil {
+					return nil, err
+				}
+				if n < 0 {
+					return nil, errorf(at, "timechart limit is 0 (no limit) or more")
+				}
+				tc.Limit = n
+				if n == 0 {
+					tc.Limit = NoTimechartLimit
+				}
+				continue
+			}
 			p.next()
 			v, err := p.value()
 			if err != nil {
@@ -464,6 +528,11 @@ func (p *parser) parseCommand() (Command, error) {
 			} else if strings.HasPrefix(k.Field, "+") {
 				k.Field = k.Field[1:]
 			}
+			if f := p.peek(); k.Field == "" && (nt.text == "-" || nt.text == "+") && f.kind == tokWord && !strings.HasPrefix(f.text, "-") && !strings.HasPrefix(f.text, "+") && !isDigits(f.text) {
+				// sort - count, with a space after the sign.
+				p.next()
+				k.Field = p.fieldSuffix(f.text)
+			}
 			if k.Field == "" {
 				return nil, errorf(nt.pos, "sort field name is missing")
 			}
@@ -510,12 +579,18 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseRegex(t)
 	case "makeresults":
 		return p.parseMakeResults()
+	case "eventcount":
+		return p.parseEventCount(t)
+	case "outputlookup":
+		return p.parseOutputLookup(t)
 	case "append":
 		return p.parseAppend(t)
 	case "appendpipe":
 		return p.parseAppendPipe(t)
 	case "tstats":
 		return p.parseTstats(t)
+	case "from":
+		return p.parseFrom(t)
 	case "chart":
 		return p.parseChart(t)
 	case "xyseries":
@@ -591,6 +666,40 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseFormat(t)
 	case "return":
 		return p.parseReturn(t)
+	case "union":
+		return p.parseUnion(t)
+	case "geostats":
+		return p.parseGeostats(t)
+	case "extract", "kv":
+		return p.parseExtract(t)
+	case "outlier":
+		return p.parseOutlier(t)
+	case "gauge":
+		return p.parseGauge(t)
+	case "multisearch":
+		return p.parseMultiSearch(t)
+	case "timewrap":
+		return p.parseTimewrap(t)
+	case "cluster":
+		return p.parseCluster(t)
+	case "xpath":
+		return p.parseXPath(t)
+	case "abstract", "excerpt":
+		return p.parseAbstract(t)
+	case "highlight":
+		return p.parseHighlight(t)
+	case "anomalydetection":
+		return p.parseAnomalyDetection(t)
+	case "correlate":
+		return p.parseCorrelate(t)
+	case "predict":
+		return p.parsePredict(t)
+	case "set":
+		return p.parseSet(t)
+	case "setfields":
+		return p.parseSetFields(t)
+	case "kmeans":
+		return p.parseKMeans(t)
 	case "makecontinuous":
 		return p.parseMakeContinuous(t)
 	case "xmlkv":
@@ -642,6 +751,11 @@ func (p *parser) parseCommand() (Command, error) {
 			fromName := from.text
 			if from.kind == tokWord {
 				fromName = p.fieldSuffix(from.text)
+			} else if n := p.peek(); n.kind == tokWord && p.followsQuote(n) {
+				// "All_Traffic".* is one name, as Splunk reads quoted
+				// and bare text that touch: drop_dm_object_name's form.
+				p.next()
+				fromName += n.text
 			}
 			if !p.isKeywordFold("as") {
 				return nil, errorf(p.peek().pos, `expected "as" in rename`)
@@ -883,6 +997,13 @@ func (p *parser) parseWhereUnary() (Expr, error) {
 
 // fieldSuffix glues "dc" "(" "user" ")" into the column name "dc(user)" so
 // stats output columns can be referenced by later commands.
+// followsQuote reports whether t starts right after a closing quote,
+// with no space between.
+func (p *parser) followsQuote(t token) bool {
+	i := t.pos - p.base
+	return i > 0 && i <= len(p.src) && p.src[i-1] == '"'
+}
+
 func (p *parser) fieldSuffix(name string) string {
 	if p.peek().kind == tokLParen && p.peekAt(1).kind == tokWord && p.peekAt(2).kind == tokRParen && isAggFunc(strings.ToLower(name)) {
 		inner := p.peekAt(1).text
@@ -972,4 +1093,13 @@ func (p *parser) flushEvals(cmds *[]Command, cmd Command, at int) error {
 	}
 	*cmds = append(*cmds, &Eval{Assigns: evals})
 	return nil
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }

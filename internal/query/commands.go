@@ -467,6 +467,19 @@ func (p *parser) lookupFields() ([]LookupField, error) {
 }
 
 func (p *parser) parseLookup(cmd token) (Command, error) {
+	// Splunk's local= (run on the search head) and update= (reload the
+	// table) change nothing here: tables are on this server and always
+	// current.
+	for {
+		t := p.peek()
+		if !(p.isKeywordFold("local") || p.isKeywordFold("update")) || p.peekAt(1).kind != tokOp || p.peekAt(1).text != "=" {
+			break
+		}
+		p.option()
+		if _, err := parseBool(p.next()); err != nil {
+			return nil, errorf(t.pos, "lookup %s= takes true or false", strings.ToLower(t.text))
+		}
+	}
 	t := p.peek()
 	if t.kind != tokWord && t.kind != tokString {
 		return nil, errorf(t.pos, "lookup needs a table name, for example: lookup owners host OUTPUT owner")
@@ -530,28 +543,21 @@ func lookupString(c *Lookup) string {
 }
 
 // InputLookup starts a search with the rows of a lookup table instead of
-// events: | inputlookup [max=N] owners.
+// events: | inputlookup [max=N] owners. With append=true it can come
+// later and adds the table's rows after the rows so far.
 type InputLookup struct {
-	Table string
-	Max   int // the most rows to read; 0 means the search's event limit
+	Table  string
+	Max    int // the most rows to read; 0 means the search's event limit
+	Append bool
+	Where  Expr // keeps only the rows that match these search terms
 }
 
 func (*InputLookup) Name() string { return "inputlookup" }
 
 func (p *parser) parseInputLookup() (Command, error) {
 	c := &InputLookup{}
-	for p.isKeywordFold("max") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
-		p.next()
-		p.next()
-		at := p.peek().pos
-		n, err := p.int()
-		if err != nil {
-			return nil, err
-		}
-		if n < 1 {
-			return nil, errorf(at, "max must be at least 1")
-		}
-		c.Max = n
+	if err := p.inputLookupOptions(c); err != nil {
+		return nil, err
 	}
 	t := p.peek()
 	if t.kind != tokWord && t.kind != tokString {
@@ -562,14 +568,65 @@ func (p *parser) parseInputLookup() (Command, error) {
 		return nil, errorf(t.pos, "%q is not a lookup table name; names use lower-case letters, digits, - and _", t.text)
 	}
 	c.Table = t.text
+	// Splunk takes the options after the name too.
+	if err := p.inputLookupOptions(c); err != nil {
+		return nil, err
+	}
+	if w := p.peek(); p.isKeywordFold("where") {
+		p.next()
+		var q Query
+		if err := p.parseSearch(&q); err != nil {
+			return nil, err
+		}
+		if q.Index != "" || q.Datamodel != "" || q.Earliest != "" || q.Latest != "" || exprSubsearches(q.Search) > 0 {
+			return nil, errorf(w.pos, "inputlookup where takes only field terms, such as where status=active")
+		}
+		if q.Search == nil {
+			return nil, errorf(w.pos, "expected terms after where, for example: | inputlookup owners where team=Web")
+		}
+		c.Where = q.Search
+	}
 	return c, p.endCommand()
 }
 
-func inputLookupString(c *InputLookup) string {
-	if c.Max > 0 {
-		return "inputlookup max=" + strconv.Itoa(c.Max) + " " + c.Table
+func (p *parser) inputLookupOptions(c *InputLookup) error {
+	for (p.isKeywordFold("max") || p.isKeywordFold("append")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		key := strings.ToLower(p.next().text)
+		p.next()
+		if key == "append" {
+			b, err := parseBool(p.next())
+			if err != nil {
+				return err
+			}
+			c.Append = b
+			continue
+		}
+		at := p.peek().pos
+		n, err := p.int()
+		if err != nil {
+			return err
+		}
+		if n < 1 {
+			return errorf(at, "max must be at least 1")
+		}
+		c.Max = n
 	}
-	return "inputlookup " + c.Table
+	return nil
+}
+
+func inputLookupString(c *InputLookup) string {
+	s := "inputlookup "
+	if c.Append {
+		s += "append=true "
+	}
+	if c.Max > 0 {
+		s += "max=" + strconv.Itoa(c.Max) + " "
+	}
+	s += c.Table
+	if c.Where != nil {
+		s += " where " + c.Where.String()
+	}
+	return s
 }
 
 // Regex keeps rows whose field matches a regular expression, or with !=

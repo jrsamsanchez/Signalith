@@ -91,7 +91,7 @@ const RepeatSpan = 30 * time.Second
 
 // Copies are a case's events, each with the time offset it happens at:
 // the event itself, or each of its repeats, spread over RepeatSpan, the
-// Vary fields numbered (tester1, tester2...).
+// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...).
 func (c Case) Copies() ([]Case, []time.Duration) {
 	if c.Repeat <= 1 {
 		c.Repeat, c.Vary = 0, nil
@@ -104,7 +104,12 @@ func (c Case) Copies() ([]Case, []time.Duration) {
 		cp.Repeat, cp.Vary = 0, nil
 		cp.Data = maps.Clone(c.Data)
 		for _, f := range c.Vary {
-			cp.Data[f] += strconv.Itoa(i + 1)
+			// A computer account keeps its $ at the end (WS1$, WS2$).
+			v, dollar := strings.CutSuffix(cp.Data[f], "$")
+			cp.Data[f] = v + strconv.Itoa(i+1)
+			if dollar {
+				cp.Data[f] += "$"
+			}
 		}
 		out[i] = cp
 		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)
@@ -216,9 +221,17 @@ func (c Case) SigmaView() (map[string]string, bool) {
 	return nil, false
 }
 
+// cloudTags are the tags of the cloud channels whose recorded records a
+// case may hold as they were sent (_raw).
+var cloudTags = map[string]string{
+	CloudTrailChannel: ingest.CloudTrailTag, AzureChannel: ingest.AzureTag, O365Channel: ingest.O365Tag,
+	OktaChannel: ingest.OktaTag,
+}
+
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, an audit or access log line, else
-// a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, a
+// cloud record (as recorded, when the case holds it as _raw), else a
+// Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
 		return c.zeekRecord(host, t)
@@ -228,6 +241,18 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if raw, ok := c.Data["_raw"]; ok && cloudTags[c.Channel] != "" {
+		// A recorded cloud record (Splunk's attack_data), as it was
+		// sent.
+		d := json.NewDecoder(strings.NewReader(raw))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			r = map[string]any{"message": raw}
+		}
+		r["hostname"] = host
+		return cloudTags[c.Channel], r
 	}
 	if c.Channel == CloudTrailChannel {
 		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)

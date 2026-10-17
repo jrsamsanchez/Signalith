@@ -52,13 +52,16 @@ func (q *Query) Drilldown() *Drill {
 	}
 	var pipe strings.Builder
 	for _, c := range q.Commands[:cut] {
+		if _, ok := c.(*OutputLookup); ok {
+			continue // it does not change the rows, and wrote its table already
+		}
 		pipe.WriteString("\n| " + CommandString(c))
 		switch c := c.(type) {
 		case *Where:
 			if _, expr := c.Expr.(*Cond); expr {
 				d.Where = true
 			}
-		case *ThreatMatch, *Table, *Sort:
+		case *ThreatMatch, *Table, *Sort, *Highlight:
 		case *Head, *Dedup:
 			// They pick which events a summary counts, so a filter must
 			// come after them; without a summary a filter only finds one
@@ -196,6 +199,18 @@ func (q *Query) Drilldown() *Drill {
 			}
 		case *Concurrency:
 			delete(fields, c.Output)
+		case *Outlier:
+			// Clamped values are in no event.
+			if len(c.Fields) == 0 {
+				clear(fields)
+			}
+			for f := range fields {
+				for _, p := range c.Fields {
+					if MatchField(p, f) {
+						delete(fields, f)
+					}
+				}
+			}
 		case *AddInfo:
 			delete(fields, AddInfoMinTime)
 			delete(fields, AddInfoMaxTime)
@@ -205,9 +220,41 @@ func (q *Query) Drilldown() *Drill {
 			for _, f := range c.Fields() {
 				delete(fields, f)
 			}
-		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace:
+		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace, *Extract:
 			// Its fields can overwrite any column.
 			clear(fields)
+		case *XPath:
+			delete(fields, c.OutField)
+		case *KMeans:
+			// Clusters and centroids are in no event.
+			delete(fields, c.ClusterField)
+			for f := range fields {
+				if strings.HasPrefix(f, "centroid_") {
+					delete(fields, f)
+				}
+			}
+		case *SetFields:
+			for _, v := range c.Values {
+				delete(fields, v.Field)
+			}
+		case *Predict:
+			// Forecasts are in no event.
+			for _, f := range c.Fields {
+				up, lo := c.BoundNames(f)
+				delete(fields, f.PredictName())
+				delete(fields, up)
+				delete(fields, lo)
+			}
+		case *AnomalyDetection:
+			for _, f := range []string{"log_event_prob", "probable_cause", "probable_cause_freq", "isOutlier"} {
+				delete(fields, f)
+			}
+			if c.Action == "summary" {
+				clear(fields)
+				d.Series = ""
+			}
+		case *Abstract:
+			delete(fields, "_raw")
 		case *Bin:
 			// Buckets are in no event.
 			if c.As != "" {
@@ -223,7 +270,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Set, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge, *EventCount:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

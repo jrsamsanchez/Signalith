@@ -395,6 +395,10 @@ func appendRows(res *Result, rows []Row, cols []string, kind string) {
 // appendSearch runs append's subsearch and adds its rows after res's.
 func (e *Engine) appendSearch(ctx context.Context, res *Result, c *query.Append, outer *query.Query) error {
 	sq := subsearch(c.Sub, outer)
+	sq, err := e.resolveSubsearches(ctx, sq)
+	if err != nil {
+		return err
+	}
 	p, err := e.compile(sq)
 	if err != nil {
 		return err

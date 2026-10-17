@@ -152,6 +152,46 @@ func ValidUsername(name string) error {
 	return nil
 }
 
+// ErrTenantSuffix refuses a provider user whose name ends like a tenant
+// user's.
+var ErrTenantSuffix = errors.New("names ending in @ and a word with no dot, like alice@acme, are kept for tenant users; " +
+	"use a full email address or a name without @")
+
+// TenantUsername returns the name a tenant's user is kept under: what
+// was typed with "@" and the tenant ID after it, so no tenant's user
+// can take, or find out about, a name of the provider's or of another
+// tenant. A name already ending in "@<tenant>" is kept as it is; any
+// other @ is refused.
+func TenantUsername(name, tenant string) (string, error) {
+	name = NormalizeUsername(name)
+	local, found := strings.CutSuffix(name, "@"+tenant)
+	if found && local == "" {
+		found = false
+	}
+	if !found {
+		local = name
+	}
+	if strings.Contains(local, "@") {
+		return "", fmt.Errorf("a tenant user's name cannot have @ in it: Signalith adds @%s itself", tenant)
+	}
+	full := local + "@" + tenant
+	if err := ValidUsername(full); err != nil {
+		return "", fmt.Errorf("usernames are letters, digits, dots, dashes or underscores, starting with a letter or digit, and at most %d long here", 63-len(tenant))
+	}
+	return full, nil
+}
+
+// tenantLike reports whether name ends in "@" and something that could
+// be a tenant ID (TenantUsername): names the provider's users cannot take.
+func tenantLike(name string) bool {
+	i := strings.LastIndexByte(name, '@')
+	if i < 0 {
+		return false
+	}
+	suffix := name[i+1:]
+	return suffix == tenants.Default || tenants.ValidID(suffix) == nil
+}
+
 func validName(name string) error {
 	if len([]rune(name)) > 100 {
 		return errors.New("keep the name under 100 characters")
@@ -503,8 +543,21 @@ func (s *Store) hold() (func(), error) {
 // Create adds a local user.
 func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	name := NormalizeUsername(in.Username)
+	if in.Tenant != "" {
+		if err := tenants.ValidID(in.Tenant); err != nil {
+			return User{}, fieldError("tenant", err)
+		}
+		full, err := TenantUsername(name, in.Tenant)
+		if err != nil {
+			return User{}, fieldError("username", err)
+		}
+		name = full
+	}
 	if err := ValidUsername(name); err != nil {
 		return User{}, fieldError("username", err)
+	}
+	if in.Tenant == "" && tenantLike(name) {
+		return User{}, fieldError("username", ErrTenantSuffix)
 	}
 	if s.reserved(name) {
 		return User{}, fieldError("username", ErrReserved)
@@ -521,11 +574,6 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	}
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
-	}
-	if in.Tenant != "" {
-		if err := tenants.ValidID(in.Tenant); err != nil {
-			return User{}, fieldError("tenant", err)
-		}
 	}
 	if err := CheckNewPassword(name, in.Password); err != nil {
 		return User{}, fieldError("password", err)
@@ -849,6 +897,9 @@ func (s *Store) SeeDirectoryUser(ctx context.Context, d DirectoryUser) (User, er
 			return recordUser(r), nil
 		}
 		// Their first sign-in.
+		if tenantLike(name) {
+			return User{}, ErrTenantSuffix
+		}
 		r, err = s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Source: SourceDirectory, Name: d.Name, Email: d.Email,
 			Role: d.Role, DN: d.DN, Created: now, Updated: now, LastSignIn: &now}, Epoch: 1})
 		if errors.Is(err, ErrExists) && try < 3 {

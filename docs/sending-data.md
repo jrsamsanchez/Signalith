@@ -4,12 +4,13 @@ description: Send events to Signalith with Fluent Bit agents and syslog, what ea
 
 # Agents and syslog
 
-Signalith takes events from three kinds of senders:
+Signalith takes events from these kinds of senders:
 
 - **Fluent Bit agents** on Windows and Linux, set up from the **Add data** page;
 - **syslog** (RFC 5424, RFC 3164 and CEF) from firewalls, switches, appliances and
   servers without an agent;
-- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md)).
+- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md));
+- tools built for Splunk's HTTP Event Collector, once turned on (see [Splunk HEC senders](hec.md)).
 
 ## Agents
 
@@ -39,7 +40,7 @@ OpenTelemetry Collector (OTLP), osquery and network sensors. The web page is on 
 and agents send to port 7779, by default. Both use the same HTTPS certificate.
 
 The agent port takes only what agents need: events (`/api/ingest`, and OTLP's
-`/api/otlp/v1/logs`), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
+`/api/otlp/v1/logs`, and [HEC](hec.md)'s `/services/collector/...` when turned on), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
 (`/api/tls/ca.pem`), the sensor install script (`/api/sensor/install.sh`), and `/livez`
 and `/readyz` for load balancer health checks. It serves no web page and no API. Once
 `server.agent_listen` is set, the web port turns agents away with 503 and a message
@@ -91,7 +92,7 @@ or detection covers every source of the same kind.
 | --- | --- |
 | Windows Security log: 4624, 4625 logons; 4648 explicit credentials; 4768, 4769, 4771 Kerberos; 4776 NTLM credential checks | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
-| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4722, 4725 accounts enabled and disabled; 4723, 4724 password changes and resets; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4732, 4737, 4756 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 4662 directory object operations; 1102 log cleared | Change |
+| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4722, 4725 accounts enabled and disabled; 4723, 4724 password changes and resets; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4731, 4732, 4737, 4744, 4749, 4754, 4756, 4759, 4783, 4790 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 4662 directory object operations; 1102 log cleared | Change |
 | Windows Security log: 5140, 5145 network share access | Filesystem |
 | Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
@@ -101,6 +102,7 @@ or detection covers every source of the same kind.
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| Splunk HEC senders ([Splunk HEC senders](hec.md)) | by sourcetype: Authentication, Web and the cloud sources' models; Other for the rest |
 | Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
 | Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |

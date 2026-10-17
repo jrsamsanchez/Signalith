@@ -766,6 +766,19 @@ func TestWindowsSecurityNamedEvents(t *testing.T) {
 	expect(t, security("4727", subject(map[string]string{"TargetUserName": "ESX Admins", "TargetDomainName": "CORP", "SamAccountName": "ESX Admins"})),
 		map[string]any{"action": "created", "object_category": "group", "object": "ESX Admins", "sam_account_name": "ESX Admins"})
 	expect(t, security("4730", subject(map[string]string{"TargetUserName": "Old Group"})), map[string]any{"action": "deleted", "object": "Old Group"})
+	expect(t, security("4731", subject(map[string]string{"TargetUserName": "Backup Operators", "TargetDomainName": "WS1",
+		"TargetSid": "S-1-5-21-2-1009", "PrivilegeList": "-", "SamAccountName": "Backup Operators", "SidHistory": "-"})), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "group", "object": "Backup Operators", "object_domain": "WS1",
+		"object_sid": "S-1-5-21-2-1009", "user": "eve", "signature": "A security-enabled local group was created",
+	})
+	for id, sig := range map[string]string{
+		"4744": "A security-disabled local group was created", "4749": "A security-disabled global group was created",
+		"4754": "A security-enabled universal group was created", "4759": "A security-disabled universal group was created",
+		"4783": "A basic application group was created", "4790": "An LDAP query group was created",
+	} {
+		expect(t, security(id, subject(map[string]string{"TargetUserName": "DnsAdmins"})),
+			map[string]any{"datamodel": "Change", "action": "created", "object": "DnsAdmins", "user": "eve", "signature": sig})
+	}
 	expect(t, security("4729", subject(map[string]string{"MemberSid": "S-1-5-21-1-1105", "TargetUserName": "Domain Admins"})),
 		map[string]any{"action": "modified", "member_sid": "S-1-5-21-1-1105", "object": "Domain Admins"})
 	expect(t, security("4798", subject(map[string]string{"TargetUserName": "bob", "CallerProcessId": "0x1a4",

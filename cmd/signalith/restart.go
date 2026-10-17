@@ -103,6 +103,9 @@ type runner struct {
 	// sharedContent links the shared settings' content (feeds, retention
 	// policies) to the components of each start; nil with shared.
 	sharedContent *sharedContent
+	// detPrints is, per tenant, the fingerprint of the files its
+	// detections use, for the heartbeat (see detspread.go).
+	detPrints *detPrints
 	// audit is the process's audit spool (see sharedaudit.go); nil in
 	// some tests.
 	audit *processAudit
@@ -200,6 +203,7 @@ func newRunner(path string, log *slog.Logger) *runner {
 		path: path, log: log, started: time.Now(),
 		sessions: auth.NewSessions(config.DefaultSessionIdle), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
 		front: &front{}, agentFront: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
+		detPrints: newDetPrints(),
 	}
 	r.front.ready = r.ready
 	r.front.confirmMove = r.confirmProbe

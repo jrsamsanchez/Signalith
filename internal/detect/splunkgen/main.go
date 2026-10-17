@@ -57,6 +57,7 @@ var windowsSources = []string{
 	"Windows Event Log Security 4887", "Windows Event Log Security 4662", "Windows Event Log Security 4723",
 	"Windows Event Log Security 4724", "Windows Event Log Security 4722", "Windows Event Log Security 4725",
 	"Windows Event Log Security 5447", "Windows Event Log Security 4728", "Windows Event Log Security 4719",
+	"Windows Event Log Security 5140", "Windows Event Log Security 4731", "Windows Event Log Security 4756",
 	// Linux audit records, which Signalith reads from the audit log.
 	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
 	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",
@@ -106,10 +107,12 @@ func main() {
 		Date:       time.Now().UTC().Format("2006-01-02"),
 		License:    "Apache-2.0",
 		LicenseURL: "https://www.apache.org/licenses/LICENSE-2.0",
-		Notice: "The detections in this pack are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. " +
-			"They are shipped unchanged; Signalith converts them when it starts. Findings from them name the rule's author.",
+		Notice: "The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. " +
+			"They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.",
 	}
 	pack.UseMacros(macros)
+	lookups, lookupErrs, lookupFiles := readLookups(*splunkDir)
+	pack.UseLookups(lookups)
 	old := map[string]string{}
 	if data, err := os.ReadFile(filepath.Join(*outDir, "pack.yaml")); err == nil {
 		var p detect.Pack
@@ -138,7 +141,7 @@ func main() {
 			}
 		}
 	}
-	for _, d := range []string{"rules", "tests", "macros"} {
+	for _, d := range []string{"rules", "tests", "macros", "lookups"} {
 		if err := os.RemoveAll(filepath.Join(*outDir, d)); err != nil {
 			log.Fatal(err)
 		}
@@ -151,6 +154,7 @@ func main() {
 	skip := func(reason, file string) { skipped[reason] = append(skipped[reason], file) }
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
+	usedLookups := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
 	// Web detections search the Web data model, whatever log fills it,
 	// and so do a few network ones. The other network detections are
@@ -193,7 +197,7 @@ func main() {
 			continue
 		}
 		web := webSearch.MatchString(meta.Search)
-		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web}
+		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web, Lookups: lookups, LookupErrors: lookupErrs}
 		if opt.Network {
 			// A network rule over connections or DNS lookups reads its
 			// data model from any source, a network sensor's among them.
@@ -240,11 +244,7 @@ func main() {
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
-			if opt.Network && splcheck.IsSensorNode(rule.Node) {
-				skip("no test events: no network sensor event as Signalith stores it matches the rule", rel)
-			} else {
-				skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
-			}
+			skip(splcheck.NoEventsReason(rule, tf.Cases), rel)
 			continue
 		}
 		for _, c := range recorded[rule.ID] {
@@ -266,6 +266,9 @@ func main() {
 			log.Fatal(err)
 		}
 		markMacros(rule.Search, macros, usedMacros)
+		for _, l := range rule.Lookups {
+			usedLookups[l] = true
+		}
 		pack.Rules = append(pack.Rules, pr)
 	}
 	for name := range usedMacros {
@@ -275,6 +278,20 @@ func main() {
 		}
 		if err := os.WriteFile(filepath.Join(*outDir, "macros", filepath.Base(macroFiles[name])), src, 0o644); err != nil {
 			log.Fatal(err)
+		}
+	}
+	// The tables the rules look values up in, as security_content ships
+	// them: the CSV and the yml that says how it matches.
+	for name := range usedLookups {
+		for _, src := range []string{lookupFiles[name], strings.TrimSuffix(lookupFiles[name], ".yml") + ".csv"} {
+			data, err := os.ReadFile(src)
+			if err != nil {
+				log.Fatal(err)
+			}
+			dst := name + filepath.Ext(src)
+			if err := os.WriteFile(filepath.Join(*outDir, "lookups", dst), data, 0o644); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 	lic, err := os.ReadFile(filepath.Join(*splunkDir, "LICENSE"))
@@ -301,6 +318,46 @@ func main() {
 		n += len(v)
 	}
 	fmt.Printf("%d rules shipped, %d left out (see %s)\n", len(pack.Rules), n, filepath.Join(*outDir, "REPORT.md"))
+}
+
+// readLookups reads security_content's tables (lookups/csv): those
+// Signalith reads, why it cannot read the others (and the KV store
+// lookups, which are not files), and each one's yml.
+func readLookups(dir string) (map[string]*splcheck.Lookup, map[string]error, map[string]string) {
+	lookups := map[string]*splcheck.Lookup{}
+	errs := map[string]error{}
+	files := map[string]string{}
+	metas, _ := filepath.Glob(filepath.Join(dir, "lookups", "*", "*.yml"))
+	for _, f := range metas {
+		meta, err := os.ReadFile(f)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var m struct {
+			Name string `yaml:"name"`
+			Type string `yaml:"lookup_type"`
+		}
+		if err := yaml.Unmarshal(meta, &m); err != nil || m.Name == "" {
+			continue
+		}
+		if m.Type != "csv" {
+			errs[m.Name] = fmt.Errorf("a %s lookup, which security_content does not ship as a file", m.Type)
+			continue
+		}
+		data, err := os.ReadFile(strings.TrimSuffix(f, ".yml") + ".csv")
+		if err != nil {
+			errs[m.Name] = fmt.Errorf("security_content has no CSV for it")
+			continue
+		}
+		l, err := splcheck.ParseLookup(meta, data)
+		if err != nil {
+			errs[m.Name] = err
+			continue
+		}
+		lookups[l.Name] = l
+		files[l.Name] = f
+	}
+	return lookups, errs, files
 }
 
 // markMacros records the macros a search's where clause uses, and the

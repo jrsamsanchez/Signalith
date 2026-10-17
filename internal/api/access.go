@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -140,6 +141,16 @@ type principal struct {
 // own admins, not a tenant's.
 func (p *principal) runsServer() bool {
 	return p != nil && p.Tenant == "" && p.Role.AtLeast(users.Admin)
+}
+
+// serverPath is path p as a page shows it: whole for the provider's admins,
+// and only its last element for anyone else, who has no say over where
+// the server keeps its files.
+func serverPath(r *http.Request, p string) string {
+	if p == "" || principalOf(r).runsServer() {
+		return fullPath(p)
+	}
+	return filepath.Base(p)
 }
 
 type userKey struct{}

@@ -199,6 +199,22 @@ func assign(term []lit) (map[string]string, bool) {
 			cands = append(cands, strings.Join(parts, " "))
 			cands = append(cands, parts...)
 		}
+		// Patterns of one field may each need their own end of it (a
+		// folder and a file name): the parts in other orders.
+		if len(ps) > 1 && len(ps) <= 4 {
+			rng := rand.New(rand.NewSource(int64(len(f))))
+			parts := make([]string, len(ps))
+			for i, p := range ps {
+				parts[i] = example(p, rng)
+			}
+			for _, perm := range permutations(len(parts)) {
+				ordered := make([]string, len(perm))
+				for i, j := range perm {
+					ordered[i] = parts[j]
+				}
+				cands = append(cands, strings.Join(ordered, " "))
+			}
+		}
 		found := false
 		for _, c := range cands {
 			ok := true
@@ -225,6 +241,21 @@ func assign(term []lit) (map[string]string, bool) {
 		}
 	}
 	return ev, true
+}
+
+// permutations are the orders of n things, the identity first.
+func permutations(n int) [][]int {
+	if n == 1 {
+		return [][]int{{0}}
+	}
+	var out [][]int
+	for _, p := range permutations(n - 1) {
+		for at := len(p); at >= 0; at-- {
+			q := slices.Insert(slices.Clone(p), at, n-1)
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // Events are field-level test events for a where clause: a matching event
@@ -307,6 +338,18 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	}
 	if IsSensorNode(node) {
 		return sensorRecords(node, ev)
+	}
+	if parts, ok := UnionNodes[node]; ok {
+		// The events of the node whose code the event names, else of
+		// each.
+		var out []sigmacheck.Case
+		for _, p := range parts {
+			if c := ev[eventCode]; c == "" || !slices.ContainsFunc(parts, func(q string) bool { return slices.Contains(NodeEvents[q], c) }) ||
+				slices.Contains(NodeEvents[p], c) {
+				out = append(out, records(p, ev)...)
+			}
+		}
+		return out
 	}
 	switch node {
 	case AuditdNode:
@@ -616,6 +659,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SubjectUserName", ev["user"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5136", Data: s}}
 	case "ShareAccess":
+		if ev[eventCode] == "5140" {
+			// The share as a whole, accessed.
+			return []sigmacheck.Case{securityRecord(node, ev)}
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("5145")])
 		set(s, "ShareName", ev["share_name"])
 		set(s, "ShareLocalPath", ev["share_path"])
@@ -658,13 +705,19 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SidHistory", ev["sid_history"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4738", Data: s}}
 	case "GroupMemberAdded":
+		// A local group's (4732) unless the event names a global (4728)
+		// or universal (4756) group's, which have the same data.
+		id := "4732"
+		if c := ev[eventCode]; c == "4728" || c == "4756" {
+			id = c
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4732")])
 		set(s, "TargetUserName", ev["object"])
 		set(s, "TargetSid", ev["object_sid"])
 		set(s, "MemberSid", ev["member_sid"])
 		set(s, "MemberName", ev["member"])
 		set(s, "SubjectUserName", ev["user"])
-		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ExplicitLogon", "NtlmAuth", "KerberosPreAuth", "ComputerChanged", "AccountRenamed", "GroupChanged",
 		"LocalGroupRead", "CertRequest", "DirectoryAccess", "AccountChanged", "FilterChanged":
 		return []sigmacheck.Case{securityRecord(node, ev)}
@@ -814,6 +867,10 @@ func StoredCopies(c sigmacheck.Case) ([]map[string]any, string) {
 }
 
 // View is a stored event as the string field values a where clause reads.
+// A field with several values (a list's, ModifiedProperties{}.NewValue)
+// reads as its first, and its values are all kept too (under its name
+// and mvKey), which a comparison reads as Splunk does: it matches when
+// one of them does.
 func View(doc map[string]any) map[string]string {
 	out := map[string]string{}
 	for k, v := range doc {
@@ -826,6 +883,13 @@ func View(doc map[string]any) map[string]string {
 		case []any:
 			if len(x) > 0 {
 				out[k] = fmt.Sprint(x[0])
+			}
+			if len(x) > 1 {
+				vals := make([]string, len(x))
+				for i, e := range x {
+					vals[i] = fmt.Sprint(e)
+				}
+				out[k+mvKey] = strings.Join(vals, "\x00")
 			}
 		default:
 			out[k] = fmt.Sprint(x)
@@ -852,29 +916,29 @@ var wordRe = regexp.MustCompile(`^[DQ]WORD \((0x[0-9a-fA-F]+)\)$`)
 // what Eval says of the event as stored.
 func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
-	var out []sigmacheck.Case
 	bursts := 0
-	for _, ev := range append(pos, neg...) {
-		if r.Threshold != nil {
-			countable(r.Threshold, ev)
+	out := r.cases(append(pos, neg...), &bursts)
+	if !slices.ContainsFunc(out, func(c sigmacheck.Case) bool { return c.Expect }) {
+		// None is found: events that also pass the tests of the rule's
+		// later stages (hints), then those and the first events again
+		// in other folders (variants), each with repeats of its own.
+		hpos, hneg := r.hinted()
+		var moved []map[string]string
+		for _, ev := range append(slices.Clone(pos), hpos...) {
+			moved = append(moved, variants(r.Node, ev)...)
 		}
-		cs := records(r.Node, ev)
-		if r.Linux {
-			cs = linuxRecords(r.Node, ev)
+		// Then events whose lists and JSON values hold what the later
+		// stages read (structured).
+		var spos, sneg []map[string]string
+		for _, ev := range append(slices.Clone(pos[:min(len(pos), maxStructured)]), hpos[:min(len(hpos), maxStructured)]...) {
+			p, n := r.structured(ev)
+			spos, sneg = append(spos, p...), append(sneg, n...)
 		}
-		for _, c := range cs {
-			doc, model := Stored(c)
-			c.Source = "synthesized"
-			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
-			c.Expect = matched && r.Keeps(doc)
-			out = append(out, c)
-			if matched && !c.Expect && bursts < maxBursts {
-				// The later stages may count events: the same event,
-				// repeated, may come through.
-				if b := r.bursts(c); b != nil {
-					bursts++
-					out = append(out, b...)
-				}
+		for _, evs := range [][]map[string]string{append(slices.Clone(hpos), hneg...), append(moved, hneg...), append(spos, sneg...)} {
+			fresh := 0
+			if extra := r.cases(evs, &fresh); slices.ContainsFunc(extra, func(c sigmacheck.Case) bool { return c.Expect }) {
+				out = append(out, extra...)
+				break
 			}
 		}
 	}
@@ -890,6 +954,35 @@ func Cases(r *Rule) []sigmacheck.Case {
 		return false
 	})
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Expect && !out[j].Expect })
+	return out
+}
+
+// cases turns field-level events into the rule's test events, with
+// repeats that its later stages count of up to maxBursts events (bursts
+// counts them).
+func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
+	var out []sigmacheck.Case
+	for _, ev := range evs {
+		if r.Threshold != nil {
+			countable(r.Threshold, ev)
+		}
+		cs := r.records(ev)
+		for _, c := range cs {
+			doc, model := Stored(c)
+			c.Source = "synthesized"
+			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
+			c.Expect = matched && r.Keeps(doc)
+			out = append(out, c)
+			if matched && !c.Expect && *bursts < maxBursts {
+				// The later stages may count events: the same event,
+				// repeated, may come through.
+				if b := r.bursts(c); b != nil {
+					*bursts++
+					out = append(out, b...)
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -1005,6 +1098,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 	return reads(r, c) && r.Keeps(doc)
 }
 
+// Matches reports whether a rule's where clause reads an event as one of
+// its node's events, before the rule's later stages (Reads with them).
+func Matches(r *Rule, c sigmacheck.Case) bool { return reads(r, c) }
+
 // reads is Reads without the rule's later stages.
 func reads(r *Rule, c sigmacheck.Case) bool {
 	doc, model := Stored(c)
@@ -1058,17 +1155,17 @@ var NodeEvents = map[string][]string{
 	"ObjectAccess":      {"4663"},
 	"ServiceInstalled":  {"7045"},
 	"DirectoryChange":   {"5136"},
-	"ShareAccess":       {"5145"},
+	"ShareAccess":       {"5145", "5140"},
 	"KerberosTGT":       {"4768"},
 	"KerberosService":   {"4769"},
 	"UserChanged":       {"4738"},
-	"GroupMemberAdded":  {"4732"},
+	"GroupMemberAdded":  {"4732", "4728", "4756"},
 	"ExplicitLogon":     {"4648"},
 	"NtlmAuth":          {"4776"},
 	"KerberosPreAuth":   {"4771"},
 	"ComputerChanged":   {"4741", "4742"},
 	"AccountRenamed":    {"4781"},
-	"GroupChanged":      {"4727", "4730", "4737"},
+	"GroupChanged":      {"4727", "4730", "4737", "4731", "4744", "4749", "4754", "4759", "4783", "4790"},
 	"LocalGroupRead":    {"4798", "4799"},
 	"CertRequest":       {"4886", "4887"},
 	"ProcessTerminated": {"5"},

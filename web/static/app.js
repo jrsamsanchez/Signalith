@@ -972,7 +972,9 @@ const commandOf = (seg) => ((seg || '').trim().match(/^[a-z_]+/i) || [''])[0].to
 function eventsPart(q) {
   const segs = pipeSegments(q);
   const i = segs.findIndex((s, n) => n > 0 && ['stats', 'timechart', 'top'].includes(commandOf(s)));
-  return i < 0 ? null : segs.slice(0, i).map((s) => s.trim()).join('\n| ') || '*';
+  // The events behind the numbers; an outputlookup among them wrote its
+  // table already and is not run again.
+  return i < 0 ? null : segs.slice(0, i).filter((s, n) => n === 0 || commandOf(s) !== 'outputlookup').map((s) => s.trim()).join('\n| ') || '*';
 }
 function quoteValue(v) {
   v = String(v);
@@ -1043,7 +1045,7 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous'],
+  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous', 'union', 'geostats', 'extract', 'outlier', 'gauge', 'multisearch', 'timewrap', 'cluster', 'xpath', 'abstract', 'highlight', 'anomalydetection', 'correlate', 'predict', 'set', 'setfields', 'kmeans', 'eventcount', 'outputlookup', 'from'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
   evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
@@ -1332,7 +1334,7 @@ function acceptSuggestion(i) {
   onQueryInput();
 }
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch(); return; }
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
   if (!suggestions.length) return;
   if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
@@ -1552,8 +1554,13 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-async function runSearch() {
+// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// writeLookups, so an outputlookup in the query writes its table when the
+// user runs it, not again when a time change, sort, filter or drilldown
+// re-runs it, nor when the Ask box runs a query it wrote.
+async function runSearch(opts) {
   const query = queryBox.value.trim() || '*';
+  const writeLookups = !!(opts && opts.writeLookups);
   const earliest = timeEarliest();
   const seq = ++searchSeq;
   $('query-error').classList.add('hidden');
@@ -1562,7 +1569,7 @@ async function runSearch() {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1585,7 +1592,7 @@ async function runSearch() {
     if (seq === searchSeq) setSearching(false);
   }
 }
-$('run').addEventListener('click', runSearch);
+$('run').addEventListener('click', () => runSearch({ writeLookups: true }));
 $('time').addEventListener('change', () => {
   const v = $('time').value;
   if (v === QUERY_TIME) return;

@@ -1,15 +1,15 @@
 package splcheck
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
-	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -41,6 +41,16 @@ var fieldTokenRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'([^']+)'|([A-Za-z_][\w
 // ("" for a raw search).
 func (r *Rule) postCommands(stages []string, field func(string) (string, bool), group string) error {
 	var parts []string
+	// scan are the stages as they name fields, for the copies below: a
+	// lookup's fields without its table and columns.
+	var scan []string
+	multi := map[string]bool{}
+	outs := map[string]*lookupOut{}
+	grouped := group != ""
+	var groupStages []string
+	if group != "" {
+		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
+	}
 	for _, s := range stages {
 		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
 		if s == "" {
@@ -49,12 +59,33 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
-		// A later search filters the rows as a where of the same terms
-		// does in Signalith: case-insensitive, with wildcards.
+		if lookupStageRe.MatchString(s) {
+			s = nodeFieldRe.ReplaceAllString(s, "$1")
+			before := append(slices.Clone(groupStages), parts...)
+			single := func(f string) bool { return fieldSingle(f, before, group == "") }
+			conv, names, err := r.lookupStage(s, strings.Join(before, "\n| "), grouped, field, single, outs)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, conv...)
+			scan = append(scan, "table "+strings.Join(names, " "))
+			continue
+		}
+		if w, ok := multiIn(s, multi); ok {
+			s = w
+		} else if err := multiFilter(s, multi); err != nil {
+			return err
+		}
+		// A later search filters the rows as Signalith's search command
+		// does: case-insensitive, with wildcards, terms side by side
+		// joined by AND, and OR before AND, as in Splunk's search.
 		if m := searchRe.FindStringSubmatch(s); m != nil {
-			s = "where " + m[1]
+			if err := laterSearch(m[1]); err != nil {
+				return err
+			}
+			s = "search " + m[1]
 		} else if m := whereRe.FindStringSubmatch(s); m != nil {
-			cond := quoteCompared(quoteDotted(m[1]))
+			cond := inStarCompared(quoteCompared(quoteDotted(m[1])))
 			s = "where " + cond
 			if err := splunkWhere(cond); err != nil {
 				return err
@@ -66,24 +97,33 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		// it groups by. Splunk's add-ons give every event the fields they
 		// define; a field Signalith keeps none of is "unknown" instead, as
 		// a tstats search's missing fields are.
+		expand, err := multiUse(nodeFieldRe.ReplaceAllString(s, "$1"), outs)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, expand...)
 		if group == "" {
 			if fill := missingGroups(s, parts, field); len(fill) > 0 {
 				parts = append(parts, "fillnull value=unknown "+strings.Join(fill, " "))
 			}
 		}
 		parts = append(parts, s)
+		scan = append(scan, s)
+		grouped = grouped || strings.HasPrefix(s, "stats ") || strings.HasPrefix(s, "table ")
 	}
 	if len(parts) == 0 {
 		return nil
 	}
 	text := strings.Join(parts, "\n| ")
+	named := strings.Join(scan, "\n| ")
 	if group != "" {
 		text = group + "\n| " + nodeFieldRe.ReplaceAllString(text, "$1")
+		named = group + "\n| " + nodeFieldRe.ReplaceAllString(named, "$1")
 	}
 	// The fields the stages name, copied to Splunk's names.
 	var copies []string
 	seen := map[string]bool{}
-	for _, m := range fieldTokenRe.FindAllStringSubmatch(text, -1) {
+	for _, m := range fieldTokenRe.FindAllStringSubmatch(named, -1) {
 		name := m[1] + m[2]
 		if name == "" || seen[name] {
 			continue
@@ -103,13 +143,112 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Lookup, *query.Join, *query.Append, *query.AppendPipe, *query.InputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
+		case *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}
 	r.Post = text
 	r.post = q.Commands
+	r.postField = field
+	if len(r.Lookups) > 0 {
+		var ts []*lookuptables.Table
+		for _, name := range r.Lookups {
+			ts = append(ts, r.lookups[name].Table)
+		}
+		r.lookupStore = lookuptables.NewPackStore(ts)
+	}
 	return nil
+}
+
+// makemvRe is a makemv stage, with the field it splits; splitEvalRe an
+// eval that sets a field to a split of text.
+var (
+	makemvRe    = regexp.MustCompile(`(?is)^makemv\b.*?\s([A-Za-z_][\w.]*)\s*$`)
+	splitEvalRe = regexp.MustCompile(`(?i)(?:^eval\s+|,\s*)([A-Za-z_][\w.]*)\s*=\s*split\s*\(`)
+)
+
+// multiFilter returns an error for a later search or where that filters
+// on a field an earlier stage made multivalue (makemv, split), noting
+// the fields stage makes so in multi. Splunk keeps the row when any of
+// the values matches; Signalith's filter does not.
+func multiFilter(stage string, multi map[string]bool) error {
+	if m := makemvRe.FindStringSubmatch(stage); m != nil {
+		multi[m[1]] = true
+		return nil
+	}
+	for _, m := range splitEvalRe.FindAllStringSubmatch(stage, -1) {
+		multi[m[1]] = true
+	}
+	cond := ""
+	if m := searchRe.FindStringSubmatch(stage); m != nil {
+		cond = m[1]
+	} else if m := whereRe.FindStringSubmatch(stage); m != nil {
+		cond = m[1]
+	}
+	for _, m := range fieldTokenRe.FindAllStringSubmatch(cond, -1) {
+		if f := m[1] + m[2]; multi[f] {
+			return fmt.Errorf("search has a later stage Signalith reads differently: %s filters the values of multivalue %s", firstWords(stage), f)
+		}
+	}
+	return nil
+}
+
+// multiInRe is a later search of one field against a list, and inItemRe
+// one of its values: quoted text or a bare word.
+var (
+	multiInRe = regexp.MustCompile(`(?is)^search\s+([A-Za-z_][\w.]*)\s+IN\s*\(([^()]*)\)\s*$`)
+	inItemRe  = regexp.MustCompile(`^(?:"([^"*\\]*)"|([A-Za-z_][\w.\-]*))$`)
+)
+
+// multiIn writes a later search of a field an earlier stage made
+// multivalue against a list of values as the where Signalith reads the
+// same way: Splunk's search keeps the row when one of the field's values
+// is one of the list's, ignoring case, and drops it when the field has no
+// value; in() over the field's values in lower case does both. Only text
+// without a * qualifies (no number, which a search may read as one).
+func multiIn(stage string, multi map[string]bool) (string, bool) {
+	m := multiInRe.FindStringSubmatch(stage)
+	if m == nil || !multi[m[1]] {
+		return "", false
+	}
+	var vals []string
+	for _, v := range strings.Split(m[2], ",") {
+		p := inItemRe.FindStringSubmatch(strings.TrimSpace(v))
+		if p == nil {
+			return "", false
+		}
+		t := p[1] + p[2]
+		if t == "" || strings.EqualFold(t, "AND") || strings.EqualFold(t, "OR") || strings.EqualFold(t, "NOT") {
+			return "", false
+		}
+		if _, err := strconv.ParseFloat(t, 64); err == nil {
+			return "", false
+		}
+		vals = append(vals, `"`+strings.ToLower(t)+`"`)
+	}
+	f := quoteField(m[1])
+	return "where in(mvmap(" + f + ", lower(" + f + ")), " + strings.Join(vals, ", ") + ")", true
+}
+
+// laterSearch returns an error for a later search's terms that Signalith
+// reads differently: a bare term (Splunk looks for it in the event's raw
+// text, which a row of a later stage need not have).
+func laterSearch(terms string) error {
+	q, err := query.Parse("* | search " + terms)
+	if err != nil || len(q.Commands) != 1 || strings.HasPrefix(strings.TrimSpace(terms), "[") {
+		return nil // reported when the stages are parsed (a subsearch's too)
+	}
+	var bad error
+	w, ok := q.Commands[0].(*query.Where)
+	if !ok {
+		return nil // search *, which keeps every row
+	}
+	walkFilter(w.Expr, func(e query.Expr) {
+		if t, ok := e.(*query.Text); ok && bad == nil {
+			bad = fmt.Errorf("search has a later stage Signalith reads differently: search %s has the bare term %s", firstWords(terms), t.Value)
+		}
+	})
+	return bad
 }
 
 // positionRe is where a query error says it is, which only the query's
@@ -162,7 +301,7 @@ func (r *Rule) KeepsAll(docs []map[string]any) bool {
 	if len(r.post) == 0 {
 		return true
 	}
-	rows, err := search.RunCommands(context.Background(), docs, r.post)
+	rows, err := r.runPost(docs)
 	return err == nil && len(rows) > 0
 }
 
@@ -178,8 +317,9 @@ var burstSizes = []int{1, 2, 3, 4, 6, 11, 21, 26, 31, 51, 101, 201}
 
 // bursts returns, for an event the rule's filter matches but its later
 // stages drop, the smallest repeat of it that they keep (with one or
-// none of its fields different each time), and the largest smaller one
-// tried, which they drop; nil when no repeat comes through.
+// none of its fields different each time, or failing that every field
+// they count distinct values of), and the largest smaller one tried,
+// which they drop; nil when no repeat comes through.
 func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
 	// Splunk's stats drops events that miss a field it groups by, so the
 	// event gets each one it misses (the record's own names, as a cloud
@@ -204,6 +344,19 @@ func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
 			varies = append(varies, []string{k})
 		}
 	}
+	if out := r.burst(c, varies); out != nil {
+		return out
+	}
+	if len(counted) > 1 {
+		// A count of several fields' distinct values (addresses and
+		// browsers): all of them different each time.
+		return r.burst(c, [][]string{counted})
+	}
+	return nil
+}
+
+// burst is bursts with the fields each repeat varies.
+func (r *Rule) burst(c sigmacheck.Case, varies [][]string) []sigmacheck.Case {
 	for i, n := range burstSizes {
 		for _, vary := range varies {
 			if n == 1 && vary != nil {
@@ -283,7 +436,14 @@ func splunkWhere(cond string) error {
 	}
 	for _, m := range whereInRe.FindAllStringSubmatch(cond, -1) {
 		for _, v := range strings.Split(m[1], ",") {
-			values = append(values, strings.TrimSpace(v))
+			v = strings.TrimSpace(v)
+			if plainFieldRe.MatchString(v) {
+				// Splunk reads a bare word in the list as a field, which
+				// can hold several values or none; its documentation does
+				// not say what IN does with those.
+				return fmt.Errorf("search has a later stage Signalith reads differently: where IN with a field in its list (%s)", v)
+			}
+			values = append(values, v)
 		}
 	}
 	for _, v := range values {
@@ -293,6 +453,9 @@ func splunkWhere(cond string) error {
 	}
 	return nil
 }
+
+// notBeforeRe is a NOT just before a term.
+var notBeforeRe = regexp.MustCompile(`(?i)\bNOT\s*$`)
 
 // missingGroups are the fields a stats stage groups by that neither
 // Signalith keeps (field) nor an earlier stage makes.
@@ -345,6 +508,32 @@ func quoteCompared(cond string) string {
 	return b.String()
 }
 
+// starCmpRe is a field compared with = to quoted text that holds a *.
+var starCmpRe = regexp.MustCompile(`(^|[\s(])([A-Za-z_][\w.{}]*|'[^']+')\s*==?\s*("[^"\\]*\*[^"\\]*")`)
+
+// inStarCompared writes each comparison of a field with = to quoted text
+// holding a * as in(field, text), which Signalith reads as Splunk's where
+// reads the comparison: the text compared exactly, * and all, and false
+// for a field with no value. (A plain filter would read the * as a
+// wildcard.) Under NOT, which may differ on a null field, it is left as
+// it is, and refused.
+func inStarCompared(cond string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range starCmpRe.FindAllStringSubmatchIndex(cond, -1) {
+		name := cond[m[4]:m[5]]
+		if strings.Count(cond[:m[0]], `"`)%2 == 1 || slices.Contains(whereWords, strings.ToLower(name)) ||
+			notBeforeRe.MatchString(cond[:m[4]]) {
+			continue
+		}
+		b.WriteString(cond[last:m[4]])
+		b.WriteString("in(" + quoteField(strings.Trim(name, "'"), true) + ", " + cond[m[6]:m[7]] + ")")
+		last = m[1]
+	}
+	b.WriteString(cond[last:])
+	return b.String()
+}
+
 func quoteComparedText(cond string) string {
 	return fieldCmpRe.ReplaceAllStringFunc(cond, func(m string) string {
 		p := fieldCmpRe.FindStringSubmatch(m)
@@ -359,6 +548,9 @@ func quoteComparedText(cond string) string {
 		return left + op + quoteField(right, true) + after
 	})
 }
+
+// lookupStageRe is a lookup stage.
+var lookupStageRe = regexp.MustCompile(`(?i)^lookup\s`)
 
 // postEvalRe is an eval stage.
 var postEvalRe = regexp.MustCompile(`(?is)^eval\s+(.+)$`)

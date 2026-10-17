@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -83,13 +85,25 @@ type Scheduler struct {
 	CatchUp time.Duration
 	// Runtime keeps the run state and throttle documents, in the index
 	// RuntimeIndex; nil keeps them in memory, for tests and throwaway
-	// schedulers. Epoch is the job lease's epoch, written into them, so a
-	// server that lost the lease cannot write over a newer leader's state;
-	// NodeID names this server in them.
+	// schedulers. Epoch is the job lease's epoch: the detection epoch
+	// written into them comes from it (see epoch.go), so a server that
+	// lost the lease cannot write over a newer leader's state; NodeID
+	// names this server in them.
 	Runtime      RunStore
 	RuntimeIndex string
 	Epoch        func() int64
 	NodeID       string
+	// Counter, when set, says whether the epoch written into those
+	// documents comes from the detepoch document rather than the lease
+	// (cluster level 11, see epoch.go).
+	Counter func() bool
+	// Owned, when set, spreads the schedule over several servers (see
+	// assign.go): it returns the buckets this server runs now, each with
+	// its detection epoch, and ok false when it may run none. Only the
+	// rules of those buckets run here, each fenced with its bucket's
+	// epoch. Tenant is the tenant the rules hash with.
+	Owned  func() (buckets map[int]int64, ok bool)
+	Tenant string
 
 	mu sync.Mutex
 	// flags are this server's running and waiting runs.
@@ -99,6 +113,13 @@ type Scheduler struct {
 	// the schedule.
 	det         map[string]*detEntry
 	loadedEpoch int64
+	// detEpoch is the detection epoch taken for that copy, and
+	// loadedCounter whether it came from the detepoch document.
+	detEpoch      int64
+	loadedCounter bool
+	// spread is detections.spread.
+	spread atomic.Bool
+	own    owned
 	// firstStart says the run state, when last read, had no detstate
 	// documents at all: the dispatch after that read starts each enabled
 	// rule at its current slot rather than its next one.
@@ -309,6 +330,13 @@ func (s *Scheduler) SetMaxFindingsPerRun(n int) {
 	s.MaxFindingsPerRun = n
 }
 
+// SetSpread sets detections.spread, which the leader's Assigner reads
+// (SpreadOn).
+func (s *Scheduler) SetSpread(on bool) { s.spread.Store(on) }
+
+// SpreadOn reports detections.spread as last set.
+func (s *Scheduler) SpreadOn() bool { return s.spread.Load() }
+
 // SetCatchUp changes how far back missed slots are run, from the next
 // tick on, as detections.catch_up says: zero turns catching up off.
 func (s *Scheduler) SetCatchUp(d time.Duration) {
@@ -424,6 +452,9 @@ func (s *Scheduler) dispatch(ctx context.Context, wg *sync.WaitGroup) {
 	limit := s.CatchUpLimit()
 	var current, catchup []batch
 	for _, d := range s.Library.List() {
+		if _, mine := s.ownsRule(d.ID); !mine {
+			continue
+		}
 		b, ok := s.plan(ctx, d, now, limit, epoch, first)
 		if !ok {
 			continue
@@ -501,7 +532,8 @@ func (s *Scheduler) runBatch(ctx context.Context, b batch, epoch int64, workers,
 		if b.current {
 			got()
 		}
-		ok := ctx.Err() == nil && s.allowed(ctx) && s.epoch() == epoch
+		_, mine := s.ownsRule(b.d.ID)
+		ok := ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && mine
 		var err error
 		if ok {
 			s.setFlags(b.d.ID, runFlags{running: true})
@@ -717,6 +749,8 @@ func (s *Scheduler) housekeep(ctx context.Context, epoch int64) {
 		ids = append(ids, id)
 	}
 	s.mu.Unlock()
+	// In spread mode, only the rules of this server's buckets.
+	ids = slices.DeleteFunc(ids, func(id string) bool { _, mine := s.ownsRule(id); return !mine })
 	have := map[string]bool{}
 	for _, d := range s.Library.List() {
 		have[d.ID] = true
@@ -736,6 +770,9 @@ func (s *Scheduler) housekeep(ctx context.Context, epoch int64) {
 	for _, doc := range manual {
 		var m manualDoc
 		if json.Unmarshal(doc.Source, &m) != nil || m.DetectionID == "" || have[m.DetectionID] || known[m.DetectionID] {
+			continue
+		}
+		if _, mine := s.ownsRule(m.DetectionID); !mine {
 			continue
 		}
 		known[m.DetectionID] = true

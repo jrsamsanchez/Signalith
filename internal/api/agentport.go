@@ -18,7 +18,7 @@ import (
 
 // agentRoutes are the routes agents call. They check an agent token or
 // osquery node key themselves, never a sign-in.
-var agentRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute}, osqueryRoutes, sensorPublicRoutes)
+var agentRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute}, osqueryRoutes, sensorPublicRoutes, hecRoutes)
 
 // routeAgentIntake registers the agent routes on mux.
 func (s *Server) routeAgentIntake(mux *http.ServeMux) {
@@ -26,6 +26,7 @@ func (s *Server) routeAgentIntake(mux *http.ServeMux) {
 	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
 	s.routeOsquery(mux)
 	s.routeSensorAgent(mux)
+	s.routeHEC(mux)
 }
 
 // AgentHandler returns the handler of the agent port: the agent routes,

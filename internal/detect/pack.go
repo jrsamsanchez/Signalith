@@ -26,7 +26,7 @@ import (
 // pass in CI are listed in the manifest (see pack_test.go and
 // internal/sigmacheck).
 //
-//go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml
+//go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml packs/*/lookups/*
 var packFS embed.FS
 
 // Origin says where a detection from a content pack came from. It is
@@ -73,6 +73,9 @@ type Pack struct {
 	Rules  []PackRule `yaml:"rules" json:"-"`
 
 	macros map[string]*splcheck.Macro
+	// lookups are a splunk pack's tables (lookups/), which its rules'
+	// lookup stages read, by their names in security_content.
+	lookups map[string]*splcheck.Lookup
 }
 
 // PackRule is one rule in a manifest.
@@ -105,6 +108,11 @@ func builtinPacks() *packSet {
 	embeddedOnce.Do(func() {
 		embedded.packs, embedded.dets, _, embedded.err = loadPacks(packFS, false)
 		embedded.version = packsVersion(embedded.packs)
+		packsMu.RLock()
+		if update == nil {
+			usePackTables(embedded.packs)
+		}
+		packsMu.RUnlock()
 	})
 	return &embedded
 }
@@ -169,13 +177,20 @@ func LoadPacks(fsys fs.FS) (ps []*Pack, ds []*Detection, skipped []error, err er
 // goes back to the packs built into Signalith. Libraries pick them up
 // with Library.ReloadPacks.
 func UsePacks(ps []*Pack, ds []*Detection, version string) {
+	var builtin *packSet
+	if ps == nil {
+		// Converted before the lock, which converting takes.
+		builtin = builtinPacks()
+	}
 	packsMu.Lock()
 	defer packsMu.Unlock()
 	if ps == nil {
 		update = nil
+		usePackTables(builtin.packs)
 		return
 	}
 	update = &packSet{packs: ps, dets: ds, version: version}
+	usePackTables(ps)
 }
 
 func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error) {
@@ -200,6 +215,9 @@ func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error)
 		dir := path.Dir(m)
 		if p.Format == "splunk" {
 			if p.macros, err = loadMacros(fsys, dir); err != nil {
+				return nil, nil, nil, err
+			}
+			if p.lookups, err = loadLookups(fsys, dir); err != nil {
 				return nil, nil, nil, err
 			}
 		}

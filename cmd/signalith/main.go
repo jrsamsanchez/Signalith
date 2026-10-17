@@ -1446,13 +1446,21 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if err := notes.Load(); err != nil {
 		log.Error("notifications are not sent until the notifications file is fixed", "err", err)
 	}
-	sched := &detect.Scheduler{
-		Library: lib, Engine: eng, Findings: fstore, Log: log,
-		Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix}, Assets: lists,
-		MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
-		Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
+	newSched := func() *detect.Scheduler {
+		s := &detect.Scheduler{
+			Library: lib, Engine: eng, Findings: fstore, Log: log,
+			Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix}, Assets: lists,
+			MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
+			Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
+		}
+		s.SetCatchUp(c.DetectionsCatchUp())
+		s.SetSpread(c.Detections.Spread)
+		return s
 	}
-	sched.SetCatchUp(c.DetectionsCatchUp())
+	sched := newSched()
+	// spread runs the detection buckets assigned to this server, when the
+	// detections are spread over the servers (see detspread.go).
+	var spread *detSpread
 	// Behavior baselines: the server that runs the background jobs learns
 	// how each user and host usually behaves, and adds risk for what is
 	// new or rare (see internal/baselines).
@@ -1847,6 +1855,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			sched.Start(ctx)
 			log.Info("detection scheduler stopped")
 		}},
+		{Name: "detection assignment", Run: func(ctx context.Context) {
+			if spread == nil || !ready(ctx) || !findingsOK {
+				return
+			}
+			spread.assign(ctx)
+		}},
 		{Name: "threat intel feeds", Run: func(ctx context.Context) {
 			if !ready(ctx) || !intelOK {
 				return
@@ -1959,6 +1973,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		if r.shared != nil {
+			sched.Counter = r.shared.DetectionEpochs
+			spread = newDetSpread(r.node, r.shared, tenants.Default, c.LeaderEligible(), sched, newSched(), r.detPrints,
+				func() string { return detFilesFingerprint(c, r.shared, sharedOn, true) }, log)
+			srv.SpreadScheduler = spread.sched
+			if c.LeaderEligible() {
+				in.jobs.Go(func() {
+					if ready(ctx) && findingsOK {
+						spread.follow(ctx, &in.jobs)
+					}
+				})
+			}
+		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
@@ -2045,6 +2072,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			TLS:        tlsStatus,
 			OSIdentity: osIdentity,
 			Busy:       jobsBusy(ret, r.shared),
+			DetTenants: r.detPrints.all,
 		}
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {

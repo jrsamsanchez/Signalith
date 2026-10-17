@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -46,6 +48,54 @@ func loadMacros(fsys fs.FS, dir string) (map[string]*splcheck.Macro, error) {
 		out[m.Name] = m
 	}
 	return out, nil
+}
+
+// UseLookups gives a splunk pack the tables its rules' lookup stages read
+// (the pack generator reads them from a security_content checkout).
+func (p *Pack) UseLookups(l map[string]*splcheck.Lookup) { p.lookups = l }
+
+// Lookups are a splunk pack's tables, by their names in security_content.
+func (p *Pack) Lookups() map[string]*splcheck.Lookup { return p.lookups }
+
+// loadLookups reads a splunk pack's lookups folder: each table's yml, as
+// security_content describes it, and its CSV beside it.
+func loadLookups(fsys fs.FS, dir string) (map[string]*splcheck.Lookup, error) {
+	files, err := fs.Glob(fsys, path.Join(dir, "lookups", "*.yml"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]*splcheck.Lookup{}
+	for _, f := range files {
+		meta, err := fs.ReadFile(fsys, f)
+		if err != nil {
+			return nil, err
+		}
+		data, err := fs.ReadFile(fsys, strings.TrimSuffix(f, ".yml")+".csv")
+		if err != nil {
+			return nil, err
+		}
+		l, err := splcheck.ParseLookup(meta, data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		if l.Name != strings.TrimSuffix(path.Base(f), ".yml") {
+			return nil, fmt.Errorf("%s: the table is named %s", f, l.Name)
+		}
+		out[l.Name] = l
+	}
+	return out, nil
+}
+
+// usePackTables makes the tables of packs the ones lookup searches read,
+// as the packs' rules do.
+func usePackTables(ps []*Pack) {
+	var ts []*lookuptables.Table
+	for _, p := range ps {
+		for _, name := range slices.Sorted(maps.Keys(p.lookups)) {
+			ts = append(ts, p.lookups[name].Table)
+		}
+	}
+	lookuptables.SetPackTables(ts)
 }
 
 // SplunkFilter is a Splunk rule's where clause as a Signalith filter,
@@ -259,6 +309,10 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // drive,
 // an audit record per host, type, program and what it ran or touched.
 func splunkThrottle(node, dm string) []string {
+	if parts, ok := splcheck.UnionNodes[node]; ok {
+		// A node of several others' events, as the first's.
+		node = parts[0]
+	}
 	switch node {
 	case "ObjectAccess":
 		return []string{"host", "process_path", "object_path"}
@@ -321,7 +375,7 @@ func splunkThrottle(node, dm string) []string {
 // risk, as in Splunk's risk-based alerting. A finding is made once a day
 // per host, program and what it acted on.
 func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
-	rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
+	rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path), Lookups: p.lookups})
 	if err != nil {
 		return nil, err
 	}

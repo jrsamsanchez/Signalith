@@ -31,7 +31,9 @@ Admins add tables on **Settings > Lookups**:
 2. Pick the CSV file. Its first line names the columns.
 3. Check the name (taken from the file name). Searches use this name, so it is
    lower-case letters, digits, `-` and `_`.
-4. Select **Add table**.
+4. Optionally, under **Matching**, name the **Wildcard columns** and turn on
+   **Ignore case** (see [Wildcards and case](#wildcards-and-case)).
+5. Select **Add table**.
 
 Searches and detections use the table right away. **Replace…** in a table's menu
 uploads a new file over all its rows, **View** shows the first rows, **Download
@@ -84,9 +86,13 @@ lookup <table> <column> [AS <field>] [, ...] [OUTPUT | OUTPUTNEW <column> [AS <f
 - `OUTPUTNEW` adds only fields an event does not have already. `OUTPUT` replaces
   them.
 
-Matching is exact, case included: `WEB-01` does not match `web-01`. Use
-`eval host=lower(host)` before `lookup` when the case differs. An event whose field
-is missing or empty, or that matches no row, is left as it is.
+Matching is exact, case included, unless the table says otherwise (see
+[Wildcards and case](#wildcards-and-case)): `WEB-01` does not match `web-01`. An
+event whose field is missing or empty, or that matches no row, is left as it is.
+
+`local=true` and `update=true` before the table name are accepted for searches
+written for Splunk and change nothing: tables are on the server that runs the
+search and always current.
 
 When several rows match, each added field holds the values of all of them (up to
 100). A multivalue field, such as one from `rex max_match=0`, looks up each of its
@@ -106,6 +112,25 @@ datamodel=Endpoint
 | where isnull(approved)
 ```
 
+### Wildcards and case
+
+A table can match like Splunk's `match_type = WILDCARD(<column>)` and
+`case_sensitive_match = false`, which many published detections' lookups need:
+
+- In a **wildcard column**, `*` in a cell matches any text, including none:
+  `*\psexec*.exe` matches `C:\Tools\PsExec64.exe` (with **Ignore case**). A
+  cell without `*` still matches exactly. Every other character, `?` included,
+  matches itself.
+- **Ignore case** makes every key column match whatever the case.
+
+Rows without patterns are found at once; rows with patterns are tried one by one
+for each event, in table order and after the exact matches, so a table of many
+thousand patterns makes searches slower. Each try counts toward the search's work
+limit.
+
+Set both when adding or replacing the table. Replacing a table sets them again
+from the form, which starts with the table's current choices.
+
 ## The inputlookup command
 
 `inputlookup` starts a search with the rows of a table instead of events, to
@@ -118,8 +143,47 @@ check a table or report on it:
 
 `max=N` reads at most N rows (`| inputlookup max=50 owners`); without it a
 search reads up to the event limit (`search.max_events`, 10,000 by default).
-It must come first, with nothing before the `|`. An empty cell is a missing
+It must come first, with nothing before the `|`, unless it has `append=true`
+(`| inputlookup append=true owners`), which adds the table's rows after the
+rows the search has so far. `where` keeps only the rows that match search
+terms, before `max=` counts them:
+`| inputlookup owners where team=Web NOT user=bob`. The terms are the ones a
+search starts with (`field=value`, wildcards, `IN`, `AND`, `OR`, `NOT`), without
+`index=`, time ranges or subsearches. An empty cell is a missing
 field, so `where isnull(owner)` finds rows with no owner.
+
+## The outputlookup command
+
+`outputlookup` writes a search's rows to a table and passes them on, to keep
+a list a search builds, such as the users seen this week:
+
+```
+index=signalith-authentication-* earliest=-7d
+| stats count by user
+| outputlookup weekly_users
+```
+
+Only admins can use it, and it writes only when they press **Run** (or
+Ctrl+Enter) on the Search page. Changing the time range, sorting, filtering
+on a value, drilling down or opening the Events tab runs the search again
+without writing, and so does the Ask box. Detections cannot use it (a
+detection with it is refused when saved), nor can dashboards, the AI tools or
+API tokens. Each table written is in the audit log, with who wrote it and how
+many rows. Through the API, a search writes only with `"write_lookups": true`
+in its request.
+
+A table that exists is never replaced by accident. Without `append=`, the
+command makes a new table and fails if one by that name exists; `append=t`
+adds the rows after the table's own (new fields become new columns), and
+`append=f` replaces the table. The table keeps its wildcard and case
+settings. The same limits apply as to an upload. Every field is written except
+those starting with `_`, apart from `_time`; a multivalue field is written as
+its values on separate lines.
+
+`max=N` writes at most N rows. With no rows, `create_empty=f` makes no new
+table, and `override_if_empty=f` leaves a table `append=f` would replace as
+it is. A name may end in `.csv`, which is dropped. Like uploads, it is refused
+while several servers share the data.
 
 ## GeoIP database for iplocation
 
@@ -151,6 +215,45 @@ time a search uses it, and is checked before use; a damaged file, one larger tha
 512 MB, or a database of another kind (such as ASN) is not used, and the server log
 says why while searches keep the file they had.
 
+## Tables that come with content packs
+
+Some [Splunk Security Content](detections.md#splunk-security-content) rules look
+values up in a table Splunk publishes with them: known named pipes of remote access
+tools, PowerShell attack strings, vulnerable drivers and the like. The Splunk pack
+ships those tables (`internal/detect/packs/splunk/lookups`), each as
+security_content has it: the CSV and the yml that says how it matches. Only tables
+that a shipped rule reads are included.
+
+A pack's table is named after its pack: `browser_app_list` in security_content is
+`splunk-browser_app_list` in Signalith, and the converted rules look up that name.
+So a table of yours named `browser_app_list` stays yours, and a pack update never
+replaces it, nor does your table change what a pack rule finds. Names starting with
+`splunk-` are kept for the pack's tables: adding a table with such a name is
+refused. (A table of yours saved under such a name before is hidden by the pack's
+table of the same name, and is not listed; rename its file in the tables folder.)
+
+Pack tables:
+
+- are kept in memory with the pack, not in the tables folder, and don't count
+  toward the [limits](#limits) on your tables;
+- are not listed on **Settings > Lookups**, which lists your own tables, but
+  searches can read them like any table (`| inputlookup splunk-loldrivers`), and
+  `GET /api/lookuptables/splunk-loldrivers` shows one, with `"pack": "splunk"`;
+- can't be replaced or deleted; a [content update](detections.md#content-updates)
+  that brings new rules brings their tables too.
+
+Each table's yml settings are kept: `match_type: WILDCARD(<column>)` makes a
+[wildcard column](#wildcards-and-case), `case_sensitive_match: false` ignores case,
+and `min_matches: 1` with `default_match` fills the output fields of an event no
+row matches. `max_matches: 1` keeps the first matching row in the table's order, as
+Splunk does; a rule whose table has a row with a pattern before a row without one
+that it also matches is left out, since Signalith tries the rows without patterns
+first. A rule is left out too when its table's settings, or how its later stages
+read the output, could give a different result than in Splunk, for example a table
+with spaces around values (Splunk keeps them; Signalith's CSV reading drops them),
+or an output compared with a value while several rows may match. The pack's
+`REPORT.md` lists each rule left out and why.
+
 ## Several servers
 
 Each server keeps its tables in `tables` inside the folder of the asset and
@@ -162,10 +265,10 @@ tables but cannot change them, and the API answers changes with `409 Conflict`.
 
 | Route | Role | What it does |
 | --- | --- | --- |
-| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change |
-| `GET /api/lookuptables/{name}` | viewer | One table and its first 1,000 rows |
+| `GET /api/lookuptables` | viewer | Lists the tables: name, columns, rows, bytes, last change, and `wildcard` and `ignore_case` when set. [Content packs' tables](#tables-that-come-with-content-packs) are not listed |
+| `GET /api/lookuptables/{name}` | viewer | One table and its first 1,000 rows; a content pack's table has `pack` set |
 | `GET /api/lookuptables/{name}.csv` | viewer | The whole table as CSV |
-| `PUT /api/lookuptables/{name}` | admin | Adds or replaces a table; the body is the CSV file |
-| `DELETE /api/lookuptables/{name}` | admin | Deletes a table |
+| `PUT /api/lookuptables/{name}` | admin | Adds or replaces a table; the body is the CSV file. `?wildcard=col1,col2` names wildcard columns and `?case_sensitive=false` ignores case; without them the table matches exactly |
+| `DELETE /api/lookuptables/{name}` | admin | Deletes a table (not a content pack's) |
 
 API tokens can only read, so changes come from a signed-in admin.

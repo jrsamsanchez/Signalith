@@ -43,6 +43,10 @@ func (e *Engine) mapSearch(ctx context.Context, res *Result, c *query.Map, outer
 			return &QueryError{Msg: "map's search for row " + strconv.Itoa(i+1) + " does not parse: " + err.Error()}
 		}
 		sq := subsearch(q, outer)
+		sq, err = e.resolveSubsearches(ctx, sq)
+		if err != nil {
+			return err
+		}
 		p, err := e.compile(sq)
 		if err != nil {
 			return err

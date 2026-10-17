@@ -195,6 +195,34 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyReturn(ctx, res, c)
 	case *query.MakeContinuous:
 		return applyMakeContinuous(ctx, res, c)
+	case *query.Geostats:
+		return applyGeostats(ctx, res, c)
+	case *query.Extract:
+		return applyExtract(ctx, res, c)
+	case *query.Outlier:
+		return applyOutlier(ctx, res, c)
+	case *query.Gauge:
+		return applyGauge(ctx, res, c)
+	case *query.Timewrap:
+		return applyTimewrap(ctx, res, c)
+	case *query.Cluster:
+		return applyCluster(ctx, res, c)
+	case *query.XPath:
+		return applyXPath(ctx, res, c)
+	case *query.Abstract:
+		return applyAbstract(ctx, res, c)
+	case *query.AnomalyDetection:
+		return applyAnomalyDetection(ctx, res, c)
+	case *query.Correlate:
+		return applyCorrelate(ctx, res, c)
+	case *query.Predict:
+		return applyPredict(ctx, res, c)
+	case *query.SetFields:
+		return applySetFields(ctx, res, c)
+	case *query.KMeans:
+		return applyKMeans(ctx, res, c)
+	case *query.Highlight:
+		// The results view marks terms itself; the rows stay as they are.
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
