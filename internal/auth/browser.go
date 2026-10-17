@@ -178,3 +178,15 @@ func (k *BrowserKey) sign(head []byte, account, version string) []byte {
 }
 
 func normAccount(account string) string { return strings.ToLower(strings.TrimSpace(account)) }
+
+// MAC returns the MAC of data under a key derived from k for purpose,
+// for other short-lived cookies a browser must hand back unchanged, such
+// as a single sign-on under way. Every server with the same key makes the
+// same MAC; purposes never share one.
+func (k *BrowserKey) MAC(purpose string, data []byte) []byte {
+	d := hmac.New(sha256.New, k.mac)
+	d.Write([]byte("signalith purpose " + purpose))
+	h := hmac.New(sha256.New, d.Sum(nil))
+	h.Write(data)
+	return h.Sum(nil)
+}
