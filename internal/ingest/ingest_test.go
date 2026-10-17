@@ -782,6 +782,18 @@ func TestWindowsSecurityNamedEvents(t *testing.T) {
 		"TaskContentNew": `<Task><Actions><Exec><Command>cmd.exe</Command><Arguments>/c whoami</Arguments></Exec></Actions></Task>`})), map[string]any{
 		"action": "modified", "task_name": `\Updater`, "task_command": "cmd.exe", "task_arguments": "/c whoami",
 	})
+	expect(t, security("4724", subject(map[string]string{"TargetUserName": "Administrator", "TargetDomainName": "CORP",
+		"TargetSid": "S-1-5-21-1-500"})), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "user", "object": "Administrator",
+		"object_sid": "S-1-5-21-1-500", "user": "eve", "user_sid": "S-1-5-21-1-1104",
+		"signature": "An attempt was made to reset an account's password",
+	})
+	expect(t, security("4723", subject(map[string]string{"TargetUserName": "bob", "TargetSid": "S-1-5-21-1-1105", "PrivilegeList": "-"})),
+		map[string]any{"datamodel": "Change", "action": "modified", "object": "bob", "user": "eve"})
+	expect(t, security("4725", subject(map[string]string{"TargetUserName": "bob", "TargetDomainName": "CORP"})),
+		map[string]any{"datamodel": "Change", "signature": "A user account was disabled", "object": "bob", "object_domain": "CORP"})
+	expect(t, security("4722", subject(map[string]string{"TargetUserName": "Guest"})),
+		map[string]any{"datamodel": "Change", "signature": "A user account was enabled", "object": "Guest", "user": "eve"})
 	expect(t, security("5140", subject(map[string]string{"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123",
 		"ShareName": `\\*\ADMIN$`, "ShareLocalPath": `\??\C:\Windows`, "AccessMask": "0x1", "AccessList": "%%4416"})), map[string]any{
 		"datamodel": "Filesystem", "share_name": `\\*\ADMIN$`, "share_path": `\??\C:\Windows`, "src": "192.0.2.10", "user": "eve",

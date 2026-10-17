@@ -4,7 +4,7 @@ title: Splunk Security Content
 description: Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
 version: 13bf1750b21768c03a2237ecfd27b54644bc6de9
-date: "2026-10-16"
+date: "2026-10-17"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts them when it starts. Findings from them name the rule's author.
@@ -2622,6 +2622,10 @@ rules:
     rule_id: 08cb291e-ea77-48e8-a95a-0799319bf056
     file: windows_ad_dsrm_account_changes.yml
     path: detections/endpoint/windows_ad_dsrm_account_changes.yml
+  - id: splunk-windows-ad-privileged-object-access-activity
+    rule_id: dc2f58bc-8cd2-4e51-962a-694b963acde0
+    file: windows_ad_privileged_object_access_activity.yml
+    path: detections/endpoint/windows_ad_privileged_object_access_activity.yml
   - id: splunk-windows-ad-serviceprincipalname-added-to-domain-account
     rule_id: 8a1259cb-0ea7-409c-8bfe-74bad89259f9
     file: windows_ad_serviceprincipalname_added_to_domain_account.yml
