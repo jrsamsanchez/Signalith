@@ -538,6 +538,13 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Geostats:
+		s := fmt.Sprintf("Count %s in map squares of %s by %s degrees of %s and %s", describeAggs(c.Aggs),
+			strconv.FormatFloat(c.SpanLat, 'f', -1, 64), strconv.FormatFloat(c.SpanLon, 'f', -1, 64), c.LatField, c.LonField)
+		if c.By != "" {
+			s += ", one column per " + c.By
+		}
+		return s + "."
 	case *query.Union:
 		parts := make([]string, 0, len(c.Subs))
 		for i, s := range c.Subs {

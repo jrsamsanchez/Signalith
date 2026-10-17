@@ -195,6 +195,8 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyReturn(ctx, res, c)
 	case *query.MakeContinuous:
 		return applyMakeContinuous(ctx, res, c)
+	case *query.Geostats:
+		return applyGeostats(ctx, res, c)
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:

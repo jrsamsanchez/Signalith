@@ -373,6 +373,7 @@ func QueryReference() string {
   concurrency duration=dur [start=_time] [output=concurrency]   how many rows were in progress when each started
   contingency [maxrows=N] [maxcols=N] [usetotal=f] src_ip action   counts each pair of values in a table with totals; format [maxresults=N] turns rows into a search string in field search
   return [N] src [ip=dest] [$user]   the first N rows' fields as search terms in field search; makecontinuous [_time] span=1h adds empty rows for missing buckets
+  geostats [latfield=lat] [longfield=lon] [binspanlat=22.5 binspanlong=45] count [by action]   counts per map square, with each square's average latitude and longitude, for maps
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   union [search datamodel=Authentication] [search datamodel=Change]   adds each subsearch's rows after the results

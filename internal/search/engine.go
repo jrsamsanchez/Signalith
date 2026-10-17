@@ -519,7 +519,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats:
 			return true
 		}
 	}
