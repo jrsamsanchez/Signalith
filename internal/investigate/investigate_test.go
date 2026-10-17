@@ -68,6 +68,28 @@ func TestMaskerStandIns(t *testing.T) {
 	}
 }
 
+func TestMaskerSubfields(t *testing.T) {
+	m := NewMasker([]string{"user"})
+	for f, want := range map[string]bool{"user": true, "user.name": true, "User.Name": true, "user.id.raw": true,
+		"username": false, "src_user": false, "dest.user": false, "src": false} {
+		if got := m.Masks(f); got != want {
+			t.Errorf("Masks(%q) = %v, want %v", f, got, want)
+		}
+	}
+	if row := m.Row(map[string]any{"user.name": "alice"}); row["user.name"] != "masked-user-name-1" {
+		t.Errorf("row %v", row)
+	}
+	for _, src := range []string{`user.name=alice`, `* | stats values(user.name) by src`, `* | timechart count by user.name`} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if guardQuery(q, m) == nil {
+			t.Errorf("%s was allowed although user is masked", src)
+		}
+	}
+}
+
 func TestMaskerShortValueInsideStandIn(t *testing.T) {
 	m := NewMasker([]string{"user"})
 	m.Value("user", "user")

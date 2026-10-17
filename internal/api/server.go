@@ -52,6 +52,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -248,6 +249,17 @@ type Server struct {
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
+	// Tenants lists the tenants of a multi-tenant install (see
+	// docs/multi-tenant.md); nil has only the default tenant.
+	Tenants *tenants.Registry
+	// TenantID is the tenant whose data this server holds: "" for the
+	// default tenant's server, which also answers the provider's pages
+	// and sends each request in another tenant to that tenant's server
+	// (TenantRuntime). A tenant's server answers that tenant's requests
+	// only.
+	TenantID string
+	// TenantRuntime runs the servers of the other tenants; nil runs none.
+	TenantRuntime TenantRuntime
 
 	authOnce          sync.Once
 	ssoOnce           sync.Once
@@ -255,6 +267,7 @@ type Server struct {
 	creds             credCache    // recently checked Basic credentials
 	passkeyChallenges challengeSet // passkey challenges answered on this server
 	routes            []route      // every API route and its role, from Handler
+	apiMux            http.Handler // the routes of routes, each behind allow
 	caseLocks         caseLocks    // one lock per case being changed
 	checksMu          sync.Mutex
 	dirChecks         map[string]dirCheck // when each directory user was last checked
@@ -275,6 +288,9 @@ type Server struct {
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
 	liveAI atomic.Pointer[liveModel]
+	// followMu keeps a tenant's server following one change at a time.
+	followMu sync.Mutex
+
 	// backtests limits detection backtests running at once.
 	backtests backtestSlots
 
@@ -407,6 +423,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeTokens(api)
 	s.routeAPITokens(api)
 	s.routeAgents(api)
+	s.routeTenants(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
 		if v := versionSegment(s.Version); v != "" {
@@ -416,6 +433,7 @@ func (s *Server) Handler() http.Handler {
 		}
 	}
 	s.routes = api.routes
+	s.apiMux = api.mux
 	s.routeLogin(mux)
 	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(api.mux))))
 	return limitBodies(s.securityHeaders(s.configHeaders(s.guardAPI(mux))))
@@ -493,6 +511,10 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	if t := s.agentTenant(r); t != nil {
+		t.handleIngest(w, r)
+		return
+	}
 	from := clientaddr.Parse(r.RemoteAddr)
 	who, ok := s.agentIdentity(w, r)
 	if !ok {
@@ -1194,7 +1216,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
-	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
+	if p := principalOf(r); !p.runsServer() {
+		if p != nil && p.Tenant != "" {
+			// The server's other parts are the provider's business.
+			for _, k := range []string{"cluster_banners", "cluster", "sensors", "m365", "syslog"} {
+				delete(out, k)
+			}
+		}
 		brief := map[string]any{"status": status}
 		if problem != "" {
 			brief["problem"] = problem

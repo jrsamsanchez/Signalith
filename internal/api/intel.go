@@ -11,7 +11,6 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/intel"
-	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // routeIntel registers the threat intel routes. Everyone can see feeds
@@ -42,7 +41,9 @@ func (s *Server) routeIntel(api *router) {
 // account, so only admins see those in full.
 func (s *Server) feedsFor(r *http.Request) []intel.FeedView {
 	list := s.Feeds.Status()
-	if p := principalOf(r); p != nil && p.Role.AtLeast(users.Admin) {
+	// Feeds are set up by the provider's users: a tenant's admins see
+	// them as the others do.
+	if principalOf(r).runsServer() {
 		return list
 	}
 	for i := range list {
@@ -373,7 +374,7 @@ func (s *Server) handleIntelFeeds(w http.ResponseWriter, r *http.Request) {
 // addFeedETags adds each feed's version to out, for If-Match on a change:
 // a hash of its settings, secrets included, so only admins get it.
 func (s *Server) addFeedETags(r *http.Request, feeds []intel.FeedView, out map[string]any) {
-	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
+	if !principalOf(r).runsServer() {
 		return
 	}
 	etags := map[string]string{}

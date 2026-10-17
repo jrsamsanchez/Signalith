@@ -366,6 +366,8 @@ func QueryReference() string {
   rangemap field=f low=0-10 high=11-100 [default=name]   sets range to the matching range name
   replace "old*" WITH "new*"[, ...] [IN f1, f2]   changes matching values; xmlkv [field] extracts XML elements as fields
   map [maxsearches=N] search="search EventCode=4624 TargetLogonId=$TargetLogonId$"   runs the search once per row (default 10, at most 100) with $field$ replaced by the row's value
+  accum f [AS t]   running total; delta f [AS d] [p=N] change from N rows earlier; autoregress f [p=N-M] copies f from earlier rows as f_pN
+  fieldsummary [maxvals=N] [fields]   one row per field: count, distinct_count, min, max, mean, stdev, top values
   iplocation [prefix=p] [allfields=true] f   adds City, Region, Country, lat, lon for the IP address in f (needs a GeoIP database)
   foreach f_* [eval <<FIELD>>=<<FIELD>>*2]   runs eval for each matching field (<<MATCHSTR>> is the * text); fieldformat runs as eval
   appendpipe [<commands>]   runs commands over the results so far and adds their rows after them, e.g. appendpipe [stats sum(count) as count | eval user="TOTAL"]

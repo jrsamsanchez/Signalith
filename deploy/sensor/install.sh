@@ -441,6 +441,16 @@ put_file() {
     *" $5 "*) ;;
     *) changed="$changed $5" ;;
   esac
+  # A put at the end of a pipeline runs in a subshell, where $changed is
+  # lost: the group is noted in a file too (see note_changed).
+  printf '%s\n' "$5" >>"$tmp/changed"
+}
+# note_changed adds the groups put_file noted in $tmp/changed to $changed.
+note_changed() {
+  [ -f "$tmp/changed" ] || return 0
+  while read -r _g; do
+    case " $changed " in *" $_g "*) ;; *) changed="$changed $_g" ;; esac
+  done <"$tmp/changed"
 }
 # put writes standard input to a file with put_file.
 put() {
@@ -2837,6 +2847,7 @@ sensor_test_configs() {
 
 # is_changed says whether group $1 changed in this run.
 is_changed() {
+  note_changed
   case " $changed " in *" $1 "*) return 0 ;; esac
   return 1
 }
@@ -3051,6 +3062,7 @@ sensor_units
 sensor_tuning_files
 sensor_test_configs
 say ""
+note_changed
 if [ -z "$changed" ] && [ -z "$installed" ] && [ -z "$upgraded" ]; then
   say "Nothing to change: the sensor is set up as the line says."
   if [ -z "$dryrun" ]; then

@@ -170,6 +170,14 @@ func (q *Query) Drilldown() *Drill {
 			if c.LabelField != "" {
 				delete(fields, c.LabelField)
 			}
+		case *Accum:
+			delete(fields, c.AccumName())
+		case *Delta:
+			delete(fields, c.DeltaName())
+		case *AutoRegress:
+			for _, f := range c.Names() {
+				delete(fields, f)
+			}
 		case *IPLocation:
 			// Places are in no event.
 			for _, f := range c.Fields() {
@@ -193,7 +201,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)

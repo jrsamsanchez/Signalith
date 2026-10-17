@@ -70,7 +70,7 @@ Only analysts and admins can investigate. Viewers do not see the button.
   such as `masked-user-1` wherever they appear, including inside the event text and other
   fields. The same value always gets the same stand-in, so the model can still tell
   accounts apart and search for them: Signalith puts the real value back into its queries
-  before they run, and into its write-up before you read it. Wildcards work (`*_user`).
+  before they run, and into its write-up before you read it. Wildcards work (`*_user`), and a field covers its subfields: `user` also masks `user.name`.
 - **Leave out the event text.** Add `_raw` to **Fields never sent**.
 - **Always masked:** fields whose names contain password, passwd, secret, token, api_key,
   apikey, cookie, authorization, session_id or private_key.

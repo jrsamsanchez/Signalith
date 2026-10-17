@@ -1551,3 +1551,22 @@ func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) erro
 	}
 	return nil
 }
+
+// fieldMatcher returns match with each field name's answer remembered, so
+// a command tries its n field patterns once per name instead of once per
+// row, charging a step for each pattern tried. ok is false once the
+// search's budget or deadline is spent (ev.err says which).
+func fieldMatcher(ev *evaluator, n int, match func(name string) bool) func(name string) (matched, ok bool) {
+	seen := map[string]bool{}
+	return func(name string) (bool, bool) {
+		if m, ok := seen[name]; ok {
+			return m, true
+		}
+		if !ev.stepN(n + 1) {
+			return false, false
+		}
+		m := match(name)
+		seen[name] = m
+		return m, true
+	}
+}
