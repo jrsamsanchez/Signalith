@@ -30,7 +30,16 @@ locals {
     "sensor"       = { role = "sensor", type = "cx23", ip = "10.0.1.41", minimal = false }
     "linux-1"      = { role = "linux", type = "cx23", ip = "10.0.1.51", minimal = true }
   }
-  linux_machines = { for k, v in local.all_machines : k => v if var.size == "full" || v.minimal }
+  # The load test (docs/cloud-lab.md): two big OpenSearch nodes, one small
+  # Signalith server and the load generator, 20 cores in all.
+  loadtest_machines = {
+    "signalith-1"  = { role = "signalith", type = "cx23", ip = "10.0.1.11", minimal = true }
+    "opensearch-1" = { role = "opensearch", type = "cx43", ip = "10.0.1.21", minimal = true }
+    "opensearch-2" = { role = "opensearch", type = "cx43", ip = "10.0.1.22", minimal = true }
+    "loadgen"      = { role = "loadgen", type = "cx23", ip = "10.0.1.71", minimal = true }
+  }
+  loadtest       = var.size == "loadtest"
+  linux_machines = local.loadtest ? local.loadtest_machines : { for k, v in local.all_machines : k => v if var.size == "full" || v.minimal }
   windows        = var.windows && var.size == "full"
   full           = var.size == "full"
 
@@ -145,6 +154,18 @@ resource "hcloud_server" "linux" {
     ignore_changes = [user_data]
   }
   depends_on = [hcloud_network_subnet.lab]
+}
+
+# In the load test, OpenSearch keeps its data on a volume of its own: a
+# terabyte a day does not fit the machines' disks. lab-setup mounts it.
+resource "hcloud_volume" "opensearch" {
+  for_each  = local.loadtest ? toset(["opensearch-1", "opensearch-2"]) : toset([])
+  name      = "signalith-lab-${each.key}"
+  size      = var.loadtest_volume_gb
+  server_id = hcloud_server.linux[each.key].id
+  format    = "ext4"
+  automount = false
+  labels    = { lab = "signalith" }
 }
 
 # Windows is installed from the Hetzner Console (docs/cloud-lab.md), or
