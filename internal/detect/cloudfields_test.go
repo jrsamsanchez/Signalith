@@ -113,6 +113,10 @@ func queryFields(q *query.Query) []string {
 			for _, p := range c.Pairs {
 				made[p[1]] = true
 			}
+		case *query.IPLocation:
+			for _, f := range c.Fields() {
+				made[f] = true
+			}
 		case *query.Spath:
 			made[cmp.Or(c.Output, c.Path)] = true
 		case *query.FromJSON:

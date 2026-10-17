@@ -78,10 +78,18 @@ func TestIPLocationAsSplunk(t *testing.T) {
 			}
 		}
 		for k := range rows[0] {
-			if strings.HasPrefix(k, iplocationPrefix) {
-				t.Errorf("%v: left %s", tc, k)
+			if _, ok := want[k]; !ok {
+				t.Errorf("%v: added %s, which Splunk's does not", tc, k)
 			}
 		}
+	}
+	// A stats by City keeps no row for an address iplocation does not
+	// locate, as Splunk's does: City is not filled as a field the event
+	// misses.
+	r = &Rule{}
+	kept := func(f string) (string, bool) { return f, f == "src" }
+	if err := r.postCommands([]string{"iplocation src", "stats count by src City"}, kept, ""); err != nil || strings.Contains(r.Post, "fillnull") {
+		t.Errorf("stats by City: %v\n%s", err, r.Post)
 	}
 }
 

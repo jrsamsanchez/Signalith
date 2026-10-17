@@ -657,7 +657,9 @@ func splunkWhere(cond string) error {
 var notBeforeRe = regexp.MustCompile(`(?i)\bNOT\s*$`)
 
 // missingGroups are the fields a stats stage groups by that neither
-// Signalith keeps (field) nor an earlier stage makes.
+// Signalith keeps (field) nor an earlier stage makes. An earlier
+// iplocation makes Splunk's fields of a located address, and an address
+// it does not locate has none, in Splunk too.
 func missingGroups(stage string, earlier []string, field func(string) (string, bool)) []string {
 	if !strings.HasPrefix(stage, "stats ") {
 		return nil
@@ -671,9 +673,10 @@ func missingGroups(stage string, earlier []string, field func(string) (string, b
 		return nil
 	}
 	made := strings.Join(earlier, "\n")
+	located := slices.ContainsFunc(earlier, func(s string) bool { return strings.HasPrefix(s, "iplocation ") })
 	var out []string
 	for _, f := range st.By {
-		if _, kept := field(f); kept || strings.HasPrefix(f, "_") || strings.Contains(made, f) {
+		if _, kept := field(f); kept || strings.HasPrefix(f, "_") || strings.Contains(made, f) || located && slices.Contains(iplocationFields, f) {
 			continue
 		}
 		out = append(out, f)

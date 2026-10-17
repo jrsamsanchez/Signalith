@@ -78,6 +78,14 @@ func FromBytes(buf []byte) (*Store, error) {
 	return &Store{now: time.Now, fixed: true, db: db, file: "(in memory)"}, nil
 }
 
+// Loading returns a store whose first database is always still loading:
+// for tests of what a search does meanwhile.
+func Loading() *Store {
+	s := &Store{now: time.Now}
+	s.loadMu.Lock()
+	return s
+}
+
 // Dir is the folder the store reads.
 func (s *Store) Dir() string { return s.dir }
 

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/geoip/geoiptest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -397,6 +399,36 @@ func TestErrorsRetryOrAdvance(t *testing.T) {
 	s := newTestScheduler(lib, &recRunner{}, clock)
 	if _, err := s.run(context.Background(), d, runSpec{at: t0, slot: t0, raised: t0}); ErrorKind(err) != ErrorQuery {
 		t.Errorf("parse error is %q: %v", ErrorKind(err), err)
+	}
+}
+
+// TestGeoIPLoadingRetries: a rule that runs iplocation while the
+// server's first GeoIP database is still loading fails transiently, and
+// its slot runs again once the database is in.
+func TestGeoIPLoadingRetries(t *testing.T) {
+	lib := OnlyRules(t, &Detection{ID: "geo", Title: "Geo", Query: `src=* | stats count by src | iplocation src | where Country="Testland"`,
+		Enabled: true, Schedule: "5m", Lookback: "5m"})
+	eng := &search.Engine{Store: emptySearcher{}, GeoIP: geoip.Loading()}
+	clock := &fakeClock{t: t0}
+	s := newTestScheduler(lib, eng, clock)
+	s.RunDue(context.Background())
+	last := mustState(t, s, "geo").LastSlot
+	clock.Add(10 * time.Minute)
+	s.RunDue(context.Background())
+	st := mustState(t, s, "geo")
+	if st.ErrorKind != ErrorTransient || !strings.Contains(st.LastError, "still loading") || !st.LastSlot.Equal(last) {
+		t.Fatalf("while loading: %+v", st)
+	}
+	b, err := geoiptest.Build("GeoLite2-City", map[string]geoiptest.City{"198.51.100.0/24": {Country: "Testland"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eng.GeoIP, err = geoip.FromBytes(b); err != nil {
+		t.Fatal(err)
+	}
+	s.RunDue(context.Background())
+	if st := mustState(t, s, "geo"); st.LastError != "" || !st.LastSlot.Equal(last.Add(10*time.Minute)) {
+		t.Errorf("after the retry: %+v", st)
 	}
 }
 

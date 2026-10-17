@@ -899,7 +899,9 @@ func fieldSingle(f string, stages []string, raw bool) bool {
 						return false
 					}
 				}
-			case *query.MakeMV, *query.MVExpand, *query.Fillnull, *query.Where, *query.Table, *query.FieldsRemove, *query.Dedup, *query.Sort, *query.Head:
+			case *query.MakeMV, *query.MVExpand, *query.Fillnull, *query.Where, *query.Table, *query.FieldsRemove, *query.Dedup, *query.Sort, *query.Head, *query.IPLocation:
+				// An iplocation's field is one value where it locates the
+				// address, and the row's own where it does not.
 				if mv, ok := c.(*query.MakeMV); ok && mv.Field == f {
 					return false
 				}

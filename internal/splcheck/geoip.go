@@ -62,22 +62,12 @@ func TestGeoIP() *geoip.Store {
 
 // Splunk's iplocation adds City, Country, Region, lat and lon for an
 // address its database lists: each one it has no value for is there but
-// empty (a country-level record's City is ""). An address it does not
-// list (a private one) or a value that is not an address gets none, and
-// a field the event already had keeps its value. Signalith's iplocation
-// adds only the fields it has a value for, so a located address without
-// a city has no City, which a stats by City drops and Splunk's keeps.
-//
-// So a rule's iplocation of a field is Signalith's with every field
-// under a prefix (with allfields, so an address located only to its
-// continent counts as located too), then each of Splunk's fields set to
-// its value, or "" when the address was located and that field has none,
-// or left as it was when the address was not located.
+// empty (a country-level record's City is ""), and each replaces a value
+// the event already had. An address it does not list (a private one) or
+// a value that is not an address gets none, and a field the event
+// already had keeps its value. Signalith's iplocation with no options
+// does the same, so a rule's iplocation of a field runs as written.
 var iplocationStageRe = regexp.MustCompile(`(?i)^iplocation\s+([A-Za-z_][\w.{}]*)$`)
-
-// iplocationPrefix starts the names of the fields the converted
-// iplocation reads first.
-const iplocationPrefix = "splunk_iploc_"
 
 // iplocationFields are the fields Splunk's iplocation adds.
 var iplocationFields = []string{"City", "Region", "Country", "lat", "lon"}
@@ -93,21 +83,7 @@ func iplocationStage(s string) ([]string, bool, error) {
 	if m == nil {
 		return nil, false, fmt.Errorf("search has a later stage Signalith does not run: %s (only iplocation of one field, with no options, is converted)", firstWords(s))
 	}
-	all := append(append([]string{}, iplocationFields...), "Continent", "Timezone", "MetroCode")
-	var found, sets, drop []string
-	for _, f := range all {
-		found = append(found, "isnotnull("+iplocationPrefix+f+")")
-		drop = append(drop, iplocationPrefix+f)
-	}
-	located := strings.Join(found, " OR ")
-	for _, f := range iplocationFields {
-		sets = append(sets, f+"=if("+located+", coalesce("+iplocationPrefix+f+`, ""), `+f+")")
-	}
-	return []string{
-		"iplocation allfields=true prefix=" + iplocationPrefix + " " + m[1],
-		"eval " + strings.Join(sets, ", "),
-		"fields - " + strings.Join(drop, " "),
-	}, true, nil
+	return []string{"iplocation " + m[1]}, true, nil
 }
 
 // wholeRowRe is a stage that reads every field a row has: fillnull with
@@ -115,9 +91,9 @@ func iplocationStage(s string) ([]string, bool, error) {
 var wholeRowRe = regexp.MustCompile(`(?i)^fillnull(\s+value\s*=\s*\S+)?\s*$|\(\s*\*\s*\)|^foreach\s+\*|^(table|fields)\s+\*`)
 
 // iplocationLater returns an error for a stage after an iplocation that
-// reads every field a row has: Signalith's results then have Splunk's
-// iplocation fields as columns even when no address was located, and
-// Splunk's do not.
+// reads every field a row has: no test here shows that Signalith's rows
+// then hold the fields Splunk's do (both add iplocation's fields as
+// columns only when an address is located), so it is not converted.
 func iplocationLater(s string) error {
 	if wholeRowRe.MatchString(s) {
 		return fmt.Errorf("search has a later stage Signalith reads differently after iplocation: %s reads every field a row has", firstWords(s))
@@ -128,7 +104,7 @@ func iplocationLater(s string) error {
 // iplocationField is the field of a rule's iplocation, "" for none.
 func (r *Rule) iplocationField() string {
 	for _, s := range strings.Split(r.Post, "\n| ") {
-		if rest, ok := strings.CutPrefix(s, "iplocation allfields=true prefix="+iplocationPrefix+" "); ok {
+		if rest, ok := strings.CutPrefix(s, "iplocation "); ok {
 			return rest
 		}
 	}
