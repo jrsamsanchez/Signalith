@@ -260,6 +260,7 @@ var criteria = map[string]string{
 	"events_lost":                    "events the agents had stored (2xx) that are not in OpenSearch",
 	"events_duplicated":              "events stored more than once",
 	"events_undelivered":             "events still unsent when the run ended",
+	"events_dropped":                 "events the agents dropped because their buffers were full (buffer_mb)",
 	"ingest_error_rate":              "share of agent requests answered other than 2xx",
 	"ingest_p99_ms":                  "99th percentile agent request time",
 	"syslog_send_errors":             "syslog messages that could not be written",

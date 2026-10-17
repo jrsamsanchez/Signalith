@@ -54,7 +54,12 @@ case "${1:-start}" in
     systemctl stop "$UNIT" && echo "Stopped. What it measured is in $LAB/loadtest/latest/."
     exit 0
     ;;
-  run) ;;
+  run)
+    # One run at a time, also when run is started by hand: a second one
+    # would restart the samplers and the load generator under the first.
+    exec 9>/run/lab-loadtest.lock
+    flock -n 9 || { echo "Another load test is running: sudo lab-loadtest status" >&2; exit 1; }
+    ;;
   *)
     echo "Usage: lab-loadtest [start|status|stop]" >&2
     exit 2
@@ -63,6 +68,8 @@ esac
 
 OUT=$LAB/loadtest/$(date -u +%Y%m%d-%H%M%S)
 mkdir -p "$OUT"
+# Each run's samples have a file of their own on every machine.
+SAMPLES=/root/lt-sample-$(basename "$OUT").csv
 ln -sfn "$OUT" "$LAB/loadtest/latest"
 say "Load test: results in $OUT"
 
@@ -96,6 +103,18 @@ while sleep 15; do
   b0=$b1 t0=$t1 w0=$w1 r0=$r1 x0=$x1
 done
 EOF
+}
+
+# Ubuntu's automatic updates restart services, and systemd re-executing
+# itself during one stopped and restarted a run: hold them for the run.
+APT_UNITS="apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service"
+hold_updates() {
+  local m
+  for m in $(names); do on "$m" "systemctl stop $APT_UNITS 2>/dev/null; true" </dev/null; done
+}
+release_updates() {
+  local m
+  for m in $(names); do on "$m" 'systemctl start apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service 2>/dev/null; true' </dev/null; done
 }
 
 stop_samplers() {
@@ -215,8 +234,9 @@ finish() {
   # Stopped early: the load generator does not stop with its ssh.
   on loadgen 'pkill -INT -f "signalith-loadgen run" 2>/dev/null; true' </dev/null
   stop_samplers
+  release_updates
   local m
-  for m in $(names); do on "$m" 'cat /root/lt-sample.csv 2>/dev/null' </dev/null >"$OUT/$m.csv"; done
+  for m in $(names); do on "$m" "cat $SAMPLES 2>/dev/null" </dev/null >"$OUT/$m.csv"; done
   on loadgen 'cat /root/loadtest/report.json 2>/dev/null' </dev/null >"$OUT/loadgen.json"
   [ -s "$OUT/loadgen.json" ] || rm -f "$OUT/loadgen.json"
   report >"$OUT/report.md" 2>>"$OUT/report-errors.txt" || say "the summary could not be written: see $OUT/report-errors.txt"
@@ -226,8 +246,9 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT TERM
 
+hold_updates
 for m in $(names); do
-  sampler | on "$m" 'cat >/root/lt-sample.sh && systemctl stop lt-sample 2>/dev/null; rm -f /root/lt-sample.csv; systemd-run -q --unit=lt-sample --collect bash /root/lt-sample.sh /root/lt-sample.csv'
+  sampler | on "$m" "cat >/root/lt-sample.sh && systemctl stop lt-sample 2>/dev/null; rm -f /root/lt-sample*.csv; systemd-run -q --unit=lt-sample --collect bash /root/lt-sample.sh $SAMPLES"
 done
 say "  sampling on: $(names | tr '\n' ' ')"
 
