@@ -259,6 +259,10 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // drive,
 // an audit record per host, type, program and what it ran or touched.
 func splunkThrottle(node, dm string) []string {
+	if parts, ok := splcheck.UnionNodes[node]; ok {
+		// A node of several others' events, as the first's.
+		node = parts[0]
+	}
 	switch node {
 	case "ObjectAccess":
 		return []string{"host", "process_path", "object_path"}

@@ -339,6 +339,18 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	if IsSensorNode(node) {
 		return sensorRecords(node, ev)
 	}
+	if parts, ok := UnionNodes[node]; ok {
+		// The events of the node whose code the event names, else of
+		// each.
+		var out []sigmacheck.Case
+		for _, p := range parts {
+			if c := ev[eventCode]; c == "" || !slices.ContainsFunc(parts, func(q string) bool { return slices.Contains(NodeEvents[q], c) }) ||
+				slices.Contains(NodeEvents[p], c) {
+				out = append(out, records(p, ev)...)
+			}
+		}
+		return out
+	}
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}
@@ -647,6 +659,10 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SubjectUserName", ev["user"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5136", Data: s}}
 	case "ShareAccess":
+		if ev[eventCode] == "5140" {
+			// The share as a whole, accessed.
+			return []sigmacheck.Case{securityRecord(node, ev)}
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("5145")])
 		set(s, "ShareName", ev["share_name"])
 		set(s, "ShareLocalPath", ev["share_path"])
@@ -689,13 +705,19 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SidHistory", ev["sid_history"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4738", Data: s}}
 	case "GroupMemberAdded":
+		// A local group's (4732) unless the event names a global (4728)
+		// or universal (4756) group's, which have the same data.
+		id := "4732"
+		if c := ev[eventCode]; c == "4728" || c == "4756" {
+			id = c
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4732")])
 		set(s, "TargetUserName", ev["object"])
 		set(s, "TargetSid", ev["object_sid"])
 		set(s, "MemberSid", ev["member_sid"])
 		set(s, "MemberName", ev["member"])
 		set(s, "SubjectUserName", ev["user"])
-		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ExplicitLogon", "NtlmAuth", "KerberosPreAuth", "ComputerChanged", "AccountRenamed", "GroupChanged",
 		"LocalGroupRead", "CertRequest", "DirectoryAccess", "AccountChanged", "FilterChanged":
 		return []sigmacheck.Case{securityRecord(node, ev)}
@@ -1133,17 +1155,17 @@ var NodeEvents = map[string][]string{
 	"ObjectAccess":      {"4663"},
 	"ServiceInstalled":  {"7045"},
 	"DirectoryChange":   {"5136"},
-	"ShareAccess":       {"5145"},
+	"ShareAccess":       {"5145", "5140"},
 	"KerberosTGT":       {"4768"},
 	"KerberosService":   {"4769"},
 	"UserChanged":       {"4738"},
-	"GroupMemberAdded":  {"4732"},
+	"GroupMemberAdded":  {"4732", "4728", "4756"},
 	"ExplicitLogon":     {"4648"},
 	"NtlmAuth":          {"4776"},
 	"KerberosPreAuth":   {"4771"},
 	"ComputerChanged":   {"4741", "4742"},
 	"AccountRenamed":    {"4781"},
-	"GroupChanged":      {"4727", "4730", "4737"},
+	"GroupChanged":      {"4727", "4730", "4737", "4731", "4744", "4749", "4754", "4759", "4783", "4790"},
 	"LocalGroupRead":    {"4798", "4799"},
 	"CertRequest":       {"4886", "4887"},
 	"ProcessTerminated": {"5"},

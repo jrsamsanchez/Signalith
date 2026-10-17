@@ -645,6 +645,11 @@ var windowsSchema = map[string][]string{
 		"SamAccountName", "SidHistory"},
 	"4737": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList",
 		"SamAccountName", "SidHistory"},
+	// The other groups created (4731 local, 4744 local distribution, 4749
+	// global distribution, 4754 and 4759 universal, 4783 basic
+	// application, 4790 LDAP query) have the data of 4727.
+	"4731": groupCreatedSchema, "4744": groupCreatedSchema, "4749": groupCreatedSchema, "4754": groupCreatedSchema,
+	"4759": groupCreatedSchema, "4783": groupCreatedSchema, "4790": groupCreatedSchema,
 	"4730": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"},
 	"4798": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CallerProcessId",
 		"CallerProcessName"},
@@ -659,6 +664,10 @@ var windowsSchema = map[string][]string{
 	"5140": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectType", "IpAddress", "IpPort", "ShareName",
 		"ShareLocalPath", "AccessMask", "AccessList"},
 }
+
+// groupCreatedSchema is the data of a group created (4727 and the like).
+var groupCreatedSchema = []string{"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+	"SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SamAccountName", "SidHistory"}
 
 // hexID is an OTLP trace or span ID as lower-case hex, or "" when it is
 // empty or all zeros (not set).
