@@ -15,6 +15,7 @@ const maxJoinRows = maxEventsLimit
 // outer query's time range unless it names its own.
 func subsearch(q *query.Query, outer *query.Query) *query.Query {
 	sub := *q
+	sub.EventsOnly = q.EventsOnly || outer.EventsOnly
 	if sub.Earliest == "" && sub.Latest == "" {
 		sub.Earliest, sub.Latest = outer.Earliest, outer.Latest
 	}

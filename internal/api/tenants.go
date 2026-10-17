@@ -39,8 +39,7 @@ var (
 	// baselines, which learn from the default tenant's data only for now.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat",
-		"baselines",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "baselines",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,

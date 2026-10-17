@@ -52,7 +52,7 @@ func TestCheckNewPassword(t *testing.T) {
 	if err := CheckNewPassword("alice", "abc"); err == nil || !strings.Contains(err.Error(), "at least 8") {
 		t.Errorf("short: %v", err)
 	}
-	if err := CheckNewPassword("alice", strings.Repeat("xy", 37)); err == nil || !strings.Contains(err.Error(), "72 bytes") {
+	if err := CheckNewPassword("alice", strings.Repeat("xyz", 86)); err == nil || !strings.Contains(err.Error(), "at most 256") {
 		t.Errorf("long: %v", err)
 	}
 	if !strings.Contains(ErrCommonPassword.Error(), "on a list of commonly used passwords; choose another") {

@@ -98,7 +98,7 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		defer releaseRaw()
 	}
-	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "token:"+who.ID)
 	if err != nil {
 		fail(http.StatusServiceUnavailable, "5", err)
 		return

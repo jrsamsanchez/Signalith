@@ -106,6 +106,10 @@ file.
 When a user is deleted (on the Users page or through SCIM), their notebooks lose their
 owner, so a new account with the same name does not get them. Shared ones stay
 shared; private ones are seen only by admins, who can share, copy or delete them.
+If that could not be done when the user was deleted (OpenSearch was unreachable), it is
+done before an account with the same name is made, and making the account waits until it
+can be. On a [multi-tenant](multi-tenant.md) install, a provider user's notebooks are
+released in every tenant.
 Unlinking a case and changes made by someone other than the owner are also written
 to the audit log.
 
