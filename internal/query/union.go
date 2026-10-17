@@ -29,14 +29,24 @@ func unionEnd(src string, i int) int {
 }
 
 func (p *parser) parseUnion(cmd token) (Command, error) {
+	subs, err := p.subsearchGroups(cmd, "union", unionExample)
+	if err != nil {
+		return nil, err
+	}
+	return &Union{Subs: subs}, p.endCommand()
+}
+
+// subsearchGroups reads the [ ] subsearches that follow a command such
+// as union, one after another.
+func (p *parser) subsearchGroups(cmd token, name, example string) ([]*Query, error) {
 	raw := p.next()
 	if raw.kind != tokRaw {
-		return nil, errorf(cmd.pos, "union needs subsearches in [ ], for example: %s", unionExample)
+		return nil, errorf(cmd.pos, "%s needs subsearches in [ ], for example: %s", name, example)
 	}
 	if p.depth+1 > maxSubsearchDepth {
 		return nil, errorf(raw.pos, "subsearches can be at most %d deep", maxSubsearchDepth)
 	}
-	u := &Union{}
+	var subs []*Query
 	body := raw.text
 	i := 0
 	for {
@@ -47,23 +57,23 @@ func (p *parser) parseUnion(cmd token) (Command, error) {
 			break
 		}
 		if body[i] != '[' {
-			return nil, errorf(raw.pos+i, "union takes only subsearches in [ ], for example: %s", unionExample)
+			return nil, errorf(raw.pos+i, "%s takes only subsearches in [ ], for example: %s", name, example)
 		}
 		end := subsearchEnd(body, i)
 		if body[end-1] != ']' || subsearchEnd(body[i:end], 0) != end-i {
-			return nil, errorf(raw.pos+i, "union needs subsearches in [ ], for example: %s", unionExample)
+			return nil, errorf(raw.pos+i, "%s needs subsearches in [ ], for example: %s", name, example)
 		}
 		sub, err := p.parseSubsearch(body[i+1:end-1], raw.pos+i+1)
 		if err != nil {
 			return nil, err
 		}
-		u.Subs = append(u.Subs, sub)
+		subs = append(subs, sub)
 		i = end
 	}
-	if len(u.Subs) == 0 {
-		return nil, errorf(cmd.pos, "union needs subsearches in [ ], for example: %s", unionExample)
+	if len(subs) == 0 {
+		return nil, errorf(cmd.pos, "%s needs subsearches in [ ], for example: %s", name, example)
 	}
-	return u, p.endCommand()
+	return subs, nil
 }
 
 func unionString(c *Union) string {
