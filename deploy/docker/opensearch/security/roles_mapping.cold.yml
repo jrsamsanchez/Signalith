@@ -1,0 +1,26 @@
+# roles_mapping.yml with cold storage turned on: docker-compose.cold.yml
+# puts this file in its place. It also gives Signalith's certificates the
+# signalith_cold_storage role from roles.yml, which lets it snapshot its
+# old days into the cold storage repository, mount them from there and
+# delete their snapshots (docs/cold-storage.md).
+#
+# Signalith's client certificate (CN=signalith) gets the signalith_server
+# role from roles.yml, and so does each server's own certificate when
+# several Signalith servers share one OpenSearch (CN=signalith-server-<name>,
+# from the same CA). The pattern is signalith-server-*, not signalith-*,
+# which would also match the admin certificate (CN=signalith-admin). That
+# one needs no role: OpenSearch trusts it fully
+# (plugins.security.authcz.admin_dn).
+_meta:
+  type: "rolesmapping"
+  config_version: 2
+
+signalith_server:
+  users:
+    - "signalith"
+    - "signalith-server-*"
+
+signalith_cold_storage:
+  users:
+    - "signalith"
+    - "signalith-server-*"

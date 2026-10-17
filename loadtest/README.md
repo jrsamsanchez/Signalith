@@ -37,8 +37,10 @@ It runs on Linux and Windows. Faults that stop processes (`kill9`, `stop`) need 
 | `s9-small.yaml` | One of three OpenSearch nodes stopped for 90 s under light load | CI, laptop |
 | `s9-opensearch-node-loss.yaml` | One of three OpenSearch nodes stopped under load | Lab |
 | `sizing-small.yaml` | Agents from 1k to 32k events/s; rate stored, answer times, CPU, memory | CI, laptop |
+| `tb-day.yaml` | 25k events/s (about 1 TB a day) for 4 hours with analysts searching | Cloud lab's load test ([docs/cloud-lab.md](../docs/cloud-lab.md#load-test)) |
 
-A scenario file names the targets, the files with secrets, the phases of load, the
+A scenario file names the targets (and `agent_targets`, the servers' agent port, when
+they take agents on a port of their own), the files with secrets, the phases of load, the
 faults and the pass criteria. `${NAME}` in it is replaced by that environment variable.
 `signalith-loadgen check loadtest/*.yaml` checks the files without running anything.
 

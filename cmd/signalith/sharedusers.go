@@ -77,6 +77,7 @@ func newSharedUsers(log *slog.Logger) *sharedUsers {
 // through.
 func (ua *sharedUsers) follow(rt *shared.Runtime) {
 	ua.docs.Cluster = rt.Cluster
+	ua.docs.Tenants = rt.Tenants
 	rt.OnMode(func(_, m shared.Mode) {
 		if m != shared.ModeMember {
 			return

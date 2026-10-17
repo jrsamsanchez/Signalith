@@ -37,6 +37,20 @@
 #
 # With an opensearch.index_prefix other than signalith, change signalith*
 # below to match it.
+#
+# signalith_cold_storage is for cold storage (docs/cold-storage.md), which
+# keeps old days in a snapshot repository such as an S3 bucket. No one has
+# it until it is mapped to Signalith when cold storage is turned on,
+# because OpenSearch's snapshot permissions are not limited to one
+# repository: whoever has them can delete any repository's snapshots.
+# Signalith itself only touches snapshots named <prefix>-* in the
+# repository <prefix>-cold.
+#   GET    _snapshot/<prefix>-cold                 cluster:admin/repository/get
+#   GET    _snapshot/<prefix>-cold/<prefix>-*      cluster:admin/snapshot/get
+#   PUT    _snapshot/<prefix>-cold/<name>          cluster:admin/snapshot/create
+#   POST   _snapshot/<prefix>-cold/<name>/_restore (mounts a day)
+#                                                  cluster:admin/snapshot/restore
+#   DELETE _snapshot/<prefix>-cold/<name>          cluster:admin/snapshot/delete
 _meta:
   type: "roles"
   config_version: 2
@@ -55,3 +69,12 @@ signalith_server:
         - "crud"
         - "create_index"
         - "manage"
+
+signalith_cold_storage:
+  description: "Signalith cold storage: snapshots of its own days in the <prefix>-cold repository"
+  cluster_permissions:
+    - "cluster:admin/repository/get"
+    - "cluster:admin/snapshot/get"
+    - "cluster:admin/snapshot/create"
+    - "cluster:admin/snapshot/restore"
+    - "cluster:admin/snapshot/delete"

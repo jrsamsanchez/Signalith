@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -183,6 +184,11 @@ func TestClusterExportToFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Its tenants, one turned off.
+	tenantsFile := tenants.File(stateA)
+	if err := tenants.WriteFile(tenantsFile, []tenants.Tenant{{ID: "acme", Name: "Acme", Created: now}, {ID: "contoso", Name: "Contoso", Disabled: true, Created: now}}); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := run("found", "-name", "Plant"); err != nil {
 		t.Fatalf("found: %v\n%s", err, out)
 	}
@@ -218,11 +224,18 @@ func TestClusterExportToFiles(t *testing.T) {
 	for name, dest := range map[string]string{
 		"users": filepath.Join(lookups, "users.json"), "feeds": filepath.Join(lookups, "intel_feeds.yaml"),
 		"retention": filepath.Join(lookups, "retention.yaml"), "detections": filepath.Join(rules, "my-rule.yaml"),
-		"dashboards": filepath.Join(boards, "ops.yaml"),
+		"dashboards": filepath.Join(boards, "ops.yaml"), "tenants": tenantsFile,
 	} {
 		if f, ok := byName[name]; !ok || f.Dest != dest {
 			t.Errorf("%s: %+v, want it to go to %s", name, f, dest)
 		}
+	}
+	exported, err := tenants.Open(filepath.Join(out1, filepath.FromSlash(byName["tenants"].Path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := exported.List(); len(list) != 2 || list[0].ID != "acme" || list[1].ID != "contoso" || !list[1].Disabled {
+		t.Errorf("exported tenants: %+v", list)
 	}
 	if !byName["users"].Secret || !byName["feeds"].Secret {
 		t.Errorf("files with secrets are not marked: %+v", m.Files)

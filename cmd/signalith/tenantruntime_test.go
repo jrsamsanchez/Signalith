@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,14 +9,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 )
 
 // A tenant added on a running server gets data of its own: its agents'
 // events go to its indices only, its users see only its data, and the
 // default tenant's agents and users never reach it.
 func TestTenantsDataStaysApart(t *testing.T) {
-	// Without the background jobs this server never founds a cluster,
-	// whose shared users cannot have tenants yet.
+	// Without the background jobs this server never founds a cluster:
+	// a server that keeps its users in its own files.
 	rs := startRunnerWith(t, runOptions{server: plainHTTP})
 	must := func(method, path, body string, want int) map[string]any {
 		t.Helper()
@@ -125,20 +128,25 @@ func TestTenantsDataStaysApart(t *testing.T) {
 
 	// Acme's admin, signed in, works in acme only, and cannot reach the
 	// server's own pages.
-	ada := &running{t: t, r: rs.r, addr: rs.addr, os: rs.os, scheme: "http", client: rs.client}
-	resp, err := rs.client.Post("http://"+rs.addr+"/api/login", "application/json", strings.NewReader(`{"username":"ada","password":"Long-pass-for-acme-9"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	for _, c := range resp.Cookies() {
-		if strings.HasSuffix(c.Name, "signalith_session") {
-			ada.cookie = c.Name + "=" + c.Value
+	signIn := func(name, password string) *running {
+		t.Helper()
+		who := &running{t: t, r: rs.r, addr: rs.addr, os: rs.os, scheme: "http", client: rs.client}
+		resp, err := rs.client.Post("http://"+rs.addr+"/api/login", "application/json", strings.NewReader(`{"username":"`+name+`","password":"`+password+`"}`))
+		if err != nil {
+			t.Fatal(err)
 		}
+		resp.Body.Close()
+		for _, c := range resp.Cookies() {
+			if strings.HasSuffix(c.Name, "signalith_session") {
+				who.cookie = c.Name + "=" + c.Value
+			}
+		}
+		if resp.StatusCode != 200 || who.cookie == "" {
+			t.Fatalf("%s's sign-in: %d", name, resp.StatusCode)
+		}
+		return who
 	}
-	if resp.StatusCode != 200 || ada.cookie == "" {
-		t.Fatalf("ada's sign-in: %d", resp.StatusCode)
-	}
+	ada := signIn("ada", "Long-pass-for-acme-9")
 	for _, c := range []struct {
 		method, path string
 		want         int
@@ -200,6 +208,26 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	}
 	must("POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
 
+	// A provider user's notebooks in a tenant are released with their
+	// account, so a later account of the same name does not get them.
+	must("POST", "/api/users", `{"username":"pat","role":"analyst","password":"Quiet-river-stone-77","must_change_password":false}`, http.StatusCreated)
+	pat := signIn("pat", "Quiet-river-stone-77")
+	if code, out, err := pat.call("", "POST", "/api/tenants/switch", `{"tenant":"acme"}`); err != nil || code != 200 {
+		t.Fatalf("pat's switch: %d %v %v", code, out, err)
+	}
+	if code, out, err := pat.call("", "POST", "/api/notebooks", `{"title":"Pat's hunt"}`); err != nil || code != http.StatusCreated {
+		t.Fatalf("pat's notebook: %d %v %v", code, out, err)
+	}
+	must("DELETE", "/api/users/pat", "", 200)
+	must("POST", "/api/users", `{"username":"pat","role":"analyst","password":"Quiet-river-stone-88","must_change_password":false}`, http.StatusCreated)
+	pat = signIn("pat", "Quiet-river-stone-88")
+	if code, out, err := pat.call("", "POST", "/api/tenants/switch", `{"tenant":"acme"}`); err != nil || code != 200 {
+		t.Fatalf("new pat's switch: %d %v %v", code, out, err)
+	}
+	if code, out, _ := pat.call("", "GET", "/api/notebooks", ""); code != 200 || strings.Contains(fmt.Sprint(out["notebooks"]), "Pat's hunt") {
+		t.Errorf("the new pat sees the deleted pat's private notebook in acme: %d %v", code, out)
+	}
+
 	// Turned off: its agents and users are refused at once.
 	must("PATCH", "/api/tenants/acme", `{"disabled":true}`, 200)
 	if code := ingest(acmeToken, "late"); code == 200 {
@@ -208,4 +236,109 @@ func TestTenantsDataStaysApart(t *testing.T) {
 	if code, _, _ := ada.call("", "GET", "/api/findings", ""); code == 200 {
 		t.Error("a user of a tenant turned off was let in")
 	}
+}
+
+// In a cluster at the tenants' level, tenants run on the server that runs
+// the background jobs. Another server refuses tenants' users, provider
+// users switching and tenants' agents; so does the first once it gave the
+// jobs up, rather than serve data it no longer keeps up to date.
+func TestTenantsInACluster(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	fos := ostest.New(t)
+	a := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP, os: fos, name: "siem-a"})
+	a.usersShared()
+	giveKey(t, a)
+	b := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP, os: fos, name: "siem-b"})
+	b.usersShared()
+	must := func(rs *running, method, path, body string, want int) map[string]any {
+		t.Helper()
+		code, out, err := rs.call("", method, path, body)
+		if err != nil || code != want {
+			t.Fatalf("%s %s %s: %d %v %v, want %d", rs.r.node.Name(), method, path, code, out, err, want)
+		}
+		return out
+	}
+	eventually(t, "the cluster keeps tenants", func() bool { return a.r.shared.Tenants() && b.r.shared.Tenants() })
+	must(a, "POST", "/api/tenants", `{"id":"acme","name":"Acme"}`, http.StatusCreated)
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
+	must(a, "POST", "/api/users", `{"username":"ada","role":"analyst","password":"Long-pass-for-acme-9","must_change_password":false}`, http.StatusCreated)
+	token, _ := must(a, "POST", "/api/agent-tokens", `{"name":"acme agents"}`, http.StatusCreated)["secret"].(string)
+	ingest := func(rs *running) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", "http://"+rs.addr+"/api/ingest", strings.NewReader(`[{"log":"acme"}]`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode, resp.Header.Get("Retry-After")
+	}
+	accepted := func(rs *running) bool { code, _ := ingest(rs); return code == 200 }
+	// B, which runs no tenant now, tells acme's agents to send again
+	// later, so no batch is lost.
+	toldToWait := func(rs *running) bool {
+		code, retry := ingest(rs)
+		return code == http.StatusServiceUnavailable && retry != ""
+	}
+	eventually(t, "acme's agent is accepted on A", func() bool { return accepted(a) })
+	eventually(t, "B knows acme", func() bool {
+		tn, err := b.r.srv.Load().Tenants.Get("acme")
+		return err == nil && !tn.Disabled
+	})
+	eventually(t, "B tells acme's agent to wait", func() bool { return toldToWait(b) })
+	// The session's tenant is shared: B, which runs no tenant, refuses.
+	b.cookie = a.cookie
+	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("B on acme's findings: %d %v", code, out)
+	}
+	saved := b.cookie
+	// Once B has read ada, she signs in there too, and is told acme's
+	// data is not run there now.
+	eventually(t, "B read acme's user", func() bool {
+		if err := b.r.shared.Hub().Cycle(context.Background()); err != nil {
+			return false
+		}
+		_, ok := b.r.srv.Load().Users.Get("ada")
+		return ok
+	})
+	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != 200 {
+		t.Errorf("acme's user signing in on B: %d", code)
+	}
+	if code, out, _ := b.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("ada on B: %d %v", code, out)
+	}
+	b.cookie = saved
+	// Turned off on A, acme is off on B as well.
+	off := func(disabled bool) {
+		t.Helper()
+		must(a, "PATCH", "/api/tenants/acme", fmt.Sprintf(`{"disabled":%v}`, disabled), 200)
+		eventually(t, "B knows whether acme is off", func() bool {
+			tn, err := b.r.srv.Load().Tenants.Get("acme")
+			return err == nil && tn.Disabled == disabled
+		})
+	}
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"default"}`, 200)
+	off(true)
+	if code, _ := ingest(b); code == 200 || code == http.StatusServiceUnavailable {
+		t.Errorf("B: acme's agent after acme was turned off: %d", code)
+	}
+	if code := b.signInAs("ada", "Long-pass-for-acme-9"); code != http.StatusForbidden {
+		t.Errorf("B: acme's user after acme was turned off: %d", code)
+	}
+	b.cookie = saved
+	off(false)
+	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
+	// A gives the jobs up: it refuses acme's requests, and tells its
+	// agents to wait.
+	a.r.node.Drain("test")
+	eventually(t, "A gave the jobs up", func() bool { return !a.r.node.RunsJobs() })
+	if code, out, _ := a.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
+		t.Errorf("A on acme's findings without the jobs: %d %v", code, out)
+	}
+	eventually(t, "A tells acme's agent to wait", func() bool { return toldToWait(a) })
+	// A stops: B takes the jobs over, and acme's data with them.
+	a.stop()
+	eventually(t, "B takes the jobs over", b.r.node.RunsJobs)
+	eventually(t, "B accepts acme's agent", func() bool { return accepted(b) })
 }
