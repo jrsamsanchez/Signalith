@@ -610,6 +610,14 @@ var windowsSchema = map[string][]string{
 		"UserAccountControl", "UserParameters", "SidHistory"},
 	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
 		"SubjectLogonId"},
+	"4722": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4723": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId", "PrivilegeList"},
+	"4724": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4725": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
 	"4728": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
 		"SubjectDomainName", "SubjectLogonId"},
 	"4732": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
@@ -687,5 +695,9 @@ func otlpInt(raw json.RawMessage) (int64, bool) {
 }
 
 // WindowsSecurityNames returns the names of a Security event's data
-// values in schema order, for the events the Windows parser reads.
-func WindowsSecurityNames(eventID string) []string { return windowsSchema[eventID] }
+// values in schema order, for the events the Windows parser reads (by
+// position or by name).
+func WindowsSecurityNames(eventID string) []string {
+	s, _ := windowsSchemaFor(SecurityChannel, "", eventID)
+	return s
+}

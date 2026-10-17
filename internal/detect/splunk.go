@@ -272,8 +272,12 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "src", "share_name", "share_target"}
 	case "KerberosTGT", "KerberosService":
 		return []string{"host", "user", "kerberos_service"}
-	case "UserChanged", "ComputerChanged", "AccountRenamed", "GroupChanged":
+	case "UserChanged", "ComputerChanged", "AccountRenamed", "GroupChanged", "AccountChanged":
 		return []string{"host", "object"}
+	case "DirectoryAccess":
+		return []string{"host", "user", "object"}
+	case "FilterChanged":
+		return []string{"host", "security_filter_key"}
 	case "ExplicitLogon":
 		return []string{"host", "src_user", "user"}
 	case "NtlmAuth":

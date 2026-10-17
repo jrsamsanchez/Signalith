@@ -820,7 +820,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,185 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,186 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -863,6 +863,8 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
 | `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
 | `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
+| `` `wineventlog_security` EventCode=4662 ``, `4728`, `4722`, `4723`, `4724` or `4725` (raw search) | Security 4662 (operation on a directory object), 4728 (member added to a global group), 4722 and 4725 (account enabled or disabled), 4723 and 4724 (password changed or reset) | Change |
+| `` `wineventlog_security` EventCode=5447 `` (raw search) | Security 5447 (Windows Filtering Platform filter changed; each value by its name, `FilterName` is `security_filter_name`) | Other |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
@@ -949,6 +951,13 @@ Local group listing rules (4798, 4799) search the program that asked
 (`CallerProcessName` is `process_path`), and certificate rules (4886, 4887) the
 requester (`Requester` is `cert_requester`) and the request's `Attributes`
 (`cert_attributes`, such as its template and any subject alternative name).
+Directory object rules (4662) search the object (`ObjectName` is `object`, as
+recorded: often a `%{GUID}`), its class (`ObjectType` is `object_type`),
+`AccessMask`, `AccessList` and `Properties` (`object_properties`, one space between
+values), and who acted (`SubjectUserName` is `user`). Password rules (4723 changed by
+the account, 4724 reset by another) and account enabled or disabled (4722, 4725)
+search the account (`TargetUserName` is `object`, `TargetSid` is `object_sid`) and
+who acted (`SubjectUserName` is `user`, `SubjectUserSid` is `user_sid`).
 
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is

@@ -667,6 +667,23 @@ func parseWindowsSecurityNamed(eventID string, d map[string]string, ev *Event) {
 		f["old_object"] = d["OldTargetUserName"]
 		f["object_domain"] = d["TargetDomainName"]
 		f["object_sid"] = d["TargetSid"]
+	case "4722", "4723", "4724", "4725":
+		// A user account enabled (4722) or disabled (4725), and its
+		// password changed by the user (4723) or reset by another
+		// account (4724). The account that acted is the subject.
+		ev.Model = "Change"
+		f["object_category"] = "user"
+		f["action"] = "modified"
+		f["signature"] = map[string]string{
+			"4722": "A user account was enabled",
+			"4723": "An attempt was made to change an account's password",
+			"4724": "An attempt was made to reset an account's password",
+			"4725": "A user account was disabled",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
 	case "4727", "4730", "4737":
 		// A security-enabled global group created, deleted or changed.
 		ev.Model = "Change"

@@ -666,7 +666,7 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SubjectUserName", ev["user"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
 	case "ExplicitLogon", "NtlmAuth", "KerberosPreAuth", "ComputerChanged", "AccountRenamed", "GroupChanged",
-		"LocalGroupRead", "CertRequest":
+		"LocalGroupRead", "CertRequest", "DirectoryAccess", "AccountChanged", "FilterChanged":
 		return []sigmacheck.Case{securityRecord(node, ev)}
 	case "ProcessTerminated", "RawAccessRead":
 		id := map[string]string{"ProcessTerminated": "5", "RawAccessRead": "9"}[node]
@@ -992,7 +992,7 @@ func webRecord(ev map[string]string) sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web", "DirectoryAccess": "Change", "AccountChanged": "Change", "FilterChanged": "Other"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -1073,6 +1073,9 @@ var NodeEvents = map[string][]string{
 	"CertRequest":       {"4886", "4887"},
 	"ProcessTerminated": {"5"},
 	"RawAccessRead":     {"9"},
+	"DirectoryAccess":   {"4662"},
+	"AccountChanged":    {"4723", "4724", "4722", "4725"},
+	"FilterChanged":     {"5447"},
 	"Web":               {"access"},
 }
 
