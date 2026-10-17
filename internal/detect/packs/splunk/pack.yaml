@@ -7,9 +7,13 @@ version: 13bf1750b21768c03a2237ecfd27b54644bc6de9
 date: "2026-10-17"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
-notice: The detections in this pack are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts them when it starts. Findings from them name the rule's author.
+notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
 format: splunk
 rules:
+  - id: splunk-3cx-supply-chain-attack-network-indicators
+    rule_id: 791b727c-deec-4fbe-a732-756131b3c5a1
+    file: 3cx_supply_chain_attack_network_indicators.yml
+    path: detections/network/3cx_supply_chain_attack_network_indicators.yml
   - id: splunk-access-lsass-memory-for-dump-creation
     rule_id: fb4c31b0-13e8-4155-8aa5-24de4b8d6717
     file: access_lsass_memory_for_dump_creation.yml
@@ -154,6 +158,10 @@ rules:
     rule_id: 0b80e2c8-c746-4ddb-89eb-9efd892220cf
     file: aws_ecr_container_scanning_findings_medium.yml
     path: detections/cloud/aws_ecr_container_scanning_findings_medium.yml
+  - id: splunk-aws-exfiltration-via-anomalous-getobject-api-activity
+    rule_id: e4384bbf-5835-4831-8d85-694de6ad2cc6
+    file: aws_exfiltration_via_anomalous_getobject_api_activity.yml
+    path: detections/cloud/aws_exfiltration_via_anomalous_getobject_api_activity.yml
   - id: splunk-aws-exfiltration-via-batch-service
     rule_id: 04455dd3-ced7-480f-b8e6-5469b99e98e2
     file: aws_exfiltration_via_batch_service.yml
@@ -326,6 +334,10 @@ rules:
     rule_id: a7da845d-6fae-41cf-b823-6c0b8c55814a
     file: azure_ad_privileged_authentication_administrator_role_assigned.yml
     path: detections/cloud/azure_ad_privileged_authentication_administrator_role_assigned.yml
+  - id: splunk-azure-ad-privileged-role-assigned
+    rule_id: a28f0bc3-3400-4a6e-a2da-89b9e95f0d2a
+    file: azure_ad_privileged_role_assigned.yml
+    path: detections/cloud/azure_ad_privileged_role_assigned.yml
   - id: splunk-azure-ad-service-principal-authentication
     rule_id: 5a2ec401-60bb-474e-b936-1e66e7aa4060
     file: azure_ad_service_principal_authentication.yml
@@ -1086,6 +1098,14 @@ rules:
     rule_id: 1e45e6a8-110b-4886-b815-8d69cf35bf0a
     file: http_request_to_reserved_name_on_iis_server.yml
     path: detections/web/http_request_to_reserved_name_on_iis_server.yml
+  - id: splunk-http-rmm-user-agent
+    rule_id: 61884b02-0dcf-44c5-9094-db33bac09fa6
+    file: http_rmm_user_agent.yml
+    path: detections/network/http_rmm_user_agent.yml
+  - id: splunk-http-scripting-tool-user-agent
+    rule_id: 04430b4e-5ca8-4e88-98b5-d6bcf54f8393
+    file: http_scripting_tool_user_agent.yml
+    path: detections/web/http_scripting_tool_user_agent.yml
   - id: splunk-icacls-deny-command
     rule_id: cf8d753e-a8fe-11eb-8f58-acde48001122
     file: icacls_deny_command.yml
@@ -2674,6 +2694,10 @@ rules:
     rule_id: 8e99f89e-ae58-4ebc-bf52-ae0b1a277e72
     file: system_information_discovery_detection.yml
     path: detections/endpoint/system_information_discovery_detection.yml
+  - id: splunk-system-processes-run-from-unexpected-locations
+    rule_id: a34aae96-ccf8-4aef-952c-3ea21444444d
+    file: system_processes_run_from_unexpected_locations.yml
+    path: detections/endpoint/system_processes_run_from_unexpected_locations.yml
   - id: splunk-time-provider-persistence-registry
     rule_id: 5ba382c4-2105-11ec-8d8f-acde48001122
     file: time_provider_persistence_registry.yml
@@ -2850,6 +2874,10 @@ rules:
     rule_id: cb56a1ea-e0b1-46d5-913f-e024cba40cbe
     file: windows_archived_collected_data_in_temp_folder.yml
     path: detections/endpoint/windows_archived_collected_data_in_temp_folder.yml
+  - id: splunk-windows-attempt-to-stop-security-service
+    rule_id: 9ed27cea-4e27-4eff-b2c6-aac9e78a7517
+    file: windows_attempt_to_stop_security_service.yml
+    path: detections/endpoint/windows_attempt_to_stop_security_service.yml
   - id: splunk-windows-audit-policy-auditing-option-disabled-via-auditpo
     rule_id: 663a7a50-b752-4c84-975b-8325ca3f6f9e
     file: windows_audit_policy_auditing_option_disabled_via_auditpol.yml
@@ -3470,6 +3498,10 @@ rules:
     rule_id: 8351340b-ac0e-41ec-8b07-dd01bf32d6ea
     file: windows_hijack_execution_flow_version_dll_side_load.yml
     path: detections/endpoint/windows_hijack_execution_flow_version_dll_side_load.yml
+  - id: splunk-windows-hosts-file-access
+    rule_id: b34bcf35-5380-4b00-b208-5531303fb751
+    file: windows_hosts_file_access.yml
+    path: detections/endpoint/windows_hosts_file_access.yml
   - id: splunk-windows-iis-components-add-new-module
     rule_id: 38fe731c-1f13-43d4-b878-a5bbe44807e3
     file: windows_iis_components_add_new_module.yml
@@ -3638,6 +3670,10 @@ rules:
     rule_id: 90e71722-8c0f-43b4-937a-6222325976c2
     file: windows__key_file_creation_in_root_directory.yml
     path: detections/endpoint/windows__key_file_creation_in_root_directory.yml
+  - id: splunk-windows-known-abused-dll-created
+    rule_id: ea91651a-772a-4b02-ac3d-985b364a5f07
+    file: windows_known_abused_dll_created.yml
+    path: detections/endpoint/windows_known_abused_dll_created.yml
   - id: splunk-windows-known-graphicalproton-loaded-modules
     rule_id: bf471c94-0324-4b19-a113-d02749b969bc
     file: windows_known_graphicalproton_loaded_modules.yml
@@ -3674,6 +3710,10 @@ rules:
     rule_id: 09555511-aca6-484a-b6ab-72cd03d73c34
     file: windows_local_administrator_credential_stuffing.yml
     path: detections/endpoint/windows_local_administrator_credential_stuffing.yml
+  - id: splunk-windows-lolbas-executed-outside-expected-path
+    rule_id: 326fdf44-b90c-4d2e-adca-1fd140b10536
+    file: windows_lolbas_executed_outside_expected_path.yml
+    path: detections/endpoint/windows_lolbas_executed_outside_expected_path.yml
   - id: splunk-windows-lsa-secrets-nolmhash-registry
     rule_id: 48cc1605-538c-4223-8382-e36bee5b540d
     file: windows_lsa_secrets_nolmhash_registry.yml
@@ -4162,6 +4202,10 @@ rules:
     rule_id: 08d67349-0808-4f55-b431-1037269fa517
     file: windows_powershell_process_implementing_manual_base64_decoder.yml
     path: detections/endpoint/windows_powershell_process_implementing_manual_base64_decoder.yml
+  - id: splunk-windows-powershell-process-with-malicious-string
+    rule_id: 5df35d50-e1a3-4a52-a337-92e69d9b1b8a
+    file: windows_powershell_process_with_malicious_string.yml
+    path: detections/endpoint/windows_powershell_process_with_malicious_string.yml
   - id: splunk-windows-powershell-remotesigned-file
     rule_id: f7f7456b-470d-4a95-9703-698250645ff4
     file: windows_powershell_remotesigned_file.yml
@@ -4170,6 +4214,10 @@ rules:
     rule_id: ddf82fcb-e9ee-40e3-8712-a50b5bf323fc
     file: windows_powershell_scheduletask.yml
     path: detections/endpoint/windows_powershell_scheduletask.yml
+  - id: splunk-windows-powershell-script-block-with-malicious-string
+    rule_id: 0f09cedd-10f1-4b9f-bdea-7a8b06ea575d
+    file: windows_powershell_script_block_with_malicious_string.yml
+    path: detections/endpoint/windows_powershell_script_block_with_malicious_string.yml
   - id: splunk-windows-powershell-script-from-windowsapps-directory
     rule_id: 8c3d1f2e-7b4a-45e3-9d8f-6a2e4c9b1234
     file: windows_powershell_script_from_windowsapps_directory.yml
@@ -4278,6 +4326,10 @@ rules:
     rule_id: 9a5f4b3e-1d2b-4c6f-9a8e-3b7d2f5c1a6e
     file: windows_pstools_recon_usage.yml
     path: detections/endpoint/windows_pstools_recon_usage.yml
+  - id: splunk-windows-pua-named-pipe
+    rule_id: 95b11d20-e2c6-46a5-b526-8629f5f0860a
+    file: windows_pua_named_pipe.yml
+    path: detections/endpoint/windows_pua_named_pipe.yml
   - id: splunk-windows-putty-suite-utility-execution
     rule_id: 64d5263e-0f29-4641-81ed-03b39c27ecd4
     file: windows_putty_suite_utility_execution.yml
@@ -4410,6 +4462,10 @@ rules:
     rule_id: 6735153f-2da0-4eba-a428-288898613837
     file: windows_renamed_python_binary_was_executed.yml
     path: detections/endpoint/windows_renamed_python_binary_was_executed.yml
+  - id: splunk-windows-rmm-named-pipe
+    rule_id: c07c7138-edf5-4a16-8b24-3842599235bf
+    file: windows_rmm_named_pipe.yml
+    path: detections/endpoint/windows_rmm_named_pipe.yml
   - id: splunk-windows-rmm-tool-execution
     rule_id: 4afbd373-b769-4f82-8375-41e0153e46f9
     file: windows_rmm_tool_execution.yml
@@ -4666,6 +4722,10 @@ rules:
     rule_id: 953322db-128a-4ce9-8e89-56e039e33d98
     file: windows_suspect_process_with_authentication_traffic.yml
     path: detections/endpoint/windows_suspect_process_with_authentication_traffic.yml
+  - id: splunk-windows-suspicious-c2-named-pipe
+    rule_id: 90599d85-dc2a-4d4c-8c59-9485c3665828
+    file: windows_suspicious_c2_named_pipe.yml
+    path: detections/endpoint/windows_suspicious_c2_named_pipe.yml
   - id: splunk-windows-suspicious-child-process-of-consent-exe
     rule_id: 8194b5d4-41ae-4ce7-adfb-92d375e341d2
     file: windows_suspicious_child_process_of_consent_exe.yml
@@ -4690,6 +4750,10 @@ rules:
     rule_id: 4000d728-faaf-44d4-969b-12216f2879e1
     file: windows_suspicious_file_in_efi_volume.yml
     path: detections/endpoint/windows_suspicious_file_in_efi_volume.yml
+  - id: splunk-windows-suspicious-named-pipe
+    rule_id: 3a76d52f-a007-4a65-a37d-f313c2c83f31
+    file: windows_suspicious_named_pipe.yml
+    path: detections/endpoint/windows_suspicious_named_pipe.yml
   - id: splunk-windows-suspicious-process-file-path
     rule_id: ecddae4e-3d4b-41e2-b3df-e46a88b38521
     file: windows_suspicious_process_file_path.yml
@@ -4846,6 +4910,10 @@ rules:
     rule_id: 0c398be7-e33a-4882-9546-12166ceaf73c
     file: windows_vssvc_process_accessing_defender_engine.yml
     path: detections/endpoint/windows_vssvc_process_accessing_defender_engine.yml
+  - id: splunk-windows-vulnerable-driver-installed
+    rule_id: 1dda7586-57be-4a1b-8de1-a9ad802b9a7f
+    file: windows_vulnerable_driver_installed.yml
+    path: detections/endpoint/windows_vulnerable_driver_installed.yml
   - id: splunk-windows-wbadmin-file-recovery-from-backup
     rule_id: 0175f0b7-728d-4038-bbf1-1c30d6ee3d31
     file: windows_wbadmin_file_recovery_from_backup.yml

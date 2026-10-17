@@ -70,3 +70,23 @@ func TestOutput(t *testing.T) {
 		t.Error("appended past the column limit")
 	}
 }
+
+// A search's outputlookup cannot write a content pack's table, or a new
+// table under a pack's prefix.
+func TestOutputLeavesPackTables(t *testing.T) {
+	pt, err := NewPackTable("splunk", "splunk-pipes", []byte("pipe,tool\nx,PsExec\n"), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewPackStore([]*Table{pt})
+	for _, name := range []string{"splunk-pipes", "splunk-other"} {
+		for _, mode := range []OutputMode{OutputCreate, OutputAppend, OutputReplace} {
+			if _, err := s.Output(name, []string{"pipe"}, [][]string{{"y"}}, mode); err == nil {
+				t.Errorf("Output(%s, %v) succeeded", name, mode)
+			}
+		}
+	}
+	if tb, _ := s.Get("splunk-pipes"); len(tb.Rows) != 1 {
+		t.Errorf("pack table rows = %v", tb.Rows)
+	}
+}

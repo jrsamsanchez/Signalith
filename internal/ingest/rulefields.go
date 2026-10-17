@@ -10,7 +10,7 @@ package ingest
 var cloudRuleFields = []string{
 	// AWS CloudTrail.
 	"additionalEventData.MFAUsed", "userIdentity.sessionContext.sessionIssuer.type",
-	"requestParameters.VersioningConfiguration.Status", "requestParameters.attribute", "requestParameters.egress",
+	"requestParameters.VersioningConfiguration.Status", "requestParameters.attribute", "requestParameters.bucketName", "requestParameters.egress",
 	"requestParameters.masterUserPassword", "requestParameters.x-amz-server-side-encryption",
 	"responseElements.publiclyAccessible",
 	// Entra ID and Azure.
