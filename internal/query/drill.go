@@ -52,6 +52,9 @@ func (q *Query) Drilldown() *Drill {
 	}
 	var pipe strings.Builder
 	for _, c := range q.Commands[:cut] {
+		if _, ok := c.(*OutputLookup); ok {
+			continue // it does not change the rows, and wrote its table already
+		}
 		pipe.WriteString("\n| " + CommandString(c))
 		switch c := c.(type) {
 		case *Where:

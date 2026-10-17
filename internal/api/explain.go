@@ -214,6 +214,20 @@ func ordinal(n int) string {
 
 func describeCommand(c query.Command) string {
 	switch c := c.(type) {
+	case *query.OutputLookup:
+		s := "Write the rows to the lookup table " + c.Table
+		switch {
+		case c.Append == nil:
+			s += ", which must not exist yet"
+		case *c.Append:
+			s += ", after the rows it has"
+		default:
+			s += ", replacing what it holds"
+		}
+		if c.Max > 0 {
+			s += fmt.Sprintf(", at most %d rows", c.Max)
+		}
+		return s + ", and keep them as they are."
 	case *query.Stats:
 		s := "Calculate " + describeAggs(c.Aggs)
 		if len(c.By) > 0 {

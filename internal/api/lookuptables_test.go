@@ -1,12 +1,15 @@
 package api
 
 import (
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 func withLookupTables(t *testing.T) func(*Server) {
@@ -84,5 +87,65 @@ func TestLookupTablesReadOnlyWithSeveralServers(t *testing.T) {
 	}
 	if _, body := do(t, ts, "GET", "/api/lookuptables", "", true); body["multi_server"] != true {
 		t.Errorf("GET list = %v, want multi_server", body)
+	}
+}
+
+// TestOutputLookupFromSearch: an admin's search writes a table and the
+// write is audited; an analyst's, an API token's and a cluster's cannot.
+func TestOutputLookupFromSearch(t *testing.T) {
+	var logs logBuffer
+	var srv *Server
+	ts, _ := newUsersServer(t, func(s *Server) {
+		withLookupTables(t)(s)
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+		srv = s
+	})
+	q := `{"query":"| makeresults count=2 | eval user=\"amy\" | outputlookup weekly_users | stats count by user","write_lookups":true}`
+	// A search that does not ask to write, such as a re-run or the Ask
+	// box's, does not, even an admin's.
+	if code, body := do(t, ts, "POST", "/api/search", strings.Replace(q, `,"write_lookups":true`, "", 1), true); code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "presses Run") {
+		t.Fatalf("admin search without write_lookups = %d %v", code, body)
+	}
+	if _, ok := srv.Engine.Lookups.Get("weekly_users"); ok {
+		t.Fatal("a search without write_lookups wrote a table")
+	}
+	code, body := do(t, ts, "POST", "/api/search", q, true)
+	if code != http.StatusOK {
+		t.Fatalf("admin search = %d %v", code, body)
+	}
+	// Drilling into a count does not write again.
+	if drill, _ := body["drill"].(map[string]any); drill == nil || strings.Contains(fmt.Sprint(drill["pipe"]), "outputlookup") {
+		t.Errorf("drill = %v", body["drill"])
+	}
+	if tb, ok := srv.Engine.Lookups.Get("weekly_users"); !ok || len(tb.Rows) != 2 {
+		t.Fatalf("table = %+v", tb)
+	}
+	if l := logs.String(); !strings.Contains(l, `msg="lookup table written by a search"`) || !strings.Contains(l, "by=admin") || !strings.Contains(l, "table=weekly_users") || !strings.Contains(l, "rows=2") {
+		t.Errorf("audit log = %s", l)
+	}
+	if code, body := do(t, ts, "POST", "/api/search", q, true); code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "append=t") {
+		t.Errorf("second write = %d %v", code, body)
+	}
+	if code, _, _ := call(t, ts, "POST", "/api/users", `{"username":"ana","role":"analyst","password":"a-fine-pass-here","must_change_password":false}`, "admin", adminPass, nil); code != 201 {
+		t.Fatal(code)
+	}
+	q = `{"query":"| makeresults | outputlookup append=t weekly_users","write_lookups":true}`
+	if code, body := doAs(t, ts, "ana", "a-fine-pass-here", "POST", "/api/search", q); code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "presses Run") {
+		t.Errorf("analyst search = %d %v", code, body)
+	}
+	if tb, _ := srv.Engine.Lookups.Get("weekly_users"); len(tb.Rows) != 2 {
+		t.Errorf("analyst changed the table: %v", tb.Rows)
+	}
+	srv.Cluster = &fakeCluster{runs: true}
+	if code, body := do(t, ts, "POST", "/api/search", q, true); code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "several servers") {
+		t.Errorf("search with several servers = %d %v", code, body)
+	}
+	for _, p := range []*principal{nil, {Role: users.Analyst}, {Role: users.Admin, Method: "token", tokenID: "abc"}, {Role: users.Admin, tokenID: "abc"}} {
+		if mayWriteLookups(p) {
+			t.Errorf("%+v may write lookup tables", p)
+		}
+	}
+	if !mayWriteLookups(&principal{Role: users.Admin, Method: "session"}) {
+		t.Error("an admin's session may not write lookup tables")
 	}
 }

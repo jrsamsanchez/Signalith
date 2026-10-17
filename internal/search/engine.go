@@ -546,7 +546,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans, *query.OutputLookup:
 			return true
 		}
 	}
@@ -763,6 +763,8 @@ func (e *Engine) post(ctx context.Context, res *Result, cmds []query.Command, q 
 			err = e.mapSearch(ctx, res, c, q)
 		case *query.AddInfo:
 			err = e.addInfo(ctx, res, q)
+		case *query.OutputLookup:
+			err = e.outputLookup(ctx, res, c)
 		default:
 			err = applyCommand(ctx, res, c)
 		}
