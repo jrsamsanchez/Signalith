@@ -62,6 +62,7 @@ var fuzzSeeds = []string{
 	`* | geostats | geostats latfield="l a" longfield=lo binspanlat=0.5 binspanlong=1e1 globallimit=3 avg(x) AS a by "s c" | geostats dc(u), sum(b) AS "s b"`,
 	`* | extract | kv pairdelim="|;", kvdelim=":" limit=5 maxchars=100 mv_add=t clean_keys=false | outlier | outlier action=rm param=0.5 uselower=true mark=1 type=iqr bytes "a=b" c* | gauge count | gauge "a b" -5 0 1e3 2.5`,
 	`| multisearch [search a=1 | head 2] [search b="x y"] [search index=* | stats count by c] | timewrap 1d | timewrap 2h align=now series=short | cluster | cluster field="m s" t=0.5 match=ngramset showcount=t countfield="n c" labelfield=l labelonly=1`,
+	`* | xpath "//Event/System/EventID" | xpath field=m outfield="o f" default="" "/a//b[@n='x'][2]/@v" | xpath "*/c/text()" | abstract | excerpt maxterms=5 maxlines=2 | highlight a, "b c"`,
 	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }

@@ -207,6 +207,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyTimewrap(ctx, res, c)
 	case *query.Cluster:
 		return applyCluster(ctx, res, c)
+	case *query.XPath:
+		return applyXPath(ctx, res, c)
+	case *query.Abstract:
+		return applyAbstract(ctx, res, c)
+	case *query.Highlight:
+		// The results view marks terms itself; the rows stay as they are.
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
