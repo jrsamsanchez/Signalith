@@ -95,6 +95,8 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
   default tenant; tenants get the detections built into Signalith.
 - The buttons in Slack and Teams messages work in the default tenant only: only provider users
   link chat accounts, and a click on a tenant's message is refused.
+- [Behavior baselines](baselines.md) learn from the default tenant's data only, and only provider
+  admins see Settings > Behavior baselines.
 - Custom log parsers are the provider's: only provider admins change them, and they read every
   tenant's records alike.
 - Downgrading to a version without multi-tenant mode is not supported once there are
