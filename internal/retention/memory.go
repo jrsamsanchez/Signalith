@@ -32,6 +32,8 @@ type Memory struct {
 	Calls []string
 	// OnExport, when set, runs before each exported document.
 	OnExport func(index string, n int)
+	// OnSnapshot, when set, runs after each snapshot is taken.
+	OnSnapshot func(index string)
 	// ColdRepo names the registered cold storage repository (empty: none
 	// is registered), and ColdMountable says whether a node can mount
 	// searchable snapshots.
@@ -462,7 +464,16 @@ func (m *Memory) ColdState(_ context.Context, repo, prefix string) (*ColdState, 
 
 func (m *Memory) SnapshotIndex(_ context.Context, repo, name, index string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	err := m.snapshotIndex(repo, name, index)
+	hook := m.OnSnapshot
+	m.mu.Unlock()
+	if err == nil && hook != nil {
+		hook(index)
+	}
+	return err
+}
+
+func (m *Memory) snapshotIndex(repo, name, index string) error {
 	if err := m.fail("snapshot", index); err != nil {
 		return err
 	}

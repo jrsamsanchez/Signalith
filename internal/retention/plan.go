@@ -69,6 +69,9 @@ type Decision struct {
 	// writesBlocked means writes to the index are already blocked, by an
 	// earlier compaction or by OpenSearch's flood-stage block.
 	writesBlocked bool
+	// writeBlock means index.blocks.write itself is set, which, unlike
+	// the flood-stage block, OpenSearch never lifts on its own.
+	writeBlock bool
 	// diskBlocked means OpenSearch's flood-stage block is on the index:
 	// it can still be read and deleted, but not changed or merged.
 	diskBlocked bool
@@ -335,7 +338,7 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		e.Category, e.Day, e.Source = cat, day.Format(time.DateOnly), src
 		e.age = int(today.Sub(day).Hours() / 24)
 		e.compacted = ix.Compacted()
-		e.writesBlocked, e.diskBlocked = ix.WriteBlocked || ix.DiskBlocked, ix.DiskBlocked
+		e.writesBlocked, e.diskBlocked, e.writeBlock = ix.WriteBlocked || ix.DiskBlocked, ix.DiskBlocked, ix.WriteBlocked
 		if ix.Cold != nil {
 			// Its data is in the snapshot repository: deleting it frees no
 			// disk, so size caps and the disk guard leave it alone.
@@ -412,10 +415,17 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 			e := &entry{Decision: Decision{Index: sn.Index, Category: cat, Day: day.Format(time.DateOnly), Source: src,
 				Snapshot: sn.Name, snapshotOnly: true, cold: true, hold: true}, dayT: day}
 			e.age = int(today.Sub(day).Hours() / 24)
+			past := pol.KeepDays > 0 && e.age > pol.KeepDays
 			switch {
-			case pol.KeepDays > 0 && e.age > pol.KeepDays:
+			case past && !pol.Archive:
 				e.Action, e.Rule = ActionDelete, RuleKeepDays
 				e.Reason = fmt.Sprintf("Older than %s; only its cold storage snapshot is left", days(pol.KeepDays))
+			case past && snap.Cold.Mountable && !names[sn.Index]:
+				// The policy archives, and only a mounted day can be
+				// archived: mount it, and the next run archives and
+				// deletes it.
+				e.Action, e.Rule = ActionMount, RuleColdRecover
+				e.Reason = fmt.Sprintf("Older than %s; mounted from cold storage first so it can be archived", days(pol.KeepDays))
 			case names[sn.Index]:
 				// Another index of that name holds events that arrived
 				// later; mounting would need its name, so both are kept.

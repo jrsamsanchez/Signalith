@@ -893,6 +893,44 @@ func (m *Manager) freeze(ctx context.Context, d Decision) (bool, error) {
 	return set, nil
 }
 
+// sealed checks, just before an index is deleted, that it still holds the
+// n events that were copied out of it. freeze cannot block writes to an
+// index under OpenSearch's flood-stage block, and OpenSearch lifts that
+// block on its own once the disk frees up, after which late events could
+// land in the index and be deleted with it. So when only the flood-stage
+// block held the index, sealed sets the write block now: refused means the
+// flood-stage block is still on and nothing can have been written; set
+// means it was lifted, and a recount shows whether events arrived.
+func (m *Manager) sealed(ctx context.Context, d Decision, n int64) error {
+	if !d.diskBlocked || d.writeBlock {
+		return nil
+	}
+	if err := m.Cluster.BlockWrites(ctx, d.Index, true); err != nil {
+		if isFloodStage(err) {
+			return nil
+		}
+		return fmt.Errorf("could not make the index read-only before deleting it, so it was kept: %w", err)
+	}
+	if err := m.Cluster.Refresh(ctx, d.Index); err != nil {
+		return fmt.Errorf("could not refresh the index before deleting it, so it was kept: %w", err)
+	}
+	got, err := m.Cluster.Count(ctx, d.Index)
+	if err != nil {
+		return fmt.Errorf("could not count its events again before deleting it, so it was kept: %w", err)
+	}
+	if got != n {
+		return fmt.Errorf("events arrived after OpenSearch lifted its disk block (%d, not %d), so the index was kept; the next run tries again", got, n)
+	}
+	return nil
+}
+
+// isFloodStage reports whether OpenSearch refused a change because of its
+// flood-stage (read-only-allow-delete) block.
+func isFloodStage(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "read-only-allow-delete") || strings.Contains(s, "flood-stage")
+}
+
 // thaw lifts the write block freeze set on an index that is kept, so it
 // keeps taking late events.
 func (m *Manager) thaw(ctx context.Context, d Decision, set bool) {
@@ -944,6 +982,9 @@ func (m *Manager) archiveFrozen(ctx context.Context, d Decision, act *Action) er
 	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
 		return fmt.Errorf("archived to %s, but the index was not deleted: %w", man.File, err)
 	}
+	if err := m.sealed(ctx, d, man.Docs); err != nil {
+		return fmt.Errorf("archived to %s, but %w", man.File, err)
+	}
 	if err := m.deleteIndex(ctx, d, act); err != nil {
 		return fmt.Errorf("archived to %s, but deleting the index failed: %w", man.File, err)
 	}
@@ -979,6 +1020,9 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 	act.Docs = n
 	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
 		m.thaw(ctx, d, set)
+		return err
+	}
+	if err := m.sealed(ctx, d, n); err != nil {
 		return err
 	}
 	if err := m.deleteIndex(ctx, d, act); err != nil {
@@ -1062,6 +1106,9 @@ func (m *Manager) toCold(ctx context.Context, d Decision, act *Action) error {
 	// The snapshot may have taken long: check again before deleting.
 	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
 		return fmt.Errorf("snapshotted to %s, but the index was not deleted: %w", name, err)
+	}
+	if err := m.sealed(ctx, d, n); err != nil {
+		return fmt.Errorf("snapshotted to %s, but %w", name, err)
 	}
 	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
 		return fmt.Errorf("snapshotted to %s, but deleting the index failed: %w", name, err)

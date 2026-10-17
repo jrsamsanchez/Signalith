@@ -230,3 +230,85 @@ func TestColdOrphanSnapshots(t *testing.T) {
 		t.Errorf("notes = %v", p.Notes)
 	}
 }
+
+// A policy that archives never lets a day's snapshot go unarchived: a day
+// past Keep whose mount failed is mounted first, then archived.
+func TestColdSnapshotPastKeepIsArchivedFirst(t *testing.T) {
+	f := coldFixture(t, Policy{KeepDays: 60, ColdAfterDays: 30, Archive: true})
+	day := f.add("endpoint", 45, 4*GB, 7)
+	f.mem.Fail["mount "+day] = errors.New("no warm node")
+	if run, _ := f.m.Run(context.Background(), TriggerManual, ""); f.exists(day) || len(f.mem.Snapshots()) != 1 {
+		t.Fatalf("run = %+v", run)
+	}
+	f.m.Now = func() time.Time { return testNow.AddDate(0, 0, 16) }
+	run, _ := f.m.Run(context.Background(), TriggerManual, "")
+	if run.Deleted != 0 || run.Archived != 0 || len(f.mem.Snapshots()) != 1 {
+		t.Fatalf("snapshot deleted without an archive: run %+v, snapshots %v", run, f.mem.Snapshots())
+	}
+	// Once it can be mounted, it is mounted, then archived and deleted.
+	delete(f.mem.Fail, "mount "+day)
+	if run, _ := f.m.Run(context.Background(), TriggerManual, ""); run.Mounted != 1 {
+		t.Fatalf("run = %+v", run)
+	}
+	run, _ = f.m.Run(context.Background(), TriggerManual, "")
+	if run.Archived != 1 || len(run.Errors) > 0 || f.exists(day) || len(f.mem.Snapshots()) != 0 {
+		t.Fatalf("run = %+v, snapshots %v", run, f.mem.Snapshots())
+	}
+	if man, err := f.m.Archive.Get(day); err != nil || man.Docs != 7 {
+		t.Errorf("archive = %+v, %v", man, err)
+	}
+}
+
+// Without an archive, the snapshot of a day past Keep is simply deleted.
+func TestColdSnapshotPastKeepDeletedWithoutArchive(t *testing.T) {
+	f := coldFixture(t, Policy{KeepDays: 60, ColdAfterDays: 30})
+	day := f.add("endpoint", 45, 4*GB, 7)
+	f.mem.Fail["mount "+day] = errors.New("no warm node")
+	f.m.Run(context.Background(), TriggerManual, "")
+	f.m.Now = func() time.Time { return testNow.AddDate(0, 0, 16) }
+	if run, _ := f.m.Run(context.Background(), TriggerManual, ""); run.Deleted != 1 || len(f.mem.Snapshots()) != 0 {
+		t.Errorf("run = %+v, snapshots %v", run, f.mem.Snapshots())
+	}
+}
+
+// A day under the flood-stage block cannot be made read-only first. If
+// OpenSearch lifts the block while it is copied out and events arrive,
+// the day is kept, not deleted with them.
+func TestDiskBlockLiftedDuringMoveKeepsLateEvents(t *testing.T) {
+	f := coldFixture(t, Policy{KeepDays: 365, ColdAfterDays: 30})
+	day := f.add("endpoint", 40, 2*GB, 3)
+	f.mem.SetIndex(day, func(i *IndexInfo) { i.DiskBlocked = true })
+	f.mem.OnSnapshot = func(index string) {
+		f.mem.SetIndex(index, func(i *IndexInfo) { i.DiskBlocked = false })
+		f.mem.AddDocs(index, testDocs(2)...)
+	}
+	run, _ := f.m.Run(context.Background(), TriggerManual, "")
+	if run.Cold != 0 || len(run.Errors) != 1 || !strings.Contains(run.Errors[0], "events arrived") {
+		t.Fatalf("run = %+v", run)
+	}
+	if info, docs, ok := f.mem.Index(day); !ok || info.Cold != nil || len(docs) != 5 || !info.WriteBlocked {
+		t.Fatalf("day = %+v, %d docs, ok %v", info, len(docs), ok)
+	}
+	// The next run snapshots all five again and moves the day.
+	f.mem.OnSnapshot = nil
+	if run, _ := f.m.Run(context.Background(), TriggerManual, ""); run.Cold != 1 || len(run.Errors) > 0 {
+		t.Fatalf("run = %+v", run)
+	}
+	if info, docs, _ := f.mem.Index(day); info.Cold == nil || len(docs) != 5 || len(f.mem.Snapshots()) != 1 {
+		t.Errorf("day = %+v, %d docs, snapshots %v", info, len(docs), f.mem.Snapshots())
+	}
+}
+
+// While the flood-stage block holds, nothing can be written, so the day
+// moves as it is.
+func TestDiskBlockedDayMovesWhileTheBlockHolds(t *testing.T) {
+	f := coldFixture(t, Policy{KeepDays: 365, ColdAfterDays: 30})
+	day := f.add("endpoint", 40, 2*GB, 3)
+	f.mem.SetIndex(day, func(i *IndexInfo) { i.DiskBlocked = true })
+	if run, _ := f.m.Run(context.Background(), TriggerManual, ""); run.Cold != 1 || len(run.Errors) > 0 {
+		t.Fatalf("run = %+v", run)
+	}
+	if info, docs, _ := f.mem.Index(day); info.Cold == nil || len(docs) != 3 {
+		t.Errorf("day = %+v, %d docs", info, len(docs))
+	}
+}

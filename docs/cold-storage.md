@@ -119,10 +119,10 @@ Storage work with their repository plugins.
   its own [archives](retention.md#archives); snapshots are encrypted by the bucket.
 - **Give the access key only this bucket**: list, read, write and delete objects in
   it, nothing else.
-- **Keep backups somewhere else.** Signalith deletes cold days' snapshots when Keep
-  runs out, so its role may delete snapshots, and OpenSearch does not limit that to one
-  repository. Keep backup snapshots in another bucket with object lock, or in another
-  cluster, so nothing Signalith can do reaches them.
+- **Keep backups where Signalith can't erase them.** Signalith deletes cold days'
+  snapshots when Keep runs out, so its role may delete snapshots, and OpenSearch does not
+  limit that to one repository. Keep backup snapshots in a bucket with S3 Object Lock, or
+  in a bucket whose credentials this cluster doesn't have, or in another cluster.
 - Signalith only ever touches snapshots named `signalith-*` in `signalith-cold`.
 
 ## Good to know
@@ -139,5 +139,8 @@ Storage work with their repository plugins.
   because the day is deleted from disk only after its snapshot is checked.
 - **Removing cold storage:** set **Move to cold storage after** back to empty. Days
   already in cold storage stay there, searchable, until Keep runs out.
+- **With [tenants](multi-tenant.md)**, each tenant has its own repository, named after
+  its index prefix: `signalith.t.<tenant id>-cold`. A tenant gets cold storage once that
+  repository is registered.
 - The Helm chart does not set cold storage up yet; follow the steps for your own
   cluster.
