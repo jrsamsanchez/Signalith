@@ -83,7 +83,7 @@ func TestParseRefuses(t *testing.T) {
 		"| tstats count from datamodel=Endpoint.Processes where Processes.dest=x by Processes.dest":                        "no Signalith mapping",
 		"| tstats count from datamodel=Endpoint.Processes where Filesystem.file_name=x by Processes.dest":                  "not a field of",
 		"| tstats count from datamodel=Endpoint.Processes where `nope` by Processes.dest":                                  "not defined",
-		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name IN (\"a\" \"b\") by Processes.dest": "missing )",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name IN (\"a\" \"b\") by Processes.dest": "no comma between two values",
 		"| tstats count from datamodel=Network_Traffic.DNS where DNS.query=x by DNS.dest":                                  "not supported",
 		"| tstats count from datamodel=Endpoint.All_Traffic where All_Traffic.dest_port=1 by All_Traffic.dest":             "not supported",
 		"| tstats count from datamodel=Network_Traffic.All_Traffic where All_Traffic.dest=x by All_Traffic.dest":           "no Signalith mapping",
@@ -190,6 +190,61 @@ func TestOrBeforeAnd(t *testing.T) {
 	}
 	if !Eval(e, map[string]string{"process_name": "x.exe", "process": "x.exe temp.dat"}) {
 		t.Error("does not match the second OR side")
+	}
+}
+
+// A macro in an IN list stands for its values, as Splunk expands it as
+// text; one that is not a list of values is refused.
+func TestMacroInList(t *testing.T) {
+	macros := map[string]*Macro{
+		"names": {Name: "names", Definition: `cmd.exe,"power*"`},
+		"terms": {Name: "terms", Definition: `a.exe) OR (Processes.process_name=b.exe`},
+	}
+	e, err := ParseWhere(`Processes.process_name IN (x.exe, `+"`names`"+`)`, "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v, want := range map[string]bool{"x.exe": true, "CMD.EXE": true, "powershell.exe": true, "names": false, "y.exe": false} {
+		if got := Eval(e, map[string]string{"process_name": v}); got != want {
+			t.Errorf("%s: %v, want %v", v, got, want)
+		}
+	}
+	if _, err := ParseWhere(`Processes.process_name IN (`+"`terms`"+`)`, "Processes", macros); err == nil {
+		t.Error("a macro that is not a list of values is read")
+	}
+	// A macro after the list is a term of its own.
+	macros["reg"] = &Macro{Name: "reg", Definition: `(Processes.process_name=reg.exe OR Processes.original_file_name=reg.exe)`}
+	e, err = ParseWhere(`Processes.parent_process_name IN (a.exe, b.exe) `+"`reg`", "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "reg.exe"}) || Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "x.exe"}) {
+		t.Error("the macro after the list is not read as a term")
+	}
+	if _, err := ParseWhere(`Processes.process_name IN (,a.exe)`, "Processes", macros); err == nil {
+		t.Error("a list starting with a comma is read")
+	}
+}
+
+// A later search of several terms ANDs them, with OR before AND, as
+// Splunk's search does; a bare term in it is refused.
+func TestLaterSearchTerms(t *testing.T) {
+	r, err := Parse(rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=net.exe by Processes.dest Processes.user Processes.process\n"+
+		"| `drop_dm_object_name(Processes)`\n| search user=admin* process=\"*share*\" OR process=\"*use*\""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for doc, want := range map[[2]string]bool{
+		{"admin1", "net share x"}: true, {"ADMIN2", "net use x"}: true, {"admin1", "net view"}: false, {"bob", "net share x"}: false,
+	} {
+		if got := r.Keeps(map[string]any{"dest": "pc", "user": doc[0], "process": doc[1]}); got != want {
+			t.Errorf("%v: keeps %v, want %v\npost:\n%s", doc, got, want, r.Post)
+		}
+	}
+	_, err = Parse(rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=net.exe by Processes.dest\n"+
+		"| `drop_dm_object_name(Processes)`\n| search dest=x \"share\""), nil)
+	if err == nil || !strings.Contains(err.Error(), "bare term") {
+		t.Errorf("err = %v, want a bare term refused", err)
 	}
 }
 

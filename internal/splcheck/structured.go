@@ -101,24 +101,26 @@ type find struct {
 }
 
 var (
-	evalAssignRe = regexp.MustCompile(`(?s)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=([^=].*)$`)
-	mvindexRe    = regexp.MustCompile(`(?i)^mvindex\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*([^,()]+?)\s*\)$`)
-	mvcountRe    = regexp.MustCompile(`(?i)^mvcount\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)$`)
-	mvfindRe     = regexp.MustCompile(`(?i)mvfind\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
-	splitRe      = regexp.MustCompile(`(?i)^split\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)$`)
-	copyExprRe   = regexp.MustCompile(`(?i)^(?:(?:lower|upper|trim|ltrim|rtrim|coalesce|replace|mvappend)\s*\(\s*)?('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:[,)].*)?$`)
-	countedRe    = regexp.MustCompile(`(?i)^(?:coalesce\s*\(\s*)?mvcount\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)`)
-	condGtRe     = regexp.MustCompile(`(?i)'?([A-Za-z_]\w*)'?\s*>=?\s*('?[A-Za-z_]\w*'?|\d+)`)
-	spathArgRe   = regexp.MustCompile(`(?i)\b(input|output|path)\s*=\s*("[^"]*"|\S+)`)
-	rexStageRe   = regexp.MustCompile(`(?is)^rex\s+(?:field\s*=\s*("[^"]+"|\S+)\s+)?(?:max_match\s*=\s*\d+\s+)?("(?:[^"\\]|\\.)*")`)
-	groupNameRe  = regexp.MustCompile(`\(\?P?<([A-Za-z_]\w*)>`)
-	statsByRe    = regexp.MustCompile(`(?is)^stats\s.*?\bby\s+(.+)$`)
-	dcArgRe      = regexp.MustCompile(`(?i)\bdc\(\s*'?([A-Za-z_][\w.{}]*)'?\s*\)`)
-	condInRe     = regexp.MustCompile(`(?i)('[^']+'|[A-Za-z_][\w.{}]*)\s+IN\s*\(([^)]*)\)`)
-	condEqRe     = regexp.MustCompile(`(?i)('[^']+'|[A-Za-z_][\w.{}]*)\s*(=|!=|\s+like\s+)\s*("(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*)`)
-	condFnRe     = regexp.MustCompile(`(?i)\b(like|match|isnotnull)\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:,\s*("(?:[^"\\]|\\.)*"))?\s*\)`)
-	condNotRe    = regexp.MustCompile(`(?i)\bNOT\s*\(?\s*$`)
-	mvindexArgRe = regexp.MustCompile(`^(-?\d+)$|^([A-Za-z_]\w*)\s*(?:-\s*(\d+))?$`)
+	evalAssignRe  = regexp.MustCompile(`(?s)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=([^=].*)$`)
+	mvindexRe     = regexp.MustCompile(`(?i)^mvindex\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*([^,()]+?)\s*\)$`)
+	mvcountRe     = regexp.MustCompile(`(?i)^mvcount\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)$`)
+	mvindexFindRe = regexp.MustCompile(`(?i)^mvindex\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*mvfind\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)\s*\)$`)
+	mvfindRe      = regexp.MustCompile(`(?i)mvfind\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
+	splitRe       = regexp.MustCompile(`(?i)^split\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)$`)
+	copyExprRe    = regexp.MustCompile(`(?i)^(?:(?:lower|upper|trim|ltrim|rtrim|coalesce|replace|mvappend)\s*\(\s*)?('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:[,)].*)?$`)
+	countedRe     = regexp.MustCompile(`(?i)^(?:coalesce\s*\(\s*)?mvcount\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)`)
+	condGtRe      = regexp.MustCompile(`(?i)'?([A-Za-z_]\w*)'?\s*>=?\s*('?[A-Za-z_]\w*'?|\d+)`)
+	spathArgRe    = regexp.MustCompile(`(?i)\b(input|output|path)\s*=\s*("[^"]*"|\S+)`)
+	rexStageRe    = regexp.MustCompile(`(?is)^rex\s+(?:field\s*=\s*("[^"]+"|\S+)\s+)?(?:max_match\s*=\s*\d+\s+)?("(?:[^"\\]|\\.)*")`)
+	groupNameRe   = regexp.MustCompile(`\(\?P?<([A-Za-z_]\w*)>`)
+	statsByRe     = regexp.MustCompile(`(?is)^stats\s.*?\bby\s+(.+)$`)
+	dcArgRe       = regexp.MustCompile(`(?i)\bdc\(\s*'?([A-Za-z_][\w.{}]*)'?\s*\)`)
+	condMvInRe    = regexp.MustCompile(`(?i)\bin\(\s*(?:mvmap\(\s*)?('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:,\s*lower\([^()]*\)\s*\))?\s*,([^()]*)\)`)
+	condInRe      = regexp.MustCompile(`(?i)('[^']+'|[A-Za-z_][\w.{}]*)\s+IN\s*\(([^)]*)\)`)
+	condEqRe      = regexp.MustCompile(`(?i)('[^']+'|[A-Za-z_][\w.{}]*)\s*(=|!=|\s+like\s+)\s*("(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*)`)
+	condFnRe      = regexp.MustCompile(`(?i)\b(like|match|isnotnull)\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:,\s*("(?:[^"\\]|\\.)*"))?\s*\)`)
+	condNotRe     = regexp.MustCompile(`(?i)\bNOT\s*\(?\s*$`)
+	mvindexArgRe  = regexp.MustCompile(`^(-?\d+)$|^([A-Za-z_]\w*)\s*(?:-\s*(\d+))?$`)
 )
 
 // shapeOf reads what a rule's later stages need of an event.
@@ -215,6 +217,13 @@ func (r *Rule) shapeOf() *shape {
 					}
 				}
 				switch {
+				case mvindexFindRe.MatchString(expr):
+					// The entry a find picks, in one expression
+					// (mvindex('X{}.NewValue', mvfind('X{}.Name', "re"))).
+					f := mvindexFindRe.FindStringSubmatch(expr)
+					if n := slices.Index(sh.finds, find{resolve(f[2]).base, unquote(f[3])}); n >= 0 {
+						vars[name] = at(resolve(f[1]), fmt.Sprintf("f%d", n))
+					}
 				case mvfindRe.MatchString(expr):
 				case mvindexRe.MatchString(expr):
 					f := mvindexRe.FindStringSubmatch(expr)
@@ -328,7 +337,7 @@ func (r *Rule) shapeOf() *shape {
 			if field != "_raw" && len(groupNameRe.FindAllString(re, -1)) == 0 {
 				need(resolve(field), &lit{field: "v", values: []string{re}, re: true})
 			}
-		case "where":
+		case "where", "search":
 			cond := rest
 			negated := func(at int) bool { return condNotRe.MatchString(cond[:at]) }
 			for _, m := range condInRe.FindAllStringSubmatchIndex(cond, -1) {
@@ -340,6 +349,25 @@ func (r *Rule) shapeOf() *shape {
 					vals = append(vals, unquote(q))
 				}
 				if len(vals) > 0 {
+					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
+				}
+			}
+			for _, m := range condMvInRe.FindAllStringSubmatchIndex(cond, -1) {
+				// A test of a field's values against a list (multiIn, inStarCompared).
+				if negated(m[0]) {
+					continue
+				}
+				var vals, exact []string
+				for _, q := range quotedRe.FindAllString(cond[m[4]:m[5]], -1) {
+					vals = append(vals, unquote(q))
+					exact = append(exact, regexp.QuoteMeta(unquote(q)))
+				}
+				switch {
+				case len(vals) == 0:
+				case strings.Contains(cond[m[4]:m[5]], "*"):
+					// in() compares exactly: a * is the character.
+					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: []string{"^(?:" + strings.Join(exact, "|") + ")$"}, re: true})
+				default:
 					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
 				}
 			}

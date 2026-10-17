@@ -41,7 +41,7 @@ func TestPostStages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(r.Post, "eval TargetUserName=user, src_ip=src\n| bucket span=2m _time") || !strings.HasSuffix(r.Post, "| where n>=1") {
+	if !strings.HasPrefix(r.Post, "eval TargetUserName=user, src_ip=src\n| bucket span=2m _time") || !strings.HasSuffix(r.Post, "| search n>=1") {
 		t.Errorf("post:\n%s", r.Post)
 	}
 	if !r.Keeps(map[string]any{"user": "alice", "src": "10.0.0.5", "@timestamp": "2026-01-01T12:00:00Z"}) {
@@ -54,11 +54,13 @@ func TestPostStages(t *testing.T) {
 
 func TestPostRefuses(t *testing.T) {
 	for search, want := range map[string]string{
-		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName IN (a, b)": "reads differently",
-		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName=\"adm*\"":  "reads differently",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName IN (a, b)":    "reads differently",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | where NOT TargetUserName=\"adm*\"": "reads differently",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | where NOT x IN (TargetUserName)":   "a field in its list",
 		// Splunk's filter keeps a row when any value matches.
-		"`wineventlog_security` EventCode=4768 Status=0x6 | makemv delim=\" \" TargetUserName | search TargetUserName IN (\"a\", \"b\")": "multivalue TargetUserName",
-		"`wineventlog_security` EventCode=4768 Status=0x6 | eval u=split(TargetUserName, \"@\") | where u=\"a\"":                         "multivalue u",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | makemv delim=\" \" TargetUserName | search NOT TargetUserName IN (\"a\", \"b\")": "multivalue TargetUserName",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | makemv delim=\" \" TargetUserName | search TargetUserName IN (\"a*\", \"b\")":    "multivalue TargetUserName",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | eval u=split(TargetUserName, \"@\") | where u=\"a\"":                             "multivalue u",
 		// Lookups need Splunk's tables.
 		"`wineventlog_security` EventCode=4768 Status=0x6 | lookup local=t accounts user OUTPUT owner":                                   "later stage",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | eval x=1": "grouped by time",
@@ -159,5 +161,43 @@ func TestPostFillsGroups(t *testing.T) {
 	}
 	if !r.Keeps(map[string]any{"user": "alice", "src": "10.0.0.5"}) {
 		t.Error("an event without process_exec is not kept")
+	}
+}
+
+// Splunk's where compares text with a * exactly; a later search of a
+// multivalue field keeps the row when one of its values is in the list,
+// ignoring case.
+func TestPostRewrites(t *testing.T) {
+	for in, want := range map[string]string{
+		`key = "*"`:            `in('key', "*")`,
+		`a="x*" AND b == "*y"`: `in('a', "x*") AND in('b', "*y")`,
+		`NOT a="x*"`:           `NOT a="x*"`,
+		`c="a = \"*\""`:        `c="a = \"*\""`,
+		`a!="x*"`:              `a!="x*"`,
+	} {
+		if got := inStarCompared(in); got != want {
+			t.Errorf("inStarCompared(%s) = %s, want %s", in, got, want)
+		}
+	}
+	r, err := Parse(rule("`wineventlog_security` EventCode=4768 Status=0x6 | eval k=TargetUserName | where k = \"*\" | stats count by k"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v, keep := range map[string]bool{"*": true, "admin": false} {
+		if got := r.Keeps(map[string]any{"user": v}); got != keep {
+			t.Errorf("k=%s: keeps %v\n%s", v, got, r.Post)
+		}
+	}
+	r, err = Parse(rule("`wineventlog_security` EventCode=4768 Status=0x6 | eval s=TargetUserName | makemv delim=\" \" s | search s IN (\"Mail.Read\", Files.Read) | stats count by src"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v, keep := range map[string]bool{"openid mail.read": true, "FILES.READ": true, "mail.readwrite openid": false} {
+		if got := r.Keeps(map[string]any{"user": v, "src": "10.0.0.1"}); got != keep {
+			t.Errorf("s=%s: keeps %v\n%s", v, got, r.Post)
+		}
+	}
+	if r.Keeps(map[string]any{"src": "10.0.0.1"}) {
+		t.Error("a row without the field is kept")
 	}
 }

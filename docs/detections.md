@@ -821,7 +821,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,259 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,265 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1120,8 +1120,19 @@ events, and failing that, the program runs from a folder other than System32 (fo
 rule that leaves System32 out), a library loads from its program's own folder, or a
 share access writes; whether the rule finds each is still what its search, run as
 written, says of the event as Signalith stores it. Where the two
-languages read a stage differently, the rule is left out: text with a `*`, since
-Signalith's `where` reads a plain condition as a filter. A `where` that compares two
+languages read a stage differently, the rule is left out: text with a `*` compared with `!=` or under `NOT`,
+since Signalith's `where` reads a plain condition as a filter. Without `NOT`, Splunk's
+`where action = "*"` compares the text exactly, so it runs as `where in('action', "*")`;
+a field in an `IN` list (`where NOT new_ace IN (old_values)`)
+is left out, since Splunk's documentation does not say how `IN` reads a field of several
+values or none. A later `search` runs as Signalith's `search`, so its terms side by side
+are joined by AND, with OR before AND, as in Splunk; a bare term in it is left out. A later
+`search field IN (...)` of a field an earlier stage made multivalue (`makemv`) keeps the row
+when one of its values is in the list, ignoring case, as in Splunk, and runs as
+`where in(mvmap(field, lower(field)), ...)`. A macro in an `IN` list
+(`` process_name IN (`uacbypass_process_name`) ``) stands for its values, as Splunk expands
+macros as text; a list with two values and no comma between them is left out. A `where`
+that compares two
 fields (`where process_name != service_process`) has both quoted, so Signalith compares
 the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups

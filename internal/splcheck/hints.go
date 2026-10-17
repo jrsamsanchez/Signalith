@@ -22,8 +22,8 @@ import (
 // later stages, run as written, say of the event as stored.
 
 var (
-	hintInRe    = regexp.MustCompile(`(?i)\bwhere\s+'?([A-Za-z_][\w.{}]*)'?\s+IN\s*\(([^)]*)\)`)
-	hintEqRe    = regexp.MustCompile(`(?i)\bwhere\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
+	hintInRe    = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s+IN\s*\(([^)]*)\)`)
+	hintEqRe    = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
 	hintLikeRe  = regexp.MustCompile(`(?i)\blike\(\s*(?:lower\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
 	hintMatchRe = regexp.MustCompile(`(?i)\bmatch\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
 	hintRexRe   = regexp.MustCompile(`(?i)\brex\s+field=\s*"?([A-Za-z_][\w.{}]*)"?\s+("(?:[^"\\]|\\.)*")`)
