@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -217,6 +218,9 @@ type Plan struct {
 	post      []query.Command
 	threat    *query.ThreatMatch
 	sum       *summaryUse
+	// fill is a fillnull of by fields just before stats, run in
+	// OpenSearch as buckets for events that lack those fields.
+	fill *query.Fillnull
 }
 
 func (e *Engine) opts() Options {
@@ -453,9 +457,13 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			// chart is stats, which runs in OpenSearch, then a pivot.
 			cmds = append(chartCommands(c), cmds[1:]...)
 		}
+		fill := statsFill(cmds)
+		if fill != nil {
+			cmds = cmds[1:]
+		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
-			p.Mode, p.transform, p.post = "stats", c, cmds[1:]
+			p.Mode, p.transform, p.post, p.fill = "stats", c, cmds[1:], fill
 			body["size"] = 0
 			if len(c.By) == 0 {
 				aggs, err := metricAggsFor(c.Aggs, summed)
@@ -469,6 +477,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 				comp, err := compositeAggFor(c.By, c.Aggs, o.MaxBuckets, summed)
 				if err != nil {
 					return nil, err
+				}
+				if fill != nil {
+					missingBuckets(comp, c.By, fill.Fields)
 				}
 				body["aggs"] = map[string]any{"groups": comp}
 			}
@@ -603,6 +614,41 @@ func addEventsAgg(body map[string]any, summed bool) {
 		body["aggs"] = aggs
 	}
 	aggs[eventsAgg] = countAgg()
+}
+
+// statsFill returns the fillnull that starts cmds when stats by fields
+// follows it and every field it fills is one of those by fields: stats
+// can then run in OpenSearch, with a bucket for the events missing each
+// field, keyed by the fill value. It returns nil otherwise.
+func statsFill(cmds []query.Command) *query.Fillnull {
+	if len(cmds) < 2 {
+		return nil
+	}
+	f, ok := cmds[0].(*query.Fillnull)
+	st, isStats := cmds[1].(*query.Stats)
+	if !ok || !isStats || len(f.Fields) == 0 || len(st.By) == 0 {
+		return nil
+	}
+	for _, x := range f.Fields {
+		if !slices.Contains(st.By, x) {
+			return nil
+		}
+	}
+	return f
+}
+
+// missingBuckets turns on the missing bucket of comp's sources for fields.
+func missingBuckets(comp map[string]any, by, fields []string) {
+	sources, _ := comp["composite"].(map[string]any)["sources"].([]any)
+	for i, f := range by {
+		if !slices.Contains(fields, f) || i >= len(sources) {
+			continue
+		}
+		src, _ := sources[i].(map[string]any)[fmt.Sprintf("k%d", i)].(map[string]any)
+		if terms, ok := src["terms"].(map[string]any); ok {
+			terms["missing_bucket"] = true
+		}
+	}
 }
 
 func compositeAgg(by []string, aggs []query.Agg, maxBuckets int) (map[string]any, error) {
@@ -819,6 +865,9 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		res.Truncated = truncated
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
+			if p.fill != nil {
+				applyFillnull(&Result{Rows: []Row{row}}, p.fill)
+			}
 			for i, a := range st.Aggs {
 				switch {
 				case a.Func == "count" && a.Field == "" && summed:

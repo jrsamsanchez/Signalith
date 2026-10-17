@@ -128,9 +128,20 @@ func topOptions(c *Top) string {
 	return s
 }
 
+// keepAll is | search *, which the parser drops.
+type keepAll struct{}
+
+func (keepAll) Name() string { return "search" }
+
 // parseSearchCommand reads | search after the first command: it filters
 // the rows with the search's syntax.
 func (p *parser) parseSearchCommand(cmd token) (Command, error) {
+	if t := p.peek(); t.kind == tokWord && t.text == "*" && (p.peekAt(1).kind == tokPipe || p.peekAt(1).kind == tokEOF) {
+		// | search * keeps every row, as the filter macros of Splunk's
+		// detections do until someone tunes them.
+		p.next()
+		return keepAll{}, nil
+	}
 	var q Query
 	if err := p.parseSearch(&q); err != nil {
 		return nil, err
