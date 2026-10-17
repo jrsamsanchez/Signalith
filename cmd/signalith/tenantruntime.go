@@ -13,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
@@ -412,6 +413,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	}
 	pruns := playbooks.NewOpenSearch(cl, prefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The tenant's behavior baselines: learned from its own records, kept
+	// in its own index, with risk for its own users and hosts.
+	blStore := baselines.NewStore(cl, prefix)
+	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: prefix},
+		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
 	// The tenant's agent tokens, in its own runtime index: no token of the
 	// default tenant's or another tenant's is accepted for its data.
 	tokens := &agenttokens.Registry{Client: cl, Prefix: prefix, Log: log, Node: func() string { return nodeID }}
@@ -459,6 +465,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Notebooks:  nstore,
 		Respond:    responder,
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Baselines:  blStore,
 		Retention:  ret,
 		Sample:     sampleLoader,
 		Content:    updater,
@@ -491,6 +498,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		behavior.Allowed, behavior.Epoch, behavior.NodeID, behavior.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
 	if t.sharedOK != nil && ret.Archive != nil {
 		// A tenant's archive folder is in this server's state folder,
@@ -515,6 +523,10 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		findingsOK := fstore.EnsureIndex(ctx) == nil
 		notifyOK := deliveries.EnsureIndex(ctx) == nil
 		playbooksOK := pruns.EnsureIndex(ctx) == nil
+		baselinesOK := blStore.EnsureIndex(ctx) == nil
+		if !baselinesOK {
+			log.Error("could not create the tenant's behavior baselines index; its baselines do not learn until it is started again", "index", blStore.Index)
+		}
 		for _, e := range []interface{ EnsureIndex(context.Context) error }{cstore, nstore, estore, astore} {
 			if err := e.EnsureIndex(ctx); err != nil {
 				log.Error("could not create an index of the tenant", "err", err)
@@ -529,6 +541,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
 			{Name: "playbooks", Run: pbRunner.Run},
+			{Name: "behavior baselines", Run: func(ctx context.Context) {
+				if baselinesOK {
+					behavior.Run(ctx)
+				}
+			}},
 			{Name: "retention", Run: func(ctx context.Context) {
 				ret.Start(ctx)
 				ret.Wait()

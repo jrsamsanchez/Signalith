@@ -23,6 +23,13 @@ func (s *Server) routeBaselines(api *router) {
 	api.admin("POST /api/baselines/{check}/reset", s.handleResetBaseline)
 }
 
+// tenantUser reports whether the request is a tenant's user's, not one
+// of the provider's own.
+func tenantUser(r *http.Request) bool {
+	p := principalOf(r)
+	return p != nil && p.Tenant != ""
+}
+
 var errBaselinesOff = errors.New("behavior baselines need OpenSearch, which this server is not set up with")
 
 // baselineCheck is one check as the page shows it.
@@ -53,7 +60,10 @@ type baselinesView struct {
 	// Behind is how far the last hour learned from is behind, in seconds.
 	Behind     int64                `json:"behind_s"`
 	IPDatabase baselines.IPDBStatus `json:"ip_database"`
-	Defaults   map[string]any       `json:"defaults"`
+	// IPDatabaseFixed is true for a tenant's users: where the IP database
+	// comes from is the provider's to choose, since the server fetches it.
+	IPDatabaseFixed bool           `json:"ip_database_fixed,omitempty"`
+	Defaults        map[string]any `json:"defaults"`
 }
 
 func (s *Server) baselinesMissing(w http.ResponseWriter) bool {
@@ -73,6 +83,7 @@ func (s *Server) handleBaselines(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	v.IPDatabaseFixed = tenantUser(r)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -169,6 +180,14 @@ func (s *Server) handleSaveBaselines(w http.ResponseWriter, r *http.Request) {
 	}
 	next := req.Settings
 	next.IPDatabase = strings.TrimSpace(next.IPDatabase)
+	// The server fetches the IP database from where the setting says, so
+	// a tenant's users may not point it elsewhere: the provider's network
+	// is not theirs to reach (as with the providerManaged routes).
+	if tenantUser(r) && next.IPDatabase != saved.IPDatabase {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "Where the IP database comes from is set by the provider that runs Signalith.", "code": "provider_only"})
+		return
+	}
 	// A reset is asked for only with the reset route, and carries over.
 	for id, cs := range next.Checks {
 		cs.ResetAt = saved.Checks[id].ResetAt

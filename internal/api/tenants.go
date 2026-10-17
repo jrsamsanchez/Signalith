@@ -25,7 +25,7 @@ var (
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
 		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "intel", "posture",
 		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
-		"endpoints", "agents", "agent-tokens", "users",
+		"endpoints", "agents", "agent-tokens", "users", "baselines",
 	}
 	// platformResources are about the server itself, shared by every
 	// tenant: only the provider's own users may use them, and always in
@@ -35,11 +35,10 @@ var (
 	// server's scanners and OpenVAS), network sensors, the custom
 	// parsers (one set that reads every tenant's records) and the chat
 	// accounts linked for the buttons in Slack and Teams messages, whose
-	// clicks the default tenant's server answers, and the behavior
-	// baselines, which learn from the default tenant's data only for now.
+	// clicks the default tenant's server answers.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "baselines",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,
