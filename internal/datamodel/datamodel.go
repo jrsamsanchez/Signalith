@@ -393,9 +393,10 @@ var Models = []Model{
 	},
 	{
 		Name:        "Script",
-		Description: "PowerShell script blocks run on Windows hosts (event 4104)",
+		Description: "PowerShell script blocks (event 4104) and pipelines (4103, module logging) run on Windows hosts",
 		Fields: []Field{
-			{Name: "script_block_text", Type: "text", Description: "The script text that ran"},
+			{Name: "script_block_text", Type: "text", Description: "The script text that ran; for a pipeline, its command and the values bound to its parameters"},
+			{Name: "event_data", Type: "text", Description: "For a pipeline, its context: host program, command and account, as Windows writes them"},
 			{Name: "script_path", Type: "string", Description: "File the script came from, when it came from one"},
 			{Name: "script_block_id", Type: "string", Description: "ID that ties together the parts of a long script"},
 			{Name: "user", Type: "string", Description: "Account that ran the script"},

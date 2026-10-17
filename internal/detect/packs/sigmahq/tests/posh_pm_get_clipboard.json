@@ -1,0 +1,4 @@
+{"rule": "4cbd4f12-2e22-43e3-882f-bff3247ffb78", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"Get-Clipboard"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

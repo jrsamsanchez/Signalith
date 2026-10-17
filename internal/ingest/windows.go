@@ -111,12 +111,17 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 		parseDefender(eventID, str(r, "Message"), in, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		parseScriptBlock(in, &ev)
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4103":
+		parseModuleLog(in, &ev)
+	case strings.EqualFold(channel, WindowsPowerShellChannel):
+		parseClassicPowerShell(eventID, str(r, "ProviderName"), in, &ev)
 	}
 	return ev
 }
 
 // PowerShellChannel is where PowerShell logs script blocks (4104) once
-// script block logging is turned on.
+// script block logging is turned on, and the commands pipelines run
+// (4103) once module logging is.
 const PowerShellChannel = "Microsoft-Windows-PowerShell/Operational"
 
 // parseScriptBlock reads a PowerShell script block event (4104). A long

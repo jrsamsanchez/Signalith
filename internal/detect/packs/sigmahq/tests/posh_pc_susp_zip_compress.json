@@ -1,0 +1,4 @@
+{"rule": "71ff406e-b633-4989-96ec-bc49d825a412", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"800","data":{"Data":"Compress-Archive -Path-DestinationPath $env:TEMP"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"800","data":{}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "c72aca44-8d52-45ad-8f81-f96c4d3c755e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"SETx\u0026\u0026SETENVIRONMENTx\u0026\u0026x\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

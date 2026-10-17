@@ -59,6 +59,12 @@ var categories = map[string]string{
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
 	"ps_script":            "rules/windows/powershell/powershell_script",
+	"ps_module":            "rules/windows/powershell/powershell_module",
+	// The Windows PowerShell log's rules: its engine starting (category
+	// ps_classic_start), its providers starting
+	// (ps_classic_provider_start), or any of its events (service:
+	// powershell-classic).
+	"powershell_classic": "rules/windows/powershell/powershell_classic",
 	// Not a Sigma category: Windows System log rules (service: system),
 	// in folders by provider.
 	"system": "rules/windows/builtin/system",
@@ -307,6 +313,12 @@ func main() {
 			if cat == "sysmon_service" {
 				want["category"], want["service"] = "", "sysmon"
 			}
+			if cat == "powershell_classic" {
+				want["category"], want["service"] = "", "powershell-classic"
+				if c := rule.Logsource["category"]; c == "ps_classic_start" || c == "ps_classic_provider_start" {
+					want["category"], want["service"] = c, ""
+				}
+			}
 			for service := range ingest.NamedChannelServices {
 				if cat == ingest.NamedChannelCategory(service) {
 					want["category"], want["service"] = "", service
@@ -330,6 +342,10 @@ func main() {
 			}
 			if cat == "sysmon_service" {
 				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "powershell_classic" && want["category"] != "" {
+				rcat = want["category"]
 				rbases = sigmacheck.Bases[rcat]
 			}
 			if cat == "security" {

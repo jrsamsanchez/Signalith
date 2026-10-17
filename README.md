@@ -377,6 +377,7 @@ Supported sources in Phase 1:
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
 | Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](docs/detections.md#powershell-script-blocks)) | Script |
+| PowerShell module logging: 4103 (same channel), and the Windows PowerShell log: 400, 403, 600, 800 (see [Detections](docs/detections.md#powershell-module-logging-and-the-windows-powershell-log)) | Script; Other |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
@@ -902,7 +903,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,524 tested
+- **Content packs** add community rules, off until you turn them on: 2,560 tested
   [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,283
   Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source

