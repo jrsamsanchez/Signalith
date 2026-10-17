@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -31,6 +32,18 @@ type Memory struct {
 	Calls []string
 	// OnExport, when set, runs before each exported document.
 	OnExport func(index string, n int)
+	// ColdRepo names the registered cold storage repository (empty: none
+	// is registered), and ColdMountable says whether a node can mount
+	// searchable snapshots.
+	ColdRepo      string
+	ColdMountable bool
+	snapshots     map[string]memSnapshot
+}
+
+// memSnapshot is a snapshot of one index.
+type memSnapshot struct {
+	info IndexInfo
+	docs []Doc
 }
 
 type memIndex struct {
@@ -52,7 +65,8 @@ type Record struct {
 
 // NewMemory returns an empty cluster with a 1 TB disk.
 func NewMemory() *Memory {
-	return &Memory{indices: map[string]*memIndex{}, records: map[string][]Record{}, DiskTotal: 1 << 40, Fail: map[string]error{}}
+	return &Memory{indices: map[string]*memIndex{}, records: map[string][]Record{}, DiskTotal: 1 << 40, Fail: map[string]error{},
+		snapshots: map[string]memSnapshot{}}
 }
 
 // AddIndex adds an index of a given size with docs documents, replacing
@@ -164,7 +178,9 @@ func (m *Memory) Disk(context.Context) (*Disk, error) {
 	}
 	used := m.DiskBase
 	for _, ix := range m.indices {
-		used += ix.info.Bytes
+		if ix.info.Cold == nil {
+			used += ix.info.Bytes
+		}
 	}
 	return &Disk{Node: "memory", Total: m.DiskTotal, Available: max(m.DiskTotal-used, 0)}, nil
 }
@@ -182,7 +198,7 @@ func (m *Memory) NodeBytes(_ context.Context, pattern, node string) (map[string]
 	}
 	for name, ix := range m.indices {
 		for _, p := range strings.Split(pattern, ",") {
-			if ok, _ := path.Match(p, name); ok {
+			if ok, _ := path.Match(p, name); ok && ix.info.Cold == nil {
 				out[name] = ix.info.Bytes
 				break
 			}
@@ -413,4 +429,91 @@ func (m *Memory) RecordRange(_ context.Context, index string) (time.Time, time.T
 		}
 	}
 	return lo, hi, nil
+}
+
+// Snapshots lists the snapshot names in the cold storage repository.
+func (m *Memory) Snapshots() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := slices.Collect(maps.Keys(m.snapshots))
+	slices.Sort(out)
+	return out
+}
+
+func (m *Memory) ColdState(_ context.Context, repo, prefix string) (*ColdState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("coldstate", ""); err != nil {
+		return nil, err
+	}
+	st := &ColdState{Repository: repo, Registered: m.ColdRepo == repo && repo != "", Mountable: m.ColdMountable}
+	if !st.Registered {
+		return st, nil
+	}
+	st.Type = "fs"
+	for name, sn := range m.snapshots {
+		if strings.HasPrefix(name, prefix+"-") {
+			st.Snapshots = append(st.Snapshots, ColdSnapshot{Name: name, Index: sn.info.Name})
+		}
+	}
+	sort.Slice(st.Snapshots, func(i, j int) bool { return st.Snapshots[i].Name < st.Snapshots[j].Name })
+	return st, nil
+}
+
+func (m *Memory) SnapshotIndex(_ context.Context, repo, name, index string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("snapshot", index); err != nil {
+		return err
+	}
+	if repo != m.ColdRepo || repo == "" {
+		return fmt.Errorf("[%s] missing", repo)
+	}
+	if _, ok := m.snapshots[name]; ok {
+		return fmt.Errorf("[%s:%s] a snapshot with the same name already exists", repo, name)
+	}
+	ix, err := m.get(index)
+	if err != nil {
+		return err
+	}
+	m.snapshots[name] = memSnapshot{info: ix.info, docs: slices.Clone(ix.docs)}
+	m.call("snapshot", index)
+	return nil
+}
+
+func (m *Memory) MountSnapshot(_ context.Context, repo, name, index string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("mount", index); err != nil {
+		return err
+	}
+	sn, ok := m.snapshots[name]
+	if !ok || repo != m.ColdRepo {
+		return fmt.Errorf("[%s:%s] is missing", repo, name)
+	}
+	if _, ok := m.indices[index]; ok {
+		return fmt.Errorf("cannot restore index [%s] because an open index with same name already exists in the cluster", index)
+	}
+	info := sn.info
+	info.UUID, info.WriteBlocked, info.Copies = m.uuid(), true, 1
+	info.Cold = &ColdRef{Repository: repo, Snapshot: name}
+	m.indices[index] = &memIndex{info: info, docs: slices.Clone(sn.docs)}
+	m.call("mount", index)
+	return nil
+}
+
+func (m *Memory) DeleteSnapshot(_ context.Context, repo, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("deletesnapshot", name); err != nil {
+		return err
+	}
+	for _, ix := range m.indices {
+		if ix.info.Cold != nil && ix.info.Cold.Snapshot == name {
+			return fmt.Errorf("[%s:[%s]] These remote snapshots are backing some indices and hence can't be deleted!", repo, name)
+		}
+	}
+	delete(m.snapshots, name)
+	m.call("deletesnapshot", name)
+	return nil
 }

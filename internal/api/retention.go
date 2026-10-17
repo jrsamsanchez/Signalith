@@ -43,7 +43,7 @@ func (s *Server) retentionOK(w http.ResponseWriter) bool {
 
 // policyFields are the settings a problem message can start with, so the
 // page can mark the right input.
-var policyFields = []string{"keep_days", "max_size_gb", "compact_after_days", "archive", "max_disk_percent", "min_days"}
+var policyFields = []string{"keep_days", "max_size_gb", "compact_after_days", "cold_after_days", "archive", "max_disk_percent", "min_days"}
 
 func writeRetentionError(w http.ResponseWriter, err error) {
 	var pe *retention.PolicyError
