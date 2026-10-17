@@ -1051,7 +1051,10 @@ minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
-[sso.md](sso.md#how-it-works)). The `/api/scim/v2` routes, through which the identity provider
+[sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
+browser to the SAML identity provider, `POST /api/auth/saml/acs` is where the provider posts its
+signed response, and `GET /api/auth/saml/metadata` is Signalith's own SAML metadata (see
+[sso.md](sso.md#saml-20)). The `/api/scim/v2` routes, through which the identity provider
 provisions single sign-on users, take the SCIM token instead of a sign-in, and only over HTTPS
 (see [sso.md](sso.md#provisioning-with-scim)). Requests from a browser that change something must come from the Signalith
 page itself.
@@ -1171,8 +1174,8 @@ run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
 `GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
-`/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
-three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
+`/api/users`, `/api/auth/directory`, `/api/auth/oidc`, `/api/auth/saml` and `/api/auth/scim` route below (the last
+four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/test` and `POST /api/auth/scim/token`; see
 [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
@@ -1182,7 +1185,7 @@ three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/s
 itself rather than one tenant's data are refused to tenants' users, whatever their role:
 every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
 `/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
-`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers` and `/api/chat` route. So are the routes
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat` and `/api/baselines` route. So are the routes
 that make the server send requests to addresses a user gives, though they change a
 tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,

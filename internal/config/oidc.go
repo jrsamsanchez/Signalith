@@ -171,6 +171,14 @@ func (c *Config) oidcProblems() []string {
 // with s: the highest that matches, the default role when none does, or
 // "" when someone may not sign in. It also returns what matched.
 func (s OIDCSettings) OIDCRole(groups []string, email string) (string, []string) {
+	return mapRole(s.AdminGroups, s.AnalystGroups, s.ViewerGroups, s.DefaultRole, groups, email)
+}
+
+// mapRole returns the role groups (and an email address) give with the
+// group lists of each role: the highest that matches, defaultRole
+// (viewer) when none does, or "" when someone may not sign in. It also
+// returns what matched.
+func mapRole(admins, analysts, viewers []string, defaultRole string, groups []string, email string) (string, []string) {
 	role := ""
 	var matched []string
 	rank := map[string]int{"viewer": 1, "analyst": 2, "admin": 3}
@@ -179,7 +187,7 @@ func (s OIDCSettings) OIDCRole(groups []string, email string) (string, []string)
 		for _, m := range []struct {
 			role string
 			list []string
-		}{{"admin", s.AdminGroups}, {"analyst", s.AnalystGroups}, {"viewer", s.ViewerGroups}} {
+		}{{"admin", admins}, {"analyst", analysts}, {"viewer", viewers}} {
 			if slices.ContainsFunc(m.list, func(g string) bool { return strings.EqualFold(strings.TrimSpace(g), v) }) {
 				hit = true
 				if rank[m.role] > rank[role] {
@@ -197,7 +205,7 @@ func (s OIDCSettings) OIDCRole(groups []string, email string) (string, []string)
 	if email != "" {
 		try(email)
 	}
-	if role == "" && s.DefaultRole == "viewer" {
+	if role == "" && defaultRole == "viewer" {
 		role = "viewer"
 	}
 	return role, matched

@@ -48,6 +48,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
+	"github.com/jrsamsanchez/signalith/internal/saml"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
@@ -169,6 +170,9 @@ type Server struct {
 	// OIDC talks to the single sign-on identity provider; nil makes one
 	// on first use.
 	OIDC *oidc.Client
+	// SAMLMeta reads the SAML identity provider's metadata; nil makes one
+	// on first use.
+	SAMLMeta *saml.Metadata
 	// SharedUsers is set when Users, Directory and SessionStore keep the
 	// users, the directory settings and the sessions in the shared
 	// settings of a cluster; nil keeps them on this server.
@@ -267,6 +271,10 @@ type Server struct {
 
 	authOnce          sync.Once
 	ssoOnce           sync.Once
+	samlOnce          sync.Once
+	samlReplays       saml.Replays // SAML assertions used, until they expire
+	samlEntity        atomic.Value // the SAML provider's entity ID, from its metadata
+	samlLoading       atomic.Bool  // whether its metadata is being read for samlIssuerOK
 	scimRefused       scimRefusals // when a refused SCIM token was last logged, by address
 	creds             credCache    // recently checked Basic credentials
 	passkeyChallenges challengeSet // passkey challenges answered on this server
@@ -406,6 +414,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeChat(mux, api)
 	s.routeUsers(api)
 	s.routeSSO(api)
+	s.routeSAML(api)
 	s.routeRetention(api)
 	s.routeAudit(api)
 	s.routeRequests(api)
@@ -516,7 +525,11 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
-	if t := s.agentTenant(r); t != nil {
+	if t, wait := s.agentTenant(r); wait {
+		w.Header().Set("Retry-After", tenantAgentRetry)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": tenantAgentWait, "code": "tenant_unavailable"})
+		return
+	} else if t != nil {
 		t.handleIngest(w, r)
 		return
 	}

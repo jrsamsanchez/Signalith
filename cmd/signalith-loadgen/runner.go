@@ -279,7 +279,11 @@ func (r *runner) prepare(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("agents need an agent token in credentials.token_file: %w", err)
 		}
-		r.fleet = newFleet(r.run, token, s.Targets, &http.Client{Transport: r.tr}, r.m)
+		agentTargets := s.AgentTargets
+		if len(agentTargets) == 0 {
+			agentTargets = s.Targets
+		}
+		r.fleet = newFleet(r.run, token, agentTargets, &http.Client{Transport: r.tr}, r.m)
 	}
 	return nil
 }

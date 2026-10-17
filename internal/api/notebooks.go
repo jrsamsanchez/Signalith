@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -654,17 +655,31 @@ func (s *Server) handleUnlinkNotebookCase(w http.ResponseWriter, r *http.Request
 // releaseNotebooks clears the owner of a deleted user's notebooks, so an
 // account made later with the same name does not inherit them. Private
 // ones are then seen only by admins, who can share, hand on or delete them.
-func (s *Server) releaseNotebooks(ctx context.Context, username, by string) {
-	if s.Notebooks == nil || username == "" {
+// A provider user may have made notebooks in every tenant: theirs are
+// released in each tenant's too, whether it runs or not.
+func (s *Server) releaseNotebooks(ctx context.Context, username, by string, provider bool) {
+	if username == "" {
 		return
 	}
-	list, _, err := s.Notebooks.Search(ctx, notebooks.Filter{Admin: true, Owner: username, Limit: 10000})
+	releaseNotebooksIn(ctx, s.Notebooks, s.Log, username, by)
+	if provider && s.TenantID == "" && s.TenantRuntime != nil {
+		for id, store := range s.TenantRuntime.NotebookStores() {
+			releaseNotebooksIn(ctx, store, s.Log.With("tenant", id), username, by)
+		}
+	}
+}
+
+func releaseNotebooksIn(ctx context.Context, store notebooks.Store, log *slog.Logger, username, by string) {
+	if store == nil {
+		return
+	}
+	list, _, err := store.Search(ctx, notebooks.Filter{Admin: true, Owner: username, Limit: 10000})
 	if err != nil {
-		s.Log.Warn("could not release the deleted user's hunting notebooks", "user", username, "err", err)
+		log.Warn("could not release the deleted user's hunting notebooks", "user", username, "err", err)
 		return
 	}
 	for _, sum := range list {
-		_, err := s.Notebooks.Modify(ctx, sum.ID, func(n *notebooks.Notebook) (bool, error) {
+		_, err := store.Modify(ctx, sum.ID, func(n *notebooks.Notebook) (bool, error) {
 			if !n.IsOwner(username) {
 				return false, nil
 			}
@@ -672,9 +687,9 @@ func (s *Server) releaseNotebooks(ctx context.Context, username, by string) {
 			return true, nil
 		})
 		if err != nil {
-			s.Log.Warn("could not release a deleted user's hunting notebook", "user", username, "notebook", sum.ID, "err", err)
+			log.Warn("could not release a deleted user's hunting notebook", "user", username, "notebook", sum.ID, "err", err)
 			continue
 		}
-		s.Log.Info("hunting notebook owner removed with their account", "audit", true, "by", by, "notebook", sum.ID, "former_owner", username)
+		log.Info("hunting notebook owner removed with their account", "audit", true, "by", by, "notebook", sum.ID, "former_owner", username)
 	}
 }

@@ -1543,6 +1543,15 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                 <div class="rt-unit"><input id="rt-compact" class="input" type="number" inputmode="numeric" min="0" step="1" placeholder="Never" aria-describedby="rt-compact-hint"><span aria-hidden="true">days</span></div>
               </div>
             </div>
+            <div class="rt-set rt-events-only" id="rt-f-cold">
+              <div class="rt-set__text">
+                <label class="rt-set__label" for="rt-cold">Move to cold storage after</label>
+                <p class="rt-set__hint" id="rt-cold-hint">Older days move to the cold storage repository, such as an S3 bucket, and leave OpenSearch&rsquo;s disks. They stay searchable, more slowly. Late events for them are refused and lost.</p>
+              </div>
+              <div class="rt-set__ctl">
+                <div class="rt-unit"><input id="rt-cold" class="input" type="number" inputmode="numeric" min="0" step="1" placeholder="Never" aria-describedby="rt-cold-hint"><span aria-hidden="true">days</span></div>
+              </div>
+            </div>
             <div class="rt-set rt-events-only" id="rt-f-archive">
               <div class="rt-set__text">
                 <label class="rt-set__label" for="rt-archive">Archive before deleting</label>
@@ -1731,7 +1740,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="page-head">
       <div>
         <h2 class="page-head__title">Single sign-on</h2>
-        <p class="page-head__desc">Let people sign in with Microsoft Entra ID, Okta, Google, Keycloak or another OpenID Connect provider. Local and directory users keep signing in with their passwords.</p>
+        <p class="page-head__desc">Let people sign in with an identity provider such as Microsoft Entra ID, Okta, AD FS, Google or Keycloak, over OpenID Connect or SAML 2.0. Local and directory users keep signing in with their passwords.</p>
       </div>
     </div>
     <div id="sso-page" class="st-main sso-page" aria-busy="true"></div>

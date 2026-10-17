@@ -116,10 +116,12 @@
   // ---- Single sign-on --------------------------------------------------
   // The button (shown by the server when single sign-on is on) returns to
   // the same page as a password sign-in; the server checks the path again.
-  const ssoLink = $('sso-link');
-  if (ssoLink) {
+  // There is one for OpenID Connect and one for SAML.
+  for (const [id, start] of [['sso-link', 'api/auth/oidc/start'], ['saml-link', 'api/auth/saml/start']]) {
+    const link = $(id);
+    if (!link) continue;
     const u = new URL(nextPath(), location.href);
-    ssoLink.href = 'api/auth/oidc/start?next=' + encodeURIComponent(u.pathname + u.search + u.hash);
+    link.href = start + '?next=' + encodeURIComponent(u.pathname + u.search + u.hash);
   }
   // A single sign-on that failed comes back here with a code; the reason
   // is in the server log.
@@ -129,7 +131,9 @@
     expired: ['That sign-in took too long or started in another browser.', 'Try again.'],
     denied: ['Your identity provider didn’t sign you in.', 'Try again, or ask your identity provider’s admin about your access.'],
     failed: ['Signalith couldn’t confirm your sign-in with your identity provider.', 'Try again. If it keeps happening, tell a Signalith admin: the server log says why.'],
-    username: ['Your identity provider didn’t send a username Signalith can use.', 'Ask a Signalith admin to check the username claim under Settings, Single sign-on.'],
+    username: ['Your identity provider didn’t send a username Signalith can use.', 'Ask a Signalith admin to check the username claim or attribute under Settings, Single sign-on.'],
+    https: ['SAML sign-in needs HTTPS.', 'Open Signalith at its https:// address and try again, or ask a Signalith admin.'],
+    replay: ['That sign-in was already used.', 'Start a new sign-in from this page.'],
     domain: ['Your email address isn’t in a domain that can use Signalith.', 'Sign in with your work account, or ask a Signalith admin.'],
     role: ['Your account can’t use Signalith yet.', 'It isn’t in a group that Signalith lets in. Ask a Signalith admin to add you to one.'],
     new: ['You haven’t used Signalith before, and new users aren’t added.', 'Ask a Signalith admin to let you in.'],
