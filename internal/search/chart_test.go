@@ -68,7 +68,7 @@ func TestChartRunsInOpenSearch(t *testing.T) {
 
 func TestTstatsCompiles(t *testing.T) {
 	p := compile(t, `| tstats count from datamodel=Endpoint.Processes where Processes.process_name=cmd.exe by Processes.dest`)
-	if p.Mode != "stats" || p.Index != "signalith-endpoint-*" || !strings.Contains(asJSON(p.Body), `"process_name"`) {
+	if p.Mode != "stats" || !namesDays(p.Index, "signalith-endpoint-") || !strings.Contains(asJSON(p.Body), `"process_name"`) {
 		t.Errorf("plan = %s %s %s", p.Mode, p.Index, asJSON(p.Body))
 	}
 }
