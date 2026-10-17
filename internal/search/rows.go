@@ -215,6 +215,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyAnomalyDetection(ctx, res, c)
 	case *query.Correlate:
 		return applyCorrelate(ctx, res, c)
+	case *query.Predict:
+		return applyPredict(ctx, res, c)
+	case *query.SetFields:
+		return applySetFields(ctx, res, c)
 	case *query.Highlight:
 		// The results view marks terms itself; the rows stay as they are.
 	case *query.MVExpand:

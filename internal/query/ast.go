@@ -437,6 +437,12 @@ func CommandString(c Command) string {
 		return anomalyString(c)
 	case *Correlate:
 		return correlateString(c)
+	case *Predict:
+		return predictString(c)
+	case *Set:
+		return setString(c)
+	case *SetFields:
+		return setFieldsString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:
