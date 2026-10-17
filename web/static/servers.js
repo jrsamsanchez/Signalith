@@ -221,14 +221,52 @@ const serverPanels = [];
     }
     const spread = spreadText(s, d);
     if (spread) body.push(el('div', { class: 'sv-sub' }, icon('shield', 'icon--sm'), el('span', {}, spread)));
+    if (!gone(s)) {
+      for (const h of healthOf(s, d)) {
+        body.push(el('div', { class: 'sv-sub', title: 'Over each rule this server ran last in the last day: how long its last run took, and how long after its time slot ended that run started.' },
+          icon('activity', 'icon--sm'), el('span', {}, h.text)));
+        if (h.behind) body.push(el('div', { class: 'sv-sub sv-warn' }, icon('triangle-alert', 'icon--sm'), el('span', {}, 'Falling behind: ' + h.behind)));
+      }
+    }
     return el('td', { 'data-col': 'jobs' }, ...body);
+  }
+
+  // msText shows a time in milliseconds the way people read it.
+  function msText(ms) {
+    ms = Math.max(0, ms || 0);
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    if (ms < 10000) return `${(ms / 1000).toFixed(1)} s`;
+    if (ms < 120000) return `${Math.round(ms / 1000)} s`;
+    return `${Math.round(ms / 60000)} min`;
+  }
+
+  // healthOf says, per tenant, how server s keeps up with the detections it
+  // ran last: [{ text, behind }], behind being why it falls behind, or ''.
+  // The tenant is named only when more than one has detections running.
+  function healthOf(s, d) {
+    const views = (d.detections || []).filter((v) => v.health && Object.keys(v.health).length);
+    const out = [];
+    for (const v of views) {
+      const h = v.health[s.node_id];
+      if (!h || !h.rules) continue;
+      const parts = [`${views.length > 1 ? v.tenant + ': ' : ''}${h.rules} ${h.rules === 1 ? 'rule' : 'rules'}`,
+        `runs take ${msText(h.duration_p50_ms)} (p95 ${msText(h.duration_p95_ms)})`,
+        `start ${msText(h.lag_p50_ms)} after their slot (p95 ${msText(h.lag_p95_ms)})`];
+      if (h.late_hour) parts.push(`${h.late_hour} late in the last hour`);
+      if (h.skipped) parts.push(`${h.skipped} ${h.skipped === 1 ? 'slot' : 'slots'} skipped today`);
+      if (h.timed_out) parts.push(`${h.timed_out} timed out`);
+      out.push({ text: parts.join(' · '), behind: h.behind ? h.why || 'its detections run late' : '' });
+    }
+    return out;
   }
 
   // spreadText says, while detections are spread over the servers
   // (detections.spread), how many of the rule groups server s runs, and
   // how many it is handing over to another server; '' otherwise.
   function spreadText(s, d) {
-    const views = d.detections || [];
+    // Only tenants whose detections are spread: the others have run
+    // health but no groups.
+    const views = (d.detections || []).filter((v) => v.servers && Object.keys(v.servers).length);
     if (!views.length) return '';
     let run = 0, moving = 0, total = 0;
     for (const v of views) {
@@ -316,6 +354,14 @@ const serverPanels = [];
         out.push(alertBox('warning', `${s.name}: ${title}`, body));
       }
     }
+    for (const s of servers) {
+      if (gone(s)) continue;
+      for (const h of healthOf(s, d)) {
+        if (!h.behind) continue;
+        out.push(alertBox('warning', `${s.name}: detections are falling behind.`,
+          `${cap(h.behind)}. Findings come late until it catches up. Look at the slowest rules on the Detections page, or spread detections over more servers (Settings, Detections).`));
+      }
+    }
     return out;
   }
   function diskAlert(lease) {
@@ -380,6 +426,7 @@ const serverPanels = [];
   function view(d, servers) {
     const lease = d.lease || {};
     return JSON.stringify([d.warnings, d.writes_refused, lease.frozen, lease.holder_name, (d.opensearch || {}).status, (d.opensearch || {}).problem, noteHidden(),
+      servers.map((s) => [spreadText(s, d), healthOf(s, d)]),
       servers.map((s) => [s.node_id, s.name, s.self, s.state, (s.opensearch || {}).problem, s.jobs, s.version, s.node_url, s.listen, s.cannot_take_over, s.not_eligible,
         clockOff(s), s.problems, s.seen_seconds_ago == null, s.uptime_seconds == null,
         s.shared && [s.shared.mode, s.shared.tamper, s.shared.needs_upgrade, s.shared.settings_drift, s.shared.restart_needed, s.shared.settings_refused, s.shared.restart]])]);

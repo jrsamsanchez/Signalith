@@ -92,8 +92,13 @@ func TestDetViews(t *testing.T) {
 	v.add(ctx, &jobs, "zeta", read("zeta", 4))
 	v.add(ctx, &jobs, "acme", read("acme", 64))
 	v.add(ctx, &jobs, "idle", read("idle", 0))
+	// Not spread, but its detections ran: its run health is shown.
+	v.add(ctx, &jobs, "solo", func(context.Context) (detect.SpreadView, error) {
+		return detect.SpreadView{Tenant: "solo", Buckets: detect.Buckets, Servers: map[string]detect.SpreadCount{},
+			Health: map[string]detect.ServerHealth{"a": {Rules: 3}}}, nil
+	})
 	got := v.all(context.Background())
-	if len(got) != 2 || got[0].Tenant != "acme" || got[1].Tenant != "zeta" {
+	if len(got) != 3 || got[0].Tenant != "acme" || got[1].Tenant != "solo" || got[2].Tenant != "zeta" {
 		t.Errorf("%+v", got)
 	}
 	cancel()
