@@ -567,6 +567,16 @@ func describeCommand(c query.Command) string {
 			s += ", one column per " + c.By
 		}
 		return s + "."
+	case *query.XPath:
+		s := "Set " + c.OutField + " to the text of " + c.Path + " in the XML of " + c.Field
+		if c.HasDefault {
+			s += fmt.Sprintf(", or %q where it finds none", c.Default)
+		}
+		return s + "."
+	case *query.Abstract:
+		return fmt.Sprintf("Shorten each event's _raw to its %d lines with the most words.", c.MaxLines)
+	case *query.Highlight:
+		return "Mark " + strings.Join(c.Terms, ", ") + " in the results; the rows stay as they are."
 	case *query.MultiSearch:
 		parts := make([]string, 0, len(c.Subs))
 		for i, s := range c.Subs {

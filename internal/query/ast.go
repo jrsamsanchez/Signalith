@@ -427,6 +427,12 @@ func CommandString(c Command) string {
 		return timewrapString(c)
 	case *Cluster:
 		return clusterString(c)
+	case *XPath:
+		return xpathString(c)
+	case *Abstract:
+		return abstractString(c)
+	case *Highlight:
+		return highlightString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:
