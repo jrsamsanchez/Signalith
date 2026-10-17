@@ -209,8 +209,20 @@ func ComparePassword(hash, pw string) bool {
 // NormalizePassword returns pw in Unicode normalization form NFKC, as NIST
 // SP 800-63B asks, so a password typed on another keyboard or system
 // that composes accents or full-width characters differently still
-// matches.
-func NormalizePassword(pw string) string { return norm.NFKC.String(pw) }
+// matches. A password over maxNormalizeBytes is returned as it is: it is
+// far over MaxPasswordLength, so it is refused or cannot match, and
+// normalizing a megabyte sent to the sign-in page would cost the server
+// half a second of work.
+func NormalizePassword(pw string) string {
+	if len(pw) > maxNormalizeBytes {
+		return pw
+	}
+	return norm.NFKC.String(pw)
+}
+
+// maxNormalizeBytes is the longest password NormalizePassword changes:
+// 16 KB, many times MaxPasswordLength in any script.
+const maxNormalizeBytes = 16 << 10
 
 // bcryptLimit is the most bytes of a password bcrypt reads.
 const bcryptLimit = 72

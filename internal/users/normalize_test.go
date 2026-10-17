@@ -1,6 +1,7 @@
 package users
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/bcrypt"
@@ -44,5 +45,29 @@ func TestPasswordNormalization(t *testing.T) {
 	// the common password it looks like.
 	if err := CheckNewPassword("", "１２３４５６７８"); err != ErrCommonPassword {
 		t.Errorf("full-width 12345678: %v", err)
+	}
+}
+
+// A huge password sent to the sign-in page is not normalized, so it costs
+// no more than any other wrong password.
+func TestHugePasswordIsNotNormalized(t *testing.T) {
+	huge := strings.Repeat("ﷺ", maxNormalizeBytes) // expands 18 times under NFKC
+	if NormalizePassword(huge) != huge {
+		t.Error("a password over the limit was normalized")
+	}
+	at := strings.Repeat("ａ", maxNormalizeBytes/3) // full-width a, 3 bytes each
+	if got := NormalizePassword(at); got != strings.Repeat("a", maxNormalizeBytes/3) {
+		t.Error("a password at the limit was not normalized")
+	}
+	h, err := HashPassword("correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ComparePassword(h, huge) {
+		t.Error("a huge password matched")
+	}
+	WasteTime(huge)
+	if _, err := HashPassword(huge); err == nil {
+		t.Error("a huge password was accepted")
 	}
 }
