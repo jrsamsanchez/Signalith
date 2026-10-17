@@ -29,6 +29,9 @@ func (e *Engine) setSearch(ctx context.Context, c *query.Set, outer *query.Query
 	}
 	var keys [2][]string
 	var in [2]map[string]bool
+	// Rows with the same key share one string, charged once, so many
+	// identical rows hold no more than one copy of their key.
+	canon := map[string]string{}
 	for i, sub := range subs {
 		in[i] = map[string]bool{}
 		for j, r := range sub.Rows {
@@ -39,8 +42,13 @@ func (e *Engine) setSearch(ctx context.Context, c *query.Set, outer *query.Query
 			if !ok {
 				return nil, ev.err
 			}
-			if !in[i][k] && !ev.charge(len(k)+fieldOverhead) {
-				return nil, ev.err
+			if c, seen := canon[k]; seen {
+				k = c
+			} else {
+				if !ev.charge(len(k) + fieldOverhead) {
+					return nil, ev.err
+				}
+				canon[k] = k
 			}
 			in[i][k] = true
 			keys[i] = append(keys[i], k)
