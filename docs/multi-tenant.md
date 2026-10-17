@@ -61,11 +61,11 @@ configured index prefix and folders, so nothing moves when you upgrade.
   `bob@example.com` are fine. A tenant's admins do not count toward the install's last
   admin.
 
-  Users added before this rule keep their names. A tenant user added with a bare name,
-  like `ada`, still signs in as `ada`, and no one else can take that name. A provider user
-  named like a tenant user, such as `bob@acme`, also keeps working, but tenant `acme`
-  cannot then add its own `bob`. To free a name like that, rename the provider user by
-  adding them again with a full email address, then delete the old account.
+    Users added before this rule keep their names. A tenant user added with a bare name,
+    like `ada`, still signs in as `ada`, and no one else can take that name. A provider user
+    named like a tenant user, such as `bob@acme`, also keeps working, but tenant `acme`
+    cannot then add its own `bob`. To free a name like that, rename the provider user by
+    adding them again with a full email address, then delete the old account.
 - **File locations.** Pages that name a file on the server, like Response actions and
   Playbooks, show tenant users only the file's name, never where it is on the server.
 - **Requests to other addresses.** Threat intel feeds, notification channels, response
