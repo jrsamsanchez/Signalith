@@ -256,6 +256,8 @@ func TestSplunkSyntaxForms(t *testing.T) {
 		`* | eval s=case(!match(a, "x"), 1, true(), 0)`:               "*\n| eval s=case(NOT match(a, \"x\"), 1, true(), 0)",
 		`"a.b" ="x y" OR "c" = 1`:                                     "a.b=\"x y\" OR c=1",
 		`* | eval -time = _time, b=1`:                                 "*\n| eval '-time'=_time, b=1",
+		`* | iplocation "'a'"`:                                        "*\n| iplocation \"'a'\"",
+		`* | iplocation 'a{}'`:                                        "*\n| iplocation a{}",
 		`* | transaction dest connected=false maxpause=5m`:            "*\n| transaction dest maxpause=300s",
 		`| inputlookup a | inputlookup append=true b`:                 "*\n| inputlookup a\n| inputlookup append=true b",
 	} {
