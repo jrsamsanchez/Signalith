@@ -169,7 +169,7 @@ func applyMakeContinuous(ctx context.Context, res *Result, c *query.MakeContinuo
 		with = append(with, keyed{Row{c.Field: v}, b})
 	}
 	sort.SliceStable(with, func(i, j int) bool { return with[i].b < with[j].b })
-	rows := make([]Row, 0, len(with)+len(without))
+	var rows []Row
 	for _, k := range with {
 		rows = append(rows, k.row)
 	}
