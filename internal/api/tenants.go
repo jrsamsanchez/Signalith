@@ -350,6 +350,25 @@ type tenantView struct {
 	Name     string `json:"name"`
 	Disabled bool   `json:"disabled,omitempty"`
 	Default  bool   `json:"default,omitempty"`
+	// Created and CreatedBy are listed for Settings > Tenants.
+	Created   *time.Time `json:"created,omitempty"`
+	CreatedBy string     `json:"created_by,omitempty"`
+}
+
+// tenantsOff says why tenants cannot be added or changed here now, the
+// way tenantsWritable refuses it, or "" when they can: Settings > Tenants
+// shows it before anyone tries.
+func (s *Server) tenantsOff() string {
+	switch {
+	case s.Tenants == nil:
+		return "the list of tenants cannot be read; see the server's log"
+	case s.TenantRuntime == nil:
+		return "this server cannot run tenants"
+	}
+	if err := s.TenantRuntime.Ready(); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 // handleListTenants lists the tenants a provider user may switch to, the
@@ -365,10 +384,19 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, t := range ts {
-			list = append(list, tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled})
+			v := tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled, CreatedBy: t.CreatedBy}
+			if !t.Created.IsZero() {
+				v.Created = &t.Created
+			}
+			list = append(list, v)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenants": list, "active": p.Active, "enabled": len(list) > 1})
+	out := map[string]any{"tenants": list, "active": p.Active, "enabled": len(list) > 1}
+	// "off" is for the admins who add and change tenants.
+	if p.runsServer() {
+		out["off"] = s.tenantsOff()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleSwitchTenant moves the provider user's session to another tenant.

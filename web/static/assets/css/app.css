@@ -311,6 +311,26 @@ kbd {
 .user-btn:hover, .menu[open] > .user-btn { background: var(--hover); color: var(--text); }
 .user-btn .icon { width: 14px; height: 14px; color: var(--text-3); }
 
+/* The tenant picker (tenants.js): quiet in the default tenant, a tinted
+   pill with the tenant's name while working in a customer's. */
+.tenant-btn {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: var(--h-md); padding: 0 8px 0 10px; margin-right: 4px;
+  border-radius: var(--r-full); color: var(--text-2); font-weight: 500; transition: background var(--t-fast), color var(--t-fast);
+}
+.tenant-btn:hover, .menu[open] > .tenant-btn { background: var(--hover); color: var(--text); }
+.tenant-btn .icon { flex: none; color: var(--text-3); }
+.tenant-btn .tenant-btn__chev { width: 14px; height: 14px; }
+.tenant-btn__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tenant-pick[data-active="tenant"] .tenant-btn { color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.tenant-pick[data-active="tenant"] .tenant-btn:hover, .tenant-pick[data-active="tenant"][open] > .tenant-btn { background: var(--accent-soft-2); }
+.tenant-pick[data-active="tenant"] .tenant-btn .icon { color: var(--accent); }
+.tenant-menu { width: min(300px, calc(100vw - 24px)); max-height: min(420px, 70vh); overflow-y: auto; }
+.tenant-menu__label { padding: 8px 10px 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: var(--track-caps); text-transform: uppercase; color: var(--text-3); }
+.tenant-menu .menu__item > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tenant-menu .menu__item[aria-checked="true"] { color: var(--text); background: var(--accent-soft); }
+.tenant-menu .menu__item .tenant-menu__check { color: var(--accent); }
+.tenant-menu .menu__item .menu__hint { margin-left: 0; }
+
 .avatar {
   --av: #5457E6;
   width: 24px; height: 24px; border-radius: 50%; flex: none; display: inline-grid; place-items: center;
@@ -1066,6 +1086,10 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
   .page-head__title { font-size: var(--fs-lg); }
   .topbar__crumb, .topbar__sep { display: none; }
   .user-btn .user-name, .user-btn > .icon { display: none; }
+  /* On a phone the picker keeps its icon and a short name. */
+  .tenant-btn { max-width: 112px; padding: 0 8px; margin-right: 0; }
+  .tenant-btn .tenant-btn__chev { display: none; }
+  .tenant-pick:not([data-active="tenant"]) .tenant-btn__name { display: none; }
   .user-btn { padding: 0 4px; margin-left: 0; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi__value { font-size: var(--fs-2xl); }
@@ -1228,6 +1252,11 @@ dialog.about { width: min(360px, calc(100vw - 32px)); text-align: center; }
    every such control stays hidden. */
 body:not([data-role="analyst"]):not([data-role="admin"]) [data-min-role="analyst"],
 body:not([data-role="admin"]) [data-min-role="admin"] { display: none !important; }
+/* tenants: controls for pages about the server itself carry
+   data-provider-only; <body data-scope> is "provider" for the provider's
+   own users and "tenant" for a tenant's (app.js). Until it is known, every
+   such control stays hidden. */
+body:not([data-scope="provider"]) [data-provider-only] { display: none !important; }
 /* sign-in page additions */
 .auth__forgot { font-size: var(--fs-sm); }
 .auth__note { font-size: var(--fs-sm); }
@@ -2828,61 +2857,68 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 
 /* Agent tokens: a table of tokens, then the shared tokens kept from older
    setups. On phones each row stacks. */
-:is(#page-data, #page-apitokens, #page-lookuptables) .tokens-card { overflow: hidden; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tokens-card__head { padding-bottom: 14px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tokens-card__body:empty { display: none; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table th:first-child, :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td:first-child { padding-left: 16px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td { height: 56px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table [data-col="created"] { width: 140px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table [data-col="used"] { width: 110px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table [data-col="events"] { width: 130px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table [data-col="status"] { width: 110px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table [data-col="act"] { width: 48px; padding-left: 0; text-align: right; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="name"] { max-width: 0; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="created"] { color: var(--text-2); white-space: nowrap; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"] { color: var(--text-2); white-space: nowrap; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tokens-card { overflow: hidden; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tokens-card__head { padding-bottom: 14px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tokens-card__body:empty { display: none; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table th:first-child, :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td:first-child { padding-left: 16px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td { height: 56px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table [data-col="created"] { width: 140px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table [data-col="used"] { width: 110px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table [data-col="events"] { width: 130px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table [data-col="status"] { width: 110px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table [data-col="act"] { width: 48px; padding-left: 0; text-align: right; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="name"] { max-width: 0; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="created"] { color: var(--text-2); white-space: nowrap; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="used"] { color: var(--text-2); white-space: nowrap; }
 #page-apitokens .tk-table [data-col="role"] { width: 110px; color: var(--text-2); }
 #page-apitokens .tk-table [data-col="created"] { width: 200px; }
 #page-apitokens .tk-table [data-col="expires"] { width: 120px; }
 #page-apitokens .tk-table td[data-col="expires"] { color: var(--text-2); white-space: nowrap; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-hint { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-3); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-muted { color: var(--text-3); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-num { font-variant-numeric: tabular-nums; color: var(--text-2); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-skel-gap { height: 6px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) tr.tk-off .tk-name, :is(#page-data, #page-apitokens, #page-lookuptables) .tk-off .tk-name { color: var(--text-2); font-weight: 400; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-menu .menu__panel { min-width: 180px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-hint { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-3); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-muted { color: var(--text-3); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-num { font-variant-numeric: tabular-nums; color: var(--text-2); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-skel-gap { height: 6px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) tr.tk-off .tk-name, :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-off .tk-name { color: var(--text-2); font-weight: 400; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-menu .menu__panel { min-width: 180px; }
 /* status: a dot carries the state, as on the Users page */
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-status { --st: var(--success); display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); white-space: nowrap; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--st); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-status[data-state="warn"] { --st: var(--warning); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-status[data-state="off"] { --st: transparent; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-status[data-state="off"]::before { box-shadow: inset 0 0 0 1.5px var(--text-3); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-empty .empty__icon { color: var(--accent); background: var(--accent-soft-2); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-alert { align-items: center; margin: 12px 16px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-alert__body { flex: 1; min-width: 0; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-foot { padding: 8px 16px 10px; box-shadow: inset 0 1px 0 var(--line-subtle); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-toggle { font-size: var(--fs-sm); color: var(--text-2); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-toggle .chev { transition: transform var(--t) var(--ease); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-status { --st: var(--success); display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); white-space: nowrap; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--st); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-status[data-state="warn"] { --st: var(--warning); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-status[data-state="off"] { --st: transparent; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-status[data-state="off"]::before { box-shadow: inset 0 0 0 1.5px var(--text-3); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-empty .empty__icon { color: var(--accent); background: var(--accent-soft-2); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-alert { align-items: center; margin: 12px 16px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-alert__body { flex: 1; min-width: 0; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-foot { padding: 8px 16px 10px; box-shadow: inset 0 1px 0 var(--line-subtle); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-toggle { font-size: var(--fs-sm); color: var(--text-2); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-toggle .chev { transition: transform var(--t) var(--ease); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
 
 /* shared tokens: a warning, then one line per token */
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy { display: grid; gap: 4px; padding: 16px; box-shadow: inset 0 1px 0 var(--line-subtle); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy > .alert { margin-bottom: 8px; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__list { display: grid; margin: 0; padding: 0; list-style: none; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__row { display: grid; grid-template-columns: minmax(0, 1fr) 200px 150px auto; align-items: center; gap: 8px 20px; padding: 12px 0; box-shadow: inset 0 -1px 0 var(--line-subtle); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__row:last-child { padding-bottom: 0; box-shadow: none; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__main { min-width: 0; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__src { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__public { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; font-size: var(--fs-sm); line-height: 18px; color: var(--danger); }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__public .icon { margin-top: 2px; flex: none; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__facts { display: grid; grid-template-columns: 76px auto; gap: 20px; margin: 0; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__facts dt { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__facts dd { margin: 2px 0 0; color: var(--text-2); white-space: nowrap; }
-:is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__act { justify-self: end; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy { display: grid; gap: 4px; padding: 16px; box-shadow: inset 0 1px 0 var(--line-subtle); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy > .alert { margin-bottom: 8px; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__list { display: grid; margin: 0; padding: 0; list-style: none; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__row { display: grid; grid-template-columns: minmax(0, 1fr) 200px 150px auto; align-items: center; gap: 8px 20px; padding: 12px 0; box-shadow: inset 0 -1px 0 var(--line-subtle); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__row:last-child { padding-bottom: 0; box-shadow: none; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__main { min-width: 0; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__src { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__public { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; font-size: var(--fs-sm); line-height: 18px; color: var(--danger); }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__public .icon { margin-top: 2px; flex: none; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__facts { display: grid; grid-template-columns: 76px auto; gap: 20px; margin: 0; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__facts dt { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__facts dd { margin: 2px 0 0; color: var(--text-2); white-space: nowrap; }
+:is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__act { justify-self: end; }
 
 /* the New token dialog (at the end of <body>) */
 .tk-dialog { width: min(540px, calc(100vw - 32px)); }
+/* Settings > Tenants (tenants.js) shares the API tokens' list. */
+#page-tenants .tk-table [data-col="created"] { width: 200px; }
+#page-tenants .tk-name { display: flex; align-items: center; gap: 8px; }
+#page-tenants .tk-name > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#page-tenants .tk-name .badge { flex: none; }
+#page-tenants .tk-empty .empty__text a { white-space: nowrap; }
+.tn-dialog .tn-id { font-family: var(--font-mono); }
 .tk-dialog .modal__close { margin: -4px -8px 0 auto; flex: none; }
 .tk-dialog .tk-secret { display: flex; gap: 8px; align-items: flex-start; }
 .tk-dialog .tk-secret__value { flex: 1; min-width: 0; height: auto; padding-block: 8px; resize: none; overflow: hidden; word-break: break-all; line-height: 1.5; font-family: var(--font-mono); font-size: var(--fs-sm); }
@@ -2891,38 +2927,40 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 .tk-dialog .tk-secret__copy.is-copied, .tk-dialog .tk-secret__copy.is-copied .icon { color: var(--success); }
 
 @media (max-width: 760px) {
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__row { grid-template-columns: minmax(0, 1fr) auto; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__facts { grid-column: 1; grid-row: 2; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__state { grid-column: 2; grid-row: 1; justify-self: end; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__act { grid-column: 2; grid-row: 2; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__row { grid-template-columns: minmax(0, 1fr) auto; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__facts { grid-column: 1; grid-row: 2; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__state { grid-column: 2; grid-row: 1; justify-self: end; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__act { grid-column: 2; grid-row: 2; }
 }
 @media (max-width: 600px) {
   #page-data #agent-body .agent-addr__row > .label { min-width: 0; }
   #page-data .agent-token > .label { padding-top: 0; }
   #page-data :is(.agent-token__help, #agent-token-error) { margin-left: 0; }
   #page-data .agent-token__field .input { flex: 1 1 100%; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tokens-card__head { flex-wrap: wrap; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table thead { display: none; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table, :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table tbody { display: block; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 12px 8px 12px 16px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table tbody tr:last-child { box-shadow: none; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td { display: block; width: auto !important; max-width: none !important; height: auto; padding: 0 !important; box-shadow: none !important; background: none !important; font-size: var(--fs-sm); text-align: left; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="name"] { flex: 1 1 calc(100% - 64px); min-width: 0; font-size: var(--fs-base); }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="act"] { flex: none; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="status"] { order: 2; flex-basis: 100%; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="created"] { order: 3; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"] { order: 4; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tokens-card__head { flex-wrap: wrap; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table thead { display: none; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table, :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table tbody { display: block; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 12px 8px 12px 16px; box-shadow: inset 0 -1px 0 var(--line-subtle); }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table tbody tr:last-child { box-shadow: none; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td { display: block; width: auto !important; max-width: none !important; height: auto; padding: 0 !important; box-shadow: none !important; background: none !important; font-size: var(--fs-sm); text-align: left; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="name"] { flex: 1 1 calc(100% - 64px); min-width: 0; font-size: var(--fs-base); }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="act"] { flex: none; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="status"] { order: 2; flex-basis: 100%; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="created"] { order: 3; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="used"] { order: 4; }
   #page-apitokens .tk-table td[data-col="role"] { order: 3; }
   #page-apitokens .tk-table td[data-col="created"] { order: 4; }
   #page-apitokens .tk-table td[data-col="expires"] { order: 5; }
   #page-apitokens .tk-table td[data-col="expires"]::before { content: "Expires "; color: var(--text-3); }
   #page-apitokens .tk-table td[data-col="used"] { order: 6; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="created"]::before { content: "Created "; color: var(--text-3); }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="used"]::before { content: "Last used: "; color: var(--text-3); }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="events"] { order: 5; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-table td[data-col="events"]::after { content: " in the last hour"; color: var(--text-3); }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-alert { flex-wrap: wrap; }
-  :is(#page-data, #page-apitokens, #page-lookuptables) .tk-legacy__facts { gap: 14px; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="created"]::before { content: "Created "; color: var(--text-3); }
+  /* The default tenant was not created by anyone. */
+  #page-tenants .tk-table td[data-col="created"]:empty { display: none; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="used"]::before { content: "Last used: "; color: var(--text-3); }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="events"] { order: 5; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-table td[data-col="events"]::after { content: " in the last hour"; color: var(--text-3); }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-alert { flex-wrap: wrap; }
+  :is(#page-data, #page-apitokens, #page-lookuptables, #page-tenants) .tk-legacy__facts { gap: 14px; }
   #page-data .agent-token-chip { white-space: normal; line-height: 16px; padding: 1px 7px; }
 }
 /* ==== end page:data ==== */

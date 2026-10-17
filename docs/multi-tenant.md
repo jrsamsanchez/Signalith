@@ -5,10 +5,11 @@ example as a managed security provider. Each customer is a **tenant**, with its 
 events, findings, investigations, detections, dashboards, hunting notebooks, lists, playbooks,
 notifications, retention and agent tokens, and its own users.
 
-!!! note "Being built"
-    Multi-tenant mode arrives in steps. This version runs tenants and has an API for them;
-    the Settings page and the tenant picker come next. An install without tenants works
-    exactly as before.
+An install without tenants works exactly as before. The provider's admins add, rename and
+turn off tenants in **Settings > Tenants**; once there is one, the provider's analysts and
+admins switch between tenants with the tenant picker in the top bar, which is tinted with
+the tenant's name while they work in a customer's data. Tenant users see neither, nor any
+page about the server itself.
 
 ## Who is who
 

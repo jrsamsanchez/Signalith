@@ -90,7 +90,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	me["search_default_earliest"] = s.conf().Search.DefaultEarliest
 	// Every page asks this first: an admin who gets here at a new web
 	// address after a restart moved it confirms that it works.
-	if p.Role == users.Admin && !p.MustChangePassword {
+	if p.runsServer() && !p.MustChangePassword {
 		s.confirmMove(r)
 	}
 	writeJSON(w, http.StatusOK, me)
