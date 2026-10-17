@@ -92,7 +92,7 @@ func (o *OpenSearch) Indices(ctx context.Context, pattern string) ([]IndexInfo, 
 	var settings map[string]struct {
 		Settings map[string]any `json:"settings"`
 	}
-	err = o.Client.Do(ctx, http.MethodGet, "/"+esc(pattern)+"/_settings/index.blocks.*?flat_settings=true&expand_wildcards=open", nil, &settings)
+	err = o.Client.Do(ctx, http.MethodGet, "/"+esc(pattern)+"/_settings/index.blocks.*,index.store.type,index.searchable_snapshot.*?flat_settings=true&expand_wildcards=open", nil, &settings)
 	if err != nil && !notFound(err) {
 		return nil, err
 	}
@@ -101,6 +101,10 @@ func (o *OpenSearch) Indices(ctx context.Context, pattern string) ([]IndexInfo, 
 			out[i].WriteBlocked = fmt.Sprint(s.Settings["index.blocks.write"]) == "true" ||
 				fmt.Sprint(s.Settings["index.blocks.read_only"]) == "true"
 			out[i].DiskBlocked = fmt.Sprint(s.Settings["index.blocks.read_only_allow_delete"]) == "true"
+			if fmt.Sprint(s.Settings["index.store.type"]) == "remote_snapshot" {
+				out[i].Cold = &ColdRef{Repository: fmt.Sprint(s.Settings["index.searchable_snapshot.repository"]),
+					Snapshot: fmt.Sprint(s.Settings["index.searchable_snapshot.snapshot_id.name"])}
+			}
 		}
 	}
 	var meta map[string]struct {
@@ -516,4 +520,154 @@ func (o *OpenSearch) RecordRange(ctx context.Context, index string) (time.Time, 
 		return time.UnixMilli(int64(*v)).UTC()
 	}
 	return ms(out.Aggregations.Oldest.Value), ms(out.Aggregations.Newest.Value), nil
+}
+
+// ColdState reads the cold storage repository, which nodes can mount
+// searchable snapshots, and the repository's <prefix>-* snapshots.
+func (o *OpenSearch) ColdState(ctx context.Context, repo, prefix string) (*ColdState, error) {
+	st := &ColdState{Repository: repo}
+	var repos map[string]struct {
+		Type string `json:"type"`
+	}
+	err := o.Client.Do(ctx, http.MethodGet, "/_snapshot/"+esc(repo), nil, &repos)
+	var oe *store.Error
+	switch {
+	case notFound(err):
+	case errors.As(err, &oe) && oe.Status == http.StatusForbidden:
+		// Snapshot permissions are only granted to Signalith when cold
+		// storage is turned on (the signalith_cold_storage role).
+		st.Forbidden = true
+		return st, nil
+	case err != nil:
+		return nil, fmt.Errorf("could not read the snapshot repository %s: %w", repo, err)
+	default:
+		r, ok := repos[repo]
+		st.Registered, st.Type = ok, r.Type
+	}
+	var nodes struct {
+		Nodes map[string]struct {
+			Roles []string `json:"roles"`
+		} `json:"nodes"`
+	}
+	if err := o.Client.Do(ctx, http.MethodGet, "/_nodes?filter_path=nodes.*.roles", nil, &nodes); err != nil {
+		return nil, fmt.Errorf("could not read the nodes' roles: %w", err)
+	}
+	// OpenSearch 3 mounts searchable snapshots on nodes with the warm
+	// role. OpenSearch 2 mounts them on search nodes, but there searches
+	// of a mounted day fail on fields of the wildcard type, which every
+	// Signalith event index has, so cold storage needs OpenSearch 3.
+	for _, n := range nodes.Nodes {
+		if slices.Contains(n.Roles, "warm") {
+			st.Mountable = true
+			break
+		}
+	}
+	if !st.Registered {
+		return st, nil
+	}
+	var snaps struct {
+		Snapshots []struct {
+			Name    string   `json:"snapshot"`
+			State   string   `json:"state"`
+			Indices []string `json:"indices"`
+		} `json:"snapshots"`
+	}
+	err = o.Client.Do(ctx, http.MethodGet, "/_snapshot/"+esc(repo)+"/"+esc(prefix+"-*")+"?verbose=false&ignore_unavailable=true", nil, &snaps)
+	if err != nil && !notFound(err) {
+		return nil, fmt.Errorf("could not list the snapshots in %s: %w", repo, err)
+	}
+	for _, sn := range snaps.Snapshots {
+		ix, ok := coldIndex(prefix, sn.Name)
+		// Only complete snapshots of exactly their own index count; one
+		// still being made, failed or partial is not a copy of the day.
+		if !ok || sn.State != "" && sn.State != "SUCCESS" || len(sn.Indices) > 0 && !slices.Equal(sn.Indices, []string{ix}) {
+			continue
+		}
+		st.Snapshots = append(st.Snapshots, ColdSnapshot{Name: sn.Name, Index: ix})
+	}
+	return st, nil
+}
+
+// SnapshotIndex snapshots one index and waits for the snapshot, checking
+// it every Poll.
+func (o *OpenSearch) SnapshotIndex(ctx context.Context, repo, name, index string) error {
+	err := o.Client.Do(ctx, http.MethodPut, "/_snapshot/"+esc(repo)+"/"+esc(name)+"?wait_for_completion=false", map[string]any{
+		"indices": index, "include_global_state": false, "ignore_unavailable": false, "partial": false,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	poll := o.Poll
+	if poll <= 0 {
+		poll = 5 * time.Second
+	}
+	for {
+		var out struct {
+			Snapshots []struct {
+				State   string   `json:"state"`
+				Indices []string `json:"indices"`
+				Reason  string   `json:"reason"`
+				Shards  struct {
+					Total  int `json:"total"`
+					Failed int `json:"failed"`
+				} `json:"shards"`
+			} `json:"snapshots"`
+		}
+		if err := o.Client.Do(ctx, http.MethodGet, "/_snapshot/"+esc(repo)+"/"+esc(name), nil, &out); err != nil {
+			return fmt.Errorf("checking the snapshot: %w", err)
+		}
+		if len(out.Snapshots) != 1 {
+			return errors.New("OpenSearch did not report the snapshot")
+		}
+		sn := out.Snapshots[0]
+		switch sn.State {
+		case "IN_PROGRESS", "STARTED", "INIT":
+		case "SUCCESS":
+			if sn.Shards.Failed > 0 || sn.Shards.Total == 0 || !slices.Equal(sn.Indices, []string{index}) {
+				return fmt.Errorf("the snapshot is incomplete (%d of %d shards failed)", sn.Shards.Failed, sn.Shards.Total)
+			}
+			return nil
+		default:
+			return fmt.Errorf("the snapshot ended %s: %s", sn.State, sn.Reason)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+}
+
+// MountSnapshot restores the index as a searchable snapshot and waits
+// until its primary shards are assigned. Its data stays in the
+// repository, so a replica would add nothing: a node that fails is
+// replaced from the repository.
+func (o *OpenSearch) MountSnapshot(ctx context.Context, repo, name, index string) error {
+	err := o.Client.Do(ctx, http.MethodPost, "/_snapshot/"+esc(repo)+"/"+esc(name)+"/_restore?wait_for_completion=true", map[string]any{
+		"indices": index, "storage_type": "remote_snapshot", "include_global_state": false, "include_aliases": false,
+		"index_settings": map[string]any{"index.number_of_replicas": 0, "index.auto_expand_replicas": false},
+	}, nil)
+	if err != nil {
+		return err
+	}
+	var health struct {
+		Status   string `json:"status"`
+		TimedOut bool   `json:"timed_out"`
+	}
+	err = o.Client.Do(ctx, http.MethodGet, "/_cluster/health/"+esc(index)+"?wait_for_status=yellow&timeout=60s", nil, &health)
+	if err != nil {
+		return fmt.Errorf("checking the mounted index: %w", err)
+	}
+	if health.TimedOut || health.Status == "red" {
+		return errors.New("the mounted index did not become available within 60 seconds")
+	}
+	return nil
+}
+
+func (o *OpenSearch) DeleteSnapshot(ctx context.Context, repo, name string) error {
+	err := o.Client.Do(ctx, http.MethodDelete, "/_snapshot/"+esc(repo)+"/"+esc(name), nil, nil)
+	if notFound(err) {
+		return nil
+	}
+	return err
 }

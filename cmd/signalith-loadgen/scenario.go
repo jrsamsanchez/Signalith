@@ -46,6 +46,10 @@ type Scenario struct {
 	Needs []string `yaml:"needs"`
 	// Targets are the servers' web addresses, or one load balancer's.
 	Targets []string `yaml:"targets"`
+	// AgentTargets are the addresses the agents send to, when the servers
+	// take agents on a port of their own (server.agent_listen); empty
+	// sends them to Targets.
+	AgentTargets []string `yaml:"agent_targets"`
 	// CAFile and CAFiles are the certificate authorities that sign the
 	// targets' HTTPS certificates; empty uses the system's.
 	CAFile  string   `yaml:"ca_file"`

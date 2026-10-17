@@ -134,9 +134,18 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 	return nil
 }
 
-// ErrTenantUsers refuses tenant users in the shared settings, which
-// multi-tenant mode does not use yet.
-var ErrTenantUsers = errors.New("tenant users cannot be kept in the shared settings of several servers yet")
+// ErrTenantUsers refuses tenant users, and sessions' tenants, in the
+// shared settings below shared.LevelTenants.
+var ErrTenantUsers = errors.New("tenants need every server sharing these settings on a version that supports them: upgrade the others first")
+
+// TenantsOn reports whether the cluster keeps tenants (Docs.Tenants, the
+// runtime's shared.LevelTenants gate), so tenant users and sessions'
+// tenants may be kept in the shared settings. Below it, a tenant user is
+// never used: no server writes one, and an older server would read one
+// as a user of the provider's.
+func (d *Docs) TenantsOn() bool {
+	return d.Tenants != nil && d.Tenants()
+}
 
 // UsersBackend keeps the users of a users.Store in the shared settings.
 // The built-in admin is a user document too (source builtin) but is left
@@ -152,7 +161,7 @@ func (b *UsersBackend) Load() (map[string]users.Record, error) {
 	out := map[string]users.Record{}
 	keys := b.Docs.mfaKeys()
 	for _, it := range b.Docs.Users().List() {
-		if it.Value == nil || it.Value.Source == users.SourceBuiltin {
+		if it.Value == nil || it.Value.Source == users.SourceBuiltin || it.Value.Tenant != "" && !b.Docs.TenantsOn() {
 			continue
 		}
 		out[it.Name] = record(it.Value, it.ETag, keys)
@@ -172,7 +181,7 @@ func (b *UsersBackend) Create(ctx context.Context, by string, r users.Record) (u
 	if r.Source == users.SourceBuiltin {
 		return users.Record{}, users.ErrReserved
 	}
-	if r.Tenant != "" {
+	if r.Tenant != "" && !b.Docs.TenantsOn() {
 		// Servers of an older version would read a tenant user as one of
 		// the provider's.
 		return users.Record{}, ErrTenantUsers
