@@ -186,3 +186,18 @@ func TestLookupCountsAgainstTheBudget(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestLookupWildcards(t *testing.T) {
+	st, _ := lookuptables.Open("")
+	if _, err := st.PutWithOptions("tools", []byte("path,note\n*/psexec*.exe,psexec\n/usr/bin/*,system\n/opt/x,exact\n"),
+		lookuptables.Options{Wildcard: []string{"path"}, IgnoreCase: true}); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Lookups: st}
+	for p, want := range map[string]string{"C:/Tools/PsExec64.EXE": "psexec", "/usr/bin/ls": "system", "/OPT/X": "exact", "/opt/y": "<nil>"} {
+		got := runRows(t, e, `| makeresults | eval p="`+p+`" | lookup local=t update=false tools path AS p OUTPUT note`, "note")
+		if !reflect.DeepEqual(got, []string{want}) {
+			t.Errorf("%s: note = %v, want %s", p, got, want)
+		}
+	}
+}
