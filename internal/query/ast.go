@@ -457,6 +457,8 @@ func CommandString(c Command) string {
 		return rowCmdString(c)
 	case *Concurrency, *Contingency, *Format:
 		return shapeCmdString(c)
+	case *Return, *MakeContinuous:
+		return returnCmdString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"
