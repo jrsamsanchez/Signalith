@@ -230,3 +230,34 @@ func TestEvalInOperator(t *testing.T) {
 		t.Errorf("rows = %s", got)
 	}
 }
+
+func TestInputLookupWhere(t *testing.T) {
+	e := lookupEngine(t)
+	res, err := e.Run(context.Background(), `| inputlookup owners where team=Data NOT owner=Kim | table user, owner`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[owner:Sam user:amy]]" || res.Matched != 1 {
+		t.Errorf("rows = %s, matched %d", got, res.Matched)
+	}
+	e.Opt.MaxEvents = 1
+	if res, err = e.Run(context.Background(), `| inputlookup owners where team=Data`); err != nil || len(res.Rows) != 1 || !res.Truncated || res.Matched != 2 {
+		t.Errorf("res = %+v, %v", res, err)
+	}
+	if res, err = e.Run(context.Background(), `| makeresults | inputlookup append=t owners where user=bob | stats count`); err != nil || fmt.Sprint(res.Rows) != "[map[count:2]]" {
+		t.Errorf("append where = %v, %v", res, err)
+	}
+}
+
+func TestTimechartLimit(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | timechart span=1h count by host`:           `"size":10`,
+		`* | timechart limit=3 span=1h count by host`:   `"size":3`,
+		`* | timechart limit=0 span=1h count by host`:   `"size":100`,
+		`* | timechart limit=500 span=1h count by host`: `"size":100`,
+	} {
+		if body := asJSON(compile(t, src).Body); !strings.Contains(body, want) {
+			t.Errorf("%s: %s", src, body)
+		}
+	}
+}

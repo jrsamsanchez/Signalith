@@ -145,7 +145,11 @@ check a table or report on it:
 search reads up to the event limit (`search.max_events`, 10,000 by default).
 It must come first, with nothing before the `|`, unless it has `append=true`
 (`| inputlookup append=true owners`), which adds the table's rows after the
-rows the search has so far. An empty cell is a missing
+rows the search has so far. `where` keeps only the rows that match search
+terms, before `max=` counts them:
+`| inputlookup owners where team=Web NOT user=bob`. The terms are the ones a
+search starts with (`field=value`, wildcards, `IN`, `AND`, `OR`, `NOT`), without
+`index=`, time ranges or subsearches. An empty cell is a missing
 field, so `where isnull(owner)` finds rows with no owner.
 
 ## The outputlookup command

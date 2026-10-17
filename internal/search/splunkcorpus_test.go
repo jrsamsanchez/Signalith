@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/geoip/geoiptest"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 )
 
@@ -103,6 +106,23 @@ func corpusCause(src string, err error) string {
 	return "other: " + positionRE.ReplaceAllString(msg, "")
 }
 
+// corpusGeoIP returns a small GeoIP city database, standing in for the
+// GeoLite2 file a server is given, so iplocation searches run.
+func corpusGeoIP(t *testing.T) *geoip.Store {
+	t.Helper()
+	b, err := geoiptest.Build("GeoLite2-City", map[string]geoiptest.City{
+		"81.2.69.0/24": {City: "London", Country: "United Kingdom", CountryCode: "GB", Lat: 51.5, Lon: -0.09},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "city.mmdb"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return geoip.Open(dir)
+}
+
 // TestSplunkCorpus runs every search of Splunk's security_content
 // detections, baselines and dashboards through the parser and the
 // engine, and fails when fewer pass than splunkCorpusPass. Set
@@ -110,7 +130,7 @@ func corpusCause(src string, err error) string {
 func TestSplunkCorpus(t *testing.T) {
 	corpus := loadCorpus(t)
 	lookups := corpusLookups(t)
-	e := &Engine{Store: emptyStore{}, Lookups: lookups}
+	e := &Engine{Store: emptyStore{}, Lookups: lookups, GeoIP: corpusGeoIP(t)}
 	pass := 0
 	causes := map[string][]string{}
 	for _, c := range corpus {
@@ -150,4 +170,4 @@ func TestSplunkCorpus(t *testing.T) {
 
 // splunkCorpusPass is how many corpus searches passed when it was last
 // raised. Raise it when a change makes more pass.
-const splunkCorpusPass = 2057
+const splunkCorpusPass = 2073

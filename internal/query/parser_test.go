@@ -240,17 +240,21 @@ func TestSearchStarKeepsEveryRow(t *testing.T) {
 
 func TestSplunkSyntaxForms(t *testing.T) {
 	for src, want := range map[string]string{
-		`* | rename "All_Traffic".* as *`:                      "*\n| rename All_Traffic.* as *",
-		`"requestParameters.masterUserPassword"=* x=1`:         "requestParameters.masterUserPassword=* x=1",
-		`"query_type{}" IN (SIG,KEY)`:                          "query_type{} IN (SIG, KEY)",
-		`process IN ("a", "b",)`:                               "process IN (a, b)",
-		`* | sort - count, + user`:                             "*\n| sort -count, user",
-		`* | eval s=if(type IN ("A", "B") AND res="ok", 1, 0)`: "*\n| eval s=if(in(type, \"A\", \"B\") AND res = \"ok\", 1, 0)",
-		`* | where NOT x IN (1, 2)`:                            "*\n| where NOT x IN (1, 2)",
-		`* | inputlookup append=t max=5 owners`:                "*\n| inputlookup append=true max=5 owners",
-		`| makeresults | inputlookup b append=t`:               "*\n| makeresults\n| inputlookup append=true b",
-		`user=x NOT [inputlookup t | fields a]`:                "user=x NOT [search *\n| inputlookup t\n| table a]",
-		`| inputlookup a | inputlookup append=true b`:          "*\n| inputlookup a\n| inputlookup append=true b",
+		`* | rename "All_Traffic".* as *`:                             "*\n| rename All_Traffic.* as *",
+		`"requestParameters.masterUserPassword"=* x=1`:                "requestParameters.masterUserPassword=* x=1",
+		`"query_type{}" IN (SIG,KEY)`:                                 "query_type{} IN (SIG, KEY)",
+		`process IN ("a", "b",)`:                                      "process IN (a, b)",
+		`* | sort - count, + user`:                                    "*\n| sort -count, user",
+		`* | eval s=if(type IN ("A", "B") AND res="ok", 1, 0)`:        "*\n| eval s=if(in(type, \"A\", \"B\") AND res = \"ok\", 1, 0)",
+		`* | where NOT x IN (1, 2)`:                                   "*\n| where NOT x IN (1, 2)",
+		`* | inputlookup append=t max=5 owners`:                       "*\n| inputlookup append=true max=5 owners",
+		`| makeresults | inputlookup b append=t`:                      "*\n| makeresults\n| inputlookup append=true b",
+		`user=x NOT [inputlookup t | fields a]`:                       "user=x NOT [search *\n| inputlookup t\n| table a]",
+		`| inputlookup owners where team=Web NOT user=bob | eval x=1`: "*\n| inputlookup owners where (team=Web AND NOT user=bob)\n| eval x=1",
+		`* | timechart limit=0 span=1h count by host`:                 "*\n| timechart span=1h limit=0 count by host",
+		`* | timechart span=1h limit=5 count by host`:                 "*\n| timechart span=1h limit=5 count by host",
+		`* | eval s=case(!match(a, "x"), 1, true(), 0)`:               "*\n| eval s=case(NOT match(a, \"x\"), 1, true(), 0)",
+		`| inputlookup a | inputlookup append=true b`:                 "*\n| inputlookup a\n| inputlookup append=true b",
 	} {
 		q, err := Parse(src)
 		if err != nil {
@@ -264,7 +268,7 @@ func TestSplunkSyntaxForms(t *testing.T) {
 			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
 		}
 	}
-	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
