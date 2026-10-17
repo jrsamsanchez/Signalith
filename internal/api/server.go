@@ -525,7 +525,11 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
-	if t := s.agentTenant(r); t != nil {
+	if t, wait := s.agentTenant(r); wait {
+		w.Header().Set("Retry-After", tenantAgentRetry)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": tenantAgentWait, "code": "tenant_unavailable"})
+		return
+	} else if t != nil {
 		t.handleIngest(w, r)
 		return
 	}
@@ -558,7 +562,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "token:"+who.ID)
 	if err != nil {
 		// 503 makes Fluent Bit retry later instead of dropping data.
 		w.Header().Set("Retry-After", "5")

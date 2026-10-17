@@ -6,9 +6,9 @@ events, findings, investigations, detections, dashboards, hunting notebooks, lis
 notifications, retention and agent tokens, and its own users.
 
 !!! note "Being built"
-    Multi-tenant mode arrives in steps. This version runs tenants on a server that does
-    not share its users with other servers; the Settings page and the tenant picker come
-    next. An install without tenants works exactly as before.
+    Multi-tenant mode arrives in steps. This version runs tenants and has an API for them;
+    the Settings page and the tenant picker come next. An install without tenants works
+    exactly as before.
 
 ## Who is who
 
@@ -69,16 +69,34 @@ Tenant IDs are 2 to 24 lower-case letters and digits, starting with a letter, su
 
 ## Limits of this version
 
-- Tenants work on a server that keeps its users in its own files. Once servers share
-  their users in OpenSearch, which a server running the background jobs sets up on its
-  own, tenants cannot be added and provider users cannot switch; the next version lifts
-  this.
+- While servers share their settings in OpenSearch (which a server that runs the
+  background jobs sets up by itself, even on its own), tenants need every server on a
+  version that supports them: the cluster then moves to level 10, and older versions
+  refuse to start. Until it has, tenants cannot be added and provider users cannot
+  switch.
+- Tenants run on the server that runs the background jobs. Which tenants exist and which
+  are turned off is kept in the shared settings (the first server's list moves there when
+  the cluster reaches level 10, and `signalith cluster export --to-files` writes it back
+  to `tenants.json`), so it is the same on every server, and
+  another server that takes the background jobs over runs the tenants from then on. Every
+  other server answers tenants' users and provider users switched into a tenant with
+  `503` (code `tenant_unavailable`), and tenants' agents with `503` and `Retry-After`, so
+  they send their batches again rather than lose them; the tenant's data waits in
+  OpenSearch. Point tenants' users and agents at the server that runs the background
+  jobs, or at a load balancer that sends them there. A switch shows on the other servers
+  within one poll of the shared settings, about 15 seconds at most.
+- A tenant's files (its detections, lookups, dashboards and response scripts) are in the
+  state folder of the server that runs it: copy `tenants/` to a server before it takes
+  the background jobs over. While servers share their settings, tenants' events are not
+  archived: retention keeps the days it would archive, and the Retention page says so.
 - Directory (LDAP) and single sign-on users are provider users.
 - Syslog, Microsoft 365, Okta, vulnerability scans, network sensors, osquery hosts, API tokens and
   compliance notes are the default tenant's. Content updates of the detections go to the
   default tenant; tenants get the detections built into Signalith.
 - The buttons in Slack and Teams messages work in the default tenant only: only provider users
   link chat accounts, and a click on a tenant's message is refused.
+- [Behavior baselines](baselines.md) learn from the default tenant's data only, and only
+  provider admins see Settings > Behavior baselines.
 - Custom log parsers are the provider's: only provider admins change them, and they read every
   tenant's records alike.
 - Downgrading to a version without multi-tenant mode is not supported once there are

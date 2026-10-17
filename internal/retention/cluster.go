@@ -57,7 +57,96 @@ type Cluster interface {
 	// RecordRange returns when the oldest and newest records were created;
 	// both are zero for an empty or missing index.
 	RecordRange(ctx context.Context, index string) (oldest, newest time.Time, err error)
+
+	// ColdState says whether the snapshot repository for cold storage is
+	// registered, whether a node can mount searchable snapshots, and which
+	// snapshots named <prefix>-* the repository holds.
+	ColdState(ctx context.Context, repo, prefix string) (*ColdState, error)
+	// SnapshotIndex snapshots one index alone into repo under name, waits
+	// until the snapshot is done, and returns an error unless it succeeded
+	// with every shard of exactly that index.
+	SnapshotIndex(ctx context.Context, repo, name, index string) error
+	// MountSnapshot mounts the index from a snapshot as a searchable
+	// snapshot under the same name: its data stays in the repository.
+	MountSnapshot(ctx context.Context, repo, name, index string) error
+	// DeleteSnapshot deletes a snapshot; one that is already gone is not
+	// an error.
+	DeleteSnapshot(ctx context.Context, repo, name string) error
 }
+
+// ColdRef names the snapshot a searchable snapshot index is mounted from.
+type ColdRef struct {
+	Repository string `json:"repository"`
+	Snapshot   string `json:"snapshot"`
+}
+
+// ColdState is what OpenSearch says about cold storage.
+type ColdState struct {
+	Repository string `json:"repository"`
+	// Registered is true when OpenSearch has a snapshot repository of
+	// that name, of Type (s3, azure, gcs, fs ...).
+	Registered bool   `json:"registered"`
+	Type       string `json:"type,omitempty"`
+	// Forbidden is true when OpenSearch does not let Signalith read
+	// snapshot repositories: its cold storage role is not mapped to it.
+	Forbidden bool `json:"forbidden,omitempty"`
+	// Mountable is true when at least one node can hold searchable
+	// snapshots: a node with the warm role, on OpenSearch 3.
+	Mountable bool `json:"mountable"`
+	// Snapshots lists the complete snapshots named <prefix>-* in the
+	// repository.
+	Snapshots []ColdSnapshot `json:"-"`
+}
+
+// Ready reports whether days can be moved to cold storage.
+func (c *ColdState) Ready() bool { return c != nil && c.Registered && c.Mountable }
+
+// Missing says what keeps days from moving to cold storage, as the end
+// of a sentence.
+func (c *ColdState) Missing(prefix string) string {
+	switch {
+	case c == nil:
+		return "OpenSearch could not be asked about cold storage"
+	case c.Forbidden:
+		return "OpenSearch does not let Signalith use snapshots: map the signalith_cold_storage role to it (see Cold storage in the retention guide)"
+	case !c.Registered:
+		return "OpenSearch has no snapshot repository named " + ColdRepository(prefix) + " (see Cold storage in the retention guide)"
+	case !c.Mountable:
+		return "no OpenSearch node can mount searchable snapshots (it takes OpenSearch 3 and a node with the warm role)"
+	}
+	return "nothing is missing"
+}
+
+// ColdSnapshot is one snapshot in the cold storage repository.
+type ColdSnapshot struct {
+	Name  string
+	Index string
+}
+
+// ColdSnapshotName names the snapshot of one index: the index name and
+// its UUID, lowercased as snapshot names must be. The UUID tells apart
+// indices of the same name, such as a day created again by late events.
+func ColdSnapshotName(index, uuid string) string {
+	return strings.ToLower(index + "." + uuid)
+}
+
+// coldIndex returns the index a cold storage snapshot was made from.
+func coldIndex(prefix, name string) (string, bool) {
+	i := strings.LastIndexByte(name, '.')
+	if i <= 0 || !strings.HasPrefix(name, prefix+"-") {
+		return "", false
+	}
+	if _, _, ok := ParseIndex(prefix, name[:i]); !ok {
+		return "", false
+	}
+	return name[:i], true
+}
+
+// ColdRepository is the snapshot repository cold storage uses. An admin
+// registers it in OpenSearch, with the bucket's credentials kept in
+// OpenSearch's keystore: Signalith never sees them, and nothing on its
+// pages can point cold storage at another bucket.
+func ColdRepository(prefix string) string { return prefix + "-cold" }
 
 // IndexInfo describes one index.
 type IndexInfo struct {
@@ -90,6 +179,10 @@ type IndexInfo struct {
 	RestoredUntil string `json:"restored_until,omitempty"`
 	// RestoredFrom lists the archives (IDs) restored into the index.
 	RestoredFrom []string `json:"restored_from,omitempty"`
+	// Cold is set on an index mounted from cold storage: its data is in
+	// the snapshot repository, and Bytes is the snapshot's size, not disk
+	// it takes on a node.
+	Cold *ColdRef `json:"cold,omitempty"`
 }
 
 // Compacted reports whether an index is read-only and merged into one

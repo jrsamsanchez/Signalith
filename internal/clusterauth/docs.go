@@ -48,12 +48,18 @@ type Docs struct {
 	users     *shared.Collection[UserBody]
 	directory *shared.Doc[DirectoryBody]
 	tokens    *shared.Collection[APITokenBody]
+	tenantDoc *shared.Doc[TenantsBody]
 	subs      map[string][]func()
 	sessions  []func(ctx context.Context, raw json.RawMessage, v store.Version)
 
 	// tokenUse is when this server last tried to write each API token's
 	// LastUsed (NoteAPITokenUse).
 	tokenUse map[string]time.Time
+
+	// Tenants reports whether the cluster keeps tenants
+	// (shared.Runtime.Tenants), the one place that decides it; nil is
+	// never.
+	Tenants func() bool
 }
 
 // Kinds of change subscribers hear of.
@@ -91,8 +97,9 @@ func (d *Docs) Track(h *shared.Hub) {
 		d.fire(changeLocks)
 		return nil
 	})
+	tl := trackTenants(h)
 	d.mu.Lock()
-	d.hub, d.users, d.directory, d.tokens = h, users, dir, tokens
+	d.hub, d.users, d.directory, d.tokens, d.tenantDoc = h, users, dir, tokens, tl
 	d.mu.Unlock()
 }
 

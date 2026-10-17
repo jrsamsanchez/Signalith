@@ -67,6 +67,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/summary"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -800,11 +801,34 @@ func newStore(c *config.Config) *store.Client {
 	return store.New(c.OpenSearchConnection())
 }
 
+// newSummaries starts reading which slots eng's summary indexes cover,
+// and returns the builder the summaries job runs. Summaries reach back
+// no further than ret keeps each data model's events.
+func newSummaries(ctx context.Context, c *config.Config, cl *store.Client, eng *search.Engine, ret *retention.Manager, log *slog.Logger, goFn func(func())) *summary.Builder {
+	runtime := cluster.RuntimeIndex(c.OpenSearch.IndexPrefix)
+	coverage := &summary.Coverage{Client: cl, Runtime: runtime, Log: log}
+	eng.Summaries = coverage
+	goFn(func() { coverage.Run(ctx) })
+	return &summary.Builder{
+		Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: runtime, Days: eng.SummaryDays,
+		KeepDays: func(model string) (int, bool) {
+			s, err := ret.Settings()
+			if err != nil {
+				return 0, false
+			}
+			p, _ := s.For(strings.ToLower(model))
+			return p.KeepDays, true
+		},
+		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log,
+	}
+}
+
 func newEngine(c *config.Config, s store.Searcher) *search.Engine {
 	return &search.Engine{Store: s, Opt: search.Options{
 		IndexPrefix:     c.OpenSearch.IndexPrefix,
 		DefaultEarliest: c.Search.DefaultEarliest,
 		MaxEvents:       c.Search.MaxEvents,
+		SummaryDays:     c.Search.SummaryDays,
 	}}
 }
 
@@ -1200,7 +1224,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
+	// The ingest slots and the memory for batches arriving are the whole
+	// server's: every tenant's pipeline shares them (see ingest.Limits).
+	ingestLimits := ingest.NewLimits(c.Ingest.MaxConcurrent, ingest.DefaultMaxReceiving)
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	// Each day's new field names are shared out among the servers that
 	// stored events in the last 10 minutes, and none are added to an index
@@ -1268,6 +1295,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	log.Info("asset and identity lists loaded", "assets", len(lists.Assets()), "identities", len(lists.Identities()), "dir", c.LookupsDir())
 	eng.Assets = lists
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
+	// Every server reads which slots summary indexes cover; the server
+	// that runs the background jobs keeps them (the summaries job).
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, in.jobs.Go)
 	// Likewise a damaged lookup table is left out, and the rest load.
 	tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir()))
 	if err != nil {
@@ -1775,6 +1805,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{chatOK, chats.Index, nil, chats.Replicate},
 			})
 		}},
+		{Name: "summaries", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			sumBuilder.Run(ctx)
+		}},
 		{Name: "detections", Run: func(ctx context.Context) {
 			if !ready(ctx) || !findingsOK {
 				return
@@ -1885,6 +1921,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
 		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
@@ -1917,14 +1954,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if reg, err := tenants.Open(c.TenantsFile()); err != nil {
 		log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
 	} else {
+		if parts != nil {
+			// Which tenants exist and are on is the same on every server.
+			reg.UseShared(r.sharedContent.users.docs.TenantList())
+		}
 		srv.Tenants = reg
 	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
-	if srv.Tenants != nil && parts == nil {
-		// Each tenant's data, on this server only for now: tenants' users
-		// cannot be kept in the shared settings of a cluster yet.
-		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv)
+	if srv.Tenants != nil {
+		// Each tenant's data. While the users are shared, on the server
+		// that runs the background jobs only, once the cluster keeps
+		// tenants (tenantRuntime.Ready).
+		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv, ingestLimits)
+		if parts != nil {
+			tr.sharedOK = r.shared.Tenants
+		}
 		srv.TenantRuntime, in.tenants = tr, tr
 		in.jobs.Go(tr.startAll)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -50,8 +51,14 @@ type tenantRuntime struct {
 	front *api.Server
 	ctx   context.Context
 	log   *slog.Logger
-	// leader reports whether this server runs the background jobs now.
-	leader func() bool
+	// leader reports whether this server runs the background jobs now,
+	// and sharedOK, set while the users are shared, whether the cluster
+	// keeps tenants (shared.LevelTenants).
+	leader   func() bool
+	sharedOK func() bool
+	// limits are the ingest slots and receive budget the default tenant's
+	// pipeline uses, which every tenant's pipeline shares.
+	limits *ingest.Limits
 
 	// changing makes Changed one at a time; mu guards running, which
 	// requests read while a tenant starts.
@@ -59,6 +66,10 @@ type tenantRuntime struct {
 	mu       sync.Mutex
 	running  map[string]*tenantInstance
 	stopped  bool
+
+	// listErr is the last problem logged by startAll's loop, so each is
+	// logged once.
+	listErr string
 }
 
 // tenantInstance is one tenant's running server.
@@ -68,8 +79,8 @@ type tenantInstance struct {
 	jobs   sync.WaitGroup
 }
 
-func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server) *tenantRuntime {
-	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, running: map[string]*tenantInstance{}}
+func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *store.Client, reg *tenants.Registry, front *api.Server, limits *ingest.Limits) *tenantRuntime {
+	t := &tenantRuntime{r: r, c: c, cl: cl, reg: reg, front: front, ctx: ctx, log: r.log, limits: limits, running: map[string]*tenantInstance{}}
 	t.leader = func() bool { return r.node == nil || r.node.RunsJobs() }
 	return t
 }
@@ -77,22 +88,84 @@ func newTenantRuntime(ctx context.Context, r *runner, c *config.Config, cl *stor
 // startAll starts every tenant that is not turned off. One that cannot
 // start is logged and left stopped: its users' requests are refused.
 func (t *tenantRuntime) startAll() {
-	list, err := t.reg.List()
-	if err != nil {
-		t.log.Error("the list of tenants cannot be read; no tenant's data can be used until it is fixed", "file", t.reg.Path, "err", err)
+	t.reconcile()
+	if t.sharedOK == nil {
 		return
 	}
-	for _, tn := range list {
-		if tn.Disabled {
-			continue
+	// In a cluster the list is shared: follow what other servers change
+	// in it.
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case <-tick.C:
 		}
-		if err := t.Changed(t.ctx, tn.ID); err != nil {
-			t.log.Error("could not start a tenant", "tenant", tn.ID, "err", err)
+		t.reconcile()
+	}
+}
+
+// reconcile runs the tenants that are on, and stops those turned off or
+// gone.
+func (t *tenantRuntime) reconcile() {
+	list, err := t.reg.List()
+	if err != nil {
+		if fmt.Sprint(err) != t.listErr {
+			t.log.Error("the list of tenants cannot be read; no tenant's data can be used until it is fixed", "file", t.reg.Path, "err", err)
+		}
+		t.listErr = fmt.Sprint(err)
+		return
+	}
+	t.listErr = ""
+	want := map[string]bool{}
+	for _, tn := range list {
+		if !tn.Disabled {
+			want[tn.ID] = true
+		}
+	}
+	t.mu.Lock()
+	var change []string
+	for id := range t.running {
+		if !want[id] {
+			change = append(change, id)
+		}
+	}
+	for id := range want {
+		if t.running[id] == nil {
+			change = append(change, id)
+		}
+	}
+	t.mu.Unlock()
+	for _, id := range change {
+		if err := t.Changed(t.ctx, id); err != nil {
+			t.log.Error("could not start a tenant", "tenant", id, "err", err)
 		}
 	}
 }
 
+// Ready says why this server cannot run tenants now: while servers share
+// their users, tenants run on the one that runs the background jobs, and
+// only once every server reads tenants. Tenants' requests and agents are
+// refused on the others, and on a server that lost the job lease, rather
+// than answered with data it no longer keeps up to date.
+func (t *tenantRuntime) Ready() error {
+	if t.sharedOK == nil {
+		return nil
+	}
+	if !t.sharedOK() {
+		return clusterauth.ErrTenantUsers
+	}
+	if !t.leader() {
+		return errors.New("tenants run on the server that runs the background jobs; use that one")
+	}
+	return nil
+}
+
 func (t *tenantRuntime) Server(id string) *api.Server {
+	if t.Ready() != nil {
+		return nil
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if ti := t.running[id]; ti != nil {
@@ -101,6 +174,9 @@ func (t *tenantRuntime) Server(id string) *api.Server {
 	return nil
 }
 
+// Servers returns every tenant server running here, also while another
+// server runs the tenants (Ready): their agent tokens tell this server
+// which tenant an agent is of.
 func (t *tenantRuntime) Servers() []*api.Server {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -156,6 +232,26 @@ func (t *tenantRuntime) Changed(_ context.Context, id string) error {
 
 // SettingsChanged has every running tenant's server follow the settings
 // the default tenant's server applied at once.
+// NotebookStores returns a store of hunting notebooks for each tenant in
+// the list, turned off ones too: a deleted provider user's notebooks are
+// released in all of them.
+func (t *tenantRuntime) NotebookStores() map[string]notebooks.Store {
+	list, err := t.reg.List()
+	if err != nil {
+		t.log.Warn("could not list the tenants to release a deleted user's hunting notebooks", "err", err)
+		return nil
+	}
+	front := t.front.Running()
+	out := make(map[string]notebooks.Store, len(list))
+	for _, tn := range list {
+		if tn.ID == tenants.Default {
+			continue
+		}
+		out[tn.ID] = notebooks.NewOpenSearch(t.cl, front.ForTenant(tn.ID).OpenSearch.IndexPrefix)
+	}
+	return out
+}
+
 func (t *tenantRuntime) SettingsChanged() {
 	t.mu.Lock()
 	list := make([]*tenantInstance, 0, len(t.running))
@@ -217,7 +313,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Log: log}
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
@@ -241,6 +337,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, ti.jobs.Go)
 	ibackend := intel.NewOpenSearch(cl, prefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -398,6 +495,15 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+	}
+	if t.sharedOK != nil && ret.Archive != nil {
+		// A tenant's archive folder is in this server's state folder,
+		// which a server running the tenants after it would not see:
+		// days to archive are kept until tenants' archives can be shared.
+		ret.CanArchive = func() (bool, string) {
+			return false, "a tenant's events are not archived while servers share their settings"
+		}
 	}
 
 	// The tenant's index template and indices, then its background jobs
@@ -424,6 +530,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			return
 		}
 		runWhileLeader(ctx, t.leader, []cluster.Job{
+			{Name: "summaries", Run: sumBuilder.Run},
 			{Name: "detections", Run: sched.Start},
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
