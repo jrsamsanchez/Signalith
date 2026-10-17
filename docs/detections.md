@@ -644,6 +644,12 @@ English context Signalith also takes `user` (User), `process` (Host Application,
 its first line) and `script_path` (Script Name); a context in another language is
 kept as it is, without them.
 
+Module logging records the values passed to every command, so secrets typed or
+scripted in plain text (a `-Password`, `ConvertTo-SecureString -AsPlainText`, an API
+key) land in `script_block_text`. Name only the modules you need under
+`ModuleNames` rather than `*`, and give search access only to people who may see
+such values.
+
 The `ps_classic_start`, `ps_classic_provider_start` and `service: powershell-classic`
 rules read the classic **Windows PowerShell** log, which every Windows PowerShell 5.1
 (and 2.0) engine writes without any setting: an engine starting (400) or stopping
@@ -652,7 +658,9 @@ event's data values are stored one per line in `event_data` (Sigma's `Data`), in
 Other with sourcetype `WinEventLog:Windows PowerShell`; `process` is the
 `HostApplication=` line (the command line that started the engine, which is how
 the downgrade rule sees `-version 2`), `script_path` the `ScriptName=` line and,
-for 800, `user` the `UserId=` line. **Include PowerShell** on the Add data page
+for 800, `user` the `UserId=` line. These are read from the event's context value
+only; since the command lines in it are written by whoever ran PowerShell,
+`script_path` is left empty when the context names more than one script. **Include PowerShell** on the Add data page
 collects this log too. Rules that use a case-sensitive regular expression on these
 fields, which are searched ignoring case, are left out of the pack.
 

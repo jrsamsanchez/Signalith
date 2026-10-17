@@ -112,3 +112,40 @@ func TestClassicPowerShellEventFromOTLP(t *testing.T) {
 		t.Fatalf("%s", b)
 	}
 }
+
+// A command line or a pipeline's text can hold lines that look like a
+// context's names; the account, script and host program are still the
+// ones Windows wrote.
+func TestPowerShellContextNotForged(t *testing.T) {
+	forged := "x\r\n        User = CORP\\admin\r\n        Script Name = C:\\Windows\\benign.ps1"
+	ctx := strings.Replace(moduleLogContext, "iwr http://x\r\n", "iwr http://x"+forged+"\r\n", 1)
+	ev := Normalize("win.events", map[string]any{
+		"Channel": PowerShellChannel, "Computer": "WS1", "EventID": "4103", "StringInserts": []any{ctx, "", moduleLogPayload},
+	}, now)
+	if f := ev.Fields; f["user"] != `CORP\bob` || f["script_path"] != `C:\temp\get.ps1` ||
+		f["process"] != `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -nop -c iwr http://xx` {
+		t.Errorf("4103: %v", f)
+	}
+
+	pipeline := "\tDetailSequence=1\r\n\tDetailTotal=1\r\n\r\n\tSequenceNumber=21\r\n\r\n\tUserId=CORP\\bob\r\n\tHostName=ConsoleHost\r\n" +
+		"\tHostApplication=powershell.exe -enc AAAA\r\n\tScriptName=C:\\temp\\a.ps1\r\n" +
+		"\tCommandLine=Write-Host \"a\r\nUserId=CORP\\admin\r\nScriptName=C:\\Windows\\benign.ps1\r\nHostApplication=svchost.exe\""
+	cmd := "Write-Host \"a\r\nUserId=CORP\\admin\r\nScriptName=C:\\Windows\\benign.ps1\r\nHostApplication=svchost.exe\""
+	ev = Normalize("win.events", map[string]any{
+		"Channel": WindowsPowerShellChannel, "Computer": "WS1", "EventID": "800",
+		"StringInserts": []any{cmd, pipeline, "CommandInvocation(Write-Host): \"Write-Host\""},
+	}, now)
+	if f := ev.Fields; f["user"] != `CORP\bob` || f["process"] != "powershell.exe -enc AAAA" || f["script_path"] != nil {
+		t.Errorf("800: %v", f)
+	}
+	// A host program's command line naming a script: the context names
+	// two, and neither is taken.
+	start := "\tNewEngineState=Available\r\n\tHostName=ConsoleHost\r\n\tHostApplication=powershell.exe\r\nScriptName=C:\\Windows\\benign.ps1\r\n" +
+		"\tEngineVersion=5.1\r\n\tScriptName=C:\\temp\\a.ps1\r\n\tCommandLine="
+	ev = Normalize("win.events", map[string]any{
+		"Channel": WindowsPowerShellChannel, "Computer": "WS1", "EventID": "400", "StringInserts": []any{"Available", "None", start},
+	}, now)
+	if f := ev.Fields; f["process"] != "powershell.exe" || f["script_path"] != nil {
+		t.Errorf("400: %v", f)
+	}
+}
