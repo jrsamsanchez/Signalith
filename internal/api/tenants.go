@@ -37,9 +37,11 @@ var (
 	// accounts linked for the buttons in Slack and Teams messages, whose
 	// clicks the default tenant's server answers, and the behavior
 	// baselines, which learn from the default tenant's data only for now.
+	// The summaries' status lists every tenant's, so it is the provider's
+	// too.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "baselines",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "baselines", "summaries",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,
