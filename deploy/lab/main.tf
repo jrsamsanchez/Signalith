@@ -54,13 +54,14 @@ locals {
   ))
 
   lab = {
-    size     = var.size
-    ref      = var.signalith_ref
-    openvas  = var.openvas
-    domain   = local.domain
-    siem     = "siem.${local.domain}"
-    lb_ip    = local.full ? local.lb_ip : ""
-    machines = [for k, v in local.linux_machines : { name = k, role = v.role, ip = v.ip }]
+    size       = var.size
+    ref        = var.signalith_ref
+    opensearch = var.opensearch_version
+    openvas    = var.openvas
+    domain     = local.domain
+    siem       = "siem.${local.domain}"
+    lb_ip      = local.full ? local.lb_ip : ""
+    machines   = [for k, v in local.linux_machines : { name = k, role = v.role, ip = v.ip }]
   }
 }
 
