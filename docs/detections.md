@@ -820,7 +820,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,186 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,208 Windows,
 Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1080,10 +1080,18 @@ row for it; a rule ships only when some test event comes through. A rule that co
 (`stats count`, `dc`) keeps no row for one event, so its test is the same event
 repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
 with a field it counts distinct values of different each time (`"vary"`), next to a
-smaller repeat that the rule must not find. Where the two
-languages read a stage differently, the rule is left out: a `where` that compares two
-fields (`where process_name != service_process`), or text with a `*`, since Signalith's
-`where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
+smaller repeat that the rule must not find. When none of the events made from the
+`where` clause comes through, the tests the later stages make of fields the clause
+leaves open (`search process IN (...)` after a `tstats`, `like()` and `match()`, a
+`rex` a later stage reads, a `regex` stage) are added to the clause to make more
+events, and failing that, the program runs from a folder other than System32 (for a
+rule that leaves System32 out), a library loads from its program's own folder, or a
+share access writes; whether the rule finds each is still what its search, run as
+written, says of the event as Signalith stores it. Where the two
+languages read a stage differently, the rule is left out: text with a `*`, since
+Signalith's `where` reads a plain condition as a filter. A `where` that compares two
+fields (`where process_name != service_process`) has both quoted, so Signalith compares
+the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
 (`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
 `spath` and the functions Signalith lacks are left out for now;
@@ -1093,7 +1101,8 @@ CI checks as the SigmaHQ pack run on it.
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).
 Every recorded Windows event goes through Signalith's parser, and the detection must
-read it as the rule does and find the attack. 715 of the 717 shipped rules with a
+read it as the rule does and find the attack (a rule's later stages run over the
+recording's matching events together, as they count across events). 715 of the 717 shipped rules with a
 Windows recording do, and up to two recorded events each rule finds are kept with
 its test events, so CI checks real events too:
 

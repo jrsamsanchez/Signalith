@@ -240,11 +240,7 @@ func main() {
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
-			if opt.Network && splcheck.IsSensorNode(rule.Node) {
-				skip("no test events: no network sensor event as Signalith stores it matches the rule", rel)
-			} else {
-				skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
-			}
+			skip(splcheck.NoEventsReason(rule, tf.Cases), rel)
 			continue
 		}
 		for _, c := range recorded[rule.ID] {
