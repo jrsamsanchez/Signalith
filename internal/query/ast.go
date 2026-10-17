@@ -433,6 +433,10 @@ func CommandString(c Command) string {
 		return abstractString(c)
 	case *Highlight:
 		return highlightString(c)
+	case *AnomalyDetection:
+		return anomalyString(c)
+	case *Correlate:
+		return correlateString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:

@@ -222,6 +222,14 @@ func (q *Query) Drilldown() *Drill {
 			clear(fields)
 		case *XPath:
 			delete(fields, c.OutField)
+		case *AnomalyDetection:
+			for _, f := range []string{"log_event_prob", "probable_cause", "probable_cause_freq", "isOutlier"} {
+				delete(fields, f)
+			}
+			if c.Action == "summary" {
+				clear(fields)
+				d.Series = ""
+			}
 		case *Abstract:
 			delete(fields, "_raw")
 		case *Bin:
@@ -239,7 +247,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Timewrap, *Cluster, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *MultiSearch, *Timewrap, *Cluster, *Correlate, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)
