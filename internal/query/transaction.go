@@ -113,6 +113,9 @@ func (p *parser) transactionBound(key string) (Expr, error) {
 		if e == nil {
 			return nil, errorf(v.pos, "%s=(*) matches every event", key)
 		}
+		if exprSubsearches(e) > 0 {
+			return nil, errorf(v.pos, "%s cannot hold a subsearch", key)
+		}
 		return e, nil
 	}
 	return nil, errorf(v.pos, `%s takes text such as "session opened" or a search in parentheses such as (action=success)`, key)

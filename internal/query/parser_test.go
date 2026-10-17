@@ -264,7 +264,7 @@ func TestSplunkSyntaxForms(t *testing.T) {
 			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
 		}
 	}
-	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
