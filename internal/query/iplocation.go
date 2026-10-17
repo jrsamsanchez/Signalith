@@ -115,5 +115,10 @@ func ipLocationString(c *IPLocation) string {
 	if c.Lang != "" {
 		s += " lang=" + c.Lang
 	}
+	// A name that starts and ends with ' is written in double quotes, or
+	// it would read back without them.
+	if n := len(c.Field); n > 2 && c.Field[0] == '\'' && c.Field[n-1] == '\'' {
+		return s + " " + quote(c.Field)
+	}
 	return s + " " + formatName(c.Field)
 }
