@@ -538,6 +538,28 @@ func describeCommand(c query.Command) string {
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Extract:
+		s := fmt.Sprintf("Read up to %d key%svalue pairs from the first %d characters of _raw into fields, keeping the values of fields the events already have", c.Limit, c.KVDelim[:1], c.MaxChars)
+		if c.MVAdd {
+			s += "; a repeated key gives a multivalue field"
+		}
+		return s + "."
+	case *query.Outlier:
+		which := "every field with numbers"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		side := "above the 75th percentile plus"
+		if c.UseLower {
+			side = "outside the 25th to 75th percentiles by more than"
+		}
+		limit := side + " " + strconv.FormatFloat(c.Param, 'f', -1, 64) + " times the distance between the 25th and 75th percentiles"
+		if c.Remove {
+			return "Remove rows whose numbers in " + which + " are " + limit + "."
+		}
+		return "Set numbers in " + which + " that are " + limit + " to that bound."
+	case *query.Gauge:
+		return "Make one row for a gauge: x is " + c.Value + ", and y1, y2, ... are the range values."
 	case *query.Geostats:
 		s := fmt.Sprintf("Count %s in map squares of %s by %s degrees of %s and %s", describeAggs(c.Aggs),
 			strconv.FormatFloat(c.SpanLat, 'f', -1, 64), strconv.FormatFloat(c.SpanLon, 'f', -1, 64), c.LatField, c.LonField)

@@ -519,7 +519,7 @@ func needsAllEvents(cmds []query.Command) bool {
 			return false
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
-			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats:
+			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier:
 			return true
 		}
 	}
@@ -534,7 +534,7 @@ func leadingHead(cmds []query.Command) (int, bool) {
 		case *query.Table, *query.Rename, *query.Enrich, *query.Intel, *query.Eval, *query.Rex, *query.Fillnull, *query.Lookup,
 			*query.Bin, *query.FieldsRemove, *query.Spath, *query.FromJSON, *query.MakeMV, *query.Convert,
 			*query.NoMV, *query.StrCat, *query.RangeMap, *query.ForEach, *query.Replace, *query.XMLKV, *query.IPLocation,
-			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo:
+			*query.Accum, *query.Delta, *query.AutoRegress, *query.FillDown, *query.Trendline, *query.AddInfo, *query.Extract:
 			continue
 		}
 		return 0, false

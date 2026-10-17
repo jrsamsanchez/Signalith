@@ -60,6 +60,7 @@ var fuzzSeeds = []string{
 	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,
 	`* | replace "::ffff:*" WITH *, "a", WITH "b" IN src, "x y" | replace a WITH b | xmlkv | xmlkv Message maxinputs=5 | eval b=bit_and(a, 3), c=bit_shift_left(1, 4)`,
 	`* | geostats | geostats latfield="l a" longfield=lo binspanlat=0.5 binspanlong=1e1 globallimit=3 avg(x) AS a by "s c" | geostats dc(u), sum(b) AS "s b"`,
+	`* | extract | kv pairdelim="|;", kvdelim=":" limit=5 maxchars=100 mv_add=t clean_keys=false | outlier | outlier action=rm param=0.5 uselower=true mark=1 type=iqr bytes "a=b" c* | gauge count | gauge "a b" -5 0 1e3 2.5`,
 	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,
 	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }

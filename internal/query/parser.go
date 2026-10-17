@@ -6,7 +6,7 @@ import (
 )
 
 // Commands lists every pipe command, for autocomplete and error messages.
-var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous", "union", "geostats"}
+var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "rare", "where", "eval", "rex", "dedup", "fillnull", "sort", "head", "table", "rename", "lookup", "inputlookup", "transaction", "join", "enrich", "intel", "threatmatch", "streamstats", "bin", "bucket", "fields", "regex", "makeresults", "append", "appendpipe", "tstats", "chart", "xyseries", "untable", "spath", "mvexpand", "makemv", "reverse", "addtotals", "addcoltotals", "convert", "tail", "uniq", "fromjson", "nomv", "mvcombine", "strcat", "rangemap", "fieldformat", "foreach", "replace", "xmlkv", "iplocation", "map", "accum", "delta", "autoregress", "fieldsummary", "transpose", "filldown", "addinfo", "trendline", "concurrency", "contingency", "format", "return", "makecontinuous", "union", "geostats", "extract", "outlier", "gauge"}
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
@@ -595,6 +595,12 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseUnion(t)
 	case "geostats":
 		return p.parseGeostats(t)
+	case "extract", "kv":
+		return p.parseExtract(t)
+	case "outlier":
+		return p.parseOutlier(t)
+	case "gauge":
+		return p.parseGauge(t)
 	case "makecontinuous":
 		return p.parseMakeContinuous(t)
 	case "xmlkv":

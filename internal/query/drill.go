@@ -196,6 +196,18 @@ func (q *Query) Drilldown() *Drill {
 			}
 		case *Concurrency:
 			delete(fields, c.Output)
+		case *Outlier:
+			// Clamped values are in no event.
+			if len(c.Fields) == 0 {
+				clear(fields)
+			}
+			for f := range fields {
+				for _, p := range c.Fields {
+					if MatchField(p, f) {
+						delete(fields, f)
+					}
+				}
+			}
 		case *AddInfo:
 			delete(fields, AddInfoMinTime)
 			delete(fields, AddInfoMaxTime)
@@ -205,7 +217,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, f := range c.Fields() {
 				delete(fields, f)
 			}
-		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace:
+		case *Rex, *Spath, *FromJSON, *XMLKV, *Replace, *Extract:
 			// Its fields can overwrite any column.
 			clear(fields)
 		case *Bin:
@@ -223,7 +235,7 @@ func (q *Query) Drilldown() *Drill {
 			for _, a := range c.Aggs {
 				delete(fields, a.Column())
 			}
-		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return:
+		case *Stats, *Top, *Timechart, *Chart, *Append, *Union, *Geostats, *AppendPipe, *XYSeries, *Untable, *Map, *FieldSummary, *Transpose, *Contingency, *Format, *Return, *Gauge:
 			// A summary of a summary, or rows from elsewhere: only the
 			// time range still holds.
 			clear(fields)
