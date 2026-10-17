@@ -62,7 +62,7 @@ func (s *Scheduler) claim(ctx context.Context, d *Detection, key string, slot, n
 	if !slot.IsZero() {
 		end = slot
 	}
-	ep := s.epoch()
+	ep := s.fenceEpoch()
 	doc := throttleDoc{Kind: kindThrottle, DetectionID: d.ID, GroupKey: key, Slot: slotString(slot),
 		Until: end.Add(w).UTC(), FindingID: findingID, Epoch: ep, Node: s.NodeID}
 	asked := false

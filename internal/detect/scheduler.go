@@ -83,13 +83,18 @@ type Scheduler struct {
 	CatchUp time.Duration
 	// Runtime keeps the run state and throttle documents, in the index
 	// RuntimeIndex; nil keeps them in memory, for tests and throwaway
-	// schedulers. Epoch is the job lease's epoch, written into them, so a
-	// server that lost the lease cannot write over a newer leader's state;
-	// NodeID names this server in them.
+	// schedulers. Epoch is the job lease's epoch: the detection epoch
+	// written into them comes from it (see epoch.go), so a server that
+	// lost the lease cannot write over a newer leader's state; NodeID
+	// names this server in them.
 	Runtime      RunStore
 	RuntimeIndex string
 	Epoch        func() int64
 	NodeID       string
+	// Counter, when set, says whether the epoch written into those
+	// documents comes from the detepoch document rather than the lease
+	// (cluster level 11, see epoch.go).
+	Counter func() bool
 
 	mu sync.Mutex
 	// flags are this server's running and waiting runs.
@@ -99,6 +104,10 @@ type Scheduler struct {
 	// the schedule.
 	det         map[string]*detEntry
 	loadedEpoch int64
+	// detEpoch is the detection epoch taken for that copy, and
+	// loadedCounter whether it came from the detepoch document.
+	detEpoch      int64
+	loadedCounter bool
 	// firstStart says the run state, when last read, had no detstate
 	// documents at all: the dispatch after that read starts each enabled
 	// rule at its current slot rather than its next one.
