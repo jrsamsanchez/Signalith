@@ -92,6 +92,11 @@ func oktaField(name string) (string, bool) {
 	if f, ok := oktaCIM[name]; ok {
 		return f, true
 	}
+	// Okta's device object is stored as okta_device, as device is a
+	// field of other events (ingest.OktaSigmaField).
+	if rest, ok := strings.CutPrefix(name, "device."); ok {
+		name = "okta_device." + rest
+	}
 	return name, ingest.OktaField(name)
 }
 

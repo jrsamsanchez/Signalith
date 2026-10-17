@@ -39,6 +39,6 @@ var cloudRuleFields = []string{
 	// Okta: what an event's debugData says, whose names vary by event.
 	"debugContext.debugData.behaviors", "debugContext.debugData.factor", "debugContext.debugData.logOnlySecurityData",
 	"debugContext.debugData.url", "debugContext.debugData.dtHash",
-	// Okta: the client and device of a sign-on, read by later stages.
-	"client.geographicalContext.city", "client.userAgent.browser", "client.userAgent.os", "device.os_platform",
+	// Okta: the client of a sign-on, read by later stages.
+	"client.geographicalContext.city", "client.userAgent.browser", "client.userAgent.os",
 }
