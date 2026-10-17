@@ -1,0 +1,7 @@
+{"rule": "c068d53f-6aaa-4558-8011-3734df878266", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"NewValue\":\"test-newvalue\"},{\"NewValue\":\"test-newvalue\"}]","ObjectId":"test-object","Operation":"Add owner to application.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add owner to application.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Add owner to application.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add owner to applicatioo.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

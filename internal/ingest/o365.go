@@ -406,9 +406,34 @@ func O365Record(t time.Time, workload string, data map[string]string) map[string
 			r[k] = json.Number(data[k])
 			continue
 		}
+		if l, ok := testList(data[k]); ok && !strings.ContainsAny(k, ".{}") {
+			// A whole list (ModifiedProperties), written as JSON.
+			r[k] = l
+			continue
+		}
 		put(k, data[k])
 	}
 	return r
+}
+
+// testList reads a test event's value that is a whole list of objects,
+// written as JSON ([{"Name": "x", "NewValue": "y"}]).
+func testList(v string) ([]any, bool) {
+	if !strings.HasPrefix(v, "[{") {
+		return nil, false
+	}
+	d := json.NewDecoder(strings.NewReader(v))
+	d.UseNumber()
+	var l []any
+	if d.Decode(&l) != nil || d.More() {
+		return nil, false
+	}
+	for _, e := range l {
+		if _, ok := e.(map[string]any); !ok {
+			return nil, false
+		}
+	}
+	return l, true
 }
 
 // O365SigmaRecord is the Microsoft 365 audit record a Sigma rule's

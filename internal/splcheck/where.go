@@ -475,7 +475,8 @@ func dropPlatform(e Expr, linux bool) (Expr, error) {
 // the way Splunk reads it: a field compared with = or IN must be present
 // and match one of the values, and != needs the field present and
 // matching none. A missing field never matches =, and NOT turns the
-// result around.
+// result around. A field with several values (View's mvKey) matches when
+// one of them does.
 func Eval(e Expr, ev map[string]string) bool {
 	switch x := e.(type) {
 	case *And:
@@ -499,9 +500,13 @@ func Eval(e Expr, ev map[string]string) bool {
 		if !ok {
 			return false
 		}
+		vals := []string{v}
+		if mv, ok := ev[x.Field+mvKey]; ok {
+			vals = strings.Split(mv, "\x00")
+		}
 		any := false
 		for _, p := range x.Values {
-			if x.matches(p, v) {
+			if slices.ContainsFunc(vals, func(v string) bool { return x.matches(p, v) }) {
 				any = true
 				break
 			}
@@ -510,6 +515,9 @@ func Eval(e Expr, ev map[string]string) bool {
 	}
 	return false
 }
+
+// mvKey marks the values of a field with several (View).
+const mvKey = "\x00values"
 
 // Glob matches a Splunk pattern: * is any run of characters, case is
 // ignored, everything else (? and \ too) is literal.

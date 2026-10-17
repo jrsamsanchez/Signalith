@@ -221,9 +221,17 @@ func (c Case) SigmaView() (map[string]string, bool) {
 	return nil, false
 }
 
+// cloudTags are the tags of the cloud channels whose recorded records a
+// case may hold as they were sent (_raw).
+var cloudTags = map[string]string{
+	CloudTrailChannel: ingest.CloudTrailTag, AzureChannel: ingest.AzureTag, O365Channel: ingest.O365Tag,
+	OktaChannel: ingest.OktaTag,
+}
+
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, an audit or access log line, else
-// a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, a
+// cloud record (as recorded, when the case holds it as _raw), else a
+// Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
 		return c.zeekRecord(host, t)
@@ -233,6 +241,18 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if raw, ok := c.Data["_raw"]; ok && cloudTags[c.Channel] != "" {
+		// A recorded cloud record (Splunk's attack_data), as it was
+		// sent.
+		d := json.NewDecoder(strings.NewReader(raw))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			r = map[string]any{"message": raw}
+		}
+		r["hostname"] = host
+		return cloudTags[c.Channel], r
 	}
 	if c.Channel == CloudTrailChannel {
 		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)

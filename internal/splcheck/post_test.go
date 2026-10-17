@@ -56,6 +56,9 @@ func TestPostRefuses(t *testing.T) {
 	for search, want := range map[string]string{
 		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName IN (a, b)": "reads differently",
 		"`wineventlog_security` EventCode=4768 Status=0x6 | where TargetUserName=\"adm*\"":  "reads differently",
+		// Splunk's filter keeps a row when any value matches.
+		"`wineventlog_security` EventCode=4768 Status=0x6 | makemv delim=\" \" TargetUserName | search TargetUserName IN (\"a\", \"b\")": "multivalue TargetUserName",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | eval u=split(TargetUserName, \"@\") | where u=\"a\"":                         "multivalue u",
 		// Lookups need Splunk's tables.
 		"`wineventlog_security` EventCode=4768 Status=0x6 | lookup local=t accounts user OUTPUT owner":                                   "later stage",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | eval x=1": "grouped by time",
