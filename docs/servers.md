@@ -150,6 +150,15 @@ or while it cannot write its heartbeat for 20 seconds (it then stops its share b
 itself). While they are spread, the Servers page says under **Background jobs** how many of the
 groups each server runs, and how many it is handing over to another.
 
+Spread or not, the Servers page also shows, under **Background jobs**, how each server keeps up
+with the rules it ran last in the past day: how many rules, how long their last runs took (the
+median and the 95th percentile), how long after its time slot ended each run started, how many
+rules started more than one schedule interval late in the last hour, how many slots were skipped
+for being older than the catch-up limit (`detections.catch_up`), and how many runs timed out. A
+server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
+rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
+look at the slowest rules on the Detections page, or spread detections over more servers.
+
 When a group moves, its new server takes over from where the last run of each rule
 ended, so no time is skipped or searched twice. A server that is still running hands
 its groups over first: it starts no new run of them, finishes the runs it has going,

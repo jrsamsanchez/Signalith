@@ -38,8 +38,9 @@ func (v *detViews) add(ctx context.Context, jobs *sync.WaitGroup, tenant string,
 	})
 }
 
-// all reads every tenant's view, leaving out those not spread or that
-// cannot be read, in tenant order.
+// all reads every tenant's view, leaving out those with nothing to show
+// (not spread and no detection run lately) or that cannot be read, in
+// tenant order.
 func (v *detViews) all(ctx context.Context) []detect.SpreadView {
 	v.mu.Lock()
 	reads := make(map[string]*detView, len(v.tenants))
@@ -49,7 +50,7 @@ func (v *detViews) all(ctx context.Context) []detect.SpreadView {
 	v.mu.Unlock()
 	var out []detect.SpreadView
 	for _, e := range reads {
-		if sv, err := e.read(ctx); err == nil && len(sv.Servers) > 0 {
+		if sv, err := e.read(ctx); err == nil && (len(sv.Servers) > 0 || len(sv.Health) > 0) {
 			out = append(out, sv)
 		}
 	}

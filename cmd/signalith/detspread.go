@@ -96,7 +96,20 @@ func (ds *detSpread) follow(ctx context.Context, jobs *sync.WaitGroup) {
 	ds.publish(ctx, jobs)
 	if ds.views != nil {
 		ds.views.add(ctx, jobs, ds.tenant, func(ctx context.Context) (detect.SpreadView, error) {
-			return detect.ReadSpread(ctx, ds.follower.Runtime, ds.follower.RuntimeIndex, ds.tenant)
+			sv, err := detect.ReadSpread(ctx, ds.follower.Runtime, ds.follower.RuntimeIndex, ds.tenant)
+			if err != nil {
+				return sv, err
+			}
+			// Every rule's run state, as every server sees it (cached for
+			// a few seconds), says which server ran it last and how.
+			if states, serr := ds.sched.StatusCtx(ctx); serr == nil {
+				now := time.Now()
+				if ds.sched.ClusterNow != nil {
+					now = ds.sched.ClusterNow()
+				}
+				sv.Health = detect.HealthByServer(states, now)
+			}
+			return sv, nil
 		})
 	}
 }

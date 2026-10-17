@@ -560,12 +560,15 @@ type SpreadCount struct {
 }
 
 // SpreadView is how a tenant's detections are spread over the servers,
-// for the Servers page: per server node ID, its buckets. Empty when they
-// are not spread.
+// for the Servers page: per server node ID, its buckets (empty when they
+// are not spread) and how it keeps up.
 type SpreadView struct {
 	Tenant  string                 `json:"tenant"`
 	Buckets int                    `json:"buckets"`
 	Servers map[string]SpreadCount `json:"servers"`
+	// Health is how each server keeps up with the tenant's detections it
+	// runs (see HealthByServer), spread or not.
+	Health map[string]ServerHealth `json:"health,omitempty"`
 }
 
 // ReadSpread reads tenant's assignment from its runtime index.
