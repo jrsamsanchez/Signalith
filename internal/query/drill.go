@@ -222,6 +222,14 @@ func (q *Query) Drilldown() *Drill {
 			clear(fields)
 		case *XPath:
 			delete(fields, c.OutField)
+		case *KMeans:
+			// Clusters and centroids are in no event.
+			delete(fields, c.ClusterField)
+			for f := range fields {
+				if strings.HasPrefix(f, "centroid_") {
+					delete(fields, f)
+				}
+			}
 		case *SetFields:
 			for _, v := range c.Values {
 				delete(fields, v.Field)
