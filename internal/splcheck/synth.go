@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -10,11 +11,13 @@ import (
 	"net/netip"
 	"path"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -131,7 +134,13 @@ func example(l lit, rng *rand.Rand) string {
 	if !l.re {
 		return instantiate(l.values[0])
 	}
-	s, err := sigmacheck.RegexExample(rng, l.values[0])
+	p := l.values[0]
+	if loose, ok := WithoutBoundaries(p); ok {
+		// An example of it without its word boundaries, which may need
+		// another try to fall on them.
+		p = loose
+	}
+	s, err := sigmacheck.RegexExample(rng, p)
 	if err != nil {
 		return ""
 	}
@@ -215,6 +224,26 @@ func assign(term []lit) (map[string]string, bool) {
 				cands = append(cands, strings.Join(ordered, " "))
 			}
 		}
+		// A value that begins or ends in a space comes last: an event's
+		// parser may trim it (a command line), losing a match of \s.
+		// Before the others, one that a regular expression's word
+		// boundary decides, so a near miss tests it (boundaryMiss).
+		rank := map[string]int{}
+		for _, c := range cands {
+			rank[c] = 2 * edgeSpace(c)
+		}
+		for _, p := range ps {
+			if _, ok := WithoutBoundaries(p.values[0]); !ok || !p.re {
+				continue
+			}
+			for _, c := range cands {
+				if _, ok := boundaryMiss(term, p, c); !ok {
+					rank[c] |= 1
+				}
+			}
+			break
+		}
+		slices.SortStableFunc(cands, func(a, b string) int { return cmp.Compare(rank[a], rank[b]) })
 		found := false
 		for _, c := range cands {
 			ok := true
@@ -241,6 +270,14 @@ func assign(term []lit) (map[string]string, bool) {
 		}
 	}
 	return ev, true
+}
+
+// edgeSpace is 1 for a value that begins or ends in white space, else 0.
+func edgeSpace(s string) int {
+	if s != strings.TrimSpace(s) {
+		return 1
+	}
+	return 0
 }
 
 // permutations are the orders of n things, the identity first.
@@ -297,10 +334,99 @@ func Events(e Expr) (pos, neg []map[string]string) {
 				m = maps.Clone(ev)
 				delete(m, l.field)
 				add(&neg, m)
+				if b, ok := boundaryMiss(term, l, v); ok {
+					m = maps.Clone(ev)
+					m[l.field] = b
+					add(&neg, m)
+				}
 			}
 		}
 	}
 	return pos, neg
+}
+
+// boundaryMiss is, for a regular expression with word boundaries (\b,
+// \B), a value close to v that it misses only at a boundary: v with one
+// letter or space put in, which the expression without its boundaries
+// still matches, as do the term's other comparisons of the field.
+func boundaryMiss(term []lit, l lit, v string) (string, bool) {
+	if !l.re || len(l.values) != 1 {
+		return "", false
+	}
+	loose, ok := WithoutBoundaries(l.values[0])
+	if !ok {
+		return "", false
+	}
+	strict, err := compiled(l.values[0])
+	if err != nil {
+		return "", false
+	}
+	others := func(w string) bool {
+		if !l.matches(loose, w) {
+			return false
+		}
+		for _, o := range term {
+			if o.field != l.field || o.values == nil || o.re == l.re && slices.Equal(o.values, l.values) {
+				continue
+			}
+			if slices.ContainsFunc(o.values, func(p string) bool { return o.matches(p, w) }) == o.neg {
+				return false
+			}
+		}
+		return true
+	}
+	// A value may match in several places: each round puts in the
+	// character that leaves the fewest matches, up to a few.
+	w := v
+	for round := 0; round < 4; round++ {
+		best, fewest := "", len(strict.FindAllStringIndex(w, -1))
+		if fewest == 0 {
+			return w, w != v
+		}
+		for i := len(w); i >= 0; i-- {
+			if i < len(w) && !utf8.RuneStart(w[i]) {
+				continue
+			}
+			for _, c := range []string{"q", " "} {
+				x := w[:i] + c + w[i:]
+				if n := len(strict.FindAllStringIndex(x, -1)); n < fewest && others(x) {
+					best, fewest = x, n
+				}
+			}
+		}
+		if best == "" {
+			return "", false
+		}
+		w = best
+	}
+	return w, !strict.MatchString(w)
+}
+
+// WithoutBoundaries is a regular expression with its word boundaries (\b,
+// \B) taken out, and whether it had any.
+func WithoutBoundaries(p string) (string, bool) {
+	tree, err := syntax.Parse(p, syntax.Perl)
+	if err != nil {
+		return "", false
+	}
+	var drop func(re *syntax.Regexp) bool
+	drop = func(re *syntax.Regexp) bool {
+		found := false
+		if re.Op == syntax.OpWordBoundary || re.Op == syntax.OpNoWordBoundary {
+			re.Op = syntax.OpEmptyMatch
+			found = true
+		}
+		for _, s := range re.Sub {
+			if drop(s) {
+				found = true
+			}
+		}
+		return found
+	}
+	if !drop(tree) {
+		return "", false
+	}
+	return tree.String(), true
 }
 
 func key(ev map[string]string) string {
@@ -1209,9 +1335,18 @@ func InModel(node, model string) bool {
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the
 // Splunk where clause (Eval) and by the detection's filter
-// (search.MatchDoc), and as the test file says. A rule's later stages
-// (Post) run after both. It returns every disagreement.
-func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFile) []error {
+// (search.MatchDoc) and the regex stages the detection runs right after
+// it, and as the test file says. A rule's later stages (Post) run after
+// both. It returns every disagreement.
+func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
+	datamodel, filter := q.Datamodel, q.Search
+	var regexes []query.Command
+	for _, c := range q.Commands {
+		if _, ok := c.(*query.Regex); !ok {
+			break
+		}
+		regexes = append(regexes, c)
+	}
 	var errs []error
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
@@ -1239,6 +1374,13 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 				errs = append(errs, fmt.Errorf("%s: %v", where, err))
 			}
 			m = m && ok && err == nil
+		}
+		if m && len(regexes) > 0 {
+			rows, err := search.RunCommands(context.Background(), docs, regexes)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %v", where, err))
+			}
+			m = err == nil && len(rows) == len(docs)
 		}
 		// The detection runs the rule's later stages after its filter.
 		m = m && r.KeepsAll(docs)

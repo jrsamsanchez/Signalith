@@ -130,7 +130,7 @@ func TestPostBursts(t *testing.T) {
 		&query.Compare{Field: "signature_id", Op: "=", Value: "4768"},
 		&query.Compare{Field: "kerberos_status", Op: "=", Value: "0x6"},
 	}}
-	if errs := Verify(r, "Authentication", filter, tf); len(errs) > 0 {
+	if errs := Verify(r, &query.Query{Datamodel: "Authentication", Search: filter}, tf); len(errs) > 0 {
 		t.Error(errs)
 	}
 }

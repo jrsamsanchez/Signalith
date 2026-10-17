@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"flag"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -167,7 +169,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("%s: %v", r.File, err)
 		}
-		filter, err := detect.SplunkFilter(rule)
+		filter, regexes, err := detect.SplunkSearch(rule)
 		if err != nil {
 			log.Fatalf("%s: %v", r.File, err)
 		}
@@ -215,6 +217,18 @@ func main() {
 				ours, err = search.MatchDoc(filter, doc)
 				if err != nil {
 					log.Fatalf("%s: %v", r.File, err)
+				}
+				// The regex stages the detection runs after its filter.
+				if ours && len(regexes) > 0 {
+					cmds := make([]query.Command, len(regexes))
+					for i, re := range regexes {
+						cmds[i] = re
+					}
+					rows, err := search.RunCommands(context.Background(), []map[string]any{doc}, cmds)
+					if err != nil {
+						log.Fatalf("%s: %v", r.File, err)
+					}
+					ours = len(rows) > 0
 				}
 			}
 			if ours != splunk {

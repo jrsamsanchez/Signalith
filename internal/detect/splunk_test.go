@@ -71,6 +71,49 @@ search: |
 			t.Errorf("%s: does not parse back: %v", d.Query, err)
 		}
 	}
+	// A regular expression with word boundaries, which OpenSearch cannot
+	// search, runs after the filter, as Splunk reads it; one that must not
+	// match, or is one of several joined by OR, is refused.
+	later := map[string]string{
+		`| regex process="(?i)\\.(key|pem)\\b"`:                              "process_name=reg.exe",
+		`| where match(process, "\\biex\\b") AND match(process_path, "^C:")`: `process_path=~^C:`,
+	}
+	for stage, want := range later {
+		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
+		d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r)
+		if err != nil || !strings.Contains(d.Query, want) || !strings.Contains(d.Query, "\n| regex process=") || strings.Contains(d.Query, "process=~") {
+			t.Errorf("%s: %v %+v", stage, err, d)
+			continue
+		}
+		q, err := query.Parse(d.Query)
+		if err != nil || q.String() != d.Query {
+			t.Errorf("%s: does not parse back: %v", d.Query, err)
+			continue
+		}
+		rows, err := search.RunCommands(context.Background(), []map[string]any{
+			{"process": `reg.exe x.KEY`}, {"process": `iex foo`}, {"process": `x.keys`}, {"process": `xiex`}, {"other": "x"},
+		}, q.Commands)
+		if err != nil || len(rows) != 1 {
+			t.Errorf("%s: kept %v %v", stage, rows, err)
+		}
+	}
+	for _, stage := range []string{
+		`| where match(process, "\\biex\\b") OR match(process_path, "^C:")`,
+		`| regex process="\\biex\\b"`,
+	} {
+		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
+		if stage == `| regex process="\\biex\\b"` {
+			// The only term: there is nothing OpenSearch searches by.
+			r = []byte(strings.Replace(string(r), "where Processes.process_name=reg.exe Processes.user!=SYSTEM", "where Processes.process=*", 1))
+			if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err != nil || !strings.HasSuffix(d.Query, `| regex process="\\biex\\b"`) {
+				t.Errorf("%s: %v %+v", stage, err, d)
+			}
+			continue
+		}
+		if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
+			t.Errorf("%s accepted: %s", stage, d.Query)
+		}
+	}
 	// Lookarounds are not RE2, so such a rule is refused.
 	r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | regex process=\"(?<!x)y\"\n", 1))
 	if _, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
