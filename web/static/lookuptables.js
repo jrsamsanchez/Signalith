@@ -113,7 +113,9 @@
     }
     const m = dxMenu('Actions for ' + t.name, items);
     m.classList.add('tk-menu');
-    const cols = (t.columns || []).join(', ');
+    let cols = (t.columns || []).join(', ');
+    const how = [(t.wildcard || []).length ? 'wildcards in ' + t.wildcard.join(', ') : '', t.ignore_case ? 'ignores case' : ''].filter(Boolean);
+    if (how.length) cols += ' · ' + how.join(', ');
     return el('tr', { 'data-table': t.name },
       el('td', { 'data-col': 'name' },
         el('div', { class: 'tk-name mono' }, t.name),
@@ -156,6 +158,13 @@
     const name = el('input', { class: 'input mono', id: 'lt-f-name', type: 'text', maxlength: '64', autocomplete: 'off', spellcheck: 'false', required: '',
       placeholder: 'owners', 'aria-describedby': 'lt-f-name-hint lt-f-name-error' });
     const nameErr = el('p', { class: 'field-error hidden', id: 'lt-f-name-error', role: 'alert' });
+    // How keys match, as Splunk's match_type = WILDCARD(col) and
+    // case_sensitive_match = false: kept from the table being replaced.
+    const wild = el('input', { class: 'input mono', id: 'lt-f-wild', type: 'text', autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'process_path', 'aria-describedby': 'lt-f-wild-hint' });
+    wild.value = ((t && t.wildcard) || []).join(', ');
+    const fold = el('input', { type: 'checkbox', id: 'lt-f-fold' });
+    fold.checked = !!(t && t.ignore_case);
     if (t) {
       name.value = t.name;
       name.readOnly = true;
@@ -173,9 +182,13 @@
         t ? 'The new file replaces every row. Searches use it right away.' : 'A CSV file whose first line names the columns, up to 16 MB.', close),
       el('div', { class: 'modal__body' }, alertBox,
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'lt-f-file' }, 'CSV file'), file,
-          el('p', { class: 'hint', id: 'lt-f-file-hint' }, 'For example host,owner,team on the first line, then one row per host. Values match exactly, including case.'), fileErr),
+          el('p', { class: 'hint', id: 'lt-f-file-hint' }, 'For example host,owner,team on the first line, then one row per host. Values match exactly, including case, unless you choose otherwise below.'), fileErr),
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'lt-f-name' }, 'Name'), name,
-          el('p', { class: 'hint', id: 'lt-f-name-hint' }, 'What searches call it: lower-case letters, digits, - and _.'), nameErr)),
+          el('p', { class: 'hint', id: 'lt-f-name-hint' }, 'What searches call it: lower-case letters, digits, - and _.'), nameErr),
+        el('fieldset', { class: 'field rp-fieldset' }, el('legend', { class: 'label' }, 'Matching'),
+          el('label', { class: 'label', for: 'lt-f-wild' }, 'Wildcard columns (optional)'), wild,
+          el('p', { class: 'hint', id: 'lt-f-wild-hint' }, 'Columns, separated by commas, whose cells can hold * to match any text, such as C:\\Windows\\*.exe.'),
+          el('label', { class: 'check' }, fold, el('span', {}, 'Ignore case when matching')))),
       el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), submit));
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -197,7 +210,12 @@
       submit.disabled = true;
       submit.setAttribute('aria-busy', 'true');
       try {
-        const resp = await apiRaw('api/lookuptables/' + encodeURIComponent(n), { method: 'PUT', headers: { 'Content-Type': 'text/csv' }, body: await f.text() });
+        const q = new URLSearchParams();
+        const cols = wild.value.split(',').map((c) => c.trim()).filter(Boolean);
+        if (cols.length) q.set('wildcard', cols.join(','));
+        if (fold.checked) q.set('case_sensitive', 'false');
+        const qs = q.toString() ? '?' + q.toString() : '';
+        const resp = await apiRaw('api/lookuptables/' + encodeURIComponent(n) + qs, { method: 'PUT', headers: { 'Content-Type': 'text/csv' }, body: await f.text() });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) {
           showAlert(alertBox, 'The table wasn’t saved', sentence(data.error || resp.statusText));

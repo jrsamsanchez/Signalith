@@ -94,14 +94,14 @@ func TestLookupIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := idx["53"]; !reflect.DeepEqual(got, []int{1, 2}) {
+	if got := idx.Exact["53"]; !reflect.DeepEqual(got, []int{1, 2}) {
 		t.Errorf(`idx["53"] = %v`, got)
 	}
-	if _, ok := idx[""]; ok {
+	if _, ok := idx.Exact[""]; ok {
 		t.Error("an empty key should not be indexed")
 	}
 	_, idx2, _ := s.Lookup("ports", []string{"port", "proto"})
-	if got := idx2[Key([]string{"53", "udp"})]; len(got) != 1 || tb.Rows[got[0]][2] != "dns" {
+	if got := idx2.Exact[Key([]string{"53", "udp"})]; len(got) != 1 || tb.Rows[got[0]][2] != "dns" {
 		t.Errorf("two-column key = %v", got)
 	}
 	if _, _, err := s.Lookup("ports", []string{"nope"}); err == nil || !strings.Contains(err.Error(), "no column") {
@@ -114,8 +114,92 @@ func TestLookupIndex(t *testing.T) {
 	if _, err := s.Put("ports", []byte("port,name\n22,ssh\n")); err != nil {
 		t.Fatal(err)
 	}
-	if _, idx, _ := s.Lookup("ports", []string{"port"}); len(idx["53"]) != 0 || len(idx["22"]) != 1 {
+	if _, idx, _ := s.Lookup("ports", []string{"port"}); len(idx.Exact["53"]) != 0 || len(idx.Exact["22"]) != 1 {
 		t.Errorf("index after replace = %v", idx)
+	}
+}
+
+func TestGlob(t *testing.T) {
+	for _, c := range []struct {
+		p, s string
+		want bool
+	}{
+		{"*", "", true}, {"a*", "abc", true}, {"*c", "abc", true}, {"a*c", "ac", true}, {"a*c", "a", false},
+		{`*\psexec*.exe`, `c:\tools\psexec64.exe`, true}, {"*a*b*a*", "xaybza", true}, {"*a*b*a*", "xaybz", false},
+		{"ab*ba", "aba", false}, {"a?c", "abc", false}, {"a?c", "a?c", true}, {"abc", "abc", true}, {"**", "x", true},
+	} {
+		if got := Glob(c.p, c.s); got != c.want {
+			t.Errorf("Glob(%q, %q) = %v", c.p, c.s, got)
+		}
+	}
+}
+
+func TestWildcardsAndCase(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := Open(dir)
+	csv := []byte("path,name,note\nC:\\Windows\\*.exe,*,system\nC:\\Tools\\psexec.exe,psexec,exact\n*\\psexec*.exe,psexec,pattern\n")
+	if _, err := s.PutWithOptions("tools", csv, Options{Wildcard: []string{"nope"}}); err == nil || !strings.Contains(err.Error(), "no column") {
+		t.Errorf("unknown wildcard column err = %v", err)
+	}
+	if _, err := s.PutWithOptions("tools", csv, Options{Wildcard: []string{"path"}, IgnoreCase: true}); err != nil {
+		t.Fatal(err)
+	}
+	tb, idx, err := s.Lookup("tools", []string{"path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := func(vals ...string) []int {
+		steps := 0
+		m, ok := idx.Match(tb, vals, 100, func(n int) bool { steps += n; return true })
+		if !ok || steps == 0 && len(idx.Patterns) > 0 {
+			t.Errorf("Match(%q) ok=%v steps=%d", vals, ok, steps)
+		}
+		return m
+	}
+	// Exact rows come before patterns, and case does not matter.
+	if got := match(`c:\tools\PsExec.exe`); !reflect.DeepEqual(got, []int{1, 2}) {
+		t.Errorf("psexec = %v", got)
+	}
+	if got := match(`C:\Windows\notepad.EXE`); !reflect.DeepEqual(got, []int{0}) {
+		t.Errorf("notepad = %v", got)
+	}
+	if got := match(`D:\other.dll`); len(got) != 0 {
+		t.Errorf("other = %v", got)
+	}
+	// name is not a wildcard column, so its * is only a *.
+	_, idx2, _ := s.Lookup("tools", []string{"name"})
+	if got, _ := idx2.Match(tb, []string{"cmd"}, 100, func(int) bool { return true }); len(got) != 0 {
+		t.Errorf("* outside a wildcard column matched: %v", got)
+	}
+	if got, _ := idx2.Match(tb, []string{"*"}, 100, func(int) bool { return true }); !reflect.DeepEqual(got, []int{0}) {
+		t.Errorf("literal * = %v", got)
+	}
+	// A step budget that runs out stops the match.
+	if _, ok := idx.Match(tb, []string{"x"}, 100, func(int) bool { return false }); ok {
+		t.Error("Match went on with no budget")
+	}
+	// The options are kept with the table, and dropped with a plain upload.
+	again, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tb, _ := again.Get("tools"); !reflect.DeepEqual(tb.Options, Options{Wildcard: []string{"path"}, IgnoreCase: true}) || tb.Info().IgnoreCase != true {
+		t.Errorf("reopened options = %+v", tb.Options)
+	}
+	if _, err := again.Put("tools", csv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tools.options.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("options file after a plain upload: %v", err)
+	}
+	if _, err := again.PutWithOptions("tools", csv, Options{IgnoreCase: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := again.Delete("tools"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tools.options.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("options file after delete: %v", err)
 	}
 }
 
