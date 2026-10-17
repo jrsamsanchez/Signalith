@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
@@ -177,4 +178,51 @@ func TestSplunkPackLookups(t *testing.T) {
 	if _, ok := store.Get("splunk-pua_named_pipes"); !ok {
 		t.Error("the built-in packs' table is not back")
 	}
+}
+
+// TestSplunkGeoIPRules: the pack's rules that run iplocation are tagged
+// geoip and say in their guidance that they need a GeoIP database; no
+// other rule runs it. With no database, a run fails with the search's
+// error rather than finding rows without locations.
+func TestSplunkGeoIPRules(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, d := range ds {
+		runs := strings.Contains(d.Query, "iplocation")
+		tagged := slices.Contains(d.Tags, "geoip")
+		if runs != tagged || tagged != strings.HasPrefix(d.Guidance, GeoIPSetup) {
+			t.Errorf("%s: iplocation %v, tag %v, guidance %q", d.ID, runs, tagged, d.Guidance)
+		}
+		if runs {
+			got = append(got, d.ID)
+		}
+	}
+	slices.Sort(got)
+	want := []string{"splunk-kubernetes-access-scanning", "splunk-kubernetes-scanning-by-unauthenticated-ip-address", "splunk-okta-user-logins-from-multiple-cities"}
+	if !slices.Equal(got, want) {
+		t.Errorf("rules running iplocation: %q", got)
+	}
+	for _, d := range ds {
+		if d.ID != want[0] {
+			continue
+		}
+		q, err := query.Parse(d.Query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eng := &search.Engine{Store: emptySearcher{}, GeoIP: geoip.Open(t.TempDir())}
+		if _, err := eng.Execute(context.Background(), q); err == nil || !strings.Contains(err.Error(), "iplocation needs a GeoIP database") || ErrorKind(err) != ErrorQuery {
+			t.Errorf("with no database: %v", err)
+		}
+	}
+}
+
+// emptySearcher finds no events.
+type emptySearcher struct{}
+
+func (emptySearcher) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	return map[string]any{"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}}}, nil
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -664,7 +665,11 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 	// fallbackWindow, or the rule's own throttle window when that is
 	// longer.
 	fallback := !e.doc.Created.IsZero() && start.Sub(e.doc.Created) < max(fallbackWindow, throttleWindow(d))
-	res, err := s.run(rctx, d, runSpec{at: slot, slot: slot, raised: start, fallback: fallback})
+	var res *RunResult
+	err := s.geoIPReady(d)
+	if err == nil {
+		res, err = s.run(rctx, d, runSpec{at: slot, slot: slot, raised: start, fallback: fallback})
+	}
 	timedOut := err != nil && errors.Is(rctx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
 	cancel()
 	if ctx.Err() != nil || errors.Is(err, ErrNotAllowed) {
@@ -945,6 +950,25 @@ type runSpec struct {
 	// throttles were documents need it: a run writes a risk event only
 	// after its group's throttle document, which the next slot reads.
 	fallback bool
+}
+
+// errGeoIPLoading is a run put off while the GeoIP database loads.
+var errGeoIPLoading = errors.New("the GeoIP database iplocation reads is still loading; this run is tried again")
+
+// geoIPReady returns errGeoIPLoading, a transient error, for a detection
+// that runs iplocation while the server's first GeoIP database is still
+// loading: its search would fail, and a failed search's slot is not run
+// again. With no database at all the search fails as written, an error
+// the detection shows.
+func (s *Scheduler) geoIPReady(d *Detection) error {
+	eng, ok := s.Engine.(*search.Engine)
+	if !ok || eng.GeoIP == nil || !strings.Contains(d.Query, "iplocation") {
+		return nil
+	}
+	if _, err := eng.GeoIP.Status(); errors.Is(err, geoip.ErrLoading) {
+		return errGeoIPLoading
+	}
+	return nil
 }
 
 func (s *Scheduler) run(ctx context.Context, d *Detection, spec runSpec) (*RunResult, error) {

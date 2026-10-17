@@ -48,17 +48,34 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	lists := map[string]bool{}
 	outs := map[string]*lookupOut{}
 	grouped := group != ""
+	located := false
 	var groupStages []string
 	if group != "" {
 		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
 	}
-	for _, s := range stages {
+	for i, s := range stages {
 		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
 		if s == "" {
 			continue
 		}
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
+		}
+		if conv, ok, err := iplocationStage(s); err != nil {
+			return err
+		} else if ok && !readsLocation(stages[i+1:]) {
+			// iplocation only adds columns, which no later stage reads.
+			continue
+		} else if ok {
+			located = true
+			parts = append(parts, conv...)
+			scan = append(scan, s)
+			continue
+		}
+		if located {
+			if err := iplocationLater(s); err != nil {
+				return err
+			}
 		}
 		if lookupStageRe.MatchString(s) {
 			s = nodeFieldRe.ReplaceAllString(s, "$1")
@@ -152,7 +169,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	}
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.IPLocation, *query.Map, *query.AddInfo:
+		case *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}
@@ -502,6 +519,11 @@ func (r *Rule) bursts(c sigmacheck.Case) []sigmacheck.Case {
 	// event gets each one it misses (the record's own names, as a cloud
 	// rule's are), unless that loses the filter's match.
 	by, counted := r.postFields()
+	if r.IPLocation() {
+		// Fields iplocation adds come from the address, not the event.
+		made := func(f string) bool { return slices.Contains(iplocationFields, f) }
+		by, counted = slices.DeleteFunc(by, made), slices.DeleteFunc(counted, made)
+	}
 	filled := c
 	filled.Data = maps.Clone(c.Data)
 	for _, f := range by {

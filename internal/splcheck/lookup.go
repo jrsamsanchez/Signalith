@@ -943,7 +943,13 @@ func (r *Rule) runPost(docs []map[string]any) ([]search.Row, error) {
 	cmds := r.post
 	var rows []search.Row
 	for len(cmds) > 0 {
-		i := slices.IndexFunc(cmds, func(c query.Command) bool { _, ok := c.(*query.Lookup); return ok })
+		i := slices.IndexFunc(cmds, func(c query.Command) bool {
+			switch c.(type) {
+			case *query.Lookup, *query.IPLocation:
+				return true
+			}
+			return false
+		})
 		if i < 0 {
 			i = len(cmds)
 		}
@@ -951,7 +957,7 @@ func (r *Rule) runPost(docs []map[string]any) ([]search.Row, error) {
 		if i > 0 {
 			rows, err = search.RunCommands(ctx, docs, cmds[:i])
 		} else {
-			rows, err = r.runLookup(ctx, docs, cmds[0].(*query.Lookup))
+			rows, err = r.runLookup(ctx, docs, cmds[0])
 			i = 1
 		}
 		if err != nil {
@@ -966,9 +972,13 @@ func (r *Rule) runPost(docs []map[string]any) ([]search.Row, error) {
 	return rows, nil
 }
 
-// runLookup runs a lookup over rows, as a search does.
-func (r *Rule) runLookup(ctx context.Context, docs []map[string]any, c *query.Lookup) ([]search.Row, error) {
+// runLookup runs a lookup, or an iplocation against the test GeoIP
+// database (TestGeoIP), over rows, as a search does.
+func (r *Rule) runLookup(ctx context.Context, docs []map[string]any, c query.Command) ([]search.Row, error) {
 	eng := &search.Engine{Store: rowsSearcher(docs), Lookups: r.lookupStore}
+	if _, ok := c.(*query.IPLocation); ok {
+		eng.GeoIP = TestGeoIP()
+	}
 	q := &query.Query{Commands: []query.Command{c, &query.Head{N: len(docs) + 1}}}
 	res, err := eng.Execute(search.Background(ctx), q)
 	if err != nil {

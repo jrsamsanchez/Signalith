@@ -411,6 +411,12 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
 		d.Guidance = "Known false positives: " + fp
 	}
+	if rule.IPLocation() {
+		// Splunk ships a GeoIP database; Signalith reads one an admin
+		// adds.
+		d.Guidance = strings.TrimSpace(GeoIPSetup + "\n\n" + d.Guidance)
+		d.Tags = append(d.Tags, "geoip")
+	}
 	if splcheck.IsSensorNode(rule.Node) {
 		// About the address that sent the traffic, not the sensor that
 		// saw it.
@@ -523,6 +529,12 @@ func groupedBy(d *Detection, rule *splcheck.Rule, by []string) {
 	}
 	d.Risk.Objects = objects
 }
+
+// GeoIPSetup is the setup note of a pack rule that runs iplocation.
+const GeoIPSetup = "Setup: this rule runs iplocation, which needs a GeoIP City database (.mmdb), such as DB-IP's free " +
+	"IP to City Lite (the one Splunk ships) or MaxMind's GeoLite2 City, in the geoip folder next to the lookup tables " +
+	"on each server (docs/lookups.md, GeoIP database for iplocation). Without one, every run of the rule fails with " +
+	"\"iplocation needs a GeoIP database\", shown as the detection's last error, and finds nothing for that run."
 
 // splunkPost runs a rule's later stages after its filter, as they are
 // written. When they end in groups, each is found once a day.

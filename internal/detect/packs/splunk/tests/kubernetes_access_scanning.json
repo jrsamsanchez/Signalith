@@ -1,0 +1,11 @@
+{"rule": "2f4abe6d-5991-464d-8216-f90f42999764", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"403","sourceIPs{}":"203.0.113.7"},"repeat":6},
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"403","sourceIPs{}":"198.51.100.7"},"repeat":6},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"403","sourceIPs{}":"203.0.113.7"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"403","sourceIPs{}":"203.0.113.7"},"repeat":4},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticatee","responseStatus.code":"403","sourceIPs{}":"203.0.113.7"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"responseStatus.code":"403","sourceIPs{}":"203.0.113.7"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"404","sourceIPs{}":"203.0.113.7"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","sourceIPs{}":"203.0.113.7"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"kube_user.groups{}":"system:unauthenticated","responseStatus.code":"403","sourceIPs{}":"10.20.30.4"},"repeat":6}
+]}

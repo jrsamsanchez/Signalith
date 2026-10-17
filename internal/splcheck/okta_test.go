@@ -73,3 +73,18 @@ func TestOktaTstats(t *testing.T) {
 		t.Errorf("authentication: %v %v", r, err)
 	}
 }
+
+// TestOktaAggsOutsideTheModel: a tstats aggregation of a field the
+// Authentication data model does not have reads nothing, so it is left
+// out, unless a later stage names its result.
+func TestOktaAggsOutsideTheModel(t *testing.T) {
+	fields := Nodes[OktaAuthNode]
+	aggs := "values(Authentication.app) as app values(Authentication.method) as method count"
+	got, err := oktaAggs(aggs, fields, []string{"stats dc(app) as apps by user"})
+	if err != nil || got != "values(Authentication.app) as app  count" {
+		t.Errorf("got %q, %v", got, err)
+	}
+	if _, err := oktaAggs(aggs, fields, []string{"where isnotnull(method)"}); err == nil {
+		t.Error("a later stage reads method")
+	}
+}

@@ -1218,6 +1218,10 @@ rules:
     rule_id: df6e9cae-5257-4a34-8f3a-df49fa0f5c46
     file: kubernetes_abuse_of_secret_by_unusual_user_name.yml
     path: detections/cloud/kubernetes_abuse_of_secret_by_unusual_user_name.yml
+  - id: splunk-kubernetes-access-scanning
+    rule_id: 2f4abe6d-5991-464d-8216-f90f42999764
+    file: kubernetes_access_scanning.yml
+    path: detections/cloud/kubernetes_access_scanning.yml
   - id: splunk-kubernetes-create-or-update-privileged-pod
     rule_id: 3c6bd734-334d-4818-ae7c-5234313fc5da
     file: kubernetes_create_or_update_privileged_pod.yml
@@ -1242,6 +1246,10 @@ rules:
     rule_id: cce357cf-43a4-494a-814b-67cea90fe990
     file: kubernetes_pod_with_host_network_attachment.yml
     path: detections/cloud/kubernetes_pod_with_host_network_attachment.yml
+  - id: splunk-kubernetes-scanning-by-unauthenticated-ip-address
+    rule_id: f9cadf4e-df22-4f4e-a08f-9d3344c2165d
+    file: kubernetes_scanning_by_unauthenticated_ip_address.yml
+    path: detections/cloud/kubernetes_scanning_by_unauthenticated_ip_address.yml
   - id: splunk-kubernetes-suspicious-image-pulling
     rule_id: 4d3a17b3-0a6d-4ae0-9421-46623a69c122
     file: kubernetes_suspicious_image_pulling.yml
@@ -2218,6 +2226,10 @@ rules:
     rule_id: 5f661629-9750-4cb9-897c-1f05d6db8727
     file: okta_unauthorized_access_to_application.yml
     path: detections/application/okta_unauthorized_access_to_application.yml
+  - id: splunk-okta-user-logins-from-multiple-cities
+    rule_id: a3d1df37-c2a9-41d0-aa8f-59f82d6192a8
+    file: okta_user_logins_from_multiple_cities.yml
+    path: detections/application/okta_user_logins_from_multiple_cities.yml
   - id: splunk-overwriting-accessibility-binaries
     rule_id: 13c2f6c3-10c5-4deb-9ba1-7c4460ebe4ae
     file: overwriting_accessibility_binaries.yml

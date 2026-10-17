@@ -41,6 +41,9 @@ type Location struct {
 type Store struct {
 	dir string
 	now func() time.Time
+	// fixed is a store of one database held in memory (FromBytes), which
+	// never looks at a folder.
+	fixed bool
 
 	loadMu  sync.Mutex // one load at a time; guards checked and tried
 	checked time.Time
@@ -62,6 +65,17 @@ type fileID struct {
 // address is looked up.
 func Open(dir string) *Store {
 	return &Store{dir: dir, now: time.Now}
+}
+
+// FromBytes returns a store of the one City or Country database in buf,
+// which never looks at a folder: for tests, and for checking rules that
+// run iplocation against a known database.
+func FromBytes(buf []byte) (*Store, error) {
+	db, err := openBytes(buf)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{now: time.Now, fixed: true, db: db, file: "(in memory)"}, nil
 }
 
 // Dir is the folder the store reads.
@@ -173,6 +187,9 @@ func name(n names, lang string) string {
 // the folder at most every 30 seconds. A file that cannot be used leaves
 // the one in use, if any, and sets the error Status returns.
 func (s *Store) refresh() {
+	if s.fixed {
+		return
+	}
 	// A search does not wait while another loads a file, which can take
 	// seconds; it uses the file in use until the load is done.
 	if !s.loadMu.TryLock() {

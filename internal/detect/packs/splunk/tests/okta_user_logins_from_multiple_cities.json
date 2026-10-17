@@ -1,0 +1,9 @@
+{"rule": "a3d1df37-c2a9-41d0-aa8f-59f82d6192a8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"203.0.113.7","eventType":"user.session.start","src":"test-src","target{}.displayName":"Example App","target{}.type":"AppInstance","user":"test-user"},"repeat":2,"vary":["client.ipAddress"]},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"203.0.113.7","eventType":"user.session.start","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"203.0.113.7","eventType":"user.session.start","src":"test-src","target{}.displayName":"Example App","target{}.type":"AppInstance","user":"test-user"},"repeat":1,"vary":["client.ipAddress"]},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"203.0.113.7","eventType":"user.session.staru","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"203.0.113.7","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"198.51.100.7","eventType":"user.session.start","src":"test-src","target{}.displayName":"Example App","target{}.type":"AppInstance","user":"test-user"},"repeat":2,"vary":["client.ipAddress"]},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"client.ipAddress":"10.20.30.4","eventType":"user.session.start","src":"test-src","target{}.displayName":"Example App","target{}.type":"AppInstance","user":"test-user"},"repeat":2,"vary":["client.ipAddress"]}
+]}
