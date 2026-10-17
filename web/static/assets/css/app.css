@@ -4177,6 +4177,19 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
 :is(#page-settings, #page-sso, #page-baselines) .st-cert .st-kv { font-size: var(--fs-sm); }
 :is(#page-settings, #page-sso, #page-baselines) .st-cert .btn-row { justify-content: flex-start; }
 :is(#page-settings, #page-sso, #page-baselines) .st-fp { font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); }
+#page-settings .st-sum { gap: 10px; min-width: 0; }
+#page-settings .st-sum__details { min-width: 0; max-width: 100%; }
+#page-settings .st-sum__tenant { margin: 6px 0 0; font-size: var(--fs-sm); font-weight: 600; }
+#page-settings .st-sum__table { font-size: var(--fs-sm); }
+#page-settings .st-sum__table :is(th, td) { white-space: nowrap; }
+#page-settings .st-sum__table td.st-sum__state { white-space: normal; min-width: 12em; }
+#page-settings .st-sum__details > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); padding: 4px 0; }
+#page-settings .st-sum__details[open] > summary { margin-bottom: 8px; }
+#page-settings .st-sum__state[data-tone="info"] { color: var(--text-2); }
+#page-settings .st-sum__state[data-tone="ok"] { color: var(--success); }
+#page-settings .st-sum__state[data-tone="warn"] { color: var(--warning); }
+#page-settings .st-sum__state[data-tone="danger"] { color: var(--danger); }
+#page-settings .st-sum__state[data-tone="muted"] { color: var(--text-3); }
 :is(#page-settings, #page-sso, #page-baselines) .st-problems { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); display: grid; gap: 2px; }
 :is(#page-settings, #page-sso, #page-baselines) .st-problems b { color: var(--text); font-weight: 600; }
 /* a test result whose settings changed since: a note, the rest dimmed */

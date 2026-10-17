@@ -76,6 +76,28 @@ days, and every 6 hours for the whole range. A slot whose count changed gets
 summarized again. That covers events that arrived late, sample data added or
 removed, and days restored from the archive.
 
+## Seeing how far they reach
+
+**Settings > Search** shows a **Summaries now** table under the search
+settings, for admins. One line counts the data models in each state; open it
+for the table. It opens by itself when a model is behind or failing. For each
+data model it lists the days its summaries
+cover, any gaps (hours that are read from the events instead), how many rows
+it has, and its state:
+
+- **Up to date**: the newest slots were summarized within the last half hour.
+- **Building**: the first build is working forward from the oldest day and
+  has reached the day shown.
+- **Behind**: the summaries are more than half an hour behind. Searches still
+  give the same counts, reading the events for the rest, just more slowly.
+- **Not built yet**: the first build has not reached this model, or it has no
+  events.
+- **Last build failed**: the reason the server that runs the background jobs
+  gave. It tries again every minute.
+
+On a [multi-tenant](multi-tenant.md) install the table lists every tenant's
+summaries, and only the provider's admins can see it.
+
 ## Good to know
 
 - Summaries are stored in OpenSearch in monthly indices named
