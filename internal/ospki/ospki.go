@@ -395,8 +395,17 @@ plugins.security.nodes_dn: ["` + strings.Join(NodesDN(append([]string{node}, pee
 # folder (config.yml, roles.yml and the others). Existing indices stay.
 plugins.security.allow_default_init_securityindex: true
 plugins.security.allow_unsafe_democertificates: false
-# No audit log in OpenSearch: Signalith is its only user and keeps its own.
-# Without this OpenSearch logs an error that its audit log cannot work.
-plugins.security.audit.type: noop
+# OpenSearch's own audit log, kept in its log, where Signalith's
+# certificate cannot change it: failed sign-ins, refused requests, TLS
+# errors and changes to its security settings. Successful requests, which
+# are Signalith's own searches and writes, are left out.
+plugins.security.audit.type: log4j
+plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.log_request_body: false
+plugins.security.audit.config.exclude_sensitive_headers: true
+plugins.security.audit.compliance.internal_config: true
+plugins.security.audit.compliance.write_metadata_only: true
+plugins.security.audit.compliance.read_metadata_only: true
 `
 }

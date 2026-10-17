@@ -17,6 +17,7 @@ func TestHelmChartFilesMatchDocker(t *testing.T) {
 		"docker/opensearch/security/internal_users.yml": "helm/signalith/files/internal_users.yml",
 		"docker/opensearch/security/roles.yml":          "helm/signalith/files/roles.yml",
 		"docker/opensearch/security/roles_mapping.yml":  "helm/signalith/files/roles_mapping.yml",
+		"docker/opensearch/security/audit.yml":          "helm/signalith/files/audit.yml",
 	}
 	for docker, helm := range pairs {
 		a, err := os.ReadFile(filepath.FromSlash(docker))

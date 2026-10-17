@@ -96,6 +96,7 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health && curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health || exit 1"]
       interval: 10s
@@ -121,6 +122,7 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
       - opensearch-security-loaded:/usr/share/opensearch/data
     # /tmp allows running files: from OpenSearch 3, securityadmin.sh
     # unpacks a native library of its FIPS crypto provider there.
