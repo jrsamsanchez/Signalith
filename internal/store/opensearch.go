@@ -136,6 +136,11 @@ func (c *Client) CloseIdleConnections() {
 func Transport(cfg Config) (*http.Transport, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = nil
+	// Ingest runs many bulk writes at once (ingest.DefaultMaxConcurrent);
+	// the default of 2 idle connections per host would make most of them
+	// open a new TLS connection each time.
+	tr.MaxIdleConns = 128
+	tr.MaxIdleConnsPerHost = 64
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	tr.TLSClientConfig = tlsCfg
 	var errs []error

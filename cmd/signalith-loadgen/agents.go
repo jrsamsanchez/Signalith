@@ -82,6 +82,9 @@ type simAgent struct {
 // drops new ones, as Fluent Bit stops reading when its buffer is full.
 const agentQueue = 256
 
+// defaultBufferMB is AgentLoad.BufferMB when it is not set.
+const defaultBufferMB = 512
+
 // Fleet is the simulated Fluent Bit agents of a run. Each agent numbers
 // its events from 1 and keeps the numbers across retries, so verify can
 // tell exactly which stored events went missing or were stored twice.
@@ -108,6 +111,7 @@ type Fleet struct {
 	undelivered atomic.Int64 // events still unsent when the drain ended
 	dropped     atomic.Int64 // events the generator could not queue
 	pending     atomic.Int64 // events queued or being sent
+	buffered    atomic.Int64 // bytes of batches queued or being sent
 
 	switchOnError atomic.Bool
 }
@@ -148,12 +152,19 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 	}
 	batch = min(batch, 20000)
 	f.switchOnError.Store(load.SwitchOnError)
+	bufferMB := load.BufferMB
+	if bufferMB <= 0 {
+		bufferMB = defaultBufferMB
+	}
+	limit := int64(bufferMB) << 20
 	for i := range load.N {
 		f.agent(i)
 	}
 	pace(ctx, load.Rate/float64(batch), f.m, func(n int64) {
 		a := f.agent(int(n % int64(load.N)))
-		if len(a.queue) >= cap(a.queue) {
+		// When the server falls behind, unsent batches pile up; without
+		// a cap the generator runs out of memory before the run ends.
+		if len(a.queue) >= cap(a.queue) || f.buffered.Load() >= limit {
 			f.dropped.Add(int64(batch))
 			f.m.Add("agent_events_dropped", int64(batch))
 			return
@@ -161,6 +172,7 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 		b := f.build(a, batch, load.EventBytes)
 		f.sent.Add(b.events())
 		f.pending.Add(b.events())
+		f.buffered.Add(int64(len(b.body)))
 		f.m.Add("agent_events_sent", b.events())
 		a.queue <- b
 	})
@@ -211,6 +223,7 @@ func (f *Fleet) sender(a *simAgent) {
 	for b := range a.queue {
 		f.deliver(a, b)
 		f.pending.Add(-b.events())
+		f.buffered.Add(-int64(len(b.body)))
 	}
 }
 

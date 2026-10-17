@@ -1200,7 +1200,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
+	// The ingest slots and the memory for batches arriving are the whole
+	// server's: every tenant's pipeline shares them (see ingest.Limits).
+	ingestLimits := ingest.NewLimits(c.Ingest.MaxConcurrent, ingest.DefaultMaxReceiving)
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	// Each day's new field names are shared out among the servers that
 	// stored events in the last 10 minutes, and none are added to an index
@@ -1929,7 +1932,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Each tenant's data. While the users are shared, on the server
 		// that runs the background jobs only, once the cluster keeps
 		// tenants (tenantRuntime.Ready).
-		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv)
+		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv, ingestLimits)
 		if parts != nil {
 			tr.sharedOK = r.shared.Tenants
 		}

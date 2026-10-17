@@ -258,7 +258,7 @@ func (s *Server) handleOsqueryLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(b.Events) > 0 {
-		slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+		slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "osquery:"+n.ID)
 		if err != nil {
 			w.Header().Set("Retry-After", "5")
 			writeError(w, http.StatusServiceUnavailable, err)
