@@ -237,3 +237,34 @@ func TestSearchStarKeepsEveryRow(t *testing.T) {
 		}
 	}
 }
+
+func TestSplunkSyntaxForms(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | rename "All_Traffic".* as *`:                      "*\n| rename All_Traffic.* as *",
+		`"requestParameters.masterUserPassword"=* x=1`:         "requestParameters.masterUserPassword=* x=1",
+		`"query_type{}" IN (SIG,KEY)`:                          "query_type{} IN (SIG, KEY)",
+		`process IN ("a", "b",)`:                               "process IN (a, b)",
+		`* | sort - count, + user`:                             "*\n| sort -count, user",
+		`* | eval s=if(type IN ("A", "B") AND res="ok", 1, 0)`: "*\n| eval s=if(in(type, \"A\", \"B\") AND res = \"ok\", 1, 0)",
+		`* | where NOT x IN (1, 2)`:                            "*\n| where NOT x IN (1, 2)",
+		`* | inputlookup append=t max=5 owners`:                "*\n| inputlookup append=true max=5 owners",
+		`| inputlookup a | inputlookup append=true b`:          "*\n| inputlookup a\n| inputlookup append=true b",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		if got := q.String(); got != want {
+			t.Errorf("Parse(%q) = %q, want %q", src, got, want)
+		}
+		if _, err := Parse(q.String()); err != nil {
+			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
+		}
+	}
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s parsed", bad)
+		}
+	}
+}

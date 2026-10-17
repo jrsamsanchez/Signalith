@@ -3,6 +3,7 @@ package search
 import (
 	"compress/gzip"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -38,6 +39,34 @@ func loadCorpus(t *testing.T) []corpusSearch {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// corpusLookups returns a store holding an empty table for each lookup
+// table security_content defines (testdata/splunk_lookups.json), with
+// its columns, as a Splunk server with the app installed has. Names
+// Signalith does not take as table names are left out.
+func corpusLookups(t *testing.T) *lookuptables.Store {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/splunk_lookups.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables map[string][]string
+	if err := json.Unmarshal(raw, &tables); err != nil {
+		t.Fatal(err)
+	}
+	s, err := lookuptables.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, cols := range tables {
+		var b strings.Builder
+		w := csv.NewWriter(&b)
+		_ = w.Write(cols)
+		w.Flush()
+		_, _ = s.Put(name, []byte(b.String()))
+	}
+	return s
 }
 
 type emptyStore struct{}
@@ -80,7 +109,7 @@ func corpusCause(src string, err error) string {
 // SPL_COMPAT_REPORT to a file to write the failures grouped by cause.
 func TestSplunkCorpus(t *testing.T) {
 	corpus := loadCorpus(t)
-	lookups, _ := lookuptables.Open("")
+	lookups := corpusLookups(t)
 	e := &Engine{Store: emptyStore{}, Lookups: lookups}
 	pass := 0
 	causes := map[string][]string{}
@@ -121,4 +150,4 @@ func TestSplunkCorpus(t *testing.T) {
 
 // splunkCorpusPass is how many corpus searches passed when it was last
 // raised. Raise it when a change makes more pass.
-const splunkCorpusPass = 1782
+const splunkCorpusPass = 2047

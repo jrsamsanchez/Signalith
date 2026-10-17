@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -151,6 +152,24 @@ func TestInputLookup(t *testing.T) {
 	}
 }
 
+func TestInputLookupAppend(t *testing.T) {
+	e := lookupEngine(t)
+	res, err := e.Run(context.Background(), `| inputlookup max=1 owners | eval src="first" | inputlookup append=t owners | stats count by src`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[count:1 src:first]]" {
+		t.Errorf("rows = %s", got)
+	}
+	res, err = e.Run(context.Background(), `| makeresults | eval user="x" | inputlookup append=true owners | eval n=1 | stats sum(n) as n`)
+	if err != nil || fmt.Sprint(res.Rows) != "[map[n:4]]" {
+		t.Errorf("rows = %v, %v", res, err)
+	}
+	if _, err := e.Run(context.Background(), `| makeresults | inputlookup append=t nope`); err == nil {
+		t.Error("appended a missing table")
+	}
+}
+
 func TestInputLookupSkipsEmptyCells(t *testing.T) {
 	st, _ := lookuptables.Open("")
 	if _, err := st.Put("t", []byte("a,b\n1,\n,2\n")); err != nil {
@@ -199,5 +218,15 @@ func TestLookupWildcards(t *testing.T) {
 		if !reflect.DeepEqual(got, []string{want}) {
 			t.Errorf("%s: note = %v, want %s", p, got, want)
 		}
+	}
+}
+
+func TestEvalInOperator(t *testing.T) {
+	res, err := (&Engine{}).Run(context.Background(), `| makeresults | eval t="B" | eval a=if(t IN ("A", "B"), 1, 0), b=if(NOT t IN ("A"), 1, 0) | where t IN ("B") | table a, b`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[a:1 b:1]]" {
+		t.Errorf("rows = %s", got)
 	}
 }

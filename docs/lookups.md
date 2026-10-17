@@ -143,7 +143,9 @@ check a table or report on it:
 
 `max=N` reads at most N rows (`| inputlookup max=50 owners`); without it a
 search reads up to the event limit (`search.max_events`, 10,000 by default).
-It must come first, with nothing before the `|`. An empty cell is a missing
+It must come first, with nothing before the `|`, unless it has `append=true`
+(`| inputlookup append=true owners`), which adds the table's rows after the
+rows the search has so far. An empty cell is a missing
 field, so `where isnull(owner)` finds rows with no owner.
 
 ## The outputlookup command
