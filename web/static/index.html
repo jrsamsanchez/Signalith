@@ -181,7 +181,7 @@
       <a class="nav__item" href="#findings" data-page="findings"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg><span>Findings</span><span id="open-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#cases" data-page="cases"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Investigations</span><span id="case-count" class="nav__count hidden"></span></a>
       <a class="nav__item" href="#risk" data-page="risk"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg><span>Risk</span></a>
-      <a class="nav__item" href="#vulns" data-page="vulns" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
+      <a class="nav__item" href="#vulns" data-page="vulns" data-min-role="analyst" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-scan-search"/></svg><span>Vulnerabilities</span></a>
       <a class="nav__item" href="#approvals" data-page="approvals" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-user-check"/></svg><span>Approvals</span><span id="approval-count" class="nav__count hidden"></span></a>
     </div>
     <div class="nav__group" data-group="Hunt">
@@ -194,7 +194,7 @@
       <div class="nav__label">Detect &amp; respond</div>
       <a class="nav__item" href="#detections" data-page="detections"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg><span>Detections</span></a>
       <a class="nav__item" href="#coverage" data-page="coverage"><svg class="icon" aria-hidden="true"><use href="#i-grid-3x3"/></svg><span>ATT&amp;CK coverage</span></a>
-      <a class="nav__item" href="#compliance" data-page="compliance"><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check"/></svg><span>Compliance</span></a>
+      <a class="nav__item" href="#compliance" data-page="compliance" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-clipboard-check"/></svg><span>Compliance</span></a>
       <a class="nav__item" href="#playbooks" data-page="playbooks" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span>Playbooks</span></a>
       <a class="nav__item" href="#respond" data-page="respond" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg><span>Response actions</span></a>
     </div>
@@ -211,20 +211,21 @@
          does. -->
     <div class="nav__group nav__group--jump hidden" data-group="Settings">
       <div class="nav__label">Settings</div>
-      <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
+      <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
-      <a class="nav__item" href="#sso" data-page="sso" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
-      <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="nav__item" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
+      <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="nav__item" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#ticketing" data-page="ticketing" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-ticket"/></svg><span>Ticketing</span></a>
       <a class="nav__item" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="nav__item" href="#baselines" data-page="baselines" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-trending-up"/></svg><span>Behavior baselines</span></a>
       <a class="nav__item" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
-      <a class="nav__item" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
-      <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
-      <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
-      <a class="nav__item" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
-      <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
+      <a class="nav__item" href="#security" data-page="security" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span></a>
+      <a class="nav__item" href="#servers" data-page="servers" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="nav__item" href="#scanners" data-page="scanners" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="nav__item" href="#sensors" data-page="sensors" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
+      <a class="nav__item" href="#audit" data-page="audit" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="nav__item" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
     <p class="nav__empty hidden" id="jump-empty">No page matches.</p>
@@ -247,6 +248,13 @@
   <svg class="topbar__mark" viewBox="0 0 20 28" width="14.3" height="20" aria-hidden="true"><use href="#logo-mark"/></svg>
   <div class="topbar__title"><span class="topbar__crumb" id="crumb-group"></span><span class="topbar__sep" aria-hidden="true">/</span><h1 id="crumb-page"></h1></div>
   <div class="topbar__actions">
+    <!-- The tenant picker, for the provider's analysts and admins once
+         there are tenants (tenants.js). It names the tenant the session
+         works in, tinted while that is a customer's, not the default. -->
+    <details class="menu tenant-pick hidden" id="tenant-pick">
+      <summary class="tenant-btn" id="tenant-btn" aria-label="Tenant" title="Switch tenant"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span class="tenant-btn__name" id="tenant-name"></span><svg class="icon tenant-btn__chev" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg></summary>
+      <div class="menu__panel tenant-menu" id="tenant-menu" role="menu" aria-label="Tenants"></div>
+    </details>
     <button class="btn btn--ghost btn--icon theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme"><svg class="icon when-light" aria-hidden="true"><use href="#i-moon"/></svg><svg class="icon when-dark" aria-hidden="true"><use href="#i-sun"/></svg></button>
     <details class="menu" id="user-menu">
       <summary class="user-btn" aria-label="Account menu"><span class="avatar" id="user-avatar" aria-hidden="true"></span><span class="user-name" id="user-name"></span><svg class="icon" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
@@ -274,20 +282,21 @@
        Each tab is hidden from roles its page is not for. -->
   <nav class="set-tabs hidden" id="set-tabs" aria-label="Settings">
     <div class="set-tabs__list">
-      <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
+      <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
-      <a class="set-tab" href="#sso" data-page="sso" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
-      <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="set-tab" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
+      <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="set-tab" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#ticketing" data-page="ticketing" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-ticket"/></svg><span>Ticketing</span></a>
       <a class="set-tab" href="#retention" data-page="retention" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Data retention</span></a>
       <a class="set-tab" href="#baselines" data-page="baselines" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-trending-up"/></svg><span>Behavior baselines</span></a>
       <a class="set-tab" href="#lookuptables" data-page="lookuptables" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-file-spreadsheet"/></svg><span>Lookups</span></a>
-      <a class="set-tab" href="#security" data-page="security" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
-      <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
-      <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
-      <a class="set-tab" href="#sensors" data-page="sensors" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
-      <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
+      <a class="set-tab" href="#security" data-page="security" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg><span>Security</span><span id="security-count" class="nav__count hidden" data-critical></span></a>
+      <a class="set-tab" href="#servers" data-page="servers" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg><span>Servers</span></a>
+      <a class="set-tab" href="#scanners" data-page="scanners" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-radar"/></svg><span>Scanners</span></a>
+      <a class="set-tab" href="#sensors" data-page="sensors" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg><span>Network sensors</span></a>
+      <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
   </nav>
@@ -1439,7 +1448,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     </div>
     <div class="tabs u-tabs" role="tablist" aria-label="Users and sign-in">
       <button class="tab" type="button" role="tab" id="u-tab-users" aria-controls="u-panel-users" aria-selected="true">Users <span class="count hidden" id="u-count"></span></button>
-      <button class="tab" type="button" role="tab" id="u-tab-directory" aria-controls="u-panel-directory" aria-selected="false" tabindex="-1">Directory sign-in <span class="badge badge--success hidden" id="u-dir-on">On</span></button>
+      <button class="tab" type="button" role="tab" id="u-tab-directory" data-provider-only aria-controls="u-panel-directory" aria-selected="false" tabindex="-1">Directory sign-in <span class="badge badge--success hidden" id="u-dir-on">On</span></button>
     </div>
     <div id="u-panel-users" class="u-panel" role="tabpanel" aria-labelledby="u-tab-users">
       <div class="toolbar hidden" id="u-toolbar" role="search">
@@ -1820,6 +1829,28 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     </div>
   </section>
 
+  <!-- Tenants: the customers this install serves (provider admins) -->
+  <section id="page-tenants" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Tenants</h2>
+        <p class="page-head__desc">Customers this install serves, each with its own data, detections and users. Switch between them with the tenant picker in the top bar.</p>
+      </div>
+    </div>
+    <div class="card tokens-card">
+      <div class="card__head tokens-card__head">
+        <div>
+          <h3 class="card__title" id="tn-title">Tenants</h3>
+          <p class="card__sub">Your own data is in the default tenant. A tenant that is turned off keeps its data.</p>
+        </div>
+        <div class="card__actions">
+          <button class="btn btn--primary btn--sm" type="button" id="tn-new"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>New tenant</span></button>
+        </div>
+      </div>
+      <div class="tokens-card__body" id="tn-body" aria-busy="true" aria-labelledby="tn-title"></div>
+    </div>
+  </section>
+
   <section id="page-lookuptables" class="page">
     <div class="page-head">
       <div>
@@ -1956,6 +1987,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="compliance.js"></script>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
+<script src="tenants.js"></script>
 <script src="sso.js"></script>
 <script src="baselines.js"></script>
 <script src="lookuptables.js"></script>

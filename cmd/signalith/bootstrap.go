@@ -604,8 +604,8 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 func cmdInitialPassword(args []string) error {
 	fs := flag.NewFlagSet("initial-password", flag.ExitOnError)
 	path := configFlag(fs)
-	note := fs.Bool("note", false, "print nothing, but note in the state folder that the built-in admin still has the first password, "+
-		"for a server that cannot read the file that keeps it (the packages run this at every upgrade)")
+	note := fs.Bool("note", false, "print nothing, but note next to the config file that the built-in admin still has the first password, "+
+		"for a server that cannot read the file that keeps it (the Linux packages and unit run this as root)")
 	fs.Parse(args)
 	if *note {
 		return noteFirstPassword(*path)
@@ -656,14 +656,16 @@ func printInitialPassword(out io.Writer, path string) error {
 	return nil
 }
 
-// noteFirstPassword notes in the state folder the built-in admin's
-// password hash while signalith.yaml still gives it the first password,
-// so the server, which cannot read the file that keeps that password (the
-// Linux packages keep it root's), asks for a new one at the next sign-in
-// with it (see config.FirstPassword). signalith init notes it for a new
-// install; the packages run this at every upgrade for an install made
-// before. Where the environment gives the password, the server reads the
-// file itself, and nothing is noted.
+// noteFirstPassword notes the built-in admin's password hash while
+// signalith.yaml still gives it the first password, so the server, which
+// cannot read the file that keeps that password (the Linux packages keep
+// it root's), asks for a new one at the next sign-in with it (see
+// config.FirstPassword). signalith init notes it in the state folder for a
+// new install. For an install made before, the packages run this at every
+// upgrade and the Linux unit at every start, as root: it notes it next to
+// the config file, never in the folder the service owns. Where the
+// environment gives the password, the server reads the file itself, and
+// nothing is noted.
 func noteFirstPassword(path string) error {
 	if os.Getenv("SIGNALITH_ADMIN_PASSWORD_FILE") != "" || os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
 		return nil
@@ -680,21 +682,22 @@ func noteFirstPassword(path string) error {
 	if pw == "" {
 		return nil
 	}
-	c, err := config.LoadUnchecked(path)
+	// Root reads nothing from the service's state folder, whose files the
+	// service could point anywhere: a password saved there on the page
+	// is seen from the file being there at all.
+	c, err := config.LoadFileOnly(path)
 	if err != nil {
 		return err
 	}
-	if c.AdminPasswordChanged() != "" {
-		return nil
-	}
-	dir := c.StateDir()
-	if fp, err := config.ReadFirstPassword(dir); err == nil && (fp.Hash != "" || !fp.Changed.IsZero()) {
+	if _, err := os.Lstat(c.AdminHashFile()); err == nil {
+		// A note left from before the change no longer applies.
+		_ = os.Remove(config.FirstPasswordFileIn(filepath.Dir(path)))
 		return nil
 	}
 	if !c.CheckPassword(c.Auth.AdminUser, pw) {
 		return nil
 	}
-	return config.RecordFirstPassword(dir, c.Auth.AdminPasswordHash)
+	return config.RecordFirstPasswordNextTo(path, c.Auth.AdminPasswordHash)
 }
 
 // firstPasswordReplaced follows signalith passwd's replacing the built-in

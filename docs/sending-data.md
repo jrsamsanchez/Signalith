@@ -91,7 +91,7 @@ or detection covers every source of the same kind.
 | --- | --- |
 | Windows Security log: 4624, 4625 logons; 4648 explicit credentials; 4768, 4769, 4771 Kerberos; 4776 NTLM credential checks | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
-| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4732, 4737, 4756 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 1102 log cleared | Change |
+| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4722, 4725 accounts enabled and disabled; 4723, 4724 password changes and resets; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4732, 4737, 4756 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 4662 directory object operations; 1102 log cleared | Change |
 | Windows Security log: 5140, 5145 network share access | Filesystem |
 | Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
