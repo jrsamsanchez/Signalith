@@ -1,0 +1,5 @@
+{"rule": "7c3b43d8-d794-47d2-800a-d277715aa460", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/tmp/","path":"/crontab"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/crontab","path":"/crontab"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/tmp/","path":"/usr/local/bin/helper"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "7ed2c9f7-c59d-4c82-a7e2-f859aa676099", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"full","path":"/usr/sbin/firmwarepasswd"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/sbin/firmwarepasswd","path":"/usr/sbin/firmwarepasswd"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"full","path":"/usr/local/bin/helper"}}
+]}

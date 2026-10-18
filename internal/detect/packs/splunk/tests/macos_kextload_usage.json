@@ -1,0 +1,7 @@
+{"rule": "9d680775-84a6-4625-a8ea-8182b9427ce4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/bin/kextload","parent":"4000","path":"/usr/bin/kextload","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/bin/kextloae","parent":"4000","path":"/usr/bin/kextloae","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -help x","parent":"4000","path":"/usr/bin/kextload","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x  -h  x","parent":"4000","path":"/usr/bin/kextload","pid":"4242","uid":"501","username":"tester"}}
+]}

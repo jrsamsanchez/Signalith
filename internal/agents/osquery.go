@@ -78,6 +78,11 @@ func OsqueryFlags(platform, hostPort, secretPath, ca string) string {
 	} else {
 		flags = append(flags, "--enable_file_events=true")
 	}
+	// Program starts on macOS, from EndpointSecurity (es_process_events),
+	// which osquery leaves off unless asked.
+	if platform == "darwin" {
+		flags = append(flags, "--disable_endpointsecurity=false")
+	}
 	flags = append(flags, "--utc")
 	return strings.Join(flags, "\n") + "\n"
 }
@@ -178,7 +183,7 @@ func generateOsquery(o Options) (*Agent, error) {
 		a.ConfigStep = len(a.Steps)
 		a.Steps = append(a.Steps, "Run it as root from the folder you saved it in: sudo sh signalith-osquery-setup.sh")
 		if platform == "darwin" {
-			a.Steps = append(a.Steps, "Give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk Access, add /opt/osquery/lib/osquery.app), so it can watch files and read inventory.")
+			a.Steps = append(a.Steps, "Give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk Access, add /opt/osquery/lib/osquery.app), so it can watch files, see programs start and read inventory.")
 		}
 	}
 	a.Steps = append(a.Steps, "The host appears on the Endpoints page within a minute, and its inventory and file changes in Search soon after.")

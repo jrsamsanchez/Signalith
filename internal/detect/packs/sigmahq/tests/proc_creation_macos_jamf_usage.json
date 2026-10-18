@@ -1,0 +1,5 @@
+{"rule": "be2e3a5c-9cc7-4d02-842a-68e9cb26ec49", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"resetPassword","path":"/jamf"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/jamf","path":"/jamf"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"resetPassword","path":"/usr/local/bin/helper"}}
+]}

@@ -73,7 +73,7 @@ var Models = []Model{
 	},
 	{
 		Name:        "Endpoint",
-		Description: "Process launches on hosts (Windows 4688, Sysmon, Sysmon for Linux, Linux auditd)",
+		Description: "Process launches on hosts (Windows 4688, Sysmon, Sysmon for Linux, Linux auditd, osquery on macOS)",
 		Fields: []Field{
 			{Name: "action", Type: "string", Description: "What happened", Examples: []string{"allowed"}},
 			{Name: "user", Type: "string", Description: "Account that started the process"},
