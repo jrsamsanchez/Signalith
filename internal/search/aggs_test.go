@@ -146,4 +146,10 @@ func TestTimeIsANumberAndStdevOfOne(t *testing.T) {
 	if err != nil || res.Rows[0]["sd"] != int64(0) {
 		t.Errorf("stdev of one value in OpenSearch = %v %v", res.Rows, err)
 	}
+	// The base search reads a number for _time as seconds too, so a
+	// bound means the same before and after the first pipe.
+	p := compile(t, `_time>=1767268800 _time<1767268800.5`)
+	if got := asJSON(p.Body["query"]); !strings.Contains(got, `"gte":1767268800000`) || !strings.Contains(got, `"lt":1767268800500`) {
+		t.Errorf("base search = %s", got)
+	}
 }
