@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -97,6 +98,8 @@ func AgentLines(l AgentLine) (AgentCommands, error) {
 	return AgentCommands{Linux: line, Note: note, ScriptSHA256: sha}, nil
 }
 
+var programName = regexp.MustCompile(`^signalith-agent-[a-z0-9]+-[a-z0-9]+(\.exe)?$`)
+
 // ErrNoProgram is the answer for a platform this server has no agent
 // program for: a development build, or a platform the agent is not built
 // for.
@@ -177,6 +180,11 @@ func (p *Programs) Open(goos, goarch string) (*os.File, int64, string, error) {
 		return nil, 0, "", ErrNoProgram
 	}
 	name := agentproto.ProgramName(goos, goarch)
+	// Checked again here, where the name becomes a path: only a program
+	// file name, never a separator or "..".
+	if !programName.MatchString(name) {
+		return nil, 0, "", ErrNoProgram
+	}
 	f, err := os.Open(filepath.Join(dir, name))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, 0, "", ErrNoProgram
