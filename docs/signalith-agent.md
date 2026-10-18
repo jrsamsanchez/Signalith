@@ -100,7 +100,7 @@ that folder and prints the commands instead of running them.
   own signed package repository; the script refuses its signing key unless its
   fingerprint is the one pinned in the script. On Windows, the script downloads the
   Fluent Bit version it pins from Fluent Bit's site and checks the zip's SHA-256 against
-  the one the publisher lists next to it (or against `-FluentBitSha256`). Sysmon is
+  the one the publisher lists next to it (or against `-FluentBitSha256`). Fluent Bit publishes no signing key for the Windows zip; checking it against a SHA-256 carried in Signalith's signed content updates is planned, together with signed agent updates. Sysmon is
   downloaded from Microsoft and used only when Microsoft's signature on it is valid. The
   agent program comes from your Signalith server, and the script checks its SHA-256
   against the one Signalith gives with it.
