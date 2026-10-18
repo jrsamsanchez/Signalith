@@ -1246,12 +1246,12 @@ search's other rows (`eventstats` over the events or a `tstats` search's rows,
 (`bucket span=10m _time`, `stats ... by _time, src`, `eventstats ... by _time`) ships when
 the span divides 10 minutes, so Splunk's window holds each bucket whole: each run searches
 the span plus the time since the last run (every 5 minutes), and the detection keeps a
-bucket's rows only from a run whose window holds the whole bucket (`addinfo` and a `where`
-at the end), since a part of a bucket may stand out where the whole does not. A bucket is
+bucket's rows only from a run whose window holds the whole bucket (`addinfo` and
+`where _time >= info_min_time AND _time + 600 <= info_max_time` at the end, for a 10-minute
+span), since a part of a bucket may stand out where the whole does not. A bucket is
 compared at the first run after it ends; events that arrive later are not counted in it
-(Splunk's default waits 10 minutes). Splunk's standard deviation of a single value is 0,
-and Signalith's is null, so after the `eventstats` a null standard deviation of a count is
-set to 0 (`eval std=coalesce(std, 0)`). Its test events are the repeated event among other
+(Splunk's default waits 10 minutes). The standard deviation of a single value is 0, as in
+Splunk, so a source alone in its bucket stands out by its count alone. Its test events are the repeated event among other
 groups' events at the same time, one each (`"baseline"` in the test file): the rule must
 find the repeat among enough others to stand out, and not find it when another group is as
 high, or among fewer others (with the sample standard deviation, one group stands out

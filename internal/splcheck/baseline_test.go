@@ -29,7 +29,7 @@ func TestCompareStages(t *testing.T) {
 				t.Errorf("%s: %v", search, err)
 				continue
 			}
-			if !r.PostCompared || r.PostSpan != 2*time.Minute || !strings.Contains(r.Post, "eval s=coalesce(s, 0)") {
+			if !r.PostCompared || r.PostSpan != 2*time.Minute || strings.Contains(r.Post, "coalesce") {
 				t.Errorf("%s: compared %v span %v post:\n%s", search, r.PostCompared, r.PostSpan, r.Post)
 			}
 			continue
