@@ -17,3 +17,7 @@ func setProcAttr(cmd *exec.Cmd) {
 // askStop asks the collector to stop: Fluent Bit flushes what it holds on
 // SIGTERM.
 func askStop(p *os.Process) error { return p.Signal(syscall.SIGTERM) }
+
+// keepWithAgent does nothing here: systemd stops the collector with the
+// agent's service.
+func keepWithAgent(*os.Process) error { return nil }

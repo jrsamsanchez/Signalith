@@ -42,6 +42,7 @@ func (s *Server) AgentHandler() http.Handler {
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	mux.HandleFunc("GET /api/sensor/install.sh", s.handleInstallScript(clusterinstall.ScriptSensor))
 	mux.HandleFunc("GET "+agentproto.RouteInstallSH, s.handleInstallScript(clusterinstall.ScriptAgent))
+	mux.HandleFunc("GET "+agentproto.RouteInstallPS1, s.handleInstallScript(clusterinstall.ScriptAgentPS1))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("this port is for agents; the web page is at %s", s.conf().Server.PublicURL))
 	})

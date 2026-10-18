@@ -37,6 +37,12 @@ var SensorInstallSH []byte
 //go:embed agent/install.sh
 var AgentInstallSH []byte
 
+// AgentInstallPS1 is deploy/agent/install.ps1, the Signalith Agent's
+// Windows install script.
+//
+//go:embed agent/install.ps1
+var AgentInstallPS1 []byte
+
 // SensorUnits are the systemd units deploy/sensor/install.sh writes, and
 // SensorCompose the Docker Compose file of its --docker option; the
 // script carries copies of them, which a test checks agree.

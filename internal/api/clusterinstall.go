@@ -66,6 +66,7 @@ var installRoutes = []string{
 	"GET /api/cluster/join/binary",
 	"GET /api/sensor/install.sh",
 	"GET /api/agent/install.sh",
+	"GET /api/agent/install.ps1",
 }
 
 func (s *Server) routeClusterInstall(mux *http.ServeMux, api *router) {

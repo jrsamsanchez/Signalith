@@ -2669,6 +2669,11 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data #agent-install:empty { display: none; }
 #page-data #agent-install .hint code { font-size: var(--fs-sm); }
 #page-data #agent-install .hint a .icon { margin-left: 3px; vertical-align: -1px; }
+#page-data #agent-install .agent-install__os { justify-self: start; }
+#page-data #agent-install .agent-install__sysmon { display: grid; gap: var(--sp-1); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); }
+#page-data #agent-install .agent-install__sysmon .check { align-items: flex-start; }
+#page-data #agent-install .agent-install__sysmon .check input { margin-top: 2px; flex: none; }
+#page-data #agent-install .agent-install__sysmon .check b { color: var(--text); font-weight: 600; }
 #page-data .agent-os__text b .badge { margin-left: 6px; vertical-align: 1px; font-size: var(--fs-xs); color: var(--accent); }
 #page-data .sensor-needs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
 #page-data .sensor-needs li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }

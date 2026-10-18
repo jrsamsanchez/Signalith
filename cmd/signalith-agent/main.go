@@ -26,6 +26,11 @@ import (
 var version = "dev"
 
 func main() {
+	// Started by Windows as the SignalithAgent service: the service
+	// handler runs the agent instead of the commands.
+	if runService() {
+		return
+	}
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "signalith-agent:", err)
 		os.Exit(1)
@@ -47,15 +52,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	paths := agentd.DefaultPaths()
 	switch args[0] {
 	case "run":
-		settings, err := agentd.ReadSettings(paths)
+		a, err := newAgent(paths, stderr)
 		if err != nil {
 			return err
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		a := &agentd.Agent{Paths: paths, Settings: settings, Version: version,
-			Log: slog.New(slog.NewTextHandler(stderr, nil))}
-		a.Log.Info("Signalith Agent starting", "version", version, "server", settings.Server)
 		return a.Run(ctx)
 	case "status":
 		return status(paths, stdout)
@@ -70,11 +72,24 @@ func run(args []string, stdout, stderr io.Writer) error {
 	return fmt.Errorf("unknown command %q", args[0])
 }
 
+// newAgent reads the agent's settings and makes the agent, which logs
+// to w (and passes on there what its collectors write).
+func newAgent(paths agentd.Paths, w io.Writer) (*agentd.Agent, error) {
+	settings, err := agentd.ReadSettings(paths)
+	if err != nil {
+		return nil, err
+	}
+	a := &agentd.Agent{Paths: paths, Settings: settings, Version: version,
+		Log: slog.New(slog.NewTextHandler(w, nil)), Out: w}
+	a.Log.Info("Signalith Agent starting", "version", version, "server", settings.Server)
+	return a, nil
+}
+
 // status prints what the running agent last wrote down.
 func status(paths agentd.Paths, w io.Writer) error {
 	b, err := os.ReadFile(paths.StatusFile())
 	if err != nil {
-		return fmt.Errorf("the agent has not reported yet (%w); is the signalith-agent service running?", err)
+		return fmt.Errorf("the agent has not reported yet (%w); is the Signalith Agent service running?", err)
 	}
 	var st agentproto.Status
 	if err := json.Unmarshal(b, &st); err != nil {

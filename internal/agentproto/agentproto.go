@@ -33,6 +33,8 @@ const (
 	RouteProgram = "/api/agent/program"
 	// RouteInstallSH is the Linux install script.
 	RouteInstallSH = "/api/agent/install.sh"
+	// RouteInstallPS1 is the Windows install script.
+	RouteInstallPS1 = "/api/agent/install.ps1"
 )
 
 // Headers the agent sends with every request, besides the agent token in

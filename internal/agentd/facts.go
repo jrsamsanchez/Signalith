@@ -49,8 +49,13 @@ func exists(p string) bool {
 // systemName is the operating system's own name for itself, such as
 // "Ubuntu 24.04.1 LTS", or the kind of system when it has none.
 func systemName() string {
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		if name := osReleaseName("/etc/os-release"); name != "" {
+			return name
+		}
+	case "windows":
+		if name := windowsName(); name != "" {
 			return name
 		}
 	}
