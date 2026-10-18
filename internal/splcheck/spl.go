@@ -76,6 +76,9 @@ type Rule struct {
 	// none); post is the same, parsed.
 	Post string          `yaml:"-"`
 	post []query.Command `yaml:"-"`
+	// PostSpan is the span of a tstats search's own grouping by time
+	// (by _time span=1h) whose later stages run as Post; 0 for none.
+	PostSpan time.Duration `yaml:"-"`
 	// postField is the Signalith field of a field the later stages name
 	// (false for none).
 	postField func(string) (string, bool) `yaml:"-"`
@@ -315,11 +318,20 @@ func (r *Rule) parse(macros map[string]*Macro, opt ParseOptions) (*Rule, error) 
 				return nil, err
 			}
 		}
-		group, err := tstatsGroup(aggs, m[5])
+		group, span, err := tstatsGroup(aggs, m[5])
 		if err != nil {
 			return nil, err
 		}
 		joined := r.sub || slices.ContainsFunc(post, func(s string) bool { return joinStageRe.MatchString(s) })
+		if span > 0 {
+			if joined {
+				return nil, fmt.Errorf("a tstats search grouped by time is not supported in a join")
+			}
+			if err := spanStages(post); err != nil {
+				return nil, err
+			}
+			r.PostSpan = span
+		}
 		field := func(f string) (string, bool) {
 			if joined && f == "dest" && endpointDest[r.Node] {
 				return "host", true

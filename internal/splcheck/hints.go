@@ -38,6 +38,12 @@ var (
 	copyRe    = regexp.MustCompile(`(?i)(?:^|,)\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:(?:lower|upper)\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*(?:,|$)`)
 )
 
+// lenRe is an eval assignment of a field's length; maxHintLen is the
+// longest text a length hint makes.
+var lenRe = regexp.MustCompile(`(?i)^\s*'?([A-Za-z_]\w*)'?\s*=\s*len\(\s*'?([A-Za-z_][\w.{}]*)'?\s*\)\s*$`)
+
+const maxHintLen = 4096
+
 // rexGroupRe is a named group of a regular expression.
 var rexGroupRe = regexp.MustCompile(`\(\?P?<([A-Za-z_]\w*)>`)
 
@@ -145,6 +151,7 @@ func (r *Rule) hints() []Expr {
 		}
 	}
 	groups := map[string][2]string{} // a rex's group: its field and pattern
+	lens := map[string]string{}      // an eval's length of a field: the field
 	// groupValues adds, for text a channel node's rex group is compared
 	// with, the rex's pattern with that text for the group (where
 	// config_name IN ("clr enabled")).
@@ -211,7 +218,21 @@ func (r *Rule) hints() []Expr {
 				groups[g[1]] = [2]string{m[1], pat}
 			}
 		}
+		if body, ok := strings.CutPrefix(s, "eval "); ok {
+			for _, part := range splitTop(body) {
+				if m := lenRe.FindStringSubmatch(part); m != nil {
+					lens[m[1]] = m[2]
+				}
+			}
+		}
 		for _, n := range hintNumbers(s, negated) {
+			// A length a where needs (eval n = len(value) | where n >
+			// 512): text that long.
+			if f, ok := lens[n[0]]; ok {
+				if l, err := strconv.Atoi(n[1]); err == nil && l > 0 && l <= maxHintLen {
+					add(&Cmp{Field: stored(f), Values: []string{strings.Repeat("A", l)}})
+				}
+			}
 			g, ok := groups[n[0]]
 			if !ok {
 				continue

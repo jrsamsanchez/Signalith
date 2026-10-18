@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -504,24 +505,94 @@ func quoteField(f string, always ...bool) string {
 
 // tstatsGroup is the stats stage that groups events as a tstats search
 // does: aggs and by are its own (with their node prefixes), and the
-// missing by fields are "unknown".
-func tstatsGroup(aggs, by string) (string, error) {
+// missing by fields are "unknown". A grouping by _time span=1h first
+// puts each event's time in its bucket (bin, aligned to UTC) in a field
+// of its own, so that min(_time) and max(_time) still read the event's
+// time, and names the bucket _time after the stats; span is the
+// bucket's size (0 for none).
+func tstatsGroup(aggs, by string) (group string, span time.Duration, err error) {
 	aggs = strings.TrimSpace(nodeFieldRe.ReplaceAllString(aggs, "$1"))
 	by = strings.TrimSpace(nodeFieldRe.ReplaceAllString(by, "$1"))
+	if m := timeSpanRe.FindStringSubmatch(by); m != nil {
+		span = parseSpan(m[1]+m[3], m[2]+m[4])
+		by = timeSpanRe.ReplaceAllString(by, " "+timeBucket+" ")
+	}
 	if strings.Contains(by, "span") || strings.Contains(aggs, "`") {
-		return "", fmt.Errorf("a tstats search grouped by time is not supported")
+		return "", 0, fmt.Errorf("a tstats search grouped by time is not supported")
 	}
 	fields := strings.Fields(strings.ReplaceAll(by, ",", " "))
 	if len(fields) == 0 {
-		return "", fmt.Errorf("a tstats search with no by fields is not supported")
+		return "", 0, fmt.Errorf("a tstats search with no by fields is not supported")
 	}
 	var fill []string
 	for _, f := range fields {
-		if f != "_time" {
+		if f != "_time" && f != timeBucket {
 			fill = append(fill, f)
 		}
 	}
-	return "fillnull value=unknown " + strings.Join(fill, " ") + "\n| stats " + aggs + " by " + strings.Join(fields, " "), nil
+	group = "fillnull value=unknown " + strings.Join(fill, " ") + "\n| stats " + aggs + " by " + strings.Join(fields, " ")
+	if span > 0 {
+		if slices.Contains(fields, "_time") || strings.Count(by, timeBucket) > 1 {
+			return "", 0, fmt.Errorf("a tstats search grouped by time twice is not supported")
+		}
+		group = fmt.Sprintf("bin _time span=%ds as %s\n| %s\n| rename %s as _time", int64(span/time.Second), timeBucket, group, timeBucket)
+	}
+	return group, span, nil
+}
+
+// timeSpanRe is a tstats grouping by time (_time span=1h, or span=1h
+// _time); timeBucket is the field the bucket is kept in until the stats
+// is done.
+var timeSpanRe = regexp.MustCompile(`(?i)\b_time\s+span\s*=\s*(\d+)([smh])\b|\bspan\s*=\s*(\d+)([smh])\s+_time\b`)
+
+const timeBucket = "time_bucket"
+
+// Each run of a rule grouped by time searches its span plus the time
+// since the last run, so each bucket is whole in some run, and the
+// buckets at a run's edges are parts of buckets. spanStages returns an
+// error for later stages that may keep a row for a part of a bucket but
+// not for the whole bucket, or that compare or regroup buckets (which
+// depends on Splunk's search window): their filters must be ones a
+// growing bucket keeps passing (>, >=), a later stats may only take
+// counts, sums, largest values and values of its rows, and only a stats
+// may read the bucket's _time.
+var (
+	spanWindowRe = regexp.MustCompile(`(?i)^(eventstats|streamstats|delta|accum|autoregress|trendline|head|tail|sort|dedup|anomalydetection|outlier|predict|timechart|chart|top|rare|bin|bucket|transaction|concurrency)\b`)
+	spanFilterRe = regexp.MustCompile(`(?i)^(where|search|eval)\b`)
+	spanShrinkRe = regexp.MustCompile(`(?i)<|!=|\bNOT\b|\bisnull\b|\bnull\(|\bin\s*\(`)
+	spanEqualRe  = regexp.MustCompile(`(^|[^<>=!])=`)
+	spanTimeRe   = regexp.MustCompile(`\b_time\b`)
+	spanAggRe    = regexp.MustCompile(`(?i)\b(avg|mean|median|stdevp?|varp?|mode|range|(?:exact|upper)?perc\d*|p\d+|min)\(\s*([\w.]*)`)
+)
+
+func spanStages(stages []string) error {
+	for _, s := range stages {
+		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
+		if m := spanWindowRe.FindStringSubmatch(s); m != nil {
+			return fmt.Errorf("a later %s of a tstats search grouped by time depends on Splunk's search window", strings.ToLower(m[1]))
+		}
+		if strings.HasPrefix(strings.ToLower(s), "stats ") {
+			for _, a := range spanAggRe.FindAllStringSubmatch(s, -1) {
+				if !strings.EqualFold(a[1], "min") || a[2] != "firstTime" && a[2] != "_time" {
+					return fmt.Errorf("a tstats search grouped by time with a later %s() is not supported (a part of a bucket may pass)", strings.ToLower(a[1]))
+				}
+			}
+			continue
+		}
+		m := spanFilterRe.FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		cond := s[len(m[1]):]
+		if spanTimeRe.MatchString(cond) {
+			return fmt.Errorf("a tstats search grouped by time whose later stages read _time is not supported: %s", firstWords(s))
+		}
+		// An eval's = sets a field; its tests are what may shrink.
+		if spanShrinkRe.MatchString(cond) || !strings.EqualFold(m[1], "eval") && spanEqualRe.MatchString(cond) {
+			return fmt.Errorf("a tstats search grouped by time with a later test a part of a bucket may pass is not supported: %s", firstWords(s))
+		}
+	}
+	return nil
 }
 
 // Keeps reports whether the rule's later stages keep a row for an event

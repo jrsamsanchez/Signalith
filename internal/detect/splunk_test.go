@@ -142,6 +142,13 @@ search: |
 		d.Schedule != "5m" || d.Lookback != "25m" {
 		t.Errorf("distinct count = %v %+v", err, d)
 	}
+	// Later stages grouped by time search the span and the time since
+	// the last run, so each bucket is whole in some run.
+	r = []byte(strings.Replace(string(src), "by Processes.dest\n", "by _time span=1h Processes.dest\n  | eval n=count\n  | where n > 3\n", 1))
+	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err != nil || !strings.Contains(d.Query, "| bin span=3600s _time AS time_bucket\n") ||
+		d.Schedule != "5m" || d.Lookback != "65m" || strings.Join(d.Throttle.Fields, ",") != "_time,dest" {
+		t.Errorf("grouped by time = %v %+v", err, d)
+	}
 }
 
 // eventsSearcher answers every search with its events.

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
@@ -51,6 +52,32 @@ func TestPostStages(t *testing.T) {
 	if r.Keeps(map[string]any{"user": "alice", "@timestamp": "2026-01-01T12:00:00Z"}) {
 		t.Error("an event with no address is kept")
 	}
+
+	// A tstats grouping by time puts each event in its UTC-aligned bucket,
+	// kept apart from _time, which min(_time) and max(_time) read.
+	r, err = Parse(rule("| tstats count min(_time) as firstTime max(_time) as lastTime from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | eval n=count | where n > 1"), testMacros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(r.Post, "bin _time span=3600s as time_bucket\n| fillnull value=unknown dest\n| stats count min(_time) as firstTime max(_time) as lastTime by time_bucket dest\n| rename time_bucket as _time") || r.PostSpan != time.Hour {
+		t.Errorf("post %v:\n%s", r.PostSpan, r.Post)
+	}
+	if g := r.PostGroups(); strings.Join(g, ",") != "_time,dest" {
+		t.Errorf("groups %v", g)
+	}
+	ev := func(ts string) map[string]any {
+		return map[string]any{"process_name": "a.exe", "host": "h1", "@timestamp": ts}
+	}
+	if !r.KeepsAll([]map[string]any{ev("2026-01-01T12:10:00Z"), ev("2026-01-01T12:50:00Z")}) {
+		t.Error("two events in one hour are not kept")
+	}
+	if r.KeepsAll([]map[string]any{ev("2026-01-01T12:50:00Z"), ev("2026-01-01T13:10:00Z")}) {
+		t.Error("two events in two hours are kept")
+	}
+	rows, err := r.runPost([]map[string]any{ev("2026-01-01T12:10:00Z"), ev("2026-01-01T12:50:00Z")})
+	if err != nil || len(rows) != 1 || rows[0]["_time"] != "2026-01-01T12:00:00Z" {
+		t.Errorf("rows %v, %v", rows, err)
+	}
 }
 
 func TestPostRefuses(t *testing.T) {
@@ -63,8 +90,13 @@ func TestPostRefuses(t *testing.T) {
 		"`wineventlog_security` EventCode=4768 Status=0x6 | makemv delim=\" \" TargetUserName | search TargetUserName IN (\"a*\", \"b\")":    "multivalue TargetUserName",
 		"`wineventlog_security` EventCode=4768 Status=0x6 | eval u=split(TargetUserName, \"@\") | where u=\"a\"":                             "multivalue u",
 		// Lookups need Splunk's tables.
-		"`wineventlog_security` EventCode=4768 Status=0x6 | lookup local=t accounts user OUTPUT owner":                                   "later stage",
-		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | eval x=1": "grouped by time",
+		"`wineventlog_security` EventCode=4768 Status=0x6 | lookup local=t accounts user OUTPUT owner": "later stage",
+		// A part of a bucket, at a run's edge, must not pass where the
+		// whole bucket would not.
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | where count < 5":                                      "part of a bucket",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | search count=1":                                       "part of a bucket",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest _time span=1m | eventstats avg(count) as a by dest | where count > a": "search window",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h _time span=1m Processes.dest | eval x=1":                               "twice",
 	} {
 		if _, err := Parse(rule(search), testMacros); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", search, err, want)

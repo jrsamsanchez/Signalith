@@ -40,6 +40,25 @@ func TestCasesFromALaterWhere(t *testing.T) {
 	}
 }
 
+func TestCasesFromALaterLength(t *testing.T) {
+	// A length a later where needs is text that long.
+	src := rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest Processes.process\n" +
+		"| `drop_dm_object_name(Processes)`\n| eval n = len(process)\n| where n > 300\n| `test_rule_filter`")
+	r, err := Parse(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pos := found(Cases(r))
+	if len(pos) == 0 {
+		t.Fatal("no test event is found")
+	}
+	for _, c := range pos {
+		if len(c.Data["CommandLine"]) <= 300 {
+			t.Errorf("found with a short command line: %v", c.Data)
+		}
+	}
+}
+
 func TestCasesFromALaterRexAndMatch(t *testing.T) {
 	src := rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=bash Processes.process=\"*|*\" by Processes.dest Processes.process\n" +
 		"| `drop_dm_object_name(Processes)`\n| rex field=process \"base64\\s+(?<decode_flag>-{1,2}d\\w*)\"\n| where isnotnull(decode_flag)\n| `test_rule_filter`")
