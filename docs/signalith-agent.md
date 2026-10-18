@@ -227,7 +227,8 @@ configuration, within 5 minutes; nothing needs to be done on the computers.
 
 Turning a log off hides what happens on those computers, so saving asks for your
 password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
-goes to the audit log with what it was before and after. Only admins can change it;
+goes to the audit log as `agent collection settings changed`, with what it was before
+and after, so a gap in what detections see can be traced to the change. Only admins can change it;
 analysts see it in the token list. The osquery part of the same window (watched files,
 checks and how often they run) applies to every osquery host. The API is
 `PUT /api/agent-tokens/{id}/collect` with `{"osquery": "off", "linux_log": "journal"}`
