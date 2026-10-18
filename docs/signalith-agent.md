@@ -208,7 +208,30 @@ On Windows, it collects what the **Windows** option collects: the Security, Syst
 Application logs, Defender, PowerShell (with script blocks) and the other event logs the
 detections use, and Sysmon's log when Sysmon is installed.
 
-Choosing what each group of computers collects from the **Endpoints** page is coming.
+### Change what agents collect
+
+Everything above is on by default. To change it, open **Endpoints > What hosts collect**
+and pick an **Install line**: the choices apply to every computer installed with that
+line's token, so give different groups (web servers, desktops) their own line on **Add
+data** and choose for each. Agents pick up a change the next time they ask for their
+configuration, within 5 minutes; nothing needs to be done on the computers.
+
+| Choice | What it does |
+| --- | --- |
+| **osquery** | Off stops osquery on computers that have it (it stays installed) |
+| **Sysmon** | Off stops reading Sysmon's events on Windows and Linux |
+| **PowerShell logs** | Off stops reading Windows PowerShell's logs |
+| **Web server logs** | Off stops reading Apache's and Nginx's access logs on Linux |
+| **Audit log** | Off stops reading the Linux audit log |
+| **Linux sign-ins** | Where sign-ins are read from: where the computer writes them (the default), `auth.log` or `secure`, or the systemd journal |
+
+Turning a log off hides what happens on those computers, so saving asks for your
+password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
+goes to the audit log with what it was before and after. Only admins can change it;
+analysts see it in the token list. The osquery part of the same window (watched files,
+checks and how often they run) applies to every osquery host. The API is
+`PUT /api/agent-tokens/{id}/collect` with `{"osquery": "off", "linux_log": "journal"}`
+(any choice left out is on, or `auto` for `linux_log`).
 
 ## osquery
 

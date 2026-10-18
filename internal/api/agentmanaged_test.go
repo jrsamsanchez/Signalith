@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -197,6 +198,112 @@ func TestManagedAgentConfig(t *testing.T) {
 		if code, _, body := sensorGet(t, ts, agentproto.RouteConfig+bad, agent); code != 400 {
 			t.Errorf("%s: %d %s", bad, code, body)
 		}
+	}
+}
+
+// An admin chooses on the Endpoints page what the agents of an install
+// line collect; each agent's next configuration follows.
+func TestManagedAgentCollect(t *testing.T) {
+	ts, s := newSensorServer(t)
+	var logs bytes.Buffer
+	s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	id, agent := makeToken(t, ts, "Web servers", "agent")
+	otherID, other := makeToken(t, ts, "Desktops", "agent")
+	linuxID, _ := makeToken(t, ts, "Old Linux", "linux")
+	path := agentproto.RouteConfig + "?" + url.Values{"os": {"linux"}, "arch": {"amd64"}, "server": {"https://siem.example.com:7779"}}.Encode()
+	win := strings.Replace(path, "os=linux", "os=windows", 1)
+	fetch := func(p, token string) agentproto.Config {
+		t.Helper()
+		code, _, body := sensorGet(t, ts, p, token)
+		var cfg agentproto.Config
+		if code != 200 || json.Unmarshal([]byte(body), &cfg) != nil || cfg.FluentBit == nil {
+			t.Fatalf("config: %d %s", code, body)
+		}
+		return cfg
+	}
+	before := fetch(path+"&osquery=true&sysmon=true", agent)
+	if before.Osquery == nil || !strings.Contains(before.FluentBit.Config, "linux.web") || !strings.Contains(before.FluentBit.Config, "linux.audit") ||
+		!strings.Contains(before.FluentBit.Config, "SYSLOG_IDENTIFIER=sysmon") {
+		t.Fatalf("default: %+v\n%s", before.Osquery, before.FluentBit.Config)
+	}
+	if !strings.Contains(fetch(win, agent).FluentBit.Config, "PowerShell/Operational") {
+		t.Fatal("default Windows: no PowerShell log")
+	}
+	// The list shows the default for agent tokens only.
+	_, out, _ := call(t, ts, "GET", "/api/agent-tokens", "", "andy", "role-password", nil)
+	for _, tok := range out["tokens"].([]any) {
+		m := tok.(map[string]any)
+		if _, has := m["collect"]; has != (m["purpose"] == "agent") {
+			t.Errorf("collect listed for %v: %v", m["purpose"], m["collect"])
+		}
+	}
+
+	body := `{"osquery":"off","sysmon":"off","powershell":"off","linux_log":"journal","web_logs":"off","audit_log":"off"}`
+	for _, who := range [][2]string{{"andy", "role-password"}, {"vera", "role-password"}} {
+		if code, _ := doAs(t, ts, who[0], who[1], "PUT", "/api/agent-tokens/"+id+"/collect", body); code != 403 {
+			t.Errorf("%s: %d", who[0], code)
+		}
+	}
+	code, out, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", body, "admin", adminPass, nil)
+	if code != 200 || strings.Contains(raw, agent) {
+		t.Fatalf("set: %d %s", code, raw)
+	}
+	if c := out["token"].(map[string]any)["collect"].(map[string]any); c["osquery"] != "off" || c["linux_log"] != "journal" {
+		t.Errorf("answer: %v", c)
+	}
+	after := fetch(path+"&osquery=true&sysmon=true", agent)
+	if after.Osquery != nil || after.Revision == before.Revision {
+		t.Errorf("osquery still on: %+v", after.Osquery)
+	}
+	for _, gone := range []string{"linux.web", "linux.audit", "SYSLOG_IDENTIFIER=sysmon", "/var/log/auth.log"} {
+		if strings.Contains(after.FluentBit.Config, gone) {
+			t.Errorf("config still has %q:\n%s", gone, after.FluentBit.Config)
+		}
+	}
+	if !strings.Contains(after.FluentBit.Config, "systemd") {
+		t.Errorf("not reading the journal:\n%s", after.FluentBit.Config)
+	}
+	if c := fetch(win+"&sysmon=true", agent).FluentBit.Config; strings.Contains(c, "PowerShell") || strings.Contains(c, "Sysmon") {
+		t.Errorf("Windows still reads PowerShell or Sysmon:\n%s", c)
+	}
+	// Other lines keep the default.
+	if c := fetch(path+"&osquery=true", other); c.Osquery == nil || !strings.Contains(c.FluentBit.Config, "linux.web") {
+		t.Errorf("other line changed: %+v", c.Osquery)
+	}
+	if !strings.Contains(logs.String(), "agent collection settings changed") || !strings.Contains(logs.String(), "osquery=off") {
+		t.Errorf("no audit line:\n%s", logs.String())
+	}
+	// Back to the default: on, auto and empty all mean it.
+	if code, out, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"osquery":"on","linux_log":"auto"}`, "admin", adminPass, nil); code != 200 ||
+		len(out["token"].(map[string]any)["collect"].(map[string]any)) != 0 {
+		t.Fatalf("reset: %d %s", code, raw)
+	}
+	if c := fetch(path+"&osquery=true&sysmon=true", agent); c.Revision != before.Revision {
+		t.Errorf("default again differs:\n%s", c.FluentBit.Config)
+	}
+
+	for name, c := range map[string]struct {
+		id, body string
+		code     int
+		says     string
+	}{
+		"bad value":     {id, `{"osquery":"maybe"}`, 400, `"field":"osquery"`},
+		"bad log":       {id, `{"linux_log":"syslog"}`, 400, `"field":"linux_log"`},
+		"unknown field": {id, `{"osqueyr":"off"}`, 400, "unknown field"},
+		"not an agent":  {linuxID, `{"osquery":"off"}`, 409, "Signalith Agent"},
+		"unknown token": {"000000000000", `{}`, 404, "not_found"},
+		"not an ID":     {"x", `{}`, 404, "not_found"},
+	} {
+		code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+c.id+"/collect", c.body, "admin", adminPass, nil)
+		if code != c.code || !strings.Contains(raw, c.says) {
+			t.Errorf("%s: %d %s", name, code, raw)
+		}
+	}
+	if code, _, raw := call(t, ts, "POST", "/api/agent-tokens/"+otherID+"/revoke", "", "admin", adminPass, nil); code != 200 {
+		t.Fatalf("revoke: %d %s", code, raw)
+	}
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+otherID+"/collect", `{"osquery":"off"}`, "admin", adminPass, nil); code != 409 || !strings.Contains(raw, "revoked") {
+		t.Errorf("revoked: %d %s", code, raw)
 	}
 }
 

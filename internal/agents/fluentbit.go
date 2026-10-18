@@ -48,6 +48,9 @@ type Options struct {
 	// PowerShell adds Windows PowerShell's operational channel, where
 	// script block logging writes the scripts that run (event 4104).
 	PowerShell bool
+	// NoWebLogs and NoAuditLog leave out web servers' access logs and the
+	// audit log on Linux, which are read by default.
+	NoWebLogs, NoAuditLog bool
 	// CollectorOS is where the OpenTelemetry Collector runs, for OS
 	// "otel": "linux" (the default) or "windows".
 	CollectorOS string
@@ -645,7 +648,7 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoWebLogs {
 			// Web servers' access logs (Apache, Nginx), whichever source the
 			// auth logs come from. Path_Key says which server wrote a line,
 			// and the host name is added because the lines carry none. A
@@ -663,7 +666,7 @@ func Generate(o Options) (*Agent, error) {
 				{"hostname_key", "hostname"},
 			}))
 		}
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoAuditLog {
 			// The Linux audit log, whichever source the auth logs come
 			// from: auditd writes it as a file. Its records carry no host
 			// name, so it is added. A host without auditd has no such file.
@@ -760,7 +763,7 @@ func Generate(o Options) (*Agent, error) {
 		a.Steps = append(a.Steps,
 			"Restart the agent: sudo systemctl enable --now fluent-bit && sudo systemctl restart fluent-bit",
 			done)
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoAuditLog {
 			a.Steps = append(a.Steps, auditdStep)
 		}
 		// The Signalith Agent puts the files in place and runs Fluent Bit

@@ -789,15 +789,65 @@ window.sensorText = (function () {
   }
 
   // ---------- what hosts collect ----------
+  // What the Signalith Agents of each install line collect: each switch is
+  // on by default ("" stored), off is "off". The agents pick a change up
+  // the next time they fetch their configuration.
+  const AGENT_COLLECT = [
+    ['osquery', 'osquery', 'Where it is installed: inventory, file changes and checks'],
+    ['sysmon', 'Sysmon', 'Where it runs, on Windows and Linux'],
+    ['powershell', 'PowerShell logs', 'Windows: the scripts and commands that run'],
+    ['web_logs', 'Web server logs', 'Linux: Apache and Nginx access logs'],
+    ['audit_log', 'Audit log', 'Linux: auditd’s records'],
+  ];
+
+  function agentCollectSection(lines, edits) {
+    const sec = el('section', { class: 'ep-set__group' },
+      el('div', {}, el('h4', { class: 'ep-set__title' }, 'Signalith Agent'),
+        el('p', { class: 'hint' }, 'For the computers installed with each line from Add endpoints. Everything is on by default.')));
+    if (!lines.length) {
+      sec.append(el('p', { class: 'hint' }, 'No Signalith Agent is installed yet. Add one with Add endpoints, then choose what it collects here.'));
+      return sec;
+    }
+    let cur = lines[0].id;
+    const pick = el('select', { class: 'select', id: 'ep-agent-line' }, ...lines.map((l) => el('option', { value: l.id }, l.name)));
+    const body = el('div', { class: 'ep-set__agent' });
+    const draw = () => {
+      const c = edits.get(cur) || { ...(lines.find((l) => l.id === cur).collect || {}) };
+      const change = (k, v) => {
+        const n = { ...c, [k]: v };
+        if (!v) delete n[k];
+        edits.set(cur, n);
+        draw();
+      };
+      body.replaceChildren(
+        el('div', { class: 'ep-set__switches' }, ...AGENT_COLLECT.map(([k, label, hint]) => {
+          const sw = el('input', { type: 'checkbox', onchange: () => change(k, sw.checked ? '' : 'off') });
+          sw.checked = c[k] !== 'off';
+          return el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, label), el('span', { class: 'hint' }, hint)));
+        })),
+        el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Linux sign-ins'),
+          seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')));
+    };
+    pick.addEventListener('change', () => { cur = pick.value; draw(); });
+    draw();
+    sec.append(el('div', { class: 'field' }, el('label', { class: 'label', for: 'ep-agent-line' }, 'Install line'), pick), body);
+    return sec;
+  }
+
   async function openSettings() {
     const dlg = $('ep-settings-dialog');
     let d;
+    let lines = [];
     try {
-      d = await api('api/endpoints/settings');
+      const [set, toks] = await Promise.all([api('api/endpoints/settings'), api('api/agent-tokens').catch(() => null)]);
+      d = set;
+      lines = ((toks && toks.tokens) || []).filter((t) => t.purpose === 'agent' && t.status === 'active');
     } catch (e) {
       toast(e.message, null, { tone: 'danger', title: 'Couldn’t load the settings' });
       return;
     }
+    // edits maps a line's token ID to what it should collect, once changed.
+    const edits = new Map();
     const s = d.settings;
     let plat = 'windows';
     const paths = { windows: (s.file_paths.windows || []).join('\n'), linux: (s.file_paths.linux || []).join('\n'), darwin: (s.file_paths.darwin || []).join('\n') };
@@ -839,10 +889,13 @@ window.sensorText = (function () {
     dlg.replaceChildren(el('form', { method: 'dialog', novalidate: '' },
       el('div', { class: 'modal__head' }, el('div', {},
         el('h3', { class: 'modal__title', id: 'ep-set-title' }, 'What hosts collect'),
-        el('p', { class: 'modal__desc' }, 'For every endpoint. Hosts pick up changes within 5 minutes.')),
+        el('p', { class: 'modal__desc' }, 'Computers pick up changes within 5 minutes.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
       el('div', { class: 'modal__body' },
+        agentCollectSection(lines, edits),
         el('section', { class: 'ep-set__group' },
+          el('div', {}, el('h4', { class: 'ep-set__title' }, 'osquery'),
+            el('p', { class: 'hint' }, 'For every host running osquery, with the agent or on its own.')),
           el('label', { class: 'switch' }, fim, el('b', {}, 'Watch files for changes')),
           el('div', { class: 'ep-set__row' }, platSeg, restore),
           el('div', { class: 'field' }, el('label', { class: 'label', for: 'ep-paths' }, 'Watched paths, one per line'),
@@ -869,6 +922,12 @@ window.sensorText = (function () {
       };
       save.disabled = true;
       try {
+        for (const [id, c] of edits) {
+          const r = await api('api/agent-tokens/' + encodeURIComponent(id) + '/collect', c, 'PUT');
+          const l = lines.find((x) => x.id === id);
+          if (l && r && r.token) l.collect = r.token.collect;
+          edits.delete(id);
+        }
         await api('api/endpoints/settings', body, 'PUT');
         dlg.close();
         toast('Hosts pick up the new settings within 5 minutes.', null, { title: 'Saved' });

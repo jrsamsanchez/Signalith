@@ -76,6 +76,12 @@ type tokenDoc struct {
 	RevokedBy string     `json:"revoked_by"`
 	RenamedAt *time.Time `json:"renamed_at"`
 	RenamedBy string     `json:"renamed_by"`
+	// Collect is what the Signalith Agents with an agent token collect,
+	// nil for the default; CollectAt and CollectBy are when and by whom
+	// it was last set.
+	Collect   *Collect   `json:"collect,omitempty"`
+	CollectAt *time.Time `json:"collect_at,omitempty"`
+	CollectBy string     `json:"collect_by,omitempty"`
 }
 
 // refusal is a shared token an admin stopped accepting.
@@ -803,6 +809,11 @@ type Token struct {
 	Events1h     int64      `json:"events_1h"`
 	RevokedAt    *time.Time `json:"revoked_at"`
 	RevokedBy    string     `json:"revoked_by"`
+	// Collect is what the Signalith Agents of a token made for the agent
+	// collect (see Collect); nil for other tokens.
+	Collect   *Collect   `json:"collect,omitempty"`
+	CollectAt *time.Time `json:"collect_at,omitempty"`
+	CollectBy string     `json:"collect_by,omitempty"`
 }
 
 // LegacyToken is a shared token from the configuration as listed.
@@ -830,8 +841,16 @@ type List struct {
 }
 
 func toToken(d *tokenDoc) Token {
-	return Token{ID: d.ID, Name: d.Name, Purpose: d.Purpose, Status: d.State, Hint: d.Hint, CreatedAt: d.At, CreatedBy: d.CreatedBy,
+	t := Token{ID: d.ID, Name: d.Name, Purpose: d.Purpose, Status: d.State, Hint: d.Hint, CreatedAt: d.At, CreatedBy: d.CreatedBy,
 		RevokedAt: d.RevokedAt, RevokedBy: d.RevokedBy}
+	if d.Purpose == PurposeAgent {
+		c := Collect{}
+		if d.Collect != nil {
+			c = *d.Collect
+		}
+		t.Collect, t.CollectAt, t.CollectBy = &c, d.CollectAt, d.CollectBy
+	}
+	return t
 }
 
 func withUse(t *Token, u Use, ok bool) {
