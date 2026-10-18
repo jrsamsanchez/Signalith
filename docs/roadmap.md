@@ -64,8 +64,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
-  with one line on Linux, Windows or Docker, shared settings, users and detections, one
-  certificate authority, rolling upgrades, draining and removing a server, and
+  with one line on Linux, Windows or Docker, shared settings, users and detections,
+  [detections spread over the servers](servers.md#the-background-jobs) with each server's
+  detection health on the Servers page, one certificate authority, rolling upgrades, draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
   the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
