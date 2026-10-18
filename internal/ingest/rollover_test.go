@@ -3,6 +3,8 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,5 +139,40 @@ func TestPipelineWritesToRolledPart(t *testing.T) {
 	}
 	if strings.Join(got, " ") != "sig-network-2026.10.17-2 sig-endpoint-2026.10.17" {
 		t.Errorf("written to %v", got)
+	}
+}
+
+// Failing checks are logged at debug level, then warned about once after
+// RolloverWarnAfter, and the first success after the warning says so.
+func TestRolloverWarnsWhenChecksKeepFailing(t *testing.T) {
+	var buf strings.Builder
+	r := &Rollover{Prefix: "sig", Log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	var f rolloverFailures
+	at := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	fail := errors.New("403 no permission")
+	levels := func() string {
+		var out []string
+		for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+			_, rest, _ := strings.Cut(l, "level=")
+			lvl, _, _ := strings.Cut(rest, " ")
+			out = append(out, lvl)
+		}
+		buf.Reset()
+		return strings.Join(out, " ")
+	}
+	for i := range 12 {
+		f.note(r, fail, at.Add(time.Duration(i)*time.Minute))
+	}
+	if got := levels(); got != strings.TrimSpace(strings.Repeat("DEBUG ", 10)+"WARN DEBUG") {
+		t.Errorf("12 failed checks a minute apart logged %s", got)
+	}
+	f.note(r, nil, at.Add(12*time.Minute))
+	f.note(r, nil, at.Add(13*time.Minute))
+	if got := levels(); got != "INFO" {
+		t.Errorf("after the warning, two good checks logged %s", got)
+	}
+	f.note(r, fail, at.Add(14*time.Minute))
+	if got := levels(); got != "DEBUG" {
+		t.Errorf("a new failure logged %s", got)
 	}
 }

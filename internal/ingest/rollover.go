@@ -70,13 +70,23 @@ func (r *Rollover) Index(dayIndex string) string {
 	return dayIndex
 }
 
-// Run checks at once and then every RolloverEvery until ctx ends.
+// RolloverWarnAfter is how long the checks must keep failing before Run
+// warns: until then a busy day's index may only grow past the rollover
+// size a little.
+const RolloverWarnAfter = 10 * time.Minute
+
+// Run checks at once and then every RolloverEvery until ctx ends. A check
+// that fails is logged at debug level; checks failing for
+// RolloverWarnAfter are warned about once, as busy days then stop rolling
+// over.
 func (r *Rollover) Run(ctx context.Context) {
 	t := time.NewTicker(RolloverEvery)
 	defer t.Stop()
+	var fl rolloverFailures
 	for {
-		if err := r.Check(ctx); err != nil && ctx.Err() == nil && r.Log != nil {
-			r.Log.Debug("could not check the size of today's indices; tried again in a minute", "prefix", r.Prefix, "err", err)
+		err := r.Check(ctx)
+		if ctx.Err() == nil {
+			fl.note(r, err, time.Now())
 		}
 		select {
 		case <-ctx.Done():
@@ -84,6 +94,39 @@ func (r *Rollover) Run(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// rolloverFailures is how long Run's checks have been failing.
+type rolloverFailures struct {
+	since  time.Time
+	warned bool
+}
+
+// note logs the outcome of a check made at now: a failure at debug level
+// until the checks have failed for RolloverWarnAfter, then once as a
+// warning, and the first success after that warning.
+func (f *rolloverFailures) note(r *Rollover, err error, now time.Time) {
+	log := r.Log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	if err == nil {
+		if f.warned {
+			log.Info("the size of today's indices can be checked again; busy days roll over", "prefix", r.Prefix)
+		}
+		*f = rolloverFailures{}
+		return
+	}
+	if f.since.IsZero() {
+		f.since = now
+	}
+	if !f.warned && now.Sub(f.since) >= RolloverWarnAfter {
+		log.Warn("could not check the size of today's indices for a while, so a busy day's index is not split and keeps growing",
+			"prefix", r.Prefix, "since", f.since.UTC().Format(time.RFC3339), "err", err)
+		f.warned = true
+		return
+	}
+	log.Debug("could not check the size of today's indices; tried again in a minute", "prefix", r.Prefix, "err", err)
 }
 
 // Check lists the parts of the days events are being written to
