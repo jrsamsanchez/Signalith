@@ -941,13 +941,20 @@ func singleExpr(e query.EvalExpr, stages []string, raw bool) bool {
 // runPost runs the rule's later stages over events, with its lookups
 // against the pack's tables.
 func (r *Rule) runPost(docs []map[string]any) ([]search.Row, error) {
+	return r.runPostWith(docs, nil)
+}
+
+// runPostWith is runPost with the events a join's subsearch reads (nil
+// for none).
+func (r *Rule) runPostWith(docs []map[string]any, jc *joinInput) ([]search.Row, error) {
 	ctx := context.Background()
 	cmds := r.post
 	var rows []search.Row
+	joins := 0
 	for len(cmds) > 0 {
 		i := slices.IndexFunc(cmds, func(c query.Command) bool {
 			switch c.(type) {
-			case *query.Lookup, *query.IPLocation:
+			case *query.Lookup, *query.IPLocation, *query.Join:
 				return true
 			}
 			return false
@@ -958,6 +965,10 @@ func (r *Rule) runPost(docs []map[string]any) ([]search.Row, error) {
 		var err error
 		if i > 0 {
 			rows, err = search.RunCommands(ctx, docs, cmds[:i])
+		} else if j, ok := cmds[0].(*query.Join); ok {
+			rows, err = r.runJoin(ctx, docs, j, joins, jc)
+			joins++
+			i = 1
 		} else {
 			rows, err = r.runLookup(ctx, docs, cmds[0])
 			i = 1

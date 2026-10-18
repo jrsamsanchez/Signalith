@@ -71,6 +71,19 @@ var windowsSources = []string{
 	"Linux Auditd Daemon Abort",
 }
 
+// windowsSource reports whether a data source is one of windowsSources,
+// or events of several of them together (Sysmon EventID 1 AND Sysmon
+// EventID 11), as a rule that joins a program start to the file it
+// writes reads.
+func windowsSource(s string) bool {
+	for _, part := range strings.Split(s, " AND ") {
+		if !slices.Contains(windowsSources, strings.TrimSpace(part)) {
+			return false
+		}
+	}
+	return true
+}
+
 // maxWildcardTerms keeps a rule's searches under
 // OpenSearch's default limit of 1,024 clauses in one search (see
 // search.WildcardFieldTerms and search.Clauses), as for the SigmaHQ pack.
@@ -215,7 +228,7 @@ func main() {
 				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
 			}
-		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web &&
+		} else if !slices.ContainsFunc(meta.DataSource, windowsSource) && !web &&
 			!cloudSearch.MatchString(meta.Search) && !slices.Equal(meta.DataSource, []string{"Okta"}) && !slices.Equal(meta.DataSource, []string{"Osquery Results"}) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue

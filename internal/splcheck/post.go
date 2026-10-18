@@ -22,6 +22,10 @@ import (
 // event is one the rule finds when the filter matches it and the later
 // stages keep a row for it (Keeps).
 
+// integrityMatchRe is a test of a program's integrity level by a
+// regular expression or a pattern, which compare case.
+var integrityMatchRe = regexp.MustCompile(`(?i)\b(?:match|like)\(\s*'?process_integrity_level\b`)
+
 // postMacros are the macros a later stage may name that change nothing
 // Signalith shows: time formats, the data model's field prefixes, and
 // the rule's own (empty) filter.
@@ -54,9 +58,24 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
 	}
 	for i, s := range stages {
+		if m := joinStageRe.FindStringSubmatch(strings.TrimSpace(s)); m != nil {
+			// A join of a tstats subsearch's rows, whose own stages are
+			// read as the subsearch's (joinStage). Only its fields are
+			// named here.
+			conv, fields, err := r.joinStage(m[1], m[2])
+			if err != nil {
+				return err
+			}
+			parts = append(parts, conv)
+			scan = append(scan, "fields "+strings.Join(fields, " "))
+			continue
+		}
 		s = strings.TrimSpace(postMacros.ReplaceAllString(s, ""))
 		if s == "" {
 			continue
+		}
+		if integrityMatchRe.MatchString(s) {
+			return fmt.Errorf("a later stage matches the integrity level's case, which Sysmon writes as High")
 		}
 		if c, ok := channelStage(r.Node, s); ok {
 			s = c
@@ -141,12 +160,15 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		scan = append(scan, s)
 		grouped = grouped || strings.HasPrefix(s, "stats ") || strings.HasPrefix(s, "table ")
 	}
-	if len(parts) == 0 {
+	if len(parts) == 0 && !r.sub {
 		return nil
 	}
 	text := strings.Join(parts, "\n| ")
 	named := strings.Join(scan, "\n| ")
-	if group != "" {
+	if group != "" && len(parts) == 0 {
+		// A join's subsearch with no stages after its grouping.
+		text, named = group, group
+	} else if group != "" {
 		text = group + "\n| " + nodeFieldRe.ReplaceAllString(text, "$1")
 		named = group + "\n| " + nodeFieldRe.ReplaceAllString(named, "$1")
 	}
@@ -171,10 +193,25 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	if err != nil {
 		return fmt.Errorf("search has a later stage Signalith does not run: %s", positionRe.ReplaceAllString(err.Error(), ""))
 	}
+	joins := 0
 	for _, c := range q.Commands {
 		switch c.(type) {
-		case *query.Join, *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.Map, *query.AddInfo:
+		case *query.Join:
+			joins++
+		case *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
+		}
+	}
+	if joins != len(r.Joins) {
+		return fmt.Errorf("search has a later stage Signalith does not run: join")
+	}
+	i := 0
+	for k, c := range q.Commands {
+		if _, ok := c.(*query.Join); ok {
+			if err := joinFieldsSafe(r.Node, q.Commands[:k], r.Joins[i]); err != nil {
+				return err
+			}
+			i++
 		}
 	}
 	r.Post = text

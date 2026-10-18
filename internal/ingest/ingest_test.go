@@ -523,14 +523,14 @@ func TestSysmonMultiLineCommandLine(t *testing.T) {
 }
 
 func TestSysmonNetwork(t *testing.T) {
-	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"
+	msg := "Network connection detected:\r\nRuleName: -\r\nProcessId: 6120\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3,
 		"ProviderName": "Microsoft-Windows-Sysmon", "Message": msg})
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	doc := ev.Document()
 	expect(t, doc, map[string]any{
 		"datamodel": "Network_Traffic", "dest": "198.51.100.7", "dest_port": int64(4444), "process_name": "nc.exe", "transport": "tcp",
-		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon",
+		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon", "process_id": int64(6120),
 	})
 	if _, ok := doc["dest_port_name"]; ok {
 		t.Errorf("dest_port_name '-' should be dropped")
