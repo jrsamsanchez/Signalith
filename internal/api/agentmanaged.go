@@ -46,6 +46,7 @@ const agentPollSeconds = 300
 func (s *Server) routeAgentManaged(mux *http.ServeMux, api *router) {
 	mux.HandleFunc("GET "+agentproto.RouteInstallSH, s.handleInstallScript(clusterinstall.ScriptAgent))
 	mux.HandleFunc("GET "+agentproto.RouteInstallPS1, s.handleInstallScript(clusterinstall.ScriptAgentPS1))
+	mux.HandleFunc("GET "+agentproto.RouteInstallMacOS, s.handleInstallScript(clusterinstall.ScriptAgentMac))
 	api.admin("GET /api/agent/install", s.handleAgentInstall)
 }
 
@@ -328,6 +329,14 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		}
 		cfg.FluentBit = &agentproto.FluentBit{Config: a.Config}
 		cfg.CA = a.CA
+		if facts.with(collect).Osquery {
+			cfg.Osquery = agentOsquery(goos, opts)
+		}
+	} else if goos == "darwin" {
+		// On macOS osquery is the agent's only collector: program starts,
+		// inventory, file changes and checks.
+		opts := s.agentManagedOptions(server, goos, facts, collect, certs)
+		cfg.CA = strings.TrimSpace(opts.CA)
 		if facts.with(collect).Osquery {
 			cfg.Osquery = agentOsquery(goos, opts)
 		}

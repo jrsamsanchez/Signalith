@@ -7,7 +7,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/signalith ./cmd/signalith
 # The Signalith Agent's programs, which Signalith hands to the computers it
 # is installed on (docs/signalith-agent.md).
-RUN for p in linux-amd64 linux-arm64 windows-amd64; do \
+RUN for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do \
       ext=''; [ "${p%-*}" = windows ] && ext=.exe; \
       GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/agents/signalith-agent-$p$ext ./cmd/signalith-agent || exit 1; \

@@ -1057,8 +1057,8 @@ sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the senso
 arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
 minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
-`GET /api/agent/install.sh` and `GET /api/agent/install.ps1` (the [Signalith Agent](signalith-agent.md)'s
-install scripts for Linux and Windows, also public), and the four routes the script and the agent call with the agent's token,
+`GET /api/agent/install.sh`, `GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh` (the
+[Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the four routes the script and the agent call with the agent's token,
 `GET /api/agent/program` (the agent program), `GET /api/agent/manifest` (the programs' signed
 manifest, for updates), `GET /api/agent/config` (what the agent runs) and
 `POST /api/agent/status` (how its collectors run); all four take only an active token made for

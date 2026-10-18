@@ -240,11 +240,13 @@ window.sensorText = (function () {
     const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
     const trouble = managedTrouble(m);
     // Where to read a collector's last lines on the computer: osquery and
-    // the updater have their own services on Linux; on Windows the updater
-    // writes updater.log and the rest agent.log.
+    // the updater have their own services on Linux; on Windows and macOS
+    // the updater writes updater.log and the rest agent.log.
+    const logFile = (c) => (c.name === 'update' ? 'updater' : 'agent') + '.log';
     const logCommand = (c) => m.os === 'windows'
-      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\' + (c.name === 'update' ? 'updater' : 'agent') + '.log\' -Tail 50'
-      : 'sudo journalctl -u ' + ({ osquery: 'signalith-osquery', update: 'signalith-agent-update' }[c.name] || 'signalith-agent') + ' -n 50';
+      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\' + logFile(c) + '\' -Tail 50'
+      : m.os === 'darwin' ? 'sudo tail -n 50 /var/lib/signalith-agent/' + logFile(c)
+        : 'sudo journalctl -u ' + ({ osquery: 'signalith-osquery', update: 'signalith-agent-update' }[c.name] || 'signalith-agent') + ' -n 50';
     const why = [];
     if (m.config_error) why.push('It could not get a new configuration from Signalith, so it keeps the one it has: ' + m.config_error);
     for (const c of m.components || []) {

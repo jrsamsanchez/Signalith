@@ -10,11 +10,12 @@
 // line holds the token placeholder until Copy, which makes the token
 // (agentTokEnsure) and puts it in. After a copy, the card waits for the
 // agent: it reads api/agents every 10 seconds, for up to 30 minutes, until
-// an agent with the new token reports. Linux and Windows each have their
-// line. Both install osquery too unless it is unticked (--osquery,
-// -Osquery), from its publisher; the agent then runs it with Signalith as
-// its management server. On Windows the line can also install Sysmon
-// (-Sysmon), which the script downloads from Microsoft.
+// an agent with the new token reports. Linux, Windows and macOS each have
+// their line. The Linux and Windows lines install osquery too unless it is
+// unticked (--osquery, -Osquery), from its publisher; the agent then runs
+// it with Signalith as its management server. On Windows the line can also
+// install Sysmon (-Sysmon), which the script downloads from Microsoft. On a
+// Mac osquery is what collects, so its line always installs it.
 'use strict';
 
 (function () {
@@ -34,6 +35,11 @@
       ['globe', 'Outbound HTTPS', 'To Signalith, to packages.fluentbit.io for Fluent Bit, to pkg.osquery.io for osquery if you keep it, and to Microsoft for Sysmon if you add it. Nothing has to reach the computer.'],
       LATER,
     ],
+    darwin: [
+      ['laptop', 'A Mac', 'macOS 12 or later, Apple silicon or Intel, and an administrator to run the line and give osquery Full Disk Access.'],
+      ['globe', 'Outbound HTTPS', 'To Signalith, and to pkg.osquery.io for osquery. Nothing has to reach the Mac.'],
+      ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps osquery running: program starts, inventory, file changes and checks.'],
+    ],
   };
   // S.data is the latest line as the server sent it, S.wait the wait for
   // the agent after a copy, S.os the system picked, S.osquery whether the
@@ -41,7 +47,8 @@
   // Sysmon too.
   const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', osquery: true, sysmon: false };
   try {
-    if (localStorage.getItem(OS_KEY) === 'windows') S.os = 'windows';
+    const saved = localStorage.getItem(OS_KEY);
+    if (saved === 'windows' || saved === 'darwin') S.os = saved;
   } catch (_) { /* storage may be blocked */ }
 
   const card = $('agent-setup');
@@ -65,7 +72,7 @@
       return false;
     }
     $('agent-title').textContent = 'Install the Signalith Agent';
-    $('agent-sub').textContent = 'One line per computer installs the agent and Fluent Bit. Signalith then tells the agent what to collect, so there is no configuration file to edit.';
+    $('agent-sub').textContent = 'One line per computer installs the agent. Signalith then tells it what to collect, so there is no configuration file to edit.';
     load();
     return true;
   };
@@ -134,23 +141,28 @@
       return;
     }
     const win = S.os === 'windows';
+    const mac = S.os === 'darwin';
     const copyBtn = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', id: 'agent-install-copy' }, icon('copy'), el('span', {}, 'Copy'));
     copyBtn.addEventListener('click', () => copyLine(copyBtn));
     const seg = el('div', { class: 'seg seg--sm agent-install__os', role: 'group', 'aria-label': 'Kind of computer' },
-      ...[['linux', 'Linux'], ['windows', 'Windows']].map(([os, label]) => {
+      ...[['linux', 'Linux'], ['windows', 'Windows'], ['darwin', 'macOS']].map(([os, label]) => {
         const b = el('button', { type: 'button', 'aria-pressed': String(S.os === os) }, label);
         b.addEventListener('click', () => pickOS(os));
         return b;
       }));
     const programs = d.programs || [];
-    const missing = (win ? ['windows-amd64'] : ['linux-amd64', 'linux-arm64']).filter((p) => !programs.includes(p));
+    const wanted = { linux: ['linux-amd64', 'linux-arm64'], windows: ['windows-amd64'], darwin: ['darwin-arm64', 'darwin-amd64'] }[S.os];
+    const missing = wanted.filter((p) => !programs.includes(p));
     let missingText = 'This server has no agent program to hand out.';
-    if (!win && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'linux-arm64' ? 'ARM' : 'x86') + ' computers.';
+    if (S.os === 'linux' && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'linux-arm64' ? 'ARM' : 'x86') + ' computers.';
+    if (mac && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'darwin-arm64' ? 'Apple silicon' : 'Intel') + ' Macs.';
+    if (mac && missing.length === 2) missingText = 'This server has no agent program for Macs.';
     if (win) missingText = 'This server has no agent program for Windows.';
     const noProgram = missing.length
       ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
         el('div', {}, el('b', {}, missingText),
-          el('p', {}, 'Released versions of Signalith (packages, Docker image) carry them; a build from source does not. Until then, set up Fluent Bit by hand with the ' + (win ? 'Windows' : 'Linux') + ' option.')))
+          el('p', {}, 'Released versions of Signalith (packages, Docker image) carry them; a build from source does not. Until then, ' +
+            (mac ? 'set osquery up by hand with the osquery option.' : 'set up Fluent Bit by hand with the ' + (win ? 'Windows' : 'Linux') + ' option.'))))
       : null;
     // option is a tick box that changes the line.
     const option = (id, key) => {
@@ -163,7 +175,8 @@
       });
       return box;
     };
-    const osquery = el('div', { class: 'agent-install__opt' },
+    const osquery = mac ? el('p', { class: 'hint' }, icon('shield-check'), el('span', {},
+      'The line installs osquery too, from osquery.io, only when Apple says osquery’s developer signed it. On a Mac it collects for the agent: program starts, inventory, file changes and checks. Give it Full Disk Access afterwards, as the line says.')) : el('div', { class: 'agent-install__opt' },
       el('label', { class: 'check' }, option('agent-install-osquery', 'osquery'), el('span', {}, el('b', {}, 'Also install osquery'), ' for inventory, file changes and live queries on the Endpoints page')),
       el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, win
         ? 'The script downloads it from osquery.io and checks its signature. The agent runs it with Signalith as its management server; nothing else to set up.'
@@ -188,15 +201,14 @@
       sysmon,
       el('div', { class: 'agent-file sensor-line' },
         el('div', { class: 'agent-file__bar' }, icon('terminal'),
-          el('span', { class: 'agent-file__name' }, win ? 'Run on each computer, in PowerShell opened with Run as administrator' : 'Run on each computer, as a user who can use sudo'),
+          el('span', { class: 'agent-file__name' }, win ? 'Run on each computer, in PowerShell opened with Run as administrator' : mac ? 'Run on each Mac, in Terminal, as an administrator' : 'Run on each computer, as a user who can use sudo'),
           el('span', { class: 'spacer' }), copyBtn),
         el('pre', { class: 'sensor-line__text', id: 'agent-install-line', tabindex: '0', 'aria-label': 'The line to run on each computer' }, ...agentTokShown(currentLine(), true))),
-      el('p', { class: 'hint' }, icon('info'), el('span', {}, win ? d.windows_note : d.note)),
+      el('p', { class: 'hint' }, icon('info'), el('span', {}, win ? d.windows_note : mac ? d.macos_note : d.note)),
       ca,
       el('p', { class: 'hint' }, icon('list-checks'), el('span', {}, 'It checks the computer and the token before it installs anything, and says what stopped it. Add ',
         el('code', {}, win ? '-DryRun $env:TEMP\\agent' : '--dry-run /tmp/agent'), ' to the end to see what it would change (it writes the files under that folder). Running it again is safe. ',
         el('a', { href: 'https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md', target: '_blank', rel: 'noopener' }, 'Signalith Agent guide', icon('external-link', 'icon--xs')))),
-      el('p', { class: 'hint' }, icon('laptop'), el('span', {}, 'macOS: the agent is coming next. Until then, use the osquery option for Macs.')),
       el('div', { id: 'agent-install-wait', role: 'status', 'aria-live': 'polite' })].filter(Boolean));
     drawWait();
   }
@@ -206,6 +218,7 @@
   function currentLine() {
     const d = S.data;
     if (!d) return '';
+    if (S.os === 'darwin') return d.macos;
     if (S.os !== 'windows') return d.linux + (S.osquery ? ' --osquery' : '');
     return d.windows + (S.osquery ? ' -Osquery' : '') + (S.sysmon ? ' -Sysmon' : '');
   }

@@ -41,8 +41,11 @@ outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io`, for osquer
 `pkg.osquery.io`, and for Sysmon to `download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
 PowerShell 7, opened with **Run as administrator**.
 
-Nothing has to reach the computer. macOS is next; until then, use
-[osquery](endpoints.md) or the [OpenTelemetry Collector](opentelemetry.md) for Macs.
+On **macOS**: macOS 12 or later, on Apple silicon or Intel, with outbound HTTPS to
+Signalith's agent port and to `pkg.osquery.io`. On a Mac the agent runs osquery, which
+collects process starts, sign-ins, file changes and the inventory (see [On a Mac](#on-a-mac)).
+
+Nothing has to reach the computer.
 
 ## Install it
 
@@ -51,11 +54,11 @@ Nothing has to reach the computer. macOS is next; until then, use
    port, such as `https://siem.example.com:7779`.
 3. Name the token, or keep the name given, and select **Copy**. Signalith makes an agent
    token for the computers you install from this line and puts it in the line.
-4. Pick **Linux** or **Windows** above the line. **Also install osquery** is ticked; untick
+4. Pick **Linux**, **Windows** or **macOS** above the line. **Also install osquery** is ticked; untick
    it to leave osquery out (see [osquery](#osquery)). On Windows, tick **Also install
    Sysmon** to add it (see [Sysmon](#sysmon-on-windows)).
-5. On the computer, paste the line: on Linux in a terminal, as a user who can use `sudo`;
-   on Windows in PowerShell opened with **Run as administrator**.
+5. On the computer, paste the line: on Linux and macOS in a terminal, as a user who can
+   use `sudo`; on Windows in PowerShell opened with **Run as administrator**.
 
 The Linux line looks like this (the page fills in the real values):
 
@@ -67,6 +70,8 @@ The Linux line looks like this (the page fills in the real values):
 
 The Windows line does the same in PowerShell, ending with
 `'sgl_…' | & $f -From https://siem.example.com:7779 -CaSha256 <hex> -Version 0.4.0 -Token - -Osquery`.
+The macOS line fetches `install-macos.sh` instead, checks it with `shasum -a 256`, and
+always installs osquery.
 
 The script checks the computer, then Signalith, before it installs anything, and stops
 with a plain message at the first problem. When it finishes, the computer shows on the
@@ -77,7 +82,7 @@ Use the same line on as many computers as you like: they share its token. Make a
 (with a new token) for each group you may want to cut off on its own, such as web servers
 and domain controllers.
 
-To see what it would change first, add `--dry-run /tmp/agent` (Linux) or
+To see what it would change first, add `--dry-run /tmp/agent` (Linux and macOS) or
 `-DryRun $env:TEMP\agent` (Windows) to the end of the line: it writes every file under
 that folder and prints the commands instead of running them.
 
@@ -196,7 +201,33 @@ Get-Service SignalithAgent                                          # the servic
 Get-Content 'C:\ProgramData\Signalith Agent\agent.log' -Tail 50    # the agent's and Fluent Bit's log
 ```
 
-### Both
+### macOS
+
+| Path | What it is |
+|---|---|
+| `/opt/signalith-agent/bin/signalith-agent` | The agent program |
+| `/etc/signalith-agent/agent.conf` | The server address, written by the install line |
+| `/etc/signalith-agent/token` | The agent token (root only) |
+| `/etc/signalith-agent/ca.pem` | Signalith's certificate authority |
+| `/etc/signalith-agent/osquery.flags` | osquery's settings, written by the agent |
+| `/var/lib/signalith-agent/` | The configuration in use, osquery's database, the agent's status, its log `agent.log` and the updater's log `updater.log` |
+| `/Library/LaunchDaemons/io.signalith.agent.plist` | The agent's service, which macOS starts at boot and starts again when it stops |
+| `/opt/osquery/` | osquery, from its signed package |
+| `/opt/signalith-agent/lib/install-macos.sh` | A copy of the install script, for `--uninstall` |
+
+The agent runs osquery itself. If osquery's own `io.osquery.agent` service was set up by
+hand, the script warns about it, since both would send the same events; remove it with
+`sudo launchctl bootout system/io.osquery.agent`.
+
+Useful commands:
+
+```sh
+sudo /opt/signalith-agent/bin/signalith-agent status   # how the agent and osquery are
+sudo launchctl print system/io.signalith.agent         # the service
+sudo tail -n 50 /var/lib/signalith-agent/agent.log     # the agent's and osquery's log
+```
+
+### All of them
 
 When Signalith cannot be reached, the agent keeps running the configuration it has and
 Fluent Bit keeps events in its buffer until Signalith is back.
@@ -211,6 +242,12 @@ systemd journal otherwise, and adds Sysmon for Linux's events when Sysmon is ins
 On Windows, it collects what the **Windows** option collects: the Security, System and
 Application logs, Defender, PowerShell (with script blocks) and the other event logs the
 detections use, and Sysmon's log when Sysmon is installed.
+
+On macOS, everything comes from osquery: process starts (from Apple's EndpointSecurity,
+once osquery has Full Disk Access), the inventory, file changes in the watched folders,
+and the checks on the [Endpoints page](endpoints.md). The choices below that name a
+Linux or Windows log do nothing on a Mac; turning **osquery** off stops the Mac's
+collection.
 
 ### Change what agents collect
 
@@ -260,6 +297,26 @@ computer.
 - A run again without `--osquery` keeps osquery once the script installed it.
   `--uninstall` removes osquery only if the script installed it, and turns osquery's own
   service back on otherwise.
+
+## On a Mac
+
+macOS keeps its system logs in a form only Apple's own tools read, so on a Mac the agent
+collects with osquery, which reads what the detections need through Apple's interfaces.
+
+- The script installs osquery's package from `pkg.osquery.io` only when it is signed by
+  osquery's developer (Apple Developer ID team `3522FA9PXF`), checked with `pkgutil`, and
+  runs an osquery already installed only when `codesign` shows the same signer. Give
+  `--osquery-sha256 <hex>` to check the package against a SHA-256 instead.
+- osquery needs **Full Disk Access** to see process starts and files under users' home
+  folders. macOS lets only a person at the Mac (or a device management profile) grant it:
+  open **System Settings > Privacy & Security > Full Disk Access**, select **+**, press
+  **Cmd+Shift+G**, type `/opt/osquery/lib/osquery.app` and add it. The script prints the
+  same steps when it finishes. With a management tool such as Jamf or Intune, grant it
+  with a Privacy Preferences Policy Control profile for the bundle ID `io.osquery.agent`
+  instead, before or after running the line.
+- The agent programs for macOS are not notarized by Apple. The line downloads the agent
+  with `curl`, which macOS does not mark as downloaded from the internet, so Gatekeeper
+  does not stop it; do not copy the program to Macs by other means.
 
 ## Sysmon on Windows
 
@@ -342,6 +399,12 @@ On Windows, in an elevated PowerShell:
 & 'C:\Program Files\Signalith Agent\install.ps1' -Uninstall
 ```
 
+On macOS:
+
+```sh
+sudo sh /opt/signalith-agent/lib/install-macos.sh --uninstall
+```
+
 Then revoke the line's token in **Settings > Agent tokens** if no other computer uses it.
 
 ## When something goes wrong
@@ -353,9 +416,11 @@ The install line says what stopped it and how to fix it. The common ones:
 | Signalith refused the token | Make the line again on **Add data**: the token was revoked, or the line was cut off when copied. |
 | This Signalith's certificate authority is not the one the line names | Copy the line again. If it keeps failing, something between the computer and Signalith is answering in its place. |
 | This Signalith has no agent program | Signalith was built from source. Released versions (packages, Docker image) carry the agent programs. |
-| Update failed | The agent went back to the version before. `sudo journalctl -u signalith-agent-update -n 50` (Linux) or `C:\ProgramData\Signalith Agent\updater.log` (Windows) shows why. |
+| Update failed | The agent went back to the version before. `sudo journalctl -u signalith-agent-update -n 50` (Linux), `C:\ProgramData\Signalith Agent\updater.log` (Windows) or `sudo tail /var/lib/signalith-agent/updater.log` (macOS) shows why. |
 | Fluent Bit is not running | `sudo journalctl -u signalith-agent -n 50` (Linux) or `agent.log` (Windows) shows Fluent Bit's last lines. |
-| osquery is not running yet | `sudo journalctl -u signalith-osquery -n 50` (Linux) or `agent.log` (Windows) shows osquery's last lines. |
+| osquery is not running yet | `sudo journalctl -u signalith-osquery -n 50` (Linux) or `agent.log` (Windows and macOS) shows osquery's last lines. |
+| No process starts from a Mac | Give osquery Full Disk Access (see [On a Mac](#on-a-mac)). |
+| The agent runs on macOS 12 or later | Update macOS, or set osquery up by hand from **Add data > osquery**. |
 | The osquery MSI has no valid signature | Check the MSI's SHA-256 against the one on osquery's download page and add `-OsquerySha256 <hex>`, or run the line without `-Osquery`. |
 | Run this in PowerShell opened with Run as administrator | Right-click PowerShell, choose **Run as administrator**, and paste the line again. |
 | The Microsoft Visual C++ runtime it needs is missing | Install it from Microsoft (the message has the link) and run the line again. |
@@ -373,8 +438,9 @@ makes the line, and the routes the script and agent call with the agent token ar
 update in `update`) and `POST /api/agent/status`. Updates are in
 `internal/agentd/update.go` and the release key in `internal/agentproto/release.keys`. What the agent and server say to each other is in
 `internal/agentproto`. The agent is `cmd/signalith-agent` and `internal/agentd`; the
-install scripts are `deploy/agent/install.sh` and `deploy/agent/install.ps1` (served at
-`GET /api/agent/install.sh` and `GET /api/agent/install.ps1`). The server hands out the agent programs in
+install scripts are `deploy/agent/install.sh`, `deploy/agent/install.ps1` and
+`deploy/agent/install-macos.sh` (served at `GET /api/agent/install.sh`,
+`GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh`). The server hands out the agent programs in
 `/usr/share/signalith/agents` (the packages and the Docker image put them there), the
 `agents` folder next to the `signalith` program, or the folder in
 `SIGNALITH_AGENT_PROGRAMS`.

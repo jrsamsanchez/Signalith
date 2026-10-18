@@ -21,7 +21,8 @@ type Paths struct {
 	// State holds the configuration in use, the health file and the
 	// collectors' buffers.
 	State string
-	// FluentBit is Fluent Bit's program.
+	// FluentBit is Fluent Bit's program; "" on macOS, where osquery is
+	// the agent's only collector.
 	FluentBit string
 	// Osqueryd is osquery's program; the computer has osquery when it
 	// exists.
@@ -31,7 +32,8 @@ type Paths struct {
 	OsqueryUnit string
 	// Program is the agent program as installed, Prev the copy of the
 	// version before an update (kept for going back), and Service the
-	// agent's service (systemd unit or Windows service name).
+	// agent's service (systemd unit, launchd label or Windows service
+	// name).
 	Program, Prev, Service string
 }
 
@@ -48,6 +50,12 @@ func DefaultPaths() Paths {
 		return Paths{Conf: data, State: data, FluentBit: filepath.Join(dir, "fluent-bit", "bin", "fluent-bit.exe"),
 			Osqueryd: filepath.Join(prog, "osquery", "osqueryd", "osqueryd.exe"),
 			Program:  filepath.Join(dir, "signalith-agent.exe"), Prev: filepath.Join(dir, "signalith-agent.prev.exe"), Service: "SignalithAgent"}
+	case "darwin":
+		// /opt rather than /usr/local, which Homebrew gives the user on
+		// Intel Macs: root runs the program, so only root may change it.
+		return Paths{Conf: "/etc/signalith-agent", State: "/var/lib/signalith-agent",
+			Osqueryd: "/opt/osquery/lib/osquery.app/Contents/MacOS/osqueryd",
+			Program:  "/opt/signalith-agent/bin/signalith-agent", Prev: "/opt/signalith-agent/lib/signalith-agent.prev", Service: "io.signalith.agent"}
 	default:
 		return Paths{Conf: "/etc/signalith-agent", State: "/var/lib/signalith-agent", FluentBit: "/opt/fluent-bit/bin/fluent-bit",
 			Osqueryd: "/opt/osquery/bin/osqueryd", OsqueryUnit: "signalith-osquery.service",
