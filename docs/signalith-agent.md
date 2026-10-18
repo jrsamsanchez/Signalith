@@ -90,6 +90,9 @@ writes every file under that folder and prints the commands instead of running t
   authorities only when it still trusts the server it is talking to, so a mistake cannot
   cut the computer off. Where packages come from, and their signing keys, are in the
   script, never in what the server sends.
+  The server does decide what Fluent Bit reads and where it sends, as root on every
+  computer with the agent, within the limits below: guard Signalith's admin accounts and
+  the server itself as you would any tool that manages your computers.
 - **The service is fenced in.** The agent runs as root so Fluent Bit can read every log,
   but its systemd service keeps only the right to read files
   (`CapabilityBoundingSet=CAP_DAC_READ_SEARCH`), sees the system read-only
