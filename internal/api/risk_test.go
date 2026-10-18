@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 func put(t *testing.T, url, body string) (int, string) {
@@ -90,5 +93,21 @@ func TestRiskEndpoints(t *testing.T) {
 	code, out = do(t, ts, "GET", "/api/risk/object?object=bob&type=user", "", true)
 	if code != 200 || !strings.Contains(out["query"].(string), "risk_object=bob") {
 		t.Errorf("object = %d %v", code, out)
+	}
+}
+
+// max(_time) is epoch seconds; the Risk page needs a date it can read.
+func TestRiskLastSeenIsADate(t *testing.T) {
+	seen := time.Now().Add(-time.Hour).Truncate(time.Millisecond)
+	rows := []search.Row{{"last_seen": float64(seen.UnixMilli()) / 1000}, {"last_seen": seen.Unix()}, {"risk_object": "bob"}}
+	lastSeenAsTime(rows)
+	for i, r := range rows[:2] {
+		got, err := time.Parse(time.RFC3339Nano, r["last_seen"].(string))
+		if err != nil || time.Since(got) > 24*time.Hour || time.Since(got) < time.Hour-time.Second {
+			t.Errorf("row %d: last_seen = %v", i, r["last_seen"])
+		}
+	}
+	if _, ok := rows[2]["last_seen"]; ok {
+		t.Errorf("row without last_seen = %v", rows[2])
 	}
 }

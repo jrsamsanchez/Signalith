@@ -153,7 +153,7 @@ func TestActivityLinksEntities(t *testing.T) {
 	}
 	run := &fakeRun{rows: map[string][]map[string]any{
 		"Authentication": {
-			{"user": "alice", "src": "10.0.0.9", "dest": "ws-fin-07", "action": "success", "count": 3.0, "first": float64(t0.UnixMilli()), "last": float64(t0.UnixMilli())},
+			{"user": "alice", "src": "10.0.0.9", "dest": "ws-fin-07", "action": "success", "count": 3.0, "first": float64(t0.Unix()), "last": float64(t0.Unix())},
 			// Touches nothing in the story: does not add nodes.
 			{"user": "carol", "src": "10.0.0.20", "dest": "file-01", "action": "success", "count": 9.0},
 		},
