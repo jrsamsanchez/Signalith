@@ -126,8 +126,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 **One agent per computer**
 :   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
-    what to collect, so nobody edits a Fluent Bit configuration. Linux and Windows (with
-    optional Sysmon) are in; osquery inside the agent, choosing what each group collects
+    what to collect, so nobody edits a Fluent Bit or osquery configuration. Linux and
+    Windows (with osquery and optional Sysmon) are in; choosing what each group collects
     from the Endpoints page, signed updates and macOS come next.
 
 **Tenants**

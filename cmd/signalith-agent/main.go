@@ -5,6 +5,9 @@
 //	signalith-agent run       run the agent (what the service runs)
 //	signalith-agent status    show how the agent and its collectors are
 //	signalith-agent version   show the agent's version
+//	signalith-agent osquery-flags <in> <out>
+//	                          check osquery's flags and write the checked
+//	                          copy (osquery's Linux service runs this)
 package main
 
 import (
@@ -45,6 +48,9 @@ const usage = `usage: signalith-agent run | status | version
 `
 
 func run(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 3 && args[0] == "osquery-flags" {
+		return osqueryFlags(agentd.DefaultPaths(), args[1], args[2])
+	}
 	if len(args) != 1 {
 		fmt.Fprint(stderr, usage)
 		return errors.New("one command is needed")
@@ -87,6 +93,37 @@ func newAgent(paths agentd.Paths, w io.Writer) (*agentd.Agent, error) {
 		Log: slog.New(slog.NewTextHandler(w, nil)), Out: w}
 	a.Log.Info("Signalith Agent starting", "version", version, "server", settings.Server)
 	return a, nil
+}
+
+// osqueryFlags checks the flags file in and writes the checked copy to
+// out, which osquery then runs with.
+func osqueryFlags(paths agentd.Paths, in, out string) error {
+	f, err := os.Open(in)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 64<<10+1))
+	if err != nil {
+		return err
+	}
+	if len(b) > 64<<10 {
+		return errors.New("osquery's flags file is larger than the agent writes")
+	}
+	text, err := agentd.CheckOsqueryFlags(paths, string(b))
+	if err != nil {
+		return err
+	}
+	_ = os.Remove(out)
+	o, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := o.WriteString(text); err != nil {
+		o.Close()
+		return err
+	}
+	return o.Close()
 }
 
 // status prints what the running agent last wrote down.

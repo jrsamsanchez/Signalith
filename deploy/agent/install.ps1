@@ -7,7 +7,7 @@
 # with Run as administrator. It downloads this script from Signalith,
 # checks its SHA-256, and runs it with the agent token on the pipeline:
 #
-#   ... 'sgl_...' | & $f -From https://siem:7779 -CaSha256 <hex> -Version 0.4.0 -Token -
+#   ... 'sgl_...' | & $f -From https://siem:7779 -CaSha256 <hex> -Version 0.4.0 -Token - -Osquery
 #
 # "-Token -" reads the token from the pipeline. The script runs in the same
 # PowerShell, so the token is on no program's command line, and the script
@@ -30,12 +30,18 @@
 #      Microsoft (its license does not allow handing it out otherwise),
 #      checks that Microsoft signed it, and installs it with the
 #      configuration below. A Sysmon already installed keeps its own.
-#   5. Downloads the agent program from Signalith and checks its SHA-256,
+#   5. With -Osquery: when osquery is not installed yet, downloads its MSI
+#      from its publisher (the version pinned below), checks its signature
+#      (or -OsquerySha256), and installs it. osquery's own service is
+#      turned off: the agent runs osquery with the flags it writes from
+#      Signalith's configuration, and osquery enrolls with the agent token.
+#      -OsqueryMsi uses an MSI already on the computer instead.
+#   6. Downloads the agent program from Signalith and checks its SHA-256,
 #      writes the agent's settings, token and certificate authority to a
 #      folder only SYSTEM and Administrators can open, and starts the
 #      SignalithAgent service.
-#   6. Waits until the agent runs Fluent Bit with Signalith's configuration
-#      and Signalith has its status.
+#   7. Waits until the agent runs Fluent Bit (and osquery) with Signalith's
+#      configuration and Signalith has its status.
 #
 # Run it again to repair, or to upgrade Fluent Bit and the agent: it
 # changes only what differs. It keeps a copy of itself in the agent's
@@ -62,6 +68,14 @@ param(
   [string]$FluentBitZip = "",
   # The SHA-256 the Fluent Bit zip must have.
   [string]$FluentBitSha256 = "",
+  # Also install osquery, for inventory, file changes and live queries. A
+  # run again keeps osquery once the script installed it.
+  [switch]$Osquery,
+  # An osquery MSI already on this computer, used instead of downloading
+  # one.
+  [string]$OsqueryMsi = "",
+  # The SHA-256 the osquery MSI must have.
+  [string]$OsquerySha256 = "",
   # Write every file under this folder and print the commands instead of
   # running them.
   [string]$DryRun = "",
@@ -77,6 +91,10 @@ $piped = @($input)
 # it (<zip>.sha256), which the script checks the zip against.
 $FluentBitVersion = "4.0.3"
 $FluentBitUrl = "https://packages.fluentbit.io/windows/fluent-bit-$FluentBitVersion-win64.zip"
+# osquery for Windows, from its publisher. The script checks the MSI's
+# Authenticode signature, or the SHA-256 given with -OsquerySha256.
+$OsqueryVersion = "5.12.1"
+$OsqueryUrl = "https://pkg.osquery.io/windows/osquery-$OsqueryVersion.msi"
 # Sysmon, from Microsoft's Sysinternals.
 $SysmonUrl = "https://download.sysinternals.com/files/Sysmon.zip"
 $Systems = "Windows 10 or 11 and Windows Server 2016 or later (64-bit x86)"
@@ -96,11 +114,14 @@ if ($DryRun) {
   New-Item -ItemType Directory -Force -Path $R | Out-Null
   $ProgramDir = Join-Path $R "Program Files/Signalith Agent"
   $ConfDir = Join-Path $R "ProgramData/Signalith Agent"
+  $OsquerydExe = Join-Path $R "Program Files/osquery/osqueryd/osqueryd.exe"
 } else {
   $pf = $env:ProgramFiles
   if (-not $pf) { $pf = "C:\Program Files" }
   $ProgramDir = Join-Path $pf "Signalith Agent"
   $ConfDir = Join-Path $env:ProgramData "Signalith Agent"
+  # Where osquery's MSI puts it; the agent looks there too.
+  $OsquerydExe = Join-Path $pf "osquery\osqueryd\osqueryd.exe"
 }
 $Program = Join-Path $ProgramDir "signalith-agent.exe"
 $FluentBitDir = Join-Path $ProgramDir "fluent-bit"
@@ -396,7 +417,7 @@ function Check-Args {
   if ($From -notmatch '^https://[A-Za-z0-9.\-\[\]:]+$') {
     Fail "-From must be Signalith's address and nothing else, like https://siem.example.com:7779 (no path)."
   }
-  foreach ($p in @(@("-CaSha256", $CaSha256), @("-NextCaSha256", $NextCaSha256), @("-FluentBitSha256", $FluentBitSha256))) {
+  foreach ($p in @(@("-CaSha256", $CaSha256), @("-NextCaSha256", $NextCaSha256), @("-FluentBitSha256", $FluentBitSha256), @("-OsquerySha256", $OsquerySha256))) {
     if ($p[1] -and $p[1] -notmatch '^[0-9a-fA-F]{64}$') { Fail "$($p[0]) must be 64 hexadecimal characters." $again }
   }
   $script:CaSha256 = $CaSha256.ToLowerInvariant()
@@ -405,6 +426,8 @@ function Check-Args {
   if (-not $Version) { $script:Version = "unknown" }
   elseif ($Version -notmatch '^[A-Za-z0-9.+-]+$') { Fail "-Version must be a version number, like 0.4.0." }
   if ($FluentBitZip -and -not (Test-Path -LiteralPath $FluentBitZip -PathType Leaf)) { Fail "-FluentBitZip ${FluentBitZip}: there is no such file." }
+  if ($OsqueryMsi -and -not (Test-Path -LiteralPath $OsqueryMsi -PathType Leaf)) { Fail "-OsqueryMsi ${OsqueryMsi}: there is no such file." }
+  if (($OsqueryMsi -or $OsquerySha256) -and -not $Osquery) { $script:Osquery = [switch]$true }
   if ($Token -eq "-") {
     $script:Token = (($piped | ForEach-Object { "$_" }) -join "").Trim()
     $script:tokenFromLine = $true
@@ -483,7 +506,7 @@ function Check-Token {
 
 # --- Fluent Bit --------------------------------------------------------------
 
-function FluentBit-Version([string]$Exe) {
+function Program-Version([string]$Exe) {
   if (-not (Test-Path -LiteralPath $Exe)) { return "" }
   # Windows PowerShell 5.1 turns a program's error output into errors
   # that stop the script; here they are only output.
@@ -523,7 +546,7 @@ function Vendor-FluentBit {
 }
 
 function FluentBit-Install {
-  $have = FluentBit-Version $FluentBitExe
+  $have = Program-Version $FluentBitExe
   if ($DryRun -and (Manifest-Has "fluentbit $FluentBitVersion")) { $have = $FluentBitVersion }
   if ($have -eq $FluentBitVersion -and -not $FluentBitZip) {
     Ok "Fluent Bit $have"
@@ -571,7 +594,7 @@ function FluentBit-Install {
   if ($LASTEXITCODE -eq -1073741515) {
     Fail "Fluent Bit cannot start on this computer: the Microsoft Visual C++ runtime it needs is missing." "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe, then run the line again."
   }
-  $newVersion = FluentBit-Version $exe.FullName
+  $newVersion = Program-Version $exe.FullName
   if (-not $newVersion) { Fail "Fluent Bit from the zip does not run here (exit code $LASTEXITCODE)." }
   Stop-Agent
   if (Test-Path -LiteralPath $FluentBitDir) { Remove-Item -LiteralPath $FluentBitDir -Recurse -Force }
@@ -743,6 +766,83 @@ function Sysmon-Install {
   Ok "installed Sysmon with the agent's configuration"
 }
 
+# --- osquery -----------------------------------------------------------------
+
+# Osquery-Wanted says whether the agent runs osquery here: asked for now,
+# or installed by an earlier run.
+function Osquery-Wanted { return [bool]$Osquery -or (Manifest-Has "osquery") }
+
+# Vendor-Osquery stops osquery's own service and turns it off: the agent
+# runs osquery with its own flags, and two would share one database.
+# -Uninstall turns it back on when osquery stays.
+function Vendor-Osquery {
+  $svc = Get-Service -Name "osqueryd" -ErrorAction SilentlyContinue
+  if (-not $svc) { return }
+  $start = (Get-CimInstance Win32_Service -Filter "Name='osqueryd'").StartMode
+  if ($start -eq "Disabled" -and $svc.Status -eq "Stopped") { return }
+  if (-not (Manifest-Has "osquery-msi")) { Manifest-Add "service-start osqueryd $start" }
+  Stop-Service -Name "osqueryd" -Force -ErrorAction SilentlyContinue
+  Set-Service -Name "osqueryd" -StartupType Disabled
+  $script:changed = $true
+  Ok "turned off osquery's own service (the agent runs osquery now)"
+}
+
+function Osquery-Install {
+  if (-not (Osquery-Wanted)) { return }
+  if ($DryRun) {
+    if (-not (Manifest-Has "osquery")) {
+      Info "would download $OsqueryUrl, check its signature, install it, and turn off osquery's own service"
+      Manifest-Add "osquery"
+      $script:changed = $true
+    }
+    return
+  }
+  if (Test-Path -LiteralPath $OsquerydExe) {
+    Ok "osquery $(Program-Version $OsquerydExe)"
+  } else {
+    $msi = Join-Path $script:tmp "osquery.msi"
+    $want = $OsquerySha256.ToLowerInvariant()
+    if ($OsqueryMsi) {
+      Copy-Item -LiteralPath $OsqueryMsi -Destination $msi
+    } else {
+      $pub = New-Object SignalithAgentInstall.Fetch2 $false
+      $code = $pub.Get($OsqueryUrl, "", $msi, 600, $true)
+      if ($code -ne 200) {
+        Fail "Could not download osquery from $OsqueryUrl ($(if ($code) { "it answered $code" } else { $pub.Error }))." "Check that this computer reaches pkg.osquery.io; without internet access, download the MSI elsewhere and run the line again with -OsqueryMsi <path to the MSI>, or run it without -Osquery."
+      }
+    }
+    if ($want) {
+      $got = [SignalithAgentInstall.Fetch2]::Sha256File($msi)
+      if ($got -ne $want) { Fail "The osquery MSI is not the one expected (its SHA-256 is $got, not $want), so it was not installed." "Download it again; if it keeps failing, it was changed on its way here." }
+      Ok "osquery MSI checked (SHA-256 $($got.Substring(0, 12)))"
+    } else {
+      $sig = Get-AuthenticodeSignature -LiteralPath $msi
+      if ($sig.Status -ne "Valid") {
+        Fail "The osquery MSI has no valid signature (signature: $($sig.Status)), so it was not installed." "Run the line again later; or check the MSI's SHA-256 against the one on osquery.io/downloads and run the line again with -OsquerySha256 <it>; or run it without -Osquery."
+      }
+      Ok "osquery MSI signed by $($sig.SignerCertificate.Subject)"
+    }
+    $log = Join-Path $script:tmp "osquery-msi.log"
+    $p = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", "`"$msi`"", "/qn", "/norestart", "/l*v", "`"$log`"") -Wait -PassThru
+    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+      if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 10 | ForEach-Object { Write-Host "      $_" } }
+      Fail "Installing osquery failed (msiexec exit code $($p.ExitCode))." "Run the line again without -Osquery to install the agent alone."
+    }
+    Manifest-Add "osquery-msi"
+    if (-not (Test-Path -LiteralPath $OsquerydExe)) { Fail "The osquery MSI did not put osqueryd at $OsquerydExe." "Run the line again without -Osquery to install the agent alone." }
+    Ok "installed osquery $(Program-Version $OsquerydExe)"
+    $script:changed = $true
+    # The agent tells Signalith it has osquery, which adds osquery's part.
+    $script:restart = $true
+  }
+  Vendor-Osquery
+  if (-not (Manifest-Has "osquery")) {
+    Manifest-Add "osquery"
+    $script:changed = $true
+    $script:restart = $true
+  }
+}
+
 # --- The agent ---------------------------------------------------------------
 
 function Agent-Service {
@@ -830,7 +930,7 @@ function Agent-Folders {
 function Agent-Files {
   $files = @(
     @((Join-Path $ConfDir "token"), "$Token`n"),
-    @((Join-Path $ConfDir "agent.conf"), "# Written by the Signalith Agent install script (deploy/agent/install.ps1).`n# Run the line from Add data again to change it.`nSERVER=$From`nSIGNALITH_VERSION=$Version`n")
+    @((Join-Path $ConfDir "agent.conf"), "# Written by the Signalith Agent install script (deploy/agent/install.ps1).`n# Run the line from Add data again to change it.`nSERVER=$From`nSIGNALITH_VERSION=$Version`nOSQUERY=$(if (Osquery-Wanted) { 'yes' } else { 'no' })`n")
   )
   foreach ($f in $files) {
     if (Put-Text $f[0] $f[1]) { $script:changed = $true; $script:restart = $true }
@@ -895,10 +995,12 @@ function Agent-Start {
   # The agent fetches its configuration, starts Fluent Bit and reports
   # within a few seconds; two minutes covers a slow network.
   $items = @{}
+  $osq = Osquery-Wanted
   for ($i = 0; $i -lt 60; $i++) {
     $items = Read-Health $health
-    if ($items["fluentbit"] -eq "running" -and $items["reported"] -eq "yes") {
-      Ok "Fluent Bit runs with Signalith's configuration, and Signalith has the agent's status"
+    if ($items["fluentbit"] -eq "running" -and $items["reported"] -eq "yes" -and (-not $osq -or $items["osquery"] -eq "running")) {
+      if ($osq) { Ok "Fluent Bit and osquery run with Signalith's configuration, and Signalith has the agent's status" }
+      else { Ok "Fluent Bit runs with Signalith's configuration, and Signalith has the agent's status" }
       return
     }
     if ((Get-Service -Name $ServiceName).Status -eq "Stopped" -and $i -gt 5) { break }
@@ -910,17 +1012,23 @@ function Agent-Start {
     if (-not $why) { $why = "no answer yet" }
     Fail "The agent could not get its configuration: $why" "See $log."
   }
-  if ($items["fluentbit"] -eq "running") {
-    Warn "Fluent Bit runs, but Signalith has not had the agent's status yet." "Check the Endpoints page in a few minutes; $log says why."
-  } else {
+  if ($items["fluentbit"] -ne "running") {
     $fb = $items["fluentbit"]
     if (-not $fb) { $fb = "not started" }
     Fail "Fluent Bit is not running: $fb" "See $log."
   }
+  if ($items["reported"] -ne "yes") {
+    Warn "Fluent Bit runs, but Signalith has not had the agent's status yet." "Check the Endpoints page in a few minutes; $log says why."
+  }
+  if ($osq -and $items["osquery"] -ne "running") {
+    $oq = $items["osquery"]
+    if (-not $oq) { $oq = "the agent has not started it" }
+    Warn "osquery is not running yet: $oq" "Check the Endpoints page in a few minutes; $log says why."
+  }
 }
 
 # Read-Health reads the short file the agent writes about itself: one
-# item=value line each for config, fluentbit and reported.
+# item=value line each for config, fluentbit, osquery and reported.
 function Read-Health([string]$Path) {
   $h = @{}
   if (Test-Path -LiteralPath $Path) {
@@ -981,18 +1089,32 @@ function Remove-Agent {
       if ($LASTEXITCODE -eq 0) { Ok "removed Sysmon, which the script installed" } else { Warn "Removing Sysmon failed (exit code $LASTEXITCODE)." "Sysmon64.exe -u force, in an elevated PowerShell." }
     }
   }
+  if ($lines -contains "osquery-msi") {
+    if ($DryRun) {
+      Would "msiexec /x <osquery> /qn"
+    } else {
+      $product = Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+        Where-Object { (Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue).DisplayName -eq "osquery" } | Select-Object -First 1
+      if ($product -and $product.PSChildName -match '^\{[0-9A-Fa-f-]+\}$') {
+        $p = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/x", $product.PSChildName, "/qn", "/norestart") -Wait -PassThru
+        if ($p.ExitCode -eq 0 -or $p.ExitCode -eq 3010) { Ok "removed osquery, which the script installed" }
+        else { Warn "Removing osquery failed (msiexec exit code $($p.ExitCode))." "Remove osquery in Settings > Apps." }
+      }
+    }
+  }
   foreach ($line in $lines) {
-    if ($line -match '^service-start fluent-bit (\w+)$') {
-      $mode = $Matches[1]
+    if ($line -match '^service-start (fluent-bit|osqueryd) (\w+)$') {
+      $name, $mode = $Matches[1], $Matches[2]
+      $what = if ($name -eq "osqueryd") { "osquery's" } else { "Fluent Bit's" }
       if ($mode -eq "Auto") { $mode = "Automatic" }
       if ($DryRun) {
-        Would "Set-Service fluent-bit -StartupType $mode; Start-Service fluent-bit"
-      } else {
+        Would "Set-Service $name -StartupType $mode; Start-Service $name"
+      } elseif (Get-Service -Name $name -ErrorAction SilentlyContinue) {
         try {
-          Set-Service -Name "fluent-bit" -StartupType $mode
-          if ($mode -eq "Automatic") { Start-Service -Name "fluent-bit" }
-          Ok "turned Fluent Bit's own service back on"
-        } catch { Warn "Could not turn Fluent Bit's own service back on: $($_.Exception.Message)" "Set-Service fluent-bit -StartupType Automatic; Start-Service fluent-bit" }
+          Set-Service -Name $name -StartupType $mode
+          if ($mode -eq "Automatic") { Start-Service -Name $name }
+          Ok "turned $what own service back on"
+        } catch { Warn "Could not turn $what own service back on: $($_.Exception.Message)" "Set-Service $name -StartupType Automatic; Start-Service $name" }
       }
     }
   }
@@ -1029,6 +1151,7 @@ try {
     if (-not $DryRun) { Vendor-FluentBit }
     FluentBit-Install
     Sysmon-Install
+    Osquery-Install
     Agent-Program
     Agent-Files
     Say ""

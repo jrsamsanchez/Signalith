@@ -10,7 +10,7 @@
 #    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:7779/api/agent/install.sh -o "$f" &&
 #   echo '<sha-256>  '"$f" | sha256sum -c --quiet &&
 #   echo 'sgl_...' | sudo sh "$f" --from https://siem:7779 \
-#     --ca-sha256 <hex> --version 0.4.0 --token -
+#     --ca-sha256 <hex> --version 0.4.0 --token - --osquery
 #
 # "--token -" reads the agent token from the standard input, so it is
 # never on a command line other users of the computer could see. The line
@@ -27,11 +27,15 @@
 #   3. Adds Fluent Bit's own signed package repository, its key checked
 #      against the fingerprint pinned below, and installs Fluent Bit. The
 #      package's own service is masked: the agent runs Fluent Bit itself.
-#   4. Downloads the agent program from Signalith and checks its SHA-256,
+#   4. With --osquery: adds osquery's own signed package repository the
+#      same way and installs osquery. Its package's service is masked too;
+#      osquery runs as signalith-osquery.service with the flags the agent
+#      writes, and enrolls in Signalith with the agent token.
+#   5. Downloads the agent program from Signalith and checks its SHA-256,
 #      writes the agent's settings, token and certificate authority, and
 #      starts the agent's hardened systemd service.
-#   5. Waits until the agent runs Fluent Bit with Signalith's configuration
-#      and Signalith has its status.
+#   6. Waits until the agent runs Fluent Bit (and osquery) with Signalith's
+#      configuration and Signalith has its status.
 #
 # Run it again to repair, or to upgrade Fluent Bit and the agent: it
 # changes only what differs. It keeps a copy of itself in
@@ -48,6 +52,9 @@ set -eu
 # publisher is used only when its fingerprint is this one. The network
 # sensor's install script pins the same key.
 KEY_FPR_FLUENTBIT=C3C0A28534B9293EAF51FABD9F9DDC083888C1CD
+# osquery's repository signing key (pkg.osquery.io), as published in
+# osquery's documentation (installation/install-linux).
+KEY_FPR_OSQUERY=1484120AC4E9F8A1A577AEEE97A80C63C9D8B80B
 
 # --- Systems -----------------------------------------------------------
 #   system                         Fluent Bit repository
@@ -65,6 +72,13 @@ LIB_DIR=/usr/local/lib/signalith-agent
 CONF_DIR=/etc/signalith-agent
 STATE_DIR=/var/lib/signalith-agent
 UNIT=signalith-agent.service
+# osquery's service, and the path unit that restarts it when the agent
+# writes new flags. The agent names the same service and flags file
+# (internal/agentd).
+OSQUERY_UNIT=signalith-osquery.service
+OSQUERY_PATH=signalith-osquery-flags.path
+OSQUERY_RESTART=signalith-osquery-flags.service
+OSQUERYD=/opt/osquery/bin/osqueryd
 
 from=''
 ca_sha=''
@@ -73,6 +87,7 @@ version=''
 token=''
 dryrun=''
 uninstall=no
+osquery=no
 
 os_release=${SIGNALITH_AGENT_OS_RELEASE:-/etc/os-release}
 
@@ -95,7 +110,7 @@ usage() {
   cat <<'USAGE'
 Usage: echo '<token>' | sudo sh install.sh --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
-         [--dry-run <folder>]
+         [--osquery] [--dry-run <folder>]
        sudo sh install.sh --uninstall
 
   --from              Signalith's address, which the agent sends to.
@@ -106,6 +121,9 @@ Usage: echo '<token>' | sudo sh install.sh --from https://<signalith>:7779
   --version           Signalith's version.
   --token             The agent token, or - to read it from the standard
                       input. Left out on a run again, the agent keeps its own.
+  --osquery           Also install osquery, from its publisher, for
+                      inventory, file changes and live queries. A run again
+                      keeps osquery once it is installed.
   --dry-run           Write every file under this folder and print the
                       commands instead of running them.
   --uninstall         Remove what the script added.
@@ -131,6 +149,7 @@ while [ $# -gt 0 ]; do
     --dry-run) need "$1" $#; dryrun=$2; shift 2 ;;
     --dry-run=*) dryrun=${1#*=}; shift ;;
     --uninstall) uninstall=yes; shift ;;
+    --osquery) osquery=yes; shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; fail "Unknown option: $1" ;;
   esac
@@ -428,11 +447,20 @@ key_add() {
   got=$(GNUPGHOME=$tmp/gnupg gpg --batch --show-keys --with-colons "$tmp/key" 2>/dev/null |
     awk -F: '$1 == "pub" { p = 1; next } $1 == "fpr" && p { print $10; p = 0 }')
   [ "$got" = "$3" ] || fail "$1's signing key downloaded from $2 is not the one this script pins ($3), so its repository was not added." "Run the line again later; if it keeps failing, the key changed: update Signalith, or tell us."
-  head -n 1 "$tmp/key" | grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' ||
-    fail "$1's signing key from $2 is not a text (armoured) key."
-  case "$4" in
-    *.gpg) GNUPGHOME=$tmp/gnupg gpg --batch --yes --dearmor -o "$tmp/key.out" "$tmp/key" ;;
-    *) cp "$tmp/key" "$tmp/key.out" ;;
+  # apt reads binary keys (.gpg), dnf text ones (.asc); publishers hand
+  # out either.
+  armored=no
+  if head -n 1 "$tmp/key" | grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----'; then armored=yes; fi
+  rm -f "$tmp/key.out"
+  case "$4:$armored" in
+    *.gpg:yes) GNUPGHOME=$tmp/gnupg gpg --batch --yes --dearmor -o "$tmp/key.out" "$tmp/key" ;;
+    *.gpg:no) cp "$tmp/key" "$tmp/key.out" ;;
+    *:yes) cp "$tmp/key" "$tmp/key.out" ;;
+    *)
+      GNUPGHOME=$tmp/gnupg gpg --batch --quiet --import "$tmp/key" 2>/dev/null &&
+        GNUPGHOME=$tmp/gnupg gpg --batch --armor --export "$3" >"$tmp/key.out" ||
+        fail "$1's signing key from $2 could not be read."
+      ;;
   esac
   put_file "$4" 0644 root:root "$tmp/key.out" repo
   ok "$1's signing key ($3)"
@@ -546,6 +574,123 @@ fluentbit_install() {
   mask_vendor fluent-bit.service
 }
 
+# --- osquery -----------------------------------------------------------
+
+osquery_repo() {
+  if [ "$pkg" = apt ]; then
+    key_add osquery https://pkg.osquery.io/deb/pubkey.gpg "$KEY_FPR_OSQUERY" /etc/apt/keyrings/signalith-osquery.gpg
+    printf '# Written by the Signalith Agent install script.\n%s\n' \
+      "deb [arch=$arch signed-by=/etc/apt/keyrings/signalith-osquery.gpg] https://pkg.osquery.io/deb deb main" |
+      put /etc/apt/sources.list.d/signalith-osquery.list 0644 root:root repo
+    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with osquery's repository (see above)." "Check that this computer reaches pkg.osquery.io, or run the line again without --osquery."
+  else
+    key_add osquery https://pkg.osquery.io/rpm/GPG "$KEY_FPR_OSQUERY" /etc/pki/rpm-gpg/signalith-osquery.asc
+    # osquery signs each package; its repository's index is not signed.
+    put /etc/yum.repos.d/signalith-osquery.repo 0644 root:root repo <<REPO
+# Written by the Signalith Agent install script.
+[signalith-osquery]
+name=osquery
+baseurl=https://pkg.osquery.io/rpm/\$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/signalith-osquery.asc
+enabled=1
+REPO
+  fi
+}
+
+# osquery_install installs osquery and the services that run it with the
+# agent's flags. Once installed, a run again keeps it.
+osquery_install() {
+  if [ "$osquery" != yes ] && ! manifest_has osquery; then
+    return 0
+  fi
+  osquery=yes
+  osquery_repo
+  if pkg_has osquery; then
+    before=$(pkg_version osquery) || before=""
+    if [ "$pkg" = dnf ]; then
+      set -- dnf upgrade -y osquery
+    else
+      set -- env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade --no-install-recommends osquery
+    fi
+    if ! quiet "$@"; then
+      warn "Upgrading osquery failed (see above); the version installed keeps running." "Run the line again later."
+    elif [ -z "$dryrun" ] && [ "$before" != "$(pkg_version osquery)" ]; then
+      upgraded="$upgraded osquery"
+      changed="$changed agent"
+      ok "upgraded osquery to $(pkg_version osquery)"
+    else
+      ok "osquery $before"
+    fi
+  else
+    pkg_add package osquery
+  fi
+  if [ -z "$dryrun" ] && [ ! -x "$OSQUERYD" ]; then
+    fail "The osquery package has no $OSQUERYD." "Run the line again without --osquery to install the agent alone."
+  fi
+  mask_vendor osqueryd.service
+  manifest_add osquery
+  put "/etc/systemd/system/$OSQUERY_UNIT" 0644 root:root agent <<UNIT
+# Written by the Signalith Agent install script (deploy/agent/install.sh).
+# osquery with the flags the Signalith Agent writes from Signalith's
+# configuration: Signalith is its management server, and its enroll
+# secret is the agent token. It runs while the flags file exists, in a
+# service of its own because it reads the whole computer, which the
+# agent's narrower service may not. Anything in the agent's service could
+# write the flags file, so before osquery starts, the agent program checks
+# it here, as root outside that service, and osquery runs with the
+# checked copy in a folder only this service can write. Extensions stay
+# off whatever the file says.
+[Unit]
+Description=osquery for the Signalith Agent
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=$CONF_DIR/osquery.flags
+
+[Service]
+RuntimeDirectory=signalith-osquery
+RuntimeDirectoryMode=0700
+ExecStartPre=$PROGRAM osquery-flags $CONF_DIR/osquery.flags /run/signalith-osquery/osquery.flags
+ExecStart=$OSQUERYD --flagfile=/run/signalith-osquery/osquery.flags --disable_extensions=true
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  put "/etc/systemd/system/$OSQUERY_PATH" 0644 root:root agent <<UNIT
+# Written by the Signalith Agent install script (deploy/agent/install.sh).
+# Restarts osquery when the Signalith Agent writes new flags for it, or
+# removes them.
+[Unit]
+Description=osquery flags of the Signalith Agent
+
+[Path]
+PathChanged=$CONF_DIR/osquery.flags
+Unit=$OSQUERY_RESTART
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  put "/etc/systemd/system/$OSQUERY_RESTART" 0644 root:root agent <<UNIT
+# Written by the Signalith Agent install script (deploy/agent/install.sh).
+[Unit]
+Description=Restart osquery for the Signalith Agent with its new flags
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart $OSQUERY_UNIT
+UNIT
+  manifest_add "unit $OSQUERY_PATH"
+  manifest_add "unit $OSQUERY_UNIT"
+  manifest_add "unit $OSQUERY_RESTART"
+}
+
 # --- The agent ---------------------------------------------------------
 
 agent_program() {
@@ -580,6 +725,7 @@ agent_files() {
 # Run the line from Add data again to change it.
 SERVER=$from
 SIGNALITH_VERSION=$version
+OSQUERY=$osquery
 CONF
   put "/etc/systemd/system/$UNIT" 0644 root:root agent <<'UNIT'
 # Written by the Signalith Agent install script (deploy/agent/install.sh).
@@ -627,16 +773,32 @@ UNIT
 }
 
 # health prints what the agent last wrote about item $1 in its health file
-# (config, fluentbit, reported).
+# (config, fluentbit, osquery, reported).
 health() {
   sed -n "s/^$1=//p" "$STATE_DIR/health" 2>/dev/null | head -n 1
+}
+
+# osquery_ready is true when osquery is not installed, or runs.
+osquery_ready() {
+  [ "$osquery" != yes ] || [ "$(health osquery)" = running ]
 }
 
 agent_start() {
   run systemctl daemon-reload
   if [ -n "$dryrun" ]; then
+    if [ "$osquery" = yes ]; then
+      run systemctl enable --now "$OSQUERY_PATH"
+      run systemctl enable "$OSQUERY_UNIT"
+    fi
     run systemctl enable --now "$UNIT"
     return 0
+  fi
+  if [ "$osquery" = yes ]; then
+    # Before the agent starts: its first flags start osquery.
+    systemctl enable "$OSQUERY_UNIT" >/dev/null 2>&1 || fail "Could not enable osquery's service." "sudo systemctl status $OSQUERY_UNIT"
+    systemctl enable --now "$OSQUERY_PATH" >/dev/null 2>&1 || fail "Could not start the unit that restarts osquery with new flags." "sudo systemctl status $OSQUERY_PATH"
+    # A run again with the flags in place: osquery starts with them now.
+    if [ -f "$CONF_DIR/osquery.flags" ]; then systemctl restart "$OSQUERY_UNIT" >/dev/null 2>&1 || true; fi
   fi
   systemctl enable "$UNIT" >/dev/null 2>&1 || fail "Could not enable the agent's service." "sudo systemctl status $UNIT"
   rm -f "$STATE_DIR/health"
@@ -646,8 +808,12 @@ agent_start() {
   # within a few seconds; two minutes covers a slow network.
   i=0
   while [ $i -lt 60 ]; do
-    if [ "$(health fluentbit)" = running ] && [ "$(health reported)" = yes ]; then
-      ok "Fluent Bit runs with Signalith's configuration, and Signalith has the agent's status"
+    if [ "$(health fluentbit)" = running ] && [ "$(health reported)" = yes ] && osquery_ready; then
+      if [ "$osquery" = yes ]; then
+        ok "Fluent Bit and osquery run with Signalith's configuration, and Signalith has the agent's status"
+      else
+        ok "Fluent Bit runs with Signalith's configuration, and Signalith has the agent's status"
+      fi
       return 0
     fi
     sleep 2
@@ -657,9 +823,16 @@ agent_start() {
   fb=$(health fluentbit)
   [ "$c" = ok ] || fail "The agent could not get its configuration: ${c:-no answer yet}" "sudo journalctl -u $UNIT -n 50"
   case "$fb" in
-    running) warn "Fluent Bit runs, but Signalith has not had the agent's status yet." "Check the Endpoints page in a few minutes; sudo journalctl -u $UNIT -n 50 says why." ;;
+    running) ;;
     *) fail "Fluent Bit is not running: ${fb:-not started}" "sudo journalctl -u $UNIT -n 50" ;;
   esac
+  if [ "$(health reported)" != yes ]; then
+    warn "Fluent Bit runs, but Signalith has not had the agent's status yet." "Check the Endpoints page in a few minutes; sudo journalctl -u $UNIT -n 50 says why."
+  fi
+  if ! osquery_ready; then
+    oq=$(health osquery)
+    warn "osquery is not running yet: ${oq:-the agent has not started it}" "Check the Endpoints page in a few minutes; sudo journalctl -u $OSQUERY_UNIT -n 50 says why."
+  fi
 }
 
 uninstall() {
@@ -720,6 +893,7 @@ say ""
 rm -f "$R$CONF_DIR"/*.signalith-new
 say "Installing"
 fluentbit_install
+osquery_install
 agent_program
 agent_files
 say ""

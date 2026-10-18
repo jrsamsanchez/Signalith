@@ -164,12 +164,13 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 // agentFacts are what an agent says about its computer when it fetches
 // its configuration, which decide what the configuration collects until
 // an admin chooses: which file the Linux sign-in log is in, and whether
-// Sysmon runs.
+// Sysmon runs and osquery is installed.
 type agentFacts struct {
 	// Source is the Linux sign-in log: file (auth.log or secure) or
 	// journal (the systemd journal only).
-	Source string
-	Sysmon bool
+	Source  string
+	Sysmon  bool
+	Osquery bool
 }
 
 // agentManagedOptions are the Fluent Bit options of an agent on goos that
@@ -254,7 +255,8 @@ func agentPlatform(r *http.Request) (goos, goarch string, err error) {
 // handleAgentManagedConfig hands an agent its configuration: Fluent Bit's,
 // made by the same generator as every agent's for the address the agent
 // reaches this server at (?server=), which reads the token from the agent (so the
-// file holds no secret), and the certificate authority. A configuration
+// file holds no secret), the certificate authority, and osquery's flags
+// when the computer has osquery (?osquery=true). A configuration
 // that has not changed since the revision the agent has is answered 304.
 func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request) {
 	if s.agentManagedTenant(w, r, (*Server).handleAgentManagedConfig) {
@@ -288,7 +290,7 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, errors.New(msgAgentHTTPS))
 		return
 	}
-	facts := agentFacts{Source: q.Get("source"), Sysmon: q.Get("sysmon") == "true"}
+	facts := agentFacts{Source: q.Get("source"), Sysmon: q.Get("sysmon") == "true", Osquery: q.Get("osquery") == "true"}
 	cfg := agentproto.Config{PollSeconds: agentPollSeconds}
 	if goos == "linux" || goos == "windows" {
 		opts := s.agentManagedOptions(server, goos, facts, certs)
@@ -299,6 +301,9 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		}
 		cfg.FluentBit = &agentproto.FluentBit{Config: a.Config}
 		cfg.CA = a.CA
+		if facts.Osquery {
+			cfg.Osquery = agentOsquery(goos, opts)
+		}
 	}
 	cfg.Revision = agentproto.RevisionOf(cfg)
 	etag := `"` + cfg.Revision + `"`
@@ -309,6 +314,17 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// agentOsquery is the osquery part of the configuration of an agent
+// whose computer has osquery: the flags that make it enroll here with the
+// agent token, or why it cannot.
+func agentOsquery(goos string, o agents.Options) *agentproto.Osquery {
+	flags, err := agents.ManagedOsqueryFlags(goos, o)
+	if err != nil {
+		return &agentproto.Osquery{Error: err.Error()}
+	}
+	return &agentproto.Osquery{Flags: flags}
 }
 
 // handleAgentManagedStatus takes an agent's status for the Endpoints page.

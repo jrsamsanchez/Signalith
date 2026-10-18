@@ -268,7 +268,7 @@ func TestAgentScriptDryRun(t *testing.T) {
 		t.Error("no copy of the script for --uninstall")
 	}
 	conf := readFile(t, filepath.Join(root, "etc/signalith-agent/agent.conf"))
-	if !strings.Contains(conf, "\nSERVER=https://siem.example.com:7779\n") || !strings.Contains(conf, "SIGNALITH_VERSION=0.4.0") {
+	if !strings.Contains(conf, "\nSERVER=https://siem.example.com:7779\n") || !strings.Contains(conf, "SIGNALITH_VERSION=0.4.0") || !strings.Contains(conf, "\nOSQUERY=no\n") {
 		t.Errorf("agent.conf:\n%s", conf)
 	}
 	if got := readFile(t, filepath.Join(root, "etc/signalith-agent/ca.pem")); got != readFile(t, filepath.Join(m.dir, "ca.pem")) {
@@ -320,4 +320,72 @@ func TestAgentScriptDryRun(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// With --osquery the script adds osquery's signed repository, installs
+// osquery, masks its own service and adds the services that run it with
+// the agent's flags; a run again keeps it, and --uninstall removes it.
+func TestAgentScriptDryRunOsquery(t *testing.T) {
+	for _, c := range []struct {
+		id, version, repoFile, repo string
+	}{
+		{"ubuntu", "24.04", "etc/apt/sources.list.d/signalith-osquery.list", "signed-by=/etc/apt/keyrings/signalith-osquery.gpg] https://pkg.osquery.io/deb deb main"},
+		{"rocky", "9.4", "etc/yum.repos.d/signalith-osquery.repo", "baseurl=https://pkg.osquery.io/rpm/$basearch/\ngpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/signalith-osquery.asc\n"},
+	} {
+		t.Run(c.id, func(t *testing.T) {
+			m := newAgentMachine(t)
+			m.os(c.id, c.version)
+			mustWrite(t, filepath.Join(m.dir, "bin", "dnf"), "#!/bin/sh\nexit 0\n", 0o755)
+			root := filepath.Join(m.dir, "root")
+			out, err := m.run(t, testToken, nil, append(m.line(root), "--osquery")...)
+			if err != nil {
+				t.Fatalf("dry run: %v\n%s", err, out)
+			}
+			for _, want := range []string{"would download https://pkg.osquery.io/", "and check its fingerprint is 1484120AC4E9F8A1A577AEEE97A80C63C9D8B80B",
+				"would run: systemctl mask --now osqueryd.service", "would run: systemctl enable --now signalith-osquery-flags.path",
+				"would run: systemctl enable signalith-osquery.service"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output has no %q:\n%s", want, out)
+				}
+			}
+			if !strings.Contains(out, "install -y osquery") && !strings.Contains(out, "--no-install-recommends osquery") {
+				t.Errorf("osquery not installed:\n%s", out)
+			}
+			if got := readFile(t, filepath.Join(root, "etc/signalith-agent/agent.conf")); !strings.Contains(got, "\nOSQUERY=yes\n") {
+				t.Errorf("agent.conf:\n%s", got)
+			}
+			if got := readFile(t, filepath.Join(root, c.repoFile)); !strings.Contains(got, c.repo) {
+				t.Errorf("%s:\n%s", c.repoFile, got)
+			}
+			unit := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-osquery.service"))
+			for _, want := range []string{"ConditionPathExists=/etc/signalith-agent/osquery.flags\n",
+				"ExecStartPre=/usr/local/sbin/signalith-agent osquery-flags /etc/signalith-agent/osquery.flags /run/signalith-osquery/osquery.flags\n",
+				"ExecStart=/opt/osquery/bin/osqueryd --flagfile=/run/signalith-osquery/osquery.flags --disable_extensions=true\n",
+				"RuntimeDirectoryMode=0700\n", "NoNewPrivileges=yes\n", "Restart=always\n"} {
+				if !strings.Contains(unit, want) {
+					t.Errorf("osquery unit has no %q:\n%s", want, unit)
+				}
+			}
+			if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-osquery-flags.path")); !strings.Contains(got, "PathChanged=/etc/signalith-agent/osquery.flags\nUnit=signalith-osquery-flags.service\n") {
+				t.Errorf("path unit:\n%s", got)
+			}
+			if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-osquery-flags.service")); !strings.Contains(got, "ExecStart=/usr/bin/systemctl restart signalith-osquery.service\n") {
+				t.Errorf("restart unit:\n%s", got)
+			}
+
+			// Again, without --osquery: osquery stays.
+			out, err = m.run(t, "", nil, append(m.line(root)[:6], m.line(root)[8:]...)...)
+			if err != nil || !strings.Contains(out, "Nothing to change") {
+				t.Errorf("again: %v\n%s", err, out)
+			}
+
+			out, err = m.run(t, "", nil, "--uninstall", "--dry-run", root)
+			for _, want := range []string{"removed the packages osquery fluent-bit", "would run: systemctl unmask osqueryd.service",
+				"would run: systemctl disable --now signalith-osquery.service", "would run: systemctl disable --now signalith-osquery-flags.path"} {
+				if err != nil || !strings.Contains(out, want) {
+					t.Errorf("uninstall has no %q: %v\n%s", want, err, out)
+				}
+			}
+		})
+	}
 }

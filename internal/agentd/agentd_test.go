@@ -31,6 +31,10 @@ import (
 // The test program stands in for Fluent Bit when AGENTD_FAKE_FLUENTBIT
 // says how it should behave: "run" keeps running, "exit" stops at once.
 func TestMain(m *testing.M) {
+	if strings.HasPrefix(filepath.Base(os.Args[0]), "osqueryd") {
+		fakeOsqueryd()
+		return
+	}
 	if mode := os.Getenv("AGENTD_FAKE_FLUENTBIT"); mode != "" {
 		fakeFluentBit(mode)
 		return
@@ -331,6 +335,10 @@ func TestReadSettings(t *testing.T) {
 	s, err := ReadSettings(p)
 	if err != nil || s.Server != "https://siem.example:9000" || s.Token != "sgl_abc" {
 		t.Fatalf("settings = %+v, %v", s, err)
+	}
+	_ = os.WriteFile(p.settingsFile(), []byte("SERVER=https://siem.example:9000\nOSQUERY=yes\n"), 0o644)
+	if s, err := ReadSettings(p); err != nil || !s.Osquery {
+		t.Fatalf("OSQUERY=yes: %+v, %v", s, err)
 	}
 	_ = os.WriteFile(p.settingsFile(), []byte("SERVER=http://siem.example:9000\n"), 0o644)
 	if _, err := ReadSettings(p); err == nil {

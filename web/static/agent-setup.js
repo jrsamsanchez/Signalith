@@ -11,8 +11,10 @@
 // (agentTokEnsure) and puts it in. After a copy, the card waits for the
 // agent: it reads api/agents every 10 seconds, for up to 30 minutes, until
 // an agent with the new token reports. Linux and Windows each have their
-// line; on Windows the line can also install Sysmon (-Sysmon), which the
-// script downloads from Microsoft.
+// line. Both install osquery too unless it is unticked (--osquery,
+// -Osquery), from its publisher; the agent then runs it with Signalith as
+// its management server. On Windows the line can also install Sysmon
+// (-Sysmon), which the script downloads from Microsoft.
 'use strict';
 
 (function () {
@@ -20,23 +22,24 @@
   const WAIT_FOR = 30 * 60 * 1000;
   const OS_KEY = 'signalith.agentInstallOS';
   const SYSMON_LICENSE = 'https://learn.microsoft.com/sysinternals/license-terms';
-  const LATER = ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit running.'];
+  const LATER = ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit and osquery running.'];
   const NEEDS = {
     linux: [
       ['server', 'A Linux computer', 'Ubuntu 22.04 or 24.04, Debian 12 or 13, RHEL, Rocky, Alma or Oracle Linux 8 or 9, or Amazon Linux 2023.'],
-      ['globe', 'Outbound HTTPS', 'To Signalith, and to packages.fluentbit.io for Fluent Bit. Nothing has to reach the computer.'],
+      ['globe', 'Outbound HTTPS', 'To Signalith, to packages.fluentbit.io for Fluent Bit, and to pkg.osquery.io for osquery if you keep it. Nothing has to reach the computer.'],
       LATER,
     ],
     windows: [
       ['monitor', 'A Windows computer', 'Windows 10 or 11, or Windows Server 2016 or later, 64-bit x86.'],
-      ['globe', 'Outbound HTTPS', 'To Signalith, to packages.fluentbit.io for Fluent Bit, and to Microsoft for Sysmon if you add it. Nothing has to reach the computer.'],
+      ['globe', 'Outbound HTTPS', 'To Signalith, to packages.fluentbit.io for Fluent Bit, to pkg.osquery.io for osquery if you keep it, and to Microsoft for Sysmon if you add it. Nothing has to reach the computer.'],
       LATER,
     ],
   };
   // S.data is the latest line as the server sent it, S.wait the wait for
-  // the agent after a copy, S.os the system picked and S.sysmon whether
-  // the Windows line installs Sysmon too.
-  const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', sysmon: false };
+  // the agent after a copy, S.os the system picked, S.osquery whether the
+  // line installs osquery and S.sysmon whether the Windows line installs
+  // Sysmon too.
+  const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', osquery: true, sysmon: false };
   try {
     if (localStorage.getItem(OS_KEY) === 'windows') S.os = 'windows';
   } catch (_) { /* storage may be blocked */ }
@@ -149,17 +152,26 @@
         el('div', {}, el('b', {}, missingText),
           el('p', {}, 'Released versions of Signalith (packages, Docker image) carry them; a build from source does not. Until then, set up Fluent Bit by hand with the ' + (win ? 'Windows' : 'Linux') + ' option.')))
       : null;
-    let sysmon = null;
-    if (win) {
-      const box = el('input', { type: 'checkbox', id: 'agent-install-sysmon' });
-      box.checked = S.sysmon;
+    // option is a tick box that changes the line.
+    const option = (id, key) => {
+      const box = el('input', { type: 'checkbox', id });
+      box.checked = S[key];
       box.addEventListener('change', () => {
-        S.sysmon = box.checked;
+        S[key] = box.checked;
         const pre = $('agent-install-line');
         if (pre) pre.replaceChildren(...agentTokShown(currentLine(), true));
       });
-      sysmon = el('div', { class: 'agent-install__sysmon' },
-        el('label', { class: 'check' }, box, el('span', {}, el('b', {}, 'Also install Sysmon'), ' for detailed process, network and registry events')),
+      return box;
+    };
+    const osquery = el('div', { class: 'agent-install__opt' },
+      el('label', { class: 'check' }, option('agent-install-osquery', 'osquery'), el('span', {}, el('b', {}, 'Also install osquery'), ' for inventory, file changes and live queries on the Endpoints page')),
+      el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, win
+        ? 'The script downloads it from osquery.io and checks its signature. The agent runs it with Signalith as its management server; nothing else to set up.'
+        : 'The script installs it from osquery’s signed package repository. It runs as its own service with the settings the agent gets from Signalith; nothing else to set up.')));
+    let sysmon = null;
+    if (win) {
+      sysmon = el('div', { class: 'agent-install__opt' },
+        el('label', { class: 'check' }, option('agent-install-sysmon', 'sysmon'), el('span', {}, el('b', {}, 'Also install Sysmon'), ' for detailed process, network and registry events')),
         el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, 'The script downloads it from Microsoft and checks Microsoft signed it. Choosing it accepts the ',
           el('a', { href: SYSMON_LICENSE, target: '_blank', rel: 'noopener' }, 'Sysinternals license', icon('external-link', 'icon--xs')),
           '. A computer that has Sysmon already keeps its own configuration.')));
@@ -172,6 +184,7 @@
     box.replaceChildren(...[
       seg,
       noProgram,
+      osquery,
       sysmon,
       el('div', { class: 'agent-file sensor-line' },
         el('div', { class: 'agent-file__bar' }, icon('terminal'),
@@ -188,13 +201,13 @@
     drawWait();
   }
 
-  // currentLine is the line for the system picked, with -Sysmon when
-  // chosen.
+  // currentLine is the line for the system picked, with osquery and
+  // Sysmon when chosen.
   function currentLine() {
     const d = S.data;
     if (!d) return '';
-    if (S.os !== 'windows') return d.linux;
-    return d.windows + (S.sysmon ? ' -Sysmon' : '');
+    if (S.os !== 'windows') return d.linux + (S.osquery ? ' --osquery' : '');
+    return d.windows + (S.osquery ? ' -Osquery' : '') + (S.sysmon ? ' -Sysmon' : '');
   }
 
   function pickOS(os) {

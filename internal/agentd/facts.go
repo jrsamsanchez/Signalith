@@ -16,11 +16,14 @@ type facts struct {
 	Source string
 	// Sysmon is whether Sysmon is installed.
 	Sysmon bool
+	// Osquery is whether osquery is installed (Paths.Osqueryd) and set up
+	// for the agent (Settings.Osquery).
+	Osquery bool
 }
 
-// lookFacts looks at this computer.
-func lookFacts() facts {
-	var f facts
+// lookFacts looks at this computer, with osquery where p says.
+func lookFacts(p Paths) facts {
+	f := facts{Osquery: p.Osqueryd != "" && exists(p.Osqueryd)}
 	switch runtime.GOOS {
 	case "linux":
 		f.Source = "journal"

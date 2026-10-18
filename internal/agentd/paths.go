@@ -23,6 +23,12 @@ type Paths struct {
 	State string
 	// FluentBit is Fluent Bit's program.
 	FluentBit string
+	// Osqueryd is osquery's program; the computer has osquery when it
+	// exists.
+	Osqueryd string
+	// OsqueryUnit is the systemd service that runs osquery on Linux; ""
+	// where the agent runs osquery itself.
+	OsqueryUnit string
 }
 
 // DefaultPaths are the paths on this system.
@@ -34,9 +40,11 @@ func DefaultPaths() Paths {
 		if prog == "" {
 			prog = `C:\Program Files`
 		}
-		return Paths{Conf: data, State: data, FluentBit: filepath.Join(prog, "Signalith Agent", "fluent-bit", "bin", "fluent-bit.exe")}
+		return Paths{Conf: data, State: data, FluentBit: filepath.Join(prog, "Signalith Agent", "fluent-bit", "bin", "fluent-bit.exe"),
+			Osqueryd: filepath.Join(prog, "osquery", "osqueryd", "osqueryd.exe")}
 	default:
-		return Paths{Conf: "/etc/signalith-agent", State: "/var/lib/signalith-agent", FluentBit: "/opt/fluent-bit/bin/fluent-bit"}
+		return Paths{Conf: "/etc/signalith-agent", State: "/var/lib/signalith-agent", FluentBit: "/opt/fluent-bit/bin/fluent-bit",
+			Osqueryd: "/opt/osquery/bin/osqueryd", OsqueryUnit: "signalith-osquery.service"}
 	}
 }
 
@@ -51,8 +59,8 @@ func (p Paths) configFile() string    { return filepath.Join(p.State, "config.js
 func (p Paths) StatusFile() string { return filepath.Join(p.State, "status.json") }
 
 // HealthFile is the short file the install script reads to tell whether
-// the agent works: one item=value line each for config, fluentbit and
-// reported.
+// the agent works: one item=value line each for config, fluentbit,
+// osquery (when it runs osquery) and reported.
 func (p Paths) HealthFile() string { return filepath.Join(p.State, "health") }
 
 // Settings are what the install script wrote in agent.conf, and the
@@ -62,6 +70,10 @@ type Settings struct {
 	Server string
 	// Token is the agent token.
 	Token string
+	// Osquery is whether the install script set osquery up for the agent
+	// (OSQUERY=yes): only then does the agent run it, so an osquery the
+	// computer runs for something else is left alone.
+	Osquery bool
 }
 
 // ReadSettings reads agent.conf and the token.
@@ -86,6 +98,8 @@ func ReadSettings(p Paths) (Settings, error) {
 		switch strings.TrimSpace(k) {
 		case "SERVER":
 			s.Server = v
+		case "OSQUERY":
+			s.Osquery = v == "yes"
 		}
 	}
 	if err := sc.Err(); err != nil {

@@ -52,10 +52,16 @@ type Agent struct {
 	Client *http.Client
 	// Facts says what the computer runs; nil looks (see facts).
 	Facts func() facts
-	now   func() time.Time
+	// UnitState asks systemd about osquery's service (Paths.OsqueryUnit);
+	// nil runs systemctl.
+	UnitState UnitState
+	now       func() time.Time
 
 	fluentBit *proc
-	started   time.Time
+	osquery   osqueryCollector
+	// osqueryRun is the flags osquery runs with, "" when it runs none.
+	osqueryRun string
+	started    time.Time
 
 	mu        sync.Mutex
 	cfg       *agentproto.Config
@@ -87,7 +93,11 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.Name = n
 	}
 	if a.Facts == nil {
-		a.Facts = lookFacts
+		a.Facts = func() facts {
+			f := lookFacts(a.Paths)
+			f.Osquery = f.Osquery && a.Settings.Osquery
+			return f
+		}
 	}
 	if a.Client == nil {
 		c, err := a.newClient()
@@ -105,20 +115,32 @@ func (a *Agent) Run(ctx context.Context) error {
 	if a.Out != nil {
 		a.fluentBit.out = a.Out
 	}
+	a.osquery = a.newOsquery()
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		a.fluentBit.run(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		a.osquery.run(ctx)
 	}()
 	// The configuration it last had runs while the server is asked.
 	if cfg, err := a.loadConfig(); err == nil {
 		a.mu.Lock()
 		a.cfg = cfg
 		a.mu.Unlock()
+		if err := a.writeOsquery(cfg); err != nil {
+			a.Log.Warn("osquery's flags", "err", err)
+		}
 		a.runFluentBit(cfg)
+		a.runOsquery(cfg)
 	}
-	a.fluentBit.setVersion(fluentBitVersion(a.Paths.FluentBit))
+	a.fluentBit.setVersion(programVersion(a.Paths.FluentBit))
+	if a.Paths.Osqueryd != "" && exists(a.Paths.Osqueryd) {
+		a.osquery.setVersion(programVersion(a.Paths.Osqueryd))
+	}
 	poll := time.Duration(agentPoll(nil)) * time.Second
 	wait := time.Duration(0)
 	for {
@@ -255,6 +277,9 @@ func (a *Agent) sync(ctx context.Context) error {
 	if f.Sysmon {
 		q.Set("sysmon", "true")
 	}
+	if f.Osquery {
+		q.Set("osquery", "true")
+	}
 	req, err := a.request(ctx, http.MethodGet, agentproto.RouteConfig, q, nil)
 	if err != nil {
 		return err
@@ -291,8 +316,9 @@ func (a *Agent) sync(ctx context.Context) error {
 }
 
 // apply puts a new configuration in place: the certificate authority, then
-// Fluent Bit's configuration, then the configuration itself, and restarts
-// Fluent Bit with it.
+// Fluent Bit's configuration and osquery's flags, then the configuration
+// itself, and restarts Fluent Bit (and osquery, when its flags changed)
+// with it.
 func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	a.mu.Lock()
 	same := a.cfg != nil && a.cfg.Revision == cfg.Revision && cfg.Revision != ""
@@ -310,6 +336,9 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 			return fmt.Errorf("writing Fluent Bit's configuration: %w", err)
 		}
 	}
+	if err := a.writeOsquery(cfg); err != nil {
+		return err
+	}
 	b, _ := json.Marshal(cfg)
 	if err := writeFile(a.Paths.configFile(), b, 0o600); err != nil {
 		return fmt.Errorf("keeping the configuration: %w", err)
@@ -319,6 +348,7 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	a.mu.Unlock()
 	a.Log.Info("applied a new configuration", "revision", cfg.Revision)
 	a.runFluentBit(cfg)
+	a.runOsquery(cfg)
 	return nil
 }
 
@@ -407,10 +437,11 @@ func (a *Agent) runFluentBit(cfg *agentproto.Config) {
 	a.fluentBit.set(&procSpec{Path: a.Paths.FluentBit, Args: []string{"-c", a.Paths.fluentBitConf()}, Env: env})
 }
 
-var fluentBitVersionText = regexp.MustCompile(`v?([0-9]+\.[0-9]+\.[0-9]+)`)
+var versionText = regexp.MustCompile(`v?([0-9]+\.[0-9]+\.[0-9]+)`)
 
-// fluentBitVersion asks Fluent Bit its version; "" when it cannot tell.
-func fluentBitVersion(path string) string {
+// programVersion asks a collector (Fluent Bit, osqueryd) its version; ""
+// when it cannot tell.
+func programVersion(path string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
@@ -419,7 +450,7 @@ func fluentBitVersion(path string) string {
 	if err != nil {
 		return ""
 	}
-	if m := fluentBitVersionText.FindSubmatch(out); m != nil {
+	if m := versionText.FindSubmatch(out); m != nil {
 		return string(m[1])
 	}
 	return ""
@@ -432,12 +463,32 @@ func (a *Agent) Status() agentproto.Status {
 	if a.cfg != nil {
 		rev = a.cfg.Revision
 	}
+	oq := a.osqueryComponent()
 	a.mu.Unlock()
+	comps := []agentproto.Component{a.fluentBit.component()}
+	if oq != nil {
+		comps = append(comps, *oq)
+	}
 	return agentproto.Status{
 		Version: a.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, System: systemName(),
 		Revision: rev, Started: a.started.UTC().Format(time.RFC3339), ConfigError: cerr,
-		Components: []agentproto.Component{a.fluentBit.component()},
+		Components: comps,
 	}
+}
+
+// osqueryComponent is osquery as the agent reports it, nil when the
+// configuration has no osquery part (the computer has no osquery). When
+// the server says osquery cannot use it, osquery is off with that reason.
+// a.mu is held.
+func (a *Agent) osqueryComponent() *agentproto.Component {
+	if a.cfg == nil || a.cfg.Osquery == nil || a.osquery == nil {
+		return nil
+	}
+	c := a.osquery.component()
+	if e := a.cfg.Osquery.Error; e != "" {
+		c.State, c.Error = agentproto.StateOff, e
+	}
+	return &c
 }
 
 // sendStatus reports the status to the server, and writes it and the
@@ -477,7 +528,15 @@ func (a *Agent) sendStatus(ctx context.Context) {
 	if ok {
 		rep = "yes"
 	}
-	health := fmt.Sprintf("config=%s\nfluentbit=%s\nreported=%s\n", cfg, fbLine, rep)
+	health := fmt.Sprintf("config=%s\nfluentbit=%s\n", cfg, fbLine)
+	for _, c := range st.Components[1:] {
+		line := c.State
+		if c.Error != "" {
+			line += ": " + oneLine(c.Error)
+		}
+		health += c.Name + "=" + line + "\n"
+	}
+	health += "reported=" + rep + "\n"
 	_ = writeFile(a.Paths.HealthFile(), []byte(health), 0o644)
 }
 

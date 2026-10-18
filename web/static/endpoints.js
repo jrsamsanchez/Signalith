@@ -235,12 +235,16 @@ window.sensorText = (function () {
   function managedFacts(m) {
     const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
     const trouble = managedTrouble(m);
-    const unit = 'sudo journalctl -u signalith-agent -n 50';
+    // Where to read a collector's last lines on the computer: osquery has
+    // its own service on Linux; on Windows both write to agent.log.
+    const logCommand = (c) => m.os === 'windows'
+      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\agent.log\' -Tail 50'
+      : 'sudo journalctl -u ' + (c.name === 'osquery' ? 'signalith-osquery' : 'signalith-agent') + ' -n 50';
     const why = [];
     if (m.config_error) why.push('It could not get a new configuration from Signalith, so it keeps the one it has: ' + m.config_error);
     for (const c of m.components || []) {
       if (c.state === 'missing') why.push(collectorName(c) + ' is not installed. Run the line from Add data > Signalith Agent again on the computer.');
-      else if (c.state === 'failed') why.push([collectorName(c) + ' stopped' + (c.restarts ? ' (' + c.restarts + (c.restarts === 1 ? ' restart' : ' restarts') + ')' : '') + '. The agent starts it again; see why on the computer with ', el('code', {}, unit), '.']);
+      else if (c.state === 'failed') why.push([collectorName(c) + ' stopped' + (c.restarts ? ' (' + c.restarts + (c.restarts === 1 ? ' restart' : ' restarts') + ')' : '') + '. The agent starts it again; see why on the computer with ', el('code', {}, logCommand(c)), '.']);
     }
     return [
       el('h4', { class: 'ep-h4' }, 'Signalith Agent', trouble ? el('span', { class: 'badge badge--warning' }, trouble) : null),
