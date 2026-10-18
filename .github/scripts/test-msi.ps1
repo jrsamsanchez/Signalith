@@ -82,10 +82,14 @@ Test-SignIn $password
 Write-Host "== A new install sets up OpenSearch on this computer"
 Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall-2.log"
 Remove-Item -Recurse -Force "$env:ProgramData\Signalith"
-$sums = Invoke-WebRequest "https://artifacts.opensearch.org/releases/bundle/opensearch/3.9.0/opensearch-3.9.0-windows-x64.zip.sha512" -UseBasicParsing
-Write-Host "Published SHA-512: $([Text.Encoding]::ASCII.GetString($sums.RawContentStream.ToArray()))"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh.log"
-& $exe opensearch status
+# The pinned SHA-512 is the one OpenSearch publishes for the release.
+$status = (& $exe opensearch status) -join "`n"
+Write-Host $status
+if ($status -notmatch "Release installed: (\S+), SHA-512 ([0-9a-f]{128})") { throw "opensearch status does not name the release" }
+$relUrl, $pin = $Matches[1], $Matches[2]
+$published = [Text.Encoding]::ASCII.GetString((Invoke-WebRequest "$relUrl.sha512" -UseBasicParsing).RawContentStream.ToArray())
+if (($published -split "\s+")[0].ToLower() -ne $pin) { throw "the pinned SHA-512 $pin is not the one published for $relUrl ($published)" }
 $os = Get-CimInstance Win32_Service -Filter "Name='SignalithOpenSearch'"
 if (-not $os -or $os.State -ne "Running") { throw "the SignalithOpenSearch service is not running" }
 if ($os.StartName -ne "NT SERVICE\SignalithOpenSearch") { throw "OpenSearch runs as $($os.StartName)" }

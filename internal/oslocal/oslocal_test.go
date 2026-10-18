@@ -22,7 +22,7 @@ import (
 )
 
 func TestPin(t *testing.T) {
-	if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(SHA512) {
+	if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(SHA512) || SHA512 == strings.Repeat("0", 128) {
 		t.Fatalf("SHA512 must be 128 lower-case hex digits, got %q", SHA512)
 	}
 	if !versionRE.MatchString(Version) || !strings.Contains(URL(), "/"+Version+"/opensearch-"+Version+"-windows-x64.zip") {
