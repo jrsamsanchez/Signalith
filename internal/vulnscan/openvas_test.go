@@ -220,6 +220,42 @@ func TestOpenVASScan(t *testing.T) {
 		t.Errorf("a login prints its secret: %v %+v", ssh, smb)
 	}
 
+	// ESXi and SNMPv3: their own slots in the target, SHA and AES, and
+	// UDP 161 added to the ports so the SNMP checks run.
+	esxi := &Login{Kind: LoginESXi, Username: "scan", Auth: AuthPassword, Secret: "esx-pass"}
+	snmp := &Login{Kind: LoginSNMP, Username: "scan", Auth: AuthSNMPv3, Secret: "auth-pass", Privacy: "priv-pass"}
+	f.commands, f.polls, f.creds = nil, 0, 0
+	if _, err := ov.Scan(ctx, target("192.0.2.0/24"), "Signalith test", ScanLogins{ESXi: esxi, SNMP: snmp}, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	tgt, cred = f.raw["create_target"], f.raw["create_credential"]
+	f.mu.Unlock()
+	if !strings.Contains(tgt, `<esxi_credential id="c1">`) || !strings.Contains(tgt, `<snmp_credential id="c2">`) ||
+		!strings.Contains(tgt, `<port_list id="730ef368-57e2-11e1-a90f-406186ea4fc5">`) {
+		t.Errorf("target with ESXi and SNMP = %s", tgt)
+	}
+	if !strings.Contains(cred, "<type>snmp</type><login>scan</login><password>auth-pass</password><auth_algorithm>sha1</auth_algorithm>"+
+		"<privacy><algorithm>aes</algorithm><password>priv-pass</password></privacy>") {
+		t.Errorf("SNMP login = %s", cred)
+	}
+	// A community, on a network with its own ports.
+	ports := target("192.0.2.0/24")
+	ports.Ports = "22,443"
+	f.commands, f.polls, f.creds = nil, 0, 0
+	if _, err := ov.Scan(ctx, ports, "Signalith test", ScanLogins{SNMP: &Login{Kind: LoginSNMP, Auth: AuthCommunity, Secret: "Xq7-long-random"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	tgt, cred = f.raw["create_target"], f.raw["create_credential"]
+	f.mu.Unlock()
+	if !strings.Contains(tgt, "<port_range>T:22,443,U:161</port_range>") || strings.Contains(tgt, "port_list") {
+		t.Errorf("target with a community = %s", tgt)
+	}
+	if !strings.Contains(cred, "<type>snmp</type><community>Xq7-long-random</community>") || strings.Contains(cred, "<login") {
+		t.Errorf("community login = %s", cred)
+	}
+
 	// The connection breaks mid-scan, and the task takes a moment to stop:
 	// the logins are still removed, on a new connection.
 	f.commands, f.polls, f.stopping = nil, 0, 2

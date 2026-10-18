@@ -683,7 +683,7 @@
           n.enabled ? null : el('span', { class: 'badge' }, 'Paused'),
           n.gentle ? el('span', { class: 'badge badge--accent', title: 'Scans slowly with fewer probes' }, 'Gentle') : null,
           n.openvas ? el('span', { class: 'badge badge--accent', title: 'Also scanned with OpenVAS' }, 'OpenVAS') : null,
-          n.openvas && (n.ssh_login || n.smb_login) ? el('span', { class: 'badge', title: 'OpenVAS signs in to its hosts' }, 'Signed-in scan') : null),
+          n.openvas && (n.ssh_login || n.smb_login || n.esxi_login || n.snmp_login) ? el('span', { class: 'badge', title: 'OpenVAS signs in to its hosts' }, 'Signed-in scan') : null),
         el('div', { class: 'vs-net__actions' }, ...actions)),
       el('p', { class: 'vs-net__addrs mono' }, n.networks.join(', ') + (n.exclude && n.exclude.length ? '  (skipping ' + n.exclude.join(', ') + ')' : '')),
       el('dl', { class: 'vs-net__facts' },
@@ -807,7 +807,7 @@
       sel.value = value || '';
       loadLogins(false).then(({ logins }) => {
         sel.replaceChildren(el('option', { value: '' }, 'None: scan from outside only'),
-          ...logins.filter((l) => l.kind === kind).map((l) => el('option', { value: l.id }, l.name + ' (' + l.username + ')' + (l.readable ? '' : ' · enter again'))));
+          ...logins.filter((l) => l.kind === kind).map((l) => el('option', { value: l.id }, l.name + ' (' + (l.username || 'community') + ')' + (l.readable ? '' : ' · enter again'))));
         if (value && !logins.some((l) => l.id === value)) sel.append(el('option', { value }, 'A removed login'));
         sel.value = value || '';
       }).catch(() => {});
@@ -815,9 +815,13 @@
     };
     const sshLogin = loginSel('vs-ssh-login', 'ssh', t.ssh_login);
     const smbLogin = loginSel('vs-smb-login', 'smb', t.smb_login);
+    const esxiLogin = loginSel('vs-esxi-login', 'esxi', t.esxi_login);
+    const snmpLogin = loginSel('vs-snmp-login', 'snmp', t.snmp_login);
     const loginsWrap = el('div', { class: 'vs-logins' },
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-ssh-login' }, 'Sign in to Linux hosts with'), sshLogin),
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-smb-login' }, 'Sign in to Windows hosts with'), smbLogin),
+      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-esxi-login' }, 'Sign in to VMware ESXi hosts with'), esxiLogin),
+      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-snmp-login' }, 'Sign in to network devices (SNMP) with'), snmpLogin),
       el('p', { class: 'hint' }, el('span', {}, 'Optional: signed in, OpenVAS checks installed patches and settings. Add logins on ',
         el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), '.')));
     const syncLogins = () => { loginsWrap.hidden = !deep.checked; };
@@ -881,6 +885,8 @@
       if (scannerSel) next.scanner = scannerSel.value;
       next.ssh_login = deep.checked ? sshLogin.value : '';
       next.smb_login = deep.checked ? smbLogin.value : '';
+      next.esxi_login = deep.checked ? esxiLogin.value : '';
+      next.snmp_login = deep.checked ? snmpLogin.value : '';
       const targets = S.data.settings.targets.filter((x) => x.id !== t.id);
       const at = S.data.settings.targets.findIndex((x) => x.id === t.id);
       targets.splice(at < 0 ? targets.length : at, 0, next);
@@ -1031,9 +1037,13 @@
   }
 
   // ---------- scan logins ----------
-  // The SSH and Windows accounts OpenVAS signs in to hosts with. Their
+  // The SSH, Windows, ESXi and SNMP accounts OpenVAS signs in with. Their
   // keys and passwords are write-only: the server never sends them back.
-  const LOGIN_TYPES = [['ssh-key', 'Linux or Unix, SSH key (recommended)'], ['ssh-password', 'Linux or Unix, SSH password'], ['smb', 'Windows account (SMB)']];
+  const LOGIN_TYPES = [['ssh-key', 'Linux or Unix, SSH key (recommended)'], ['ssh-password', 'Linux or Unix, SSH password'], ['smb', 'Windows account (SMB)'],
+    ['esxi', 'VMware ESXi account'], ['snmp-v3', 'Network devices, SNMPv3 (recommended)'], ['snmp-community', 'Network devices, SNMPv1/v2c (not encrypted)']];
+  // The kind a login type saves as, and back.
+  const loginKind = (v) => v.startsWith('ssh-') ? 'ssh' : v.startsWith('snmp-') ? 'snmp' : v;
+  const typeOf = (l) => l.kind === 'ssh' || l.kind === 'snmp' ? l.kind + '-' + l.auth : l.kind;
   let loginsReq = null;
 
   // loadLogins fetches the scan logins once per page view; fresh fetches
@@ -1045,8 +1055,12 @@
     return loginsReq;
   }
 
+  function secretName(auth) {
+    return { key: 'private key', v3: 'password', community: 'community' }[auth] || 'password';
+  }
+
   function loginType(l) {
-    return l.kind === 'smb' ? 'Windows' : l.auth === 'key' ? 'SSH key' : 'SSH password';
+    return { smb: 'Windows', esxi: 'ESXi', 'snmp-v3': 'SNMPv3', 'snmp-community': 'SNMP community', 'ssh-key': 'SSH key' }[typeOf(l)] || 'SSH password';
   }
 
   function loginsCard() {
@@ -1054,14 +1068,14 @@
     const add = el('button', { class: 'btn btn--secondary btn--sm', type: 'button', onclick: () => editLogin(null) }, icon('plus'), 'Add a login');
     add.disabled = !canSave;
     const rows = logins.map((l) => el('li', { class: 'sc-login' },
-      el('span', { class: 'sc-login__icon' }, icon(l.kind === 'smb' ? 'monitor' : 'key-round')),
+      el('span', { class: 'sc-login__icon' }, icon({ smb: 'monitor', esxi: 'server', snmp: 'router' }[l.kind] || 'key-round')),
       el('div', { class: 'sc-login__main' },
         el('div', { class: 'sc-login__name' }, el('b', {}, l.name), el('span', { class: 'badge' }, loginType(l)),
           l.readable ? null : el('span', { class: 'badge badge--warning', title: 'This server cannot decrypt it' }, 'Enter again')),
-        el('p', { class: 'vs-muted' }, 'Signs in as ', el('span', { class: 'mono' }, l.username), l.kind === 'ssh' && l.port !== 22 ? ' on port ' + l.port : '',
+        el('p', { class: 'vs-muted' }, l.username ? 'Signs in as ' : 'Signs in with a community', l.username ? el('span', { class: 'mono' }, l.username) : null, l.kind === 'ssh' && l.port !== 22 ? ' on port ' + l.port : '',
           ' · ', l.used_by.length ? 'Used by ' + l.used_by.join(', ') : 'No network uses it yet',
           ' · Changed ', ago(l.updated_at), l.updated_by ? ' by ' + l.updated_by : ''),
-        l.readable ? null : el('p', { class: 'hint' }, icon('circle-alert'), 'This server cannot decrypt it, so scans skip OpenVAS for its networks. Edit it and enter the ' + (l.auth === 'key' ? 'private key' : 'password') + ' again.')),
+        l.readable ? null : el('p', { class: 'hint' }, icon('circle-alert'), 'This server cannot decrypt it, so scans skip OpenVAS for its networks. Edit it and enter the ' + secretName(l.auth) + (l.auth === 'v3' ? 's' : '') + ' again.')),
       el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => editLogin(l) }, icon('pencil'), 'Edit')));
     return el('section', { class: 'card sc-logins', 'aria-labelledby': 'sc-logins-title' },
       el('div', { class: 'card__head' }, el('div', {},
@@ -1080,10 +1094,9 @@
     const isNew = !l;
     const id = l ? l.id : 'l-' + newID().slice(2);
     const type = el('select', { class: 'select select--block', id: 'sc-login-type' }, ...LOGIN_TYPES.map(([v, label]) => el('option', { value: v }, label)));
-    type.value = l ? (l.kind === 'smb' ? 'smb' : 'ssh-' + l.auth) : 'ssh-key';
-    // A login's type is fixed once saved: networks name it for SSH or for Windows.
-    if (l && l.kind === 'smb') type.disabled = true;
-    if (l && l.kind === 'ssh') [...type.options].forEach((o) => { o.disabled = o.value === 'smb'; });
+    type.value = l ? typeOf(l) : 'ssh-key';
+    // A login's kind is fixed once saved: networks name it for SSH, Windows, ESXi or SNMP.
+    if (l) [...type.options].forEach((o) => { o.disabled = loginKind(o.value) !== l.kind; });
     const name = el('input', { class: 'input', id: 'sc-login-name', maxlength: '80', placeholder: 'Linux servers', autocomplete: 'off' });
     name.value = l ? l.name : '';
     const user = el('input', { class: 'input mono', id: 'sc-login-user', maxlength: '200', placeholder: 'signalith-scan', autocomplete: 'off', spellcheck: 'false' });
@@ -1094,6 +1107,7 @@
     const keyBox = el('textarea', { class: 'textarea mono', id: 'sc-login-key', rows: '6', spellcheck: 'false', autocomplete: 'off', placeholder: '-----BEGIN OPENSSH PRIVATE KEY-----' });
     const pass = el('input', { class: 'input', id: 'sc-login-pass', type: 'password', maxlength: '256', autocomplete: 'new-password' });
     const phrase = el('input', { class: 'input', id: 'sc-login-phrase', type: 'password', maxlength: '256', autocomplete: 'new-password' });
+    const privacy = el('input', { class: 'input', id: 'sc-login-privacy', type: 'password', maxlength: '256', autocomplete: 'new-password' });
     const clearPhrase = el('input', { type: 'checkbox' });
     const userHint = el('p', { class: 'hint' });
     // OpenVAS hands every host it scans what the login signs in with: a
@@ -1104,23 +1118,45 @@
         'Use a key where you can, and an account that is a plain user on each host.'));
     const smbWarn = el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Every Windows host scanned receives this account’s sign-in. Use an account made for scanning, for this zone only, ' +
       'and see the guide for the Windows settings that keep it safe.'));
+    const esxiWarn = el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Every ESXi host scanned receives this password. Make a local account with a read-only role on each host, ' +
+      'not root; the guide says how.'));
+    // SNMPv1/v2c sends the community in the clear, and it often grants
+    // more than reading: offered only with a warning.
+    const communityWarn = el('div', { class: 'alert', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, 'Use SNMPv3 where you can. '), 'A v1/v2c community crosses the network unencrypted to every device scanned, so anyone on the path can read it. ' +
+        'Use only a read-only community made for scanning, never one that can write, and limit it to the scanning server’s address on the devices.'));
     const keyWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-key' }, 'Private key'), keyBox,
       el('p', { class: 'hint' }, l ? 'Leave empty to keep the saved key. ' : '', 'Paste the whole private key file. Signalith never shows it again.'));
     const phraseWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-phrase' }, 'Key passphrase'), phrase,
       el('p', { class: 'hint' }, l && l.has_passphrase ? 'Leave empty to keep the saved passphrase.' : 'Only if the key has one.'),
       l && l.has_passphrase ? el('label', { class: 'vs-allowed' }, clearPhrase, el('span', {}, 'The key no longer has a passphrase')) : null);
-    const passWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-pass' }, 'Password'), pass,
-      el('p', { class: 'hint' }, l && l.auth === 'password' ? 'Leave empty to keep the saved password. ' : '', 'Signalith never shows it again.'));
+    const passLabel = el('label', { class: 'label', for: 'sc-login-pass' }, 'Password');
+    const passHint = el('p', { class: 'hint' });
+    const passWrap = el('div', { class: 'field' }, passLabel, pass, passHint);
+    const privacyWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-privacy' }, 'Privacy password'), privacy,
+      el('p', { class: 'hint' }, l && l.auth === 'v3' ? 'Leave empty to keep the saved one. ' : '',
+        'Encrypts what the device sends (AES). At least 8 characters, and not the same as the authentication password.'));
     const portWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-port' }, 'SSH port'), port);
+    const userWrap = el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-user' }, 'User name'), user, userHint);
     const sync = () => {
       const v = type.value;
       keyWrap.hidden = phraseWrap.hidden = v !== 'ssh-key';
       passWrap.hidden = v === 'ssh-key';
-      portWrap.hidden = v === 'smb';
+      portWrap.hidden = !v.startsWith('ssh-');
       passWarn.hidden = v !== 'ssh-password';
       smbWarn.hidden = v !== 'smb';
+      esxiWarn.hidden = v !== 'esxi';
+      communityWarn.hidden = v !== 'snmp-community';
+      privacyWrap.hidden = v !== 'snmp-v3';
+      userWrap.hidden = v === 'snmp-community';
+      const keep = l && typeOf(l) === v ? 'Leave empty to keep the saved one. ' : '';
+      passLabel.textContent = { 'snmp-v3': 'Authentication password', 'snmp-community': 'Community' }[v] || 'Password';
+      passHint.textContent = keep + (v === 'snmp-v3' ? 'Signs in with SHA. At least 8 characters. ' : v === 'snmp-community' ? 'A long random read-only community, at least 8 characters. ' : '') +
+        'Signalith never shows it again.';
+      name.placeholder = { smb: 'Windows servers', esxi: 'ESXi hosts', 'snmp-v3': 'Plant switches', 'snmp-community': 'Old printers' }[v] || 'Linux servers';
       user.placeholder = v === 'smb' ? 'CORP\\svc-signalith-scan' : 'signalith-scan';
-      userHint.textContent = v === 'smb' ? 'A domain account as DOMAIN\\name, or a local account by name alone.' : 'The account it signs in to each host as.';
+      userHint.textContent = v === 'smb' ? 'A domain account as DOMAIN\\name, or a local account by name alone.'
+        : v === 'snmp-v3' ? 'The SNMPv3 user set up on the devices.' : 'The account it signs in to each host as.';
     };
     type.addEventListener('change', sync);
     sync();
@@ -1132,10 +1168,10 @@
         el('p', { class: 'modal__desc' }, 'Use an account made only for scanning, with the least access it needs. Saved encrypted; only admins can change it.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
       el('div', { class: 'modal__body vs-form' },
-        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-type' }, 'Hosts it signs in to'), type), passWarn, smbWarn,
+        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-type' }, 'Hosts it signs in to'), type), passWarn, smbWarn, esxiWarn, communityWarn,
         el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-name' }, 'Name'), name),
-        el('div', { class: 'field' }, el('label', { class: 'label', for: 'sc-login-user' }, 'User name'), user, userHint),
-        portWrap, keyWrap, phraseWrap, passWrap, err),
+        userWrap,
+        portWrap, keyWrap, phraseWrap, passWrap, privacyWrap, err),
       el('div', { class: 'modal__foot' },
         isNew ? null : el('button', { class: 'btn btn--ghost vs-danger', type: 'button', onclick: () => confirmDeleteLogin(l) }, icon('trash-2'), 'Remove'),
         el('span', { class: 'spacer' }),
@@ -1149,23 +1185,27 @@
       };
       const v = type.value;
       if (!name.value.trim()) return fail('Give the login a name, such as Linux servers.', name);
-      if (!user.value.trim()) return fail('Enter the user name it signs in as.', user);
-      const body = { name: name.value.trim(), kind: v === 'smb' ? 'smb' : 'ssh', username: user.value.trim(), auth: v === 'ssh-key' ? 'key' : 'password' };
-      if (v !== 'smb') body.port = +port.value || 22;
+      if (v !== 'snmp-community' && !user.value.trim()) return fail('Enter the user name it signs in as.', user);
+      const kind = loginKind(v);
+      const body = { name: name.value.trim(), kind, username: v === 'snmp-community' ? '' : user.value.trim(),
+        auth: kind === 'ssh' || kind === 'snmp' ? v.slice(kind.length + 1) : 'password' };
+      if (kind === 'ssh') body.port = +port.value || 22;
       if (v === 'ssh-key') {
         body.secret = keyBox.value.trim() ? keyBox.value.trim() + '\n' : '';
         body.passphrase = phrase.value;
         body.clear_passphrase = clearPhrase.checked;
       } else {
         body.secret = pass.value;
+        if (v === 'snmp-v3') body.privacy = privacy.value;
       }
-      const changed = !l || (l.kind === 'smb' ? 'smb' : 'ssh-' + l.auth) !== v;
-      if (changed && !body.secret) return fail(v === 'ssh-key' ? 'Paste the private key.' : 'Enter the password.', v === 'ssh-key' ? keyBox : pass);
+      const changed = !l || typeOf(l) !== v;
+      if (changed && !body.secret) return fail(v === 'ssh-key' ? 'Paste the private key.' : v === 'snmp-community' ? 'Enter the community.' : 'Enter the password.', v === 'ssh-key' ? keyBox : pass);
+      if (changed && v === 'snmp-v3' && !body.privacy) return fail('Enter the privacy password.', privacy);
       save.disabled = true;
       try {
         await api('api/vulns/logins/' + encodeURIComponent(id), body, 'PUT');
         // Clear the secrets from the page as soon as they are saved.
-        keyBox.value = pass.value = phrase.value = '';
+        keyBox.value = pass.value = phrase.value = privacy.value = '';
         dlg.close();
         toast(isNew ? body.name + ' was added. Pick it for a network on Vulnerabilities > Networks.' : 'Used from the next scan.', null, { title: isNew ? 'Login added' : 'Saved' });
         SC.logins = await loadLogins(true);
@@ -1175,7 +1215,7 @@
         fail(e.message);
       }
     });
-    dlg.addEventListener('close', () => { keyBox.value = pass.value = phrase.value = ''; }, { once: true });
+    dlg.addEventListener('close', () => { keyBox.value = pass.value = phrase.value = privacy.value = ''; }, { once: true });
     dlg.showModal();
     (isNew ? name : user).focus();
   }

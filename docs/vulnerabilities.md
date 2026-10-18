@@ -225,14 +225,17 @@ can use both.
 
 From outside, OpenVAS sees only what a host's open ports show. Signed in, it reads the
 installed packages, patches and settings, and finds far more: missing security updates,
-old kernels, weak configuration. Give it a login for the Linux hosts (SSH) and one for the
-Windows hosts (SMB) of a network:
+old kernels, weak configuration. Give it a login for each kind of host on a network: Linux
+and Unix (SSH), Windows (SMB), VMware ESXi, and network devices such as switches, routers,
+firewalls and industrial gateways (SNMP):
 
 1. Make a scan account on the hosts, with the least access it needs (below).
 2. Open **Settings > Scanners**, find **Scan logins for OpenVAS** and click **Add a login**.
-   Pick the kind, enter a name, the user name and the SSH private key or password, and save.
+   Pick the kind, enter a name, the user name and the key or passwords, and save.
 3. On **Vulnerabilities > Networks**, edit the network, keep **Also scan with OpenVAS** on,
-   and pick the logins under **Sign in to Linux hosts with** and **Sign in to Windows hosts with**.
+   and pick the logins under **Sign in to Linux hosts with**, **Sign in to Windows hosts
+   with**, **Sign in to VMware ESXi hosts with** and **Sign in to network devices (SNMP)
+   with**. Leave any you don't need at None.
 4. Click **Scan now**. In the results, OpenVAS findings from the signed-in checks are named
    for the package or patch, such as "Ubuntu: Security Advisory (USN-…)".
 
@@ -301,14 +304,61 @@ local account works too (its name alone), but Windows then also needs
 computer's defenses; prefer a domain account. Change the password every few months: edit
 the login and enter the new one.
 
+#### A VMware ESXi scan account
+
+OpenVAS reads the ESXi version and build over the vSphere API (HTTPS, TCP 443) and matches
+them to VMware's advisories. A read-only account is enough; never use `root`:
+
+1. In the ESXi Host Client, open **Host > Manage > Security & users > Users** and add a
+   user such as `signalith-scan` with a long random password.
+2. Right-click **Host**, choose **Permissions**, and add the user with the **Read-only**
+   role.
+3. If the host is in lockdown mode, add the user to its **Exception Users** list.
+4. Allow TCP 443 to the host from the scanning server.
+
+Every ESXi host the scan reaches receives this password, so use one account per network
+zone, and change its password after any sign that a host was compromised.
+
+#### An SNMP scan account (network devices)
+
+OpenVAS reads a device's model, firmware version and settings over SNMP (UDP 161). A network
+with an SNMP login is scanned on all TCP ports and Nmap's top 100 UDP ports (161 among
+them) instead of the usual TCP list, or on your own ports plus UDP 161, so its scans take
+longer.
+
+Use **SNMPv3** wherever the device supports it. Signalith signs in with SHA authentication
+and AES privacy (encryption), so neither the password nor what the device sends can be
+read on the way. On the device, make a v3 user that can only read, at the `authPriv`
+security level, and allow it from the scanning server's address only. On Cisco IOS, for
+example (put your own passwords in place of the two values; the scanning server here is
+10.0.5.20):
+
+```text
+access-list 10 permit 10.0.5.20
+snmp-server view SIGNALITH-RO iso included
+snmp-server group SIGNALITH v3 priv read SIGNALITH-RO access 10
+snmp-server user signalith-scan SIGNALITH v3 auth sha AUTH-PASSWORD priv aes 128 PRIVACY-PASSWORD
+```
+
+Both passwords must be at least 8 characters and different from each other; use long
+random ones.
+
+**SNMPv1/v2c communities** are for older devices that have nothing better. A community
+crosses the network unencrypted to every device scanned, so anyone on the path can read it,
+and on many devices a community can also change settings. If you must use one: make a
+read-only community just for scanning (long and random: Signalith refuses `public`,
+`private` and other well-known defaults), allow it from the scanning server's address only,
+and put the devices that need it on a network of their own in Signalith, so the community
+is sent to them alone.
+
 #### How Signalith keeps the logins
 
-- Keys, passphrases and passwords are encrypted (AES-256-GCM) before they are stored, each
+- Keys, passphrases, passwords and SNMP communities are encrypted (AES-256-GCM) before they are stored, each
   bound to its login, and never sent back to the browser, written to a log or put in an
   event. Editing a login keeps the saved key or password unless you enter a new one.
 - Only admins can see the list of logins, add, change or remove them, or pick them for a
   network. Each change is in the audit log (`vulnerability scan login saved` or
-  `removed`), with the login's name, user name and whether its key or password changed.
+  `removed`), with the login's name, user name and whether its key or passwords changed.
 - A login is decrypted only on the server that scans the network, when a scan starts. It is
   handed to OpenVAS for that scan alone and removed from OpenVAS when the scan ends, on a
   connection of its own. If that fails (OpenVAS restarted, or the server stopped

@@ -60,6 +60,9 @@ const (
 	gvmScannerOpenVAS    = "08b69003-5fc2-4037-a479-93b440211c73"
 	gvmPortsIANATCP      = "33d0cd82-57c6-11e1-8ed1-406186ea4fc5"
 	gvmPortsAllTCP       = "fd591a34-56fd-11e1-9f27-406186ea4fc5"
+	// gvmPortsAllTCPTopUDP is all TCP ports and Nmap's top 100 UDP ports,
+	// SNMP's 161 among them.
+	gvmPortsAllTCPTopUDP = "730ef368-57e2-11e1-a90f-406186ea4fc5"
 	// minQoD leaves out results OpenVAS is unsure of, as its own reports
 	// do by default.
 	minQoD = 70
@@ -226,6 +229,8 @@ type gmpCreateTarget struct {
 	AliveTests   string   `xml:"alive_tests"`
 	SSHLogin     *gmpSSH  `xml:"ssh_credential,omitempty"`
 	SMBLogin     *gmpRef  `xml:"smb_credential,omitempty"`
+	ESXiLogin    *gmpRef  `xml:"esxi_credential,omitempty"`
+	SNMPLogin    *gmpRef  `xml:"snmp_credential,omitempty"`
 }
 
 type gmpSSH struct {
@@ -234,15 +239,24 @@ type gmpSSH struct {
 }
 
 // gmpCreateCredential makes the login OpenVAS signs in to hosts with:
-// type up is a user name and password, usk a user name and SSH key.
+// type up is a user name and password, usk a user name and SSH key, snmp
+// an SNMPv3 user (or a community).
 type gmpCreateCredential struct {
-	XMLName  xml.Name `xml:"create_credential"`
-	Name     string   `xml:"name"`
-	Comment  string   `xml:"comment"`
-	Type     string   `xml:"type"`
-	Login    string   `xml:"login"`
-	Password string   `xml:"password,omitempty"`
-	Key      *gmpKey  `xml:"key,omitempty"`
+	XMLName   xml.Name    `xml:"create_credential"`
+	Name      string      `xml:"name"`
+	Comment   string      `xml:"comment"`
+	Type      string      `xml:"type"`
+	Community string      `xml:"community,omitempty"`
+	Login     string      `xml:"login,omitempty"`
+	Password  string      `xml:"password,omitempty"`
+	AuthAlgo  string      `xml:"auth_algorithm,omitempty"`
+	Privacy   *gmpPrivacy `xml:"privacy,omitempty"`
+	Key       *gmpKey     `xml:"key,omitempty"`
+}
+
+type gmpPrivacy struct {
+	Algorithm string `xml:"algorithm"`
+	Password  string `xml:"password"`
 }
 
 type gmpKey struct {
@@ -426,10 +440,17 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 	}
 	tgt := gmpCreateTarget{Name: name, Comment: scanComment,
 		Hosts: strings.Join(t.Networks, ","), ExcludeHosts: strings.Join(t.Exclude, ","), AliveTests: "Scan Config Default"}
-	switch t.Ports {
-	case PortsAll:
+	// SNMP is UDP port 161, which OpenVAS checks only when the port list
+	// has it.
+	snmp := logins.SNMP != nil
+	switch {
+	case snmp && t.Ports != PortsTop100 && t.Ports != PortsTop1000 && t.Ports != PortsAll && t.Ports != "":
+		tgt.PortRange = "T:" + t.Ports + ",U:161"
+	case snmp:
+		tgt.PortList = &gmpRef{ID: gvmPortsAllTCPTopUDP}
+	case t.Ports == PortsAll:
 		tgt.PortList = &gmpRef{ID: gvmPortsAllTCP}
-	case PortsTop100, PortsTop1000, "":
+	case t.Ports == PortsTop100 || t.Ports == PortsTop1000 || t.Ports == "":
 		tgt.PortList = &gmpRef{ID: gvmPortsIANATCP}
 	default:
 		tgt.PortRange = "T:" + t.Ports
@@ -449,13 +470,15 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 		}
 		o.remove(cctx, c, taskID, targetID, credIDs)
 	}
-	for _, l := range []*Login{logins.SSH, logins.SMB} {
-		if l == nil {
-			continue
-		}
+	for _, l := range logins.all() {
 		cred := gmpCreateCredential{Name: name + " " + l.Kind, Comment: tgt.Comment, Type: "up", Login: l.Username, Password: l.Secret}
-		if l.Auth == AuthKey {
+		switch l.Auth {
+		case AuthKey:
 			cred.Type, cred.Password, cred.Key = "usk", "", &gmpKey{Private: l.Secret, Phrase: l.Passphrase}
+		case AuthSNMPv3:
+			cred.Type, cred.AuthAlgo, cred.Privacy = "snmp", "sha1", &gmpPrivacy{Algorithm: "aes", Password: l.Privacy}
+		case AuthCommunity:
+			cred = gmpCreateCredential{Name: cred.Name, Comment: cred.Comment, Type: "snmp", Community: l.Secret}
 		}
 		if err := g.do(ctx, cred, &created); err != nil {
 			cleanup("")
@@ -469,7 +492,15 @@ func (o *OpenVAS) Scan(ctx context.Context, t Target, name string, logins ScanLo
 			}
 			tgt.SSHLogin = &gmpSSH{ID: created.ID, Port: port}
 		} else {
-			tgt.SMBLogin = &gmpRef{ID: created.ID}
+			ref := &gmpRef{ID: created.ID}
+			switch l.Kind {
+			case LoginSMB:
+				tgt.SMBLogin = ref
+			case LoginESXi:
+				tgt.ESXiLogin = ref
+			case LoginSNMP:
+				tgt.SNMPLogin = ref
+			}
 		}
 	}
 	if err := g.do(ctx, tgt, &created); err != nil {
@@ -631,8 +662,13 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 func loginWord(kind string) string {
-	if kind == LoginSMB {
+	switch kind {
+	case LoginSMB:
 		return "Windows"
+	case LoginESXi:
+		return "ESXi"
+	case LoginSNMP:
+		return "SNMP"
 	}
 	return "SSH"
 }
