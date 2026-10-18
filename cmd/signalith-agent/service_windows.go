@@ -100,3 +100,6 @@ func updateLog(p agentd.Paths, w io.Writer) io.Writer {
 	}
 	return f
 }
+
+// agentLog is w: the service writes agent.log itself (service.Execute).
+func agentLog(_ agentd.Paths, w io.Writer) io.Writer { return w }

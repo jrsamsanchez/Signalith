@@ -368,3 +368,16 @@ func TestOSReleaseName(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestSwVersName(t *testing.T) {
+	out := "ProductName:\t\tmacOS\nProductVersion:\t\t15.1\nBuildVersion:\t\t24B83\n"
+	if got := swVersName(out); got != "macOS 15.1 (24B83)" {
+		t.Errorf("got %q", got)
+	}
+	if got := swVersName("ProductName:\tMac OS X\nProductVersion:\t10.15.7\n"); got != "macOS 10.15.7" {
+		t.Errorf("got %q", got)
+	}
+	if got := swVersName("nothing"); got != "" {
+		t.Errorf("got %q", got)
+	}
+}

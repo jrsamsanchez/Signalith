@@ -61,6 +61,11 @@ func TestManagedAgentInstallScriptIsPublic(t *testing.T) {
 	if code != 200 || body != string(deploy.AgentInstallPS1) || h.Get("X-Signalith-SHA256") != hex.EncodeToString(sum[:]) {
 		t.Errorf("install.ps1: %d %v", code, h)
 	}
+	code, h, body = sensorGet(t, ts, agentproto.RouteInstallMacOS, "")
+	sum = sha256.Sum256(deploy.AgentInstallMacOS)
+	if code != 200 || body != string(deploy.AgentInstallMacOS) || h.Get("X-Signalith-SHA256") != hex.EncodeToString(sum[:]) {
+		t.Errorf("install-macos.sh: %d %v", code, h)
+	}
 }
 
 func TestManagedAgentInstallLine(t *testing.T) {
@@ -87,6 +92,16 @@ func TestManagedAgentInstallLine(t *testing.T) {
 		if !strings.Contains(win, want) {
 			t.Errorf("Windows line has no %q:\n%s", want, win)
 		}
+	}
+	mac, _ := out["macos"].(string)
+	for _, want := range []string{"https://siem.example.com:7779/api/agent/install-macos.sh", "shasum -a 256 -c -s",
+		"--from https://siem.example.com:7779 --ca-sha256 " + ca + " --version test --token -", clusterinstall.ScriptSHA256().AgentMac} {
+		if !strings.Contains(mac, want) {
+			t.Errorf("macOS line has no %q:\n%s", want, mac)
+		}
+	}
+	if note, _ := out["macos_note"].(string); !strings.Contains(note, "Full Disk Access") {
+		t.Errorf("macOS note %q", note)
 	}
 	if out["ca_sha256"] != ca || out["token_placeholder"] != agents.TokenPlaceholder || out["add_name"] != nil {
 		t.Errorf("answer: %v", out)
@@ -192,9 +207,25 @@ func TestManagedAgentConfig(t *testing.T) {
 	if _, ok := s.EnrollToken(agent); !ok {
 		t.Error("osquery cannot enroll with the agent token")
 	}
-	code, _, body = sensorGet(t, ts, strings.Replace(strings.Replace(path, "os=linux", "os=darwin", 1), "amd64", "arm64", 1), agent)
-	if code != 200 || strings.Contains(body, "fluentbit") {
-		t.Errorf("macOS (nothing yet): %d %s", code, body)
+	// A Mac runs osquery only: no Fluent Bit, and the CA for osquery.
+	darwin := strings.Replace(strings.Replace(path, "os=linux", "os=darwin", 1), "amd64", "arm64", 1)
+	code, _, body = sensorGet(t, ts, darwin, agent)
+	if code != 200 || strings.Contains(body, "fluentbit") || strings.Contains(body, "osquery") {
+		t.Errorf("macOS without osquery: %d %s", code, body)
+	}
+	code, _, body = sensorGet(t, ts, darwin+"&osquery=true", agent)
+	var mc agentproto.Config
+	if code != 200 || json.Unmarshal([]byte(body), &mc) != nil || mc.FluentBit != nil || mc.Osquery == nil || mc.Osquery.Error != "" ||
+		!strings.Contains(mc.CA, "BEGIN CERTIFICATE") || mc.Revision != agentproto.RevisionOf(mc) {
+		t.Fatalf("macOS: %d %s", code, body)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(mc.Osquery.Flags), "\n") {
+		if !agentproto.OsqueryFlagAllowed(line) {
+			t.Errorf("macOS: the agent would leave out %q", line)
+		}
+	}
+	if !strings.Contains(mc.Osquery.Flags, "--tls_hostname=siem.example.com:7779\n") || strings.Contains(mc.Osquery.Flags, "ntfs") {
+		t.Errorf("macOS osquery flags:\n%s", mc.Osquery.Flags)
 	}
 	for _, bad := range []string{"?os=plan9&arch=amd64", "?os=linux&arch=amd64&server=http://siem.example.com:7779", "?os=linux&arch=amd64&server=" + url.QueryEscape("https://a b")} {
 		if code, _, body := sensorGet(t, ts, agentproto.RouteConfig+bad, agent); code != 400 {

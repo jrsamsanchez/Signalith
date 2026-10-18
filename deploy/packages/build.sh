@@ -36,7 +36,7 @@ mkdir -p "$stage"
 sed 's#/usr/local/bin/signalith#/usr/bin/signalith#g' "$root/deploy/systemd/signalith.service" > "$stage/signalith.service"
 cp "$here"/nfpm.yaml "$here"/*.sh "$root/LICENSE" "$root/NOTICE" "$root/README.md" "$stage/"
 mkdir -p "$stage/agents"
-for p in linux-amd64 linux-arm64 windows-amd64; do
+for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do
   ext=''
   [ "${p%-*}" = windows ] && ext=.exe
   (cd "$root" && GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath \

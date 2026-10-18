@@ -67,6 +67,7 @@ var installRoutes = []string{
 	"GET /api/sensor/install.sh",
 	"GET /api/agent/install.sh",
 	"GET /api/agent/install.ps1",
+	"GET /api/agent/install-macos.sh",
 }
 
 func (s *Server) routeClusterInstall(mux *http.ServeMux, api *router) {

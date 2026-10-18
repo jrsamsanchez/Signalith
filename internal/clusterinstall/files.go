@@ -28,6 +28,7 @@ const (
 	ScriptSensor   = "sensor-install.sh"
 	ScriptAgent    = "agent-install.sh"
 	ScriptAgentPS1 = "agent-install.ps1"
+	ScriptAgentMac = "agent-install-macos.sh"
 )
 
 // ScriptSHA is the SHA-256 of each install script, in hex, which the
@@ -38,10 +39,11 @@ type ScriptSHA struct {
 	Sensor   string `json:"sensor"`
 	Agent    string `json:"agent"`
 	AgentPS1 string `json:"agent_ps1"`
+	AgentMac string `json:"agent_macos"`
 }
 
 var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1), Sensor: hexSHA(deploy.SensorInstallSH),
-	Agent: hexSHA(deploy.AgentInstallSH), AgentPS1: hexSHA(deploy.AgentInstallPS1)}
+	Agent: hexSHA(deploy.AgentInstallSH), AgentPS1: hexSHA(deploy.AgentInstallPS1), AgentMac: hexSHA(deploy.AgentInstallMacOS)}
 
 // ScriptSHA256 returns the scripts' SHA-256.
 func ScriptSHA256() ScriptSHA { return scriptSHA }
@@ -60,6 +62,8 @@ func Script(name string) ([]byte, string, bool) {
 		return deploy.AgentInstallSH, scriptSHA.Agent, true
 	case ScriptAgentPS1:
 		return deploy.AgentInstallPS1, scriptSHA.AgentPS1, true
+	case ScriptAgentMac:
+		return deploy.AgentInstallMacOS, scriptSHA.AgentMac, true
 	}
 	return nil, "", false
 }

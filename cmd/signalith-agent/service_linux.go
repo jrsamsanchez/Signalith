@@ -1,5 +1,3 @@
-//go:build !windows
-
 package main
 
 import (
@@ -18,3 +16,6 @@ func agentService(p agentd.Paths) agentd.ServiceControl {
 
 // updateLog is w: the updater's service logs to the journal.
 func updateLog(_ agentd.Paths, w io.Writer) io.Writer { return w }
+
+// agentLog is w: the agent's service logs to the journal.
+func agentLog(_ agentd.Paths, w io.Writer) io.Writer { return w }

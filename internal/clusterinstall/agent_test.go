@@ -48,6 +48,18 @@ func TestAgentLines(t *testing.T) {
 	if !strings.Contains(c.WindowsNote, "Run as administrator") || !strings.Contains(c.WindowsNote, "don't share it") {
 		t.Errorf("Windows note %q", c.WindowsNote)
 	}
+	msum := sha256.Sum256(deploy.AgentInstallMacOS)
+	if c.MacOSSHA256 != hex.EncodeToString(msum[:]) || c.MacOSSHA256 != ScriptSHA256().AgentMac {
+		t.Errorf("macOS script SHA-256 %s", c.MacOSSHA256)
+	}
+	want = " f=$(mktemp) && curl -fsSk --proto '=https' https://siem:7779/api/agent/install-macos.sh -o \"$f\" && echo \"" + c.MacOSSHA256 +
+		"  $f\" | shasum -a 256 -c -s && echo '" + agents.TokenPlaceholder + "' | sudo sh \"$f\" --from https://siem:7779 --ca-sha256 " + caSum + " --version 0.4.0 --token -"
+	if c.MacOS != want {
+		t.Errorf("macOS line\n%s\nwant\n%s", c.MacOS, want)
+	}
+	if !strings.Contains(c.MacOSNote, "macOS 12") || !strings.Contains(c.MacOSNote, "Full Disk Access") || !strings.Contains(c.MacOSNote, "history") {
+		t.Errorf("macOS note %q", c.MacOSNote)
+	}
 	c, _ = AgentLines(AgentLine{URL: "https://siem:7779", Version: "dev", CASHA256: caSum, NextCASHA256: strings.Repeat("a", 64)})
 	if !strings.Contains(c.Windows, "-CaSha256 "+caSum+" -NextCaSha256 "+strings.Repeat("a", 64)+" -Version dev") {
 		t.Errorf("next CA, Windows: %s", c.Windows)
@@ -55,8 +67,11 @@ func TestAgentLines(t *testing.T) {
 	if !strings.Contains(c.Linux, "--ca-sha256 "+caSum+" --next-ca-sha256 "+strings.Repeat("a", 64)+" --version dev") {
 		t.Errorf("next CA: %s", c.Linux)
 	}
+	if !strings.Contains(c.MacOS, "--ca-sha256 "+caSum+" --next-ca-sha256 "+strings.Repeat("a", 64)+" --version dev") {
+		t.Errorf("next CA, macOS: %s", c.MacOS)
+	}
 	c, _ = AgentLines(AgentLine{URL: "https://siem.example.com", Version: "dev"})
-	if strings.Contains(c.Linux, "--ca-sha256") || strings.Contains(c.Windows, "-CaSha256") {
+	if strings.Contains(c.Linux, "--ca-sha256") || strings.Contains(c.Windows, "-CaSha256") || strings.Contains(c.MacOS, "--ca-sha256") {
 		t.Errorf("public CA: %s", c.Linux)
 	}
 	for name, l := range map[string]AgentLine{

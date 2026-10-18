@@ -63,7 +63,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "install-update":
 		return installUpdate(paths, stderr)
 	case "run":
-		a, err := newAgent(paths, stderr)
+		a, err := newAgent(paths, agentLog(paths, stderr))
 		if err != nil {
 			return err
 		}
@@ -101,7 +101,7 @@ func newAgent(paths agentd.Paths, w io.Writer) (*agentd.Agent, error) {
 }
 
 // installUpdate installs the update the agent got ready, logging to w
-// (the journal on Linux, the updater's log on Windows).
+// (the journal on Linux, the updater's log on Windows and macOS).
 func installUpdate(paths agentd.Paths, w io.Writer) error {
 	if err := agentd.CheckFolders(paths); err != nil {
 		return err

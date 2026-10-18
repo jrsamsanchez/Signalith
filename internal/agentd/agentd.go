@@ -143,7 +143,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.runFluentBit(cfg)
 		a.runOsquery(cfg)
 	}
-	a.fluentBit.setVersion(programVersion(a.Paths.FluentBit))
+	if a.Paths.FluentBit != "" {
+		a.fluentBit.setVersion(programVersion(a.Paths.FluentBit))
+	}
 	if a.Paths.Osqueryd != "" && exists(a.Paths.Osqueryd) {
 		a.osquery.setVersion(programVersion(a.Paths.Osqueryd))
 	}
@@ -473,7 +475,10 @@ func (a *Agent) Status() agentproto.Status {
 	oq := a.osqueryComponent()
 	up := a.update
 	a.mu.Unlock()
-	comps := []agentproto.Component{a.fluentBit.component()}
+	var comps []agentproto.Component
+	if a.Paths.FluentBit != "" {
+		comps = append(comps, a.fluentBit.component())
+	}
 	if oq != nil {
 		comps = append(comps, *oq)
 	}
@@ -530,17 +535,12 @@ func (a *Agent) sendStatus(ctx context.Context) {
 	} else if st.Revision == "" {
 		cfg = "none yet"
 	}
-	fb := a.fluentBit.component()
-	fbLine := fb.State
-	if fb.Error != "" {
-		fbLine += ": " + oneLine(fb.Error)
-	}
 	rep := "no"
 	if ok {
 		rep = "yes"
 	}
-	health := fmt.Sprintf("config=%s\nfluentbit=%s\n", cfg, fbLine)
-	for _, c := range st.Components[1:] {
+	health := "config=" + cfg + "\n"
+	for _, c := range st.Components {
 		line := c.State
 		if c.Error != "" {
 			line += ": " + oneLine(c.Error)

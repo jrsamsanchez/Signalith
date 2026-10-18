@@ -2,10 +2,13 @@ package agentd
 
 import (
 	"bufio"
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // facts are what the agent tells the server about the computer, so the
@@ -61,8 +64,46 @@ func systemName() string {
 		if name := windowsName(); name != "" {
 			return name
 		}
+	case "darwin":
+		if name := macName(); name != "" {
+			return name
+		}
 	}
 	return runtime.GOOS
+}
+
+// macName is macOS's version as sw_vers says it, such as "macOS 15.1
+// (24B83)".
+func macName() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "/usr/bin/sw_vers").Output()
+	if err != nil {
+		return ""
+	}
+	return swVersName(string(out))
+}
+
+// swVersName reads sw_vers' output.
+func swVersName(out string) string {
+	v := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if k, val, ok := strings.Cut(line, ":"); ok {
+			v[strings.TrimSpace(k)] = strings.TrimSpace(val)
+		}
+	}
+	if v["ProductVersion"] == "" {
+		return ""
+	}
+	name := v["ProductName"]
+	if name == "" || name == "Mac OS X" {
+		name = "macOS"
+	}
+	name += " " + v["ProductVersion"]
+	if b := v["BuildVersion"]; b != "" {
+		name += " (" + b + ")"
+	}
+	return oneLine(name)
 }
 
 // osReleaseName reads PRETTY_NAME from an os-release file.

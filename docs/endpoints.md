@@ -24,9 +24,9 @@ Hosts found this way are also added to the asset list (**Risk and context**), as
 
 ## Adding hosts
 
-On Linux and Windows the easiest way is the [Signalith Agent](signalith-agent.md#osquery):
-its one line installs osquery too and keeps its settings, with nothing else to do. The
-steps below set osquery up by hand, which is also the way for Macs for now.
+The easiest way is the [Signalith Agent](signalith-agent.md#osquery), on Linux, Windows
+and macOS: its one line installs osquery too and keeps its settings, with nothing else to
+do. The steps below set osquery up by hand.
 
 1. Open **Add data**, pick **osquery**, and choose the platform the hosts run.
 2. Install osquery 5 on each host from <https://osquery.io/downloads>.

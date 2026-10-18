@@ -43,6 +43,12 @@ var AgentInstallSH []byte
 //go:embed agent/install.ps1
 var AgentInstallPS1 []byte
 
+// AgentInstallMacOS is deploy/agent/install-macos.sh, the Signalith
+// Agent's macOS install script.
+//
+//go:embed agent/install-macos.sh
+var AgentInstallMacOS []byte
+
 // SensorUnits are the systemd units deploy/sensor/install.sh writes, and
 // SensorCompose the Docker Compose file of its --docker option; the
 // script carries copies of them, which a test checks agree.

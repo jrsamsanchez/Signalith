@@ -53,6 +53,10 @@ type AgentCommands struct {
 	Windows       string `json:"windows"`
 	WindowsNote   string `json:"windows_note"`
 	WindowsSHA256 string `json:"windows_script_sha256"`
+	// MacOS is the line for a Mac's Terminal, and MacOSNote its note.
+	MacOS       string `json:"macos"`
+	MacOSNote   string `json:"macos_note"`
+	MacOSSHA256 string `json:"macos_script_sha256"`
 }
 
 // AgentSystems are the systems the agent install script supports, as the
@@ -62,6 +66,10 @@ const AgentSystems = "Ubuntu 22.04 or 24.04, Debian 12 or 13, Red Hat Enterprise
 // AgentWindowsSystems are the Windows versions the agent install script
 // supports.
 const AgentWindowsSystems = "Windows 10 or 11 and Windows Server 2016 or later (64-bit x86)"
+
+// AgentMacSystems are the macOS versions the agent install script
+// supports.
+const AgentMacSystems = "macOS 12 or later (Apple silicon or Intel)"
 
 func (l *AgentLine) check() error {
 	if err := checkURL(l.URL); err != nil {
@@ -111,7 +119,25 @@ func AgentLines(l AgentLine) (AgentCommands, error) {
 	c.WindowsNote = "Runs on " + AgentWindowsSystems + ", in PowerShell opened with Run as administrator (Windows PowerShell 5.1 or PowerShell 7). " +
 		"The line holds a new token for the computers you install it on: anyone with it can send data as them, so don't share it. " +
 		"The script takes the line out of PowerShell's saved history when it is done."
+	c.MacOS, c.MacOSSHA256 = agentMacLine(l, base)
+	c.MacOSNote = "Runs on " + AgentMacSystems + ", in Terminal, as an administrator. It installs osquery too, which collects for the agent on a Mac; give osquery Full Disk Access afterwards, as the line says. " +
+		"The line holds a new token for the computers you install it on: anyone with it can send data as them, so don't share it. Remove it from the shell's history after running it."
 	return c, nil
+}
+
+// agentMacLine is the macOS line: as the Linux one, with shasum, which
+// macOS has, for sha256sum.
+func agentMacLine(l AgentLine, base string) (string, string) {
+	sha := scriptSHA.AgentMac
+	line := fmt.Sprintf(" f=$(mktemp) && curl -fsSk --proto '=https' %s%s -o \"$f\" && echo \"%s  $f\" | shasum -a 256 -c -s && echo '%s' | sudo sh \"$f\" --from %s",
+		base, agentproto.RouteInstallMacOS, sha, agents.TokenPlaceholder, base)
+	if l.CASHA256 != "" {
+		line += " --ca-sha256 " + l.CASHA256
+	}
+	if l.NextCASHA256 != "" {
+		line += " --next-ca-sha256 " + l.NextCASHA256
+	}
+	return line + " --version " + l.Version + " --token -", sha
 }
 
 // agentWindowsLine is the Windows line: as for the server's own join

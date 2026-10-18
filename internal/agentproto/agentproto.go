@@ -35,6 +35,8 @@ const (
 	RouteInstallSH = "/api/agent/install.sh"
 	// RouteInstallPS1 is the Windows install script.
 	RouteInstallPS1 = "/api/agent/install.ps1"
+	// RouteInstallMacOS is the macOS install script.
+	RouteInstallMacOS = "/api/agent/install-macos.sh"
 )
 
 // Headers the agent sends with every request, besides the agent token in
@@ -102,6 +104,8 @@ var osqueryFlagNames = map[string]bool{
 	"disable_distributed": true, "distributed_plugin": true, "distributed_interval": true,
 	"distributed_tls_max_attempts": true, "distributed_tls_read_endpoint": true, "distributed_tls_write_endpoint": true,
 	"disable_events": true, "enable_file_events": true, "enable_ntfs_event_publisher": true, "utc": true,
+	// macOS: program starts from EndpointSecurity.
+	"disable_endpointsecurity": true,
 }
 
 // osqueryFlagValue is what a value of those flags may hold: a host and
