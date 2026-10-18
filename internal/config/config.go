@@ -1581,14 +1581,33 @@ func (c *Config) DetectionsCatchUp() time.Duration {
 	return detect.DefaultCatchUp
 }
 
-// Default returns a config with every default filled in.
+// DefaultAdminUser is the built-in admin's name on a new install, one
+// that is not the first name a password-guessing attack tries.
+const DefaultAdminUser = "signalithadmin"
+
+// LegacyAdminUser is the built-in admin's name in a config file that
+// names none: installs from before 0.3.1 were made with it, and keep it,
+// so an upgrade never changes the name anyone signs in with.
+const LegacyAdminUser = "admin"
+
+// KeptLegacyAdmin reports whether a cluster's built-in admin, named
+// builtin, kept the name from before 0.3.1 while auth.admin_user is
+// configured: a Docker or Kubernetes install that was upgraded, whose
+// config now names DefaultAdminUser. The cluster's name is used, as for
+// any other difference, but that is expected, not a mistake to warn of.
+func KeptLegacyAdmin(builtin, configured string) bool {
+	return strings.EqualFold(builtin, LegacyAdminUser) && strings.EqualFold(configured, DefaultAdminUser)
+}
+
+// Default returns a config with every default filled in. A new install
+// sets auth.admin_user to DefaultAdminUser (signalith init writes it).
 func Default() *Config {
 	return &Config{
 		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
 		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000, SummaryDays: 30},
 		Retention:  Retention{Days: 90},
-		Auth:       Auth{AdminUser: "admin"},
+		Auth:       Auth{AdminUser: LegacyAdminUser},
 		Detections: Detections{Dir: "detections", Scheduler: true, MaxFindingsPerRun: 100, CatchUp: "6h"},
 		Lookups:    Lookups{Dir: "lookups"},
 		Dashboards: Dashboards{Dir: "dashboards", StaleAfter: "2h"},

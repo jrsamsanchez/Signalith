@@ -462,7 +462,7 @@ func TestInitSavePassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.CheckPassword("admin", pw) {
+	if !c.CheckPassword("signalithadmin", pw) {
 		t.Error("the saved password does not sign in")
 	}
 	// The server, which cannot read the file, is told the hash, so it asks
@@ -486,7 +486,7 @@ func TestInitSavePassword(t *testing.T) {
 	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") || out.Len() != 0 {
 		t.Errorf("initial-password after the change: %q %v", out.String(), err)
 	}
-	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("admin", "the owner's own password") {
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("signalithadmin", "the owner's own password") {
 		t.Errorf("after passwd: %v", err)
 	}
 }

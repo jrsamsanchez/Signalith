@@ -42,11 +42,12 @@ until_ok 60 "the web Service answers through port-forward" sh -c "curl -sfk $URL
 PW=$(secret initial-admin-password)
 TOKEN=$(secret ingest-token)
 if [ -z "$PW" ] || [ -z "$TOKEN" ]; then fail "no password or ingest token in $FULL-secrets"; fi
-# sign_in_as writes a curl config that signs in as admin with password $1.
+# sign_in_as writes a curl config that signs in as the built-in admin
+# (signalithadmin) with password $1.
 sign_in_as() {
   P=$1 python3 -c 'import os, sys
 p = os.environ["P"].replace("\\", "\\\\").replace("\"", "\\\"")
-sys.stdout.write("user = \"admin:%s\"\n" % p)' >"$SECRETS/admin"
+sys.stdout.write("user = \"signalithadmin:%s\"\n" % p)' >"$SECRETS/admin"
 }
 printf 'Authorization: Bearer %s\n' "$TOKEN" >"$SECRETS/agent"
 

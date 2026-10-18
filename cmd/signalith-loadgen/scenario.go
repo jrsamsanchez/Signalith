@@ -92,7 +92,7 @@ type SyslogTargets struct {
 // Credentials name the files the secrets are read from. Secrets are
 // never written in scenario files, flags or reports.
 type Credentials struct {
-	// AdminFile holds "user:password" (or a password for admin).
+	// AdminFile holds "user:password" (or a password for signalithadmin).
 	AdminFile string `yaml:"admin_file"`
 	// TokenFile holds an agent token.
 	TokenFile string `yaml:"token_file"`

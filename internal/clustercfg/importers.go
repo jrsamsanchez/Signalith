@@ -324,7 +324,7 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(builtin, c.Auth.AdminUser) {
+	if !strings.EqualFold(builtin, c.Auth.AdminUser) && !config.KeptLegacyAdmin(builtin, c.Auth.AdminUser) {
 		f.log().Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
 			"builtin", builtin, "admin_user", c.Auth.AdminUser)
 	}

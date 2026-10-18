@@ -7,7 +7,7 @@
 #   2. Show the admin password:
 #        docker compose -f deploy/docker/docker-compose.cluster.yml exec signalith-a signalith initial-password
 #   3. Open https://localhost:8443 (HAProxy, which passes each connection on
-#      to signalith-a or signalith-b) and sign in as admin. The Servers page
+#      to signalith-a or signalith-b) and sign in as signalithadmin. The Servers page
 #      lists both; the Health page totals what each received.
 #   4. Stop one server and keep working; agents and syslog carry on with the
 #      other:
