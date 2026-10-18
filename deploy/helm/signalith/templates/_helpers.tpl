@@ -123,7 +123,7 @@ capabilities:
   "opensearch" $osc
   "search" (dict "default_earliest" "-24h" "max_events" 10000)
   "retention" (dict "days" 90)
-  "auth" (dict "admin_user" "admin")
+  "auth" (dict "admin_user" "signalithadmin")
   "cluster" $cluster
   "detections" (dict "dir" "/var/lib/signalith/data/detections" "max_findings_per_run" 100 "catch_up" "6h")
   "lookups" (dict "dir" "/var/lib/signalith/data/lookups")

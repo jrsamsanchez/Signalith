@@ -24,6 +24,10 @@ Hosts found this way are also added to the asset list (**Risk and context**), as
 
 ## Adding hosts
 
+The easiest way is the [Signalith Agent](signalith-agent.md#osquery), on Linux, Windows
+and macOS: its one line installs osquery too and keeps its settings, with nothing else to
+do. The steps below set osquery up by hand.
+
 1. Open **Add data**, pick **osquery**, and choose the platform the hosts run.
 2. Install osquery 5 on each host from <https://osquery.io/downloads>.
 3. Download the setup script and run it on each host:
@@ -66,7 +70,9 @@ Analysts and admins can open **Endpoints**:
 
 Admins also have:
 
-- **What hosts collect**: turn file monitoring and checks on or off, edit the watched
+- **What hosts collect**: choose what the [Signalith Agents](signalith-agent.md#change-what-agents-collect)
+  of each install line collect (osquery, Sysmon, PowerShell, web server and audit logs,
+  and where Linux sign-ins are read from). For osquery, turn file monitoring and checks on or off, edit the watched
   paths and the paths left out per platform, and set how often inventory and checks run
   (5 minutes to 24 hours). Paths use osquery's patterns: `%` matches within one folder
   level and `%%` matches everything below. Saving warns when someone else saved since you

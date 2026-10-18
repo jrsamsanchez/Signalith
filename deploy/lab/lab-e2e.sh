@@ -119,6 +119,11 @@ WEB="https://127.0.0.1:$WEB_PORT"
 PW=${E2E_PASSWORD:-}
 [ -n "$PW" ] || PW=$(cat /root/lab/admin-password 2>/dev/null)
 [ -n "$PW" ] || PW=$(cat /etc/signalith/initial-admin-password 2>/dev/null)
+# The built-in admin's name in the config: signalithadmin on a new
+# install, admin on one made before 0.3.1, unless given.
+ADMIN=${E2E_USER:-}
+[ -n "$ADMIN" ] || ADMIN=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
+[ -n "$ADMIN" ] || ADMIN=signalithadmin
 CODE=''
 BODY=''
 # call METHOD PATH [JSON]: the answer goes in $BODY, the status in $CODE.
@@ -130,7 +135,7 @@ call() {
   local args=(-sS --max-time 330 --cacert "$CA" -X "$method" -o "$OUT/.body" -w '%{http_code}')
   [ -z "$data" ] || args+=(-H 'Content-Type: application/json' --data-binary @-)
   CODE=$(printf '%s' "$data" |
-    curl -K <(printf 'user = "admin:%s"\n' "${pw//\"/\\\"}") "${args[@]}" "$WEB$path" 2>"$OUT/.err") || CODE=000
+    curl -K <(printf 'user = "%s:%s"\n' "$ADMIN" "${pw//\"/\\\"}") "${args[@]}" "$WEB$path" 2>"$OUT/.err") || CODE=000
   BODY=$(cat "$OUT/.body" 2>/dev/null)
   [ "$CODE" != 000 ] || BODY=$(cat "$OUT/.err")
   rm -f "$OUT/.body" "$OUT/.err"

@@ -156,10 +156,10 @@ each keeps its own), and give the scenarios that one:
 FIRST=$(cat $O/secrets/initial-admin-password)
 PW=$(openssl rand -hex 16)
 for p in 8441 8442 8443; do
-  curl -sk -u "admin:$FIRST" -H 'Content-Type: application/json' \
+  curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
     -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$PW\"}" https://localhost:$p/api/me/password; echo
 done
-echo "admin:$PW" > $O/admin.txt
+echo "signalithadmin:$PW" > $O/admin.txt
 ```
 
 The CI-size scenarios (`s1-small`, `s2-browsers-small`, `s3-idle`, `s4-small`,

@@ -64,8 +64,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
-  with one line on Linux, Windows or Docker, shared settings, users and detections, one
-  certificate authority, rolling upgrades, draining and removing a server, and
+  with one line on Linux, Windows or Docker, shared settings, users and detections,
+  [detections spread over the servers](servers.md#the-background-jobs) with each server's
+  detection health on the Servers page, one certificate authority, rolling upgrades, draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
   the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
@@ -122,6 +123,13 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
+
+**One agent per computer**
+:   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
+    what to collect, so nobody edits a Fluent Bit or osquery configuration. Linux,
+    Windows (with osquery and optional Sysmon) and macOS (with osquery) are in, and what
+    each group of computers collects is chosen on the Endpoints page. Signed updates with
+    automatic rollback are built, and switch on once the release key is set up.
 
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and

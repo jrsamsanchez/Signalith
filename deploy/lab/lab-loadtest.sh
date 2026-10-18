@@ -572,7 +572,10 @@ JAR=$LAB/.lab-loadtest-cookies
 api_login() {
   [ -s "$LAB/admin-password" ] || return 1
   (umask 077 && : >"$JAR")
-  jq -n --rawfile p "$LAB/admin-password" '{username: "admin", password: ($p | rtrimstr("\n"))}' |
+  # signalithadmin on a new install, admin on one made before 0.3.1.
+  local user
+  user=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
+  jq -n --rawfile p "$LAB/admin-password" --arg u "${user:-signalithadmin}" '{username: $u, password: ($p | rtrimstr("\n"))}' |
     curl -fsS --max-time 20 -c "$JAR" --cacert "$API_CA" -H 'Content-Type: application/json' -H "Origin: $API" \
       --data-binary @- "$API/api/login" >/dev/null
 }

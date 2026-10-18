@@ -2724,6 +2724,19 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .sensor-tabs.hidden { display: none; }
 #page-data #agent-setup:not([data-sensor-tab="new"]) .sensor-new-only { display: none; }
 #page-data .agent-setup[data-sensor-tab="new"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+/* Signalith Agent: what it needs and its line instead of a configuration */
+#page-data #agent-setup:not([data-agent-install="on"]) .agent-install-only { display: none; }
+#page-data .agent-setup[data-agent-install="on"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+#page-data #agent-install { display: grid; gap: var(--sp-3); min-width: 0; }
+#page-data #agent-install:empty { display: none; }
+#page-data #agent-install .hint code { font-size: var(--fs-sm); }
+#page-data #agent-install .hint a .icon { margin-left: 3px; vertical-align: -1px; }
+#page-data #agent-install .agent-install__os { justify-self: start; }
+#page-data #agent-install .agent-install__opt { display: grid; gap: var(--sp-1); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); }
+#page-data #agent-install .agent-install__opt .check { align-items: flex-start; }
+#page-data #agent-install .agent-install__opt .check input { margin-top: 2px; flex: none; }
+#page-data #agent-install .agent-install__opt .check b { color: var(--text); font-weight: 600; }
+#page-data .agent-os__text b .badge { margin-left: 6px; vertical-align: 1px; font-size: var(--fs-xs); color: var(--accent); }
 #page-data .sensor-needs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
 #page-data .sensor-needs li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
 #page-data .sensor-needs li > .icon { flex: none; margin-top: 2px; color: var(--text-3); }
@@ -5008,6 +5021,8 @@ dialog.modal.rp-dialog[open] { display: flex; flex-direction: column; max-height
 .ep-table td.ep-c-ver, .ep-table td.ep-c-addr { white-space: nowrap; }
 .ep-table td.ep-c-agent { white-space: nowrap; }
 .ep-table td .badge .icon { width: 12px; height: 12px; }
+/* the last lines a stopped collector wrote, from the Signalith Agent */
+.ep-agent__log { margin: 0; padding: 8px 10px; max-height: 160px; overflow: auto; border-radius: var(--r-md); font: var(--fs-xs)/16px var(--font-mono); color: var(--text-2); background: var(--sunken); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ep-agent__why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
 .ep-agent__why li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); color: var(--text); background: var(--warning-soft); }
 .ep-agent__why li[data-tone="info"] { background: var(--hover); }
@@ -5065,9 +5080,22 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .ep-set__group + .ep-set__group { padding-top: var(--sp-4); box-shadow: inset 0 1px 0 var(--line-subtle); }
 .ep-set__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); }
 .ep-set__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+.ep-set__title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.ep-set__agent { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ep-set__switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+.ep-set__updates { grid-template-columns: 1fr; padding-top: var(--sp-3); box-shadow: inset 0 1px 0 var(--line-subtle); }
+.ep-set__switch { align-items: flex-start; }
+.ep-set__switch input { flex: none; margin-top: 2px; }
+.ep-set__switch > span { display: flex; flex-direction: column; gap: 2px; }
+.ep-set__switch b { color: var(--text); font-weight: 500; }
+.ep-set .seg { flex-wrap: wrap; height: auto; }
+dialog.ep-set[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
+dialog.ep-set > form { display: flex; flex-direction: column; min-height: 0; }
+dialog.ep-set .modal__body { overflow: auto; }
+.ep-set .modal__close { margin: -4px -8px 0 auto; flex: none; }
 @media (max-width: 720px) {
   .ep-table .ep-c-ver, .ep-table .ep-c-addr { display: none; }
-  .ep-set__grid { grid-template-columns: 1fr; }
+  .ep-set__grid, .ep-set__switches { grid-template-columns: 1fr; }
   .ep-bar { width: 56px; }
   .ep-checks--fleet .ep-check__more { padding-left: var(--sp-4); }
   .ep-check summary { flex-wrap: wrap; row-gap: 6px; }

@@ -173,7 +173,7 @@ Certificates > Authorities > Import**, choose the file and tick **Trust this CA 
 websites**.
 
 Command-line tools take the file directly, for example
-`curl --cacert signalith-ca.crt -u admin https://siem.example.com:9000/api/health`.
+`curl --cacert signalith-ca.crt -u signalithadmin https://siem.example.com:9000/api/health`.
 
 Signalith's CA only ever signs certificates for this one server. It is limited to
 websites (its extended key usage is server authentication only), and to this server's
@@ -367,7 +367,7 @@ without it, either:
   the admin's password (use your port if it isn't 9000):
 
   ```sh
-  curl --cacert /var/lib/signalith/tls/ca.pem -u admin -H 'Content-Type: application/json' \
+  curl --cacert /var/lib/signalith/tls/ca.pem -u signalithadmin -H 'Content-Type: application/json' \
     -d '{"action":"rollback"}' https://localhost:9000/api/security/ca
   ```
 

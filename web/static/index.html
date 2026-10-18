@@ -942,17 +942,22 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your hosts with the Fluent Bit agent or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, bring in Wazuh alerts and network sensor logs, or teach Signalith any other log from a sample.</p>
+        <p class="page-head__desc">Collect logs from your computers with the Signalith Agent, Fluent Bit or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, bring in Wazuh alerts and network sensor logs, or teach Signalith any other log from a sample.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
     <div class="agent">
       <fieldset class="agent-os">
         <legend class="sr-only">Source</legend>
+        <label class="card agent-os__card agent-os__card--wide">
+          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
+          <span class="agent-os__text"><b>Signalith Agent <span class="badge badge--accent">Recommended</span></b><span>One line per computer installs everything it needs. Signalith tells it what to collect and keeps it running, so there is nothing to configure by hand. Linux and Windows now; macOS next.</span></span>
+          <input type="radio" name="os" value="agent" checked>
+        </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-square-terminal"/></svg></span>
           <span class="agent-os__text"><b>Linux</b><span>SSH, sudo, account changes and ClamAV</span></span>
-          <input type="radio" name="os" value="linux" checked>
+          <input type="radio" name="os" value="linux">
         </label>
         <label class="card agent-os__card">
           <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
@@ -1077,6 +1082,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             <button type="button" role="tab" class="tab" id="sensor-tab-new" aria-selected="false" tabindex="-1">Set up a new sensor</button>
           </div>
           <ul class="sensor-needs sensor-new-only" id="sensor-needs" role="list" aria-label="What a new sensor needs"></ul>
+          <ul class="sensor-needs agent-install-only" id="agent-install-needs" role="list" aria-label="What the Signalith Agent needs"></ul>
           <div class="agent-addr">
             <div class="agent-addr__row">
               <label class="label" for="agent-server">Agents send to</label>
@@ -1164,6 +1170,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             <p class="hint"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><span>Building a new sensor? <a href="#data" id="sensor-new-link">Set up a new sensor</a> installs Zeek, Suricata and the agent with one line.</span></p>
           </div>
           <div class="sensor-new-only" id="sensor-new" aria-busy="true"></div>
+          <div class="agent-install-only" id="agent-install" aria-busy="true"></div>
           <div id="agent-file" class="agent-file hidden">
             <div class="agent-file__bar">
               <svg class="icon" aria-hidden="true"><use href="#i-file-code"/></svg>
@@ -1302,7 +1309,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="page-head">
       <div>
         <h2 class="page-head__title">Endpoints</h2>
-        <p class="page-head__desc">Hosts running osquery that report to Signalith: what is on them, which files changed, and how their settings measure up.</p>
+        <p class="page-head__desc">Computers running the Signalith Agent or osquery: what is on them, which files changed, and how their settings measure up.</p>
       </div>
       <div class="page-head__actions">
         <button id="ep-settings" class="btn btn--secondary" type="button" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg>What hosts collect</button>
@@ -1988,6 +1995,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="endpoints.js"></script>
 <script src="sensors.js"></script>
 <script src="sensor-setup.js"></script>
+<script src="agent-setup.js"></script>
 <script src="vulns.js"></script>
 <script src="compliance.js"></script>
 <script src="tokens.js"></script>

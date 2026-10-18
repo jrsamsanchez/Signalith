@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 )
@@ -18,7 +19,7 @@ import (
 
 // agentRoutes are the routes agents call. They check an agent token or
 // osquery node key themselves, never a sign-in.
-var agentRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute}, osqueryRoutes, sensorPublicRoutes, hecRoutes)
+var agentRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute}, osqueryRoutes, sensorPublicRoutes, hecRoutes, agentManagedRoutes)
 
 // routeAgentIntake registers the agent routes on mux.
 func (s *Server) routeAgentIntake(mux *http.ServeMux) {
@@ -27,17 +28,22 @@ func (s *Server) routeAgentIntake(mux *http.ServeMux) {
 	s.routeOsquery(mux)
 	s.routeSensorAgent(mux)
 	s.routeHEC(mux)
+	s.routeAgentManagedIntake(mux)
 }
 
 // AgentHandler returns the handler of the agent port: the agent routes,
-// the certificate authority and the sensor's install script, which the
-// pasted install line fetches from the address the sensor sends to.
+// the certificate authority and the install scripts of the sensor and the
+// Signalith Agent, which their pasted lines fetch from the address they
+// send to.
 func (s *Server) AgentHandler() http.Handler {
 	s.tokens()
 	mux := http.NewServeMux()
 	s.routeAgentIntake(mux)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	mux.HandleFunc("GET /api/sensor/install.sh", s.handleInstallScript(clusterinstall.ScriptSensor))
+	mux.HandleFunc("GET "+agentproto.RouteInstallSH, s.handleInstallScript(clusterinstall.ScriptAgent))
+	mux.HandleFunc("GET "+agentproto.RouteInstallPS1, s.handleInstallScript(clusterinstall.ScriptAgentPS1))
+	mux.HandleFunc("GET "+agentproto.RouteInstallMacOS, s.handleInstallScript(clusterinstall.ScriptAgentMac))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("this port is for agents; the web page is at %s", s.conf().Server.PublicURL))
 	})

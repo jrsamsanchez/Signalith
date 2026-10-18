@@ -959,6 +959,7 @@ func (j *joiner) mergeAfterWrite(ctx context.Context) error {
 // admin password to show: the cluster's users sign in.
 func (j *joiner) writeConfig(path string) error {
 	c := config.Default()
+	c.Auth.AdminUser = config.DefaultAdminUser
 	c.Server.Listen = firstSet(j.listen, c.Server.Listen)
 	c.Server.AgentListen = j.agentListen
 	if c.Server.AgentListen == "" {

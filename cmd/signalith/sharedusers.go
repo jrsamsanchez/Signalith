@@ -130,7 +130,10 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 	if k := rt.Hub().Keys().Active(); k != nil {
 		p.browsers = auth.NewBrowserKeyFrom(k.KnownBrowserKey())
 	}
-	if name := ua.docs.BuiltinName(); name != "" && !strings.EqualFold(name, c.Auth.AdminUser) {
+	if name := ua.docs.BuiltinName(); config.KeptLegacyAdmin(name, c.Auth.AdminUser) {
+		log.Info("the built-in admin keeps the name it had before this version; new installs name it "+config.DefaultAdminUser,
+			"builtin", name, "admin_user", c.Auth.AdminUser)
+	} else if name != "" && !strings.EqualFold(name, c.Auth.AdminUser) {
 		log.Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
 			"builtin", name, "admin_user", c.Auth.AdminUser)
 	}

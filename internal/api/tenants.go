@@ -25,7 +25,7 @@ var (
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
 		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "intel", "posture",
 		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
-		"endpoints", "agents", "agent-tokens", "users", "ticketing",
+		"endpoints", "agents", "agent-tokens", "agent", "users", "ticketing",
 	}
 	// platformResources are about the server itself, shared by every
 	// tenant: only the provider's own users may use them, and always in

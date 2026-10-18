@@ -96,7 +96,7 @@ It prints `ssh root@<signalith-1 address> tail -f /var/log/lab-setup.log`: copy 
 (the first time, ssh asks whether to continue connecting: type `yes`). It ends with `Lab ready.` Press Ctrl+C to stop watching. Then:
 
 1. Open the `signalith` address it printed, such as `https://203.0.113.10:9000`.
-2. Sign in as `admin`, with the password from the `admin_password` line:
+2. Sign in as `signalithadmin`, with the password from the `admin_password` line:
    `ssh root@<signalith-1 address> cat /root/lab/admin-password`. Signalith asks the admin
    for a new password before anything else, so the setup replaces the first one with a
    random password and keeps it there.
@@ -258,7 +258,8 @@ buckets each server runs against the even share (64 / servers, within 25%), the 
 shards of each `signalith-*` index, the rollover lines, and the enabled rules by
 schedule. With fewer than 1,500 enabled rules it says so; it does not turn more on.
 
-The API calls sign in as `admin` with `/root/lab/admin-password`, given to curl on its
+The API calls sign in as the built-in admin (`signalithadmin`, or `admin` on a lab set up
+before 0.3.1) with `/root/lab/admin-password`, given to curl on its
 input; OpenSearch is read with the admin certificate in `/root/lab/pki`.
 
 ### Detection spread
