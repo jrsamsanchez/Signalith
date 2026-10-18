@@ -782,7 +782,8 @@ UNIT
 # nothing the agent left: it checks the release's signature with its own
 # keys, copies the program here and checks the copy, keeps the version
 # before, restarts the agent, and goes back to the version before if the
-# new one does not work.
+# new one does not work. It is fenced in too: it writes only the program,
+# the copy of the version before and the update folder.
 [Unit]
 Description=Install a signed Signalith Agent update
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md
@@ -795,6 +796,13 @@ UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=${PROGRAM%/*} $LIB_DIR $STATE_DIR
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 UNIT
   put "/etc/systemd/system/$UPDATE_PATH" 0644 root:root agent <<UNIT
 # Written by the Signalith Agent install script (deploy/agent/install.sh).

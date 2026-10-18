@@ -1,6 +1,7 @@
 package agentproto
 
 import (
+	"cmp"
 	"crypto/ed25519"
 	"crypto/sha256"
 	_ "embed"
@@ -188,7 +189,7 @@ func parseVersion(s string) (version, bool) {
 // is not a release version (dev) is never newer, and nothing is newer
 // than it: a development build does not update itself. A pre-release is
 // older than its final release; two pre-releases of the same version
-// compare as text.
+// compare as semantic versioning says (rc.10 is newer than rc.9).
 func Newer(a, b string) bool {
 	va, ok := parseVersion(a)
 	vb, ok2 := parseVersion(b)
@@ -208,5 +209,31 @@ func Newer(a, b string) bool {
 	case vb.pre == "":
 		return false
 	}
-	return va.pre > vb.pre
+	return comparePre(va.pre, vb.pre) > 0
+}
+
+// comparePre compares two pre-release parts by their dot-separated
+// identifiers: numbers as numbers, below words, and words as text; with
+// all equal, the one with more identifiers is newer.
+func comparePre(a, b string) int {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		na, errA := strconv.Atoi(pa[i])
+		nb, errB := strconv.Atoi(pb[i])
+		switch {
+		case errA == nil && errB == nil:
+			if na != nb {
+				return cmp.Compare(na, nb)
+			}
+		case errA == nil:
+			return -1
+		case errB == nil:
+			return 1
+		default:
+			if c := strings.Compare(pa[i], pb[i]); c != 0 {
+				return c
+			}
+		}
+	}
+	return cmp.Compare(len(pa), len(pb))
 }

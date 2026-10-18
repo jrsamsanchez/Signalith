@@ -261,7 +261,8 @@ func TestAgentScriptDryRun(t *testing.T) {
 	}
 	// The updater runs the installed program, outside the agent's sandbox,
 	// when the agent has an update ready.
-	if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent-update.service")); !strings.Contains(got, "ExecStart=/usr/local/sbin/signalith-agent install-update") {
+	if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent-update.service")); !strings.Contains(got, "ExecStart=/usr/local/sbin/signalith-agent install-update") ||
+		!strings.Contains(got, "ProtectSystem=strict\nReadWritePaths=/usr/local/sbin /usr/local/lib/signalith-agent /var/lib/signalith-agent\n") {
 		t.Errorf("updater unit:\n%s", got)
 	}
 	if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent-update.path")); !strings.Contains(got, "PathExists=/var/lib/signalith-agent/update/ready") {

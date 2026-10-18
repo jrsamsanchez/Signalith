@@ -280,6 +280,8 @@ type Updater struct {
 	Service ServiceControl
 	Log     *slog.Logger
 	now     func() time.Time
+	// dir is the update folder, opened by Install.
+	dir *updateFolder
 }
 
 // Install installs the waiting update, if there is one. It returns nil
@@ -289,12 +291,23 @@ func (u *Updater) Install(ctx context.Context) error {
 		u.now = time.Now
 	}
 	p := u.Paths
-	// The ready file goes first, whatever happens: the path unit starts
-	// the updater again while it exists.
-	if _, err := os.Lstat(p.readyFile()); errors.Is(err, os.ErrNotExist) {
+	// Nothing is read, written or deleted unless the folders are the
+	// updater's own and no link leads elsewhere.
+	dir, err := openUpdateFolder(p)
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err := os.Remove(p.readyFile()); err != nil {
+	if err != nil {
+		return fmt.Errorf("refusing the update folder: %w", err)
+	}
+	defer dir.Close()
+	u.dir = dir
+	// The ready file goes first, whatever happens: the path unit starts
+	// the updater again while it exists.
+	if !dir.exists(filepath.Base(p.readyFile())) {
+		return nil
+	}
+	if err := dir.remove(filepath.Base(p.readyFile())); err != nil {
 		return err
 	}
 	m, err := u.check()
@@ -307,19 +320,18 @@ func (u *Updater) Install(ctx context.Context) error {
 		return err
 	}
 	u.result(m.Version, nil)
-	os.Remove(p.stagedProgram())
+	_ = dir.remove(filepath.Base(p.stagedProgram()))
 	return nil
 }
 
 // check reads and checks the signed manifest the agent left: signed by a
 // release key, newer than this version, listing this computer.
 func (u *Updater) check() (*agentproto.Manifest, error) {
-	p := u.Paths
-	data, err := readNoFollow(p.stagedManifest(), agentproto.MaxManifestBytes)
+	data, err := u.read(agentproto.ManifestFile, false, agentproto.MaxManifestBytes)
 	if err != nil {
 		return nil, err
 	}
-	sig, err := readNoFollow(p.stagedSignature(), 1024)
+	sig, err := u.read(agentproto.SignatureFile, false, 1024)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +356,13 @@ func (u *Updater) install(ctx context.Context, m *agentproto.Manifest) error {
 	// The copy is made first and then checked, so what is checked is what
 	// runs; it stays readable by root alone until it is checked.
 	next := p.nextProgram()
-	if err := copyChecked(p.stagedProgram(), next, want); err != nil {
+	staged, err := u.dir.open(filepath.Base(p.stagedProgram()), false)
+	if err != nil {
+		return err
+	}
+	err = copyChecked(staged, next, want)
+	staged.Close()
+	if err != nil {
 		return err
 	}
 	if err := selfTest(ctx, next, m.Version); err != nil {
@@ -436,7 +454,7 @@ func (u *Updater) waitWorking(ctx context.Context, version string) error {
 // reported says whether the agent wrote a status as version, started
 // since then.
 func (u *Updater) reported(version string, since time.Time) bool {
-	b, err := readNoFollow(u.Paths.StatusFile(), agentproto.MaxStatusBytes)
+	b, err := u.read(filepath.Base(u.Paths.StatusFile()), true, agentproto.MaxStatusBytes)
 	if err != nil {
 		return false
 	}
@@ -455,7 +473,7 @@ func (u *Updater) result(version string, err error) {
 		r.Error = err.Error()
 	}
 	b, _ := json.Marshal(r)
-	if werr := writeNoFollow(u.Paths.resultFile(), b); werr != nil {
+	if werr := u.dir.write(filepath.Base(u.Paths.resultFile()), b); werr != nil {
 		u.Log.Warn("could not write the update's result", "err", werr)
 	}
 }
@@ -471,52 +489,25 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// readNoFollow reads at most max bytes of a file that is not a symbolic
-// link: the updater reads files the agent's sandbox can write.
-func readNoFollow(path string, max int64) ([]byte, error) {
-	f, err := openNoFollow(path)
+// read reads at most max bytes of the plain file name in the update
+// folder (or, with state, the folder above it), which the agent's sandbox
+// can write.
+func (u *Updater) read(name string, state bool, max int64) ([]byte, error) {
+	f, err := u.dir.open(name, state)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, max+1))
 	if err == nil && int64(len(b)) > max {
-		err = fmt.Errorf("%s is larger than any update writes", filepath.Base(path))
+		err = fmt.Errorf("%s is larger than any update writes", name)
 	}
 	return b, err
 }
 
-// writeNoFollow writes a file in a folder the agent's sandbox can write:
-// to a new file (never through a link someone left), whose mode is set on
-// the open file, then renamed into place.
-func writeNoFollow(path string, b []byte) error {
-	tmp := path + ".tmp"
-	_ = os.Remove(tmp)
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(b)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp, path)
-	}
-	if err != nil {
-		os.Remove(tmp)
-	}
-	return err
-}
-
 // copyChecked copies the staged program to dst, readable by its owner
 // alone, and checks the copy's SHA-256 is want.
-func copyChecked(src, dst, want string) error {
-	in, err := openNoFollow(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
+func copyChecked(in *os.File, dst, want string) error {
 	_ = os.Remove(dst)
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
 	if err != nil {

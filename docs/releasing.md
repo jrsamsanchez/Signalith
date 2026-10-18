@@ -124,8 +124,9 @@ content key. The release build signs it with `signalith agent-programs sign -ver
 `internal/agentproto/release.keys`; while that file lists none, agents do not update
 themselves and the build signs nothing.
 
-To set it up, make a key the same way as the content key (or with
-`signalith agent-programs keygen`), add the private key line as the `SIGNALITH_AGENT_KEY`
+To set it up, make a new key the same way as the content key (or with
+`signalith agent-programs keygen`); use a key of its own, never the content key, so each
+key signs one kind of thing, add the private key line as the `SIGNALITH_AGENT_KEY`
 repository secret, and add the public key line to `internal/agentproto/release.keys`.
 Agents built with that file trust the key from then on, so keep a copy of the private
 key somewhere safe and offline. To replace it, add the new public key next to the old

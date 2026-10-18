@@ -4,16 +4,9 @@ package agentd
 
 import (
 	"context"
-	"os"
 	"os/exec"
-	"syscall"
 	"time"
 )
-
-// openNoFollow opens a file for reading, refusing a symbolic link.
-func openNoFollow(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-}
 
 // startUpdater does nothing here: a path unit starts the updater's
 // service when the agent writes the ready file.

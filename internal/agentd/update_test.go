@@ -506,3 +506,66 @@ func TestUpdaterRefusesLinks(t *testing.T) {
 		t.Fatal("the program was replaced")
 	}
 }
+
+// The agent's sandbox can write the update folder and the one it is in,
+// so a link put in place of either must not lead the updater to write or
+// delete anything elsewhere.
+func TestUpdaterRefusesLinkedFolders(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need privileges on Windows")
+	}
+	for _, which := range []string{"update", "state", "writable"} {
+		t.Run(which, func(t *testing.T) {
+			c := newUpdaterCase(t, releaseKey(t), "2.0.0")
+			p := c.u.Paths
+			// target is where the link leads, set up as an update would be.
+			target := filepath.Join(t.TempDir(), "target")
+			switch which {
+			case "update":
+				if err := os.Rename(p.updateDir(), target); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, p.updateDir()); err != nil {
+					t.Fatal(err)
+				}
+			case "state":
+				if err := os.Rename(p.State, target); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, p.State); err != nil {
+					t.Fatal(err)
+				}
+				target = filepath.Join(target, "update")
+			case "writable":
+				target = p.updateDir()
+				if err := os.Chmod(target, 0o777); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := listDir(t, target)
+			err := c.u.Install(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "refusing the update folder") {
+				t.Fatalf("err = %v", err)
+			}
+			if after := listDir(t, target); after != before {
+				t.Fatalf("the folder changed:\nbefore %s\nafter  %s", before, after)
+			}
+			if !bytes.Equal(c.installed(t), c.old) || len(c.svc.restarts) != 0 {
+				t.Fatal("the program was replaced or the agent restarted")
+			}
+		})
+	}
+}
+
+func listDir(t *testing.T, dir string) string {
+	t.Helper()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range ents {
+		names = append(names, e.Name())
+	}
+	return strings.Join(names, " ")
+}
