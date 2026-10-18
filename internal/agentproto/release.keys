@@ -3,3 +3,4 @@
 # SIGNALITH_AGENT_KEY secret the release build signs the agent programs
 # with; docs/releasing.md says how to make one and add it here. With no key
 # here, agents never update themselves: run the install line again instead.
+D2fml6HDzkbF98d0D/DPK9j/Qzmat5Q/spDsqRt1cU4=
