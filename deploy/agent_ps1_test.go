@@ -95,7 +95,9 @@ func newAgentWindows(t *testing.T) *agentWindows {
 		rw.Header().Set("X-Signalith-SHA256", hex.EncodeToString(sum[:]))
 		rw.Write(w.program)
 	}))
-	w.ts = httptest.NewTLSServer(mux)
+	// Set before the server starts, so its handlers see it.
+	w.ts = httptest.NewUnstartedServer(mux)
+	w.ts.StartTLS()
 	t.Cleanup(w.ts.Close)
 	sum := sha256.Sum256(w.ts.Certificate().Raw)
 	w.caSHA = hex.EncodeToString(sum[:])
@@ -186,7 +188,10 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Error("the copy of the script for -Uninstall differs from the script")
 	}
 	// Nothing about the token on the command line Signalith saw.
-	for _, r := range w.requests {
+	w.mu.Lock()
+	requests := append([]string(nil), w.requests...)
+	w.mu.Unlock()
+	for _, r := range requests {
 		if strings.Contains(r, w.token) {
 			t.Errorf("a request carried the token in its address: %s", r)
 		}
