@@ -42,7 +42,10 @@ search:
 retention:
   days: 90
 auth:
-  admin_user: admin
+  # The built-in admin's name on a new install. An install made before
+  # 0.3.1 keeps the name it has (admin): the name its servers share is
+  # used, so it signs in as before.
+  admin_user: signalithadmin
 cluster:
   # May run the background jobs (detections, threat intel downloads,
   # retention). Servers that share one OpenSearch take turns; turn it off

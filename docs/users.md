@@ -67,7 +67,8 @@ allow, the page reloads to match the new role and says why.
 
 ## The built-in admin
 
-The account in `auth.admin_user` (`admin` unless you changed it) always works, even
+The account in `auth.admin_user` (`signalithadmin` on a new install, `admin` on one made
+before 0.3.1, unless you changed it) always works, even
 when the directory server is down or every other admin has been removed, so you can
 always get back in. It shows on the Users page as **Built-in** and cannot be edited,
 disabled or deleted there. Change its password on the server (on servers that share
@@ -112,7 +113,7 @@ Scripts that sign in with the first password must choose a new one first, as an 
 would:
 
 ```sh
-curl -sk -u "admin:$FIRST" -H 'Content-Type: application/json' \
+curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
   -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$NEW\"}" \
   https://localhost:9000/api/me/password
 ```
@@ -1297,7 +1298,7 @@ that lasts 15 minutes; then send the change again. A wrong password answers `400
 ```json
 {
   "users": [
-    {"username": "admin", "name": "", "email": "", "role": "admin", "source": "builtin",
+    {"username": "signalithadmin", "name": "", "email": "", "role": "admin", "source": "builtin",
      "disabled": false, "must_change_password": false, "created": null, "updated": null,
      "last_sign_in": "2026-10-12T15:35:22Z", "you": true, "actions": []},
     {"username": "alice", "name": "Alice Admin", "email": "alice@corp.example.com",

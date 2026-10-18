@@ -4,7 +4,7 @@ Signalith is starting{{ if .Values.opensearch.enabled }} with its own OpenSearch
 
   kubectl -n {{ $ns }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
 
-1. Show the first admin password (sign in as admin):
+1. Show the first admin password (sign in as signalithadmin, or admin on a release installed before 0.3.1):
 
   kubectl -n {{ $ns }} get secret {{ $full }}-secrets -o jsonpath='{.data.initial-admin-password}' | base64 -d; echo
 

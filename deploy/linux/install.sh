@@ -391,7 +391,7 @@ systemctl enable --now signalith >/dev/null 2>&1 || fail "Signalith is installed
 say "Signalith is installed and its service is running."
 cat <<'MSG'
 
-  Sign in:   https://<this server>:9000 as admin
+  Sign in:   https://<this server>:9000 as signalithadmin
   Password:  sudo signalith initial-password
   Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
              in this server's firewall for other machines.

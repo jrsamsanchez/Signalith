@@ -234,6 +234,7 @@ func cmdInit(args []string) error {
 	// key where it has it.
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
+	c.Auth.AdminUser = config.DefaultAdminUser
 	c.Server.Listen = *listen
 	// Set, so the web port takes no agent traffic. By default on the web
 	// page's host: a server whose page is on loopback only takes agents on

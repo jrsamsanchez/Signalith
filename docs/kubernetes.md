@@ -35,7 +35,7 @@ The first start takes a few minutes. Then:
     kubectl -n signalith port-forward service/signalith 9000:9000
     ```
 
-    then <https://localhost:9000>, and sign in as `admin`. The browser warns about the
+    then <https://localhost:9000>, and sign in as `signalithadmin`. The browser warns about the
     certificate until you trust Signalith's CA ([HTTPS](https.md#trust-the-certificate)).
 
 3. So agents and devices outside the cluster can send to it, give it an address they

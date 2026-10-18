@@ -277,6 +277,41 @@ func TestInitAgentPortFollowsListen(t *testing.T) {
 
 // A new config serves HTTPS with Signalith's own certificate, refuses
 // agents over plain HTTP and receives syslog over TLS on 6514.
+// A new install's built-in admin is signalithadmin, while a config file
+// that names none (one written by hand before 0.3.1) keeps admin.
+func TestInitNamesBuiltinAdminSignalithadmin(t *testing.T) {
+	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	path := filepath.Join(t.TempDir(), "signalith.yaml")
+	out := captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "User:        signalithadmin") {
+		t.Errorf("init output does not name signalithadmin:\n%s", out)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.AdminUser != config.DefaultAdminUser || config.DefaultAdminUser != "signalithadmin" {
+		t.Errorf("auth.admin_user %q, want signalithadmin", c.Auth.AdminUser)
+	}
+	if !c.CheckPassword("signalithadmin", "first-password") || c.CheckPassword("admin", "first-password") {
+		t.Error("the first password should sign in as signalithadmin only")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), "admin_user: signalithadmin", "", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := config.LoadFile(path); err != nil || c.Auth.AdminUser != "admin" {
+		t.Errorf("a file naming no admin: %v, %+v; want admin", err, c)
+	}
+}
+
 func TestInitTurnsOnHTTPS(t *testing.T) {
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
 	path := filepath.Join(t.TempDir(), "signalith.yaml")

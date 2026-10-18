@@ -161,7 +161,7 @@ jobs:
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" \
             -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" \
+            -d "$(jq -n --arg p "$password" '{username: "signalithadmin", password: $p}')" \
             https://localhost:9000/api/login > /dev/null
           # The first password Signalith made allows only choosing a new
           # one, as an admin does on the sign-in page.
@@ -186,7 +186,7 @@ jobs:
           echo "$health" | jq -e '.opensearch.status == "green" or .opensearch.status == "yellow"'
           # The public example password from earlier versions is refused.
           code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$RUNNER_TEMP/signalith-ca.pem" \
-            -H 'Content-Type: application/json' -d '{"username":"admin","password":"change-me-please"}' \
+            -H 'Content-Type: application/json' -d '{"username":"signalithadmin","password":"change-me-please"}' \
             https://localhost:9000/api/login)
           test "$code" = 401
       - name: Check Nmap runs in the image for vulnerability scans
@@ -451,7 +451,7 @@ jobs:
           done
           password=$($COMPOSE exec -T signalith signalith initial-password)
           curl -sf -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg p "$password" '{username: "admin", password: $p}')" https://localhost:9000/api/login > /dev/null
+            -d "$(jq -n --arg p "$password" '{username: "signalithadmin", password: $p}')" https://localhost:9000/api/login > /dev/null
           # The first password Signalith made must be replaced before
           # anything else.
           curl -sf -b "$RUNNER_TEMP/cookies" -c "$RUNNER_TEMP/cookies" --cacert "$RUNNER_TEMP/signalith-ca.pem" -H 'Content-Type: application/json' \
