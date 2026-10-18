@@ -12,6 +12,13 @@ RUN for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do
       GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/agents/signalith-agent-$p$ext ./cmd/signalith-agent || exit 1; \
     done
+# Signed with the release key when the build is given it as the secret
+# agent_key (the Release workflow does), so agents update themselves to
+# them. The key stays out of the image and its layers.
+RUN --mount=type=secret,id=agent_key \
+    if [ -s /run/secrets/agent_key ]; then \
+      SIGNALITH_AGENT_KEY="$(cat /run/secrets/agent_key)" /out/signalith agent-programs sign -version "${VERSION}" -dir /out/agents; \
+    fi
 RUN mkdir -p /out/data/detections /out/data/lookups/geoip /out/data/dashboards /out/data/archive && chmod 700 /out/data/archive
 
 # Debian slim rather than distroless, for Nmap: the Vulnerabilities page

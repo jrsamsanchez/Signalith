@@ -75,6 +75,12 @@ func runAgentPrograms(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
+		// A manifest no agent trusts would only look like updates work.
+		pub := priv.Public().(ed25519.PublicKey)
+		if !trustedKey(pub) {
+			return fmt.Errorf("key %s is not in internal/agentproto/release.keys, so agents would not trust what it signs; add its public key there: %s",
+				agentproto.KeyID(pub), base64.StdEncoding.EncodeToString(pub))
+		}
 		m, err := clusterinstall.SignPrograms(*dir, *ver, priv)
 		if err != nil {
 			return err
@@ -105,6 +111,16 @@ func runAgentPrograms(args []string, out io.Writer) error {
 	}
 	fmt.Fprint(out, agentProgramsUsage)
 	return fmt.Errorf("unknown agent-programs command %q", cmd)
+}
+
+// trustedKey says whether agents built from this source trust k.
+func trustedKey(k ed25519.PublicKey) bool {
+	for _, r := range agentproto.ReleaseKeys {
+		if r.Equal(k) {
+			return true
+		}
+	}
+	return false
 }
 
 func printPrograms(out io.Writer, m *agentproto.Manifest) {

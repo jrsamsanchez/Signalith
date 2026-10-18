@@ -44,15 +44,22 @@ func TestAgentProgramsSign(t *testing.T) {
 	if err := runAgentPrograms([]string{"pubkey"}, &out); err != nil || strings.TrimSpace(out.String()) != pub {
 		t.Fatalf("pubkey: %v %q, want %q", err, out.String(), pub)
 	}
+	// A key agents do not trust signs nothing.
+	k, _ := base64.StdEncoding.DecodeString(pub)
+	old := agentproto.ReleaseKeys
+	t.Cleanup(func() { agentproto.ReleaseKeys = old })
+	agentproto.ReleaseKeys = nil
+	if err := runAgentPrograms([]string{"sign", "-version", "1.0.0", "-dir", dir}, &out); err == nil || !strings.Contains(err.Error(), pub) {
+		t.Fatalf("untrusted key: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, agentproto.ManifestFile)); err == nil {
+		t.Fatal("an untrusted key wrote a manifest")
+	}
+	agentproto.ReleaseKeys = []ed25519.PublicKey{k}
 	out.Reset()
 	if err := runAgentPrograms([]string{"sign", "-version", "1.0.0", "-dir", dir}, &out); err != nil || !strings.Contains(out.String(), "version 1.0.0") {
 		t.Fatalf("sign: %v\n%s", err, out.String())
 	}
-
-	k, _ := base64.StdEncoding.DecodeString(pub)
-	old := agentproto.ReleaseKeys
-	agentproto.ReleaseKeys = []ed25519.PublicKey{k}
-	t.Cleanup(func() { agentproto.ReleaseKeys = old })
 	out.Reset()
 	if err := runAgentPrograms([]string{"status", "-dir", dir}, &out); err != nil || !strings.Contains(out.String(), "Signed manifest: version 1.0.0") {
 		t.Fatalf("status: %v\n%s", err, out.String())
