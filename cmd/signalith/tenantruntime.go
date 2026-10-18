@@ -14,6 +14,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
@@ -437,6 +438,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	}
 	pruns := playbooks.NewOpenSearch(cl, prefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The tenant's behavior baselines: learned from its own records, kept
+	// in its own index, with risk for its own users and hosts.
+	blStore := baselines.NewStore(cl, prefix)
+	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: prefix},
+		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
 	// The tenant's Jira and ServiceNow connections, in its own folder,
 	// kept in step with its own cases only; what each ticket last sent
 	// and saw is in its own <prefix>_ticket_sync. Its OAuth tokens and
@@ -499,6 +505,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Notebooks:  nstore,
 		Respond:    responder,
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Baselines:  blStore,
 		Ticketing:  &api.Ticketing{Service: tsync},
 		Retention:  ret,
 		Sample:     sampleLoader,
@@ -534,6 +541,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
 		tsync.Allowed = t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		behavior.Allowed, behavior.Epoch, behavior.NodeID, behavior.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 		if t.r.shared != nil {
 			sched.Counter = t.r.shared.DetectionEpochs
 			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints, t.r.detPool, cl.SearchThreads,
@@ -567,6 +575,10 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		findingsOK := fstore.EnsureIndex(ctx) == nil
 		notifyOK := deliveries.EnsureIndex(ctx) == nil
 		playbooksOK := pruns.EnsureIndex(ctx) == nil
+		baselinesOK := blStore.EnsureIndex(ctx) == nil
+		if !baselinesOK {
+			log.Error("could not create the tenant's behavior baselines index; its baselines do not learn until it is started again", "index", blStore.Index)
+		}
 		cerr := cstore.EnsureIndex(ctx)
 		if cerr != nil {
 			log.Error("could not create an index of the tenant", "index", cstore.Index, "err", cerr)
@@ -600,6 +612,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
 			{Name: "playbooks", Run: pbRunner.Run},
+			{Name: "behavior baselines", Run: func(ctx context.Context) {
+				if baselinesOK {
+					behavior.Run(ctx)
+				}
+			}},
 			{Name: "ticketing", Run: func(ctx context.Context) {
 				// The tenant's own connections, cases and links only.
 				if ticketsOK && casesOK {

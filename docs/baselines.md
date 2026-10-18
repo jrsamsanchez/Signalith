@@ -157,6 +157,16 @@ To keep memory and storage bounded:
   retention doesn't delete them. A profile is forgotten after the **Forget after**
   period.
 
+## Tenants
+
+On a [multi-tenant](multi-tenant.md) install, each tenant has its own baselines.
+They learn from that tenant's records only, keep their profiles in that tenant's
+own index, and add risk to that tenant's risk index. A tenant's admins tune its
+checks and exceptions under Settings > Behavior baselines. Where the
+**IP database** comes from is the provider's choice: the server downloads it, so a
+tenant's admins can't point it at another address or file. Each tenant keeps its
+own copy of the database.
+
 ## API
 
 Admins only:
