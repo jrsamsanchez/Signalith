@@ -179,3 +179,46 @@ func TestAgentMacScriptDryRun(t *testing.T) {
 		return nil
 	})
 }
+
+// The osquery package is installed only when the first certificate in
+// pkgutil's chain is a Developer ID Installer one ending in osquery's team.
+func TestAgentMacOsquerySigner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shells only")
+	}
+	script := string(AgentInstallMacOS)
+	start := strings.Index(script, "\nosquery_pkg_signed() {")
+	end := strings.Index(script[start:], "\n}\n")
+	team := "3522FA9PXF"
+	if start < 0 || end < 0 || !strings.Contains(script, "OSQUERY_TEAM="+team+"\n") {
+		t.Fatal("no osquery_pkg_signed function or team ID")
+	}
+	fn := script[start : start+end+3]
+	out := func(status, leaf string) string {
+		return "Package \"osquery-5.12.1.pkg\":\n   Status: " + status + "\n   Notarization: trusted by the Apple notary service\n" +
+			"   Certificate Chain:\n    1. " + leaf + "\n       Expires: 2027-09-14 21:30:09 +0000\n" +
+			"    2. Developer ID Certification Authority\n    3. Apple Root CA\n"
+	}
+	apple := "signed by a developer certificate issued by Apple for distribution"
+	for name, c := range map[string]struct {
+		text string
+		ok   bool
+	}{
+		"osquery":       {out(apple, "Developer ID Installer: OSQUERY A Series of LF Projects, LLC ("+team+")"), true},
+		"decoy team":    {out(apple, "Developer ID Installer: Evil ("+team+") (ABCDE12345)"), false},
+		"other team":    {out(apple, "Developer ID Installer: Someone (ABCDE12345)"), false},
+		"application":   {out(apple, "Developer ID Application: OSQUERY ("+team+")"), false},
+		"not apple":     {out("signed by a certificate trusted by Mac OS X", "Developer ID Installer: OSQUERY ("+team+")"), false},
+		"unsigned":      {"Package \"osquery.pkg\":\n   Status: no signature\n", false},
+		"second in row": {strings.Replace(out(apple, "Developer ID Installer: Evil (ABCDE12345)"), "3. Apple Root CA", "3. Developer ID Installer: X ("+team+")", 1), false},
+	} {
+		f := filepath.Join(t.TempDir(), "sig")
+		if err := os.WriteFile(f, []byte(c.text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := exec.Command("sh", "-c", "OSQUERY_TEAM="+team+fn+"osquery_pkg_signed \"$1\"", "sh", f).Run()
+		if (err == nil) != c.ok {
+			t.Errorf("%s: signed=%v, want %v", name, err == nil, c.ok)
+		}
+	}
+}

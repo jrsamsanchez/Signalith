@@ -448,6 +448,14 @@ osquery_signed() {
 
 # osquery_install installs osquery's package when the Mac has no osquery.
 # One that is there stays, whoever installed it, once it checks out.
+# osquery_pkg_signed says whether pkgutil --check-signature's output (in
+# $1) shows an Apple-issued Developer ID Installer certificate whose leaf,
+# the first in the chain, ends with osquery's team ID.
+osquery_pkg_signed() {
+  grep -q '^ *Status: signed by a developer certificate issued by Apple' "$1" &&
+    grep -Eq "^ *1\. Developer ID Installer: .* \($OSQUERY_TEAM\)\$" "$1"
+}
+
 osquery_install() {
   if [ -f /Library/LaunchDaemons/io.osquery.agent.plist ] && [ -z "$dryrun" ]; then
     warn "osquery's own service is set up on this Mac too, so osquery may run twice." "If nothing else uses it: sudo launchctl bootout system/io.osquery.agent"
@@ -474,8 +482,7 @@ osquery_install() {
     ok "osquery package checked (SHA-256 $(printf '%s' "$got" | cut -c1-12))"
   else
     pkgutil --check-signature "$tmp/osquery.pkg" >"$tmp/pkgsig" 2>&1 || true
-    if ! grep -q 'signed by a developer certificate issued by Apple' "$tmp/pkgsig" ||
-      ! grep -q "Developer ID Installer: .*($OSQUERY_TEAM)" "$tmp/pkgsig"; then
+    if ! osquery_pkg_signed "$tmp/pkgsig"; then
       fail "The osquery package is not signed by osquery's developer ($OSQUERY_TEAM), so it was not installed: $(grep -m 1 'Status:' "$tmp/pkgsig" || true)" "Run the line again later; or check the package's SHA-256 against the one on osquery.io/downloads and run the line again with --osquery-sha256 <it>."
     fi
     ok "osquery package signed by osquery's developer ($OSQUERY_TEAM)"
