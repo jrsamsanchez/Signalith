@@ -866,6 +866,10 @@ rules:
     rule_id: 77592bec-d5cc-11eb-9e60-acde48001122
     file: excessive_number_of_service_control_start_as_disabled.yml
     path: detections/endpoint/excessive_number_of_service_control_start_as_disabled.yml
+  - id: splunk-excessive-number-of-taskhost-processes
+    rule_id: f443dac2-c7cf-11eb-ab51-acde48001122
+    file: excessive_number_of_taskhost_processes.yml
+    path: detections/endpoint/excessive_number_of_taskhost_processes.yml
   - id: splunk-excessive-usage-of-cacls-app
     rule_id: 0bdf6092-af17-11eb-939a-acde48001122
     file: excessive_usage_of_cacls_app.yml
@@ -4598,6 +4602,10 @@ rules:
     rule_id: 0dc44d03-8c00-482d-ba7c-796ba7ab18c9
     file: windows_remote_create_service.yml
     path: detections/endpoint/windows_remote_create_service.yml
+  - id: splunk-windows-remote-desktop-network-bruteforce-attempt
+    rule_id: 908bf0d5-0983-4afd-b6a4-e9eb5d361a7d
+    file: windows_remote_desktop_network_bruteforce_attempt.yml
+    path: detections/network/windows_remote_desktop_network_bruteforce_attempt.yml
   - id: splunk-windows-remote-host-computer-management-access
     rule_id: 455da527-0047-4610-a3ca-b4a005c2d346
     file: windows_remote_host_computer_management_access.yml
