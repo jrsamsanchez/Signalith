@@ -1,0 +1,10 @@
+{"rule": "9c24aef6-cad9-4931-acce-74318aa5663b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager","param1":"VSS","param2":"stopped"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","EventCode":"test-eventcode","Provider_Name":"Service Control Manager","dest":"test-dest","display_name":"test-display_name","normalized_service_name":"test-normalized_service_name","param1":"VST","param2":"stopped"},"repeat":26,"vary":["Binary"]},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager","param2":"stopped"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager","param1":"VSS"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager","param1":"VSS","param2":"stoppee"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","Provider_Name":"Service Control Manager","param1":"VST","param2":"stopped"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7036","data":{"Binary":"4500780061006D0070006C0065005300760063000000","EventCode":"test-eventcode","Provider_Name":"Service Control Manager","dest":"test-dest","display_name":"test-display_name","normalized_service_name":"test-normalized_service_name","param1":"VST","param2":"stopped"},"repeat":21,"vary":["Binary"]}
+]}

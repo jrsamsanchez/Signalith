@@ -23,13 +23,15 @@ import (
 // later stages, run as written, say of the event as stored.
 
 var (
-	hintInRe    = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s+IN\s*\(([^)]*)\)`)
-	hintEqRe    = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
-	hintLikeRe  = regexp.MustCompile(`(?i)\blike\(\s*(?:lower\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
-	hintMatchRe = regexp.MustCompile(`(?i)\bmatch\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
-	hintRexRe   = regexp.MustCompile(`(?i)\brex\s+field=\s*"?([A-Za-z_][\w.{}]*)"?\s+("(?:[^"\\]|\\.)*")`)
-	hintRegexRe = regexp.MustCompile(`(?i)\bregex\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
-	hintNotRe   = regexp.MustCompile(`(?i)\bNOT\s*\(?\s*$`)
+	hintInRe = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s+IN\s*\(([^)]*)\)`)
+	// hintTermInRe is any field IN (...) term of a search.
+	hintTermInRe = regexp.MustCompile(`(?i)(?:^search|\s)\s*'?([A-Za-z_][\w.{}]*)'?\s+IN\s*\(([^)]*)\)`)
+	hintEqRe     = regexp.MustCompile(`(?i)\b(?:where|search)\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
+	hintLikeRe   = regexp.MustCompile(`(?i)\blike\(\s*(?:lower\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
+	hintMatchRe  = regexp.MustCompile(`(?i)\bmatch\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
+	hintRexRe    = regexp.MustCompile(`(?i)\brex\s+field=\s*"?([A-Za-z_][\w.{}]*)"?\s+("(?:[^"\\]|\\.)*")`)
+	hintRegexRe  = regexp.MustCompile(`(?i)\bregex\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
+	hintNotRe    = regexp.MustCompile(`(?i)\bNOT\s*\(?\s*$`)
 	// copyRe is an eval assignment that copies a field, or its lower or
 	// upper case.
 	replaceRe = regexp.MustCompile(`(?i)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*replace\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,`)
@@ -57,9 +59,11 @@ func (r *Rule) hints() []Expr {
 	alias := map[string]string{}
 	for _, s := range stages {
 		s = strings.TrimSpace(s)
-		if len(r.lookupHints) > 0 {
+		if len(r.lookupHints) > 0 || IsChannelNode(r.Node) {
 			// A lookup's key field may be a rename or a rex's of the
-			// field Signalith stores.
+			// field Signalith stores, and so may a field a channel
+			// node's later search tests (rename param1 as
+			// display_name).
 			if q, err := query.Parse("* | " + s); err == nil && len(q.Commands) == 1 {
 				switch c := q.Commands[0].(type) {
 				case *query.Rename:
@@ -141,10 +145,31 @@ func (r *Rule) hints() []Expr {
 		}
 	}
 	groups := map[string][2]string{} // a rex's group: its field and pattern
+	// groupValues adds, for text a channel node's rex group is compared
+	// with, the rex's pattern with that text for the group (where
+	// config_name IN ("clr enabled")).
+	groupValues := func(group string, vals []string) {
+		g, ok := groups[group]
+		if !ok || !IsChannelNode(r.Node) {
+			return
+		}
+		start, end := groupSpan(g[1], group)
+		if start < 0 {
+			return
+		}
+		for _, v := range vals[:min(len(vals), 4)] {
+			add(&Cmp{Field: stored(g[0]), Values: []string{g[1][:start] + "(?:" + regexp.QuoteMeta(v) + ")" + g[1][end:]}, Regex: true})
+		}
+	}
 	for _, s := range stages {
 		s = strings.TrimSpace(s)
 		negated := func(at int) bool { return hintNotRe.MatchString(s[:at]) }
-		for _, m := range hintInRe.FindAllStringSubmatchIndex(s, -1) {
+		inRe := hintInRe
+		if IsChannelNode(r.Node) && strings.HasPrefix(s, "search ") {
+			// Any term of a channel node's later search.
+			inRe = hintTermInRe
+		}
+		for _, m := range inRe.FindAllStringSubmatchIndex(s, -1) {
 			if negated(m[0]) {
 				continue
 			}
@@ -153,10 +178,12 @@ func (r *Rule) hints() []Expr {
 				vals = append(vals, unquote(q))
 			}
 			add(&Cmp{Field: stored(s[m[2]:m[3]]), Values: vals})
+			groupValues(s[m[2]:m[3]], vals)
 		}
 		for _, m := range hintEqRe.FindAllStringSubmatchIndex(s, -1) {
 			if !negated(m[0]) {
 				add(&Cmp{Field: stored(s[m[2]:m[3]]), Values: []string{unquote(s[m[4]:m[5]])}})
+				groupValues(s[m[2]:m[3]], []string{unquote(s[m[4]:m[5]])})
 			}
 		}
 		for _, m := range hintLikeRe.FindAllStringSubmatchIndex(s, -1) {

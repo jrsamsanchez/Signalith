@@ -58,6 +58,10 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		if s == "" {
 			continue
 		}
+		if c, ok := channelStage(r.Node, s); ok {
+			s = c
+		}
+		s = endAnchors(s)
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}

@@ -1,0 +1,5 @@
+{"rule": "9b5e7c14-f8d2-4a3b-b1a7-e5c9f2a8d123", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"603","data":{"Flags":"8388608"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"603","data":{"Flags":"8388609"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-AppXDeploymentServer/Operational","event_id":"603","data":{}}
+]}

@@ -1,0 +1,7 @@
+{"rule": "5eb76fe2-a869-4865-8c4c-8cff424b18b1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"xp_cmdshell","EventCode":"test-eventcode","Provider_Name":"MSSQLSERVER","change_type":"test-change_type","config_name":"test-config_name","dest":"test-dest","risk_message":"test-risk_message","risk_score":"test-risk_score"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"xp_cmdshell","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"A","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"xp_cmdshell","Provider_Name":"MSSQLSERVER"}}
+]}

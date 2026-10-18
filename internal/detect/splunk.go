@@ -239,6 +239,10 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: macProcessSourcetype}, e}), nil
 	}
 	sourcetype := windowsSourcetypes
+	if st := splcheck.ChannelSourcetype(r.Node); st != "" {
+		// The events of the rule's one log.
+		sourcetype = st
+	}
 	if r.Linux {
 		sourcetype = ingest.SysmonLinuxSourcetype
 	}

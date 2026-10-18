@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,296 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,304 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -957,6 +957,11 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
 | `` `wineventlog_security` EventCode=4662 ``, `4728`, `4722`, `4723`, `4724` or `4725` (raw search) | Security 4662 (operation on a directory object), 4728 (member added to a global group), 4722 and 4725 (account enabled or disabled), 4723 and 4724 (password changed or reset) | Change |
 | `` `wineventlog_security` EventCode=5447 `` (raw search) | Security 5447 (Windows Filtering Platform filter changed; each value by its name, `FilterName` is `security_filter_name`) | Other |
+| `` `wineventlog_system` EventCode=7036 `` or `7040` (raw search) | System 7036 (service started or stopped) and 7040 (service start type changed), each value by its name (`param1` is `system_param1`); the service's binary data, which `` `normalized_service_binary_field` `` reads, is `system_binary` | Other |
+| `` `wmi` EventCode=5861 `` (raw search) | WMI-Activity 5861 (permanent event subscription; `spath` of its user data, such as `PossibleCause`, reads `wmi_possible_cause`) | Other |
+| `` `wineventlog_appxdeploymentserver` EventCode=603 `` or `854` (raw search) | AppXDeployment-Server 603 (package deployment started; `Flags` is `appx_flags`) and 854 (package file downloaded) | Other |
+| `` `ntlm_audit` EventCode=8004 `` (raw search) | NTLM 8004 (NTLM authentication to a domain controller audited; `WorkstationName` is `ntlm_workstation_name`) | Other |
+| `` `wineventlog_application` EventCode=15457 `` or `17135` (raw search) | Application 15457 (SQL Server configuration option changed) and 17135 (SQL Server startup procedure run); a `rex` of the event's first `<Data>` values reads the first lines of `event_data` | Other |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |

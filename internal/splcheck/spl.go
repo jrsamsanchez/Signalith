@@ -201,7 +201,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	})
 	r.MacOS = len(r.DataSource) > 0 && !slices.ContainsFunc(r.DataSource, func(s string) bool { return s != "Osquery Results" })
 	// ```text``` is a comment in SPL.
-	stages := pipes(strings.TrimSpace(commentRe.ReplaceAllString(r.Search, " ")))
+	stages := pipes(strings.TrimSpace(expandStageMacros(commentRe.ReplaceAllString(r.Search, " "), macros)))
 	if len(stages) == 0 {
 		return nil, errors.New("empty search")
 	}
@@ -330,7 +330,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit|github_enterprise|github_organizations)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|wmi|wineventlog_appxdeploymentserver|ntlm_audit|wineventlog_application|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit|github_enterprise|github_organizations)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -352,7 +352,8 @@ var (
 			"4749": "GroupChanged", "4754": "GroupChanged", "4759": "GroupChanged", "4783": "GroupChanged",
 			"4790": "GroupChanged",
 		},
-		// The Service Control Manager's service installed event.
+		// The Service Control Manager's service installed event, and
+		// the events of channelSources.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
 		// Linux audit records: every record type is one node, whose
 		// fields are auditd's own (AuditdNode).
@@ -1005,6 +1006,10 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	}
 	if err := fieldsOf(where, r.Node, xml); err != nil {
 		return nil, err
+	}
+	if st := ChannelSourcetype(r.Node); st != "" {
+		// The events of the macro's log.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{st}}, where}}
 	}
 	if cloud {
 		// The records of the macro's sourcetype, and source.
