@@ -4,7 +4,7 @@ title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
 version: 13bf1750b21768c03a2237ecfd27b54644bc6de9
-date: "2026-10-17"
+date: "2026-10-18"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -2990,6 +2990,14 @@ rules:
     rule_id: 1ef5dab0-e1f1-495d-a272-d134583c10b1
     file: windows_application_whitelisting_bypass_attempt_via_rundll32.yml
     path: detections/endpoint/windows_application_whitelisting_bypass_attempt_via_rundll32.yml
+  - id: splunk-windows-appx-deployment-package-installation-success
+    rule_id: 1234abcd-5678-90ef-1234-56789abcdef0
+    file: windows_appx_deployment_package_installation_success.yml
+    path: detections/endpoint/windows_appx_deployment_package_installation_success.yml
+  - id: splunk-windows-appx-deployment-unsigned-package-installation
+    rule_id: 9b5e7c14-f8d2-4a3b-b1a7-e5c9f2a8d123
+    file: windows_appx_deployment_unsigned_package_installation.yml
+    path: detections/endpoint/windows_appx_deployment_unsigned_package_installation.yml
   - id: splunk-windows-archive-collected-data-via-powershell
     rule_id: 74c5a3b0-27a7-463c-9d00-1a5bb12cb7b5
     file: windows_archive_collected_data_via_powershell.yml
@@ -3142,6 +3150,10 @@ rules:
     rule_id: ce245717-779b-483b-bc52-fc7a94729973
     file: windows_chromium_process_with_disabled_extensions.yml
     path: detections/endpoint/windows_chromium_process_with_disabled_extensions.yml
+  - id: splunk-windows-cisco-secure-endpoint-related-service-stopped
+    rule_id: df74f45f-01c8-4fd6-bcb8-f6a9ea58307a
+    file: windows_cisco_secure_endpoint_related_service_stopped.yml
+    path: detections/endpoint/windows_cisco_secure_endpoint_related_service_stopped.yml
   - id: splunk-windows-cisco-secure-endpoint-stop-immunet-service-via-sf
     rule_id: 44badcb1-2e8c-4628-9537-021bbae571ad
     file: windows_cisco_secure_endpoint_stop_immunet_service_via_sfc.yml
@@ -4694,6 +4706,10 @@ rules:
     rule_id: 69c12d59-d951-431e-ab77-ec426b8d65e6
     file: windows_security_account_manager_stopped.yml
     path: detections/endpoint/windows_security_account_manager_stopped.yml
+  - id: splunk-windows-security-and-backup-services-stop
+    rule_id: 9c24aef6-cad9-4931-acce-74318aa5663b
+    file: windows_security_and_backup_services_stop.yml
+    path: detections/endpoint/windows_security_and_backup_services_stop.yml
   - id: splunk-windows-security-support-provider-reg-query
     rule_id: 31302468-93c9-4eca-9ae3-2d41f53a4e2b
     file: windows_security_support_provider_reg_query.yml
@@ -4826,6 +4842,18 @@ rules:
     rule_id: f7bb956f-b956-42a5-8c2c-ff9cdbbf7526
     file: windows_speechruntime_suspicious_child_process.yml
     path: detections/endpoint/windows_speechruntime_suspicious_child_process.yml
+  - id: splunk-windows-sql-server-critical-procedures-enabled
+    rule_id: d0434864-b043-41e3-8c08-30e53605e9cb
+    file: windows_sql_server_critical_procedures_enabled.yml
+    path: detections/endpoint/windows_sql_server_critical_procedures_enabled.yml
+  - id: splunk-windows-sql-server-startup-procedure
+    rule_id: 7bec7c5c-2262-4adb-ba56-c8028512bc58
+    file: windows_sql_server_startup_procedure.yml
+    path: detections/endpoint/windows_sql_server_startup_procedure.yml
+  - id: splunk-windows-sql-server-xp-cmdshell-config-change
+    rule_id: 5eb76fe2-a869-4865-8c4c-8cff424b18b1
+    file: windows_sql_server_xp_cmdshell_config_change.yml
+    path: detections/endpoint/windows_sql_server_xp_cmdshell_config_change.yml
   - id: splunk-windows-sqlwriter-sqldumper-dll-sideload
     rule_id: 2ed89ba9-c6c7-46aa-9f08-a2a1c2955aa3
     file: windows_sqlwriter_sqldumper_dll_sideload.yml
@@ -5154,6 +5182,10 @@ rules:
     rule_id: d2f36034-37fa-4bd4-8801-26807c15540f
     file: winrar_spawning_shell_application.yml
     path: detections/endpoint/winrar_spawning_shell_application.yml
+  - id: splunk-wmi-permanent-event-subscription
+    rule_id: 71bfdb13-f200-4c6c-b2c9-a2e07adf437d
+    file: wmi_permanent_event_subscription.yml
+    path: detections/endpoint/wmi_permanent_event_subscription.yml
   - id: splunk-wmi-recon-running-process-or-services
     rule_id: b5cd5526-cce7-11eb-b3bd-acde48001122
     file: wmi_recon_running_process_or_services.yml

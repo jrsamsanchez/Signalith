@@ -58,6 +58,13 @@ var windowsSources = []string{
 	"Windows Event Log Security 4724", "Windows Event Log Security 4722", "Windows Event Log Security 4725",
 	"Windows Event Log Security 5447", "Windows Event Log Security 4728", "Windows Event Log Security 4719",
 	"Windows Event Log Security 5140", "Windows Event Log Security 4731", "Windows Event Log Security 4756",
+	// Other Windows logs whose events the parser reads: the
+	// Service Control Manager's service events, WMI's permanent event
+	// subscriptions, app packages deployed and NTLM authentications
+	// audited, and SQL Server's events in the Application log
+	// (splcheck's channel nodes).
+	"Windows Event Log Application 15457", "Windows Event Log Application 17135", "Windows Event Log System 7036", "Windows Event Log System 7040", "Windows Event Log WMI Activity 5861",
+	"Windows Event Log AppXDeployment-Server 854", "Windows Event Log AppXDeployment-Server 855", "NTLM Operational 8004",
 	// Linux audit records, which Signalith reads from the audit log.
 	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
 	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",

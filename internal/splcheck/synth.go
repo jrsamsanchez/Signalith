@@ -465,6 +465,9 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	if IsSensorNode(node) {
 		return sensorRecords(node, ev)
 	}
+	if IsChannelNode(node) {
+		return []sigmacheck.Case{channelRecord(node, ev)}
+	}
 	if parts, ok := UnionNodes[node]; ok {
 		// The events of the node whose code the event names, else of
 		// each.
@@ -1307,7 +1310,7 @@ func reads(r *Rule, c sigmacheck.Case) bool {
 		// Every GitHub event, in any data model.
 		return c.Channel == sigmacheck.GitHubChannel && Eval(r.Where, View(doc))
 	}
-	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
+	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && inChannel(r.Node, c) && Eval(r.Where, View(doc))
 }
 
 // NodeEvents are the Windows event IDs each node reads (as Splunk's

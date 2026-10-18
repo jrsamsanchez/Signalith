@@ -714,3 +714,31 @@ func WindowsSecurityNames(eventID string) []string {
 	s, _ := windowsSchemaFor(SecurityChannel, "", eventID)
 	return s
 }
+
+// WindowsEventNames returns the names of the data values of a System log
+// event (of a provider, "" for the Service Control Manager) other than a
+// service installed, or of an event of a log the parser reads by name
+// (IsNamedChannel), in schema order, with the field each is stored as
+// (SystemDataField, ChannelDataField); none for an event the parser does
+// not read by name.
+func WindowsEventNames(channel, provider, eventID string) (names, fields []string) {
+	var s []string
+	switch {
+	case channel == SystemChannel && eventID != "7045":
+		e, _ := systemEventFor(provider, eventID)
+		s = e.data
+	case IsNamedChannel(channel):
+		e, _ := namedChannelEvent(channel, eventID)
+		s = e.data
+	}
+	for _, n := range s {
+		f, ok := SystemDataField(n)
+		if channel != SystemChannel {
+			f, ok = ChannelDataField(channel, n)
+		}
+		if ok {
+			names, fields = append(names, n), append(fields, f)
+		}
+	}
+	return names, fields
+}
