@@ -2,6 +2,7 @@ package detect
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -906,6 +907,11 @@ func (c *sigmaConv) field(name string) string {
 		}
 		if !ingest.CloudTrailField(name) {
 			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
+		} else if list := ingest.CloudTrailList(name); !ingest.KnownField(cmp.Or(list, name)) {
+			// Kept, but not mapped up front: a day's budget of new names
+			// can leave it out of the index (TestCloudRuleFieldsMapped).
+			// A field inside a list is searched as the list's text.
+			c.approx("field %s is not a CloudTrail field the index template maps", name)
 		}
 		return name
 	}

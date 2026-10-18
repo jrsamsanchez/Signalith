@@ -1,0 +1,22 @@
+{"rule": "61059783-574b-40d2-ac2f-69b898afd6b4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/doasxconfx","nametype":"CREATE"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /etc/doasxconfx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/doasxconfx","nametype":"CREATE"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/etc/doasxconfx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/doasxconfy","nametype":"CREATE"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /etc/doasxconfy"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{"nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"nametype":"CREATF"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/","nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{"name":"/ /etc/doasxconfx","nametype":"CREATE"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/doasxconfx","nametype":"CREATF"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/doasxconfx"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{"name":"/ /etc/doasxconfx"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"name":"/ /etc/doasxconfx"}}
+]}

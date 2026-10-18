@@ -1,5 +1,6 @@
 {"rule": "3a76d52f-a007-4a65-a37d-f313c2c83f31", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"test-process_path","PipeName":"x \\$77childproc","ProcessId":"4242"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"test-process_path","PipeName":"x \\$77childproc64","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"18","data":{"EventType":"ConnectPipe","PipeName":"\\test_pipe","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"17","data":{"EventType":"CreatePipe","Image":"x :\\Program Files \\(x86\\)\\Adobe x","PipeName":"\\test_pipe","ProcessId":"4242"}},

@@ -4,7 +4,7 @@ title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
 version: 42478221b1a062411b8185732c82caa439271122
-date: "2026-10-17"
+date: "2026-10-18"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -2585,6 +2585,10 @@ rules:
     rule_id: 4508a70e-97ef-4300-b62b-ff27992990ea
     file: image_load_susp_script_dotnet_clr_dll_load.yml
     path: rules/windows/image_load/image_load_susp_script_dotnet_clr_dll_load.yml
+  - id: sigma-load-susp-unsigned-dll
+    rule_id: b5de0c9a-6f19-43e0-af4e-55ad01f550af
+    file: image_load_susp_unsigned_dll.yml
+    path: rules/windows/image_load/image_load_susp_unsigned_dll.yml
   - id: sigma-load-thor-unsigned-execution
     rule_id: ea5c131b-380d-49f9-aeb3-920694da4d4b
     file: image_load_thor_unsigned_execution.yml
@@ -2725,6 +2729,10 @@ rules:
     rule_id: 3eaf6218-3bed-4d8a-8707-274096f12a18
     file: net_dns_wannacry_killswitch_domain.yml
     path: rules/network/dns/net_dns_wannacry_killswitch_domain.yml
+  - id: sigma-net-domain-azurewebsites
+    rule_id: 5c80b618-0dbb-46e6-acbb-03d90bcb6d83
+    file: net_connection_win_domain_azurewebsites.yml
+    path: rules/windows/network_connection/net_connection_win_domain_azurewebsites.yml
   - id: sigma-net-domain-btunnels
     rule_id: 9e02c8ec-02b9-43e8-81eb-34a475ba7965
     file: net_connection_win_domain_btunnels.yml
@@ -2737,6 +2745,10 @@ rules:
     rule_id: fa5b1358-b040-4403-9868-15f7d9ab6329
     file: net_connection_win_domain_crypto_mining_pools.yml
     path: rules/windows/network_connection/net_connection_win_domain_crypto_mining_pools.yml
+  - id: sigma-net-domain-dead-drop-resolvers
+    rule_id: 297ae038-edc2-4b2e-bb3e-7c5fc94dd5c7
+    file: net_connection_win_domain_dead_drop_resolvers.yml
+    path: rules/windows/network_connection/net_connection_win_domain_dead_drop_resolvers.yml
   - id: sigma-net-domain-devtunnels
     rule_id: 9501f8e6-8e3d-48fc-a8a6-1089dd5d7ef4
     file: net_connection_win_domain_devtunnels.yml
@@ -2801,6 +2813,10 @@ rules:
     rule_id: 3b5ba899-9842-4bc2-acc2-12308498bf42
     file: net_connection_win_office_uncommon_ports.yml
     path: rules/windows/network_connection/net_connection_win_office_uncommon_ports.yml
+  - id: sigma-net-rdp-outbound-over-non-standard-tools
+    rule_id: ed74fe75-7594-4b4b-ae38-e38e3fd2eb23
+    file: net_connection_win_rdp_outbound_over_non_standard_tools.yml
+    path: rules/windows/network_connection/net_connection_win_rdp_outbound_over_non_standard_tools.yml
   - id: sigma-net-rdp-reverse-tunnel
     rule_id: 5f699bc5-5446-4a4a-a0b7-5ef2885a3eb4
     file: net_connection_win_rdp_reverse_tunnel.yml
@@ -3233,6 +3249,10 @@ rules:
     rule_id: 5edc2273-c26f-406c-83f3-f4d948e740dd
     file: proc_creation_win_bash_command_execution.yml
     path: rules/windows/process_creation/proc_creation_win_bash_command_execution.yml
+  - id: sigma-proc-bash-file-execution
+    rule_id: 2d22a514-e024-4428-9dba-41505bd63a5b
+    file: proc_creation_win_bash_file_execution.yml
+    path: rules/windows/process_creation/proc_creation_win_bash_file_execution.yml
   - id: sigma-proc-bcdedit-boot-conf-tamper
     rule_id: 1444443e-6757-43e4-9ea4-c8fc705f79a2
     file: proc_creation_win_bcdedit_boot_conf_tamper.yml
@@ -3549,6 +3569,10 @@ rules:
     rule_id: ee5e119b-1f75-4b34-add8-3be976961e39
     file: proc_creation_win_conhost_path_traversal.yml
     path: rules/windows/process_creation/proc_creation_win_conhost_path_traversal.yml
+  - id: sigma-proc-conhost-susp-child-process
+    rule_id: 7dc2dedd-7603-461a-bc13-15803d132355
+    file: proc_creation_win_conhost_susp_child_process.yml
+    path: rules/windows/process_creation/proc_creation_win_conhost_susp_child_process.yml
   - id: sigma-proc-conhost-uncommon-parent
     rule_id: cbb9e3d1-2386-4e59-912e-62f1484f7a89
     file: proc_creation_win_conhost_uncommon_parent.yml
@@ -4109,6 +4133,10 @@ rules:
     rule_id: 5bac7a56-da88-4c27-922e-c81e113b20cb
     file: proc_creation_win_github_self_hosted_runner.yml
     path: rules/windows/process_creation/proc_creation_win_github_self_hosted_runner.yml
+  - id: sigma-proc-googleupdate-susp-child-process
+    rule_id: 84b1ecf9-6eff-4004-bafb-bae5c0e251b2
+    file: proc_creation_win_googleupdate_susp_child_process.yml
+    path: rules/windows/process_creation/proc_creation_win_googleupdate_susp_child_process.yml
   - id: sigma-proc-gpg4win-decryption
     rule_id: 037dcd71-33a8-4392-bb01-293c94663e5a
     file: proc_creation_win_gpg4win_decryption.yml
@@ -6073,6 +6101,10 @@ rules:
     rule_id: ab37a6ec-6068-432b-a64e-2c7bf95b1d22
     file: proc_creation_win_regsvr32_susp_parent.yml
     path: rules/windows/process_creation/proc_creation_win_regsvr32_susp_parent.yml
+  - id: sigma-proc-regsvr32-uncommon-extension
+    rule_id: 50919691-7302-437f-8e10-1fe088afa145
+    file: proc_creation_win_regsvr32_uncommon_extension.yml
+    path: rules/windows/process_creation/proc_creation_win_regsvr32_uncommon_extension.yml
   - id: sigma-proc-remote-access-tools-anydesk
     rule_id: b52e84a3-029e-4529-b09b-71d19dd27e94
     file: proc_creation_win_remote_access_tools_anydesk.yml
@@ -6397,6 +6429,10 @@ rules:
     rule_id: 5cdb711b-5740-4fb2-ba88-f7945027afac
     file: proc_creation_win_rundll32_unc_path.yml
     path: rules/windows/process_creation/proc_creation_win_rundll32_unc_path.yml
+  - id: sigma-proc-rundll32-uncommon-dll-extension
+    rule_id: c3a99af4-35a9-4668-879e-c09aeb4f2bdf
+    file: proc_creation_win_rundll32_uncommon_dll_extension.yml
+    path: rules/windows/process_creation/proc_creation_win_rundll32_uncommon_dll_extension.yml
   - id: sigma-proc-rundll32-user32-dll
     rule_id: 3b5b0213-0460-4e3f-8937-3abf98ff7dcc
     file: proc_creation_win_rundll32_user32_dll.yml
@@ -6553,6 +6589,10 @@ rules:
     rule_id: 517490a7-115a-48c6-8862-1a481504d5a8
     file: proc_creation_win_sdbinst_shim_persistence.yml
     path: rules/windows/process_creation/proc_creation_win_sdbinst_shim_persistence.yml
+  - id: sigma-proc-sdbinst-susp-extension
+    rule_id: 18ee686c-38a3-4f65-9f44-48a077141f42
+    file: proc_creation_win_sdbinst_susp_extension.yml
+    path: rules/windows/process_creation/proc_creation_win_sdbinst_susp_extension.yml
   - id: sigma-proc-sdclt-child-process
     rule_id: da2738f2-fadb-4394-afa7-0a0674885afa
     file: proc_creation_win_sdclt_child_process.yml
@@ -6837,6 +6877,10 @@ rules:
     rule_id: 32e280f1-8ad4-46ef-9e80-910657611fbc
     file: proc_creation_win_susp_homoglyph_cyrillic_lookalikes.yml
     path: rules/windows/process_creation/proc_creation_win_susp_homoglyph_cyrillic_lookalikes.yml
+  - id: sigma-proc-susp-image-missing
+    rule_id: 71158e3f-df67-472b-930e-7d287acaa3e1
+    file: proc_creation_win_susp_image_missing.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_image_missing.yml
   - id: sigma-proc-susp-inline-base64-mz-header
     rule_id: 22e58743-4ac8-4a9f-bf19-00a0428d8c5f
     file: proc_creation_win_susp_inline_base64_mz_header.yml
@@ -6881,6 +6925,10 @@ rules:
     rule_id: f208d6d8-d83a-4c2c-960d-877c37da84e5
     file: proc_creation_win_susp_no_image_name.yml
     path: rules/windows/process_creation/proc_creation_win_susp_no_image_name.yml
+  - id: sigma-proc-susp-non-exe-image
+    rule_id: c09dad97-1c78-4f71-b127-7edb2b8e491a
+    file: proc_creation_win_susp_non_exe_image.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_non_exe_image.yml
   - id: sigma-proc-susp-non-priv-reg-or-ps
     rule_id: 8f02c935-effe-45b3-8fc9-ef8696a9e41d
     file: proc_creation_win_susp_non_priv_reg_or_ps.yml
@@ -7017,6 +7065,10 @@ rules:
     rule_id: 15c7904e-6ad1-4a45-9b46-5fb25df37fd2
     file: proc_creation_win_susp_use_of_vsjitdebugger_bin.yml
     path: rules/windows/process_creation/proc_creation_win_susp_use_of_vsjitdebugger_bin.yml
+  - id: sigma-proc-susp-userinit-child
+    rule_id: b655a06a-31c0-477a-95c2-3726b83d649d
+    file: proc_creation_win_susp_userinit_child.yml
+    path: rules/windows/process_creation/proc_creation_win_susp_userinit_child.yml
   - id: sigma-proc-susp-weak-or-abused-passwords
     rule_id: 91edcfb1-2529-4ac2-9ecc-7617f895c7e4
     file: proc_creation_win_susp_weak_or_abused_passwords.yml
@@ -7037,6 +7089,10 @@ rules:
     rule_id: be58d2e2-06c8-4f58-b666-b99f6dc3b6cd
     file: proc_creation_win_svchost_masqueraded_execution.yml
     path: rules/windows/process_creation/proc_creation_win_svchost_masqueraded_execution.yml
+  - id: sigma-proc-svchost-termserv-proc-spawn
+    rule_id: 1012f107-b8f1-4271-af30-5aed2de89b39
+    file: proc_creation_win_svchost_termserv_proc_spawn.yml
+    path: rules/windows/process_creation/proc_creation_win_svchost_termserv_proc_spawn.yml
   - id: sigma-proc-svchost-uncommon-parent-process
     rule_id: 01d2e2a1-5f09-44f7-9fc1-24faa7479b6d
     file: proc_creation_win_svchost_uncommon_parent_process.yml
@@ -7129,6 +7185,10 @@ rules:
     rule_id: 6a5f68d1-c4b5-46b9-94ee-5324892ea939
     file: proc_creation_win_sysinternals_sysmon_uninstall.yml
     path: rules/windows/process_creation/proc_creation_win_sysinternals_sysmon_uninstall.yml
+  - id: sigma-proc-sysinternals-tools-masquerading
+    rule_id: 7cce6fc8-a07f-4d84-a53e-96e1879843c9
+    file: proc_creation_win_sysinternals_tools_masquerading.yml
+    path: rules/windows/process_creation/proc_creation_win_sysinternals_tools_masquerading.yml
   - id: sigma-proc-sysprep-appdata
     rule_id: d5b9ae7a-e6fc-405e-80ff-2ff9dcc64e7e
     file: proc_creation_win_sysprep_appdata.yml
@@ -7293,6 +7353,10 @@ rules:
     rule_id: f0f7be61-9cf5-43be-9836-99d6ef448a18
     file: proc_creation_win_uninstall_crowdstrike_falcon.yml
     path: rules/windows/process_creation/proc_creation_win_uninstall_crowdstrike_falcon.yml
+  - id: sigma-proc-userinit-uncommon-child-processes
+    rule_id: 0a98a10c-685d-4ab0-bddc-b6bdd1d48458
+    file: proc_creation_win_userinit_uncommon_child_processes.yml
+    path: rules/windows/process_creation/proc_creation_win_userinit_uncommon_child_processes.yml
   - id: sigma-proc-vaultcmd-list-creds
     rule_id: 58f50261-c53b-4c88-bd12-1d71f12eda4c
     file: proc_creation_win_vaultcmd_list_creds.yml
@@ -7613,6 +7677,10 @@ rules:
     rule_id: 05c36dd6-79d6-4a9a-97da-3db20298ab2d
     file: proc_creation_win_wmic_xsl_script_processing.yml
     path: rules/windows/process_creation/proc_creation_win_wmic_xsl_script_processing.yml
+  - id: sigma-proc-wmiprvse-spawning-process
+    rule_id: d21374ff-f574-44a7-9998-4a8c8bf33d7d
+    file: proc_creation_win_wmiprvse_spawning_process.yml
+    path: rules/windows/process_creation/proc_creation_win_wmiprvse_spawning_process.yml
   - id: sigma-proc-wmiprvse-spawns-powershell
     rule_id: 692f0bec-83ba-4d04-af7e-e884a96059b6
     file: proc_creation_win_wmiprvse_spawns_powershell.yml
@@ -8941,6 +9009,10 @@ rules:
     rule_id: 36803969-5421-41ec-b92f-8500f79c23b0
     file: registry_set_persistence_globalflags.yml
     path: rules/windows/registry/registry_set/registry_set_persistence_globalflags.yml
+  - id: sigma-reg-set-persistence-ie
+    rule_id: d88d0ab2-e696-4d40-a2ed-9790064e66b3
+    file: registry_set_persistence_ie.yml
+    path: rules/windows/registry/registry_set/registry_set_persistence_ie.yml
   - id: sigma-reg-set-persistence-ifilter
     rule_id: b23818c7-e575-4d13-8012-332075ec0a2b
     file: registry_set_persistence_ifilter.yml
@@ -9585,6 +9657,10 @@ rules:
     rule_id: 94dc4390-6b7c-4784-8ffc-335334404650
     file: win_esent_ntdsutil_abuse_susp_location.yml
     path: rules/windows/builtin/application/esent/win_esent_ntdsutil_abuse_susp_location.yml
+  - id: sigma-win-firewall-as-add-rule
+    rule_id: cde0a575-7d3d-4a49-9817-b8004a7bf105
+    file: win_firewall_as_add_rule.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_add_rule.yml
   - id: sigma-win-firewall-as-add-rule-susp-folder
     rule_id: 9e2575e7-2cb9-4da1-adc8-ed94221dca5e
     file: win_firewall_as_add_rule_susp_folder.yml
@@ -9597,6 +9673,10 @@ rules:
     rule_id: 79609c82-a488-426e-abcf-9f341a39365d
     file: win_firewall_as_delete_all_rules.yml
     path: rules/windows/builtin/firewall_as/win_firewall_as_delete_all_rules.yml
+  - id: sigma-win-firewall-as-delete-rule
+    rule_id: c187c075-bb3e-4c62-b4fa-beae0ffc211f
+    file: win_firewall_as_delete_rule.yml
+    path: rules/windows/builtin/firewall_as/win_firewall_as_delete_rule.yml
   - id: sigma-win-firewall-as-failed-load-gpo
     rule_id: 7ec15688-fd24-4177-ba43-1a950537ee39
     file: win_firewall_as_failed_load_gpo.yml
@@ -9617,6 +9697,10 @@ rules:
     rule_id: e8ebd53a-30c2-45bd-81bb-74befba07bdb
     file: win_iis_logging_http_disabled.yml
     path: rules/windows/builtin/iis-configuration/win_iis_logging_http_disabled.yml
+  - id: sigma-win-iis-module-added
+    rule_id: dd857d3e-0c6e-457b-9b48-e82ae7f86bd7
+    file: win_iis_module_added.yml
+    path: rules/windows/builtin/iis-configuration/win_iis_module_added.yml
   - id: sigma-win-iis-module-removed
     rule_id: 9e1a1fdf-ee58-40ce-8e15-b66ca5a80e1f
     file: win_iis_module_removed.yml
@@ -9917,6 +10001,10 @@ rules:
     rule_id: 1ce8c8a3-2723-48ed-8246-906ac91061a6
     file: win_security_petitpotam_network_share.yml
     path: rules/windows/builtin/security/win_security_petitpotam_network_share.yml
+  - id: sigma-win-security-petitpotam-susp-tgt-request
+    rule_id: 6a53d871-682d-40b6-83e0-b7c1a6c4e3a5
+    file: win_security_petitpotam_susp_tgt_request.yml
+    path: rules/windows/builtin/security/win_security_petitpotam_susp_tgt_request.yml
   - id: sigma-win-security-powershell-script-installed-as-service
     rule_id: 2a926e6a-4b81-4011-8a96-e36cc8c04302
     file: win_security_powershell_script_installed_as_service.yml
