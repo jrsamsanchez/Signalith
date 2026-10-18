@@ -821,7 +821,9 @@
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-ssh-login' }, 'Sign in to Linux hosts with'), sshLogin),
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-smb-login' }, 'Sign in to Windows hosts with'), smbLogin),
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-esxi-login' }, 'Sign in to VMware ESXi hosts with'), esxiLogin),
-      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-snmp-login' }, 'Sign in to network devices (SNMP) with'), snmpLogin),
+      el('div', { class: 'field' }, el('label', { class: 'label', for: 'vs-snmp-login' }, 'Sign in to network devices (SNMP) with'), snmpLogin,
+        el('p', { class: 'hint' }, 'With an SNMP login, OpenVAS also checks UDP 161: on Top 100, Top 1000 or All ports it scans all TCP ports and the 100 most-used UDP ports, which is much more traffic. ' +
+          'On fragile networks, pick your own ports instead; UDP 161 is added to them.')),
       el('p', { class: 'hint' }, el('span', {}, 'Optional: signed in, OpenVAS checks installed patches and settings. Add logins on ',
         el('a', { href: '#scanners', 'data-page': 'scanners', onclick: () => dlg.close() }, 'Settings > Scanners'), '.')));
     const syncLogins = () => { loginsWrap.hidden = !deep.checked; };
