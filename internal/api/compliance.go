@@ -320,8 +320,8 @@ func (s *Server) complianceData(ctx context.Context, snap *compliance.Snapshot) 
 			continue
 		}
 		d := compliance.DataSeen{Count: int64(cellNumber(row["count"]))}
-		if ms := cellNumber(row["last_seen"]); ms > 0 {
-			d.Last = time.UnixMilli(int64(ms)).UTC()
+		if sec := cellNumber(row["last_seen"]); sec > 0 {
+			d.Last = time.Unix(0, int64(sec*1e9)).UTC()
 		}
 		snap.Data[m] = d
 	}

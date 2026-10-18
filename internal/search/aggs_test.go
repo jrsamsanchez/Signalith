@@ -88,3 +88,26 @@ func TestPercentileNames(t *testing.T) {
 		}
 	}
 }
+
+// Stats over _time give epoch seconds, as in Splunk, whether OpenSearch
+// computes them (in milliseconds) or they run over rows in memory.
+func TestTimeStatsInSeconds(t *testing.T) {
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":2}},"aggregations":{"m0":{"value":1760700000000,"value_as_string":"2025-10-17T11:20:00.000Z"},"m1":{"value":1760700060500},"m2":{"min":1760700000000,"max":1760700060000}}}`}}
+	e := &Engine{Store: fs}
+	res, err := e.Run(context.Background(), `* | stats min(_time) as first max(_time) as last range(_time) as span`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["first"] != int64(1760700000) || r["last"] != 1760700060.5 || r["span"] != int64(60) {
+		t.Errorf("in OpenSearch: %v", r)
+	}
+	fs = &fakeStore{responses: []string{`{"hits":{"total":{"value":2},"hits":[{"_source":{"@timestamp":"2025-10-17T11:21:00Z","dest":"a"}},{"_source":{"@timestamp":"2025-10-17T11:20:00.250Z","dest":"a"}}]}}`}}
+	e = &Engine{Store: fs}
+	res, err = e.Run(context.Background(), `* | eval x=1 | stats min(_time) as first max(_time) as last by dest | convert timeformat="%H:%M:%S" ctime(last)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["first"] != 1760700000.25 || r["last"] != "11:21:00" {
+		t.Errorf("in memory: %v", r)
+	}
+}

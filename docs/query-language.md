@@ -157,7 +157,7 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | --- | --- |
 | `count`, `count(f)` | Events, or events where `f` has a value |
 | `dc(f)` | Distinct values of `f` (approximate above a few thousand, as OpenSearch counts them) |
-| `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest |
+| `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest. Over `_time` they are in seconds since 1970, as in Splunk, so `min(_time) as firstTime` works with `convert ctime(firstTime)` |
 | `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
 | `stdev(f)`, `var(f)` | Sample standard deviation and variance |
 | `mode(f)` | The most common value |

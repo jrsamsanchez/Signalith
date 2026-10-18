@@ -508,13 +508,13 @@ func (r *hourRun) timeOf(row search.Row) time.Time {
 	case string:
 		if parsed, err := time.Parse(time.RFC3339Nano, v); err == nil {
 			t = parsed.UTC()
-		} else if ms := num(v); ms > 0 {
-			t = time.UnixMilli(int64(ms)).UTC()
+		} else if sec := num(v); sec > 0 {
+			t = time.Unix(0, int64(sec*1e9)).UTC()
 		}
 	default:
-		// min(_time) is in milliseconds since 1970.
-		if ms := num(v); ms > 0 {
-			t = time.UnixMilli(int64(ms)).UTC()
+		// min(_time) is in seconds since 1970, as in Splunk.
+		if sec := num(v); sec > 0 {
+			t = time.Unix(0, int64(sec*1e9)).UTC()
 		}
 	}
 	if t.Before(r.start) || t.After(end) {

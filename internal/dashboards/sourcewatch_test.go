@@ -53,7 +53,7 @@ func (f *sourceExec) Execute(_ context.Context, q *query.Query) (*search.Result,
 		}
 		r := search.Row{"host": k.host, "sourcetype": k.sourcetype}
 		if last {
-			r["last_seen"] = float64(max.UnixMilli())
+			r["last_seen"] = float64(max.Unix())
 		} else {
 			r["count"] = float64(n)
 		}

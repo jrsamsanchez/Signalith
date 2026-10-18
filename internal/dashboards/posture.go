@@ -515,11 +515,11 @@ func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map
 	if sources != nil {
 		for _, r := range sources.Rows {
 			h.Sources++
-			ms, ok := toFloatAny(r["last_seen"])
+			sec, ok := toFloatAny(r["last_seen"])
 			if !ok {
 				continue
 			}
-			last := time.UnixMilli(int64(ms)).UTC()
+			last := time.Unix(0, int64(sec*1e9)).UTC()
 			if now.Sub(last) > stale {
 				h.StaleSources = append(h.StaleSources, Source{Host: fmt.Sprint(r["host"]), Sourcetype: fmt.Sprint(r["sourcetype"]), LastSeen: last, Events: int64(toNum(r["count"]))})
 			}

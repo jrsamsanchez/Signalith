@@ -172,11 +172,11 @@ func TestNewCountryAfterLearning(t *testing.T) {
 		if by != "user,src" {
 			return nil
 		}
-		rows := []search.Row{row("user", "Alice", "src", "5.5.1.2", "count", 3.0, "first", float64(start.Add(time.Minute).UnixMilli()))}
+		rows := []search.Row{row("user", "Alice", "src", "5.5.1.2", "count", 3.0, "first", float64(start.Add(time.Minute).Unix()))}
 		// Bob has no history: he is still learning when he goes abroad.
 		if start.Equal(brazilAt) {
 			rows = append(rows,
-				row("user", "alice", "src", "177.0.3.4", "count", 1.0, "first", float64(start.Add(7*time.Minute).UnixMilli())),
+				row("user", "alice", "src", "177.0.3.4", "count", 1.0, "first", float64(start.Add(7*time.Minute).Unix())),
 				row("user", "bob", "src", "177.0.3.5", "count", 1.0),
 				// Private and unknown addresses say nothing.
 				row("user", "alice", "src", "10.1.2.3", "count", 1.0),
@@ -310,7 +310,7 @@ func TestUnusualHour(t *testing.T) {
 			return []search.Row{row("user", "dave")}
 		}
 		if start.Equal(time.Date(2026, 10, 16, 3, 0, 0, 0, time.UTC)) {
-			return []search.Row{row("user", "dave", "first", float64(start.Add(12*time.Minute).UnixMilli()))}
+			return []search.Row{row("user", "dave", "first", float64(start.Add(12*time.Minute).Unix()))}
 		}
 		return nil
 	}

@@ -942,8 +942,8 @@ func num(v any) (float64, bool) {
 	return 0, false
 }
 
-// timeOf reads a time from a cell: text, or epoch milliseconds as min
-// and max of _time return them.
+// timeOf reads a time from a cell: text, or epoch seconds as min and
+// max of _time return them.
 func timeOf(v any) time.Time {
 	if s, ok := v.(string); ok {
 		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000Z0700", "2006-01-02 15:04:05"} {
@@ -953,7 +953,7 @@ func timeOf(v any) time.Time {
 		}
 	}
 	if f, ok := num(v); ok && f > 0 {
-		return time.UnixMilli(int64(f)).UTC()
+		return time.Unix(0, int64(f*1e9)).UTC()
 	}
 	return time.Time{}
 }
