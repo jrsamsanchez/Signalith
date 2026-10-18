@@ -2662,6 +2662,14 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .sensor-tabs.hidden { display: none; }
 #page-data #agent-setup:not([data-sensor-tab="new"]) .sensor-new-only { display: none; }
 #page-data .agent-setup[data-sensor-tab="new"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+/* Signalith Agent: what it needs and its line instead of a configuration */
+#page-data #agent-setup:not([data-agent-install="on"]) .agent-install-only { display: none; }
+#page-data .agent-setup[data-agent-install="on"] :is(#agent-steps, #agent-file, #sensor-paths, #sensor-note) { display: none; }
+#page-data #agent-install { display: grid; gap: var(--sp-3); min-width: 0; }
+#page-data #agent-install:empty { display: none; }
+#page-data #agent-install .hint code { font-size: var(--fs-sm); }
+#page-data #agent-install .hint a .icon { margin-left: 3px; vertical-align: -1px; }
+#page-data .agent-os__text b .badge { margin-left: 6px; vertical-align: 1px; font-size: var(--fs-xs); color: var(--accent); }
 #page-data .sensor-needs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
 #page-data .sensor-needs li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
 #page-data .sensor-needs li > .icon { flex: none; margin-top: 2px; color: var(--text-3); }
@@ -4946,6 +4954,8 @@ dialog.modal.rp-dialog[open] { display: flex; flex-direction: column; max-height
 .ep-table td.ep-c-ver, .ep-table td.ep-c-addr { white-space: nowrap; }
 .ep-table td.ep-c-agent { white-space: nowrap; }
 .ep-table td .badge .icon { width: 12px; height: 12px; }
+/* the last lines a stopped collector wrote, from the Signalith Agent */
+.ep-agent__log { margin: 0; padding: 8px 10px; max-height: 160px; overflow: auto; border-radius: var(--r-md); font: var(--fs-xs)/16px var(--font-mono); color: var(--text-2); background: var(--sunken); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ep-agent__why { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
 .ep-agent__why li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); color: var(--text); background: var(--warning-soft); }
 .ep-agent__why li[data-tone="info"] { background: var(--hover); }

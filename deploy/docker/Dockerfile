@@ -5,6 +5,13 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/signalith ./cmd/signalith
+# The Signalith Agent's programs, which Signalith hands to the computers it
+# is installed on (docs/signalith-agent.md).
+RUN for p in linux-amd64 linux-arm64 windows-amd64; do \
+      ext=''; [ "${p%-*}" = windows ] && ext=.exe; \
+      GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/agents/signalith-agent-$p$ext ./cmd/signalith-agent || exit 1; \
+    done
 RUN mkdir -p /out/data/detections /out/data/lookups/geoip /out/data/dashboards /out/data/archive && chmod 700 /out/data/archive
 
 # Debian slim rather than distroless, for Nmap: the Vulnerabilities page
@@ -19,6 +26,7 @@ RUN apt-get update \
  && useradd -u 65532 -g 65532 -d /home/nonroot -m -s /usr/sbin/nologin nonroot
 USER 65532:65532
 COPY --from=build /out/signalith /usr/local/bin/signalith
+COPY --from=build /out/agents /usr/share/signalith/agents
 # Writable folders for custom detections, lookups, dashboards and archived
 # days, owned by the nonroot user.
 COPY --from=build --chown=65532:65532 /out/data /var/lib/signalith

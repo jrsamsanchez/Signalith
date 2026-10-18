@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -266,6 +267,11 @@ type Server struct {
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
+	// AgentPrograms are the Signalith Agent programs this server hands to
+	// the computers it is installed on; nil looks in the usual folder
+	// (clusterinstall.DefaultProgramsDir).
+	AgentPrograms     *clusterinstall.Programs
+	agentProgramsOnce sync.Once
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
@@ -443,6 +449,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeAgentManaged(mux, api)
 	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)

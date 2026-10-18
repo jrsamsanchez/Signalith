@@ -2597,7 +2597,7 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
+const AGENT_TOKEN_DEFAULTS = { agent: 'Computers with the Signalith Agent', linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
 // Collectors that read AWS CloudTrail, Azure's event hub or Google Cloud's
@@ -2689,6 +2689,7 @@ function agentTokDrop() {
   $('agent-token-made').replaceChildren();
   if (had && agentSetupData) agentSetupRender(agentSetupData);
   if (had && typeof sensorSetupRender === 'function') sensorSetupRender();
+  if (had && typeof agentInstallRender === 'function') agentInstallRender();
 }
 
 function agentTokError(msg) {
@@ -2769,6 +2770,7 @@ async function agentTokEnsure() {
       agentTokMadeNote();
       if (agentSetupData) agentSetupRender(agentSetupData);
       if (typeof sensorSetupRender === 'function') sensorSetupRender();
+      if (typeof agentInstallRender === 'function') agentInstallRender();
       if (typeof tokensReload === 'function') tokensReload();
       return true;
     } catch (e) {
@@ -2786,7 +2788,7 @@ function agentTokMadeNote() {
   const box = $('agent-token-made');
   box.replaceChildren(icon('circle-check'), el('div', {},
     el('b', {}, `Created token “${agentTok.made.name}”.`),
-    el('p', {}, typeof sensorSetupActive === 'function' && sensorSetupActive()
+    el('p', {}, (typeof sensorSetupActive === 'function' && sensorSetupActive()) || (typeof agentInstallActive === 'function' && agentInstallActive())
       ? 'It’s in the line below. Signalith shows it only now, so copy the line before you leave this page.'
       : 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
   box.classList.remove('hidden');
@@ -2864,7 +2866,9 @@ async function agentSetupLoad() {
   const gcp = os === 'gcp';
   const cloud = aws || azure || gcp;
   const collector = otel || cloud;
-  const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
+  // Signalith Agent: one line, made by agent-setup.js.
+  const managed = os === 'agent';
+  const host = collector ? $('otel-host').value : osq || sensor || managed ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
   $('aws-paths').classList.toggle('hidden', !aws);
   $('gcp-paths').classList.toggle('hidden', !gcp);
@@ -2900,6 +2904,7 @@ async function agentSetupLoad() {
   // Network sensor > Set up a new sensor: one line instead of a
   // configuration (sensor-setup.js).
   if (typeof sensorSetupSync === 'function' && sensorSetupSync(sensor)) return;
+  if (typeof agentInstallSync === 'function' && agentInstallSync(managed)) return;
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
@@ -3449,7 +3454,7 @@ function loadDataSource() {
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
-// pickDataSource selects a source card on the Add data page: linux,
+// pickDataSource selects a source card on the Add data page: agent, linux,
 // windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, okta, github, gcp, kubernetes or custom. It is false
 // for anything else.
 function pickDataSource(src) {

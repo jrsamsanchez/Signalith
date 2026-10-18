@@ -183,6 +183,7 @@ window.sensorText = (function () {
 
   // agentPlatform guesses the agent's system from its tag and how it sends.
   function agentPlatform(a) {
+    if (a.managed) return { os: 'agent', label: 'Signalith Agent' + (PLATFORM[a.managed.os] ? ' on ' + PLATFORM[a.managed.os] : '') };
     if (a.intake === 'otlp') return { os: 'otel', label: 'OpenTelemetry Collector' };
     if (a.intake === 'hec') return { os: 'otel', label: 'Splunk HEC sender' };
     if ((a.tag || '').startsWith('win')) return { os: 'windows', label: 'Windows' };
@@ -196,6 +197,7 @@ window.sensorText = (function () {
   }
 
   function agentStatus(a) {
+    if (managedTrouble(a.managed) && !a.silent) return el('span', { class: 'badge badge--warning' }, icon('circle-alert'), managedTrouble(a.managed));
     if (needsConfig(a)) return el('span', { class: 'badge badge--warning' }, icon('circle-alert'), 'Needs a new configuration');
     if (a.silent) {
       const t = new Date(a.last_seen);
@@ -203,6 +205,55 @@ window.sensorText = (function () {
       return el('span', { class: 'ep-online' }, el('span', { class: 'pulse', 'data-state': 'idle' }), 'Silent since ' + when);
     }
     return el('span', { class: 'ep-online' }, el('span', { class: 'pulse' }), 'Sending, ' + ago(a.last_seen));
+  }
+
+  // ---------- the Signalith Agent ----------
+  // A computer the Signalith Agent runs reports every 5 minutes
+  // (a.managed): its version, its system, whether it got its
+  // configuration, and each collector it runs with its state.
+  const COLLECTOR = { fluentbit: 'Fluent Bit', osquery: 'osquery' };
+  const STATE = { running: 'running', starting: 'starting', failed: 'stopped', missing: 'not installed', off: 'off' };
+  const collectorName = (c) => COLLECTOR[c.name] || c.name;
+
+  // managedTrouble is the short word for what is wrong, or ''.
+  function managedTrouble(m) {
+    if (!m) return '';
+    const bad = (m.components || []).find((c) => c.state === 'failed' || c.state === 'missing');
+    if (bad) return collectorName(bad) + ' ' + STATE[bad.state];
+    if (m.config_error) return 'Can’t get its configuration';
+    return '';
+  }
+
+  // managedLine is the row's second line: "Agent 0.4.0 · Fluent Bit
+  // 4.0.3 running · Ubuntu 24.04 LTS".
+  function managedLine(m) {
+    const parts = ['Agent ' + (m.version || '')].concat((m.components || []).map((c) => [collectorName(c), c.version, STATE[c.state] || c.state].filter(Boolean).join(' ')));
+    if (m.system) parts.push(m.system);
+    return parts.join(' · ');
+  }
+
+  function managedFacts(m) {
+    const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
+    const trouble = managedTrouble(m);
+    const unit = 'sudo journalctl -u signalith-agent -n 50';
+    const why = [];
+    if (m.config_error) why.push('It could not get a new configuration from Signalith, so it keeps the one it has: ' + m.config_error);
+    for (const c of m.components || []) {
+      if (c.state === 'missing') why.push(collectorName(c) + ' is not installed. Run the line from Add data > Signalith Agent again on the computer.');
+      else if (c.state === 'failed') why.push([collectorName(c) + ' stopped' + (c.restarts ? ' (' + c.restarts + (c.restarts === 1 ? ' restart' : ' restarts') + ')' : '') + '. The agent starts it again; see why on the computer with ', el('code', {}, unit), '.']);
+    }
+    return [
+      el('h4', { class: 'ep-h4' }, 'Signalith Agent', trouble ? el('span', { class: 'badge badge--warning' }, trouble) : null),
+      el('dl', { class: 'ep-facts' },
+        ...fact('Version', m.version),
+        ...fact('System', [m.system, m.arch].filter(Boolean).join(', ')),
+        ...(m.components || []).flatMap((c) => fact(collectorName(c), [c.version, (STATE[c.state] || c.state) + (c.since ? ' since ' + new Date(c.since).toLocaleString() : '')].filter(Boolean).join(', '))),
+        ...fact('Configuration', m.config_error ? 'Could not get a new one' : m.revision ? 'Up to date (' + m.revision.slice(0, 8) + ')' : 'None yet'),
+        ...fact('Started', m.started ? new Date(m.started).toLocaleString() : ''),
+        ...fact('Status sent', m.received ? new Date(m.received).toLocaleString() + ' (' + ago(m.received) + ')' : '')),
+      why.length ? el('ul', { class: 'ep-agent__why', role: 'list' }, ...why.map((w) => el('li', { 'data-tone': 'warning' }, icon('circle-alert'), el('span', {}, ...[].concat(w))))) : null,
+      ...(m.components || []).filter((c) => c.error && c.state !== 'running').map((c) => el('pre', { class: 'ep-agent__log', 'aria-label': collectorName(c) + '’s last lines' }, c.error)),
+    ];
   }
 
   // ---------- network sensors ----------
@@ -306,7 +357,7 @@ window.sensorText = (function () {
     const plat = agentPlatform(a);
     dlg.replaceChildren(
       head(a.name || a.addresses[0] || 'Log agent', a.refusing ? 'A computer that refuses this server’s certificate' : ['Log agent', plat.label].filter(Boolean).join(' · ')),
-      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1), ...(a.sensor ? sensorFacts(a.sensor) : [])),
+      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1), ...(a.managed ? managedFacts(a.managed) : []), ...(a.sensor ? sensorFacts(a.sensor) : [])),
       el('div', { class: 'modal__foot' }, el('span', { class: 'spacer' }),
         el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
     if (!dlg.open) dlg.showModal();
@@ -376,6 +427,7 @@ window.sensorText = (function () {
           el('span', { class: 'ep-plat', title: 'Log agent' }, icon('file-text')),
           el('div', {}, el('div', { class: 'ep-name' }, label),
             el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · ')),
+            a.managed && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, managedLine(a.managed)) : null,
             a.sensor && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, sensorLine(a.sensor),
               (a.sensor.warnings || []).length ? el('span', { class: 'ep-sensor__warn', title: a.sensor.warnings.map((w) => sensorWarning(w, a.sensor)).join(' ') }, icon('triangle-alert', 'icon--xs'),
                 a.sensor.warnings.length === 1 ? '1 warning' : a.sensor.warnings.length + ' warnings') : null) : null))),
@@ -475,6 +527,7 @@ window.sensorText = (function () {
           el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); searchHost(h.hostname, 'Inventory'); } }, icon('list'), 'Inventory changes'),
           can('admin') ? el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); dlg.close(); S.query = { targets: [h.id], label: h.hostname }; showTab('query'); } }, icon('terminal'), 'Live query') : null),
         ...(agent ? agentSection(agent, dlg) : []),
+        ...(agent && agent.managed ? managedFacts(agent.managed) : []),
         ...(agent && agent.sensor ? sensorFacts(agent.sensor) : []),
         el('h4', { class: 'ep-h4' }, 'Configuration checks', failing ? el('span', { class: 'badge badge--danger' }, failing + ' failing') : null),
         checks.length ? el('ul', { class: 'ep-checks', role: 'list' }, ...checks.map(checkItem)) : el('p', { class: 'ep-muted' }, 'No checks for this platform.')),
