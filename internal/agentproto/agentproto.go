@@ -61,6 +61,9 @@ type Config struct {
 	CA string `json:"ca,omitempty"`
 	// FluentBit is the log collector's configuration; nil runs none.
 	FluentBit *FluentBit `json:"fluentbit,omitempty"`
+	// Osquery is osquery's part, for an agent whose computer has osquery
+	// (it says so when it asks); nil runs none.
+	Osquery *Osquery `json:"osquery,omitempty"`
 }
 
 // FluentBit is Fluent Bit's part of a Config.
@@ -69,6 +72,44 @@ type FluentBit struct {
 	// SIGNALITH_TOKEN variable, which the agent sets, so the file holds
 	// no secret.
 	Config string `json:"config"`
+}
+
+// Osquery is osquery's part of a Config: osquery uses Signalith as its
+// management server (enrolling with the agent token), and fetches what
+// to collect from it.
+type Osquery struct {
+	// Flags are the flags that point osquery at Signalith, one
+	// --name=value a line. The agent adds those that name its own files
+	// (the enroll secret, which is the agent token file, the certificate
+	// authority and osquery's database), and runs none it does not know
+	// (OsqueryFlagAllowed).
+	Flags string `json:"flags,omitempty"`
+	// Error is why osquery cannot use this server, "" when it can; the
+	// agent then runs no osquery and reports the reason.
+	Error string `json:"error,omitempty"`
+}
+
+// osqueryFlagNames are the flags a server may give osquery. Flags that
+// load code (extensions) or name files are not among them: the agent
+// names its own files.
+var osqueryFlagNames = map[string]bool{
+	"tls_hostname": true, "enroll_tls_endpoint": true, "host_identifier": true,
+	"config_plugin": true, "config_tls_endpoint": true, "config_refresh": true, "config_accelerated_refresh": true,
+	"logger_plugin": true, "logger_tls_endpoint": true, "logger_tls_period": true,
+	"disable_distributed": true, "distributed_plugin": true, "distributed_interval": true,
+	"distributed_tls_max_attempts": true, "distributed_tls_read_endpoint": true, "distributed_tls_write_endpoint": true,
+	"disable_events": true, "enable_file_events": true, "enable_ntfs_event_publisher": true, "utc": true,
+}
+
+// OsqueryFlagAllowed says whether a server may give osquery the flag
+// line (--name or --name=value).
+func OsqueryFlagAllowed(line string) bool {
+	name, ok := strings.CutPrefix(line, "--")
+	if !ok {
+		return false
+	}
+	name, value, _ := strings.Cut(name, "=")
+	return osqueryFlagNames[name] && !strings.ContainsAny(value, "\x00\r\n")
 }
 
 // Status is what an agent reports: itself and each collector it runs.
@@ -103,7 +144,7 @@ const (
 
 // Component is one collector the agent runs.
 type Component struct {
-	// Name is fluentbit (and, later, osquery or sysmon).
+	// Name is fluentbit or osquery.
 	Name string `json:"name"`
 	// Version is the collector's version, "" when not known.
 	Version string `json:"version,omitempty"`

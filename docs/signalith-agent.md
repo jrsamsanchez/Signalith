@@ -1,5 +1,5 @@
 ---
-description: Install the Signalith Agent with one line per Linux or Windows computer. It fetches what to collect from Signalith, runs Fluent Bit for you and reports how it is, so there is no configuration file to edit.
+description: Install the Signalith Agent with one line per Linux or Windows computer. It fetches what to collect from Signalith, runs Fluent Bit and osquery for you and reports how they are, so there is no configuration file to edit.
 ---
 
 # Signalith Agent
@@ -7,17 +7,19 @@ description: Install the Signalith Agent with one line per Linux or Windows comp
 The Signalith Agent is one small program per computer that takes care of collecting its
 logs. You paste one line on the computer; after that, nothing is configured by hand:
 
-- the line installs Fluent Bit from its publisher and the agent from your Signalith
-  server (and, on Windows, Sysmon from Microsoft if you choose);
+- the line installs Fluent Bit and osquery from their publishers and the agent from your
+  Signalith server (and, on Windows, Sysmon from Microsoft if you choose);
 - every five minutes the agent asks Signalith what to collect, writes Fluent Bit's
-  configuration and restarts Fluent Bit when it changed;
-- it keeps Fluent Bit running, starting it again when it stops, and tells Signalith how
-  it is, which the [Endpoints page](endpoints.md) shows for each computer.
+  configuration and osquery's settings, and restarts them when they changed;
+- it keeps them running, starting them again when they stop, and tells Signalith how
+  they are, which the [Endpoints page](endpoints.md) shows for each computer.
 
 The agent does not collect anything itself: Fluent Bit reads the logs and sends them, as
-with a configuration you set up by hand ([Agents and syslog](sending-data.md)). Setting
-Fluent Bit up by hand, the OpenTelemetry Collector, syslog and Splunk HEC senders all
-keep working; the agent is the easy way, not the only one.
+with a configuration you set up by hand ([Agents and syslog](sending-data.md)), and
+osquery reports inventory and file changes and answers live queries, as with the
+[osquery option](endpoints.md). Setting Fluent Bit or osquery up by hand, the
+OpenTelemetry Collector, syslog and Splunk HEC senders all keep working; the agent is the
+easy way, not the only one.
 
 ## What it runs on
 
@@ -32,11 +34,11 @@ ARM (arm64):
 | Amazon Linux | 2023 |
 
 The computer needs systemd, `curl`, and outbound HTTPS to Signalith's agent port (7779 by
-default) and to `packages.fluentbit.io`.
+default), to `packages.fluentbit.io` and, for osquery, to `pkg.osquery.io`.
 
 On **Windows**: Windows 10 or 11 and Windows Server 2016 or later, 64-bit x86, with
-outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io` and, for Sysmon, to
-`download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
+outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io`, for osquery to
+`pkg.osquery.io`, and for Sysmon to `download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
 PowerShell 7, opened with **Run as administrator**.
 
 Nothing has to reach the computer. macOS is next; until then, use
@@ -49,8 +51,9 @@ Nothing has to reach the computer. macOS is next; until then, use
    port, such as `https://siem.example.com:7779`.
 3. Name the token, or keep the name given, and select **Copy**. Signalith makes an agent
    token for the computers you install from this line and puts it in the line.
-4. Pick **Linux** or **Windows** above the line. On Windows, tick **Also install Sysmon**
-   to add it (see [Sysmon](#sysmon-on-windows)).
+4. Pick **Linux** or **Windows** above the line. **Also install osquery** is ticked; untick
+   it to leave osquery out (see [osquery](#osquery)). On Windows, tick **Also install
+   Sysmon** to add it (see [Sysmon](#sysmon-on-windows)).
 5. On the computer, paste the line: on Linux in a terminal, as a user who can use `sudo`;
    on Windows in PowerShell opened with **Run as administrator**.
 
@@ -59,11 +62,11 @@ The Linux line looks like this (the page fills in the real values):
 ```sh
  f=$(mktemp) && curl -fsSk --proto '=https' https://siem.example.com:7779/api/agent/install.sh -o "$f" \
   && echo "<sha-256>  $f" | sha256sum -c --quiet \
-  && echo 'sgl_…' | sudo sh "$f" --from https://siem.example.com:7779 --ca-sha256 <hex> --version 0.4.0 --token -
+  && echo 'sgl_…' | sudo sh "$f" --from https://siem.example.com:7779 --ca-sha256 <hex> --version 0.4.0 --token - --osquery
 ```
 
 The Windows line does the same in PowerShell, ending with
-`'sgl_…' | & $f -From https://siem.example.com:7779 -CaSha256 <hex> -Version 0.4.0 -Token -`.
+`'sgl_…' | & $f -From https://siem.example.com:7779 -CaSha256 <hex> -Version 0.4.0 -Token - -Osquery`.
 
 The script checks the computer, then Signalith, before it installs anything, and stops
 with a plain message at the first problem. When it finishes, the computer shows on the
@@ -100,12 +103,18 @@ that folder and prints the commands instead of running them.
   own signed package repository; the script refuses its signing key unless its
   fingerprint is the one pinned in the script. On Windows, the script downloads the
   Fluent Bit version it pins from Fluent Bit's site and checks the zip's SHA-256 against
-  the one the publisher lists next to it (or against `-FluentBitSha256`). Fluent Bit publishes no signing key for the Windows zip; checking it against a SHA-256 carried in Signalith's signed content updates is planned, together with signed agent updates. Sysmon is
+  the one the publisher lists next to it (or against `-FluentBitSha256`). Fluent Bit publishes no signing key for the Windows zip; checking it against a SHA-256 carried in Signalith's signed content updates is planned, together with signed agent updates. osquery
+  comes from osquery's own signed package repository on Linux, its signing key pinned the
+  same way; on Windows the script downloads the osquery MSI version it pins and installs
+  it only when its Authenticode signature is valid (or its SHA-256 is the one given with
+  `-OsquerySha256`). Sysmon is
   downloaded from Microsoft and used only when Microsoft's signature on it is valid. The
   agent program comes from your Signalith server, and the script checks its SHA-256
   against the one Signalith gives with it.
 - **What the server can change is limited.** The server sends the agent Fluent Bit's
-  configuration and the certificate authorities to trust. The agent keeps a new set of
+  configuration, osquery's settings and the certificate authorities to trust. The agent
+  passes osquery only the settings it knows (where Signalith is and how often to ask),
+  never ones that load other programs into osquery, and names osquery's files itself. The agent keeps a new set of
   authorities only when it still trusts the server it is talking to, so a mistake cannot
   cut the computer off. Where packages come from, and their signing keys, are in the
   script, never in what the server sends.
@@ -119,8 +128,10 @@ that folder and prints the commands instead of running them.
   SYSTEM, which reading the Security log needs; its folders are owned by Administrators
   and only SYSTEM and Administrators can change them (the script refuses a data folder
   someone else made first, or a link in its place, and the agent refuses to start when
-  its folder or the one above it is not owned by SYSTEM or Administrators), and Fluent Bit runs in a job object, so it never outlives the
-  agent.
+  its folder or the one above it is not owned by SYSTEM or Administrators), and Fluent Bit and osquery run in a job object, so they never outlive the
+  agent. On Linux osquery runs in a service of its own, `signalith-osquery`, because it
+  reads the whole computer, which the agent's fenced-in service may not: Fluent Bit,
+  which reads log lines anyone can write to, stays fenced in.
 
 ## On the computer
 
@@ -129,16 +140,20 @@ that folder and prints the commands instead of running them.
 | Path | What it is |
 |---|---|
 | `/usr/local/sbin/signalith-agent` | The agent program |
-| `/etc/signalith-agent/agent.conf` | The server address, written by the install line |
+| `/etc/signalith-agent/agent.conf` | The server address, and whether osquery is set up, written by the install line |
 | `/etc/signalith-agent/token` | The agent token (root only) |
 | `/etc/signalith-agent/ca.pem` | Signalith's certificate authority |
 | `/etc/signalith-agent/fluent-bit.conf` | Fluent Bit's configuration, written by the agent |
 | `/var/lib/signalith-agent/` | The configuration in use, Fluent Bit's buffer and positions, the agent's status |
+| `/etc/signalith-agent/osquery.flags` | osquery's settings, written by the agent |
 | `/etc/systemd/system/signalith-agent.service` | The agent's service |
+| `/etc/systemd/system/signalith-osquery.service` | osquery's service, which runs while `osquery.flags` exists |
+| `/etc/systemd/system/signalith-osquery-flags.path` | Restarts osquery when the agent writes new settings |
 | `/usr/local/lib/signalith-agent/install.sh` | A copy of the install script, for `--uninstall` |
 
-Fluent Bit's own `fluent-bit` service is masked, so there is never a second copy sending:
-the agent runs Fluent Bit itself.
+Fluent Bit's own `fluent-bit` service and osquery's own `osqueryd` service are masked, so
+there is never a second copy: the agent runs Fluent Bit, and osquery runs as
+`signalith-osquery` with the agent's settings.
 
 Useful commands:
 
@@ -146,6 +161,7 @@ Useful commands:
 sudo signalith-agent status            # how the agent and Fluent Bit are
 sudo systemctl status signalith-agent  # the service
 sudo journalctl -u signalith-agent -n 50   # the agent's and Fluent Bit's log
+sudo journalctl -u signalith-osquery -n 50 # osquery's log
 ```
 
 ### Windows
@@ -155,12 +171,14 @@ sudo journalctl -u signalith-agent -n 50   # the agent's and Fluent Bit's log
 | `C:\Program Files\Signalith Agent\signalith-agent.exe` | The agent program |
 | `C:\Program Files\Signalith Agent\fluent-bit\` | Fluent Bit |
 | `C:\Program Files\Signalith Agent\install.ps1` | A copy of the install script, for `-Uninstall` |
-| `C:\ProgramData\Signalith Agent\` | The settings, token and certificate authority (SYSTEM and Administrators only), Fluent Bit's configuration and buffer, the agent's status and its log, `agent.log` |
+| `C:\ProgramData\Signalith Agent\` | The settings, token and certificate authority (SYSTEM and Administrators only), Fluent Bit's configuration and buffer, osquery's settings and database, the agent's status and its log, `agent.log` |
+| `C:\Program Files\osquery\` | osquery, from its MSI |
 
 The agent is the **SignalithAgent** service, which Windows starts at boot and starts again
 when it stops. If Fluent Bit was installed by hand and its `fluent-bit` service sends to
 Signalith, the script stops and turns it off, so events do not arrive twice; one that
-sends elsewhere is left alone.
+sends elsewhere is left alone. osquery's own `osqueryd` service is turned off: the agent
+runs osquery.
 
 Useful commands, in an elevated PowerShell:
 
@@ -188,6 +206,28 @@ detections use, and Sysmon's log when Sysmon is installed.
 
 Choosing what each group of computers collects from the **Endpoints** page is coming.
 
+## osquery
+
+With **Also install osquery** ticked (the line ends with `--osquery`, or `-Osquery` on
+Windows), the computer also runs [osquery](https://osquery.io), with Signalith as its
+management server: its inventory, file changes and live queries are on the
+[Endpoints page](endpoints.md), as with the osquery option, with nothing to set up on the
+computer.
+
+- On Linux the script adds osquery's signed package repository and installs the `osquery`
+  package; on Windows it installs osquery's MSI (see
+  [How it stays safe](#how-it-stays-safe)). An osquery already installed is used as it is.
+- The agent writes osquery's settings from what Signalith hands out. osquery enrolls with
+  the agent token, so revoking the token cuts off both, and checks Signalith's
+  certificate with the same certificate authority as the agent.
+- osquery checks Signalith's certificate against the address it connects to. With an IP
+  address as **Agents send to**, that works only when Signalith uses its own certificate
+  authority; otherwise the Endpoints page shows osquery as off, with why, and Fluent Bit
+  keeps working. Use a host name the certificate covers.
+- A run again without `--osquery` keeps osquery once the script installed it.
+  `--uninstall` removes osquery only if the script installed it, and turns osquery's own
+  service back on otherwise.
+
 ## Sysmon on Windows
 
 Sysmon records process starts with their command lines, network connections, DNS
@@ -214,16 +254,19 @@ Bit reads. `-Uninstall` removes Sysmon only if the script installed it.
 On Windows, download `fluent-bit-<version>-win64.zip` (the version is at the top of the
 script) from [Fluent Bit's site](https://docs.fluentbit.io/manual/installation/downloads/windows),
 copy it to the computer and add `-FluentBitZip <path to the zip>` (and
-`-FluentBitSha256 <its SHA-256>` to have it checked) to the line. The computer still
+`-FluentBitSha256 <its SHA-256>` to have it checked) to the line. For osquery, download
+`osquery-<version>.msi` from [osquery's site](https://osquery.io/downloads) and add
+`-OsqueryMsi <path to the MSI>` (and `-OsquerySha256 <its SHA-256>`). The computer still
 needs to reach Signalith.
 
 ## Run it again, or remove it
 
 Running the line again is safe: it changes only what differs, upgrades Fluent Bit and the
-agent, and repairs what was changed. Without `--token -` (and the `echo` before it), or
+agent (and, on Linux, osquery), and repairs what was changed. Without `--token -` (and the `echo` before it), or
 `-Token -` on Windows, it keeps the computer's token.
 
-To remove the agent, Fluent Bit and every file the script wrote:
+To remove the agent, Fluent Bit, osquery if the script installed it, and every file the
+script wrote:
 
 ```sh
 sudo sh /usr/local/lib/signalith-agent/install.sh --uninstall
@@ -247,12 +290,14 @@ The install line says what stopped it and how to fix it. The common ones:
 | This Signalith's certificate authority is not the one the line names | Copy the line again. If it keeps failing, something between the computer and Signalith is answering in its place. |
 | This Signalith has no agent program | Signalith was built from source. Released versions (packages, Docker image) carry the agent programs. |
 | Fluent Bit is not running | `sudo journalctl -u signalith-agent -n 50` (Linux) or `agent.log` (Windows) shows Fluent Bit's last lines. |
+| osquery is not running yet | `sudo journalctl -u signalith-osquery -n 50` (Linux) or `agent.log` (Windows) shows osquery's last lines. |
+| The osquery MSI has no valid signature | Check the MSI's SHA-256 against the one on osquery's download page and add `-OsquerySha256 <hex>`, or run the line without `-Osquery`. |
 | Run this in PowerShell opened with Run as administrator | Right-click PowerShell, choose **Run as administrator**, and paste the line again. |
 | The Microsoft Visual C++ runtime it needs is missing | Install it from Microsoft (the message has the link) and run the line again. |
 | Could not get the SHA-256 Fluent Bit's publisher lists | Add `-FluentBitSha256 <hex>` with the SHA-256 shown on Fluent Bit's download page. |
 
-On the **Endpoints** page, a computer whose Fluent Bit stopped or that could not get its
-configuration has a warning, with Fluent Bit's last lines.
+On the **Endpoints** page, a computer whose Fluent Bit or osquery stopped, or that could
+not get its configuration, has a warning, with their last lines.
 
 ## For developers
 

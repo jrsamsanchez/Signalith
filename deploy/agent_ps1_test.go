@@ -212,6 +212,16 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Fatalf("-Sysmon: %v\n%s", err, out)
 	}
 
+	// -Osquery too; a run again after it keeps osquery.
+	out, err = w.run(t, "", append(again, "-Osquery")...)
+	if err != nil || !strings.Contains(out, "would download https://pkg.osquery.io/windows/osquery-") {
+		t.Fatalf("-Osquery: %v\n%s", err, out)
+	}
+	out, err = w.run(t, "", again...)
+	if err != nil || !strings.Contains(out, "Nothing to change") {
+		t.Fatalf("run again after -Osquery: %v\n%s", err, out)
+	}
+
 	out, err = w.run(t, "", "-Uninstall", "-DryRun", root)
 	if err != nil || !strings.Contains(out, "sc.exe delete SignalithAgent") || !strings.Contains(out, "Sysmon64.exe -u force") {
 		t.Fatalf("uninstall: %v\n%s", err, out)
@@ -237,6 +247,8 @@ func TestAgentPS1Refuses(t *testing.T) {
 		{"not a token", "SJ1.abc", []string{"-From", w.ts.URL, "-Token", "-"}, "not a Signalith agent token"},
 		{"no token", "", []string{"-From", w.ts.URL}, "-Token is missing"},
 		{"bad ca", w.token, []string{"-From", w.ts.URL, "-CaSha256", "abc", "-Token", "-"}, "64 hexadecimal"},
+		{"bad osquery sha", w.token, []string{"-From", w.ts.URL, "-OsquerySha256", "abc", "-Token", "-"}, "-OsquerySha256 must be 64 hexadecimal"},
+		{"no osquery msi", w.token, []string{"-From", w.ts.URL, "-OsqueryMsi", "no-such.msi", "-Token", "-"}, "-OsqueryMsi no-such.msi: there is no such file"},
 		{"other ca", w.token, []string{"-From", w.ts.URL, "-CaSha256", strings.Repeat("0", 64), "-Token", "-"}, "not the one the line names"},
 		{"revoked", "sgl_" + strings.Repeat("a", 52), []string{"-From", w.ts.URL, "-CaSha256", w.caSHA, "-Token", "-"}, "Signalith refused the token: this agent token was revoked"},
 		// Without -CaSha256 the computer's own authorities check the

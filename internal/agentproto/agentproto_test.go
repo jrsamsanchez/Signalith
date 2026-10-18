@@ -62,3 +62,21 @@ func TestProgramName(t *testing.T) {
 		t.Error(ProgramName("windows", "amd64"), ProgramName("linux", "arm64"))
 	}
 }
+
+func TestOsqueryFlagAllowed(t *testing.T) {
+	for line, want := range map[string]bool{
+		"--tls_hostname=siem.example.com:7779": true,
+		"--utc":                                true,
+		"--enable_ntfs_event_publisher=true":   true,
+		"--extensions_autoload=/tmp/x":         false,
+		"--enroll_secret_path=/tmp/x":          false,
+		"--database_path=/tmp/x":               false,
+		"tls_hostname=x":                       false,
+		"--tls_hostname=a\x00b":                false,
+		"":                                     false,
+	} {
+		if got := OsqueryFlagAllowed(line); got != want {
+			t.Errorf("OsqueryFlagAllowed(%q) = %v, want %v", line, got, want)
+		}
+	}
+}

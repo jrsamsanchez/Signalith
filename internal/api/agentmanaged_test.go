@@ -163,8 +163,31 @@ func TestManagedAgentConfig(t *testing.T) {
 		t.Errorf("journal: %d %s", code, body)
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(path, "os=linux", "os=windows", 1), agent)
-	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith Agent\\ca.pem`) {
+	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith Agent\\ca.pem`) || strings.Contains(body, "osquery") {
 		t.Errorf("windows: %d %s", code, body)
+	}
+	// A computer with osquery gets the flags that point it here, and
+	// osquery enrolls with the agent token.
+	for _, goos := range []string{"linux", "windows"} {
+		code, _, body = sensorGet(t, ts, strings.Replace(path, "os=linux", "os="+goos, 1)+"&osquery=true", agent)
+		var oc agentproto.Config
+		if code != 200 || json.Unmarshal([]byte(body), &oc) != nil || oc.Osquery == nil || oc.Osquery.Error != "" {
+			t.Fatalf("%s osquery: %d %s", goos, code, body)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(oc.Osquery.Flags), "\n") {
+			if !agentproto.OsqueryFlagAllowed(line) {
+				t.Errorf("%s: the agent would leave out %q", goos, line)
+			}
+		}
+		if !strings.Contains(oc.Osquery.Flags, "--tls_hostname=siem.example.com:7779\n") || strings.Contains(oc.Osquery.Flags, "enroll_secret_path") {
+			t.Errorf("%s osquery flags:\n%s", goos, oc.Osquery.Flags)
+		}
+		if (goos == "windows") != strings.Contains(oc.Osquery.Flags, "ntfs") {
+			t.Errorf("%s file events:\n%s", goos, oc.Osquery.Flags)
+		}
+	}
+	if _, ok := s.EnrollToken(agent); !ok {
+		t.Error("osquery cannot enroll with the agent token")
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(strings.Replace(path, "os=linux", "os=darwin", 1), "amd64", "arm64", 1), agent)
 	if code != 200 || strings.Contains(body, "fluentbit") {
@@ -187,6 +210,15 @@ func TestManagedAgentConfigWithoutOwnCA(t *testing.T) {
 	var cfg agentproto.Config
 	if code != 200 || json.Unmarshal([]byte(body), &cfg) != nil || cfg.CA != "" || cfg.FluentBit == nil || strings.Contains(cfg.FluentBit.Config, "ca.pem") {
 		t.Errorf("no CA: %d %s", code, body)
+	}
+	// osquery checks the certificate against the address it connects to:
+	// an IP address works only with Signalith's own CA, so osquery is off,
+	// with why.
+	if o := agentOsquery("linux", agents.Options{ServerURL: "https://10.1.2.3:7779", CertNames: []string{"siem"}}); o.Flags != "" || !strings.Contains(o.Error, "host name") {
+		t.Errorf("osquery at an IP address: %+v", o)
+	}
+	if o := agentOsquery("linux", agents.Options{ServerURL: "https://10.1.2.3:7779", OwnCA: true}); o.Error != "" || !strings.Contains(o.Flags, "--tls_hostname=10.1.2.3:7779") {
+		t.Errorf("osquery at an IP address with Signalith's own CA: %+v", o)
 	}
 }
 
