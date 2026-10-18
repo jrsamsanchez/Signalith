@@ -5,6 +5,7 @@ package search
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/netip"
 	"regexp"
 	"strconv"
@@ -134,7 +135,15 @@ func compareQuery(c *query.Compare) (map[string]any, error) {
 		field := c.Field
 		if field == "_time" {
 			field = TimeField
-			v = toDateMath(c.Value)
+			if n, ok := parseNumber(c.Value); ok {
+				// A number is epoch seconds, as _time is in Splunk and
+				// in where; OpenSearch reads a bare number as milliseconds.
+				if f, _ := asFloat(n); math.Abs(f) < 1e15 {
+					v = int64(math.Round(f * 1000))
+				}
+			} else {
+				v = toDateMath(c.Value)
+			}
 		}
 		return map[string]any{"range": map[string]any{field: map[string]any{key: v}}}, nil
 	}

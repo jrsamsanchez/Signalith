@@ -126,8 +126,12 @@ func rawAggValue(a query.Agg, container map[string]any, name string) any {
 	case "stdev", "var":
 		n, ok1 := num(m["count"])
 		v, ok2 := num(m["variance"])
-		if !ok1 || !ok2 || n < 2 {
+		if !ok1 || !ok2 || n < 1 {
 			return nil
+		}
+		if n == 1 {
+			// One value varies by nothing; Splunk gives 0.
+			return int64(0)
 		}
 		sample := v * n / (n - 1) // OpenSearch reports the population variance
 		if a.Func == "stdev" {
@@ -261,8 +265,12 @@ func (s *aggState) result(a query.Agg) any {
 		return percentile(s.nums, 50)
 	case "stdev", "var":
 		n := float64(len(s.nums))
-		if n < 2 {
+		if n < 1 {
 			return nil
+		}
+		if n == 1 {
+			// One value varies by nothing; Splunk gives 0.
+			return int64(0)
 		}
 		mean := 0.0
 		for _, f := range s.nums {

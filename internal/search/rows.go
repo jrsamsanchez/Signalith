@@ -520,6 +520,11 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		case "=~":
 			return m.regex(e.Value, fmt.Sprint(v))
 		}
+		if e.Field == "_time" {
+			if _, isNum := asFloat(e.Value); isNum {
+				v = timeNumber(v)
+			}
+		}
 		cmp := compareValues(v, e.Value)
 		switch e.Op {
 		case "<":
