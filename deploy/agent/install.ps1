@@ -84,6 +84,8 @@ $Systems = "Windows 10 or 11 and Windows Server 2016 or later (64-bit x86)"
 $ServiceName = "SignalithAgent"
 $system = "S-1-5-18"
 $admins = "S-1-5-32-544"
+# NT SERVICE\TrustedInstaller, which owns Program Files.
+$trustedInstaller = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 
 # Where the agent lives. The agent program reads the same paths
 # (internal/agentd), and the configuration Signalith makes for it names
@@ -93,12 +95,12 @@ if ($DryRun) {
   $R = [IO.Path]::GetFullPath($DryRun)
   New-Item -ItemType Directory -Force -Path $R | Out-Null
   $ProgramDir = Join-Path $R "Program Files/Signalith Agent"
-  $ConfDir = Join-Path $R "ProgramData/Signalith/Agent"
+  $ConfDir = Join-Path $R "ProgramData/Signalith Agent"
 } else {
   $pf = $env:ProgramFiles
   if (-not $pf) { $pf = "C:\Program Files" }
   $ProgramDir = Join-Path $pf "Signalith Agent"
-  $ConfDir = Join-Path $env:ProgramData "Signalith\Agent"
+  $ConfDir = Join-Path $env:ProgramData "Signalith Agent"
 }
 $Program = Join-Path $ProgramDir "signalith-agent.exe"
 $FluentBitDir = Join-Path $ProgramDir "fluent-bit"
@@ -770,7 +772,37 @@ function Agent-Program {
   Ok "the agent program ($($got.Substring(0, 12)))"
 }
 
+# Assert-NotLink stops when $Path is a link or junction: the agent, which
+# runs as SYSTEM, would read and write wherever it points.
+function Assert-NotLink([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  $item = Get-Item -LiteralPath $Path -Force
+  if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+    Fail "$Path is a link or junction, which the script does not follow." "Look at what made it (it should be a plain folder), remove it, and run the line again."
+  }
+}
+
+# Assert-SafeParent stops unless the folder $Path is in is a plain folder
+# owned by SYSTEM, Administrators or TrustedInstaller: whoever may change that folder can
+# swap the agent's folder for one of their own. (The agent checks the
+# same each time it starts.)
+function Assert-SafeParent([string]$Path) {
+  $parent = Split-Path -Parent $Path
+  Assert-NotLink $parent
+  if ($DryRun) { return }
+  $owner = (Get-Acl -LiteralPath $parent).GetOwner([Security.Principal.SecurityIdentifier]).Value
+  if (@($system, $admins, $trustedInstaller) -notcontains $owner) {
+    $name = $owner
+    try { $name = ([Security.Principal.SecurityIdentifier]$owner).Translate([Security.Principal.NTAccount]).Value } catch { }
+    Fail "$parent belongs to $name, not to SYSTEM or Administrators, so the agent's folder in it is not safe." "Make Administrators its owner (icacls `"$parent`" /setowner *$admins), and run the line again."
+  }
+}
+
 function Agent-Folders {
+  foreach ($dir in @($ConfDir, $ProgramDir)) {
+    Assert-SafeParent $dir
+    Assert-NotLink $dir
+  }
   if ($DryRun) {
     New-Item -ItemType Directory -Force -Path $ConfDir, $ProgramDir | Out-Null
     return
@@ -960,8 +992,6 @@ function Remove-Agent {
   foreach ($dir in @($ProgramDir, $ConfDir)) {
     if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
   }
-  $parent = Split-Path -Parent $ConfDir
-  if ((Test-Path -LiteralPath $parent) -and @(Get-ChildItem -LiteralPath $parent -Force).Count -eq 0) { Remove-Item -LiteralPath $parent -Force }
   Ok "removed the agent's files"
   Say ""
   Say "The agent is removed. If no other computer uses its token, revoke it in Signalith: Settings > Agent tokens."

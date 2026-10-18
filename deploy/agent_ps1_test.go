@@ -155,7 +155,7 @@ func TestAgentPS1DryRun(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	conf := filepath.Join(root, "ProgramData", "Signalith", "Agent")
+	conf := filepath.Join(root, "ProgramData", "Signalith Agent")
 	read := func(p string) string {
 		t.Helper()
 		b, err := os.ReadFile(p)
@@ -246,8 +246,47 @@ func TestAgentPS1Refuses(t *testing.T) {
 			if !strings.Contains(out, c.want) {
 				t.Errorf("output lacks %q:\n%s", c.want, out)
 			}
-			if _, err := os.Stat(filepath.Join(root, "ProgramData", "Signalith", "Agent", "token")); err == nil {
+			if _, err := os.Stat(filepath.Join(root, "ProgramData", "Signalith Agent", "token")); err == nil {
 				t.Error("the script wrote the token before it stopped")
+			}
+		})
+	}
+}
+
+// The agent's data folder, or the folder it is in, swapped for a link
+// (a junction on Windows) to a folder someone else controls is refused
+// before anything is written.
+func TestAgentPS1RefusesLinkedFolders(t *testing.T) {
+	w := newAgentWindows(t)
+	link := func(t *testing.T, target, name string) {
+		t.Helper()
+		if runtime.GOOS == "windows" {
+			if out, err := exec.Command("cmd", "/c", "mklink", "/J", name, target).CombinedOutput(); err != nil {
+				t.Skipf("mklink /J: %v %s", err, out)
+			}
+			return
+		}
+		if err := os.Symlink(target, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct{ name, linked string }{
+		{"data folder", filepath.Join("ProgramData", "Signalith Agent")},
+		{"folder above it", "ProgramData"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			theirs := t.TempDir()
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, c.linked)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			link(t, theirs, filepath.Join(root, c.linked))
+			out, err := w.run(t, w.token, w.line(root)...)
+			if err == nil || !strings.Contains(out, "is a link or junction") {
+				t.Fatalf("not refused: %v\n%s", err, out)
+			}
+			if entries, _ := os.ReadDir(theirs); len(entries) != 0 {
+				t.Errorf("the script wrote into the linked folder: %v", entries)
 			}
 		})
 	}

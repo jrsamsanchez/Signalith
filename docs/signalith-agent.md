@@ -118,7 +118,8 @@ that folder and prints the commands instead of running them.
   (`ProtectSystem=strict`) and writes only its own two folders. On Windows it runs as
   SYSTEM, which reading the Security log needs; its folders are owned by Administrators
   and only SYSTEM and Administrators can change them (the script refuses a data folder
-  someone else made first), and Fluent Bit runs in a job object, so it never outlives the
+  someone else made first, or a link in its place, and the agent refuses to start when
+  its folder or the one above it is not owned by SYSTEM or Administrators), and Fluent Bit runs in a job object, so it never outlives the
   agent.
 
 ## On the computer
@@ -154,7 +155,7 @@ sudo journalctl -u signalith-agent -n 50   # the agent's and Fluent Bit's log
 | `C:\Program Files\Signalith Agent\signalith-agent.exe` | The agent program |
 | `C:\Program Files\Signalith Agent\fluent-bit\` | Fluent Bit |
 | `C:\Program Files\Signalith Agent\install.ps1` | A copy of the install script, for `-Uninstall` |
-| `C:\ProgramData\Signalith\Agent\` | The settings, token and certificate authority (SYSTEM and Administrators only), Fluent Bit's configuration and buffer, the agent's status and its log, `agent.log` |
+| `C:\ProgramData\Signalith Agent\` | The settings, token and certificate authority (SYSTEM and Administrators only), Fluent Bit's configuration and buffer, the agent's status and its log, `agent.log` |
 
 The agent is the **SignalithAgent** service, which Windows starts at boot and starts again
 when it stops. If Fluent Bit was installed by hand and its `fluent-bit` service sends to
@@ -166,7 +167,7 @@ Useful commands, in an elevated PowerShell:
 ```powershell
 & 'C:\Program Files\Signalith Agent\signalith-agent.exe' status   # how the agent and Fluent Bit are
 Get-Service SignalithAgent                                          # the service
-Get-Content C:\ProgramData\Signalith\Agent\agent.log -Tail 50      # the agent's and Fluent Bit's log
+Get-Content 'C:\ProgramData\Signalith Agent\agent.log' -Tail 50    # the agent's and Fluent Bit's log
 ```
 
 ### Both

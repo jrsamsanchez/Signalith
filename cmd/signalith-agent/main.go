@@ -75,6 +75,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 // newAgent reads the agent's settings and makes the agent, which logs
 // to w (and passes on there what its collectors write).
 func newAgent(paths agentd.Paths, w io.Writer) (*agentd.Agent, error) {
+	// Checked before anything in the folders is read.
+	if err := agentd.CheckFolders(paths); err != nil {
+		return nil, err
+	}
 	settings, err := agentd.ReadSettings(paths)
 	if err != nil {
 		return nil, err

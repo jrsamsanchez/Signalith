@@ -163,7 +163,7 @@ func TestManagedAgentConfig(t *testing.T) {
 		t.Errorf("journal: %d %s", code, body)
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(path, "os=linux", "os=windows", 1), agent)
-	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith\\Agent\\ca.pem`) {
+	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith Agent\\ca.pem`) {
 		t.Errorf("windows: %d %s", code, body)
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(strings.Replace(path, "os=linux", "os=darwin", 1), "amd64", "arm64", 1), agent)
