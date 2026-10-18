@@ -159,7 +159,7 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | `dc(f)` | Distinct values of `f` (approximate above a few thousand, as OpenSearch counts them) |
 | `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest. Over `_time` they are in seconds since 1970, as in Splunk, so `min(_time) as firstTime` works with `convert ctime(firstTime)` |
 | `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
-| `stdev(f)`, `var(f)` | Sample standard deviation and variance |
+| `stdev(f)`, `var(f)` | Sample standard deviation and variance; 0 for a single value, as in Splunk |
 | `mode(f)` | The most common value |
 | `values(f)` | The distinct values, sorted, up to 100 |
 | `list(f)` | The values, newest first, up to 100 |
@@ -177,6 +177,9 @@ datamodel=Network_Traffic bytes_out>1000000
 | eval ratio=round(bytes_out / bytes_in, 1), direction=if(cidrmatch("10.0.0.0/8", dest), "internal", "external")
 | where ratio > 10 AND direction="external"
 ```
+
+In expressions `_time` is seconds since 1970, as in Splunk, so
+`where _time >= relative_time(now(), "-1h")` and `eval age=now()-_time` work.
 
 | Syntax | Meaning |
 | --- | --- |

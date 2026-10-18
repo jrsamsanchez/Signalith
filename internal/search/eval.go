@@ -426,6 +426,9 @@ func (ev *evaluator) eval(e query.EvalExpr, r Row) any {
 	case *query.Str:
 		return e.Value
 	case *query.Field:
+		if e.Name == "_time" {
+			return timeNumber(r[e.Name])
+		}
 		return r[e.Name]
 	case *query.Unary:
 		v := ev.eval(e.X, r)
@@ -1212,8 +1215,10 @@ func toTime(v any) (time.Time, bool) {
 		if math.IsNaN(f) || math.Abs(f) > 1e12 {
 			return time.Time{}, false
 		}
+		// To the microsecond: a float64 of epoch seconds holds no finer
+		// time, and 0.123 must not read back as 0.122999.
 		sec, frac := math.Modf(f)
-		return time.Unix(int64(sec), int64(frac*1e9)).UTC(), true
+		return time.Unix(int64(sec), int64(math.Round(frac*1e6))*1e3).UTC(), true
 	}
 	s, ok := evStr(v)
 	if !ok {
@@ -1224,6 +1229,20 @@ func toTime(v any) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t.UTC(), true
+}
+
+// timeNumber is _time as expressions see it: epoch seconds, as in Splunk,
+// though rows carry it as RFC 3339 text. Other values pass through.
+func timeNumber(v any) any {
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(s))
+	if err != nil {
+		return v
+	}
+	return numOut(float64(t.Unix()) + float64(t.Nanosecond())/1e9)
 }
 
 // strftime formats t (in UTC) with the usual % conversions.
