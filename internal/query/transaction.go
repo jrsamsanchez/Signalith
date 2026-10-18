@@ -60,6 +60,13 @@ func (p *parser) parseTransaction() (Command, error) {
 				} else {
 					c.MaxPause = n
 				}
+			case "connected":
+				// Events join a transaction only when they hold every field
+				// with the same values, so Splunk's connected= (how events
+				// missing some fields join) changes nothing.
+				if _, err := parseBool(p.next()); err != nil {
+					return nil, err
+				}
 			case "maxevents":
 				n, err := p.int()
 				if err != nil {
@@ -80,7 +87,7 @@ func (p *parser) parseTransaction() (Command, error) {
 					c.EndsWith = e
 				}
 			default:
-				return nil, errorf(t.pos, "unknown transaction option %q; transaction takes maxspan=, maxpause=, maxevents=, startswith= and endswith=", t.text)
+				return nil, errorf(t.pos, "unknown transaction option %q; transaction takes maxspan=, maxpause=, maxevents=, connected=, startswith= and endswith=", t.text)
 			}
 			continue
 		}
@@ -112,6 +119,9 @@ func (p *parser) transactionBound(key string) (Expr, error) {
 		}
 		if e == nil {
 			return nil, errorf(v.pos, "%s=(*) matches every event", key)
+		}
+		if exprSubsearches(e) > 0 {
+			return nil, errorf(v.pos, "%s cannot hold a subsearch", key)
 		}
 		return e, nil
 	}

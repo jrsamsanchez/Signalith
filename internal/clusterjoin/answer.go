@@ -36,13 +36,16 @@ type View struct {
 	URLs       []string
 	PublicURL  string
 	Listen     string
-	Syslog     SyslogDefaults
+	// AgentListen is server.agent_listen as it was set, "" when it was
+	// worked out from the listen address.
+	AgentListen string
+	Syslog      SyslogDefaults
 }
 
 // ViewOf returns the view of the configuration c.
 func ViewOf(c *config.Config) View {
 	return View{OpenSearch: c.OpenSearch, URL: cmp.Or(strings.TrimSpace(c.Cluster.OpenSearchURL), c.OpenSearch.URL),
-		PublicURL: c.Server.PublicURL, Listen: c.Server.Listen,
+		PublicURL: c.Server.PublicURL, Listen: c.Server.Listen, AgentListen: agentListenSet(c),
 		Syslog: SyslogDefaults{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS}}
 }
 
@@ -481,7 +484,7 @@ func (d *Deps) bundle(ctx context.Context, req *Request, p Parsed, cb *shared.Cl
 	b := &Bundle{ClusterID: cb.ClusterID, ClusterName: cb.Name, IndexPrefix: cmp.Or(cb.IndexPrefix, view.OpenSearch.IndexPrefix),
 		OpenSearch: OpenSearch{URL: view.URL, URLs: view.URLs, CAPEM: cr.CAPEM, Username: cr.Username, Password: cr.Password,
 			ClientCertPEM: cr.ClientCertPEM, ClientKeyPEM: cr.ClientKeyPEM, Managed: cr.Managed, Shared: cr.Shared},
-		KID: k.ID(), ClusterKey: raw, PublicURL: view.PublicURL, NodeName: req.Name, Listen: view.Listen,
+		KID: k.ID(), ClusterKey: raw, PublicURL: view.PublicURL, NodeName: req.Name, Listen: view.Listen, AgentListen: view.AgentListen,
 		IssuerVersion: d.Version, Level: cb.Level, Role: c.Body.Role}
 	if req.CopySyslog {
 		s := view.Syslog
@@ -541,4 +544,13 @@ func (d *Deps) now() time.Time {
 		return d.Now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+// agentListenSet is server.agent_listen as it was set, "" when it was
+// worked out from the listen address.
+func agentListenSet(c *config.Config) string {
+	if c.AgentListenDerived() {
+		return ""
+	}
+	return c.Server.AgentListen
 }

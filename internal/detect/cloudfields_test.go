@@ -13,7 +13,8 @@ import (
 
 // cloudSourcetypes are the sourcetypes of cloud records, whose field
 // names the sender chooses in part.
-var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype, ingest.GCPSourcetype}
+var cloudSourcetypes = []string{ingest.CloudTrailSourcetype, ingest.AzureADSourcetype, ingest.AzureActivitySourcetype, ingest.O365Sourcetype, ingest.GCPSourcetype, ingest.OktaSourcetype,
+	ingest.KubernetesSourcetype, ingest.GitHubSourcetype}
 
 // TestCloudRuleFieldsMapped checks every field a shipped cloud rule reads
 // is mapped up front, so names a caller chooses (a call's tags, an
@@ -111,6 +112,10 @@ func queryFields(q *query.Query) []string {
 		case *query.Rename:
 			for _, p := range c.Pairs {
 				made[p[1]] = true
+			}
+		case *query.IPLocation:
+			for _, f := range c.Fields() {
+				made[f] = true
 			}
 		case *query.Spath:
 			made[cmp.Or(c.Output, c.Path)] = true

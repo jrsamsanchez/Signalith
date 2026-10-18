@@ -275,6 +275,7 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
+	x.auth.Tenants = rt.Tenants
 	rt.Use(x.cl, x.prefix(), x.c.Keyring())
 	return rt
 }

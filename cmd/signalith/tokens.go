@@ -27,7 +27,7 @@ import (
 
 const tokensUsage = `usage:
   signalith tokens list   [-c file] [-json] [-all]              list agent tokens (-all: revoked ones too) and shared tokens
-  signalith tokens create [-c file] [-purpose linux|windows|otel|osquery|sensor] <name>   make a token and print it once
+  signalith tokens create [-c file] [-purpose linux|windows|otel|osquery|sensor|agent] <name>   make a token and print it once
   signalith tokens rename [-c file] <id> <new name>             rename a token; events already stored keep the old name
   signalith tokens revoke [-c file] [-yes] <id or exact name>   refuse a token on every server within a few seconds
   signalith tokens legacy refuse [-c file] <id>                 stop accepting a shared token from signalith.yaml or the environment
@@ -75,7 +75,7 @@ func runTokens(args []string, in *os.File, out, errOut io.Writer) error {
 	path := configFlag(fs)
 	asJSON := fs.Bool("json", false, "list as JSON")
 	all := fs.Bool("all", false, "list revoked tokens too")
-	purpose := fs.String("purpose", "", "the agent the token is for: linux, windows, otel, osquery or sensor (a network sensor)")
+	purpose := fs.String("purpose", "", "the agent the token is for: linux, windows, otel, osquery, sensor (a network sensor) or agent (the Signalith Agent)")
 	yes := fs.Bool("yes", false, "revoke without asking")
 	pos := parseInterleaved(fs, args)
 

@@ -1,0 +1,4 @@
+{"rule": "60167e5c-84b2-4c95-a7ac-86281f27c445", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"HostName=ServerRemoteHost wsmprovhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

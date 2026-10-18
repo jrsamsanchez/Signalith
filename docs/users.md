@@ -20,7 +20,7 @@ Each role can do everything the roles above it can.
 | Role | For | Can |
 | --- | --- | --- |
 | **Viewer** | Managers, auditors, other teams | Run searches and see dashboards, findings, investigations, detections, risk and intel. Cannot change anything. |
-| **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards, use **Ask** and add or remove intel indicators by hand. |
+| **Analyst** | SOC analysts | Also triage findings, work investigations, build dashboards and hunting notebooks, use **Ask** and add or remove intel indicators by hand. |
 | **Admin** | Whoever runs Signalith | Also create and change detections, add and change threat intel feeds and upload intel, edit asset and identity lists, set up agents and create and revoke [agent tokens](agent-tokens.md) and [API tokens](ai-tools.md#api-tokens), manage users and set up directory sign-in, and change server settings. |
 
 By area:
@@ -67,7 +67,8 @@ allow, the page reloads to match the new role and says why.
 
 ## The built-in admin
 
-The account in `auth.admin_user` (`admin` unless you changed it) always works, even
+The account in `auth.admin_user` (`signalithadmin` on a new install, `admin` on one made
+before 0.3.1, unless you changed it) always works, even
 when the directory server is down or every other admin has been removed, so you can
 always get back in. It shows on the Users page as **Built-in** and cannot be edited,
 disabled or deleted there. Change its password on the server (on servers that share
@@ -83,6 +84,39 @@ then `docker compose -f deploy/docker/docker-compose.yml restart signalith`. The
 first password comes from a file the setup step made (`signalith initial-password` shows
 it), and the new one is kept in `admin-password-hash` in the `signalith-data` volume,
 where it replaces the first one.
+
+**The first password must be changed.** When Signalith made the built-in admin's
+password (the Docker quick start's setup step, the packages, or `signalith init`), the
+first sign-in with it is like a local user's with a temporary password: the sign-in page
+asks for a new password, and until one is chosen every other request, with the session
+or HTTP Basic credentials, is refused with `403` and `"code": "password_change_required"`
+(`GET /api/me`, `POST /api/me/password` and signing out still work). The new password is
+kept in `admin-password-hash` in the state folder, as `signalith passwd` keeps it, and
+works at once, with no restart. On servers that share their users it is the cluster's
+password, on every server. From then on `signalith initial-password` says the first
+password was changed instead of showing it, and the packages' file next to the config
+file is removed where Signalith may (`signalith passwd`, run as root, always may; the
+Docker quick start's file is on a read-only volume and stays, but no longer works).
+Later changes are made with `signalith passwd` as above.
+
+Signalith knows the first password is still in use by checking the password in use
+against the file that keeps it, where the server can read that file (the Docker quick
+start, and Windows), or against the hash `signalith init` noted in
+`first-admin-password.json` in the state folder (the Linux packages, whose file only
+root can read; an upgrade of the package notes it for an install made before). An
+install that still uses the first password after an upgrade is asked once too, however
+often it signed in with it before: that is intended. A password you chose yourself, in
+`signalith.yaml`, `SIGNALITH_ADMIN_PASSWORD` or a `SIGNALITH_ADMIN_PASSWORD_FILE` of
+your own, is never asked to be changed.
+
+Scripts that sign in with the first password must choose a new one first, as an admin
+would:
+
+```sh
+curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
+  -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$NEW\"}" \
+  https://localhost:9000/api/me/password
+```
 
 Keep its password somewhere safe and use your own account day to day. No local user
 or directory user can have the built-in admin's name.
@@ -101,7 +135,8 @@ must choose their own password before they can do anything else.
 **Change a user.** Edit their name and email, change their role, disable or enable
 them, reset their password (they get a new temporary password and must change it at
 the next sign-in), or delete them. Disabling, deleting or resetting a password signs
-that user out everywhere at once.
+that user out everywhere at once. Resetting a password also removes their
+[passkeys](#passkeys).
 
 To stop anyone locking everyone out:
 
@@ -131,13 +166,21 @@ Users page.
 A new password, chosen on the Users page, at **Change password**, with
 `signalith passwd` or `signalith init -admin-password`, must be:
 
-- at least 8 characters and at most 72 bytes (bcrypt reads no more);
+- at least 8 and at most 256 characters, in any script (a password longer than the 72
+  bytes bcrypt reads is reduced to a keyed SHA-256 of all of it first, so nothing is
+  cut off; a server older than this one in the same cluster cannot check such a
+  password);
 - not on a list of about 2,000 commonly used passwords (from
   [SecLists](https://github.com/danielmiessler/SecLists)), whatever the case;
 - not one character or a short group repeated (`aaaaaaaa`, `abcabcabc`) or a run of
   characters in order (`12345678`, `abcdefgh`, `87654321`);
 - not containing the username (for usernames of 3 or more characters), and not
   `signalith` with only digits or symbols added (`Signalith2026!`).
+
+Passwords are compared in Unicode normalization form NFKC, as NIST SP 800-63B asks: an
+accented letter typed as one character or as a letter plus an accent, and full-width
+characters, all match the same password, and the rules above check that form. A
+password set before this keeps working as it was typed then.
 
 These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
 symbols. Passwords set before these rules are not checked
@@ -166,6 +209,7 @@ they do not reveal which usernames exist. Other answers are:
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
 | `mfa_required`, `mfa_wrong`, `mfa_basic` | See [Two-step sign-in](#two-step-sign-in) |
+| `passkey_wrong`, `passkey_expired`, `passkey_cloned`, `passkey_password` | See [Passkeys](#passkeys) |
 
 **Failed sign-in limits.** Wrong passwords are counted so that guessing stays slow,
 but someone guessing your password cannot keep you out:
@@ -265,8 +309,9 @@ Until it is changed, every request other than `GET /api/me` and
 
 ## Two-step sign-in
 
-Two-step sign-in asks for a code from an authenticator app on your phone after your
-password, so a stolen password alone cannot sign in. Any app that makes 6-digit codes
+Two-step sign-in asks for a second step after your password, so a stolen password
+alone cannot sign in. The second step is a [passkey](#passkeys), a code from an
+authenticator app on your phone, or both. Any app that makes 6-digit codes
 works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Authy and
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
@@ -274,7 +319,8 @@ Signalith does not ask again, so require it there: **Require two-step sign-in** 
 not reach them.
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
-sign-in**, then **Set up**:
+sign-in**. Add a passkey (see [Passkeys](#passkeys)), or under **Authenticator app**
+choose **Set up**:
 
 1. Scan the QR code with your authenticator app. Without a camera, type the key shown
    under it into the app instead.
@@ -292,7 +338,9 @@ code just before or after the current one also works, for a phone clock a little
 the page says how many are left. **Make new recovery codes** in the same menu replaces
 them all.
 
-**Turn it off** from the same menu, with a code from the app or a recovery code.
+**Turn it off** from the same menu, with a code from the app, a recovery code or a
+passkey. Turning the app off keeps your passkeys and recovery codes; two-step sign-in
+stays on until the last passkey is removed too.
 
 **Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
 chooses **Reset two-step sign-in** on your row. You then sign in with your password
@@ -326,6 +374,62 @@ resets two-step sign-in.
 | `mfa_setup_required` (403) | Two-step sign-in is required and not set up yet; only the routes under **Every role** work |
 | `mfa_unavailable` (503) | The code could not be checked just now (for example the shared settings cannot be written) |
 
+## Passkeys
+
+A passkey signs you in with your fingerprint, face, device PIN or a security key, in
+place of a code. It cannot be phished: your browser offers it only to the address it
+was made on, and the server checks that too. Windows Hello, an iPhone, iPad or Mac,
+an Android phone, a password manager that keeps passkeys (1Password, Bitwarden and
+others) and FIDO2 security keys (YubiKey and others) all work.
+
+**Add one.** Open the user menu, choose **Two-step sign-in**, then **Add a passkey**.
+Give it a name you will recognize (such as *Work laptop*) and follow your browser.
+Your first passkey turns two-step sign-in on, shows 10 recovery codes to save, and
+signs every other browser out, as setting up an app does. You can have up to 10
+passkeys, with or without an authenticator app.
+
+**Signing in.** Local users and the built-in admin can choose **Sign in with a
+passkey** on the sign-in page and skip the password. Your passkey asks for your
+fingerprint, face or PIN, so it is two steps in one. Anyone can also enter their
+password first and then use a passkey as the second step. Directory users always
+enter their directory password first, so the directory still decides whether they
+may sign in. Single sign-on users sign in at their identity provider.
+
+**Remove one** from the same menu (**Remove** on its row). Removing the last passkey
+without an app turns two-step sign-in off. An admin's **Reset two-step sign-in**
+removes every passkey too, and so does an admin's **Reset password**: a passkey signs
+in without the password, so whoever added one must not keep a way in past the reset.
+Changing your own password keeps your passkeys (it signs other browsers out), and
+says how many you have: if you don't recognize one, remove it.
+
+Things to know:
+
+- Passkeys need Signalith opened **by its name over HTTPS** (such as
+  `https://siem.example.com`); browsers refuse them for an IP address or plain HTTP.
+  `localhost` also works, for trying it out.
+- A passkey works only at the address it was made on. If people reach Signalith by two
+  names, a passkey made at one is not offered at the other; the menu shows where each
+  one works. Add one at each name, or keep an app or recovery codes for the other.
+- A passkey that syncs (iCloud Keychain, Google Password Manager, a password manager)
+  is marked **Synced** in the menu: it is on every device of that account, which is
+  convenient, and as safe as that account. A security key never leaves the key.
+- Each answer from a passkey is accepted once, on whichever server checks it, and
+  only at the address its challenge was made for.
+- If a passkey's signature counter goes backwards, it may have been copied, so it is
+  refused (`passkey_cloned`) and logged. Sign in another way and remove it.
+- Signalith keeps each passkey's public key, name, address and last use with your
+  two-step sign-in. A public key is no secret: it can check a passkey's signature but
+  not make one.
+
+| `code` | When |
+| --- | --- |
+| `passkey_wrong` (401) | The passkey was not accepted: unknown, made for another address, without your fingerprint, face or PIN when signing in with it alone or confirming it's you, or already used for this challenge |
+| `passkey_expired` (401) | The challenge was older than 5 minutes, or made for something else; ask for a new one |
+| `passkey_cloned` (401) | The passkey's counter went backwards |
+| `passkey_password` (401) | A directory user tried to sign in with a passkey alone; enter the password first |
+
+Wrong passkey answers count toward the failed sign-in limits like wrong passwords.
+
 ## Confirming it's you
 
 Some changes ask for your password again when you have not entered it in the last
@@ -336,10 +440,16 @@ Some changes ask for your password again when you have not entered it in the las
   sign-in;
 - making an API token, an agent token or a token to add a server, accepting an old
   shared agent token, approving a new server, and rotating the cluster key;
+- changing what the Signalith Agents of an install line collect, since turning a log
+  off hides what happens on those computers;
 - changing retention policies, the default or the disk guard, and running retention
   now;
-- switching certificate authority, and saving response actions, playbooks or
-  notifications, or removing the detection content pack;
+- switching certificate authority, and saving response actions, playbooks,
+  notifications or ticketing connections, or removing the detection content pack;
+- linking a Slack or Teams account to yourself, making a code to link one, or confirming
+  that a Teams app channel moves to another Teams channel;
+- saving the networks to scan for vulnerabilities, and adding, changing or removing a
+  scan login;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
@@ -347,12 +457,13 @@ Some changes ask for your password again when you have not entered it in the las
   PROXY protocol, the OpenSearch connection (`opensearch.*` and
   `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
   feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
-  and masked fields, or **Reset all**.
+  and masked fields, the Microsoft 365 and Okta connections (`m365.*`, `okta.*`), or
+  **Reset all**.
 
-With two-step sign-in on, a code from your app (or a recovery code) works instead of
-the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+With two-step sign-in on, a passkey, a code from your app or a recovery code works
+instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
 Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
-two-step sign-in and making new recovery codes always take a code. Scripts that use
+authenticator app and making new recovery codes always take a code or a passkey. Scripts that use
 HTTP Basic auth send the password with every request, so they are never asked.
 
 ## Sign in with Active Directory or LDAP
@@ -823,7 +934,7 @@ full:
 
 | File | Holds | Default place |
 | --- | --- | --- |
-| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
+| `users.json` | Local users (with bcrypt password hashes), directory users seen so far, last sign-in times, two-step sign-in (the app's key encrypted, recovery codes hashed, passkeys' public keys) | The lookups folder (`lookups.dir`), or `auth.users_file` / `SIGNALITH_USERS_FILE` |
 | `directory.json` | Directory sign-in settings from the Users page, including the service account's password | Next to `users.json` |
 
 The lookups folder is:
@@ -866,7 +977,7 @@ the Settings page and restarts are logged the same way; see
 
 | Message | Fields |
 | --- | --- |
-| `signed in` | `user`, `role`, `source`, `client`, `method` (session or basic), `mfa` (`app` or `recovery`, when a code was asked for), `recovery_codes_left` |
+| `signed in` | `user`, `role`, `source`, `client`, `method` (session, basic or passkey), `mfa` (`app`, `recovery` or `passkey`, when a second step was asked for), `recovery_codes_left` |
 | `password accepted, waiting for the two-step code` | `user`, `client`, `method` |
 | `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
 | `sign-ins from this address are paused …` | `client`, `minutes` |
@@ -879,13 +990,18 @@ the Settings page and restarts are logged the same way; see
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
 | `password change refused` | `user`, `client`, `reason`, `locked_out` |
-| `two-step sign-in turned on` | `by`, `user`, `other_sessions_ended` |
+| `two-step sign-in turned on` | `by`, `user`, `with` (`passkey` for a first passkey), `other_sessions_ended` |
 | `two-step sign-in turned off` | `by`, `user` |
+| `authenticator app turned off` | `by`, `user` (passkeys stay on) |
+| `passkey added` | `by`, `user`, `passkey` (its name), `host`, `synced` |
+| `passkey removed` | `by`, `user`, `passkey`, `host` |
+| `passkeys removed` | `by` (the admin), `user`, `count`, `reason` (`password reset`) |
+| `passkey refused` | `user`, `client`, `locked_out`; with `passkey` when its counter went backwards |
 | `two-step sign-in reset` | `by` (the admin), `user` |
 | `new recovery codes made` | `by`, `user` |
 | `recovery code used` | `by`, `user`, `recovery_codes_left` |
 | `two-step code refused` | `user`, `client`, `locked_out` |
-| `password or code entered again` | `by`, `user`, `with` (`password`, `app` or `recovery`) |
+| `password or code entered again` | `by`, `user`, `with` (`password`, `app`, `recovery` or `passkey`) |
 | `recheck refused` | `user`, `client`, `reason`, `locked_out` |
 | `directory settings changed` | `by`, `enabled`, `servers`, `fields` (names only) |
 | `directory connection tested` | `by`, `servers`, `bind_dn`, `ok` |
@@ -923,7 +1039,7 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
-`POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
+`POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
 [endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
@@ -941,9 +1057,18 @@ sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the senso
 arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
 minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
+`GET /api/agent/install.sh`, `GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh` (the
+[Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the four routes the script and the agent call with the agent's token,
+`GET /api/agent/program` (the agent program), `GET /api/agent/manifest` (the programs' signed
+manifest, for updates), `GET /api/agent/config` (what the agent runs) and
+`POST /api/agent/status` (how its collectors run); all four take only an active token made for
+the Signalith Agent.
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
-[sso.md](sso.md#how-it-works)). The `/api/scim/v2` routes, through which the identity provider
+[sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
+browser to the SAML identity provider, `POST /api/auth/saml/acs` is where the provider posts its
+signed response, and `GET /api/auth/saml/metadata` is Signalith's own SAML metadata (see
+[sso.md](sso.md#saml-20)). The `/api/scim/v2` routes, through which the identity provider
 provisions single sign-on users, take the SCIM token instead of a sign-in, and only over HTTPS
 (see [sso.md](sso.md#provisioning-with-scim)). Requests from a browser that change something must come from the Signalith
 page itself.
@@ -960,31 +1085,42 @@ request, so a server that has not yet read that change reads it first (see
 **Every role** (also allowed while a password change is pending): `GET /api/me`,
 `POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
 `POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
-`POST /api/me/recheck`.
+`POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
+`DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
 
-**Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
 `GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
+`GET /api/cases/{id}`, `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/storyline` (the [attack storyline](storyline.md)), `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
-`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/compliance`,
+`POST /api/dashboards/{id}/run`, `POST /api/panels/run`, `GET /api/notebooks`,
+`GET /api/notebooks/{id}`, `GET /api/notebooks/{id}/markdown`, `POST /api/notebooks/{id}/run`
+([hunting notebooks](hunting-notebooks.md) shared with everyone and the starter hunts; a
+viewer's run is not saved), `GET /api/compliance`,
 `GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
-they wait for), and the web UI.
+they wait for), `GET /api/tenants` (the tenants of a [multi-tenant](multi-tenant.md)
+install), `POST /api/chat/link/check`, `POST /api/chat/link`, `POST /api/chat/code`,
+`GET /api/chat/accounts`, `DELETE /api/chat/accounts/{id}` (linking your own Slack or Teams
+account for the [buttons in chat messages](notifications.md#buttons-in-slack-and-teams); the
+clicks still need the Analyst role), and the web UI.
 
-**Analyst:** `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
+**Analyst:** `POST /api/tenants/switch` (switching to another tenant's data), `POST /api/ask`, `POST /api/findings`, `POST /api/findings/bulk`,
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
-`DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`,
-`POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
+`PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
+`POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes
+their own notebooks and ones shared for editing; only the owner or an admin changes the sharing
+or deletes one), `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id}`, `GET /api/endpoints`,
 `GET /api/endpoints/{id}`, `GET /api/endpoints/settings`, `GET /api/endpoints/checks`,
 `GET /api/vulns`, `GET /api/vulns/hosts/{id}` (what [vulnerability scans](vulnerabilities.md) found),
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
@@ -996,22 +1132,27 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 `POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
 ([Investigate with AI](investigate.md), once an admin turns it on).
 
-**Admin:** `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
+**Admin:** `POST /api/tenants` and `PATCH /api/tenants/{id}` (adding a [tenant](multi-tenant.md), renaming it or turning it off; the provider's admins only), `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
 with a DNS check; see [load-balancers.md](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
-[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
+[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/agent/install` (the line that installs the
+[Signalith Agent](signalith-agent.md)), `GET /api/sensors` (every network
 sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
 [network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
-(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+(see [agent-tokens.md](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
+Signalith Agents of an install line collect; see
+[signalith-agent.md](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
-server, which can only read), `POST /api/tls/names`, `GET /api/security`,
+server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
+`GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
+`PUT /api/parsers/{name}`, `DELETE /api/parsers/{name}` ([custom log parsers](custom-logs.md)),
 `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`, `DELETE /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/test`, `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
@@ -1023,9 +1164,12 @@ server, which can only read), `POST /api/tls/names`, `GET /api/security`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
 `POST /api/endpoints/queries`, `GET /api/endpoints/queries/{id}` (the [Endpoints page](endpoints.md)),
 `GET /api/vulns/setup`, `GET /api/vulns/scanners`, `PUT /api/vulns/settings`, `POST /api/vulns/networks/{id}/scan`,
-`POST /api/vulns/scans/{id}/stop` (setting up and running [vulnerability scans](vulnerabilities.md)),
+`POST /api/vulns/scans/{id}/stop`, `GET /api/vulns/logins`, `PUT /api/vulns/logins/{id}`, `DELETE /api/vulns/logins/{id}`
+(setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
-Signalith or not applicable),
+Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
+`POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
@@ -1044,21 +1188,38 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 `GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
-`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)), every
-`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit` and
-`GET /api/audit/servers` (the [Audit page](audit.md)), every
-`/api/users`, `/api/auth/directory`, `/api/auth/oidc` and `/api/auth/scim` route below (the last
-three are `GET /api/auth/oidc`, `POST /api/auth/oidc/test` and `POST /api/auth/scim/token`; see
+`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
+`GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
+`/api/ticketing` route (`GET` and `PUT /api/ticketing`, `POST /api/ticketing/test`: Settings >
+Ticketing; see [ticketing.md](ticketing.md)), every
+`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
+`GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
+`/api/users`, `/api/auth/directory`, `/api/auth/oidc`, `/api/auth/saml` and `/api/auth/scim` route below (the last
+four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/test` and `POST /api/auth/scim/token`; see
 [sso.md](sso.md#api)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
-`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
+`POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
+
+**Provider only:** on a [multi-tenant](multi-tenant.md) install, the routes about the server
+itself rather than one tenant's data are refused to tenants' users, whatever their role:
+every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
+`/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat`, `/api/baselines` and `/api/summaries` route. So are the routes
+that make the server send requests to addresses a user gives, though they change a
+tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
+`DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,
+`POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
+`POST /api/intel/taxii/collections`, `PUT /api/notify`, `POST /api/notify/test`,
+`PUT /api/respond/config`, `POST /api/respond/test`, `PUT /api/ticketing` and
+`POST /api/ticketing/test`. Every other route works on the tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
 router: any `/api/` route there other than the public ones (sign-in, sign-out, agent
 ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the three install
-downloads and the two single sign-on routes) is admin-only.
+downloads, the two single sign-on routes and the two routes Slack and Teams post button clicks
+to, which check the chat app's signature instead) is admin-only.
 
 A refused request:
 
@@ -1085,7 +1246,11 @@ returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `builtin` or `directory` (those passwords are changed elsewhere). On servers that
 share their users, the built-in admin may change its own password here too
 (`can_change_password` says so), and the answer sets a new session cookie: the
-password change ended every session of the user, this one's too.
+password change ended every session of the user, this one's too. On a server that
+keeps its own users, the built-in admin may change it here only while it is the
+first password Signalith made (`must_change_password` is then `true`; see
+[The built-in admin](#the-built-in-admin)); a `500` means the state folder could not
+keep the new one.
 
 ### Two-step sign-in
 
@@ -1097,12 +1262,25 @@ and `recovery_codes_left` when a recovery code was used. `GET /api/me` also has
 
 | Route | Body | Reply |
 | --- | --- | --- |
-| `GET /api/me/mfa` | | `{"on", "required", "possible", "since", "recovery_left"}` |
+| `GET /api/me/mfa` | | `{"on", "app", "required", "possible", "passkeys", "passkey_alone", "passkey_host" or "passkey_problem", "since", "recovery_left"}` |
 | `POST /api/me/mfa/setup` | | `{"secret", "otpauth", "qr_svg", "expires_in"}`: a new key, not used until confirmed |
 | `POST /api/me/mfa/confirm` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}`, and a new session cookie |
-| `POST /api/me/mfa/recovery` | `{"code"}` | `{"recovery_codes": [...], "mfa": {...}}` |
-| `POST /api/me/mfa/off` | `{"code"}` | `{"mfa": {...}}`; an empty body only drops a setup not confirmed yet |
+| `POST /api/me/mfa/recovery` | `{"code"}` or `{"passkey"}` | `{"recovery_codes": [...], "mfa": {...}}` |
+| `POST /api/me/mfa/off` | `{"code"}` or `{"passkey"}` | `{"mfa": {...}}`: turns the authenticator app off, keeping passkeys; an empty body only drops a setup not confirmed yet |
+| `POST /api/me/passkeys/options` | | `{"publicKey", "token"}`: options for `navigator.credentials.create()` |
+| `POST /api/me/passkeys` | `{"token", "credential", "name"}` | `{"mfa": {...}}`, with `"recovery_codes"` and a new session cookie for a first passkey |
+| `DELETE /api/me/passkeys/{id}` | | `{"mfa": {...}}`; `id` is the passkey's ID in base64url, as `GET /api/me/mfa` lists it |
+| `POST /api/me/passkeys/challenge` | | `{"publicKey", "token"}`: options for `navigator.credentials.get()`, answered as `{"passkey": {"token", "credential"}}` in the routes that take one |
 | `DELETE /api/users/{username}/mfa` (admin) | | `{"username", "mfa": false}`; `409` for your own account |
+
+With passkeys, the `mfa_required` reply also has `"passkey": {"publicKey", "token"}`
+(or `"passkey_hosts"` when none works at this address), `"app"` and `"recovery"`; send
+the same body again with `"passkey": {"token", "credential"}` in place of `"code"`.
+To sign in with a passkey alone (local users and the built-in admin),
+`POST /api/login/passkey/options` returns `{"publicKey", "token"}`, and
+`POST /api/login/passkey` with `{"token", "credential", "remember"}` signs in like
+`POST /api/login`. Both need the browser's `Origin` to match. A token is good for 5
+minutes and one answer.
 
 A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
 sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
@@ -1118,8 +1296,9 @@ answers `403`:
 ```
 
 `with` is `password`, `password_or_code` (two-step sign-in is on) or `sign_in` (the
-account signs in elsewhere, so sign in again). `POST /api/me/recheck` with
-`{"password": "..."}` or `{"code": "123456"}` sets a cookie for this sign-in session
+account signs in elsewhere, so sign in again); `"passkey": true` when a passkey works
+here. `POST /api/me/recheck` with `{"password": "..."}`, `{"code": "123456"}` or
+`{"passkey": {"token", "credential"}}` (from `POST /api/me/passkeys/challenge`) sets a cookie for this sign-in session
 that lasts 15 minutes; then send the change again. A wrong password answers `400` with
 `"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 
@@ -1130,7 +1309,7 @@ that lasts 15 minutes; then send the change again. A wrong password answers `400
 ```json
 {
   "users": [
-    {"username": "admin", "name": "", "email": "", "role": "admin", "source": "builtin",
+    {"username": "signalithadmin", "name": "", "email": "", "role": "admin", "source": "builtin",
      "disabled": false, "must_change_password": false, "created": null, "updated": null,
      "last_sign_in": "2026-10-12T15:35:22Z", "you": true, "actions": []},
     {"username": "alice", "name": "Alice Admin", "email": "alice@corp.example.com",

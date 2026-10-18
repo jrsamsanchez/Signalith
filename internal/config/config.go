@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -55,9 +56,11 @@ type Config struct {
 	Intel      Intel      `yaml:"intel"`
 	Vulns      Vulns      `yaml:"vulns,omitempty"`
 	M365       M365       `yaml:"m365,omitempty"`
+	Okta       Okta       `yaml:"okta,omitempty"`
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
+	Ticketing  Ticketing  `yaml:"ticketing,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -75,6 +78,9 @@ type Config struct {
 	// (see AdminPasswordVersion), and envAdminHash is the hash made from
 	// it for this process.
 	envAdminVersion, envAdminHash string
+	// firstPassword is what the state folder keeps about the built-in
+	// admin's first password (see FirstPassword).
+	firstPassword FirstPassword
 	// publicURLFromEnv is set when SIGNALITH_PUBLIC_URL set
 	// server.public_url.
 	publicURLFromEnv bool
@@ -114,6 +120,9 @@ type Config struct {
 	keys *secrets.Keyring
 	// layers records where each setting's value came from.
 	layers *layers
+	// agentListenDerived is true when server.agent_listen was empty and
+	// was worked out from the listen address (see AgentsOnWebPort).
+	agentListenDerived bool
 	// publicURLDerived is true when server.public_url was empty and
 	// Validate worked it out from the listen address.
 	publicURLDerived bool
@@ -167,9 +176,15 @@ type layers struct {
 
 // Server controls the web UI and API listener.
 type Server struct {
-	// Listen is host:port. The default binds to localhost only; use
-	// 0.0.0.0:8080 to accept agents from other machines.
+	// Listen is host:port for the web page and API. The default binds to
+	// localhost only; use 0.0.0.0:9000 to accept browsers from other
+	// machines.
 	Listen string `yaml:"listen"`
+	// AgentListen is host:port for agents (ingest, OTLP, osquery and the
+	// network sensor), kept apart from the web page. Empty means Listen's
+	// host on port 7779; "off" serves agents on the web port, as before
+	// 0.3. SIGNALITH_AGENT_LISTEN overrides it. See AgentsOnWebPort.
+	AgentListen string `yaml:"agent_listen,omitempty"`
 	// PublicURL is the address agents and browsers use to reach this
 	// server: scheme, host and optional port, no path. It goes into the
 	// agent configs Signalith generates. SIGNALITH_PUBLIC_URL overrides it.
@@ -540,11 +555,40 @@ type OpenSearch struct {
 	// on other nodes: "auto" (the default) or a whole number.
 	Replicas Replicas `yaml:"replicas"`
 	// Shards is how many primary shards each new day's event indices
-	// get: 0 or 1 is one, the default. More spread a data model that
-	// stores tens of GB a day over the OpenSearch nodes; at most one
-	// per data node is used. Days already stored keep theirs; a day
-	// restored from an archive gets the current setting.
+	// get. 0, the default, is automatic: one per OpenSearch data node, up
+	// to ingest.MaxAutoShards, so a day's events are written and merged
+	// on every node. A number fixes it; at most one per data node is
+	// used. Days already stored keep theirs; a day restored from an
+	// archive gets the current setting.
 	Shards int `yaml:"shards,omitempty"`
+	// RolloverGB is how large, in GB per primary shard, a day's index of
+	// a data model may grow before that day's events continue in a new
+	// index (signalith-network-2026.10.17-2, and so on). 0 is
+	// DefaultRolloverGB.
+	RolloverGB int `yaml:"rollover_gb,omitempty"`
+}
+
+// DefaultRolloverGB is opensearch.rollover_gb when it is not set: shards
+// of 30 to 50 GB are what OpenSearch recommends for logs, big enough not
+// to waste the per-shard cost and small enough to merge, move and
+// recover quickly.
+const DefaultRolloverGB = 40
+
+// MinRolloverGB and MaxRolloverGB bound opensearch.rollover_gb. Below
+// 10 GB a busy day would make enough indices to crowd the cluster's shard
+// limit; above 200 GB a shard takes hours to move to another node.
+const (
+	MinRolloverGB = 10
+	MaxRolloverGB = 200
+)
+
+// RolloverBytes returns opensearch.rollover_gb in bytes, or the default.
+func (o *OpenSearch) RolloverBytes() int64 {
+	gb := o.RolloverGB
+	if gb <= 0 {
+		gb = DefaultRolloverGB
+	}
+	return int64(gb) << 30
 }
 
 // Replicas is opensearch.replicas: "auto", or a whole number of extra
@@ -595,11 +639,16 @@ func (r Replicas) IndexSettings() map[string]any {
 const MaxShards = 64
 
 // EventIndexSettings returns the index settings each new day's event
-// indices get: the replicas settings (see Replicas.IndexSettings) and,
-// when opensearch.shards asks for more than one, number_of_shards.
+// indices get: the replicas settings (see Replicas.IndexSettings) and
+// number_of_shards: store.AutoShards when opensearch.shards is 0, which
+// ingest.PutIndexTemplate sizes from the data nodes, or the number when
+// it asks for more than one.
 func (o *OpenSearch) EventIndexSettings() map[string]any {
 	s := o.Replicas.IndexSettings()
-	if o.Shards > 1 {
+	switch {
+	case o.Shards == 0:
+		s["number_of_shards"] = store.AutoShards
+	case o.Shards > 1:
 		s["number_of_shards"] = o.Shards
 	}
 	return s
@@ -701,10 +750,18 @@ func isLoopback(host string) bool {
 	return err == nil && a.Unmap().IsLoopback()
 }
 
+// MaxSummaryDays is the most search.summary_days takes.
+const MaxSummaryDays = 400
+
 // Search tunes the query engine.
 type Search struct {
 	DefaultEarliest string `yaml:"default_earliest"`
 	MaxEvents       int    `yaml:"max_events"`
+	// SummaryDays is how far back summary indexes start: the server
+	// that runs the background jobs keeps per-data-model counts in
+	// 5-minute slots, which stats, timechart and tstats read instead of
+	// every event (see docs/summaries.md). 0 turns summaries off.
+	SummaryDays int `yaml:"summary_days"`
 }
 
 // Retention controls how long data is kept; see docs/retention.md. Most
@@ -790,6 +847,9 @@ type Auth struct {
 	// OIDC is single sign-on with an OpenID Connect identity provider,
 	// usually set on the Single sign-on tab of Settings.
 	OIDC OIDC `yaml:"oidc,omitempty"`
+	// SAML is single sign-on with a SAML 2.0 identity provider, usually
+	// set on the Single sign-on tab of Settings.
+	SAML SAML `yaml:"saml,omitempty"`
 	// SCIM lets the identity provider of single sign-on provision users.
 	SCIM SCIM `yaml:"scim,omitempty"`
 	// MFARequired says who must use two-step sign-in (a code from an
@@ -914,6 +974,14 @@ type Ingest struct {
 	// events are stored: keep (the default), redact (keep the parameter
 	// names, hide their values) or drop. See URLQueryMode.
 	URLQuery string `yaml:"url_query,omitempty"`
+	// MaxConcurrent is how many agent batches this server decodes and
+	// writes to OpenSearch at once; more wait their turn. 0 means 32.
+	// Lower it on a server with little memory.
+	MaxConcurrent int `yaml:"max_concurrent,omitempty"`
+	// HEC turns on the intake for senders built for Splunk's HTTP Event
+	// Collector (/services/collector/event and /raw on the agent port),
+	// which take an agent token. Off by default. See docs/hec.md.
+	HEC bool `yaml:"hec,omitempty"`
 }
 
 // URLQueryMode returns ingest.url_query: keep, redact or drop, keep when
@@ -1022,7 +1090,7 @@ func (s *Syslog) problems(server Server) []string {
 		}
 	}
 	// TCP listeners cannot share a port with each other or the web server.
-	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
+	tcp := []struct{ setting, addr string }{{"server.listen", server.Listen}, {"server.agent_listen", server.AgentAddr()}, {"syslog.tcp", s.TCP}, {"syslog.tls", s.TLS}}
 	for i := range tcp {
 		for j := i + 1; j < len(tcp); j++ {
 			if sameListener(tcp[i].addr, tcp[j].addr) {
@@ -1069,6 +1137,14 @@ type Detections struct {
 	// CatchUp is how far back detection runs missed while no server ran
 	// them are made up, such as 6h; "0" turns that off. Empty means 6h.
 	CatchUp string `yaml:"catch_up,omitempty"`
+	// Spread runs each tenant's detections on every server that may run
+	// background work, each rule on one of them, instead of all on the
+	// server running the background jobs. Off by default.
+	Spread bool `yaml:"spread,omitempty"`
+	// SearchBudget is how many detection searches every server together
+	// runs at once while detections are spread; 0 means half the searches
+	// OpenSearch's data nodes run at once.
+	SearchBudget int `yaml:"search_budget,omitempty"`
 	// ContentUpdates is how newer content pack rules arrive: manual (an
 	// admin checks or uploads on the Detections page) or daily (checked
 	// and installed every day). Empty means manual.
@@ -1275,6 +1351,25 @@ type M365 struct {
 	Cloud string `yaml:"cloud,omitempty"`
 }
 
+// Okta reads an Okta organization's System Log from Okta's System Log
+// API (internal/okta), as an API service app granted the okta.logs.read
+// scope that signs in with its private key, or with an admin's API token.
+// It is on when the domain and either the app and its key or the token
+// are set.
+type Okta struct {
+	// Domain is the organization's Okta domain, such as
+	// example.okta.com.
+	Domain string `yaml:"domain,omitempty"`
+	// ClientID is the service app's client ID, and PrivateKey its private
+	// key (PEM, or a JWK as Okta's admin console shows it). KeyID is the
+	// key's ID (kid), needed when the app has more than one key.
+	ClientID   string `yaml:"client_id,omitempty"`
+	PrivateKey string `yaml:"private_key,omitempty"`
+	KeyID      string `yaml:"key_id,omitempty"`
+	// APIToken is an admin's API token, used when no app is set.
+	APIToken string `yaml:"api_token,omitempty"`
+}
+
 // Vulns configures the CVE lookups of vulnerability scans (the
 // Vulnerabilities page keeps its networks in OpenSearch).
 type Vulns struct {
@@ -1408,6 +1503,24 @@ func (c *Config) PlaybooksFile() string {
 	return filepath.Join(c.LookupsDir(), "playbooks.yaml")
 }
 
+// Ticketing sets where the Jira and ServiceNow connections set on the
+// Ticketing page are kept (see docs/ticketing.md).
+type Ticketing struct {
+	// File keeps the connections, with their tokens and passwords
+	// encrypted. Default: tickets.yaml in lookups.dir. A relative path is
+	// relative to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// TicketingFile returns the file that keeps the ticketing connections
+// set on the Ticketing page.
+func (c *Config) TicketingFile() string {
+	if c.Ticketing.File != "" {
+		return c.resolve(c.Ticketing.File)
+	}
+	return filepath.Join(c.LookupsDir(), "tickets.yaml")
+}
+
 // ResponseScriptsDir returns the folder script actions run programs from.
 func (c *Config) ResponseScriptsDir() string {
 	if c.Response.ScriptsDir != "" {
@@ -1418,6 +1531,10 @@ func (c *Config) ResponseScriptsDir() string {
 
 // LookupsDir returns the absolute lookups folder.
 func (c *Config) LookupsDir() string { return c.resolve(c.Lookups.Dir) }
+
+// GeoIPDir is where the search command iplocation finds its GeoIP
+// database, a .mmdb file an admin puts there.
+func (c *Config) GeoIPDir() string { return filepath.Join(c.LookupsDir(), "geoip") }
 
 // TLSDir is where Signalith keeps its own certificate authority and HTTPS
 // certificate (server.tls.mode auto).
@@ -1464,14 +1581,33 @@ func (c *Config) DetectionsCatchUp() time.Duration {
 	return detect.DefaultCatchUp
 }
 
-// Default returns a config with every default filled in.
+// DefaultAdminUser is the built-in admin's name on a new install, one
+// that is not the first name a password-guessing attack tries.
+const DefaultAdminUser = "signalithadmin"
+
+// LegacyAdminUser is the built-in admin's name in a config file that
+// names none: installs from before 0.3.1 were made with it, and keep it,
+// so an upgrade never changes the name anyone signs in with.
+const LegacyAdminUser = "admin"
+
+// KeptLegacyAdmin reports whether a cluster's built-in admin, named
+// builtin, kept the name from before 0.3.1 while auth.admin_user is
+// configured: a Docker or Kubernetes install that was upgraded, whose
+// config now names DefaultAdminUser. The cluster's name is used, as for
+// any other difference, but that is expected, not a mistake to warn of.
+func KeptLegacyAdmin(builtin, configured string) bool {
+	return strings.EqualFold(builtin, LegacyAdminUser) && strings.EqualFold(configured, DefaultAdminUser)
+}
+
+// Default returns a config with every default filled in. A new install
+// sets auth.admin_user to DefaultAdminUser (signalith init writes it).
 func Default() *Config {
 	return &Config{
-		Server:     Server{Listen: "127.0.0.1:8080"},
+		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
-		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000},
+		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000, SummaryDays: 30},
 		Retention:  Retention{Days: 90},
-		Auth:       Auth{AdminUser: "admin"},
+		Auth:       Auth{AdminUser: LegacyAdminUser},
 		Detections: Detections{Dir: "detections", Scheduler: true, MaxFindingsPerRun: 100, CatchUp: "6h"},
 		Lookups:    Lookups{Dir: "lookups"},
 		Dashboards: Dashboards{Dir: "dashboards", StaleAfter: "2h"},
@@ -1659,6 +1795,14 @@ func LoadUnchecked(path string) (*Config, error) {
 	return readAndEnv(path)
 }
 
+// LoadFileOnly reads signalith.yaml with defaults and the environment,
+// like LoadUnchecked, but nothing from the state folder: no password the
+// page saved there, and no first-password note. It is for root, which
+// should not read files the service owns.
+func LoadFileOnly(path string) (*Config, error) {
+	return readFileEnv(path, false)
+}
+
 // Saved is the configuration as saved, whether or not it is valid:
 // signalith.yaml, the settings changed on the Settings page, and the
 // environment. The Settings page shows it.
@@ -1790,7 +1934,11 @@ func (c *Config) readFiles(path string) (*Config, error) {
 
 // readAndEnv reads signalith.yaml with defaults and the environment,
 // without decrypting it.
-func readAndEnv(path string) (*Config, error) {
+func readAndEnv(path string) (*Config, error) { return readFileEnv(path, true) }
+
+// readFileEnv is readAndEnv, reading the state folder's files only when
+// state is true.
+func readFileEnv(path string, state bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -1822,11 +1970,16 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyEnv(); err != nil {
 		return nil, err
 	}
-	if err := c.applyAdminHashFile(); err != nil {
-		return nil, err
+	if state {
+		if err := c.applyAdminHashFile(); err != nil {
+			return nil, err
+		}
 	}
 	c.syncEligible()
-	c.readDockerUpgrade()
+	if state {
+		c.readDockerUpgrade()
+		c.readFirstPassword()
+	}
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil
@@ -2068,6 +2221,10 @@ func (c *Config) applyEnv() error {
 		c.Server.Listen = v
 		c.fromEnv("server.listen", "SIGNALITH_LISTEN")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_AGENT_LISTEN")); v != "" {
+		c.Server.AgentListen = v
+		c.fromEnv("server.agent_listen", "SIGNALITH_AGENT_LISTEN")
+	}
 	if v := strings.TrimSpace(os.Getenv("SIGNALITH_PUBLIC_URL")); v != "" {
 		if _, err := agents.ParseServerURL(v); err != nil {
 			return fmt.Errorf("SIGNALITH_PUBLIC_URL %q: %v", v, err)
@@ -2145,6 +2302,10 @@ func (c *Config) applyEnv() error {
 		c.Playbooks.File = v
 		c.fromEnv("playbooks.file", "SIGNALITH_PLAYBOOKS_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_TICKETING_FILE"); v != "" {
+		c.Ticketing.File = v
+		c.fromEnv("ticketing.file", "SIGNALITH_TICKETING_FILE")
+	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
 		c.Response.ScriptsDir = v
 		c.fromEnv("response.scripts_dir", "SIGNALITH_RESPONSE_SCRIPTS_DIR")
@@ -2182,6 +2343,18 @@ func (c *Config) applyEnv() error {
 	} else if len(v) > 0 {
 		c.M365.ClientSecret = strings.TrimSpace(v[0])
 		c.fromEnv("m365.client_secret", from)
+	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_PRIVATE_KEY"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.PrivateKey = strings.TrimSpace(v[0])
+		c.fromEnv("okta.private_key", from)
+	}
+	if v, from, err := envSecret("SIGNALITH_OKTA_API_TOKEN"); err != nil {
+		return err
+	} else if len(v) > 0 {
+		c.Okta.APIToken = strings.TrimSpace(v[0])
+		c.fromEnv("okta.api_token", from)
 	}
 	if v, from, err := envSecret("SIGNALITH_NVD_API_KEY"); err != nil {
 		return err
@@ -2318,12 +2491,16 @@ func (c *Config) JoinedCluster() bool {
 func (c *Config) Validate() error {
 	var p []string
 	if _, port, err := net.SplitHostPort(c.Server.Listen); err != nil {
-		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:8080", c.Server.Listen))
+		p = append(p, fmt.Sprintf("server.listen %q must be host:port, for example 0.0.0.0:9000", c.Server.Listen))
 	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		p = append(p, fmt.Sprintf("server.listen port %q must be 1-65535", port))
 	}
+	p = append(p, c.agentListenProblems()...)
 	if c.Server.MaxConnections < 0 {
 		p = append(p, "server.max_connections cannot be negative (0 uses the default, 10000)")
+	}
+	if c.Ingest.MaxConcurrent < 0 || c.Ingest.MaxConcurrent > 1024 {
+		p = append(p, "ingest.max_concurrent must be 0-1024 (0 uses the default, 32)")
 	}
 	for i, a := range c.Server.SharedAddresses {
 		if _, err := parseAllow(a); err != nil {
@@ -2378,14 +2555,24 @@ func (c *Config) Validate() error {
 	if c.OpenSearch.IndexPrefix == "" || strings.ToLower(c.OpenSearch.IndexPrefix) != c.OpenSearch.IndexPrefix || strings.ContainsAny(c.OpenSearch.IndexPrefix, `*?"<>|, /\#`) {
 		p = append(p, "opensearch.index_prefix must be lowercase with no spaces or wildcards")
 	}
+	if err := tenants.ValidConfiguredPrefix(c.OpenSearch.IndexPrefix); err != nil {
+		p = append(p, err.Error())
+	}
+	p = append(p, c.tenantFolderProblems()...)
 	if !c.OpenSearch.Replicas.Valid() {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
 	if c.OpenSearch.Shards < 0 || c.OpenSearch.Shards > MaxShards {
-		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 to %d (0 and 1 both mean one shard)", MaxShards))
+		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 (automatic) to %d", MaxShards))
+	}
+	if g := c.OpenSearch.RolloverGB; g != 0 && (g < MinRolloverGB || g > MaxRolloverGB) {
+		p = append(p, fmt.Sprintf("opensearch.rollover_gb: enter a number of GB from %d to %d, or leave it empty for %d", MinRolloverGB, MaxRolloverGB, DefaultRolloverGB))
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")
+	}
+	if c.Search.SummaryDays < 0 || c.Search.SummaryDays > MaxSummaryDays {
+		p = append(p, fmt.Sprintf("search.summary_days must be between 0 (off) and %d", MaxSummaryDays))
 	}
 	if c.Retention.Days < 0 {
 		p = append(p, "retention.days cannot be negative (0 keeps data forever)")
@@ -2440,6 +2627,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	p = append(p, c.oidcProblems()...)
+	p = append(p, c.samlProblems()...)
 	p = append(p, c.scimProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
@@ -2482,6 +2670,16 @@ func (c *Config) Validate() error {
 			p = append(p, f.key+": "+err.Error())
 		}
 	}
+	for _, f := range []struct {
+		key   string
+		check func(any) error
+		v     string
+	}{{"okta.domain", checkOktaDomain, c.Okta.Domain}, {"okta.client_id", checkOktaClientID, c.Okta.ClientID},
+		{"okta.key_id", checkOktaKeyID, c.Okta.KeyID}, {"okta.private_key", CheckOktaPrivateKey, c.Okta.PrivateKey}} {
+		if err := f.check(f.v); err != nil {
+			p = append(p, f.key+": "+err.Error())
+		}
+	}
 	if c.Vulns.NVDURL != "" {
 		if u, err := url.Parse(c.Vulns.NVDURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			p = append(p, fmt.Sprintf("vulns.nvd_url %q must be http(s)://host[:port][/path]", redact.URL(c.Vulns.NVDURL)))
@@ -2495,6 +2693,9 @@ func (c *Config) Validate() error {
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
+	}
+	if c.Detections.SearchBudget < 0 || c.Detections.SearchBudget > detect.MaxSearchBudget {
+		p = append(p, fmt.Sprintf("detections.search_budget must be between 0 (automatic) and %d", detect.MaxSearchBudget))
 	}
 	if v := strings.TrimSpace(c.Detections.CatchUp); v != "" && v != "0" {
 		if d, err := detect.ParseDuration(v); err != nil || d < 0 || d > detect.MaxCatchUp {
@@ -2772,7 +2973,7 @@ func (c *Config) CheckPassword(user, pw string) bool {
 	if !strings.EqualFold(strings.TrimSpace(user), c.Auth.AdminUser) {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(c.Auth.AdminPasswordHash), []byte(pw)) == nil
+	return users.ComparePassword(c.Auth.AdminPasswordHash, pw)
 }
 
 // RandomToken returns a random hex token.
@@ -2853,7 +3054,9 @@ const header = `# Signalith configuration.
 # pasted in works too, and "signalith secrets encrypt" encrypts it (see
 # docs/encryption.md).
 #
-# server.listen      address the UI/API binds to (0.0.0.0:8080 for all interfaces)
+# server.listen      address the web page and API bind to (0.0.0.0:9000 for all interfaces)
+# server.agent_listen  address agents send to (default: listen's host, port 7779;
+#                    "off" serves agents on the web port as before 0.3)
 # server.public_url  URL agents use to reach this server (or SIGNALITH_PUBLIC_URL)
 # server.tls.mode    auto: HTTPS with a certificate Signalith makes and renews itself
 #                    (browsers warn until you trust its CA; see docs/https.md);
@@ -2868,8 +3071,9 @@ const header = `# Signalith configuration.
 # server.client_header  x-forwarded-for or forwarded: the header those proxies
 #                    write each person's address into, for the sign-in limits and
 #                    the log; empty counts everyone behind them as one shared address
-# server.max_connections  open connections allowed at once (default 10000); one
-#                    client may hold a tenth of them
+# server.max_connections  open connections allowed at once (default 10000), on the
+#                    web port and again on the agent port; one client may hold a
+#                    tenth of them
 # server.shared_addresses  IPs or CIDRs of a proxy, load balancer or NAT that many
 #                    clients reach Signalith through; not limited as one client,
 #                    and wrong passwords from them never lock the address
@@ -2922,6 +3126,10 @@ const header = `# Signalith configuration.
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md
+# okta.domain, okta.client_id, okta.private_key, okta.key_id  read Okta's System
+#                    Log with an API service app (SIGNALITH_OKTA_PRIVATE_KEY_FILE);
+#                    or okta.api_token, an admin's API token
+#                    (SIGNALITH_OKTA_API_TOKEN); see docs/okta.md
 # notify.file        where the Notifications page keeps its channels and rules
 #                    (default notifications.yaml in lookups.dir); see docs/notifications.md
 # response.file      where the Response actions page keeps its actions (default
@@ -2931,6 +3139,9 @@ const header = `# Signalith configuration.
 #                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
 # playbooks.file     where the Playbooks page keeps its playbooks (default
 #                    lookups.dir/playbooks.yaml; SIGNALITH_PLAYBOOKS_FILE overrides it)
+# ticketing.file     where the Ticketing page keeps its Jira and ServiceNow connections
+#                    (default lookups.dir/tickets.yaml; SIGNALITH_TICKETING_FILE
+#                    overrides it); see docs/ticketing.md
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

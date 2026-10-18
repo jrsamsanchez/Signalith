@@ -1,0 +1,9 @@
+{"rule": "0f216a38-f45f-11eb-b09c-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x x \\sqlite32.dll"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x x \\sqlite64.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x x \\sqlite32.dlm"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x \\temp\\ x x \\sqlite64.dlm"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-07-30 13:55:21.383","Image":"C:\\Temp\\rundll32.exe","ProcessGuid":"{014657FA-F836-6103-8832-00000000E801}","ProcessId":"360","RuleName":"-","TargetFilename":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\2\\sqlite32.dll","UtcTime":"2021-07-30 13:55:21.383"}},
+  {"expect":true,"source":"attack_data","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"CreationUtcTime":"2021-07-30 13:55:21.367","Image":"C:\\Temp\\rundll32.exe","ProcessGuid":"{014657FA-F836-6103-8832-00000000E801}","ProcessId":"360","RuleName":"-","TargetFilename":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\2\\sqlite64.dll","UtcTime":"2021-07-30 13:55:21.367"}}
+]}

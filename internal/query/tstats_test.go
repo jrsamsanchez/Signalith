@@ -14,6 +14,8 @@ func TestTstats(t *testing.T) {
 		`| tstats count from datamodel=Authentication where Authentication.action=failure earliest=-1h by _time span=10m`:        "datamodel=Authentication action=failure earliest=-1h\n| bin span=10m _time\n| stats count by _time",
 		`| tstats values(Filesystem.file_path) as paths from datamodel=Endpoint.Filesystem by Filesystem.dest | where count > 1`: "datamodel=Filesystem\n| stats values(file_path) as paths by dest\n| rename dest as Filesystem.dest\n| where count>1",
 		`| tstats count from datamodel=Malware`:                                                                                  "datamodel=Malware\n| stats count",
+		`| tstats summariesonly=false allow_old_summaries=true fillnull_value=null count from datamodel=Web by Web.user`:         "datamodel=Web\n| fillnull value=null user\n| stats count by user\n| rename user as Web.user",
+		`| tstats fillnull_value="N/A" count from datamodel=Malware`:                                                             "datamodel=Malware\n| stats count",
 	} {
 		q, err := Parse(src)
 		if err != nil {
@@ -29,6 +31,7 @@ func TestTstats(t *testing.T) {
 		`| tstats count from datamodel=Endpoint.Services`:           "tstats cannot read",
 		`| tstats count from x=y`:                                   "datamodel=",
 		`| tstats prestats=t count`:                                 "prestats",
+		`| tstats fillnull_value=( count`:                           "fillnull_value",
 		`| tstats count by host span=1h`:                            "needs _time",
 		`| tstats count from datamodel=Web where index=signalith-*`: "not both",
 		`| tstats count from datamodel=Web foo`:                     "unexpected",

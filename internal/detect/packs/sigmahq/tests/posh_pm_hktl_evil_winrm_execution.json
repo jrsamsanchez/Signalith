@@ -1,0 +1,10 @@
+{"rule": "9fe55ea2-4cd6-4491-8a54-dd6871651b51", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":":\\Windows\\System32\\wsmprovhost.exe","Payload":"Invoke-Binary x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":":\\Windows\\System32\\wsmprovhost.exe","Payload":"Where-Object {$_.imagepath -notmatch \"system\" -and $_.imagepath -ne $null } | Select-Object pschildname,imagepath$servicios = Get-ItemProperty \"registry::HKLM\\System\\CurrentControlSet\\Services\\\""}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":":\\Windows\\SysWOW64\\wsmprovhost.exe","Payload":"$a +=  \\\"$($_.FullName.Replace('\\','/'))/\\\"}else{  $a += \\\"$($_.FullName.Replace('\\', '/'))\\\" }$a=@();$"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"Invoke-Binary x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":":\\Windows\\System32\\wsmprovhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"Where-Object {$_.imagepath -notmatch \"system\" -and $_.imagepath -ne $null } | Select-Object pschildname,imagepath$servicios = Get-ItemProperty \"registry::HKLM\\System\\CurrentControlSet\\Services\\\""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"$a +=  \\\"$($_.FullName.Replace('\\','/'))/\\\"}else{  $a += \\\"$($_.FullName.Replace('\\', '/'))\\\" }$a=@();$"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":":\\Windows\\SysWOW64\\wsmprovhost.exe"}}
+]}

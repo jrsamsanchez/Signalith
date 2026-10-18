@@ -36,12 +36,14 @@ var (
 )
 
 // CheckNewPassword checks a password someone chooses for the user named
-// username, as NIST SP 800-63B asks: long enough, not too long for bcrypt,
+// username, as NIST SP 800-63B asks: long enough, not too long,
 // not a commonly used password, not a repeated or sequential run of
-// characters, and not the username or the product's name dressed up.
+// characters, and not the username or the product's name dressed up. It
+// checks the password as HashPassword keeps it, normalized.
 // username may be empty when it is not known. Passwords already set are
 // never checked again: this is for new ones only.
 func CheckNewPassword(username, pw string) error {
+	pw = NormalizePassword(pw)
 	if err := checkLength(pw); err != nil {
 		return err
 	}
@@ -61,14 +63,18 @@ func CheckNewPassword(username, pw string) error {
 	return nil
 }
 
-// checkLength refuses a password that is too short, or longer than the 72
-// bytes bcrypt reads.
+// MaxPasswordLength is the longest password Signalith accepts, in
+// characters: well past the 64 NIST SP 800-63B asks for, in any script.
+const MaxPasswordLength = 256
+
+// checkLength refuses a password that is too short or too long.
 func checkLength(pw string) error {
-	if len([]rune(pw)) < MinPasswordLength {
+	n := len([]rune(pw))
+	if n < MinPasswordLength {
 		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
 	}
-	if len(pw) > 72 {
-		return errors.New("password must be at most 72 bytes (bcrypt reads no more)")
+	if n > MaxPasswordLength {
+		return fmt.Errorf("password must be at most %d characters", MaxPasswordLength)
 	}
 	return nil
 }

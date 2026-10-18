@@ -651,7 +651,7 @@ func (r *Runner) askApproval(ctx context.Context, run *Run, f *findings.Finding)
 		return
 	}
 	ask := fmt.Sprintf("Playbook %s waits for approval to: %s", run.PlaybookName, run.Approval.What)
-	if err := r.Sender.Send(ctx, c, notify.ApprovalMessage(f, ask, notify.ApprovalsLink(r.publicURL()))); err != nil {
+	if err := r.Sender.Send(ctx, c, notify.ApprovalMessage(f, ask, notify.ApprovalsLink(r.publicURL()), run.ID, run.Approval.Step)); err != nil {
 		r.log().Warn("could not ask for a playbook approval", "playbook", run.PlaybookName, "channel", c.Label(), "err", err)
 	}
 }

@@ -127,6 +127,7 @@ func (c *memberCluster) newMember(t *testing.T, name string, key *shared.Cluster
 	m.rt = shared.NewRuntime(shared.RuntimeOptions{StateDir: dir, Self: shared.Self{NodeID: "n_" + name, Name: name},
 		Content: m.docs.Track, Log: log})
 	m.docs.Cluster = m.rt.Cluster
+	m.docs.Tenants = m.rt.Tenants
 	m.rt.Use(c.cl, memberPrefix, master)
 	if key == nil {
 		if err := m.rt.Found(ctx, "test"); err != nil {
@@ -172,7 +173,8 @@ func (c *memberCluster) newMember(t *testing.T, name string, key *shared.Cluster
 				return *p
 			}
 			return ""
-		}, WritesRefused: m.writesRefused.Load, MayDegrade: m.sessions.MayDegrade}
+		}, WritesRefused: m.writesRefused.Load, MayDegrade: m.sessions.MayDegrade,
+			Spent: &clusterauth.Spent{Docs: m.docs, Client: c.client, Node: "n_" + name}}
 		if change != nil {
 			change(s)
 		}

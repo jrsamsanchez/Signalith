@@ -41,19 +41,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows = out
 	case *query.Sort:
-		sort.SliceStable(res.Rows, func(i, j int) bool {
-			for _, k := range c.Keys {
-				cmp := compareValues(res.Rows[i][k.Field], res.Rows[j][k.Field])
-				if cmp == 0 {
-					continue
-				}
-				if k.Desc {
-					return cmp > 0
-				}
-				return cmp < 0
-			}
-			return false
-		})
+		sortRows(res.Rows, c.Keys)
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -130,7 +118,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Rex:
 		return applyRex(ctx, res, c)
 	case *query.Dedup:
-		return applyDedup(ctx, res, c)
+		if err := applyDedup(ctx, res, c); err != nil {
+			return err
+		}
+		sortRows(res.Rows, c.SortBy)
 	case *query.Fillnull:
 		applyFillnull(res, c)
 	case *query.EventStats:
@@ -142,7 +133,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Regex:
 		return applyRegex(ctx, res, c)
 	case *query.FieldsRemove:
-		applyFieldsRemove(res, c)
+		return applyFieldsRemove(ctx, res, c)
 	case *query.Chart:
 		for _, cc := range chartCommands(c) {
 			if err := applyCommand(ctx, res, cc); err != nil {
@@ -167,6 +158,62 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyRangeMap(ctx, res, c)
 	case *query.ForEach:
 		return applyForEach(ctx, res, c)
+	case *query.Replace:
+		return applyReplace(ctx, res, c)
+	case *query.XMLKV:
+		return applyXMLKV(ctx, res, c)
+	case *query.Accum:
+		return applyAccum(ctx, res, c)
+	case *query.Delta:
+		return applyDelta(ctx, res, c)
+	case *query.AutoRegress:
+		return applyAutoRegress(ctx, res, c)
+	case *query.FieldSummary:
+		return applyFieldSummary(ctx, res, c)
+	case *query.Transpose:
+		return applyTranspose(ctx, res, c)
+	case *query.FillDown:
+		return applyFillDown(ctx, res, c)
+	case *query.Trendline:
+		return applyTrendline(ctx, res, c)
+	case *query.Concurrency:
+		return applyConcurrency(ctx, res, c)
+	case *query.Contingency:
+		return applyContingency(ctx, res, c)
+	case *query.Format:
+		return applyFormat(ctx, res, c)
+	case *query.Return:
+		return applyReturn(ctx, res, c)
+	case *query.MakeContinuous:
+		return applyMakeContinuous(ctx, res, c)
+	case *query.Geostats:
+		return applyGeostats(ctx, res, c)
+	case *query.Extract:
+		return applyExtract(ctx, res, c)
+	case *query.Outlier:
+		return applyOutlier(ctx, res, c)
+	case *query.Gauge:
+		return applyGauge(ctx, res, c)
+	case *query.Timewrap:
+		return applyTimewrap(ctx, res, c)
+	case *query.Cluster:
+		return applyCluster(ctx, res, c)
+	case *query.XPath:
+		return applyXPath(ctx, res, c)
+	case *query.Abstract:
+		return applyAbstract(ctx, res, c)
+	case *query.AnomalyDetection:
+		return applyAnomalyDetection(ctx, res, c)
+	case *query.Correlate:
+		return applyCorrelate(ctx, res, c)
+	case *query.Predict:
+		return applyPredict(ctx, res, c)
+	case *query.SetFields:
+		return applySetFields(ctx, res, c)
+	case *query.KMeans:
+		return applyKMeans(ctx, res, c)
+	case *query.Highlight:
+		// The results view marks terms itself; the rows stay as they are.
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
@@ -629,8 +676,13 @@ type shiftAnd struct {
 
 func newShiftAnd(p string) *shiftAnd {
 	rs := []rune(p)
-	words := (len(rs) + 63) / 64
-	sa := &shiftAnd{n: len(rs), any: make([]uint64, words), exact: map[rune][]uint64{}, state: make([]uint64, words)}
+	// One word of bits per 64 characters, grown without a size sum that
+	// could overflow.
+	words := []uint64{0}
+	for i := 64; i < len(rs); i += 64 {
+		words = append(words, 0)
+	}
+	sa := &shiftAnd{n: len(rs), any: words, exact: map[rune][]uint64{}, state: make([]uint64, len(words))}
 	for k, r := range rs {
 		if r == '?' {
 			sa.any[k/64] |= 1 << (k % 64)
@@ -761,4 +813,24 @@ func checkPatterns(q *query.Query) error {
 		}
 	}
 	return err
+}
+
+// sortRows sorts rows by keys, keeping the order of rows that tie.
+func sortRows(rows []Row, keys []query.SortKey) {
+	if len(keys) == 0 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, k := range keys {
+			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			if cmp == 0 {
+				continue
+			}
+			if k.Desc {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+		return false
+	})
 }

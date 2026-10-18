@@ -1,0 +1,11 @@
+{"rule": "3596a799-6320-4a2f-8772-a9e98ddb2960", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x .exe","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x .sys","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x .dll","User":"CORP\\tester"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x .sys","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x .exf","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","TargetFilename":"x .syt","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"26","data":{"ProcessId":"4242","User":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"23","data":{"ProcessId":"4242","TargetFilename":"x .dlm","User":"CORP\\tester"}}
+]}

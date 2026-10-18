@@ -68,8 +68,26 @@ func TestChartRunsInOpenSearch(t *testing.T) {
 
 func TestTstatsCompiles(t *testing.T) {
 	p := compile(t, `| tstats count from datamodel=Endpoint.Processes where Processes.process_name=cmd.exe by Processes.dest`)
-	if p.Mode != "stats" || p.Index != "signalith-endpoint-*" || !strings.Contains(asJSON(p.Body), `"process_name"`) {
+	if p.Mode != "stats" || !namesDays(p.Index, "signalith-endpoint-") || !strings.Contains(asJSON(p.Body), `"process_name"`) {
 		t.Errorf("plan = %s %s %s", p.Mode, p.Index, asJSON(p.Body))
+	}
+}
+
+func TestTstatsFillnullValue(t *testing.T) {
+	// Events without a by field group under the fill value, in OpenSearch.
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[
+		{"key":{"k0":"amy"},"doc_count":2},{"key":{"k0":null},"doc_count":1}]}}}`}}
+	e := &Engine{Store: fs}
+	got := runRows(t, e, `| tstats fillnull_value=unknown count from datamodel=Web by Web.user`, "Web.user", "count")
+	if !reflect.DeepEqual(got, []string{"amy 2", "unknown 1"}) {
+		t.Errorf("rows = %v", got)
+	}
+	if !strings.Contains(asJSON(fs.bodies[0]), `"missing_bucket":true`) {
+		t.Errorf("body = %s", asJSON(fs.bodies[0]))
+	}
+	// A fillnull of other fields stays in memory.
+	if p := compile(t, `* | fillnull value=x host | stats count by user`); p.Mode == "stats" {
+		t.Errorf("fillnull of a non-by field ran in OpenSearch: %s", asJSON(p.Body))
 	}
 }
 

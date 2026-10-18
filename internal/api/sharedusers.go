@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -38,6 +36,9 @@ type SharedUsers struct {
 	// APITokens says why API tokens cannot be made now (the cluster is
 	// below their level), "" when they can; nil is always.
 	APITokens func() string
+	// Spent records the sign-in proofs used once, such as SAML
+	// assertions, for every server; nil keeps only this server's record.
+	Spent *clusterauth.Spent
 }
 
 var _ SessionStore = (*clusterauth.Sessions)(nil)
@@ -94,11 +95,11 @@ func (s *Server) checkBuiltinPassword(pw string, allowLocal bool) (ok, local boo
 	if s.SharedUsers == nil {
 		return s.conf().CheckPassword(s.conf().Auth.AdminUser, pw), false
 	}
-	if h := s.builtinHash(); h != "" && bcrypt.CompareHashAndPassword([]byte(h), []byte(pw)) == nil {
+	if h := s.builtinHash(); users.ComparePassword(h, pw) {
 		return true, false
 	}
 	if allowLocal && s.SharedUsers.LocalHash != nil && s.sharedDegraded() {
-		if h := s.SharedUsers.LocalHash(); h != "" && bcrypt.CompareHashAndPassword([]byte(h), []byte(pw)) == nil {
+		if h := s.SharedUsers.LocalHash(); users.ComparePassword(h, pw) {
 			return true, true
 		}
 	}

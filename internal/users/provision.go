@@ -78,6 +78,9 @@ func (s *Store) Provision(ctx context.Context, p Provisioned) (User, error) {
 	if s.reserved(name) {
 		return User{}, ErrNotSSO
 	}
+	if tenantLike(name) {
+		return User{}, fieldError("username", ErrTenantSuffix)
+	}
 	if u, ok := s.Get(name); ok {
 		if u.Source != SourceSSO {
 			return User{}, ErrNotSSO

@@ -10,15 +10,17 @@
   const NT = {
     data: null, deliveries: null, delivErr: '', seq: 0, busy: false,
     tests: new Map(), // channel id -> { busy, ok, text } of the latest Send test
+    links: null, linksErr: '', // linked chat accounts, when a channel has buttons
     detections: null, // for the rule dialog's picker, loaded on first use
   };
   const TYPES = {
     slack: { label: 'Slack', icon: 'hash', name: '#soc', hint: 'An incoming webhook posts to one Slack channel.' },
     teams: { label: 'Teams', icon: 'users', name: 'SOC team', hint: 'A Teams workflow posts to one channel or chat.' },
+    teams_app: { label: 'Teams app', icon: 'message-square-text', name: 'SOC', hint: 'An Azure bot posts cards with Approve and Acknowledge buttons.' },
     email: { label: 'Email', icon: 'mail', name: 'SOC email', hint: 'Signalith sends through your mail server.' },
     webhook: { label: 'Webhook', icon: 'webhook', name: 'SOAR', hint: 'A JSON POST to any address, such as a SOAR or ticketing system.' },
   };
-  const TYPE_ORDER = ['slack', 'teams', 'email', 'webhook'];
+  const TYPE_ORDER = ['slack', 'teams', 'teams_app', 'email', 'webhook'];
   const LEAST = [['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low'], ['informational', 'Any']];
   const LEAST_HINT = {
     critical: 'Only critical findings.', high: 'High and critical findings.', medium: 'Medium, high and critical findings.',
@@ -55,6 +57,7 @@
       NT.deliveries = del.deliveries || null;
       NT.delivErr = del.error || '';
       render();
+      if (d.chat && d.manage && d.channels.some((c) => c.interactive)) loadLinks(seq);
     } catch (e) {
       if (seq !== NT.seq) return;
       box().removeAttribute('aria-busy');
@@ -81,7 +84,8 @@
     const hasChannels = d.channels.length > 0;
     $('nt-add-channel').classList.toggle('hidden', !manage() || !hasChannels);
     $('nt-add-rule').classList.toggle('hidden', !manage() || !hasChannels);
-    fill(box(), notes(), channelsCard(), hasChannels ? rulesCard() : null, hasChannels || (NT.deliveries || []).length ? deliveriesCard() : null);
+    const chat = d.chat && manage() && d.channels.some((c) => c.interactive);
+    fill(box(), notes(), channelsCard(), hasChannels ? rulesCard() : null, chat ? linksCard() : null, hasChannels || (NT.deliveries || []).length ? deliveriesCard() : null);
     if (focusKey) {
       const again = box().querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
       if (again) (again.matches('details') ? again.querySelector('summary') : again).focus({ preventScroll: true });
@@ -144,7 +148,43 @@
       const to = c.to || [];
       return to.length ? to[0].replace(/^.*<|>$/g, '') + (to.length > 1 ? ` +${to.length - 1}` : '') : 'No recipients';
     }
+    if (c.type === 'teams_app') return c.posts_to || 'Not added to a Teams channel yet';
     return c.url_server ? c.url_server.replace(/^https?:\/\//, '') : 'No URL';
+  }
+
+  // moveBox shows a move to another Teams channel that an admin asked for
+  // in Teams. Messages keep going where they go until it is confirmed.
+  function moveBox(c) {
+    if (!c.move_to) return null;
+    const ok = el('button', { class: 'btn btn--primary btn--sm', type: 'button', 'data-key': 'mv:' + c.id }, 'Move');
+    const keep = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'data-key': 'mk:' + c.id }, 'Keep');
+    const act = async (confirm) => {
+      ok.disabled = keep.disabled = true;
+      try {
+        if (confirm) await api(`api/notify/channels/${encodeURIComponent(c.id)}/teams-move`, { move_id: c.move_id });
+        else await api(`api/notify/channels/${encodeURIComponent(c.id)}/teams-move`, undefined, 'DELETE');
+      } catch (e) {
+        ok.disabled = keep.disabled = false;
+        toastError(confirm ? 'Couldn’t move the channel' : 'Couldn’t keep the channel', e);
+        return;
+      }
+      toast(confirm ? `${c.name} posts to ${c.move_to} now.` : `${c.name} keeps posting to ${c.posts_to}.`);
+      load(true);
+    };
+    ok.addEventListener('click', () => act(true));
+    keep.addEventListener('click', () => act(false));
+    return el('div', { class: 'nt-move', role: 'status' }, icon('triangle-alert'),
+      el('div', { class: 'nt-move__text' },
+        el('b', {}, `Move to ${c.move_to}?`),
+        el('span', {}, `${c.move_by || 'An admin'} asked in Teams. Messages go to ${c.posts_to} until you choose.`),
+        manage() ? el('div', { class: 'nt-move__btns' }, ok, keep) : null));
+  }
+
+  // buttonsLine says which buttons a channel's messages carry.
+  function buttonsLine(c) {
+    if (!c.interactive) return null;
+    const what = c.approve_in_chat ? 'Approve, Reject and Acknowledge buttons' : 'Reject and Acknowledge buttons';
+    return el('div', { class: 'nt-ch__buttons', title: c.chat_url || '' }, icon('zap'), el('span', {}, what));
   }
 
   function channelState(c) {
@@ -163,6 +203,8 @@
     const items = [];
     if (manage()) {
       items.push({ icon: 'pencil', label: 'Edit', run: () => openChannel(c) });
+      if (c.chat_url) items.push({ icon: 'copy', label: c.type === 'teams_app' ? 'Copy messaging endpoint' : 'Copy Request URL', run: () => copyChatURL(c) });
+      if (c.type === 'teams_app') items.push({ icon: 'download', label: 'Download Teams app', run: () => downloadTeamsApp(c) });
       items.push('sep', { icon: 'trash-2', label: 'Delete', danger: true, run: () => deleteChannel(c) });
     }
     const menu = items.length ? dxMenu('Actions for ' + c.name, items) : null;
@@ -189,11 +231,82 @@
           el('div', { class: 'nt-ch__name', title: c.name }, c.name),
           el('div', { class: 'nt-ch__dest', title: destination(c) }, t.label, ' · ', destination(c))),
         menu),
+      buttonsLine(c),
+      moveBox(c),
       el('div', { class: 'nt-ch__state' }, el('span', { class: 'nt-dot', 'data-state': state, 'aria-hidden': 'true' }),
         el('span', { title: c.last ? fmtTime(c.last.time) : '' }, text)),
       detail ? el('p', { class: 'nt-ch__err', title: detail }, detail) : null,
       el('div', { class: 'nt-ch__foot' }, el('span', { class: 'nt-ch__used' }, used), testBtn),
       el('div', { 'aria-live': 'polite' }, result));
+  }
+
+  // copyChatURL copies where Slack or Teams sends a channel's clicks.
+  async function copyChatURL(c) {
+    let ok = false;
+    try { await navigator.clipboard.writeText(c.chat_url); ok = true; } catch (_) { ok = false; }
+    if (ok) toast(c.type === 'teams_app' ? 'Copied. Paste it as the Azure bot’s messaging endpoint.' : 'Copied. Paste it as the Slack app’s Interactivity Request URL.');
+    else toast(c.chat_url, null, { title: 'Copy this address' });
+  }
+
+  // downloadTeamsApp saves the app package to upload to Teams.
+  function downloadTeamsApp(c) {
+    const a = el('a', { href: `api/notify/channels/${encodeURIComponent(c.id)}/teams-app`, download: '' });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+
+  // ---------- linked chat accounts ----------
+  async function loadLinks(seq) {
+    try {
+      const r = await api('api/chat/links');
+      if (seq !== NT.seq) return;
+      NT.links = r.links || [];
+      NT.linksErr = '';
+    } catch (e) {
+      if (seq !== NT.seq) return;
+      NT.linksErr = e.message;
+    }
+    render();
+  }
+
+  function linksCard() {
+    const list = NT.links || [];
+    const head = el('div', { class: 'card__head' }, el('div', {},
+      el('h3', { class: 'card__title', id: 'nt-links-title' }, 'Linked chat accounts'),
+      el('p', { class: 'card__sub' }, 'A button click counts only for a chat account linked to a Signalith user, and only with that user’s role')));
+    let bodyEl;
+    if (NT.linksErr) {
+      bodyEl = dxEmpty({ compact: true, tone: 'danger', icon: 'circle-alert', title: 'Couldn’t load linked accounts', text: NT.linksErr, action: dxRetry(() => loadLinks(NT.seq)) });
+    } else if (NT.links === null) {
+      bodyEl = el('div', { class: 'nt-skel' }, dxSkel('70%'));
+    } else if (!list.length) {
+      bodyEl = el('div', { class: 'empty empty--compact' },
+        el('div', { class: 'empty__title' }, 'No linked accounts yet'),
+        el('p', { class: 'empty__text' }, 'The first time someone clicks a button, Signalith asks them to link their chat account. Teams users can also link from Chat accounts in their account menu.'));
+    } else {
+      bodyEl = el('ul', { class: 'nt-links' }, ...list.map((l) => {
+        const rm = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', 'data-key': 'lk:' + l.id }, icon('unlink'), 'Unlink');
+        rm.addEventListener('click', async () => {
+          if (!await confirmBox({ title: `Unlink ${l.account}?`, text: `Clicks from this account stop counting as ${l.username}. They can link it again from the chat.`, confirm: 'Unlink' })) return;
+          try {
+            await api('api/chat/links/' + encodeURIComponent(l.id), undefined, 'DELETE');
+          } catch (e) {
+            toastError('Couldn’t unlink', e);
+            return;
+          }
+          toast(`Unlinked ${l.account}.`);
+          loadLinks(NT.seq);
+        });
+        return el('li', { class: 'nt-link' },
+          el('span', { class: 'nt-type nt-type--sm', 'data-type': l.system === 'slack' ? 'slack' : 'teams_app' }, icon(l.system === 'slack' ? 'hash' : 'message-square-text')),
+          el('div', { class: 'nt-link__text' },
+            el('div', { class: 'nt-link__name' }, l.account),
+            el('div', { class: 'nt-link__sub' }, `Signalith user ${l.username} · linked `, el('span', { title: fmtTime(l.created) }, ago(l.created)))),
+          rm);
+      }));
+    }
+    return el('section', { class: 'card nt-card', 'aria-labelledby': 'nt-links-title' }, head, bodyEl);
   }
 
   async function sendTest(c) {
@@ -327,6 +440,7 @@
       id: c.id, name: c.name, type: c.type, host: c.host || '', port: c.port || 0, security: c.security || '', username: c.username || '',
       from: c.from || '', to: c.to || [], allow_loopback: !!c.allow_loopback, ca_pem: c.ca_pem || '',
       headers: (c.headers || []).map((h) => ({ name: h.name })),
+      app_id: c.app_id || '', tenant_id: c.tenant_id || '', approve_in_chat: !!c.approve_in_chat,
     };
   }
   const ruleInput = (r) => ({
@@ -464,12 +578,20 @@
     // webhook
     let clearSig = false;
     const sig = secretInput('signing_secret', edit && c.signing_secret_set, 'Optional', { 'data-field': 'signing_secret' });
+    // buttons in Slack and Teams
+    const approve = el('input', { type: 'checkbox', id: fid('approve') });
+    approve.checked = edit && !!c.approve_in_chat;
+    const appID = input('app_id', { class: 'input mono', placeholder: '1b2c3d4e-…', 'data-field': 'app_id' });
+    const tenantID = input('tenant_id', { class: 'input mono', placeholder: '5f6a7b8c-…', 'data-field': 'tenant_id' });
+    const appPW = secretInput('app_password', edit && c.app_password_set, 'From the app registration', { 'data-field': 'app_password' });
     const headerRows = el('div', { class: 'nt-headers' });
     const headers = []; // { name, value, saved }
     // advanced
     const loop = el('input', { type: 'checkbox', id: fid('loop') });
     const ca = el('textarea', { class: 'textarea mono', id: fid('ca'), rows: '3', placeholder: '-----BEGIN CERTIFICATE-----', 'data-field': 'ca_pem', spellcheck: 'false' });
     if (edit) {
+      appID.value = c.app_id || '';
+      tenantID.value = c.tenant_id || '';
       host.value = c.host || '';
       port.value = c.port ? String(c.port) : '';
       security.value = c.security || 'starttls';
@@ -518,6 +640,28 @@
       return wrap;
     };
 
+    // chatBox shows where Slack or Teams sends button clicks, and whether
+    // Approve is offered.
+    const chatBox = (k) => {
+      const pub = (NT.data.public_url || '').replace(/\/+$/, '');
+      const where = pub ? `${pub}/api/chat/${k === 'slack' ? 'slack' : 'teams'}/${encodeURIComponent(id)}` : '';
+      const urlEl = where ? el('div', { class: 'nt-chat-url' }, el('code', {}, where),
+        el('button', { class: 'btn btn--ghost btn--icon btn--sm', type: 'button', title: 'Copy', 'aria-label': 'Copy the address', onclick: async (ev) => {
+          const b = ev.currentTarget;
+          let ok = false;
+          try { await navigator.clipboard.writeText(where); ok = true; } catch (_) { ok = false; }
+          b.querySelector('use').setAttribute('href', ok ? '#i-check' : '#i-circle-alert');
+        } }, icon('copy')))
+        : dxAlert('warning', 'Set this server’s public address first.', 'Slack and Teams send button clicks to it: set server.public_url on the Settings page.');
+      const what = k === 'slack' ? 'Interactivity Request URL' : 'Messaging endpoint';
+      const how = k === 'slack' ? 'In the Slack app’s settings, turn on Interactivity & Shortcuts and paste this as its Request URL.'
+        : 'Paste this as the Azure bot’s messaging endpoint. After saving, download the Teams app from the channel’s menu and add it to a team.';
+      return el('div', { class: 'nt-chat' },
+        el('div', { class: 'field' }, el('span', { class: 'label' }, what), urlEl, el('p', { class: 'hint' }, how)),
+        el('div', { class: 'field', 'data-field': 'approve_in_chat' }, el('label', { class: 'check' }, approve, el('span', {}, 'Allow approving playbook steps from chat')),
+          el('p', { class: 'hint' }, 'Off, chat offers only Reject and Acknowledge; approving needs Signalith. Either way, only linked analysts and admins can click.')));
+    };
+
     const typeSeg = el('div', { class: 'seg nt-type-seg', role: 'group', 'aria-label': 'Kind of channel' });
     const panel = el('div', { class: 'nt-form__panel' });
     const draw = () => {
@@ -537,6 +681,10 @@
         parts.push(el('div', { class: 'nt-row' }, field('User name', user, null), field('Password', pw, null, clearable(pw, edit && c.password_set && c.type === 'email', () => { clearPW = true; }, 'password'))));
         parts.push(field('From', from, 'The address messages come from; your mail server must allow it.'));
         parts.push(field('To', to, 'One or more addresses, separated by commas.'));
+      } else if (kind === 'teams_app') {
+        parts.push(el('div', { class: 'nt-row' }, field('Microsoft App ID', appID, 'On the Azure bot’s Configuration page.'), field('Tenant ID', tenantID, 'The Microsoft Entra tenant the bot is in.')));
+        parts.push(field('Client secret', appPW, 'A secret of the bot’s app registration (Certificates & secrets). Kept encrypted.'));
+        parts.push(chatBox('teams_app'));
       } else {
         const savedURL = edit && c.type === kind && c.url_set;
         url.placeholder = savedURL ? `Saved (${(c.url_server || '').replace(/^https?:\/\//, '')}) · paste a new URL to replace it`
@@ -547,6 +695,11 @@
           webhook: 'Signalith POSTs a JSON body to it. docs/notifications.md describes the body and how to check its signature.',
         }[kind];
         parts.push(field(kind === 'webhook' ? 'URL' : 'Webhook URL', url, how));
+        if (kind === 'slack') {
+          parts.push(field('Signing secret', sig, 'Optional. To get Approve and Acknowledge buttons, paste the Slack app’s Signing Secret (Basic Information › App Credentials).',
+            clearable(sig, edit && c.signing_secret_set && c.type === 'slack', () => { clearSig = true; }, 'secret')));
+          parts.push(chatBox('slack'));
+        }
         if (kind === 'webhook') {
           parts.push(field('Signing secret', sig, 'Signs each body: the X-Signalith-Signature header is sha256= and its HMAC. Optional.',
             clearable(sig, edit && c.signing_secret_set, () => { clearSig = true; }, 'secret')));
@@ -575,8 +728,15 @@
           host: host.value.trim(), port: parseInt(port.value, 10) || 0, security: security.value, username: user.value.trim(),
           password: pw.value, clear_password: clearPW || (!user.value.trim()), from: from.value.trim(), to: to.value.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean),
         });
+      } else if (kind === 'teams_app') {
+        Object.assign(out, { app_id: appID.value.trim(), tenant_id: tenantID.value.trim(), app_password: appPW.value, approve_in_chat: approve.checked });
       } else {
         out.url = url.value.trim();
+        if (kind === 'slack') {
+          out.signing_secret = sig.value;
+          out.clear_signing_secret = clearSig;
+          out.approve_in_chat = approve.checked;
+        }
         if (kind === 'webhook') {
           out.signing_secret = sig.value;
           out.clear_signing_secret = clearSig;
@@ -635,7 +795,7 @@
       form);
     draw();
     dlg.showModal();
-    (edit ? name : (kind === 'email' ? host : url)).focus();
+    (edit ? name : ({ email: host, teams_app: appID }[kind] || url)).focus();
   }
 
   // ---------- rule dialog ----------

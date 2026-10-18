@@ -10,7 +10,7 @@ site_url: https://signalith.io/docs/
 repo_url: https://github.com/jrsamsanchez/Signalith
 repo_name: jrsamsanchez/Signalith
 edit_uri: edit/main/docs/
-copyright: Signalith is open source under the Apache License 2.0.
+copyright: 'Signalith is open source under the Apache License 2.0. Not affiliated with or endorsed by Splunk; see <a href="/docs/#trademarks">Trademarks</a>.'
 
 docs_dir: docs
 exclude_docs: |
@@ -117,24 +117,33 @@ nav:
   - Getting started:
       - Overview: getting-started.md
       - Install from packages: install-packages.md
+      - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
   - Data intake:
+      - Signalith Agent: signalith-agent.md
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
+      - Splunk HEC senders: hec.md
       - Endpoints (osquery): endpoints.md
       - Wazuh alerts: wazuh.md
       - Network sensor (Zeek, Suricata): network-sensor.md
       - AWS CloudTrail: aws-cloudtrail.md
       - Entra ID and Azure: azure.md
       - Microsoft 365: microsoft-365.md
+      - Okta: okta.md
+      - Kubernetes audit logs: kubernetes-audit.md
+      - GitHub audit log: github-audit-log.md
       - Google Cloud: google-cloud.md
       - Antivirus: antivirus.md
       - Vulnerability scanning: vulnerabilities.md
+      - Any other log: custom-logs.md
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md
       - Lookup tables: lookups.md
       - Detections: detections.md
+      - Behavior baselines: baselines.md
+      - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
       - Attack storyline: storyline.md
       - AI tools (MCP): ai-tools.md
@@ -142,12 +151,14 @@ nav:
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
       - Notifications: notifications.md
+      - Ticketing (Jira, ServiceNow): ticketing.md
       - Playbooks: playbooks.md
       - Compliance: compliance.md
   - Administration:
       - Server settings: settings.md
       - Users and sign-in: users.md
       - Single sign-on: sso.md
+      - Multi-tenant mode: multi-tenant.md
       - Agent tokens: agent-tokens.md
       - Servers: servers.md
       - Adding servers: multi-server.md
@@ -156,7 +167,9 @@ nav:
       - OpenSearch with several nodes: opensearch-failover.md
       - Cloud test lab: cloud-lab.md
       - Performance and sizing: performance.md
+      - Summary indexes: summaries.md
       - Data retention: retention.md
+      - Cold storage: cold-storage.md
       - Audit: audit.md
   - Security:
       - Security checks: security.md

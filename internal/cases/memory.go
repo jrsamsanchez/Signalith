@@ -124,6 +124,12 @@ func matches(c *Case, flt Filter) bool {
 	if flt.Sample != nil && (*flt.Sample == "" || c.Sample != *flt.Sample) {
 		return false
 	}
+	if !flt.UpdatedSince.IsZero() && c.Updated.Before(flt.UpdatedSince) {
+		return false
+	}
+	if flt.Ticketed && len(c.Tickets) == 0 {
+		return false
+	}
 	if t := strings.ToLower(strings.TrimSpace(flt.Text)); t != "" {
 		hay := strings.ToLower(c.ID + "\n" + c.Title + "\n" + c.Description)
 		if !strings.Contains(hay, t) && !slices.ContainsFunc(c.EntityValues(), func(v string) bool { return strings.EqualFold(v, t) }) {

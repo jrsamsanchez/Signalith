@@ -73,8 +73,29 @@ type Config struct {
 	MaxResponseBytes int64
 }
 
-// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes.
+// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes,
+// or than the limit WithMaxResponse put on a request.
 var ErrResponseTooLarge = errors.New("the answer is larger than OpenSearch sends here")
+
+type maxResponseKey struct{}
+
+// WithMaxResponse returns ctx with a cap on the size of each answer read
+// for requests made with it, below Config.MaxResponseBytes if that is
+// set: a request whose answer a sender's data can make huge (an
+// aggregation over their values) fails instead of filling memory.
+func WithMaxResponse(ctx context.Context, n int64) context.Context {
+	return context.WithValue(ctx, maxResponseKey{}, n)
+}
+
+// maxResponse is the cap on one answer to a request made with ctx; 0 for
+// none.
+func (c *Client) maxResponse(ctx context.Context) int64 {
+	limit := c.cfg.MaxResponseBytes
+	if n, ok := ctx.Value(maxResponseKey{}).(int64); ok && n > 0 && (limit <= 0 || n < limit) {
+		limit = n
+	}
+	return limit
+}
 
 // Client is an OpenSearch REST client.
 type Client struct {
@@ -136,6 +157,11 @@ func (c *Client) CloseIdleConnections() {
 func Transport(cfg Config) (*http.Transport, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = nil
+	// Ingest runs many bulk writes at once (ingest.DefaultMaxConcurrent);
+	// the default of 2 idle connections per host would make most of them
+	// open a new TLS connection each time.
+	tr.MaxIdleConns = 128
+	tr.MaxIdleConnsPerHost = 64
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	tr.TLSClientConfig = tlsCfg
 	var errs []error
@@ -457,14 +483,15 @@ func (c *Client) doOne(ctx context.Context, e *endpoint, method, path string, ra
 	}
 	defer resp.Body.Close()
 	var rd2 io.Reader = resp.Body
-	if limit := c.cfg.MaxResponseBytes; limit > 0 {
+	limit := c.maxResponse(ctx)
+	if limit > 0 {
 		rd2 = io.LimitReader(resp.Body, limit+1)
 	}
 	data, err := io.ReadAll(rd2)
 	if err != nil {
 		return err, failAfterSend
 	}
-	if limit := c.cfg.MaxResponseBytes; limit > 0 && int64(len(data)) > limit {
+	if limit > 0 && int64(len(data)) > limit {
 		return fmt.Errorf("%s at %s: %w", path, e.shown, ErrResponseTooLarge), failNone
 	}
 	if resp.StatusCode/100 == 3 {
@@ -535,6 +562,41 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	return out.Status, err
 }
 
+// AutoShards is number_of_shards in the event index settings when
+// opensearch.shards is automatic: ingest.PutIndexTemplate replaces it
+// with a number sized from the data nodes before the template is written.
+const AutoShards = "auto"
+
+// ShardRoom returns how many shard copies the cluster holds and how many
+// it allows: cluster.max_shards_per_node (1,000 unless set) times the
+// data nodes. OpenSearch refuses to create an index past that limit.
+func (c *Client) ShardRoom(ctx context.Context) (used, limit int, err error) {
+	var health struct {
+		Nodes      int `json:"number_of_data_nodes"`
+		Active     int `json:"active_shards"`
+		Unassigned int `json:"unassigned_shards"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &health); err != nil {
+		return 0, 0, err
+	}
+	var set map[string]map[string]any
+	err = c.Do(ctx, http.MethodGet, "/_cluster/settings?include_defaults=true&flat_settings=true&filter_path=*.cluster.max_shards_per_node", nil, &set)
+	if err != nil {
+		return 0, 0, err
+	}
+	per := 1000
+	for _, scope := range []string{"transient", "persistent", "defaults"} {
+		if v, ok := set[scope]["cluster.max_shards_per_node"]; ok {
+			var n int
+			if _, err := fmt.Sscan(fmt.Sprint(v), &n); err == nil && n > 0 {
+				per = n
+				break
+			}
+		}
+	}
+	return health.Active + health.Unassigned, per * max(health.Nodes, 1), nil
+}
+
 // DataNodes returns how many data nodes the cluster has.
 func (c *Client) DataNodes(ctx context.Context) (int, error) {
 	var out struct {
@@ -542,6 +604,26 @@ func (c *Client) DataNodes(ctx context.Context) (int, error) {
 	}
 	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
 	return out.N, err
+}
+
+// SearchThreads returns the size of the search thread pool summed over
+// the data nodes: how many searches OpenSearch runs at once.
+func (c *Client) SearchThreads(ctx context.Context) (int, error) {
+	var out struct {
+		Nodes map[string]struct {
+			ThreadPool struct {
+				Search struct {
+					Size int `json:"size"`
+				} `json:"search"`
+			} `json:"thread_pool"`
+		} `json:"nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_nodes/data:true/thread_pool?filter_path=nodes.*.thread_pool.search.size", nil, &out)
+	n := 0
+	for _, nd := range out.Nodes {
+		n += nd.ThreadPool.Search.Size
+	}
+	return n, err
 }
 
 // BulkItemError describes one rejected document in a bulk request.
@@ -593,7 +675,11 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 		if d.ID != "" {
 			meta["_id"] = d.ID
 		}
-		if err := enc.Encode(map[string]any{"create": meta}); err != nil {
+		action := "create"
+		if d.Replace {
+			action = "index"
+		}
+		if err := enc.Encode(map[string]any{action: meta}); err != nil {
 			return nil, err
 		}
 		if err := enc.Encode(d.Doc); err != nil {
@@ -634,6 +720,9 @@ type IndexedDoc struct {
 	// refused as a conflict (409) instead of storing it twice.
 	ID  string
 	Doc map[string]any
+	// Replace writes the document over one stored with the same ID
+	// instead of refusing it.
+	Replace bool
 }
 
 // PutIndexTemplate creates or replaces a composable index template.

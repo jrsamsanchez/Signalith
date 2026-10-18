@@ -347,7 +347,10 @@ const azureMaxListValues = 64
 // names it by: each changed property's new value in a record's
 // targetResources is one of properties.targetResources{}.modifiedProperties{}.newValue.
 // A search for one value then matches the record, as in Splunk. Every
-// value is kept as text, so each list field has one type.
+// value is kept as text, so each list field has one type. An empty text
+// is kept too, so each entry's values keep their places in their list
+// fields (mvindex('ModifiedProperties{}.NewValue', 4) is the fifth
+// entry's, as in Splunk, when the fourth's is ""); null is left out.
 func azureListValue(name string, v any, out map[string]any) {
 	if strings.Count(name, ".") >= maxFieldDepth {
 		return
@@ -379,7 +382,7 @@ func azureListValue(name string, v any, out map[string]any) {
 	case int:
 		s = strconv.Itoa(x)
 	}
-	if s == "" {
+	if _, text := v.(string); s == "" && !text {
 		return
 	}
 	if l, _ := out[name].([]any); len(l) < azureMaxListValues {

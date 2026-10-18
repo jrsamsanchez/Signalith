@@ -172,7 +172,8 @@ func ParseO365(r map[string]any) Event {
 			leaves++
 		}
 	}
-	if raw, err := json.Marshal(r); err == nil {
+	raw, rawErr := json.Marshal(r)
+	if rawErr == nil {
 		f["message"] = truncateUTF8(string(raw), MaxRecordBytes)
 	}
 	set := func(k, v string) {
@@ -198,6 +199,9 @@ func ParseO365(r map[string]any) Event {
 	set("src", o365Address(cmp.Or(str(r, "ClientIP"), str(r, "ActorIpAddress"), str(r, "ClientIPAddress"), str(r, "SenderIp"))))
 	set("object", str(r, "ObjectId"))
 	set("user_agent", cmp.Or(o365Property(r, "ExtendedProperties", "UserAgent"), str(r, "UserAgent"), str(r, "ClientInfoString")))
+	// A sign-in's operating system is one of its device properties,
+	// which Splunk's add-on reads as OS.
+	set("os", o365DeviceOS(r))
 	// The record's result: success unless it failed. A record that has
 	// none (many reads do not) has no status.
 	status := ""
@@ -217,9 +221,11 @@ func ParseO365(r map[string]any) Event {
 	if t, ok := o365Time(str(r, "CreationTime")); ok {
 		ev.Time = t
 	}
-	// The same record, read twice from the API, is stored once.
-	if id := str(r, "Id"); id != "" {
-		ev.ID = sensorDocID("o365", id)
+	// The same record, read twice from the API, is stored once. The ID
+	// covers the whole record, not just its Id, so a record sent with a
+	// real record's Id before the poller reads it cannot take its place.
+	if id := str(r, "Id"); id != "" && rawErr == nil {
+		ev.ID = sensorDocID("o365", id+"\n"+string(raw))
 	}
 	switch {
 	case op == "UserLoggedIn" || op == "UserLoginFailed":
@@ -271,6 +277,18 @@ func o365Property(r map[string]any, list, name string) string {
 	l, _ := r[list].([]any)
 	for _, e := range l {
 		if m, ok := e.(map[string]any); ok && strings.EqualFold(str(m, "Name"), name) {
+			return o365Text(m["Value"])
+		}
+	}
+	return ""
+}
+
+// o365DeviceOS is the Value of the item of a record's DeviceProperties
+// whose Name is OS, as Microsoft writes it, or "".
+func o365DeviceOS(r map[string]any) string {
+	l, _ := r["DeviceProperties"].([]any)
+	for _, e := range l {
+		if m, ok := e.(map[string]any); ok && str(m, "Name") == "OS" {
 			return o365Text(m["Value"])
 		}
 	}
@@ -403,9 +421,39 @@ func O365Record(t time.Time, workload string, data map[string]string) map[string
 			r[k] = json.Number(data[k])
 			continue
 		}
+		if k == "OS" {
+			// A sign-in's operating system, one of its device properties.
+			r["DeviceProperties"] = []any{map[string]any{"Name": "OS", "Value": data[k]}}
+			continue
+		}
+		if l, ok := testList(data[k]); ok && !strings.ContainsAny(k, ".{}") {
+			// A whole list (ModifiedProperties), written as JSON.
+			r[k] = l
+			continue
+		}
 		put(k, data[k])
 	}
 	return r
+}
+
+// testList reads a test event's value that is a whole list of objects,
+// written as JSON ([{"Name": "x", "NewValue": "y"}]).
+func testList(v string) ([]any, bool) {
+	if !strings.HasPrefix(v, "[{") {
+		return nil, false
+	}
+	d := json.NewDecoder(strings.NewReader(v))
+	d.UseNumber()
+	var l []any
+	if d.Decode(&l) != nil || d.More() {
+		return nil, false
+	}
+	for _, e := range l {
+		if _, ok := e.(map[string]any); !ok {
+			return nil, false
+		}
+	}
+	return l, true
 }
 
 // O365SigmaRecord is the Microsoft 365 audit record a Sigma rule's

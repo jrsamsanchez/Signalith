@@ -44,7 +44,7 @@ func TestGlob(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	src := rule("| tstats `security_content_summariesonly` count from datamodel=Endpoint.Processes where\n" +
-		"`process_reg` AND Processes.process IN (\"*add*\", \"*HKCR\\\\*\",)\n" +
+		"`process_reg` AND Processes.process IN (,\"*add*\", \"*HKCR\\\\*\",)\n" +
 		"```a comment with a ` in it```\n" +
 		"NOT Processes.user=\"SYSTEM\" Processes.parent_process_name!=explorer.exe\n" +
 		"by Processes.dest Processes.user\n| `drop_dm_object_name(Processes)`\n| `security_content_ctime(firstTime)`\n| `test_rule_filter`")
@@ -79,11 +79,11 @@ func TestParse(t *testing.T) {
 func TestParseRefuses(t *testing.T) {
 	for search, want := range map[string]string{
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process=* by Processes.dest | sendemail to=x": "later stage",
-		"`sysmon` EventCode=10 | stats count":                                                                              "besides its event code",
+		"`sysmon` EventCode=10 | stats count":                                                                              "must count by fields",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.dest=x by Processes.dest":                        "no Signalith mapping",
 		"| tstats count from datamodel=Endpoint.Processes where Filesystem.file_name=x by Processes.dest":                  "not a field of",
 		"| tstats count from datamodel=Endpoint.Processes where `nope` by Processes.dest":                                  "not defined",
-		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name IN (\"a\" \"b\") by Processes.dest": "missing )",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name IN (\"a\" \"b\") by Processes.dest": "no comma between two values",
 		"| tstats count from datamodel=Network_Traffic.DNS where DNS.query=x by DNS.dest":                                  "not supported",
 		"| tstats count from datamodel=Endpoint.All_Traffic where All_Traffic.dest_port=1 by All_Traffic.dest":             "not supported",
 		"| tstats count from datamodel=Network_Traffic.All_Traffic where All_Traffic.dest=x by All_Traffic.dest":           "no Signalith mapping",
@@ -165,12 +165,23 @@ func TestParsePowerShell(t *testing.T) {
 	if !found {
 		t.Error("no test event matches")
 	}
+	// Only a script block (4104) has ScriptBlockText, so a search that
+	// needs it may leave its code out.
+	r, err = Parse(rule("`powershell` (ScriptBlockText = \"*ShadowCopy*\" AND ScriptBlockText = \"*Delete*\")\n| fillnull | stats count BY dest"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Node != "PowerShell" || !Eval(r.Where, map[string]string{"signature_id": "4104", "script_block_text": "ShadowCopy Delete"}) ||
+		Eval(r.Where, map[string]string{"signature_id": "4103", "script_block_text": "ShadowCopy Delete"}) {
+		t.Errorf("a search without its code: node %s, where %#v", r.Node, r.Where)
+	}
 	for search, want := range map[string]string{
-		"`powershell` ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                               "must name its event code",
-		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                "event 4103 is not supported",
-		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | sendemail to=x | stats count by dest":          "later stage",
-		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                           "no Signalith mapping",
-		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest": "once, at the top",
+		"`powershell` NOT ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                              "must name its event code",
+		"`powershell` (ScriptBlockText=\"*x*\" OR NOT ScriptBlockText=\"*y*\") | fillnull | stats count by dest": "must name its event code",
+		"`powershell` EventCode=4103 ScriptBlockText=\"*x*\" | fillnull | stats count by dest":                   "event 4103 is not supported",
+		"`powershell` EventCode=4104 ScriptBlockText=\"*x*\" | sendemail to=x | stats count by dest":             "later stage",
+		"`powershell` EventCode=4104 Path=\"*x*\" | fillnull | stats count by dest":                              "no Signalith mapping",
+		"`powershell` EventCode=4104 (ScriptBlockText=\"*x*\" OR EventID=1) | fillnull | stats count by dest":    "once, at the top",
 	} {
 		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", search, err, want)
@@ -190,6 +201,69 @@ func TestOrBeforeAnd(t *testing.T) {
 	}
 	if !Eval(e, map[string]string{"process_name": "x.exe", "process": "x.exe temp.dat"}) {
 		t.Error("does not match the second OR side")
+	}
+}
+
+// A macro in an IN list stands for its values, as Splunk expands it as
+// text; one that is not a list of values is refused.
+func TestMacroInList(t *testing.T) {
+	macros := map[string]*Macro{
+		"names": {Name: "names", Definition: `cmd.exe,"power*"`},
+		"terms": {Name: "terms", Definition: `a.exe) OR (Processes.process_name=b.exe`},
+	}
+	e, err := ParseWhere(`Processes.process_name IN (x.exe, `+"`names`"+`)`, "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v, want := range map[string]bool{"x.exe": true, "CMD.EXE": true, "powershell.exe": true, "names": false, "y.exe": false} {
+		if got := Eval(e, map[string]string{"process_name": v}); got != want {
+			t.Errorf("%s: %v, want %v", v, got, want)
+		}
+	}
+	if _, err := ParseWhere(`Processes.process_name IN (`+"`terms`"+`)`, "Processes", macros); err == nil {
+		t.Error("a macro that is not a list of values is read")
+	}
+	// A macro after the list is a term of its own.
+	macros["reg"] = &Macro{Name: "reg", Definition: `(Processes.process_name=reg.exe OR Processes.original_file_name=reg.exe)`}
+	e, err = ParseWhere(`Processes.parent_process_name IN (a.exe, b.exe) `+"`reg`", "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "reg.exe"}) || Eval(e, map[string]string{"parent_process_name": "b.exe", "process_name": "x.exe"}) {
+		t.Error("the macro after the list is not read as a term")
+	}
+	// A comma right after "(" adds no value, as one before ")" does.
+	e, err = ParseWhere(`Processes.process_name IN (,a.exe,)`, "Processes", macros)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Eval(e, map[string]string{"process_name": "a.exe"}) || Eval(e, map[string]string{"process_name": ""}) {
+		t.Error("a list starting with a comma is not the list of its values")
+	}
+	if _, err := ParseWhere(`Processes.process_name IN (,,a.exe)`, "Processes", macros); err == nil {
+		t.Error("a list starting with two commas is read")
+	}
+}
+
+// A later search of several terms ANDs them, with OR before AND, as
+// Splunk's search does; a bare term in it is refused.
+func TestLaterSearchTerms(t *testing.T) {
+	r, err := Parse(rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=net.exe by Processes.dest Processes.user Processes.process\n"+
+		"| `drop_dm_object_name(Processes)`\n| search user=admin* process=\"*share*\" OR process=\"*use*\""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for doc, want := range map[[2]string]bool{
+		{"admin1", "net share x"}: true, {"ADMIN2", "net use x"}: true, {"admin1", "net view"}: false, {"bob", "net share x"}: false,
+	} {
+		if got := r.Keeps(map[string]any{"dest": "pc", "user": doc[0], "process": doc[1]}); got != want {
+			t.Errorf("%v: keeps %v, want %v\npost:\n%s", doc, got, want, r.Post)
+		}
+	}
+	_, err = Parse(rule("| tstats count from datamodel=Endpoint.Processes where Processes.process_name=net.exe by Processes.dest\n"+
+		"| `drop_dm_object_name(Processes)`\n| search dest=x \"share\""), nil)
+	if err == nil || !strings.Contains(err.Error(), "bare term") {
+		t.Errorf("err = %v, want a bare term refused", err)
 	}
 }
 
@@ -333,6 +407,49 @@ func TestParseDirectoryShareAndKerberos(t *testing.T) {
 		if pos == 0 {
 			t.Errorf("%s: no test event matches", node)
 		}
+	}
+}
+
+// A search may name only its event code, and its codes may be of nodes
+// that one node reads together (UnionNodes).
+func TestParseEventCodeOnlyAndUnions(t *testing.T) {
+	for src, want := range map[string]struct {
+		node string
+		ids  []string
+	}{
+		"`wineventlog_security` EventCode=4887\n| stats count by dest, Requester":                                                 {"CertRequest", []string{"4887"}},
+		"`sysmon` (EventID=15 OR EventID=11) Image=\"*\\\\MsMpEng.exe\"\n| stats count by Computer TargetFilename":                {"FileOrStream", []string{"15", "11"}},
+		"`wineventlog_security` EventCode IN (4742, 4738) NOT SidHistory IN (\"%%1793\", -)\n| stats count by TargetUserName":     {"UserOrComputerChanged", []string{"4742", "4738"}},
+		"`wineventlog_security` EventCode IN (4731, 4756) TargetUserName=\"Domain Admins\"\n| stats count by dest TargetUserName": {"GroupChangedOrMemberAdded", []string{"4731", "4756"}},
+		"`wineventlog_security` EventCode=5140 OR EventCode=5145 ShareName=\"\\\\\\\\*\\\\C$\"\n| stats count by dest IpAddress":  {"ShareAccess", []string{"5140", "5145"}},
+	} {
+		r, err := Parse(rule(src), nil)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if r.Node != want.node {
+			t.Fatalf("%s: node %s, want %s", src, r.Node, want.node)
+		}
+		found := map[string]bool{}
+		for _, c := range Cases(r) {
+			if c.Expect {
+				found[c.EventID] = true
+			}
+			if c.Expect != Reads(r, c) {
+				t.Errorf("%s case %+v: Reads disagrees", want.node, c)
+			}
+		}
+		for _, id := range want.ids {
+			if !found[id] {
+				t.Errorf("%s: no test event %s matches", src, id)
+			}
+		}
+	}
+	// The fields a union node reads are stored the same in each of its
+	// nodes; a field of one alone is not one of the union's.
+	if _, err := Parse(rule("`sysmon` EventCode IN (11, 15) Contents=\"*x*\"\n| stats count by dest"), nil); err == nil ||
+		!strings.Contains(err.Error(), "not a field of") {
+		t.Errorf("a stream's contents on a file created: err = %v", err)
 	}
 }
 

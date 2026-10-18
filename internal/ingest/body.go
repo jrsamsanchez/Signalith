@@ -64,6 +64,13 @@ func badBody(format string, args ...any) *BodyError {
 // to), records already stored count as duplicates instead of being
 // stored twice.
 func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Result, error) {
+	if isKubernetesTag(tag) || bytes.Contains(body[:min(len(body), 256)], []byte(`"EventList"`)) {
+		// A Kubernetes API server's audit webhook posts its events as one
+		// EventList: they are its records.
+		if items, ok := kubeEventListItems(body); ok {
+			body = items
+		}
+	}
 	n, err := checkBody(body)
 	if err != nil {
 		return nil, err
@@ -108,7 +115,11 @@ func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Re
 			p.stats.Failed.Add(int64(n - done))
 			return nil, err
 		}
-		batch = append(batch, Normalize(tag, rec, p.now()))
+		ev, drop := p.normalize(tag, rec, p.now())
+		if drop {
+			continue
+		}
+		batch = append(batch, ev)
 		total.noteHost(&batch[len(batch)-1])
 		size += len(raw)
 		if len(batch) >= batchEvents || size >= batchBytes {

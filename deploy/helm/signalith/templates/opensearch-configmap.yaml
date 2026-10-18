@@ -1,0 +1,69 @@
+{{- if .Values.opensearch.enabled }}
+{{- $os := include "signalith.opensearchName" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $os }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+data:
+  # The Docker quick start's settings (deploy/docker/opensearch), with
+  # discovery for Kubernetes.
+  opensearch.yml: |
+    cluster.name: {{ include "signalith.fullname" . }}
+    network.host: 0.0.0.0
+    {{- if eq (int .Values.opensearch.replicas) 1 }}
+    discovery.type: single-node
+    {{- else }}
+    discovery.seed_hosts: {{ $os }}-nodes
+    cluster.initial_cluster_manager_nodes:
+      {{- range $i := until (int .Values.opensearch.replicas) }}
+      - {{ $os }}-{{ $i }}
+      {{- end }}
+    {{- end }}
+    # Do not depend on the node's vm.max_map_count.
+    node.store.allow_mmap: false
+    # HTTPS on the REST API (9200) and TLS between nodes (9300), with
+    # certificates from Signalith's own OpenSearch CA, made by the setup Job.
+    plugins.security.ssl.transport.pemcert_filepath: certs/node.pem
+    plugins.security.ssl.transport.pemkey_filepath: certs/node-key.pem
+    plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
+    # Nodes are recognized by their certificate's name (nodes_dn below).
+    transport.ssl.enforce_hostname_verification: false
+    plugins.security.ssl.transport.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
+    plugins.security.ssl.http.enabled: true
+    plugins.security.ssl.http.pemcert_filepath: certs/node.pem
+    plugins.security.ssl.http.pemkey_filepath: certs/node-key.pem
+    plugins.security.ssl.http.pemtrustedcas_filepath: certs/root-ca.pem
+    # Clients sign in with a certificate from that CA: Signalith's
+    # (CN=signalith) or the admin's. Anything else gets 401.
+    plugins.security.ssl.http.clientauth_mode: OPTIONAL
+    plugins.security.ssl.http.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
+    plugins.security.authcz.admin_dn: ["CN=signalith-admin,O=Signalith"]
+    plugins.security.nodes_dn: ["CN=opensearch,O=Signalith"]
+    plugins.security.allow_default_init_securityindex: true
+    plugins.security.allow_unsafe_democertificates: false
+    # OpenSearch's own audit log, kept in its log, where Signalith's
+    # certificate cannot change it: failed sign-ins, refused requests, TLS
+    # errors and changes to its security settings. Successful requests, which
+    # are Signalith's own searches and writes, are left out.
+    plugins.security.audit.type: log4j
+    plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.log_request_body: false
+    plugins.security.audit.config.exclude_sensitive_headers: true
+  load-security.sh: |
+    {{- .Files.Get "files/load-security.sh" | nindent 4 }}
+  config.yml: |
+    {{- .Files.Get "files/config.yml" | nindent 4 }}
+  internal_users.yml: |
+    {{- .Files.Get "files/internal_users.yml" | nindent 4 }}
+  roles.yml: |
+    {{- .Files.Get "files/roles.yml" | nindent 4 }}
+  roles_mapping.yml: |
+    {{- .Files.Get "files/roles_mapping.yml" | nindent 4 }}
+  audit.yml: |
+    {{- .Files.Get "files/audit.yml" | nindent 4 }}
+{{- end }}

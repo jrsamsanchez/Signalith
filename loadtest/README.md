@@ -37,8 +37,11 @@ It runs on Linux and Windows. Faults that stop processes (`kill9`, `stop`) need 
 | `s9-small.yaml` | One of three OpenSearch nodes stopped for 90 s under light load | CI, laptop |
 | `s9-opensearch-node-loss.yaml` | One of three OpenSearch nodes stopped under load | Lab |
 | `sizing-small.yaml` | Agents from 1k to 32k events/s; rate stored, answer times, CPU, memory | CI, laptop |
+| `tb-day.yaml` | 25k events/s (about 1 TB a day) for 4 hours with analysts searching | Cloud lab's load test ([docs/cloud-lab.md](../docs/cloud-lab.md#load-test)) |
+| `spread-10k.yaml` | 10k events/s for 4 hours with analysts searching, while detections are spread over the servers | Cloud lab's spread test ([docs/cloud-lab.md](../docs/cloud-lab.md#detection-spread)) |
 
-A scenario file names the targets, the files with secrets, the phases of load, the
+A scenario file names the targets (and `agent_targets`, the servers' agent port, when
+they take agents on a port of their own), the files with secrets, the phases of load, the
 faults and the pass criteria. `${NAME}` in it is replaced by that environment variable.
 `signalith-loadgen check loadtest/*.yaml` checks the files without running anything.
 
@@ -142,8 +145,21 @@ mkdir -p $O/secrets
 for s in siem-a siem-b siem-c; do $C cp $s:/var/lib/signalith/tls/ca.pem $O/$s-ca.pem; done
 $C cp siem-a:/run/signalith-secrets/. $O/secrets/
 cp $O/secrets/opensearch-ca.pem $O/secrets/opensearch-client.pem $O/secrets/opensearch-client-key.pem $O/
-echo "admin:$(cat $O/secrets/initial-admin-password)" > $O/admin.txt
 cp $O/secrets/ingest-token $O/token.txt
+```
+
+The first admin password Signalith made allows only choosing a new one, so choose
+one, on every server that still has the first (until the servers share their users,
+each keeps its own), and give the scenarios that one:
+
+```
+FIRST=$(cat $O/secrets/initial-admin-password)
+PW=$(openssl rand -hex 16)
+for p in 8441 8442 8443; do
+  curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
+    -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$PW\"}" https://localhost:$p/api/me/password; echo
+done
+echo "signalithadmin:$PW" > $O/admin.txt
 ```
 
 The CI-size scenarios (`s1-small`, `s2-browsers-small`, `s3-idle`, `s4-small`,

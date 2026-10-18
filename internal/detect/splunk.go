@@ -3,6 +3,7 @@ package detect
 import (
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -48,6 +50,151 @@ func loadMacros(fsys fs.FS, dir string) (map[string]*splcheck.Macro, error) {
 	return out, nil
 }
 
+// UseLookups gives a splunk pack the tables its rules' lookup stages read
+// (the pack generator reads them from a security_content checkout).
+func (p *Pack) UseLookups(l map[string]*splcheck.Lookup) { p.lookups = l }
+
+// Lookups are a splunk pack's tables, by their names in security_content.
+func (p *Pack) Lookups() map[string]*splcheck.Lookup { return p.lookups }
+
+// loadLookups reads a splunk pack's lookups folder: each table's yml, as
+// security_content describes it, and its CSV beside it.
+func loadLookups(fsys fs.FS, dir string) (map[string]*splcheck.Lookup, error) {
+	files, err := fs.Glob(fsys, path.Join(dir, "lookups", "*.yml"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]*splcheck.Lookup{}
+	for _, f := range files {
+		meta, err := fs.ReadFile(fsys, f)
+		if err != nil {
+			return nil, err
+		}
+		data, err := fs.ReadFile(fsys, strings.TrimSuffix(f, ".yml")+".csv")
+		if err != nil {
+			return nil, err
+		}
+		l, err := splcheck.ParseLookup(meta, data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		if l.Name != strings.TrimSuffix(path.Base(f), ".yml") {
+			return nil, fmt.Errorf("%s: the table is named %s", f, l.Name)
+		}
+		out[l.Name] = l
+	}
+	return out, nil
+}
+
+// usePackTables makes the tables of packs the ones lookup searches read,
+// as the packs' rules do.
+func usePackTables(ps []*Pack) {
+	var ts []*lookuptables.Table
+	for _, p := range ps {
+		for _, name := range slices.Sorted(maps.Keys(p.lookups)) {
+			ts = append(ts, p.lookups[name].Table)
+		}
+	}
+	lookuptables.SetPackTables(ts)
+}
+
+// SplunkSearch is a Splunk rule's filter (SplunkFilter) and the regex
+// stages that run after it: a regular expression OpenSearch cannot search
+// exactly only because of its word boundaries (\b, \B), which Signalith's
+// regex command reads as Splunk does, is left out of the filter and runs
+// on the events it finds, before the rule's later stages. Only one every
+// event must match (an AND term of the where clause) can run later.
+func SplunkSearch(r *splcheck.Rule) (query.Expr, []*query.Regex, error) {
+	var later []*query.Regex
+	var keep []splcheck.Expr
+	others := 0
+	for _, k := range conjuncts(r.Where) {
+		if re := laterRegex(k); re != nil {
+			later = append(later, re)
+			// The pattern without its word boundaries matches every
+			// value the whole one does, so the filter keeps it: the
+			// search finds only the events the regex stage may keep.
+			if loose := looseRegex(k.(*splcheck.Cmp)); loose != nil {
+				keep = append(keep, loose)
+			}
+			continue
+		}
+		keep = append(keep, k)
+		others++
+	}
+	if len(later) == 0 {
+		f, err := SplunkFilter(r)
+		return f, nil, err
+	}
+	if others == 0 {
+		return nil, nil, fmt.Errorf("a search of only regular expressions with word boundaries is not supported")
+	}
+	rest := *r
+	rest.Where = &splcheck.And{Kids: keep}
+	f, err := SplunkFilter(&rest)
+	return f, later, err
+}
+
+// conjuncts are the terms of a where clause joined by AND.
+func conjuncts(e splcheck.Expr) []splcheck.Expr {
+	a, ok := e.(*splcheck.And)
+	if !ok {
+		return []splcheck.Expr{e}
+	}
+	var out []splcheck.Expr
+	for _, k := range a.Kids {
+		out = append(out, conjuncts(k)...)
+	}
+	return out
+}
+
+// laterRegex is a regular expression term as a regex stage when only its
+// word boundaries keep OpenSearch from searching it (splunkRegex), or nil.
+// Splunk's regular expressions are PCRE's, which read \b and \B as Go's
+// do: between an ASCII letter, digit or _ and anything else, or the
+// value's start or end. Signalith's regex stage, like Splunk's, drops an
+// event without the field, and matches a field of several values when one
+// of them does, as the search would.
+func laterRegex(e splcheck.Expr) *query.Regex {
+	x, ok := e.(*splcheck.Cmp)
+	if !ok || !x.Regex || x.Neg || len(x.Values) != 1 ||
+		x.Field == splcheck.RawUser || x.Field == "user" || x.Field == "registry_value_data" ||
+		x.Field == search.StoredRawField || !plainField.MatchString(x.Field) {
+		return nil
+	}
+	if _, err := splunkRegex(x); err == nil {
+		return nil
+	}
+	// Without its word boundaries, the rest is one OpenSearch could
+	// search: nothing else Signalith reads differently from Splunk.
+	loose, ok := splcheck.WithoutBoundaries(x.Values[0])
+	if !ok {
+		return nil
+	}
+	if _, err := search.ParseRegex(loose); err != nil {
+		return nil
+	}
+	return &query.Regex{Field: x.Field, Pattern: x.Values[0]}
+}
+
+// looseRegex is a regular expression term with its word boundaries left
+// out, when OpenSearch can search it (splunkRegex), or nil.
+func looseRegex(x *splcheck.Cmp) *splcheck.Cmp {
+	loose, ok := splcheck.WithoutBoundaries(x.Values[0])
+	if !ok {
+		return nil
+	}
+	c := *x
+	c.Values = []string{loose}
+	if _, err := splunkRegex(&c); err != nil {
+		return nil
+	}
+	return &c
+}
+
+// plainField is a stored field's name, not a raw or internal one.
+var plainField = regexp.MustCompile(`^[A-Za-z][\w.]*$`)
+
 // SplunkFilter is a Splunk rule's where clause as a Signalith filter,
 // limited to the Windows events of its data model node. Field names are
 // the CIM's, which Signalith uses too. A != comparison needs the field
@@ -75,8 +222,10 @@ func SplunkFilter(r *splcheck.Rule) (query.Expr, error) {
 	if r.Node == splcheck.CloudTrailNode {
 		return and([]query.Expr{&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.CloudTrailSourcetype}, e}), nil
 	}
-	if r.Node == splcheck.AzureNode || r.Node == splcheck.O365Node {
-		// The where clause names the macro's sourcetype.
+	if r.Node == splcheck.AzureNode || r.Node == splcheck.O365Node || r.Node == splcheck.OktaNode || splcheck.IsOktaTstatsNode(r.Node) ||
+		r.Node == splcheck.KubernetesNode || r.Node == splcheck.GitHubNode {
+		// The where clause names the macro's sourcetype, or Okta's for a
+		// tstats search over Okta's events.
 		return e, nil
 	}
 	if r.Node == "Web" {
@@ -257,6 +406,10 @@ var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
 // drive,
 // an audit record per host, type, program and what it ran or touched.
 func splunkThrottle(node, dm string) []string {
+	if parts, ok := splcheck.UnionNodes[node]; ok {
+		// A node of several others' events, as the first's.
+		node = parts[0]
+	}
 	switch node {
 	case "ObjectAccess":
 		return []string{"host", "process_path", "object_path"}
@@ -270,8 +423,12 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"host", "src", "share_name", "share_target"}
 	case "KerberosTGT", "KerberosService":
 		return []string{"host", "user", "kerberos_service"}
-	case "UserChanged", "ComputerChanged", "AccountRenamed", "GroupChanged":
+	case "UserChanged", "ComputerChanged", "AccountRenamed", "GroupChanged", "AccountChanged":
 		return []string{"host", "object"}
+	case "DirectoryAccess":
+		return []string{"host", "user", "object"}
+	case "FilterChanged":
+		return []string{"host", "security_filter_key"}
 	case "ExplicitLogon":
 		return []string{"host", "src_user", "user"}
 	case "NtlmAuth":
@@ -298,6 +455,14 @@ func splunkThrottle(node, dm string) []string {
 		return []string{"vendor_account", "user", "src", "operationName"}
 	case splcheck.O365Node:
 		return []string{"vendor_account", "user", "src", "Operation"}
+	case splcheck.OktaNode:
+		return []string{"user", "src", "eventType"}
+	case splcheck.KubernetesNode:
+		return []string{"user", "src", "signature"}
+	case splcheck.OktaAuthNode, splcheck.OktaChangeNode:
+		return []string{"user", "src", "signature"}
+	case splcheck.GitHubNode:
+		return []string{"user", "vendor_account", "dest", "signature"}
 	}
 	return packThrottle("", dm)
 }
@@ -307,16 +472,19 @@ func splunkThrottle(node, dm string) []string {
 // risk, as in Splunk's risk-based alerting. A finding is made once a day
 // per host, program and what it acted on.
 func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
-	rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
+	rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path), Lookups: p.lookups})
 	if err != nil {
 		return nil, err
 	}
-	filter, err := SplunkFilter(rule)
+	filter, later, err := SplunkSearch(rule)
 	if err != nil {
 		return nil, err
 	}
 	dm := splcheck.NodeModel[rule.Node]
 	q := &query.Query{Datamodel: dm, Search: filter}
+	for _, re := range later {
+		q.Commands = append(q.Commands, re)
+	}
 	var mitre []string
 	for _, t := range append(rule.MitreAttackID, rule.Tags.MitreAttackID...) {
 		if t = strings.ToUpper(strings.TrimSpace(t)); splunkTechnique.MatchString(t) && !slices.Contains(mitre, t) {
@@ -342,6 +510,12 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	}
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
 		d.Guidance = "Known false positives: " + fp
+	}
+	if rule.IPLocation() {
+		// Splunk ships a GeoIP database; Signalith reads one an admin
+		// adds.
+		d.Guidance = strings.TrimSpace(GeoIPSetup + "\n\n" + d.Guidance)
+		d.Tags = append(d.Tags, "geoip")
 	}
 	if splcheck.IsSensorNode(rule.Node) {
 		// About the address that sent the traffic, not the sensor that
@@ -456,6 +630,12 @@ func groupedBy(d *Detection, rule *splcheck.Rule, by []string) {
 	d.Risk.Objects = objects
 }
 
+// GeoIPSetup is the setup note of a pack rule that runs iplocation.
+const GeoIPSetup = "Setup: this rule runs iplocation, which needs a GeoIP City database (.mmdb), such as DB-IP's free " +
+	"IP to City Lite (the one Splunk ships) or MaxMind's GeoLite2 City, in the geoip folder next to the lookup tables " +
+	"on each server (docs/lookups.md, GeoIP database for iplocation). Without one, every run of the rule fails with " +
+	"\"iplocation needs a GeoIP database\", shown as the detection's last error, and finds nothing for that run."
+
 // splunkPost runs a rule's later stages after its filter, as they are
 // written. When they end in groups, each is found once a day.
 func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
@@ -472,7 +652,8 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
 // cloudNode reports whether a node is a cloud service's records:
 // CloudTrail's, Entra ID's and Azure's, or Microsoft 365's.
 func cloudNode(node string) bool {
-	return node == splcheck.CloudTrailNode || node == splcheck.AzureNode || node == splcheck.O365Node
+	return node == splcheck.CloudTrailNode || node == splcheck.AzureNode || node == splcheck.O365Node || node == splcheck.OktaNode ||
+		splcheck.IsOktaTstatsNode(node) || node == splcheck.KubernetesNode || node == splcheck.GitHubNode
 }
 
 // formatDuration writes a duration as a detection schedule: 90s, 5m, 1h.

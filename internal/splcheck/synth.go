@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -10,11 +11,13 @@ import (
 	"net/netip"
 	"path"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -131,7 +134,13 @@ func example(l lit, rng *rand.Rand) string {
 	if !l.re {
 		return instantiate(l.values[0])
 	}
-	s, err := sigmacheck.RegexExample(rng, l.values[0])
+	p := l.values[0]
+	if loose, ok := WithoutBoundaries(p); ok {
+		// An example of it without its word boundaries, which may need
+		// another try to fall on them.
+		p = loose
+	}
+	s, err := sigmacheck.RegexExample(rng, p)
 	if err != nil {
 		return ""
 	}
@@ -199,6 +208,42 @@ func assign(term []lit) (map[string]string, bool) {
 			cands = append(cands, strings.Join(parts, " "))
 			cands = append(cands, parts...)
 		}
+		// Patterns of one field may each need their own end of it (a
+		// folder and a file name): the parts in other orders.
+		if len(ps) > 1 && len(ps) <= 4 {
+			rng := rand.New(rand.NewSource(int64(len(f))))
+			parts := make([]string, len(ps))
+			for i, p := range ps {
+				parts[i] = example(p, rng)
+			}
+			for _, perm := range permutations(len(parts)) {
+				ordered := make([]string, len(perm))
+				for i, j := range perm {
+					ordered[i] = parts[j]
+				}
+				cands = append(cands, strings.Join(ordered, " "))
+			}
+		}
+		// A value that begins or ends in a space comes last: an event's
+		// parser may trim it (a command line), losing a match of \s.
+		// Before the others, one that a regular expression's word
+		// boundary decides, so a near miss tests it (boundaryMiss).
+		rank := map[string]int{}
+		for _, c := range cands {
+			rank[c] = 2 * edgeSpace(c)
+		}
+		for _, p := range ps {
+			if _, ok := WithoutBoundaries(p.values[0]); !ok || !p.re {
+				continue
+			}
+			for _, c := range cands {
+				if _, ok := boundaryMiss(term, p, c); !ok {
+					rank[c] |= 1
+				}
+			}
+			break
+		}
+		slices.SortStableFunc(cands, func(a, b string) int { return cmp.Compare(rank[a], rank[b]) })
 		found := false
 		for _, c := range cands {
 			ok := true
@@ -225,6 +270,29 @@ func assign(term []lit) (map[string]string, bool) {
 		}
 	}
 	return ev, true
+}
+
+// edgeSpace is 1 for a value that begins or ends in white space, else 0.
+func edgeSpace(s string) int {
+	if s != strings.TrimSpace(s) {
+		return 1
+	}
+	return 0
+}
+
+// permutations are the orders of n things, the identity first.
+func permutations(n int) [][]int {
+	if n == 1 {
+		return [][]int{{0}}
+	}
+	var out [][]int
+	for _, p := range permutations(n - 1) {
+		for at := len(p); at >= 0; at-- {
+			q := slices.Insert(slices.Clone(p), at, n-1)
+			out = append(out, q)
+		}
+	}
+	return out
 }
 
 // Events are field-level test events for a where clause: a matching event
@@ -266,10 +334,99 @@ func Events(e Expr) (pos, neg []map[string]string) {
 				m = maps.Clone(ev)
 				delete(m, l.field)
 				add(&neg, m)
+				if b, ok := boundaryMiss(term, l, v); ok {
+					m = maps.Clone(ev)
+					m[l.field] = b
+					add(&neg, m)
+				}
 			}
 		}
 	}
 	return pos, neg
+}
+
+// boundaryMiss is, for a regular expression with word boundaries (\b,
+// \B), a value close to v that it misses only at a boundary: v with one
+// letter or space put in, which the expression without its boundaries
+// still matches, as do the term's other comparisons of the field.
+func boundaryMiss(term []lit, l lit, v string) (string, bool) {
+	if !l.re || len(l.values) != 1 {
+		return "", false
+	}
+	loose, ok := WithoutBoundaries(l.values[0])
+	if !ok {
+		return "", false
+	}
+	strict, err := compiled(l.values[0])
+	if err != nil {
+		return "", false
+	}
+	others := func(w string) bool {
+		if !l.matches(loose, w) {
+			return false
+		}
+		for _, o := range term {
+			if o.field != l.field || o.values == nil || o.re == l.re && slices.Equal(o.values, l.values) {
+				continue
+			}
+			if slices.ContainsFunc(o.values, func(p string) bool { return o.matches(p, w) }) == o.neg {
+				return false
+			}
+		}
+		return true
+	}
+	// A value may match in several places: each round puts in the
+	// character that leaves the fewest matches, up to a few.
+	w := v
+	for round := 0; round < 4; round++ {
+		best, fewest := "", len(strict.FindAllStringIndex(w, -1))
+		if fewest == 0 {
+			return w, w != v
+		}
+		for i := len(w); i >= 0; i-- {
+			if i < len(w) && !utf8.RuneStart(w[i]) {
+				continue
+			}
+			for _, c := range []string{"q", " "} {
+				x := w[:i] + c + w[i:]
+				if n := len(strict.FindAllStringIndex(x, -1)); n < fewest && others(x) {
+					best, fewest = x, n
+				}
+			}
+		}
+		if best == "" {
+			return "", false
+		}
+		w = best
+	}
+	return w, !strict.MatchString(w)
+}
+
+// WithoutBoundaries is a regular expression with its word boundaries (\b,
+// \B) taken out, and whether it had any.
+func WithoutBoundaries(p string) (string, bool) {
+	tree, err := syntax.Parse(p, syntax.Perl)
+	if err != nil {
+		return "", false
+	}
+	var drop func(re *syntax.Regexp) bool
+	drop = func(re *syntax.Regexp) bool {
+		found := false
+		if re.Op == syntax.OpWordBoundary || re.Op == syntax.OpNoWordBoundary {
+			re.Op = syntax.OpEmptyMatch
+			found = true
+		}
+		for _, s := range re.Sub {
+			if drop(s) {
+				found = true
+			}
+		}
+		return found
+	}
+	if !drop(tree) {
+		return "", false
+	}
+	return tree.String(), true
 }
 
 func key(ev map[string]string) string {
@@ -308,6 +465,18 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 	if IsSensorNode(node) {
 		return sensorRecords(node, ev)
 	}
+	if parts, ok := UnionNodes[node]; ok {
+		// The events of the node whose code the event names, else of
+		// each.
+		var out []sigmacheck.Case
+		for _, p := range parts {
+			if c := ev[eventCode]; c == "" || !slices.ContainsFunc(parts, func(q string) bool { return slices.Contains(NodeEvents[q], c) }) ||
+				slices.Contains(NodeEvents[p], c) {
+				out = append(out, records(p, ev)...)
+			}
+		}
+		return out
+	}
 	switch node {
 	case AuditdNode:
 		return []sigmacheck.Case{auditdRecord(ev)}
@@ -317,6 +486,12 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		return []sigmacheck.Case{azureRecord(ev)}
 	case O365Node:
 		return []sigmacheck.Case{o365Record(ev)}
+	case OktaNode, OktaAuthNode, OktaChangeNode:
+		return []sigmacheck.Case{oktaRecord(ev)}
+	case KubernetesNode:
+		return []sigmacheck.Case{kubeRecord(ev)}
+	case GitHubNode:
+		return []sigmacheck.Case{githubRecord(ev)}
 	case "Web":
 		return []sigmacheck.Case{webRecord(ev)}
 	case "Processes":
@@ -504,6 +679,9 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "IpAddress", ev["src"])
 		set(s, "WorkstationName", ev["src_host"])
 		set(s, "ProcessName", ev["process_path"])
+		set(s, "SubjectUserName", ev["src_user"])
+		set(s, "SubjectUserSid", ev["src_user_sid"])
+		set(s, "SubjectDomainName", ev["src_user_domain"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ImageLoad":
 		s := map[string]string{"ProcessId": "4242", "ProcessGuid": "{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}"}
@@ -608,8 +786,14 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "AttributeValue", ev["ad_value"])
 		set(s, "OperationType", ev["ad_operation"])
 		set(s, "SubjectUserName", ev["user"])
+		set(s, "SubjectUserSid", ev["user_sid"])
+		set(s, "SubjectDomainName", ev["user_domain"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "5136", Data: s}}
 	case "ShareAccess":
+		if ev[eventCode] == "5140" {
+			// The share as a whole, accessed.
+			return []sigmacheck.Case{securityRecord(node, ev)}
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("5145")])
 		set(s, "ShareName", ev["share_name"])
 		set(s, "ShareLocalPath", ev["share_path"])
@@ -652,15 +836,21 @@ func records(node string, ev map[string]string) []sigmacheck.Case {
 		set(s, "SidHistory", ev["sid_history"])
 		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4738", Data: s}}
 	case "GroupMemberAdded":
+		// A local group's (4732) unless the event names a global (4728)
+		// or universal (4756) group's, which have the same data.
+		id := "4732"
+		if c := ev[eventCode]; c == "4728" || c == "4756" {
+			id = c
+		}
 		s := maps.Clone(sigmacheck.Bases[sigmacheck.SecurityCategory("4732")])
 		set(s, "TargetUserName", ev["object"])
 		set(s, "TargetSid", ev["object_sid"])
 		set(s, "MemberSid", ev["member_sid"])
 		set(s, "MemberName", ev["member"])
 		set(s, "SubjectUserName", ev["user"])
-		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: "4732", Data: s}}
+		return []sigmacheck.Case{{Channel: sigmacheck.SecurityChannel, EventID: id, Data: s}}
 	case "ExplicitLogon", "NtlmAuth", "KerberosPreAuth", "ComputerChanged", "AccountRenamed", "GroupChanged",
-		"LocalGroupRead", "CertRequest":
+		"LocalGroupRead", "CertRequest", "DirectoryAccess", "AccountChanged", "FilterChanged":
 		return []sigmacheck.Case{securityRecord(node, ev)}
 	case "ProcessTerminated", "RawAccessRead":
 		id := map[string]string{"ProcessTerminated": "5", "RawAccessRead": "9"}[node]
@@ -808,6 +998,10 @@ func StoredCopies(c sigmacheck.Case) ([]map[string]any, string) {
 }
 
 // View is a stored event as the string field values a where clause reads.
+// A field with several values (a list's, ModifiedProperties{}.NewValue)
+// reads as its first, and its values are all kept too (under its name
+// and mvKey), which a comparison reads as Splunk does: it matches when
+// one of them does.
 func View(doc map[string]any) map[string]string {
 	out := map[string]string{}
 	for k, v := range doc {
@@ -820,6 +1014,13 @@ func View(doc map[string]any) map[string]string {
 		case []any:
 			if len(x) > 0 {
 				out[k] = fmt.Sprint(x[0])
+			}
+			if len(x) > 1 {
+				vals := make([]string, len(x))
+				for i, e := range x {
+					vals[i] = fmt.Sprint(e)
+				}
+				out[k+mvKey] = strings.Join(vals, "\x00")
 			}
 		default:
 			out[k] = fmt.Sprint(x)
@@ -846,32 +1047,33 @@ var wordRe = regexp.MustCompile(`^[DQ]WORD \((0x[0-9a-fA-F]+)\)$`)
 // what Eval says of the event as stored.
 func Cases(r *Rule) []sigmacheck.Case {
 	pos, neg := Events(r.Where)
-	var out []sigmacheck.Case
 	bursts := 0
-	for _, ev := range append(pos, neg...) {
-		if r.Threshold != nil {
-			countable(r.Threshold, ev)
+	out := r.cases(append(pos, neg...), &bursts)
+	if !slices.ContainsFunc(out, func(c sigmacheck.Case) bool { return c.Expect }) {
+		// None is found: events that also pass the tests of the rule's
+		// later stages (hints), then those and the first events again
+		// in other folders (variants), each with repeats of its own.
+		hpos, hneg := r.hinted()
+		var moved []map[string]string
+		for _, ev := range append(slices.Clone(pos), hpos...) {
+			moved = append(moved, variants(r.Node, ev)...)
 		}
-		cs := records(r.Node, ev)
-		if r.Linux {
-			cs = linuxRecords(r.Node, ev)
+		// Then events whose lists and JSON values hold what the later
+		// stages read (structured).
+		var spos, sneg []map[string]string
+		for _, ev := range append(slices.Clone(pos[:min(len(pos), maxStructured)]), hpos[:min(len(hpos), maxStructured)]...) {
+			p, n := r.structured(ev)
+			spos, sneg = append(spos, p...), append(sneg, n...)
 		}
-		for _, c := range cs {
-			doc, model := Stored(c)
-			c.Source = "synthesized"
-			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
-			c.Expect = matched && r.Keeps(doc)
-			out = append(out, c)
-			if matched && !c.Expect && bursts < maxBursts {
-				// The later stages may count events: the same event,
-				// repeated, may come through.
-				if b := r.bursts(c); b != nil {
-					bursts++
-					out = append(out, b...)
-				}
+		for _, evs := range [][]map[string]string{append(slices.Clone(hpos), hneg...), append(moved, hneg...), append(spos, sneg...)} {
+			fresh := 0
+			if extra := r.cases(evs, &fresh); slices.ContainsFunc(extra, func(c sigmacheck.Case) bool { return c.Expect }) {
+				out = append(out, extra...)
+				break
 			}
 		}
 	}
+	out = append(out, r.elsewhere(out)...)
 	// Events that differ only in a field the rule ignores may come out
 	// the same; each is tested once.
 	seen := map[string]bool{}
@@ -884,6 +1086,39 @@ func Cases(r *Rule) []sigmacheck.Case {
 		return false
 	})
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Expect && !out[j].Expect })
+	return out
+}
+
+// cases turns field-level events into the rule's test events, with
+// repeats that its later stages count of up to maxBursts events (bursts
+// counts them).
+func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
+	var out []sigmacheck.Case
+	for _, ev := range evs {
+		if r.Threshold != nil {
+			countable(r.Threshold, ev)
+		}
+		if f := r.iplocationField(); f != "" && ev[f] == "" {
+			// An address the test GeoIP database locates to a city.
+			ev[f] = TestIP
+		}
+		cs := r.records(ev)
+		for _, c := range cs {
+			doc, model := Stored(c)
+			c.Source = "synthesized"
+			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
+			c.Expect = matched && r.Keeps(doc)
+			out = append(out, c)
+			if matched && !c.Expect && *bursts < maxBursts {
+				// The later stages may count events: the same event,
+				// repeated, may come through.
+				if b := r.bursts(c); b != nil {
+					*bursts++
+					out = append(out, b...)
+				}
+			}
+		}
+	}
 	return out
 }
 
@@ -908,6 +1143,8 @@ func countable(t *Threshold, ev map[string]string) {
 			ev[f] = cmp.Or(ev["process_name"], "sample.exe") + " /run"
 		case "action":
 			ev[f] = "deleted"
+		case "auditd_success":
+			ev[f] = "yes"
 		}
 	}
 }
@@ -986,7 +1223,7 @@ func webRecord(ev map[string]string) sigmacheck.Case {
 }
 
 // NodeModel is the Signalith data model of each node ("" for any).
-var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web"}
+var NodeModel = map[string]string{"Processes": "Endpoint", "Filesystem": "Filesystem", "Registry": "Registry", "FileStream": "Filesystem", "Pipe": "Endpoint", "PowerShell": "Script", "ImageLoad": "Image_Load", "ProcessAccess": "Endpoint", "NetworkConnection": "Network_Traffic", "All_Traffic": "Network_Traffic", "DnsQuery": "Network_Resolution", "Logon": "Authentication", "TaskCreated": "Change", "ObjectAccess": "", "ServiceInstalled": "Change", "DirectoryChange": "Change", "ShareAccess": "Filesystem", "KerberosTGT": "Authentication", "KerberosService": "Authentication", "UserChanged": "Change", "GroupMemberAdded": "Change", AuditdNode: "Other", "ExplicitLogon": "Authentication", "NtlmAuth": "Authentication", "KerberosPreAuth": "Authentication", "ComputerChanged": "Change", "AccountRenamed": "Change", "GroupChanged": "Change", "LocalGroupRead": "Change", "CertRequest": "Change", "ProcessTerminated": "Endpoint", "RawAccessRead": "Endpoint", "Web": "Web", "DirectoryAccess": "Change", "AccountChanged": "Change", "FilterChanged": "Other"}
 
 // AttackDataSource marks a test event recorded in a real attack (Splunk's
 // attack_data, by internal/detect/attackgen).
@@ -998,6 +1235,10 @@ func Reads(r *Rule, c sigmacheck.Case) bool {
 	doc, _ := Stored(c)
 	return reads(r, c) && r.Keeps(doc)
 }
+
+// Matches reports whether a rule's where clause reads an event as one of
+// its node's events, before the rule's later stages (Reads with them).
+func Matches(r *Rule, c sigmacheck.Case) bool { return reads(r, c) }
 
 // reads is Reads without the rule's later stages.
 func reads(r *Rule, c sigmacheck.Case) bool {
@@ -1017,6 +1258,18 @@ func reads(r *Rule, c sigmacheck.Case) bool {
 	if r.Node == O365Node {
 		// Every Microsoft 365 record, in any data model.
 		return c.Channel == sigmacheck.O365Channel && Eval(r.Where, View(doc))
+	}
+	if r.Node == OktaNode {
+		// Every Okta event, in any data model.
+		return c.Channel == sigmacheck.OktaChannel && Eval(r.Where, View(doc))
+	}
+	if r.Node == KubernetesNode {
+		// Every Kubernetes audit event, in any data model.
+		return c.Channel == sigmacheck.KubernetesChannel && Eval(r.Where, View(doc))
+	}
+	if r.Node == GitHubNode {
+		// Every GitHub event, in any data model.
+		return c.Channel == sigmacheck.GitHubChannel && Eval(r.Where, View(doc))
 	}
 	return InModel(r.Node, model) && slices.Contains(NodeEvents[r.Node], c.EventID) && Eval(r.Where, View(doc))
 }
@@ -1040,21 +1293,24 @@ var NodeEvents = map[string][]string{
 	"ObjectAccess":      {"4663"},
 	"ServiceInstalled":  {"7045"},
 	"DirectoryChange":   {"5136"},
-	"ShareAccess":       {"5145"},
+	"ShareAccess":       {"5145", "5140"},
 	"KerberosTGT":       {"4768"},
 	"KerberosService":   {"4769"},
 	"UserChanged":       {"4738"},
-	"GroupMemberAdded":  {"4732"},
+	"GroupMemberAdded":  {"4732", "4728", "4756"},
 	"ExplicitLogon":     {"4648"},
 	"NtlmAuth":          {"4776"},
 	"KerberosPreAuth":   {"4771"},
 	"ComputerChanged":   {"4741", "4742"},
 	"AccountRenamed":    {"4781"},
-	"GroupChanged":      {"4727", "4730", "4737"},
+	"GroupChanged":      {"4727", "4730", "4737", "4731", "4744", "4749", "4754", "4759", "4783", "4790"},
 	"LocalGroupRead":    {"4798", "4799"},
 	"CertRequest":       {"4886", "4887"},
 	"ProcessTerminated": {"5"},
 	"RawAccessRead":     {"9"},
+	"DirectoryAccess":   {"4662"},
+	"AccountChanged":    {"4723", "4724", "4722", "4725"},
+	"FilterChanged":     {"5447"},
 	"Web":               {"access"},
 }
 
@@ -1069,7 +1325,7 @@ func InModel(node, model string) bool {
 		// Sign-ins, changes and reads.
 		return model == "Authentication" || model == "Change" || model == "Other"
 	}
-	if node == AzureNode || node == O365Node {
+	if node == AzureNode || node == O365Node || node == OktaNode || node == KubernetesNode || node == GitHubNode {
 		// Sign-ins, changes, risk detections or alerts, and the rest.
 		return model == "Authentication" || model == "Change" || model == "Alerts" || model == "Other"
 	}
@@ -1079,9 +1335,18 @@ func InModel(node, model string) bool {
 // Verify checks a converted detection against a rule's test events: each
 // event, as the real parser stores it, must be read the same way by the
 // Splunk where clause (Eval) and by the detection's filter
-// (search.MatchDoc), and as the test file says. A rule's later stages
-// (Post) run after both. It returns every disagreement.
-func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFile) []error {
+// (search.MatchDoc) and the regex stages the detection runs right after
+// it, and as the test file says. A rule's later stages (Post) run after
+// both. It returns every disagreement.
+func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
+	datamodel, filter := q.Datamodel, q.Search
+	var regexes []query.Command
+	for _, c := range q.Commands {
+		if _, ok := c.(*query.Regex); !ok {
+			break
+		}
+		regexes = append(regexes, c)
+	}
 	var errs []error
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
@@ -1109,6 +1374,13 @@ func Verify(r *Rule, datamodel string, filter query.Expr, tf *sigmacheck.TestFil
 				errs = append(errs, fmt.Errorf("%s: %v", where, err))
 			}
 			m = m && ok && err == nil
+		}
+		if m && len(regexes) > 0 {
+			rows, err := search.RunCommands(context.Background(), docs, regexes)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %v", where, err))
+			}
+			m = err == nil && len(rows) == len(docs)
 		}
 		// The detection runs the rule's later stages after its filter.
 		m = m && r.KeepsAll(docs)

@@ -59,6 +59,12 @@ var categories = map[string]string{
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
 	"ps_script":            "rules/windows/powershell/powershell_script",
+	"ps_module":            "rules/windows/powershell/powershell_module",
+	// The Windows PowerShell log's rules: its engine starting (category
+	// ps_classic_start), its providers starting
+	// (ps_classic_provider_start), or any of its events (service:
+	// powershell-classic).
+	"powershell_classic": "rules/windows/powershell/powershell_classic",
 	// Not a Sigma category: Windows System log rules (service: system),
 	// in folders by provider.
 	"system": "rules/windows/builtin/system",
@@ -135,6 +141,12 @@ var cloudCategories = map[string][2]string{
 	"gcp.audit":              {"gcp", "rules/cloud/gcp/audit"},
 	"google_workspace.admin": {"gcp", "rules/cloud/gcp/gworkspace/admin"},
 	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
+	// Okta's System Log (product: okta, service: okta).
+	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
+	// Kubernetes audit events (product: kubernetes, service: audit).
+	ingest.KubernetesService: {ingest.KubernetesService, "rules/application/kubernetes/audit"},
+	// GitHub's audit log (product: github, service: audit).
+	ingest.GitHubService: {ingest.GitHubProduct, "rules/application/github/audit"},
 }
 
 // networkCategories are the network log sources, and the folders their
@@ -281,14 +293,31 @@ func main() {
 			if _, ok := cloudCategories[cat]; ok {
 				want["category"], want["service"] = "", cat
 			}
+			if cat == ingest.KubernetesService {
+				// Some of these rules also name the generic category
+				// application.
+				want["category"], want["service"] = "", "audit"
+				if rule.Logsource["category"] == "application" {
+					want["category"] = "application"
+				}
+			}
 			if cat == "m365" {
 				want["service"] = rule.Logsource["service"]
+			}
+			if cat == ingest.GitHubService {
+				want["service"] = "audit"
 			}
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"
 			}
 			if cat == "sysmon_service" {
 				want["category"], want["service"] = "", "sysmon"
+			}
+			if cat == "powershell_classic" {
+				want["category"], want["service"] = "", "powershell-classic"
+				if c := rule.Logsource["category"]; c == "ps_classic_start" || c == "ps_classic_provider_start" {
+					want["category"], want["service"] = c, ""
+				}
 			}
 			for service := range ingest.NamedChannelServices {
 				if cat == ingest.NamedChannelCategory(service) {
@@ -313,6 +342,10 @@ func main() {
 			}
 			if cat == "sysmon_service" {
 				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "powershell_classic" && want["category"] != "" {
+				rcat = want["category"]
 				rbases = sigmacheck.Bases[rcat]
 			}
 			if cat == "security" {

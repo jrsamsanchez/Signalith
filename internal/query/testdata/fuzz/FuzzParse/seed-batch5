@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\"a.b\" =\"x\" | eval -time = _time | transaction dest connected=false maxpause=5m")

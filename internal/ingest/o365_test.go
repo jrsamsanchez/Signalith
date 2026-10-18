@@ -13,6 +13,7 @@ const (
 	o365LoginFailed = `{"Actor": [{"ID": "c0282018-2447-42b4-88a5-fe4ddf5f4c9f", "Type": 0}, {"ID": "jo@example.com", "Type": 5}],
 		"ActorIpAddress": "73.15.72.101", "ApplicationId": "c44b4083-3bb0-49c1-b47d-974e53cbdf3c", "AzureActiveDirectoryEventType": 1,
 		"ClientIP": "73.15.72.101", "CreationTime": "2020-12-16T23:30:29",
+		"DeviceProperties": [{"Name": "BrowserType", "Value": "Chrome"}, {"Name": "OS", "Value": "Windows10"}],
 		"ExtendedProperties": [{"Name": "UserAgent", "Value": "Mozilla/5.0"}, {"Name": "RequestType", "Value": "Login:login"}],
 		"Id": "fbe233c2-d5fc-4238-9ac5-27febb528700", "LogonError": "IdsLocked", "ModifiedProperties": [],
 		"ObjectId": "797f4846-ba00-4fd7-ba43-dac1f8f63013", "Operation": "UserLoginFailed",
@@ -41,18 +42,39 @@ func TestO365SignIn(t *testing.T) {
 		"src": "73.15.72.101", "user_agent": "Mozilla/5.0", "reason": "IdsLocked", "signature": "UserLoginFailed",
 		"authentication_method": "Login:login", "vendor_account": "0e8108b1-18e9-41a4-961b-dfcddf92ef08",
 		"ModifiedProperties": "[]", "@timestamp": "2020-12-16T23:30:29Z",
+		// The operating system, one of the device properties, as
+		// Splunk's add-on reads it.
+		"os": "Windows10",
 	})
 	expectLists(t, ev, map[string][]any{
 		"Actor{}.ID":                {"c0282018-2447-42b4-88a5-fe4ddf5f4c9f", "jo@example.com"},
 		"Actor{}.Type":              {"0", "5"},
 		"ExtendedProperties{}.Name": {"UserAgent", "RequestType"},
+		"DeviceProperties{}.Name":   {"BrowserType", "OS"},
+		"DeviceProperties{}.Value":  {"Chrome", "Windows10"},
 	})
+	// A record whose device properties name no OS has none.
+	noOS := decode(t, o365LoginFailed)
+	noOS["DeviceProperties"] = []any{map[string]any{"Name": "BrowserType", "Value": "Chrome"}}
+	if v, ok := Normalize(O365Tag, noOS, now).Fields["os"]; ok {
+		t.Errorf("os = %#v without an OS device property", v)
+	}
+	// A test record's OS is a device property.
+	if v := Normalize(O365Tag, O365Record(now, "", map[string]string{"Operation": "UserLoggedIn", "OS": "MacOs"}), now).Fields["os"]; v != "MacOs" {
+		t.Errorf("test record's OS = %#v", v)
+	}
 	if ev.ID == "" {
 		t.Error("no document ID from the record's Id")
 	}
 	// The same record found by its own shape, without the tag.
 	if again := Normalize("", decode(t, o365LoginFailed), now); again.ID != ev.ID || again.Model != "Authentication" {
 		t.Errorf("untagged record: %s %s", again.Model, again.ID)
+	}
+	// A changed copy with the record's Id is stored as its own.
+	forged := decode(t, o365LoginFailed)
+	forged["ClientIP"] = "192.0.2.99"
+	if Normalize(O365Tag, forged, now).ID == ev.ID {
+		t.Error("a changed copy took the record's ID")
 	}
 }
 

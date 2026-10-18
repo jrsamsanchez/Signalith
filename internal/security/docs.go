@@ -67,12 +67,14 @@ var (
 	docServersIdentity = DocLink{File: "servers.md", Anchor: "identity"}
 	docServersCRL      = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
 	docSecSyslog       = DocLink{File: "security.md", Anchor: "syslog"}
+	docAgentPortUp     = DocLink{File: "sending-data.md", Anchor: "upgrading-to-03"}
 	docSecDisk         = DocLink{File: "security.md", Anchor: "disk-encryption"}
 	docSecOSDisk       = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
 	docSecFiles        = DocLink{File: "security.md", Anchor: "file-permissions"}
 	docSecNotChecked   = DocLink{File: "security.md", Anchor: "not-checked-here"}
 	docTokensHow       = DocLink{File: "agent-tokens.md", Anchor: "how-tokens-work"}
 	docTokensReplace   = DocLink{File: "agent-tokens.md", Anchor: "replace-a-shared-token"}
+	docAPITokens       = DocLink{File: "ai-tools.md", Anchor: "api-tokens"}
 )
 
 // AllDocs lists every section of the docs the report may link to.
@@ -82,7 +84,7 @@ func AllDocs() []DocLink {
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
 		docReadmeWindows, docReadmeDocker, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
-		docSecNotChecked}
+		docAPITokens, docSecNotChecked}
 }
 
 // NotCheckedDocs is the section that says how to check by hand what the

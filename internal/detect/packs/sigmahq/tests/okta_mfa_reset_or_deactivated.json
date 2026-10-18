@@ -1,0 +1,4 @@
+{"rule": "50e068d7-1e6b-4054-87e5-0a592c40c7e0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.mfa.factor.reset_all"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

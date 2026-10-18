@@ -152,13 +152,16 @@ runs `* | threatmatch` every 5 minutes over the last 10, raises one finding per
 indicator and target system per day, and adds 60 risk times the indicator's weight
 to `threat_target` and `user`. See [threat-intel.md](threat-intel.md).
 
+[Behavior baselines](baselines.md) add risk the same way for first-seen and rare
+activity, such as a sign-in from a new country.
+
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 
 ## Exceptions
 
-An exception tunes a detection without editing its query, like a suppression in
-Splunk Enterprise Security: results that match it raise no finding and add no risk,
+An exception tunes a detection without editing its query, so that
+results that match it raise no finding and add no risk,
 and every other result still alerts. Use one for a vulnerability scanner that trips
 a brute force rule, an admin script that looks like an attack, or a maintenance
 window.
@@ -241,7 +244,7 @@ To see everything a scan found on a host, search
 
 Network data from a [network sensor](network-sensor.md) (Zeek, Suricata) lights up
 these built-in detections. Those marked *risk only* add risk to the host and raise no
-finding by themselves, like Splunk's anomaly detections: they are signals that are
+finding by themselves: they are signals that are
 common on their own and matter when they add up (see [Risk](#risk)).
 
 | ID | Severity | Fires when | Default |
@@ -330,8 +333,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,478 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,080 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,560 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,116 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 13 web server rules (see
@@ -340,7 +343,8 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [AWS CloudTrail](#aws-cloudtrail)), 108 Microsoft Entra ID and Azure rules (see
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
-[Google Cloud](#google-cloud)):
+[Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), 15 Kubernetes rules (see
+[Kubernetes](#kubernetes)), and 12 GitHub rules (see [GitHub](#github)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -355,6 +359,8 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `create_stream_hash` | Sysmon 15 (alternate data stream written, such as a download's `Zone.Identifier`) | Filesystem |
 | `raw_access_thread` | Sysmon 9 (a drive read directly; `Device` is `device`) | Endpoint |
 | `ps_script` | PowerShell 4104 | Script |
+| `ps_module` | PowerShell 4103 (see [PowerShell module logging](#powershell-module-logging-and-the-windows-powershell-log)) | Script |
+| `ps_classic_start`, `ps_classic_provider_start`, `service: powershell-classic` | Windows PowerShell log 400; 600; any event | Other |
 | `webserver` | Apache and Nginx access log lines (see [Web server access logs](#web-server-access-logs)) | Web |
 | `product: aws`, `service: cloudtrail` | AWS CloudTrail records (see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `product: azure`, `service: signinlogs` | Entra ID sign-ins (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication |
@@ -364,6 +370,9 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 | `product: m365`, any service | Microsoft 365 audit records (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
 | `product: gcp`, `service: gcp.audit` | Google Cloud audit log entries (see [Google Cloud](#google-cloud)) | Change, Authentication or Other |
 | `product: gcp`, `service: google_workspace.admin`, `google_workspace.login` | Google Workspace audit log entries, shared with Google Cloud | Change or Authentication |
+| `product: okta`, `service: okta` | Okta System Log events (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
+| `product: kubernetes`, `service: audit` | Kubernetes audit events (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
+| `product: github`, `service: audit` | GitHub audit log events (see [GitHub](#github)) | Change, Authentication or Other |
 | `service: system` | System 7045 (service installed) | Change |
 | `service: system` | Other System events, by provider and event ID (see below) | Other |
 | `service: application` | Application events, by provider and event ID (see below) | Other |
@@ -407,7 +416,8 @@ logs each event only with its audit policy setting on:
 | 4768, 4769 (Kerberos tickets, on domain controllers) | Authentication | Audit Kerberos Authentication Service, Audit Kerberos Service Ticket Operations |
 | 4697 (service installed) | Change | Audit Security System Extension |
 | 4698, 4699, 4701, 4702 (scheduled task created, deleted, disabled, updated) | Change | Audit Other Object Access Events |
-| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted) | Change | Audit User Account Management, Audit Security Group Management |
+| 4720, 4738 (user account created or changed), 4732 (member added to a local group), 4728, 4729 (member added to or removed from a global group), 4730 (global group deleted), 4727, 4731, 4744, 4749, 4754, 4759 (group created), 4756 (member added to a universal group) | Change | Audit User Account Management, Audit Security Group Management |
+| 4783, 4790 (basic application and LDAP query group created) | Change | Audit Application Group Management |
 | 1102 (Security log cleared) | Change | Always logged |
 | 4719 (audit policy changed) | Change | Audit Audit Policy Change |
 | 4706 (domain trust created), 4794 (DSRM password set) | Change | Audit Authentication Policy Change, Audit User Account Management |
@@ -540,7 +550,7 @@ The 13 SigmaHQ `webserver` rules name the W3C fields: `cs-method` is
 `url`, `cs-uri-stem` is `uri_path`, `sc-status` is `status`, `cs-user-agent` is
 `http_user_agent`, `cs-referer` is `http_referrer` and `c-ip` is `src`. Their keywords
 (`'${jndi:'`, `'=whoami'`) are searched in what the client sent: the target, the user
-agent and the referrer. 36 Splunk rules search the Web data model, for example
+agent and the referrer. 43 Splunk rules search the Web data model, for example
 exploitation attempts against SharePoint, Citrix, Ivanti, Confluence, Fortinet, F5 and
 TeamCity, and Spring4Shell.
 
@@ -611,6 +621,49 @@ The type applies to indices created after an upgrade, so from the next day's ind
 on. Rules that would list more script snippets than OpenSearch allows in one search
 (1,024 clauses by default) are left out of the pack.
 
+### PowerShell module logging and the Windows PowerShell log
+
+The `ps_module` rules read event 4103, which PowerShell writes to the same
+`Microsoft-Windows-PowerShell/Operational` channel for each command a pipeline runs
+once **module logging** is on (also off by default, and much noisier than script
+block logging). Turn it on for all modules with Group Policy (Administrative
+Templates > Windows Components > Windows PowerShell > Turn on Module Logging, with
+`*` as the module name) or, in an elevated PowerShell:
+
+```powershell
+$k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging'
+New-Item -Path "$k\ModuleNames" -Force | Out-Null
+Set-ItemProperty -Path $k -Name EnableModuleLogging -Value 1
+Set-ItemProperty -Path "$k\ModuleNames" -Name '*' -Value '*'
+```
+
+A 4103 event is stored in Script: its `Payload` (the command and the values bound to
+its parameters) in `script_block_text`, and its `ContextInfo` (host program, command,
+account) in `event_data`, both wildcard fields searched for words inside. From an
+English context Signalith also takes `user` (User), `process` (Host Application,
+its first line) and `script_path` (Script Name); a context in another language is
+kept as it is, without them.
+
+Module logging records the values passed to every command, so secrets typed or
+scripted in plain text (a `-Password`, `ConvertTo-SecureString -AsPlainText`, an API
+key) land in `script_block_text`. Name only the modules you need under
+`ModuleNames` rather than `*`, and give search access only to people who may see
+such values.
+
+The `ps_classic_start`, `ps_classic_provider_start` and `service: powershell-classic`
+rules read the classic **Windows PowerShell** log, which every Windows PowerShell 5.1
+(and 2.0) engine writes without any setting: an engine starting (400) or stopping
+(403), a provider starting (600), and, with module logging, each pipeline (800). The
+event's data values are stored one per line in `event_data` (Sigma's `Data`), in
+Other with sourcetype `WinEventLog:Windows PowerShell`; `process` is the
+`HostApplication=` line (the command line that started the engine, which is how
+the downgrade rule sees `-version 2`), `script_path` the `ScriptName=` line and,
+for 800, `user` the `UserId=` line. These are read from the event's context value
+only; since the command lines in it are written by whoever ran PowerShell,
+`script_path` is left empty when the context names more than one script. **Include PowerShell** on the Add data page
+collects this log too. Rules that use a case-sensitive regular expression on these
+fields, which are searched ignoring case, are left out of the pack.
+
 A rule is only shipped when:
 
 - its status is `stable` or `test` (not `experimental` or `deprecated`), and its
@@ -665,7 +718,7 @@ The 38 CloudTrail rules read CloudTrail's own field names (`eventName`, `eventSo
 `userIdentity.type`, `requestParameters.*`), which Signalith keeps as CloudTrail writes
 them, and each searches `sourcetype=aws:cloudtrail`. Rules that compare one field with
 another, or that match text inside the call's parameters in a way no test record
-exercises, are left out. The Splunk pack adds 32 CloudTrail detections (see
+exercises, are left out. The Splunk pack adds 33 CloudTrail detections (see
 [Splunk Security Content](#splunk-security-content)). To send CloudTrail records, see [AWS CloudTrail](aws-cloudtrail.md).
 
 ### Entra ID and Azure
@@ -680,15 +733,15 @@ Older rules that name an audit record's operation `properties.message` read
 out. Sign-in and audit rules search `sourcetype=azure:monitor:aad`, and activity log rules
 `sourcetype=azure:monitor:activity`.
 
-The Splunk pack adds 30 Entra ID detections (see
+The Splunk pack adds 31 Entra ID detections (see
 [Splunk Security Content](#splunk-security-content)): admin roles assigned, MFA turned
 off, new federated domains, guest invitations, single-factor and device code sign-ins,
 password spraying and MFA fatigue. They name fields as Splunk's add-on does, which
 Signalith keeps too: a list's values by Splunk's name for them
 (`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
 matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
-their old names. Rules that use `eval`, `spath`, `rex`, lookups or `transaction`, and the
-Intune rules, are left out. To send Entra ID and Azure logs, see
+their old names. Most rules that use `eval`, `spath`, `rex` or `transaction`, and the
+Intune rules, are left out; a lookup of privileged roles reads the table the pack ships. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
 ### Microsoft 365
@@ -701,17 +754,92 @@ Compliance Center an alert's name) and `status` (success or failure), which read
 `ExtendedProperties`, so it reads `ExtendedProperties{}.Value`. Every rule searches
 `sourcetype=o365:management:activity`.
 
-The Splunk pack adds 19 Microsoft 365 detections (see
+The Splunk pack adds 54 Microsoft 365 detections (see
 [Splunk Security Content](#splunk-security-content)): MFA turned off, service principals
 added or given new credentials, mail security settings changed, content searches
 exported, mailboxes read through EWS or Microsoft Graph, malware in SharePoint, and
 counts that catch password spraying and MFA fatigue. They name a record's own fields and
-the CIM fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, and a
-sign-in's `UserAgent` is `user_agent`). A field must be one Microsoft's audit record
-schema has: an Exchange cmdlet's parameters are only in `Parameters{}.Name` and
-`Parameters{}.Value`, so rules that name one as a field (`Role=ApplicationImpersonation`)
-are left out, with rules that use `eval`, `spath`, `fromjson`, `rex` or lookups. To read
+the fields Splunk's add-on for Microsoft 365 gives it (`src_ip` is `src`, a sign-in's
+`UserAgent` is `user_agent`, and its `OS`, the `DeviceProperties` item of that name, is `os`).
+A field must be one Microsoft's audit record schema has: an Exchange cmdlet's parameters
+are only in `Parameters{}.Name` and `Parameters{}.Value`, so rules that name one as a
+field (`Role=ApplicationImpersonation`) are left out, with rules whose later stages
+Signalith would read differently from Splunk. To read
 the audit log, see [Microsoft 365](microsoft-365.md).
+
+### Okta
+
+SigmaHQ's 19 tested Okta rules ship. They name a System Log event's own fields
+(`eventType`, `actor.alternateId`, `securityContext.isProxy`,
+`debugContext.debugData.behaviors`), which Signalith keeps by the same names; a field of
+an event's targets (`target.displayName`) reads each target's value
+(`target{}.displayName`), as Splunk's add-on for Okta names them. Every rule searches
+`sourcetype=OktaIM2:log`. `okta_user_created` is informational, and
+`okta_password_in_alternateid_field` uses `^` inside a regular expression's
+alternatives, so they are left out.
+
+The Splunk pack adds 13 Okta detections (see
+[Splunk Security Content](#splunk-security-content)). Five search the `okta` macro by
+Okta's field names (`eventType`, `outcome.result`) and the CIM fields Splunk's add-on
+gives an event (`user`, `src`, `signature`). Eight are `tstats` searches of the
+Authentication or Change data model whose only data source is Okta: they read the same
+CIM fields of Okta's events (`Authentication.action`, `All_Changes.command`), limited to
+`sourcetype=OktaIM2:log`. One of them, `okta_user_logins_from_multiple_cities`, counts
+the cities an account signs in from with `iplocation`, and needs a GeoIP database (see
+[GeoIP and iplocation](#geoip-and-iplocation)). Experimental, hunting and correlation
+rules and one that reads every field after `iplocation` and uses a syntax Signalith
+doesn't run (`okta_mismatch_between_source_and_response_for_verify_push_request`) are
+left out. To read the System Log, see [Okta](okta.md).
+
+### Kubernetes
+
+SigmaHQ's 15 tested Kubernetes audit rules ship. They name an audit Event's own fields
+(`verb`, `objectRef.resource`, `objectRef.subresource`, `responseStatus.code`), which
+Signalith keeps by the same names; `user.username` and `user.groups` read
+`kube_user.username` and each value of `kube_user.groups{}`, as the Event's `user`
+object is kept under that name. Three rules name a field the Event doesn't have at the
+top: `apiGroup` reads `objectRef.apiGroup`, the only API group an Event names, and
+`hostPath: '*'` and `capabilities: '*'` (which their authors note stand for "the field
+exists") read a pod's hostPath volumes (`requestObject.spec.volumes{}.hostPath.path`) and
+its containers' added capabilities
+(`requestObject.spec.containers{}.securityContext.capabilities.add{}`), so those two
+fire only when the audit policy records request bodies. Every rule searches
+`sourcetype=_json source=kubernetes`. `kubernetes_audit_potential_enumeration_activity`
+is experimental, and is left out.
+
+The Splunk pack adds 13 Kubernetes detections (see
+[Splunk Security Content](#splunk-security-content)), the production rules that search
+the `kube_audit` macro: by the Event's fields as Splunk reads its JSON (`verb`,
+`objectRef.resource`, `requestObject.spec.type`, `user.username`, which reads
+`kube_user.username`, and `sourceIPs{}`), and a pod's
+`requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration`,
+searched for `"privileged":true` and `"hostNetwork":true`. Four read an allowed list
+macro (`kube_allowed_user_agents`, `kube_allowed_images` and the like), shipped with
+Splunk's sample values. Two count refused anonymous requests by the country and city
+`iplocation` names, and need a GeoIP database (see
+[GeoIP and iplocation](#geoip-and-iplocation)). One that compares the country after a
+`fillnull` of every field (`kubernetes_abuse_of_secret_by_unusual_location`), the Falco rule, the metrics and Splunk Connect for
+Kubernetes object rules, and experimental and hunting rules are left out. To send the
+audit log, see [Kubernetes audit logs](kubernetes-audit.md).
+
+### GitHub
+
+SigmaHQ's 12 tested GitHub audit log rules ship. They name the event's own `action`
+(`repo.destroy`, `org.disable_two_factor_requirement`), which Signalith keeps as
+`vendor_action`, as Splunk's add-on for GitHub does, since `action` is the CIM field.
+Every rule searches `sourcetype=github:cloud:audit`. `github_new_org_member` is
+informational, and `github_pages_site_changed_to_public` and
+`github_repository_archive_status_changed` are experimental, so they are left out.
+
+The Splunk pack adds 18 GitHub detections (see
+[Splunk Security Content](#splunk-security-content)): the 12 `github_enterprise` searches,
+which name GitHub's own fields (`action`, `actor`, `reason`) as audit log streaming sends
+them, and the 6 `github_organizations` searches, which name GitHub's action
+`vendor_action` as Splunk's add-on for GitHub does. GitHub's `actor`, `user`, `reason`,
+`name` and `user_agent` are kept as `github_actor`, `github_user` and so on, and
+`action` as `vendor_action`, so both macros' searches read the same events, limited to
+`sourcetype=github:cloud:audit`. To send the audit log, see
+[GitHub audit log](github-audit-log.md).
 
 ### Google Cloud
 
@@ -744,16 +872,18 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,138 Windows,
-Linux, web, network, AWS CloudTrail, Entra ID and Microsoft 365 detections from Splunk's Threat Research Team
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,283 Windows,
+Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
 `Endpoint.Processes`, `Endpoint.Filesystem`, `Endpoint.Registry` and `Web` nodes with
-`tstats`, plus the PowerShell script block rules, and 5 of the 102 network detections
+`tstats`, plus the PowerShell script block rules, and 9 of the 102 network detections
 (`detections/network`), the `tstats` searches that read any source of their data
 model, a [network sensor](network-sensor.md) among them: Cisco Smart Install port
-4786, ngrok tunnels, protocol on an unusual port and Tor over `Network_Traffic` or
-`Network_Resolution`, and the F5 iControl REST exploit over `Web`. The other network
+4786, ngrok tunnels, protocol on an unusual port, Tor, Kerberos coercion through DNS,
+unusually long DNS queries and the 3CX supply chain attack's domains over
+`Network_Traffic` or `Network_Resolution`, and the F5 iControl REST exploit and
+remote management tools' user agents over `Web`. The other network
 detections use lookups, `eval` or Cisco firewall searches, are experimental or hunting
 rules, or search Sysmon's DNS and network events, which is endpoint content
 (`REPORT.md`). Signalith uses the same CIM field
@@ -781,12 +911,15 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `wineventlog_security` EventCode=4663 `` (raw search) | Security 4663 (object access) | Filesystem for a file, Registry for a key |
 | `` `wineventlog_system` EventCode=7045 `` (raw search) | System 7045 (service installed) | Change |
 | `` `wineventlog_security` EventCode=5136 `` (raw search) | Security 5136 (directory object changed) | Change |
-| `` `wineventlog_security` EventCode=5145 `` (raw search) | Security 5145 (network share access) | Filesystem |
+| `` `wineventlog_security` EventCode=5145 `` or `5140` (raw search) | Security 5145 (network share access) and 5140 (share accessed, once per session) | Filesystem |
 | `` `wineventlog_security` EventCode=4768 `` or `4769` (raw search) | Security 4768 and 4769 (Kerberos tickets) | Authentication |
 | `` `wineventlog_security` EventCode=4738 `` or `4732` (raw search) | Security 4738 (user account changed) and 4732 (member added to a local group) | Change |
 | `` `wineventlog_security` EventCode=4648 ``, `4776` or `4771` (raw search) | Security 4648 (logon with explicit credentials), 4776 (NTLM credential check) and 4771 (Kerberos pre-authentication failed) | Authentication |
 | `` `wineventlog_security` EventCode=4741 ``, `4742`, `4781`, `4727`, `4730` or `4737` (raw search) | Security 4741 and 4742 (computer account created or changed), 4781 (account renamed), 4727, 4730 and 4737 (global group created, deleted or changed) | Change |
+| `` `wineventlog_security` EventCode=4731 ``, `4744`, `4749`, `4754`, `4759`, `4783`, `4790` or `4756` (raw search) | Security 4731, 4744, 4749, 4754 and 4759 (local, global and universal group created), 4783 and 4790 (application and LDAP query group created), 4756 (member added to a universal group) | Change |
 | `` `wineventlog_security` EventCode=4798 ``, `4799`, `4886` or `4887` (raw search) | Security 4798 and 4799 (local group membership listed), 4886 and 4887 (certificate requested and issued) | Change |
+| `` `wineventlog_security` EventCode=4662 ``, `4728`, `4722`, `4723`, `4724` or `4725` (raw search) | Security 4662 (operation on a directory object), 4728 (member added to a global group), 4722 and 4725 (account enabled or disabled), 4723 and 4724 (password changed or reset) | Change |
+| `` `wineventlog_security` EventCode=5447 `` (raw search) | Security 5447 (Windows Filtering Platform filter changed; each value by its name, `FilterName` is `security_filter_name`) | Other |
 | `Endpoint.Processes` (Sysmon for Linux rules) | Sysmon for Linux 1 | Endpoint |
 | `Endpoint.Filesystem` (Sysmon for Linux rules) | Sysmon for Linux 11 and 23 | Filesystem |
 | `` `linux_auditd` `` (raw search) | Linux audit records, each field by auditd's name (see [the Linux audit log](#linux-audit-log-auditd)) | Other |
@@ -794,6 +927,10 @@ names, so each rule's `where` clause becomes a Signalith filter field for field:
 | `` `cloudtrail` `` (raw search) | AWS CloudTrail records, by CloudTrail's field names and the CIM fields Splunk's AWS add-on gives them (`errorCode=success` reads a record with no error code; see [AWS CloudTrail](#aws-cloudtrail)) | Authentication, Change or Other |
 | `` `azure_monitor_aad` `` (raw search) | Entra ID sign-in, audit and risk records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft cloud services gives them (see [Entra ID and Azure](#entra-id-and-azure)) | Authentication, Change or Alerts |
 | `` `o365_management_activity` `` (raw search) | Microsoft 365 audit records, by the record's own field names and the CIM fields Splunk's add-on for Microsoft 365 gives them (see [Microsoft 365](#microsoft-365)) | Authentication, Change, Alerts or Other |
+| `` `okta` `` (raw search) | Okta System Log events, by Okta's own field names and the CIM fields Splunk's add-on for Okta Identity Cloud gives them (see [Okta](#okta)) | Authentication, Change, Alerts or Other |
+| `Authentication.Authentication`, `Change.All_Changes` (rules whose only data source is Okta) | Okta System Log events of that data model (see [Okta](#okta)) | Authentication or Change |
+| `` `kube_audit` `` (raw search) | Kubernetes audit events, by the Event's own field names (`user.` is `kube_user.`) and the CIM fields Signalith gives them (see [Kubernetes](#kubernetes)) | Change, Authentication or Other |
+| `` `github_enterprise` ``, `` `github_organizations` `` (raw search) | GitHub audit log events, by GitHub's own field names (GitHub's action, `action` in `github_enterprise`'s searches and `vendor_action` in `github_organizations`', is `vendor_action`; `actor` is `github_actor`) and the CIM fields Signalith gives them (see [GitHub](#github)) | Change, Authentication or Other |
 | `Network_Traffic` (network detections) | Any connection: Zeek's conn.log, a firewall, Sysmon 3 (`app` is the protocol, Zeek's `service`) | Network_Traffic |
 | `Network_Resolution` (network detections) | A DNS lookup that names who asked (`src`), as Zeek's dns.log does (`record_type` is `query_type`); a host's own lookups (Sysmon 22) name only the host and are left to the endpoint rules | Network_Resolution |
 
@@ -804,10 +941,63 @@ when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
 `a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
 syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
 (`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
-add risk, as in Splunk ES risk-based alerting. Severity follows the rule's risk score
+add risk, as their authors intend. Severity follows the rule's risk score
 (TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
+
+Some rules look values up in a table Splunk publishes with them (`| lookup
+pua_named_pipes pua_pipe_name AS pipe_name OUTPUT tool | where isnotnull(tool)`):
+named pipes, user agents and services of known tools, PowerShell attack strings,
+vulnerable drivers, LOLBAS paths, DLLs open to hijacking and privileged Entra ID
+roles. The pack ships the 15 tables its rules read (about 250 KB, in
+`internal/detect/packs/splunk/lookups`), unchanged, each with its yml, and the rule
+looks up the pack's copy, `splunk-pua_named_pipes`, so a table of your own with the
+same name is never used or replaced (see
+[Tables that come with content packs](lookups.md#tables-that-come-with-content-packs)).
+The lookup matches as the yml says (wildcard columns, case, `max_matches`,
+`default_match`), and the rule's test events hold a value of one of the table's
+rows. A rule is left out when Signalith's lookup could give it a different answer
+than Splunk's: a table row with a pattern before a row it also matches under
+`max_matches: 1`, values with spaces around them, an output that several rows may
+give compared with a value or counted by, more matching rows than Signalith's
+lookup takes (100), more than 2,000 rows with patterns, or a table security_content
+does not ship as a CSV file (KV store lookups such as `identity_lookup_expanded`).
+
+#### GeoIP and iplocation
+
+Three rules group or count by where an address is, with `iplocation`:
+`kubernetes_access_scanning` and `kubernetes_scanning_by_unauthenticated_ip_address`
+(more than 5 refused anonymous requests from one address, by its `Country` and
+`City`) and `okta_user_logins_from_multiple_cities` (one account signing in from more
+than one `City`). **They need a GeoIP database, which an admin adds**: Splunk ships
+one (DB-IP's IP to City Lite), Signalith doesn't. Put a City database (`.mmdb`, such
+as DB-IP's IP to City Lite or MaxMind's GeoLite2 City) in the `geoip` folder next to
+the lookup tables on each server (see
+[GeoIP database for iplocation](lookups.md#geoip-database-for-iplocation)) before
+turning them on. Without one, each run fails with "iplocation needs a GeoIP database",
+which the detection shows as its last error, and finds nothing, rather than running
+without locations; their triage guidance says so, and they are tagged `geoip`. Runs
+that start while the server is still reading the database wait and are tried again.
+
+The rules read the database as Splunk's `iplocation` does. An address the database
+locates gets `City`, `Region`, `Country`, `lat` and `lon`, each empty when the
+database has no value for it (an address located only to its country has an empty
+`City`, so `stats ... by Country City` keeps it as it does in Splunk, and `dc(City)`
+counts the empty city as one); a private address, one the database does not list, or
+text that is not an address gets none of them (so `stats ... by City` drops it), and a
+field the event already had keeps its value. Signalith's own `iplocation` adds only
+the fields that have a value, so each rule's conversion adds the empty ones. A list of
+addresses (Kubernetes' `sourceIPs`) is located by its first, the client's. What a
+rule finds still depends on the database: two versions, or DB-IP's and MaxMind's,
+place some addresses in different cities, which is true of Splunk too. Where an
+address has no country of its own, Signalith names its registered country (MaxMind's
+`registered_country`); Splunk's documentation doesn't say whether its `iplocation`
+does. An `iplocation` that no later stage reads (it only adds columns
+to the finding, as in several Okta and Entra ID rules) is left out, so those rules
+need no database. Rules whose stages after `iplocation` read every field of a row
+(`fillnull` with no fields, `values(*)`) are left out: Signalith's rows would have the
+location fields when Splunk's don't.
 
 PowerShell rules, and Sysmon image load, remote thread and process access rules,
 search the events themselves rather than a data model: their event fields become
@@ -815,7 +1005,9 @@ Signalith's (`ScriptBlockText` is `script_block_text`, `ImageLoaded` is
 `loaded_file_path`, `TargetImage` is `target_process_path`, and so on), and their
 `fillnull` and `stats` stages only count the events. (Without `fillnull`, Splunk's
 `stats` also drops events that miss one of its `by` fields; Signalith keeps them.) PowerShell rules need script block logging
-turned on (**Include PowerShell** on Add data).
+turned on (**Include PowerShell** on Add data). A PowerShell search that needs
+`ScriptBlockText` in every event it finds may leave out its event code: of the events
+of the channels the `powershell` macro reads, only a script block (4104) has it.
 
 Scheduled task rules search the task's name (`TaskName` is `task_name`) and its
 XML definition (`TaskContent` is `task_content`); after `xmlkv`, the command and
@@ -834,9 +1026,21 @@ Splunk. Windows logs 4663 only for objects whose auditing (SACL) asks for it, wi
 Directory change rules (Security 5136) search the object's DN (`ObjectDN` is
 `object`), `ObjectClass` (`ad_object_class`), the attribute (`AttributeLDAPDisplayName`
 is `ad_attribute`), its value (`AttributeValue` is `ad_value`) and `OperationType`
-(`ad_operation`, `%%14674` for a value added). Share access rules (Security 5145)
+(`ad_operation`, `%%14674` for a value added), and who made the change
+(`SubjectUserName` is `user`, `SubjectUserSid` `user_sid`, `SubjectDomainName`
+`user_domain`). Share access rules (Security 5145)
 search `ShareName` (`share_name`), the path inside the share (`RelativeTargetName` is
 `share_target`), the client (`IpAddress` is `src`), `AccessMask` and `AccessList`.
+
+A raw search may name only its event code: it reads every event of that code, and
+its later stages, run as written, keep what they keep (a `stats` with no `by` fields
+is refused: Splunk counts every event into one row). A search may name codes of
+events that are read differently when one node reads them all, with the fields
+stored the same in each: Sysmon 11 and 15 (a file created and a stream written),
+Security 4738 and 4742 (a user and a computer account changed), and a group created
+(4727 and the like) with a member added (4728, 4732, 4756). In Sysmon 5, Splunk's
+`ProcessID` is the Sysmon process that logged the event, which Signalith does not
+keep, so a rule that counts by it is left out.
 
 Kerberos rules (Security 4768 for a ticket-granting ticket, 4769 for a service
 ticket) search the account (`TargetUserName` is `user`), the service
@@ -853,7 +1057,9 @@ the change (`SubjectUserName` is `user`), the account's `UserAccountControl` fla
 off), and the member added (`MemberSid` is `member_sid`). They are stored in Change
 with `object_category` `user` or `group`.
 
-Sign-in rules search the account (`TargetUserName` is `user`): a logon with explicit
+Sign-in rules search the account (`TargetUserName` is `user`); a logon or failed
+logon (4624, 4625) also by the account that asked for it (`SubjectUserName` is
+`src_user`, `SubjectUserSid` `src_user_sid`); a logon with explicit
 credentials (4648) by who used them (`SubjectUserName`, or the add-on's
 `Caller_User_Name`, is `src_user`), an NTLM credential check (4776) by the computer it
 came from (`Workstation` is `src_host`) and its result (`Status` is `ntlm_status`,
@@ -869,6 +1075,13 @@ Local group listing rules (4798, 4799) search the program that asked
 (`CallerProcessName` is `process_path`), and certificate rules (4886, 4887) the
 requester (`Requester` is `cert_requester`) and the request's `Attributes`
 (`cert_attributes`, such as its template and any subject alternative name).
+Directory object rules (4662) search the object (`ObjectName` is `object`, as
+recorded: often a `%{GUID}`), its class (`ObjectType` is `object_type`),
+`AccessMask`, `AccessList` and `Properties` (`object_properties`, one space between
+values), and who acted (`SubjectUserName` is `user`). Password rules (4723 changed by
+the account, 4724 reset by another) and account enabled or disabled (4722, 4725)
+search the account (`TargetUserName` is `object`, `TargetSid` is `object_sid`) and
+who acted (`SubjectUserName` is `user`, `SubjectUserSid` is `user_sid`).
 
 Service install rules (System 7045, from the Sigma `service: system` log source or
 Splunk's `wineventlog_system`) search the service's name (`ServiceName` is
@@ -954,7 +1167,10 @@ or `where match(field, "...")` joined by AND or OR) or apply the rule's empty `_
 macro) and, on test events made from its `where` clause and passed through
 the real Windows parser, the converted detection agrees with Splunk's reading of the
 clause on every event. A regular expression converts when it is also valid in Go's
-syntax (no lookarounds) and OpenSearch can search it exactly (no word boundaries).
+syntax (no lookarounds) and OpenSearch can search it exactly. One that OpenSearch
+cannot search only because of its word boundaries (`\b`, `\B`), and that every event
+must match (not one of several joined by OR, and not negated), runs as a `regex`
+stage right after the search instead, which reads word boundaries as Splunk does.
 A value with a `?`, which Splunk reads literally, is searched as a regular expression
 too. An address range (`dest_ip IN ("10.0.0.0/8", ...)`) matches the addresses in it, as in Splunk. Raw searches that test an access mask bit by bit (`eval m = tonumber(GrantedAccess, 16)`,
 `bit_and(m, 16)` and a `where` on the result being the mask, 0 or not 0) convert to a regular
@@ -963,8 +1179,10 @@ expression over the mask's hex digits.
 Rules that count events convert too: a `tstats` count `by` some fields and
 `_time span=1m` (or a raw search's `bucket span=5m _time` and `stats ... by`), then a
 `where` limit on the count (`where count >= 10`, `where unique_accounts > 30`, several
-joined by AND). The detection runs `| stats count, dc(field) as name by fields` and
-the same limit. Each run counts the rule's span plus the time since the last run
+joined by AND; the count may have a name, `count as failures`). The detection runs
+`| stats count, dc(field) as name by fields` and the same limit. A `bucket` before a
+`stats` that is not `by _time` only rounds each event's time, so that count is over
+the rule's whole search, as one without a span. Each run counts the rule's span plus the time since the last run
 (every minute for spans under 5 minutes, every 5 minutes otherwise; a count without
 a span covers an hour, as Splunk's default schedule does), so a burst Splunk finds
 in one of its fixed buckets is counted even when its events arrive a little late,
@@ -991,10 +1209,37 @@ row for it; a rule ships only when some test event comes through. A rule that co
 (`stats count`, `dc`) keeps no row for one event, so its test is the same event
 repeated within 30 seconds, as often as the count needs (`"repeat"` in the test file),
 with a field it counts distinct values of different each time (`"vary"`), next to a
-smaller repeat that the rule must not find. Where the two
-languages read a stage differently, the rule is left out: a `where` that compares two
-fields (`where process_name != service_process`), or text with a `*`, since Signalith's
-`where` reads a plain condition as a filter. A dotted field (`userIdentity.userName`)
+smaller repeat that the rule must not find. When none of the events made from the
+`where` clause comes through, the tests the later stages make of fields the clause
+leaves open (`search process IN (...)` after a `tstats`, `like()` and `match()`, a
+`rex` a later stage reads, a `regex` stage) are added to the clause to make more
+events, and failing that, the program runs from a folder other than System32 (for a
+rule that leaves System32 out), a library loads from its program's own folder, or a
+share access writes; whether the rule finds each is still what its search, run as
+written, says of the event as Signalith stores it. Where the two
+languages read a stage differently, the rule is left out: text with a `*` compared with `!=` or under `NOT`,
+since Signalith's `where` reads a plain condition as a filter. Without `NOT`, Splunk's
+`where action = "*"` compares the text exactly, so it runs as `where in('action', "*")`;
+a field in an `IN` list (`where NOT new_ace IN (old_values)`)
+is left out, since Splunk's documentation does not say how `IN` reads a field of several
+values or none. A later `search` runs as Signalith's `search`, so its terms side by side
+are joined by AND, with OR before AND, as in Splunk; a bare term in it is left out. A later
+`search field IN (...)` of a field an earlier stage made multivalue (`makemv`) keeps the row
+when one of its values is in the list, ignoring case, as in Splunk, and runs as
+`where in(mvmap(field, lower(field)), ...)`. So does a later `search` of a list's field
+(`search "{}.ResourceAppId"="..."` after `spath`, or `targetResources{}.type`), which
+Signalith's `search` would compare as one value: each `field=value` is `in()` over its
+values in lower case, with the terms' AND and OR kept. Such a field compared with a `*`,
+a number or under `NOT`, two quoted terms with no space between them, and a `stats` that
+groups by a field `spath` takes from a JSON list (Splunk groups by each value and does not say how it counts one
+that comes twice) are left out. A number a later `where` compares a `rex` group with
+(`where tonumber(target_rid) IN (512, 513)`) makes test events whose field ends in it. A macro in an `IN` list
+(`` process_name IN (`uacbypass_process_name`) ``) stands for its values, as Splunk expands
+macros as text; a list with two values and no comma between them is left out. A
+comma right after `(` or right before `)` adds no value (`IN (,"*auth *","*req *",)`). A `where`
+that compares two
+fields (`where process_name != service_process`) has both quoted, so Signalith compares
+the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
 (`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
 `spath` and the functions Signalith lacks are left out for now;
@@ -1004,7 +1249,8 @@ CI checks as the SigmaHQ pack run on it.
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).
 Every recorded Windows event goes through Signalith's parser, and the detection must
-read it as the rule does and find the attack. 715 of the 717 shipped rules with a
+read it as the rule does and find the attack (a rule's later stages run over the
+recording's matching events together, as they count across events). 715 of the 717 shipped rules with a
 Windows recording do, and up to two recorded events each rule finds are kept with
 its test events, so CI checks real events too:
 
@@ -1018,7 +1264,7 @@ Licence: the rules are © Splunk Inc. under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
 is in the pack folder and the attribution in `NOTICE`). Findings credit the rule's
 authors and link to the rule at the pinned commit. Signalith is not affiliated with
-or endorsed by Splunk.
+or endorsed by Splunk; see [Trademarks](index.md#trademarks).
 
 To refresh the pack from a newer commit:
 
@@ -1073,6 +1319,46 @@ signalith content remove
 Restart Signalith after `install` or `remove` so a running server uses the change, or
 upload on the Detections page instead.
 
+## Describe a detection in plain English
+
+On the Detections page, **Describe a detection** turns a sentence such as
+"more than 10 failed logins from the same source in 5 minutes" into a whole
+rule: the search, how often it runs and how far back it looks, severity,
+ATT&CK techniques, risk and how repeats are grouped. The draft opens in the
+editor turned off, with a note on how each part was chosen, and is
+backtested straight away.
+
+- **Offline by default.** The draft uses the same translator as the Ask
+  box, a table of common attack behaviours (brute force, encoded
+  PowerShell, log clearing, admin group changes and so on) for severity and
+  ATT&CK, and a time window in the sentence ("in 5 minutes", "within an
+  hour") for the lookback. Say "high severity" or "priority: low" to set
+  the severity yourself.
+- **Similar detections.** The draft lists detections already in the
+  library that look like the description, so you can turn one of those on
+  instead. When the translator understands little and the library has a
+  close match, the draft starts as a copy of it.
+- **With an AI model.** When an AI model is set up (Settings, AI
+  assistant), it writes the draft instead, and the offline draft is used if
+  the model fails. The model sees only the description, never your events.
+  Every model draft is checked like any detection, and ATT&CK IDs that are
+  not in the matrix are dropped.
+
+### Backtest
+
+**Backtest** in the editor runs the detection over the past 7, 30 or 90
+days the way its scheduled runs would have, and shows how many findings it
+would have raised, a bar per search, the users and systems that raised the
+most, and the newest titles. Exceptions and the repeat grouping apply.
+Nothing is written: no findings, risk or throttle records.
+
+A backtest runs at most 60 searches, each bounded by the usual search
+limits. Each search covers the lookback, or more when the window needs
+more than 60 of them; a stats detection is then marked approximate, since
+counting over a longer span can cross a threshold that live runs would
+not. Each person runs one backtest at a time, the server at most two, and
+a backtest stops after 3 minutes with what it has so far.
+
 ## Sigma rules
 
 **Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
@@ -1086,7 +1372,10 @@ converts a rule and shows the result for review. Supported:
   logs (and, for the log sources in the table, to their event IDs), and `linux` or
   `macos` leave them out.
 - For `ps_script`, `ScriptBlockText` maps to `script_block_text`, `ScriptBlockId` to
-  `script_block_id` and `Path` to `script_path`.
+  `script_block_id` and `Path` to `script_path`. For `ps_module`, `Payload` maps to
+  `script_block_text` and `ContextInfo` to `event_data`; for `ps_classic_start`,
+  `ps_classic_provider_start` and `service: powershell-classic`, `Data` maps to
+  `event_data`.
 - For the Sysmon log sources other than process creation, fields map by log source:
   `TargetFilename` to `file_path`; `TargetObject` to `registry_path`, `Details` to
   `registry_value_data` and `EventType` (`SetValue`, `CreateKey`...) to
@@ -1138,6 +1427,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `GET`, `PUT`, `DELETE /api/detections/{id}` | Read, save, delete or revert |
 | `GET /api/detections/{id}/yaml` | Export as YAML |
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
+| `POST /api/detections/draft` | `{"description": "...", "mode": "auto"}`: draft a detection from plain English (admin). `mode` is `auto` (the AI model when one is set up), `rules` (offline) or `ai`. Returns the draft with its steps, warnings and similar detections; nothing is saved |
+| `POST /api/detections/backtest` | `{"detection": {...}, "window": "30d"}`: what an unsaved detection would have raised over a past window of 1h to 90d (admin; 429 while one of yours runs). Raises nothing |
 | `POST /api/detections/{id}/run` | Run now on this server and raise findings (admin). Searches the lookback up to now, does not change the schedule, and is recorded as the detection's last Run now with who ran it |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |

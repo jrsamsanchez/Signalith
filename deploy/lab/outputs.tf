@@ -1,6 +1,6 @@
 output "signalith" {
   description = "Open this in your browser once the setup has finished."
-  value       = "https://${hcloud_server.linux["signalith-1"].ipv4_address}:8080"
+  value       = "https://${hcloud_server.linux["signalith-1"].ipv4_address}:9000"
 }
 
 output "watch_setup" {
@@ -9,8 +9,8 @@ output "watch_setup" {
 }
 
 output "admin_password" {
-  description = "Prints the first admin password (user admin)."
-  value       = "ssh root@${hcloud_server.linux["signalith-1"].ipv4_address} cat /etc/signalith/initial-admin-password"
+  description = "Prints the admin password (user signalithadmin) the setup chose."
+  value       = "ssh root@${hcloud_server.linux["signalith-1"].ipv4_address} cat /root/lab/admin-password"
 }
 
 output "machines" {

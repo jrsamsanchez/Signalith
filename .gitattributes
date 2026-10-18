@@ -32,3 +32,9 @@ internal/ingest/testdata/sensor/** text eol=lf
 # a checkout on Windows too, where Terraform reads them.
 deploy/lab/*.sh text eol=lf
 deploy/lab/*.tftpl text eol=lf
+# The Helm chart's copies of them, which go into ConfigMaps.
+deploy/helm/signalith/files/* text eol=lf
+
+# The Signalith Agent's install script: its SHA-256 is checked by the line
+# pasted on each computer, so the same bytes on every system.
+deploy/agent/** text eol=lf

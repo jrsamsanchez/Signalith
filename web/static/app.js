@@ -244,6 +244,7 @@ async function api(path, body, method, extraHeaders) {
     if (data.role && me && data.role !== me.role) roleChanged(data.role);
     else if (typeof toast === 'function') toast(data.error, null, { tone: 'danger', title: 'Your role can’t do that' });
   }
+  if ((resp.status === 409 || resp.status === 503) && data.code === 'tenant_unavailable') tenantUnavailable(resp.status, data.error);
   if (!resp.ok) {
     const err = new Error(data.error || resp.statusText);
     err.status = resp.status;
@@ -256,6 +257,33 @@ async function api(path, body, method, extraHeaders) {
     throw err;
   }
   return data;
+}
+
+// tenantUnavailable tells that the tenant the session works in can't be
+// used. 409: it was turned off, and the server moved the session back to
+// the default tenant, so the page reloads once to show that tenant's data
+// and says why afterwards. 503: the tenant isn't running on the server
+// that answered (another server of a cluster); the page says so once.
+const TENANT_NOTE_KEY = 'signalith.tenantGone';
+let tenantNoted = false;
+function tenantUnavailable(status, text) {
+  if (tenantNoted || reloading) return;
+  tenantNoted = true;
+  const msg = sentence(text || 'The tenant you were working in can’t be used now.');
+  if (status === 409) {
+    let last = 0;
+    try { last = Number(JSON.parse(sessionStorage.getItem(TENANT_NOTE_KEY) || '{}').at) || 0; } catch (_) { last = Date.now(); }
+    // A second refusal soon after the reload is not reloaded again.
+    if (Date.now() - last > 30000) {
+      try {
+        sessionStorage.setItem(TENANT_NOTE_KEY, JSON.stringify({ at: Date.now(), text: msg }));
+        reloading = true;
+        location.reload();
+        return;
+      } catch (_) { /* no reload without a guard */ }
+    }
+  }
+  if (typeof toast === 'function') toast(msg, null, { tone: 'danger', title: 'This tenant can’t be used now' });
 }
 
 // followRequest follows work this server asked of the server that runs
@@ -305,12 +333,33 @@ function roleChanged(role) {
   try { sessionStorage.setItem(ROLE_NOTE_KEY, role); } catch (_) { /* storage may be blocked */ }
   location.reload();
 }
+// Pages about the server itself (Settings > Server, Servers, Security,
+// Audit, sign-in setup, tenants and the like) carry data-provider-only:
+// only the provider's own users may open them. <body data-scope> is
+// "provider" for them and "tenant" for a user who belongs to a tenant,
+// and CSS hides such controls unless it is "provider" (see
+// docs/multi-tenant.md). The server refuses them to tenant users anyway.
+const inTenant = () => !!me && !!me.tenant;
+const providerOnly = (name) => !!document.querySelector(`.nav__item[data-page="${name}"][data-provider-only]`);
+function setScope(m) {
+  document.body.dataset.scope = m.tenant ? 'tenant' : 'provider';
+  if (!m.tenant) return;
+  // Settings at the foot of the sidebar opens the first Settings page a
+  // tenant user may open, as Server is the provider's.
+  const first = [...document.querySelectorAll('#set-tabs .set-tab[data-page]')].find((t) => pageAllowed(t.dataset.page));
+  const home = document.querySelector('.nav__item[data-settings-home]');
+  if (first && home) {
+    home.dataset.page = first.dataset.page;
+    home.href = '#' + first.dataset.page;
+  }
+}
 // meReady resolves once api/me has answered (to null if it failed).
 const meReady = api('api/me').then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
   if (m.must_setup_mfa) { toSignIn(false, true); return m; }
   me = m;
   setRole(m.role);
+  setScope(m);
   showUser(m);
   let note = null;
   let left = null;
@@ -320,6 +369,14 @@ const meReady = api('api/me').then((m) => {
   } catch (_) { /* ignore */ }
   if (note && typeof toast === 'function') {
     toast(`An admin changed your role to ${m.role_label || m.role}. The page reloaded to match.`, null, { title: 'Your role changed' });
+  }
+  let gone = null;
+  try { gone = JSON.parse(sessionStorage.getItem(TENANT_NOTE_KEY) || 'null'); } catch (_) { /* ignore */ }
+  if (gone && gone.text && typeof toast === 'function') {
+    // Left in place (with the text gone) so a refusal right after this
+    // reload does not reload again.
+    try { sessionStorage.setItem(TENANT_NOTE_KEY, JSON.stringify({ at: gone.at })); } catch (_) { /* ignore */ }
+    toast(gone.text, null, { tone: 'danger', title: 'The tenant you were in was turned off' });
   }
   if (left !== null && typeof toast === 'function') {
     // Signed in with a recovery code.
@@ -336,7 +393,7 @@ function pageRole(name) {
   const item = document.querySelector(`.nav__item[data-page="${name}"][data-min-role]`);
   return item ? item.dataset.minRole : '';
 }
-const pageAllowed = (name) => !pageRole(name) || can(pageRole(name));
+const pageAllowed = (name) => (!pageRole(name) || can(pageRole(name))) && !(inTenant() && providerOnly(name));
 
 // ---------- app shell: navigation ----------
 // Each page is a <section id="page-NAME" class="page">; its nav item
@@ -401,7 +458,8 @@ function showPage(name, opts = {}) {
     const who = pageRole(name) === 'admin' ? 'admins' : 'analysts and admins';
     const { title, group } = pageInfo(name);
     const what = group === 'Settings' ? `Settings > ${title}` : title;
-    if (me && typeof toast === 'function') toast(`${what} is only for ${who}.`, null, { tone: 'danger' });
+    const why = inTenant() && providerOnly(name) ? `${what} is about the server itself, which your provider manages.` : `${what} is only for ${who}.`;
+    if (me && typeof toast === 'function') toast(why, null, { tone: 'danger' });
     name = 'search';
     opts = { ...opts, replace: true };
   }
@@ -435,11 +493,16 @@ function showPage(name, opts = {}) {
 
 // pageFromHash reads the page from the address. Add data takes the source
 // to show, as in #data?source=antivirus; it is selected here and the
-// address goes back to #data once the page opens.
+// address goes back to #data once the page opens. Hunting notebooks take
+// the notebook to open, as in #notebooks?id=NB-20261016-..., which
+// notebooks.js picks up from hashNotebook, and Investigations the case to
+// open, as in #cases?id=…, which cases.js picks up from hashCase.
 let hashSource = false;
 // pageQuery is the rest of an address such as #storyline?type=user&object=bob,
 // for the page to read when it opens (and clear).
 let pageQuery = '';
+let hashNotebook = null;
+let hashCase = '';
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -449,11 +512,16 @@ function pageFromHash() {
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
   pageQuery = name === 'data' ? '' : query;
+  if (name === 'notebooks') {
+    hashNotebook = new URLSearchParams(query).get('id') || null;
+    hashSource = !!hashNotebook;
+  }
+  hashCase = name === 'cases' ? (new URLSearchParams(query).get('id') || '').slice(0, 200) : '';
   return name;
 }
 const followHash = () => {
   const name = pageFromHash();
-  if (name && (name !== currentPage || hashSource)) showPage(name, { replace: true });
+  if (name && (name !== currentPage || hashSource || hashCase)) showPage(name, { replace: true });
 };
 window.addEventListener('hashchange', followHash);
 window.addEventListener('popstate', followHash);
@@ -535,12 +603,14 @@ const JUMP_WORDS = {
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
+  tenants: 'tenants customers organizations clients msp mssp multi-tenant switch',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
   notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
   sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
+  baselines: 'ueba behavior behaviour baselines anomaly anomalies first seen rare new country unusual hour impossible travel data volume exfiltration',
   lookuptables: 'lookup lookups tables csv reference owners enrichment context',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
@@ -906,7 +976,9 @@ const commandOf = (seg) => ((seg || '').trim().match(/^[a-z_]+/i) || [''])[0].to
 function eventsPart(q) {
   const segs = pipeSegments(q);
   const i = segs.findIndex((s, n) => n > 0 && ['stats', 'timechart', 'top'].includes(commandOf(s)));
-  return i < 0 ? null : segs.slice(0, i).map((s) => s.trim()).join('\n| ') || '*';
+  // The events behind the numbers; an outputlookup among them wrote its
+  // table already and is not run again.
+  return i < 0 ? null : segs.slice(0, i).filter((s, n) => n === 0 || commandOf(s) !== 'outputlookup').map((s) => s.trim()).join('\n| ') || '*';
 }
 function quoteValue(v) {
   v = String(v);
@@ -977,10 +1049,10 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach'],
+  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous', 'union', 'geostats', 'extract', 'outlier', 'gauge', 'multisearch', 'timewrap', 'cluster', 'xpath', 'abstract', 'highlight', 'anomalydetection', 'correlate', 'predict', 'set', 'setfields', 'kmeans', 'eventcount', 'outputlookup', 'from'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
-  evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
+  evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
 };
 const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
@@ -1266,7 +1338,7 @@ function acceptSuggestion(i) {
   onQueryInput();
 }
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch(); return; }
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
   if (!suggestions.length) return;
   if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
@@ -1486,8 +1558,13 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-async function runSearch() {
+// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// writeLookups, so an outputlookup in the query writes its table when the
+// user runs it, not again when a time change, sort, filter or drilldown
+// re-runs it, nor when the Ask box runs a query it wrote.
+async function runSearch(opts) {
   const query = queryBox.value.trim() || '*';
+  const writeLookups = !!(opts && opts.writeLookups);
   const earliest = timeEarliest();
   const seq = ++searchSeq;
   $('query-error').classList.add('hidden');
@@ -1496,7 +1573,7 @@ async function runSearch() {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1519,7 +1596,7 @@ async function runSearch() {
     if (seq === searchSeq) setSearching(false);
   }
 }
-$('run').addEventListener('click', runSearch);
+$('run').addEventListener('click', () => runSearch({ writeLookups: true }));
 $('time').addEventListener('change', () => {
   const v = $('time').value;
   if (v === QUERY_TIME) return;
@@ -1625,6 +1702,9 @@ function renderResult() {
     el('span', { class: 'hide-sm', 'aria-hidden': 'true' }, '·'),
     el('span', { class: 'hide-sm' }, `${(res.took_ms || 0).toLocaleString()} ms`),
   ];
+  if ((res.summaries || []).length) {
+    stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
+  }
   if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
   if ((res.rows || []).length) {
     stats.push(el('button', {
@@ -2452,7 +2532,8 @@ function renderGuide() {
 // as "Do this: command" shows the command in a copyable well, and the step
 // that saves the config file carries the file itself.
 //
-// "Agents send to" is the address written into the config. It starts as
+// "Agents send to" is the address written into the config, on the agent
+// port (the server puts an address of this server on it). It starts as
 // the server's public_url; when that is localhost but this browser reached
 // Signalith by another name, the browser's address is the better guess. An
 // address typed here is remembered in this browser.
@@ -2520,7 +2601,7 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
+const AGENT_TOKEN_DEFAULTS = { agent: 'Computers with the Signalith Agent', linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
 // Collectors that read AWS CloudTrail, Azure's event hub or Google Cloud's
@@ -2612,6 +2693,7 @@ function agentTokDrop() {
   $('agent-token-made').replaceChildren();
   if (had && agentSetupData) agentSetupRender(agentSetupData);
   if (had && typeof sensorSetupRender === 'function') sensorSetupRender();
+  if (had && typeof agentInstallRender === 'function') agentInstallRender();
 }
 
 function agentTokError(msg) {
@@ -2692,6 +2774,7 @@ async function agentTokEnsure() {
       agentTokMadeNote();
       if (agentSetupData) agentSetupRender(agentSetupData);
       if (typeof sensorSetupRender === 'function') sensorSetupRender();
+      if (typeof agentInstallRender === 'function') agentInstallRender();
       if (typeof tokensReload === 'function') tokensReload();
       return true;
     } catch (e) {
@@ -2709,7 +2792,7 @@ function agentTokMadeNote() {
   const box = $('agent-token-made');
   box.replaceChildren(icon('circle-check'), el('div', {},
     el('b', {}, `Created token “${agentTok.made.name}”.`),
-    el('p', {}, typeof sensorSetupActive === 'function' && sensorSetupActive()
+    el('p', {}, (typeof sensorSetupActive === 'function' && sensorSetupActive()) || (typeof agentInstallActive === 'function' && agentInstallActive())
       ? 'It’s in the line below. Signalith shows it only now, so copy the line before you leave this page.'
       : 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
   box.classList.remove('hidden');
@@ -2787,7 +2870,9 @@ async function agentSetupLoad() {
   const gcp = os === 'gcp';
   const cloud = aws || azure || gcp;
   const collector = otel || cloud;
-  const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
+  // Signalith Agent: one line, made by agent-setup.js.
+  const managed = os === 'agent';
+  const host = collector ? $('otel-host').value : osq || sensor || managed ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
   $('aws-paths').classList.toggle('hidden', !aws);
   $('gcp-paths').classList.toggle('hidden', !gcp);
@@ -2823,6 +2908,7 @@ async function agentSetupLoad() {
   // Network sensor > Set up a new sensor: one line instead of a
   // configuration (sensor-setup.js).
   if (typeof sensorSetupSync === 'function' && sensorSetupSync(sensor)) return;
+  if (typeof agentInstallSync === 'function' && agentInstallSync(managed)) return;
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
@@ -2849,9 +2935,15 @@ async function agentSetupLoad() {
     sensorFieldError('');
     awsFieldError('');
     gcpFieldError('');
+    let shown = server;
+    if (!agentDest.to && server && a.server_url && a.server_url !== server && agentSameHost(server, a.server_url)) {
+      // An address of this server, such as the web page's: agents send to
+      // it on the agent port, which the field shows.
+      shown = agentServerEl.value = agentServerSent = a.server_url;
+    }
     try {
       if (agentDest.to) { /* one server's own address: not remembered */ }
-      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      else if (shown && shown !== agentServerGuess) localStorage.setItem(agentServerKey, shown);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
@@ -2909,6 +3001,17 @@ function awsFieldError(field, msg) {
   }
 }
 
+// agentSameHost reports whether two addresses differ in their port alone.
+function agentSameHost(a, b) {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    return x.protocol === y.protocol && x.hostname === y.hostname;
+  } catch (_) {
+    return false;
+  }
+}
+
 // gcpFieldError shows a Google Cloud option's error under it (field
 // gcp_project or gcp_subscription), or clears both when field is empty.
 function gcpFieldError(field, msg) {
@@ -2934,7 +3037,17 @@ function gcpFieldError(field, msg) {
 // the better guess, so the config must be built again.
 function agentServerFirst(a) {
   const own = a.server_url || '';
-  agentServerGuess = a.server_loopback && !agentLoopbackHost(location.hostname) ? location.origin : own;
+  agentServerGuess = own;
+  if (a.server_loopback && !agentLoopbackHost(location.hostname)) {
+    // This browser's address, on the port agents send to (server_url's).
+    try {
+      const u = new URL(own);
+      u.hostname = location.hostname;
+      agentServerGuess = u.origin;
+    } catch (_) {
+      agentServerGuess = location.origin;
+    }
+  }
   agentServerEl.placeholder = agentServerGuess;
   if (!agentServerEl.value.trim()) agentServerEl.value = agentServerGuess;
   return agentServerGuess !== own;
@@ -2966,8 +3079,8 @@ function agentServerWarn(a) {
   if (w.dataset.url === a.server_url) return; // unchanged: don't announce it again
   w.dataset.url = a.server_url;
   let host = 'localhost';
-  let example = 'https://192.168.1.20:8080';
-  let port = '8080';
+  let example = 'https://192.168.1.20:7779';
+  let port = '7779';
   try {
     const u = new URL(a.server_url);
     host = u.hostname;
@@ -3326,17 +3439,27 @@ try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; }
 // setup lives in antivirus.js.
 function loadDataSource() {
   const src = document.querySelector('input[name=os]:checked').value;
-  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365');
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365' || src === 'okta' || src === 'kubernetes' || src === 'github' || src === 'custom');
   $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
   $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
   $('m365-setup').classList.toggle('hidden', src !== 'm365');
+  $('okta-setup').classList.toggle('hidden', src !== 'okta');
+  $('kubernetes-setup').classList.toggle('hidden', src !== 'kubernetes');
+  $('github-setup').classList.toggle('hidden', src !== 'github');
+  $('custom-setup').classList.toggle('hidden', src !== 'custom');
+  if (src === 'custom') return typeof customLogsOpen === 'function' ? customLogsOpen() : null;
   if (src === 'm365') return typeof m365Open === 'function' ? m365Open() : null;
+  if (src === 'okta') return typeof oktaOpen === 'function' ? oktaOpen() : null;
+  // Kubernetes: the steps are on the page.
+  if (src === 'kubernetes') return null;
+  // GitHub: the steps are the card's own; nothing to load.
+  if (src === 'github') return null;
   if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
-// pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365 or gcp. It is false
+// pickDataSource selects a source card on the Add data page: agent, linux,
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, okta, github, gcp, kubernetes or custom. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);

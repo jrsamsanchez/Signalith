@@ -4,7 +4,7 @@ title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
 version: 42478221b1a062411b8185732c82caa439271122
-date: "2026-10-16"
+date: "2026-10-17"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -1533,6 +1533,114 @@ rules:
     rule_id: 99980a85-3a61-43d3-ac0f-b68d6b4797b1
     file: gcp_vpn_tunnel_modified_or_deleted.yml
     path: rules/cloud/gcp/audit/gcp_vpn_tunnel_modified_or_deleted.yml
+  - id: sigma-github-delete-action-invoked
+    rule_id: 16a71777-0b2e-4db7-9888-9d59cb75200b
+    file: github_delete_action_invoked.yml
+    path: rules/application/github/audit/github_delete_action_invoked.yml
+  - id: sigma-github-disable-high-risk-configuration
+    rule_id: 8622c92d-c00e-463c-b09d-fd06166f6794
+    file: github_disable_high_risk_configuration.yml
+    path: rules/application/github/audit/github_disable_high_risk_configuration.yml
+  - id: sigma-github-disabled-outdated-dependency-or-vulnerability
+    rule_id: 34e1c7d4-0cd5-419d-9f1b-1dad3f61018d
+    file: github_disabled_outdated_dependency_or_vulnerability.yml
+    path: rules/application/github/audit/github_disabled_outdated_dependency_or_vulnerability.yml
+  - id: sigma-github-fork-private-repos-enabled-or-cleared
+    rule_id: 69b3bd1e-b38a-462f-9a23-fbdbf63d2294
+    file: github_fork_private_repos_enabled_or_cleared.yml
+    path: rules/application/github/audit/github_fork_private_repos_enabled_or_cleared.yml
+  - id: sigma-github-new-secret-created
+    rule_id: f9405037-bc97-4eb7-baba-167dad399b83
+    file: github_new_secret_created.yml
+    path: rules/application/github/audit/github_new_secret_created.yml
+  - id: sigma-github-outside-collaborator-detected
+    rule_id: eaa9ac35-1730-441f-9587-25767bde99d7
+    file: github_outside_collaborator_detected.yml
+    path: rules/application/github/audit/github_outside_collaborator_detected.yml
+  - id: sigma-github-push-protection-bypass-detected
+    rule_id: 02cf536a-cf21-4876-8842-4159c8aee3cc
+    file: github_push_protection_bypass_detected.yml
+    path: rules/application/github/audit/github_push_protection_bypass_detected.yml
+  - id: sigma-github-push-protection-disabled
+    rule_id: ccd55945-badd-4bae-936b-823a735d37dd
+    file: github_push_protection_disabled.yml
+    path: rules/application/github/audit/github_push_protection_disabled.yml
+  - id: sigma-github-repo-or-org-transferred
+    rule_id: 04ad83ef-1a37-4c10-b57a-81092164bf33
+    file: github_repo_or_org_transferred.yml
+    path: rules/application/github/audit/github_repo_or_org_transferred.yml
+  - id: sigma-github-secret-scanning-feature-disabled
+    rule_id: 3883d9a0-fd0f-440f-afbb-445a2a799bb8
+    file: github_secret_scanning_feature_disabled.yml
+    path: rules/application/github/audit/github_secret_scanning_feature_disabled.yml
+  - id: sigma-github-self-hosted-runner-changes-detected
+    rule_id: f8ed0e8f-7438-4b79-85eb-f358ef2fbebd
+    file: github_self_hosted_runner_changes_detected.yml
+    path: rules/application/github/audit/github_self_hosted_runner_changes_detected.yml
+  - id: sigma-github-ssh-certificate-config-changed
+    rule_id: 2f575940-d85e-4ddc-af13-17dad6f1a0ef
+    file: github_ssh_certificate_config_changed.yml
+    path: rules/application/github/audit/github_ssh_certificate_config_changed.yml
+  - id: sigma-kubernetes-audit-change-admission-controller
+    rule_id: eed82177-38f5-4299-8a76-098d50d225ab
+    file: kubernetes_audit_change_admission_controller.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_change_admission_controller.yml
+  - id: sigma-kubernetes-audit-cronjob-modification
+    rule_id: 0c9b3bda-41a6-4442-9345-356ae86343dc
+    file: kubernetes_audit_cronjob_modification.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_cronjob_modification.yml
+  - id: sigma-kubernetes-audit-deployment-deleted
+    rule_id: 40967487-139b-4811-81d9-c9767a92aa5a
+    file: kubernetes_audit_deployment_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_deployment_deleted.yml
+  - id: sigma-kubernetes-audit-events-deleted
+    rule_id: 3132570d-cab2-4561-9ea6-1743644b2290
+    file: kubernetes_audit_events_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_events_deleted.yml
+  - id: sigma-kubernetes-audit-exec-into-container
+    rule_id: a1b0ca4e-7835-413e-8471-3ff2b8a66be6
+    file: kubernetes_audit_exec_into_container.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_exec_into_container.yml
+  - id: sigma-kubernetes-audit-hostpath-mount
+    rule_id: 402b955c-8fe0-4a8c-b635-622b4ac5f902
+    file: kubernetes_audit_hostpath_mount.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_hostpath_mount.yml
+  - id: sigma-kubernetes-audit-pod-in-system-namespace
+    rule_id: a80d927d-ac6e-443f-a867-e8d6e3897318
+    file: kubernetes_audit_pod_in_system_namespace.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_pod_in_system_namespace.yml
+  - id: sigma-kubernetes-audit-privileged-pod-creation
+    rule_id: c5cd1b20-36bb-488d-8c05-486be3d0cb97
+    file: kubernetes_audit_privileged_pod_creation.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_privileged_pod_creation.yml
+  - id: sigma-kubernetes-audit-rbac-permisions-listing
+    rule_id: 84b777bd-c946-4d17-aa2e-c39f5a454325
+    file: kubernetes_audit_rbac_permisions_listing.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_rbac_permisions_listing.yml
+  - id: sigma-kubernetes-audit-rolebinding-modification
+    rule_id: 10b97915-ec8d-455f-a815-9a78926585f6
+    file: kubernetes_audit_rolebinding_modification.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_rolebinding_modification.yml
+  - id: sigma-kubernetes-audit-secrets-enumeration
+    rule_id: eeb3e9e1-b685-44e4-9232-6bb701f925b5
+    file: kubernetes_audit_secrets_enumeration.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_secrets_enumeration.yml
+  - id: sigma-kubernetes-audit-secrets-modified-or-deleted
+    rule_id: 58d31a75-a4f8-4c40-985b-373d58162ca2
+    file: kubernetes_audit_secrets_modified_or_deleted.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_secrets_modified_or_deleted.yml
+  - id: sigma-kubernetes-audit-serviceaccount-creation
+    rule_id: e31bae15-83ed-473e-bf31-faf4f8a17d36
+    file: kubernetes_audit_serviceaccount_creation.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_serviceaccount_creation.yml
+  - id: sigma-kubernetes-audit-sidecar-injection
+    rule_id: ad9012a6-e518-4432-9890-f3b82b8fc71f
+    file: kubernetes_audit_sidecar_injection.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_sidecar_injection.yml
+  - id: sigma-kubernetes-audit-unauthorized-unauthenticated-actions
+    rule_id: 0d933542-1f1f-420d-97d4-21b2c3c492d9
+    file: kubernetes_audit_unauthorized_unauthenticated_actions.yml
+    path: rules/application/kubernetes/audit/kubernetes_audit_unauthorized_unauthenticated_actions.yml
   - id: sigma-lnx-auditd-audio-capture
     rule_id: a7af2487-9c2f-42e4-9bb9-ff961f0561d5
     file: lnx_auditd_audio_capture.yml
@@ -2761,6 +2869,82 @@ rules:
     rule_id: 992a6cae-db6a-43c8-9cec-76d7195c96fc
     file: net_connection_win_wscript_cscript_outbound_connection.yml
     path: rules/windows/network_connection/net_connection_win_wscript_cscript_outbound_connection.yml
+  - id: sigma-okta-admin-activity-from-proxy-query
+    rule_id: 9058ca8b-f397-4fd1-a9fa-2b7aad4d6309
+    file: okta_admin_activity_from_proxy_query.yml
+    path: rules/identity/okta/okta_admin_activity_from_proxy_query.yml
+  - id: sigma-okta-admin-role-assigned-to-user-or-group
+    rule_id: 413d4a81-6c98-4479-9863-014785fd579c
+    file: okta_admin_role_assigned_to_user_or_group.yml
+    path: rules/identity/okta/okta_admin_role_assigned_to_user_or_group.yml
+  - id: sigma-okta-admin-role-assignment-created
+    rule_id: 139bdd4b-9cd7-49ba-a2f4-744d0a8f5d8c
+    file: okta_admin_role_assignment_created.yml
+    path: rules/identity/okta/okta_admin_role_assignment_created.yml
+  - id: sigma-okta-api-token-created
+    rule_id: 19951c21-229d-4ccb-8774-b993c3ff3c5c
+    file: okta_api_token_created.yml
+    path: rules/identity/okta/okta_api_token_created.yml
+  - id: sigma-okta-api-token-revoked
+    rule_id: cf1dbc6b-6205-41b4-9b88-a83980d2255b
+    file: okta_api_token_revoked.yml
+    path: rules/identity/okta/okta_api_token_revoked.yml
+  - id: sigma-okta-application-modified-or-deleted
+    rule_id: 7899144b-e416-4c28-b0b5-ab8f9e0a541d
+    file: okta_application_modified_or_deleted.yml
+    path: rules/identity/okta/okta_application_modified_or_deleted.yml
+  - id: sigma-okta-application-sign-on-policy-modified-or-deleted
+    rule_id: 8f668cc4-c18e-45fe-ad00-624a981cf88a
+    file: okta_application_sign_on_policy_modified_or_deleted.yml
+    path: rules/identity/okta/okta_application_sign_on_policy_modified_or_deleted.yml
+  - id: sigma-okta-fastpass-phishing-detection
+    rule_id: ee39a9f7-5a79-4b0a-9815-d36b3cf28d3e
+    file: okta_fastpass_phishing_detection.yml
+    path: rules/identity/okta/okta_fastpass_phishing_detection.yml
+  - id: sigma-okta-identity-provider-created
+    rule_id: 969c7590-8c19-4797-8c1b-23155de6e7ac
+    file: okta_identity_provider_created.yml
+    path: rules/identity/okta/okta_identity_provider_created.yml
+  - id: sigma-okta-mfa-reset-or-deactivated
+    rule_id: 50e068d7-1e6b-4054-87e5-0a592c40c7e0
+    file: okta_mfa_reset_or_deactivated.yml
+    path: rules/identity/okta/okta_mfa_reset_or_deactivated.yml
+  - id: sigma-okta-network-zone-deactivated-or-deleted
+    rule_id: 9f308120-69ed-4506-abde-ac6da81f4310
+    file: okta_network_zone_deactivated_or_deleted.yml
+    path: rules/identity/okta/okta_network_zone_deactivated_or_deleted.yml
+  - id: sigma-okta-new-behaviours-admin-console
+    rule_id: a0b38b70-3cb5-484b-a4eb-c4d8e7bcc0a9
+    file: okta_new_behaviours_admin_console.yml
+    path: rules/identity/okta/okta_new_behaviours_admin_console.yml
+  - id: sigma-okta-policy-modified-or-deleted
+    rule_id: 1667a172-ed4c-463c-9969-efd92195319a
+    file: okta_policy_modified_or_deleted.yml
+    path: rules/identity/okta/okta_policy_modified_or_deleted.yml
+  - id: sigma-okta-policy-rule-modified-or-deleted
+    rule_id: 0c97c1d3-4057-45c9-b148-1de94b631931
+    file: okta_policy_rule_modified_or_deleted.yml
+    path: rules/identity/okta/okta_policy_rule_modified_or_deleted.yml
+  - id: sigma-okta-security-threat-detected
+    rule_id: 5c82f0b9-3c6d-477f-a318-0e14a1df73e0
+    file: okta_security_threat_detected.yml
+    path: rules/identity/okta/okta_security_threat_detected.yml
+  - id: sigma-okta-suspicious-activity-enduser-report
+    rule_id: 07e97cc6-aed1-43ae-9081-b3470d2367f1
+    file: okta_suspicious_activity_enduser_report.yml
+    path: rules/identity/okta/okta_suspicious_activity_enduser_report.yml
+  - id: sigma-okta-unauthorized-access-to-app
+    rule_id: 6cc2b61b-d97e-42ef-a9dd-8aa8dc951657
+    file: okta_unauthorized_access_to_app.yml
+    path: rules/identity/okta/okta_unauthorized_access_to_app.yml
+  - id: sigma-okta-user-account-locked-out
+    rule_id: 14701da0-4b0f-4ee6-9c95-2ffb4e73bb9a
+    file: okta_user_account_locked_out.yml
+    path: rules/identity/okta/okta_user_account_locked_out.yml
+  - id: sigma-okta-user-session-start-via-anonymised-proxy
+    rule_id: bde30855-5c53-4c18-ae90-1ff79ebc9578
+    file: okta_user_session_start_via_anonymised_proxy.yml
+    path: rules/identity/okta/okta_user_session_start_via_anonymised_proxy.yml
   - id: sigma-pipe-created-adfs-namedpipe-connection-uncommon-tool
     rule_id: 1ea13e8c-03ea-409b-877d-ce5c3d2c1cb3
     file: pipe_created_adfs_namedpipe_connection_uncommon_tool.yml
@@ -2821,6 +3005,150 @@ rules:
     rule_id: 41504465-5e3a-4a5b-a5b4-2a0baadd4463
     file: pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
     path: rules/windows/pipe_created/pipe_created_sysinternals_psexec_default_pipe_susp_location.yml
+  - id: sigma-posh-pc-abuse-nslookup-with-dns-records
+    rule_id: 999bff6d-dc15-44c9-9f5c-e1051bfc86e1
+    file: posh_pc_abuse_nslookup_with_dns_records.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_abuse_nslookup_with_dns_records.yml
+  - id: sigma-posh-pc-delete-volume-shadow-copies
+    rule_id: 87df9ee1-5416-453a-8a08-e8d4a51e9ce1
+    file: posh_pc_delete_volume_shadow_copies.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_delete_volume_shadow_copies.yml
+  - id: sigma-posh-pc-downgrade-attack
+    rule_id: 6331d09b-4785-4c13-980f-f96661356249
+    file: posh_pc_downgrade_attack.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_downgrade_attack.yml
+  - id: sigma-posh-pc-download-via-webclient
+    rule_id: 3236fcd0-b7e3-4433-b4f8-86ad61a9af2d
+    file: posh_pc_download_via_webclient.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_download_via_webclient.yml
+  - id: sigma-posh-pc-exe-calling-ps
+    rule_id: c70e019b-1479-4b65-b0cc-cd0c6093a599
+    file: posh_pc_exe_calling_ps.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_exe_calling_ps.yml
+  - id: sigma-posh-pc-powercat
+    rule_id: c5b20776-639a-49bf-94c7-84f912b91c15
+    file: posh_pc_powercat.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_powercat.yml
+  - id: sigma-posh-pc-remote-powershell-session
+    rule_id: 60167e5c-84b2-4c95-a7ac-86281f27c445
+    file: posh_pc_remote_powershell_session.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_remote_powershell_session.yml
+  - id: sigma-posh-pc-remotefxvgpudisablement-abuse
+    rule_id: f65e22f9-819e-4f96-9c7b-498364ae7a25
+    file: posh_pc_remotefxvgpudisablement_abuse.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_remotefxvgpudisablement_abuse.yml
+  - id: sigma-posh-pc-susp-get-nettcpconnection
+    rule_id: b366adb4-d63d-422d-8a2c-186463b5ded0
+    file: posh_pc_susp_get_nettcpconnection.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_susp_get_nettcpconnection.yml
+  - id: sigma-posh-pc-susp-zip-compress
+    rule_id: 71ff406e-b633-4989-96ec-bc49d825a412
+    file: posh_pc_susp_zip_compress.yml
+    path: rules/windows/powershell/powershell_classic/posh_pc_susp_zip_compress.yml
+  - id: sigma-posh-pm-active-directory-module-dll-import
+    rule_id: 74176142-4684-4d8a-8b0a-713257e7df8e
+    file: posh_pm_active_directory_module_dll_import.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_active_directory_module_dll_import.yml
+  - id: sigma-posh-pm-alternate-powershell-hosts
+    rule_id: 64e8e417-c19a-475a-8d19-98ea705394cc
+    file: posh_pm_alternate_powershell_hosts.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_alternate_powershell_hosts.yml
+  - id: sigma-posh-pm-bad-opsec-artifacts
+    rule_id: 8d31a8ce-46b5-4dd6-bdc3-680931f1db86
+    file: posh_pm_bad_opsec_artifacts.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_bad_opsec_artifacts.yml
+  - id: sigma-posh-pm-clear-powershell-history
+    rule_id: f99276ad-d122-4989-a09a-d00904a5f9d2
+    file: posh_pm_clear_powershell_history.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_clear_powershell_history.yml
+  - id: sigma-posh-pm-get-addbaccount
+    rule_id: b140afd9-474b-4072-958e-2ebb435abd68
+    file: posh_pm_get_addbaccount.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_get_addbaccount.yml
+  - id: sigma-posh-pm-get-clipboard
+    rule_id: 4cbd4f12-2e22-43e3-882f-bff3247ffb78
+    file: posh_pm_get_clipboard.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_get_clipboard.yml
+  - id: sigma-posh-pm-hktl-evil-winrm-execution
+    rule_id: 9fe55ea2-4cd6-4491-8a54-dd6871651b51
+    file: posh_pm_hktl_evil_winrm_execution.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_hktl_evil_winrm_execution.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-compress
+    rule_id: 7034cbbb-cc55-4dc2-8dad-36c0b942e8f1
+    file: posh_pm_invoke_obfuscation_via_compress.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_compress.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-rundll
+    rule_id: a23791fe-8846-485a-b16b-ca691e1b03d4
+    file: posh_pm_invoke_obfuscation_via_rundll.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_rundll.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-stdin
+    rule_id: c72aca44-8d52-45ad-8f81-f96c4d3c755e
+    file: posh_pm_invoke_obfuscation_via_stdin.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_stdin.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-clip
+    rule_id: ebdf49d8-b89c-46c9-8fdf-2c308406f6bd
+    file: posh_pm_invoke_obfuscation_via_use_clip.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_clip.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-mhsta
+    rule_id: 07ad2ea8-6a55-4ac6-bf3e-91b8e59676eb
+    file: posh_pm_invoke_obfuscation_via_use_mhsta.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_mhsta.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-use-rundll32
+    rule_id: 88a22f69-62f9-4b8a-aa00-6b0212f2f05a
+    file: posh_pm_invoke_obfuscation_via_use_rundll32.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_use_rundll32.yml
+  - id: sigma-posh-pm-invoke-obfuscation-via-var
+    rule_id: f3c89218-8c3d-4ba9-9974-f1d8e6a1b4a6
+    file: posh_pm_invoke_obfuscation_via_var.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_invoke_obfuscation_via_var.yml
+  - id: sigma-posh-pm-remote-powershell-session
+    rule_id: 96b9f619-aa91-478f-bacb-c3e50f8df575
+    file: posh_pm_remote_powershell_session.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_remote_powershell_session.yml
+  - id: sigma-posh-pm-remotefxvgpudisablement-abuse
+    rule_id: 38a7625e-b2cb-485d-b83d-aff137d859f4
+    file: posh_pm_remotefxvgpudisablement_abuse.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_remotefxvgpudisablement_abuse.yml
+  - id: sigma-posh-pm-susp-ad-group-reco
+    rule_id: 815bfc17-7fc6-4908-a55e-2f37b98cedb4
+    file: posh_pm_susp_ad_group_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_ad_group_reco.yml
+  - id: sigma-posh-pm-susp-download
+    rule_id: de41232e-12e8-49fa-86bc-c05c7e722df9
+    file: posh_pm_susp_download.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_download.yml
+  - id: sigma-posh-pm-susp-get-nettcpconnection
+    rule_id: aff815cc-e400-4bf0-a47a-5d8a2407d4e1
+    file: posh_pm_susp_get_nettcpconnection.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_get_nettcpconnection.yml
+  - id: sigma-posh-pm-susp-invocation-generic
+    rule_id: bbb80e91-5746-4fbe-8898-122e2cafdbf4
+    file: posh_pm_susp_invocation_generic.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_invocation_generic.yml
+  - id: sigma-posh-pm-susp-invocation-specific
+    rule_id: 8ff28fdd-e2fa-4dfa-aeda-ef3d61c62090
+    file: posh_pm_susp_invocation_specific.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_invocation_specific.yml
+  - id: sigma-posh-pm-susp-local-group-reco
+    rule_id: cef24b90-dddc-4ae1-a09a-8764872f69fc
+    file: posh_pm_susp_local_group_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_local_group_reco.yml
+  - id: sigma-posh-pm-susp-reset-computermachinepassword
+    rule_id: e3818659-5016-4811-a73c-dde4679169d2
+    file: posh_pm_susp_reset_computermachinepassword.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_reset_computermachinepassword.yml
+  - id: sigma-posh-pm-susp-smb-share-reco
+    rule_id: 6942bd25-5970-40ab-af49-944247103358
+    file: posh_pm_susp_smb_share_reco.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_smb_share_reco.yml
+  - id: sigma-posh-pm-susp-zip-compress
+    rule_id: daf7eb81-35fd-410d-9d7a-657837e602bb
+    file: posh_pm_susp_zip_compress.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_susp_zip_compress.yml
+  - id: sigma-posh-pm-syncappvpublishingserver-exe
+    rule_id: fe5ce7eb-dad8-467c-84a9-31ec23bd644a
+    file: posh_pm_syncappvpublishingserver_exe.yml
+    path: rules/windows/powershell/powershell_module/posh_pm_syncappvpublishingserver_exe.yml
   - id: sigma-proc-7zip-exfil-dmp-files
     rule_id: ec570e53-4c76-45a9-804d-dc3f355ff7a7
     file: proc_creation_win_7zip_exfil_dmp_files.yml

@@ -11,7 +11,8 @@
 #   1. builds Signalith from the repository at the branch Terraform names;
 #   2. OpenSearch on opensearch-1..3 with certificates of its own CA;
 #   3. signalith-1, pointed at OpenSearch, and the CA handed to the cluster;
-#   4. signalith-2 and the scanner, joined with join tokens;
+#   4. signalith-2 (and signalith-3 in a load test with three servers)
+#      and the scanner, joined with join tokens;
 #   5. OpenVAS on the scanner;
 #   6. Fluent Bit on the Linux endpoints;
 #   7. the network sensor, fed by a copy of the endpoints' traffic.
@@ -31,8 +32,9 @@ OPENVAS=$(conf .openvas)
 DOMAIN=$(conf .domain)
 SIEM=$(conf .siem)
 LB_IP=$(conf .lb_ip)
-SIEM_URL="https://$SIEM:8080"
-OPENSEARCH_VERSION=2.17.1
+SIEM_URL="https://$SIEM:9000"
+# Labs made before the version was a setting have no "opensearch" in lab.json.
+OPENSEARCH_VERSION=$(conf '.opensearch // "3.9.0"')
 BIN=/usr/local/bin/signalith
 
 ip_of() { conf ".machines[] | select(.name == \"$1\") | .ip"; }
@@ -105,14 +107,54 @@ retry() {
   return 1
 }
 
+# The built-in admin must replace the first password Signalith made before
+# anything else, so the lab gives it a new random one, kept for root in
+# $LAB/admin-password (lab-e2e reads it too).
+admin_password() {
+  if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
+}
+
+# admin_user is the built-in admin's name in signalith-1's config:
+# signalithadmin on a new install, admin on one made before 0.3.1.
+admin_user() {
+  local u
+  u=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
+  echo "${u:-signalithadmin}"
+}
+
+# login signs in as the built-in admin, keeping the session in the jar $1.
+# The password goes to curl on its input, not its command line. One whose
+# change Signalith took though curl did not hear back is still in
+# admin-password.new.
+login() {
+  local pw
+  for pw in "" "$LAB/admin-password.new"; do
+    if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
+    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) --arg u "$(admin_user)" '{username: $u, password: ($p | rtrimstr("\n"))}' |
+      curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/login >/dev/null; then
+      [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # api calls Signalith's API on signalith-1, signed in as the built-in
 # admin (as the Add data page would).
 api() {
   local ca=/var/lib/signalith/tls/ca.pem jar=$LAB/cookies
-  curl -fsS -c "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:8080' \
-    -d "$(jq -n --rawfile p /etc/signalith/initial-admin-password '{username: "admin", password: ($p | rtrimstr("\n"))}')" \
-    https://localhost:8080/api/login >/dev/null
-  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:8080' "https://localhost:8080$1"
+  login "$jar"
+  if [ "$(curl -fsS -b "$jar" --cacert "$ca" https://localhost:9000/api/me | jq -r .must_change_password)" = true ]; then
+    (umask 077 && openssl rand -base64 24 | tr -d '/+=\n' >"$LAB/admin-password.new")
+    jq -n --rawfile c <(admin_password) --rawfile n "$LAB/admin-password.new" \
+      '{current_password: ($c | rtrimstr("\n")), new_password: $n}' |
+      curl -fsS -b "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
+        --data-binary @- https://localhost:9000/api/me/password >/dev/null
+    mv "$LAB/admin-password.new" "$LAB/admin-password"
+    login "$jar"
+  fi
+  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:9000' "https://localhost:9000$1"
   rm -f "$jar"
 }
 
@@ -188,9 +230,20 @@ cluster.initial_cluster_manager_nodes: [${managers%, }]"
     script "$n" NAME="$n" IP="$(ip_of "$n")" VERSION="$OPENSEARCH_VERSION" DISCOVERY="$discovery" <<'EOF'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# The load test's nodes keep their data on a volume of their own.
+vol=$(ls /dev/disk/by-id/scsi-0HC_Volume_* 2>/dev/null | head -n 1 || true)
+if [ -n "$vol" ] && ! mountpoint -q /var/lib/opensearch; then
+  mkdir -p /var/lib/opensearch
+  grep -q " /var/lib/opensearch " /etc/fstab || echo "$vol /var/lib/opensearch ext4 discard,nofail,defaults 0 0" >>/etc/fstab
+  mount /var/lib/opensearch
+fi
 if ! dpkg -s opensearch >/dev/null 2>&1; then
-  curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
-  echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt stable main" >/etc/apt/sources.list.d/opensearch-2.x.list
+  series="${VERSION%%.*}.x"
+  # OpenSearch 3 packages are signed with a newer release key than 2's.
+  key=opensearch-release.pgp
+  [ "$series" != 2.x ] || key=opensearch.pgp
+  curl -fsSL "https://artifacts.opensearch.org/publickeys/$key" | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
+  echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   # No demo security settings: the lab's own are put in place below. The
   # package still asks for a demo admin password, which is never used.
@@ -198,6 +251,7 @@ if ! dpkg -s opensearch >/dev/null 2>&1; then
     apt-get install -y -q "opensearch=$VERSION"
 fi
 systemctl stop opensearch 2>/dev/null || true
+chown opensearch:opensearch /var/lib/opensearch
 # The package puts its demo certificates next to opensearch.yml even when
 # told not to set them up, and the security plugin refuses to start while
 # they are there.
@@ -264,7 +318,7 @@ opensearch_security() {
 edit_config() {
   local urls=() n
   for n in $(names opensearch); do [ "$n" = opensearch-1 ] || urls+=("https://$n:9200"); done
-  python3 - /etc/signalith/signalith.yaml "$SIEM_URL" "https://signalith-1.$DOMAIN:8080" "$SIEM" "$LB_IP" "${urls[@]}" <<'EOF'
+  python3 - /etc/signalith/signalith.yaml "$SIEM_URL" "https://signalith-1.$DOMAIN:9000" "$SIEM" "$LB_IP" "${urls[@]}" <<'EOF'
 import sys, yaml
 path, public, node, siem, lb, *urls = sys.argv[1:]
 with open(path) as f:
@@ -292,7 +346,7 @@ with open(path, "w") as f:
 EOF
 }
 
-readyz() { curl -fsSk -o /dev/null https://127.0.0.1:8080/readyz; }
+readyz() { curl -fsSk -o /dev/null https://127.0.0.1:9000/readyz; }
 
 signalith_first() {
   sh "$LAB/src/deploy/linux/install.sh" --binary "$LAB/signalith"
@@ -322,11 +376,11 @@ opensearch_ca() {
 
 join() {
   local name=$1 role=${2:-} out line
-  local args=(cluster token -json -platform linux -note "lab" -url "https://signalith-1.$DOMAIN:8080"
-    -node-url "https://$name.$DOMAIN:8080")
+  local args=(cluster token -json -platform linux -note "lab" -url "https://signalith-1.$DOMAIN:9000"
+    -node-url "https://$name.$DOMAIN:9000")
   [ -z "$role" ] || args+=(-role "$role")
   out=$(sg "${args[@]}")
-  line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:8080"
+  line="$(jq -r .commands.linux <<<"$out") --name $name --node-url https://$name.$DOMAIN:9000"
   on "$name" "bash -c $(printf '%q' "$line")"
   # The same public address as signalith-1, so the servers' settings
   # match. A join through install.sh can leave node.id root's, which the
@@ -347,6 +401,11 @@ systemctl restart signalith
 EOF
   if [ "$role" = scanner ]; then
     on "$name" 'DEBIAN_FRONTEND=noninteractive apt-get install -y -q nmap >/dev/null && systemctl restart signalith'
+  fi
+  if [ "$SIZE" = loadtest ] && [ -z "$role" ]; then
+    # The load test spreads detections over every server (lab-loadtest
+    # spread), so each one may run them: cluster.leader_eligible on.
+    on "$name" 'mkdir -p /etc/systemd/system/signalith.service.d && printf "[Service]\nEnvironment=SIGNALITH_LEADER_ELIGIBLE=true\n" >/etc/systemd/system/signalith.service.d/lab-loadtest.conf && systemctl daemon-reload && systemctl restart signalith'
   fi
   if [ -n "$LB_IP" ] && [ "$role" != scanner ]; then
     # Read the PROXY protocol header the load balancer sends.
@@ -382,7 +441,14 @@ for i in $(seq 1 90); do
   sleep 10
 done
 if ! docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith; then
-  docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null
+  # On first start gvmd is still loading its port lists and other built-in
+  # objects for a while, and --create-user fails if it collides with that.
+  for i in $(seq 1 60); do
+    docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --create-user=signalith --password="$PW" </dev/null >/dev/null 2>&1 || true
+    docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --get-users </dev/null | grep -qx signalith && break
+    [ "$i" -lt 60 ] || { echo "gvmd would not create the signalith user" >&2; exit 1; }
+    sleep 10
+  done
 else
   # Run again: the user is there, with a password this run doesn't know.
   docker compose -p greenbone-community-edition exec -T -u gvmd gvmd gvmd --user=signalith --new-password="$PW" </dev/null >/dev/null
@@ -556,6 +622,28 @@ sensor() {
     fail "The sensor did not install. Its output is above."
 }
 
+# ---- 8. the load test's generator ----
+
+# loadgen puts signalith-loadgen on the load generator, with what its
+# scenarios read in /root/loadtest (root's only): the CA, an agent token
+# and the admin's password, and the scenarios tb-day (sudo lab-loadtest)
+# and spread-10k (sudo lab-loadtest spread).
+loadgen() {
+  local token
+  cd "$LAB/src"
+  CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -o "$LAB/signalith-loadgen" ./cmd/signalith-loadgen
+  # The API asks for the first password to be replaced first (api does).
+  api /api/me >/dev/null
+  token=$(sg tokens create -purpose linux "Load test $(date +%m%d-%H%M%S)")
+  on loadgen 'install -d -m 700 /root/loadtest'
+  scp -q -i "$LAB/id_lab" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$LAB/known_hosts" -o LogLevel=ERROR \
+    "$LAB/signalith-loadgen" "$LAB/src/loadtest/tb-day.yaml" "$LAB/src/loadtest/spread-10k.yaml" /var/lib/signalith/tls/ca.pem "root@$(ip_of loadgen):/root/loadtest/"
+  printf '%s\n' "$token" | on loadgen 'umask 077 && cat >/root/loadtest/token.txt'
+  { printf '%s:' "$(admin_user)"; admin_password; } | on loadgen 'umask 077 && cat >/root/loadtest/admin.txt'
+  on loadgen 'chmod 600 /root/loadtest/*; chmod 700 /root/loadtest/signalith-loadgen; /root/loadtest/signalith-loadgen check /root/loadtest/tb-day.yaml /root/loadtest/spread-10k.yaml' >/dev/null
+  install -m 755 "$LAB/src/deploy/lab/lab-loadtest.sh" /usr/local/sbin/lab-loadtest
+}
+
 # ---- run ----
 
 say "Signalith lab setup: $SIZE lab, Signalith $REF"
@@ -567,9 +655,11 @@ step opensearch-security opensearch_security
 step signalith-1 signalith_first
 step opensearch-ca opensearch_ca
 if have signalith-2; then step signalith-2 join signalith-2; fi
+if have signalith-3; then step signalith-3 join signalith-3; fi
 if have scanner; then step scanner join scanner scanner; fi
 if have scanner && [ "$OPENVAS" = true ]; then step openvas openvas; fi
-step endpoints endpoints
+if [ -n "$(names linux)" ]; then step endpoints endpoints; fi
+if have loadgen; then step loadgen loadgen; fi
 if have sensor; then
   step mirror mirror
   step sensor sensor
@@ -579,16 +669,18 @@ fi
 install -m 755 "$LAB/src/deploy/lab/lab-e2e.sh" /usr/local/sbin/lab-e2e
 
 public=$(curl -fsS -4 --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || echo '<signalith-1 address>')
+pwfile=/etc/signalith/initial-admin-password
+[ ! -s "$LAB/admin-password" ] || pwfile=$LAB/admin-password
 say "Lab ready."
 cat <<MSG
 
-  Signalith:  https://$public:8080
-  User:       admin
-  Password:   sudo cat /etc/signalith/initial-admin-password  (on signalith-1)
+  Signalith:  https://$public:9000
+  User:       $(admin_user)
+  Password:   sudo cat $pwfile  (on signalith-1)
 
-  Agents and the sensor send to $SIEM_URL$([ -n "$LB_IP" ] && echo " (the load balancer)").
+  Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").
   The rest is by hand: see "After the setup" in docs/cloud-lab.md
   (Windows, the scan networks, single sign-on).
-  To test everything: sudo lab-e2e
+  To test everything: sudo lab-e2e$(have loadgen && printf '\n  To run the load test: sudo lab-loadtest (see docs/cloud-lab.md)')$(have loadgen && have signalith-2 && printf '\n  To measure detections spread over the servers: sudo lab-loadtest spread')
 
 MSG

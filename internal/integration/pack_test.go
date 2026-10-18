@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
@@ -32,10 +33,22 @@ import (
 func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	cl, eng, prefix := setup(t)
 	ctx := context.Background()
-	_, dets, err := detect.Packs()
+	packs, dets, err := detect.Packs()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The splunk pack's lookup stages read the tables it ships, which
+	// every lookup store has.
+	var lookups map[string]*splcheck.Lookup
+	for _, p := range packs {
+		if p.Name == "splunk" {
+			lookups = p.Lookups()
+		}
+	}
+	eng.Lookups, _ = lookuptables.Open("")
+	// The splunk pack's iplocation rules read the GeoIP database their
+	// test events were made with.
+	eng.GeoIP = splcheck.TestGeoIP()
 	byID := map[string]*detect.Detection{}
 	for _, d := range dets {
 		byID[d.ID] = d
@@ -92,7 +105,7 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path)})
+				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path), Lookups: lookups})
 				if err != nil {
 					t.Fatalf("%s: %v", r.ID, err)
 				}
@@ -179,7 +192,16 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		}
 		q.Search = &query.And{Children: []query.Expr{q.Search, &query.In{Field: "host", Values: rc.hosts}}}
 		q.Earliest = "-1h"
-		q.Commands = []query.Command{&query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}}}
+		// The regex stages a detection runs right after its filter (a
+		// Splunk regular expression with word boundaries) stay.
+		var cmds []query.Command
+		for _, c := range q.Commands {
+			if _, ok := c.(*query.Regex); !ok {
+				break
+			}
+			cmds = append(cmds, c)
+		}
+		q.Commands = append(cmds, &query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}})
 		res, err := eng.Execute(ctx, q)
 		if err != nil {
 			t.Errorf("%s: %v", rc.det.ID, err)

@@ -136,6 +136,55 @@ server's next restart. A server added as a **scanner** (its **Server role**,
 `cluster.role: scanner`) never runs them, whatever this setting says; see
 [Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
 
+**Spreading detections over the servers.** With many rules, one server can be too
+few to run them all. Turn on **Spread detections over servers**
+(`detections.spread`, on the Settings page under Detections) and every server that
+may run the jobs runs a share of each tenant's rules: the rules are split into 64
+groups, and the server running the jobs gives each group to one server, moving as
+few as it can when a server joins or leaves. It applies within seconds, and only
+once every running server is on a version that supports it and the cluster's
+features are up to date; until then, one server runs every rule as before. A server
+does not get a share while its detection or lookup files differ from those of the
+server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
+or while it cannot write its heartbeat for 20 seconds (it then stops its share by
+itself). While they are spread, the Servers page says under **Background jobs** how many of the
+groups each server runs, and how many it is handing over to another.
+
+Spread or not, the Servers page also shows, under **Background jobs**, how each server keeps up
+with the rules it ran last in the past day: how many rules, how long their last runs took (the
+median and the 95th percentile), how long after its time slot ended each run started, how many
+rules started more than one schedule interval late in the last hour, how many slots were skipped
+for being older than the catch-up limit (`detections.catch_up`), and how many runs timed out. A
+server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
+rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
+look at the slowest rules on the Detections page, or spread detections over more servers.
+
+When a group moves, its new server takes over from where the last run of each rule
+ended, so no time is skipped or searched twice. A server that is still running hands
+its groups over first: it starts no new run of them, finishes the runs it has going,
+and says so in its heartbeat, and only then does the new server start them (or after
+6 minutes, longer than any run may take, if it never says so). A server that stopped
+or lost contact gives its groups up at once. A server that just started gets groups
+only once it has been running for a minute, so one that restarts quickly does not
+move them back and forth. Each group also carries a number that grows with every
+move, and OpenSearch refuses run state written under an older one, so two servers
+never both record a run of the same rule.
+
+Every server's detection searches go to the same OpenSearch, so adding servers adds
+room to run rules, not room to search. While detections are spread, all servers
+together run at most **Detection searches at once** (`detections.search_budget`)
+searches; each server runs the share that matches its groups, at least one, for all
+tenants together, taking turns between tenants so a busy one cannot hold more than
+half of a server's searches while another waits. Left empty, it is half the
+searches OpenSearch's data nodes can run at once. When a tenant's searches are
+refused as too busy, do not answer in time, or take twice as long as over the 15
+minutes before, that tenant alone runs fewer at once for a while, so one tenant's
+heavy rules do not slow the others. When most of the tenants a server runs (at
+least two) show it within two minutes, or it runs a single tenant, OpenSearch is
+taken to be slow for everyone: the server halves how many it runs and gets one back a minute; the
+current runs go first, and missed runs are made up one at a time until it is back
+to its share.
+
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
 and Threat intel feed settings can be changed on any server. Notifications and Playbooks settings,
@@ -966,9 +1015,13 @@ backend signalith
     balance source
     option httpchk GET /readyz
     http-check expect status 200
-    server siem-a 10.0.0.11:8080 check
-    server siem-b 10.0.0.12:8080 check
+    server siem-a 10.0.0.11:9000 check
+    server siem-b 10.0.0.12:9000 check
 ```
+
+Agents send to the [agent port](sending-data.md#the-agent-port) (7779 by default), so
+balance it the same way, with a backend of its own whose `server` lines use port 7779.
+The agent port answers `/readyz` and `/livez` too.
 
 **Seeing who really connected.** A load balancer that passes connections through
 (TCP mode, the usual choice, so HTTPS and syslog over TLS end at Signalith) hides the
@@ -990,9 +1043,9 @@ Kubernetes container:
 
 ```yaml
 readinessProbe:
-  httpGet: { path: /readyz, port: 8080, scheme: HTTPS }
+  httpGet: { path: /readyz, port: 9000, scheme: HTTPS }
 livenessProbe:
-  httpGet: { path: /livez, port: 8080, scheme: HTTPS }
+  httpGet: { path: /livez, port: 9000, scheme: HTTPS }
 ```
 
 Kubernetes does not check the certificate of a probe, and without `scheme: HTTPS`
@@ -1052,7 +1105,8 @@ paths (`/app.js` and so on) keep working, for pages of earlier versions.
 
 **Where agents send.** With several servers, Add data asks **Where do agents send?**:
 the shared address (the public address, which should be the load balancer's or a DNS
-name over every server) or one server's own address. It looks the shared address up
+name over every server) or one server's own address, each on its agent port (each server reports its own; see
+[The agent port](sending-data.md#the-agent-port)). It looks the shared address up
 and says which servers it reaches, and warns when it is just one server's address:
 agents sent there wait while that server is down. Agents keep their events while they
 wait, and send them once a server answers. Configurations made while several servers

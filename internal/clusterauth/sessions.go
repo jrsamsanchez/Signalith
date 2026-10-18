@@ -21,6 +21,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -82,12 +83,22 @@ type sessionDoc struct {
 	// made for, as that document's server wrote it: a user made again
 	// under the same name has another.
 	Born string `json:"born,omitempty"`
-	MAC  string `json:"mac"`
+	// Tenant is the tenant a provider user switched the session to, ""
+	// for the default tenant. It is written only at shared.LevelTenants.
+	Tenant string `json:"tenant,omitempty"`
+	MAC    string `json:"mac"`
 }
 
 func sessionText(id string, d *sessionDoc) []byte {
 	var b bytes.Buffer
-	for _, f := range []string{sessionMAC, id, d.User, strconv.FormatInt(d.Epoch, 10), d.Created, strconv.FormatBool(d.Remember), d.Born} {
+	fields := []string{sessionMAC, id, d.User, strconv.FormatInt(d.Epoch, 10), d.Created, strconv.FormatBool(d.Remember), d.Born}
+	if d.Tenant != "" {
+		// Covered only when set, so a session in the default tenant
+		// verifies as before: moving a session to another tenant
+		// outside Signalith breaks its MAC.
+		fields = append(fields, "tenant", d.Tenant)
+	}
+	for _, f := range fields {
 		b.WriteString(f)
 		b.WriteByte(0)
 	}
@@ -108,7 +119,8 @@ func (d *sessionDoc) sign(k *shared.ClusterKey, id string) {
 // verify checks the MAC of the session document id against keys.
 func (d *sessionDoc) verify(keys *shared.KeySet, id string) bool {
 	rest, ok := strings.CutPrefix(d.MAC, "m1:")
-	if !ok || strings.IndexByte(d.User, 0) >= 0 || strings.IndexByte(d.Created, 0) >= 0 || strings.IndexByte(d.Born, 0) >= 0 {
+	if !ok || strings.IndexByte(d.User, 0) >= 0 || strings.IndexByte(d.Created, 0) >= 0 || strings.IndexByte(d.Born, 0) >= 0 ||
+		d.Tenant != "" && tenants.ValidID(d.Tenant) != nil {
 		return false
 	}
 	kid, sum, ok := strings.Cut(rest, ":")
@@ -128,8 +140,9 @@ type entry struct {
 	remember bool
 	method   string
 	degraded bool
-	// born is the session document's Born.
-	born string
+	// born is the session document's Born, and tenant its Tenant.
+	born   string
+	tenant string
 	// stored is the last_seen stored, local this server's last request,
 	// and confirmed when the session was last read from OpenSearch (or
 	// written).
@@ -270,6 +283,79 @@ func (s *Sessions) MaxAge() time.Duration {
 // SetVersion does nothing: a shared session ends through its user's
 // session epoch when the password changes, not through a password stamp.
 func (s *Sessions) SetVersion(context.Context, string, string) {}
+
+// SetTenant moves the session of a cookie to tenant ("" the default
+// tenant), signed again, once the cluster is at shared.LevelTenants:
+// below it an older server would not know the field. Every server reads
+// the session again within one poll.
+func (s *Sessions) SetTenant(ctx context.Context, cookie, tenant string) error {
+	if tenant != "" && tenants.ValidID(tenant) != nil {
+		return fmt.Errorf("%q is not a tenant", tenant)
+	}
+	if !s.Docs.TenantsOn() {
+		return ErrTenantUsers
+	}
+	if !s.known(cookie) {
+		return errSessionEnded
+	}
+	id := SessionID(cookie)
+	s.Cache.mu.Lock()
+	_, inMemory := s.Cache.degraded[id]
+	s.Cache.mu.Unlock()
+	if inMemory || s.degradedNow() {
+		return errors.New("tenants cannot be switched while this server cannot use OpenSearch")
+	}
+	k := s.Docs.key()
+	if k == nil {
+		return errors.New("this server is not a member of the cluster now")
+	}
+	cl, index := s.index()
+	for range store.ModifyTries {
+		src, v, found, err := cl.Get(ctx, index, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			s.forget(id)
+			return errSessionEnded
+		}
+		var d sessionDoc
+		if err := json.Unmarshal(src, &d); err != nil || !d.verify(s.Docs.keys(), id) {
+			return errSessionEnded
+		}
+		// Only the provider's users switch; a tenant user's session
+		// works in their own tenant whatever it says (the API refuses
+		// them first).
+		if u, _, ok := s.Docs.Users().Get(d.User); ok && u.Tenant != "" {
+			return errors.New("a tenant's users cannot switch tenants")
+		}
+		d.Tenant = tenant
+		d.sign(k, id)
+		if _, err := cl.PutIf(ctx, index, id, &d, v, false); err != nil {
+			if store.IsConflict(err) {
+				continue
+			}
+			return err
+		}
+		s.Cache.mu.Lock()
+		if e := s.Cache.pos[id]; e != nil {
+			e.tenant = tenant
+		}
+		s.Cache.mu.Unlock()
+		if h := s.Docs.Hub(); h != nil {
+			// Not "last": that is a sign-out. Every server reads its
+			// sessions again.
+			if _, err := h.BumpWith(ctx, SessionsWatch, map[string]any{"switched": true}); err != nil {
+				s.log().Warn("switched tenants, but the other servers may use the tenant before for up to 15 seconds", "err", err)
+			}
+		}
+		return nil
+	}
+	return errors.New("the session changed while switching; try again")
+}
+
+// errSessionEnded is a switch of a session that ended meanwhile.
+var errSessionEnded = errors.New("the session has ended")
 
 // unusable reports whether a write failed because OpenSearch cannot be
 // used now (unreachable, overloaded, or refusing writes), rather than
@@ -572,9 +658,15 @@ func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Tim
 		s.forget(id)
 		return entry{}, false
 	}
+	if d.Tenant != "" && !s.Docs.TenantsOn() {
+		// Written at a level this cluster is not at: never read as a
+		// session of the default tenant.
+		s.forget(id)
+		return entry{}, false
+	}
 	stored, _ := time.Parse(time.RFC3339Nano, d.LastSeen)
 	e := entry{user: d.User, epoch: d.Epoch, created: created, remember: d.Remember, method: d.Method, degraded: d.Degraded, born: d.Born,
-		stored: stored, local: oldCopy.local, confirmed: now}
+		tenant: d.Tenant, stored: stored, local: oldCopy.local, confirmed: now}
 	s.Cache.mu.Lock()
 	if cur := s.Cache.pos[id]; cur != nil {
 		e.local = maxTime(e.local, cur.local)
@@ -614,7 +706,7 @@ func (s *Sessions) allows(e *entry, now time.Time, inMemory bool) bool {
 
 func (e *entry) session() auth.Session {
 	return auth.Session{User: e.user, Created: e.created, LastSeen: maxTime(e.local, e.stored), Remember: e.remember,
-		Epoch: e.epoch, Method: e.method, Degraded: e.degraded}
+		Epoch: e.epoch, Method: e.method, Degraded: e.degraded, Tenant: e.tenant}
 }
 
 func maxTime(a, b time.Time) time.Time {
@@ -806,6 +898,8 @@ func (s *Sessions) Recover(ctx context.Context) {
 			continue
 		}
 		at := e.created.UTC().Format(time.RFC3339Nano)
+		// No tenant: switching is refused while degraded (SetTenant),
+		// so a session made then is always in the default tenant.
 		doc := &sessionDoc{User: e.user, Epoch: e.epoch, Created: at, LastSeen: maxTime(e.local, e.stored).UTC().Format(time.RFC3339Nano),
 			Remember: e.remember, Node: s.Node, Method: e.method, Degraded: true, Born: bornText(u)}
 		doc.sign(k, id)

@@ -416,6 +416,7 @@ type state struct {
 	archives []Manifest
 	archErr  string
 	archProb []string
+	coldErr  string
 }
 
 func (m *Manager) snapshot(ctx context.Context) (*state, error) {
@@ -440,6 +441,11 @@ func (m *Manager) snapshot(ctx context.Context) (*state, error) {
 		st.diskErr = "could not read where shards are: " + err.Error()
 	} else {
 		st.snap.Disk, st.snap.NodeBytes = d, nb
+	}
+	if cs, err := m.Cluster.ColdState(ctx, ColdRepository(m.Prefix), m.Prefix); err != nil {
+		st.coldErr = err.Error()
+	} else {
+		st.snap.Cold = cs
 	}
 	list, problems, err := m.Archive.List()
 	if err != nil {
@@ -653,6 +659,10 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 				run.Archived++
 			case ActionDelete:
 				run.Deleted++
+			case ActionCold:
+				run.Cold++
+			case ActionMount:
+				run.Mounted++
 			}
 		}
 		if pass == 0 && !hold {
@@ -750,7 +760,7 @@ func (m *Manager) stillWanted(s Settings, snap Snapshot) func(Decision) (Decisio
 		case d.Removes() && nd.Removes():
 			// Archive if the new settings say so.
 			return nd, true, ""
-		case d.Action == ActionCompact && nd.Action == ActionCompact:
+		case d.Action == nd.Action && (d.Action == ActionCompact || d.Action == ActionCold || d.Action == ActionMount):
 			return d, true, ""
 		}
 		return d, false, "the settings saved during this run no longer call for it"
@@ -803,6 +813,12 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	case d.Action == ActionCompact && !day.Before(today.AddDate(0, 0, -1)):
 		act.Error = "refused: today and yesterday are never compacted"
 		return act
+	case d.Action == ActionCold && (isMonthly(cat) || !day.Before(today.AddDate(0, 0, -1))):
+		act.Error = "refused: today, yesterday and monthly indices never move to cold storage"
+		return act
+	case (d.Action == ActionMount || d.snapshotOnly) && d.Snapshot == "":
+		act.Error = "refused: no cold storage snapshot named"
+		return act
 	}
 	if d.Action == ActionArchive && m.CanArchive != nil {
 		if ok, why := m.CanArchive(); !ok {
@@ -818,14 +834,22 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	switch {
 	case d.Action == ActionCompact:
 		err = m.compact(ctx, d, &act)
+	case d.Action == ActionCold:
+		err = m.toCold(ctx, d, &act)
+	case d.Action == ActionMount:
+		act.Snapshot = d.Snapshot
+		err = m.Cluster.MountSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot, d.Index)
+	case d.snapshotOnly:
+		act.Snapshot = d.Snapshot
+		err = m.Cluster.DeleteSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot)
 	case d.Action == ActionArchive:
 		err = m.archiveAndDelete(ctx, d, &act)
 	case d.verify:
 		err = m.verifiedDelete(ctx, d, &act)
 	default:
 		act.Docs = d.Docs
-		if err = m.Cluster.DeleteIndex(ctx, d.Index); err == nil {
-			act.Freed = d.Bytes
+		if err = m.deleteIndex(ctx, d, &act); err == nil {
+			act.Freed = m.frees(d)
 		}
 	}
 	if err != nil {
@@ -867,6 +891,44 @@ func (m *Manager) freeze(ctx context.Context, d Decision) (bool, error) {
 		return false, fmt.Errorf("could not refresh the index before archiving it, so it was kept: %w", err)
 	}
 	return set, nil
+}
+
+// sealed checks, just before an index is deleted, that it still holds the
+// n events that were copied out of it. freeze cannot block writes to an
+// index under OpenSearch's flood-stage block, and OpenSearch lifts that
+// block on its own once the disk frees up, after which late events could
+// land in the index and be deleted with it. So when only the flood-stage
+// block held the index, sealed sets the write block now: refused means the
+// flood-stage block is still on and nothing can have been written; set
+// means it was lifted, and a recount shows whether events arrived.
+func (m *Manager) sealed(ctx context.Context, d Decision, n int64) error {
+	if !d.diskBlocked || d.writeBlock {
+		return nil
+	}
+	if err := m.Cluster.BlockWrites(ctx, d.Index, true); err != nil {
+		if isFloodStage(err) {
+			return nil
+		}
+		return fmt.Errorf("could not make the index read-only before deleting it, so it was kept: %w", err)
+	}
+	if err := m.Cluster.Refresh(ctx, d.Index); err != nil {
+		return fmt.Errorf("could not refresh the index before deleting it, so it was kept: %w", err)
+	}
+	got, err := m.Cluster.Count(ctx, d.Index)
+	if err != nil {
+		return fmt.Errorf("could not count its events again before deleting it, so it was kept: %w", err)
+	}
+	if got != n {
+		return fmt.Errorf("events arrived after OpenSearch lifted its disk block (%d, not %d), so the index was kept; the next run tries again", got, n)
+	}
+	return nil
+}
+
+// isFloodStage reports whether OpenSearch refused a change because of its
+// flood-stage (read-only-allow-delete) block.
+func isFloodStage(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "read-only-allow-delete") || strings.Contains(s, "flood-stage")
 }
 
 // thaw lifts the write block freeze set on an index that is kept, so it
@@ -920,10 +982,13 @@ func (m *Manager) archiveFrozen(ctx context.Context, d Decision, act *Action) er
 	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
 		return fmt.Errorf("archived to %s, but the index was not deleted: %w", man.File, err)
 	}
-	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+	if err := m.sealed(ctx, d, man.Docs); err != nil {
+		return fmt.Errorf("archived to %s, but %w", man.File, err)
+	}
+	if err := m.deleteIndex(ctx, d, act); err != nil {
 		return fmt.Errorf("archived to %s, but deleting the index failed: %w", man.File, err)
 	}
-	act.Freed = d.Bytes
+	act.Freed = m.frees(d)
 	return nil
 }
 
@@ -957,11 +1022,107 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 		m.thaw(ctx, d, set)
 		return err
 	}
-	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+	if err := m.sealed(ctx, d, n); err != nil {
+		return err
+	}
+	if err := m.deleteIndex(ctx, d, act); err != nil {
 		m.thaw(ctx, d, set)
 		return err
 	}
+	act.Freed = m.frees(d)
+	return nil
+}
+
+// frees is the disk deleting an index frees on the nodes: none for a day
+// in cold storage, whose data is in the snapshot repository.
+func (m *Manager) frees(d Decision) int64 {
+	if d.cold {
+		return 0
+	}
+	return d.Bytes
+}
+
+// deleteIndex deletes an index and, for a day in cold storage, then its
+// snapshot. A snapshot left behind by a failed delete is deleted by a
+// later run, which finds it with no index mounted from it.
+func (m *Manager) deleteIndex(ctx context.Context, d Decision, act *Action) error {
+	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+		return err
+	}
+	if !d.cold || d.Snapshot == "" {
+		return nil
+	}
+	act.Snapshot = d.Snapshot
+	if err := m.Cluster.DeleteSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot); err != nil {
+		return fmt.Errorf("deleted the index, but not its cold storage snapshot %s (the next run tries again): %w", d.Snapshot, err)
+	}
+	return nil
+}
+
+// toCold moves a day to cold storage: it blocks writes, refreshes and
+// counts, merges to one segment, snapshots the index alone, deletes it
+// from the nodes and mounts it back from the snapshot. Until the snapshot
+// is made and checked the index is left as it was; after the delete the
+// data is in the snapshot, and a mount that fails is tried again by the
+// next run (ActionMount).
+func (m *Manager) toCold(ctx context.Context, d Decision, act *Action) error {
+	repo := ColdRepository(m.Prefix)
+	name := ColdSnapshotName(d.Index, d.uuid)
+	act.Snapshot = name
+	if d.uuid == "" {
+		return errors.New("refused: the index's UUID is unknown")
+	}
+	set, err := m.freeze(ctx, d)
+	if err != nil {
+		return err
+	}
+	n, err := m.Cluster.Count(ctx, d.Index)
+	if err != nil {
+		m.thaw(ctx, d, set)
+		return fmt.Errorf("could not count its events, so it was kept: %w", err)
+	}
+	act.Docs = n
+	// One segment makes fewer, bigger files in the repository, which
+	// searches read faster. A day under the flood-stage block cannot be
+	// merged, and moving it frees the disk, so it goes as it is.
+	if !d.compacted && !d.diskBlocked {
+		if err := m.Cluster.ForceMerge(ctx, d.Index); err != nil {
+			m.thaw(ctx, d, set)
+			return fmt.Errorf("could not merge the index before moving it, so it was kept: %w", err)
+		}
+	}
+	if d.stale != "" {
+		// Left by an earlier move of this very index that stopped before
+		// the delete; events may have arrived since, so snapshot again.
+		if err := m.Cluster.DeleteSnapshot(ctx, repo, d.stale); err != nil {
+			m.thaw(ctx, d, set)
+			return fmt.Errorf("could not replace the snapshot an earlier move left, so the index was kept: %w", err)
+		}
+	}
+	if err := m.Cluster.SnapshotIndex(ctx, repo, name, d.Index); err != nil {
+		m.thaw(ctx, d, set)
+		return fmt.Errorf("the snapshot failed, so the index was kept: %w", err)
+	}
+	// The snapshot may have taken long: check again before deleting.
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
+		return fmt.Errorf("snapshotted to %s, but the index was not deleted: %w", name, err)
+	}
+	if err := m.sealed(ctx, d, n); err != nil {
+		return fmt.Errorf("snapshotted to %s, but %w", name, err)
+	}
+	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+		return fmt.Errorf("snapshotted to %s, but deleting the index failed: %w", name, err)
+	}
 	act.Freed = d.Bytes
+	if err := m.step(ctx, d.Index, ActionMount); err != nil {
+		return fmt.Errorf("moved to %s, but not mounted yet (the next run mounts it): %w", name, err)
+	}
+	if err := m.Cluster.MountSnapshot(ctx, repo, name, d.Index); err != nil {
+		return fmt.Errorf("moved to %s, but mounting it failed (the next run tries again): %w", name, err)
+	}
+	if got, err := m.Cluster.Count(ctx, d.Index); err == nil && got != n {
+		return fmt.Errorf("moved to %s and mounted, but it counts %d events instead of %d", name, got, n)
+	}
 	return nil
 }
 
@@ -1231,6 +1392,7 @@ type Overview struct {
 	// disk passed its flood-stage watermark.
 	DiskBlocked int            `json:"disk_blocked"`
 	Archive     ArchiveSummary `json:"archive"`
+	Cold        ColdView       `json:"cold"`
 	Schedule    ScheduleView   `json:"schedule"`
 	// Pending is what the next run would do with the current settings.
 	Pending Summary  `json:"pending"`
@@ -1295,7 +1457,11 @@ type CategoryView struct {
 	NewestDay     string `json:"newest_day"`
 	CompactedDays int    `json:"compacted_days"`
 	RestoredDays  int    `json:"restored_days"`
-	Policy        Policy `json:"policy"`
+	// ColdDays are mounted from cold storage, holding ColdBytes there;
+	// Bytes counts only what is on the nodes' disks.
+	ColdDays  int    `json:"cold_days"`
+	ColdBytes int64  `json:"cold_bytes"`
+	Policy    Policy `json:"policy"`
 	// Source is default, ui, config or feeds; Editable is false for
 	// policies from signalith.yaml and for threat intel.
 	Source   string    `json:"source"`
@@ -1329,6 +1495,19 @@ type GuardView struct {
 	// limit; PauseReason says why.
 	PausedUntil *time.Time `json:"paused_until,omitempty"`
 	PauseReason string     `json:"pause_reason,omitempty"`
+}
+
+// ColdView says whether cold storage is set up and what it holds.
+type ColdView struct {
+	ColdState
+	// Used is set when a policy moves days to cold storage.
+	Used bool `json:"used"`
+	// Days and Bytes count the days mounted from cold storage.
+	Days  int   `json:"days"`
+	Bytes int64 `json:"bytes"`
+	// Message says what is missing, when something is.
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // ArchiveSummary describes the archive folder.
@@ -1498,6 +1677,20 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 	}
 	steps := plan.Steps()
 	ov.Pending = Summarize(steps, plan.Records)
+	ov.Cold.Repository = ColdRepository(m.Prefix)
+	if st.snap.Cold != nil {
+		ov.Cold.ColdState = *st.snap.Cold
+	}
+	ov.Cold.Error = st.coldErr
+	for _, c := range Categories() {
+		if pol, _ := s.For(c.ID); c.Kind == KindEvents && pol.ColdAfterDays > 0 {
+			ov.Cold.Used = true
+		}
+	}
+	if ov.Cold.Used && !st.snap.Cold.Ready() && st.coldErr == "" && ov.Error == "" {
+		why := st.snap.Cold.Missing(m.Prefix)
+		ov.Cold.Message = strings.ToUpper(why[:1]) + why[1:] + "."
+	}
 
 	byCat := map[string]*CategoryView{}
 	for _, c := range Categories() {
@@ -1528,6 +1721,17 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		cv.Pending = Summarize(cs, cr)
 		byCat[c.ID] = cv
 	}
+	// A busy day can be split into parts (ingest.Rollover), each its own
+	// index: the day counts once, whatever it is split into.
+	seen := map[string]bool{}
+	once := func(kind, cat, ds string) bool {
+		k := kind + "|" + cat + "|" + ds
+		if seen[k] {
+			return false
+		}
+		seen[k] = true
+		return true
+	}
 	for _, ix := range st.snap.Indices {
 		cat, day, ok := ParseIndex(m.Prefix, ix.Name)
 		if !ok {
@@ -1535,20 +1739,31 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 			continue
 		}
 		cv := byCat[cat]
-		cv.Bytes += ix.Bytes
-		cv.Docs += ix.Docs
-		cv.Days++
 		ds := day.Format(time.DateOnly)
+		cv.Docs += ix.Docs
+		if ix.Cold != nil {
+			if once("cold", cat, ds) {
+				cv.ColdDays++
+				ov.Cold.Days++
+			}
+			cv.ColdBytes += ix.Bytes
+			ov.Cold.Bytes += ix.Bytes
+		} else {
+			cv.Bytes += ix.Bytes
+		}
+		if once("day", cat, ds) {
+			cv.Days++
+		}
 		if cv.OldestDay == "" || ds < cv.OldestDay {
 			cv.OldestDay = ds
 		}
 		if ds > cv.NewestDay {
 			cv.NewestDay = ds
 		}
-		if ix.Compacted() {
+		if ix.Compacted() && ix.Cold == nil && once("compacted", cat, ds) {
 			cv.CompactedDays++
 		}
-		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today {
+		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today && once("restored", cat, ds) {
 			cv.RestoredDays++
 		}
 		if ix.DiskBlocked {

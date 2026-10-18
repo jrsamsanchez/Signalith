@@ -10,6 +10,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -24,6 +25,7 @@ type UserBody struct {
 	Email              string     `json:"email,omitempty"`
 	Role               users.Role `json:"role"`
 	Source             string     `json:"source"`
+	Tenant             string     `json:"tenant,omitempty"`
 	Disabled           bool       `json:"disabled"`
 	MustChangePassword bool       `json:"must_change_password"`
 	DN                 string     `json:"dn,omitempty"`
@@ -71,7 +73,7 @@ func bodyOf(r users.Record, old *UserBody, keys users.MFAKeys) (*UserBody, error
 	if err != nil {
 		return nil, err
 	}
-	b := &UserBody{Username: r.Username, Name: r.Name, Email: r.Email, Role: r.Role, Source: r.Source, Disabled: r.Disabled,
+	b := &UserBody{Username: r.Username, Name: r.Name, Email: r.Email, Role: r.Role, Source: r.Source, Tenant: r.Tenant, Disabled: r.Disabled,
 		MustChangePassword: r.MustChangePassword, DN: r.DN, Subject: r.Subject, ExternalID: r.ExternalID, InactiveAtIdP: r.InactiveAtIdP,
 		Refused: r.Refused, SessionEpoch: r.Epoch, MFA: m,
 		Created: r.Created.UTC(), Updated: r.Updated.UTC()}
@@ -90,7 +92,7 @@ func bodyOf(r users.Record, old *UserBody, keys users.MFAKeys) (*UserBody, error
 // record returns the user record of a body, the authenticator key opened
 // with keys.
 func record(b *UserBody, etag string, keys users.MFAKeys) users.Record {
-	r := users.Record{User: users.User{Username: b.Username, Name: b.Name, Email: b.Email, Role: b.Role, Source: b.Source,
+	r := users.Record{User: users.User{Username: b.Username, Name: b.Name, Email: b.Email, Role: b.Role, Source: b.Source, Tenant: b.Tenant,
 		Disabled: b.Disabled, MustChangePassword: b.MustChangePassword, DN: b.DN, Subject: b.Subject, ExternalID: b.ExternalID,
 		InactiveAtIdP: b.InactiveAtIdP, Refused: b.Refused,
 		Created: b.Created, Updated: b.Updated, SessionEpoch: b.SessionEpoch}, Epoch: b.SessionEpoch, ETag: etag,
@@ -114,6 +116,9 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 	if !b.Role.Valid() {
 		return fmt.Errorf("its role %q is not one this version knows", b.Role)
 	}
+	if b.Tenant != "" && (tenants.ValidID(b.Tenant) != nil || b.Source != users.SourceLocal) {
+		return fmt.Errorf("its tenant %q is not a tenant a user can have", b.Tenant)
+	}
 	switch b.Source {
 	case users.SourceLocal, users.SourceDirectory, users.SourceSSO:
 	case users.SourceBuiltin:
@@ -127,6 +132,19 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 		return fmt.Errorf("its source %q is not one this version knows", b.Source)
 	}
 	return nil
+}
+
+// ErrTenantUsers refuses tenant users, and sessions' tenants, in the
+// shared settings below shared.LevelTenants.
+var ErrTenantUsers = errors.New("tenants need every server sharing these settings on a version that supports them: upgrade the others first")
+
+// TenantsOn reports whether the cluster keeps tenants (Docs.Tenants, the
+// runtime's shared.LevelTenants gate), so tenant users and sessions'
+// tenants may be kept in the shared settings. Below it, a tenant user is
+// never used: no server writes one, and an older server would read one
+// as a user of the provider's.
+func (d *Docs) TenantsOn() bool {
+	return d.Tenants != nil && d.Tenants()
 }
 
 // UsersBackend keeps the users of a users.Store in the shared settings.
@@ -143,7 +161,7 @@ func (b *UsersBackend) Load() (map[string]users.Record, error) {
 	out := map[string]users.Record{}
 	keys := b.Docs.mfaKeys()
 	for _, it := range b.Docs.Users().List() {
-		if it.Value == nil || it.Value.Source == users.SourceBuiltin {
+		if it.Value == nil || it.Value.Source == users.SourceBuiltin || it.Value.Tenant != "" && !b.Docs.TenantsOn() {
 			continue
 		}
 		out[it.Name] = record(it.Value, it.ETag, keys)
@@ -162,6 +180,11 @@ func (b *UsersBackend) Create(ctx context.Context, by string, r users.Record) (u
 	col := b.Docs.Users()
 	if r.Source == users.SourceBuiltin {
 		return users.Record{}, users.ErrReserved
+	}
+	if r.Tenant != "" && !b.Docs.TenantsOn() {
+		// Servers of an older version would read a tenant user as one of
+		// the provider's.
+		return users.Record{}, ErrTenantUsers
 	}
 	keys := b.Docs.mfaKeys()
 	body, err := bodyOf(r, nil, keys)

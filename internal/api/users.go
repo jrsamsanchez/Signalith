@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -18,6 +20,7 @@ func (s *Server) routeUsers(api *router) {
 	api.self("GET /api/me", s.handleMe)
 	api.self("POST /api/me/password", s.handleChangeOwnPassword)
 	s.routeMFA(api)
+	s.routePasskeys(api)
 	s.routeRecheck(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
@@ -35,6 +38,20 @@ func (s *Server) routeUsers(api *router) {
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
+	// A tenant's server tags every line of its log with the tenant
+	// already; the default tenant's server tags those it writes for one.
+	// The ID logged is the registry's, found by comparing, never a value
+	// taken from the request or its session.
+	if p := principalOf(r); s.TenantID == "" && s.Tenants != nil && p != nil && p.Active != "" && p.Active != tenants.Default {
+		id := "unknown"
+		list, _ := s.Tenants.List()
+		for _, t := range list {
+			if t.ID == p.Active {
+				id = t.ID
+			}
+		}
+		args = append(slices.Clip(args), "tenant", id)
+	}
 	s.Log.Info(msg, slices.Concat([]any{"audit", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
 }
 
@@ -54,9 +71,14 @@ func meView(p *principal) map[string]any {
 		"mfa":                  p.MFA,
 		"must_setup_mfa":       p.MustSetupMFA,
 		// Only local users' passwords are kept by Signalith, and the
-		// built-in admin's once it is shared by the servers of a cluster.
-		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && p.shared),
+		// built-in admin's once it is shared by the servers of a cluster,
+		// or while it is the first one Signalith made.
+		"can_change_password": p.Source == users.SourceLocal || (p.Source == users.SourceBuiltin && (p.shared || p.MustChangePassword)),
 		"auth":                p.Method,
+		// The tenant the user belongs to ("" for the provider's own
+		// users) and the one they work in now.
+		"tenant":        p.Tenant,
+		"active_tenant": cmp.Or(p.Active, tenants.Default),
 	}
 }
 
@@ -68,14 +90,15 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	me["search_default_earliest"] = s.conf().Search.DefaultEarliest
 	// Every page asks this first: an admin who gets here at a new web
 	// address after a restart moved it confirms that it works.
-	if p.Role == users.Admin && !p.MustChangePassword {
+	if p.runsServer() && !p.MustChangePassword {
 		s.confirmMove(r)
 	}
 	writeJSON(w, http.StatusOK, me)
 }
 
 // handleChangeOwnPassword lets local users change their own password. It
-// is also how a temporary password is replaced after signing in.
+// is also how a temporary password is replaced after signing in, and how
+// the built-in admin replaces the first password Signalith made.
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	var req struct {
@@ -87,7 +110,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	switch {
-	case p.Source == users.SourceBuiltin && s.SharedUsers == nil:
+	case p.Source == users.SourceBuiltin && s.SharedUsers == nil && !p.MustChangePassword:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "builtin",
 			"error": "The built-in admin's password is kept on the server. Change it there with signalith passwd, then restart Signalith. " +
 				"With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd, " +
@@ -140,6 +163,11 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		writeUserError(w, err)
 		return
 	}
+	var ke keepError
+	if errors.As(err, &ke) {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	if err != nil && sharedError(w, err) {
 		return
 	}
@@ -173,14 +201,17 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		s.rememberBrowser(w, r, p.Username)
 	}
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
+	if builtin && p.MustChangePassword {
+		s.firstPasswordChanged()
+	}
 	np.Method = p.Method
 	s.noteMFA(np)
 	writeJSON(w, http.StatusOK, meView(np))
 }
 
 // setOwnPassword gives the signed-in user p the new password and returns
-// them as they are then: a local user, or the built-in admin when the
-// servers of a cluster share it.
+// them as they are then: a local user, or the built-in admin (the
+// cluster's when the servers of a cluster share it, else this server's).
 func (s *Server) setOwnPassword(ctx context.Context, p *principal, password string) (*principal, error) {
 	if p.Source == users.SourceBuiltin {
 		if err := users.CheckNewPassword(p.Username, password); err != nil {
@@ -190,7 +221,14 @@ func (s *Server) setOwnPassword(ctx context.Context, p *principal, password stri
 		if err != nil {
 			return nil, err
 		}
-		if err := s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash); err != nil {
+		if s.SharedUsers == nil {
+			if err = s.setBuiltinHere(hash); err == nil && s.BuiltinSetHere != nil {
+				s.BuiltinSetHere(context.WithoutCancel(ctx))
+			}
+		} else {
+			err = s.SharedUsers.Docs.SetBuiltinHash(ctx, p.Username, hash)
+		}
+		if err != nil {
 			return nil, err
 		}
 		return s.builtinPrincipal(), nil
@@ -298,9 +336,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	me := userOf(r)
 	list := s.userStore().List()
 	out := make([]userView, 0, len(list)+1)
-	out = append(out, s.builtinView(me))
+	// Each tenant's server lists only that tenant's users; the default
+	// tenant's, the provider's own and the built-in admin.
+	if s.userTenant() == "" {
+		out = append(out, s.builtinView(me))
+	}
 	for _, u := range list {
-		out = append(out, s.viewUser(u, me))
+		if u.Tenant == s.userTenant() {
+			out = append(out, s.viewUser(u, me))
+		}
 	}
 	if s.SharedUsers != nil && s.SharedUsers.Seen != nil {
 		// Last sign-ins are kept apart from the users, one per server: the
@@ -398,11 +442,28 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Password = generated
 	}
 	mustChange := req.MustChangePassword == nil || *req.MustChangePassword
+	if t := s.userTenant(); t != "" {
+		// A tenant's users are kept as name@tenant, so its admins never
+		// take or learn of a name of the provider's or of another tenant.
+		full, err := users.TenantUsername(req.Username, t)
+		if err != nil {
+			writeUserError(w, &users.FieldError{Field: "username", Err: err})
+			return
+		}
+		req.Username = full
+	}
 	if s.builtinTarget(w, req.Username) || !s.usersWritable(w) {
 		return
 	}
+	// A new user belongs to the tenant whose server makes it: a tenant's
+	// admins make only their tenant's users, and only the provider's
+	// users make the provider's.
+	if err := s.releaseBeforeCreate(r.Context(), req.Username, userOf(r), s.userTenant() == ""); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
 	u, err := s.userStore().Create(changeContext(r), users.NewUser{Username: req.Username, Name: req.Name, Email: req.Email, Role: req.Role,
-		Password: req.Password, MustChangePassword: mustChange})
+		Password: req.Password, MustChangePassword: mustChange, Tenant: s.userTenant()})
 	if err != nil {
 		writeUserError(w, err)
 		return
@@ -414,6 +475,22 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		resp["temporary_password"] = generated
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// otherTenantsUser answers 404 for a user who is not of this server's
+// tenant, as if there were none: no tenant's admins can see or change
+// another tenant's users, or the provider's.
+func (s *Server) otherTenantsUser(w http.ResponseWriter, name string) bool {
+	other := false
+	if s.isBuiltin(name) {
+		other = s.userTenant() != ""
+	} else if u, ok := s.userStore().Get(name); ok {
+		other = u.Tenant != s.userTenant()
+	}
+	if other {
+		writeUserError(w, users.ErrNotFound)
+	}
+	return other
 }
 
 // targetName is the user a /api/users/{username} request is about, in
@@ -430,6 +507,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.otherTenantsUser(w, name) {
 		return
 	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
@@ -485,6 +565,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	name := targetName(r)
+	if s.otherTenantsUser(w, name) {
+		return
+	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
@@ -504,6 +587,7 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
+	s.releaseNotebooks(r.Context(), u.Username, userOf(r), u.Tenant == "")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
 }
 
@@ -519,6 +603,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+	}
+	if s.otherTenantsUser(w, name) {
+		return
 	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
@@ -543,9 +630,19 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeUserError(w, err)
 		return
 	}
+	// A passkey signs in without the password, so someone who added one
+	// would keep their way in past the reset.
+	n, keyErr := s.userStore().RemovePasskeys(changeContext(r), u.Username)
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "password reset", "user", u.Username, "sessions_ended", ended)
 	resp := map[string]any{"user": s.viewUser(u, userOf(r))}
+	switch {
+	case keyErr != nil:
+		s.Log.Error("passkeys not removed after a password reset", "user", u.Username, "err", keyErr)
+		resp["warning"] = "The password was reset, but their passkeys could not be removed, so they still sign in. Reset their two-step sign-in too."
+	case n > 0:
+		s.audit(r, "passkeys removed", "user", u.Username, "count", n, "reason", "password reset")
+	}
 	if generated != "" {
 		resp["temporary_password"] = generated
 	}

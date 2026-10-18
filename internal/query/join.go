@@ -3,6 +3,7 @@ package query
 import (
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Join adds the fields of a subsearch's rows to the rows that share the
@@ -25,11 +26,38 @@ const MaxJoinMatches = 100
 const MaxSubsearches = 10
 
 func countSubsearches(q *Query) int {
-	n := 0
+	n := exprSubsearches(q.Search)
 	for _, c := range q.Commands {
 		n += commandSubsearches(c)
 	}
 	return n
+}
+
+// exprSubsearches counts the subsearches among a search's terms and in
+// them.
+func exprSubsearches(e Expr) int {
+	n := 0
+	WalkSubsearches(e, func(s *Subsearch) { n += 1 + countSubsearches(s.Query) })
+	return n
+}
+
+// WalkSubsearches calls fn for each subsearch among e's terms, outside
+// the subsearches themselves.
+func WalkSubsearches(e Expr, fn func(*Subsearch)) {
+	switch e := e.(type) {
+	case *And:
+		for _, c := range e.Children {
+			WalkSubsearches(c, fn)
+		}
+	case *Or:
+		for _, c := range e.Children {
+			WalkSubsearches(c, fn)
+		}
+	case *Not:
+		WalkSubsearches(e.Child, fn)
+	case *Subsearch:
+		fn(e)
+	}
 }
 
 func commandSubsearches(c Command) int {
@@ -38,14 +66,75 @@ func commandSubsearches(c Command) int {
 		return 1 + countSubsearches(c.Sub)
 	case *Append:
 		return 1 + countSubsearches(c.Sub)
+	case *Union:
+		n := 0
+		for _, s := range c.Subs {
+			n += 1 + countSubsearches(s)
+		}
+		return n
+	case *Set:
+		n := 0
+		for _, s := range c.Subs {
+			n += 1 + countSubsearches(s)
+		}
+		return n
+	case *MultiSearch:
+		n := 0
+		for _, s := range c.Subs {
+			n += 1 + countSubsearches(s)
+		}
+		return n
 	case *AppendPipe:
 		n := 0
 		for _, c := range c.Commands {
 			n += commandSubsearches(c)
 		}
 		return n
+	case *Map:
+		return 1
+	case *Where:
+		return exprSubsearches(c.Expr)
+	case *InputLookup:
+		// append=true reads a table into the rows, as append [| inputlookup] does.
+		if c.Append {
+			return 1
+		}
 	}
 	return 0
+}
+
+// countMapSearches adds up the most searches q's map commands run.
+func countMapSearches(q *Query) int {
+	n := 0
+	var walk func(cmds []Command)
+	walk = func(cmds []Command) {
+		for _, c := range cmds {
+			switch c := c.(type) {
+			case *Map:
+				n += c.Max
+			case *Join:
+				walk(c.Sub.Commands)
+			case *Append:
+				walk(c.Sub.Commands)
+			case *Union:
+				for _, s := range c.Subs {
+					walk(s.Commands)
+				}
+			case *MultiSearch:
+				for _, s := range c.Subs {
+					walk(s.Commands)
+				}
+			case *Set:
+				for _, s := range c.Subs {
+					walk(s.Commands)
+				}
+			case *AppendPipe:
+				walk(c.Commands)
+			}
+		}
+	}
+	walk(q.Commands)
+	return n
 }
 
 // maxSubsearchDepth bounds subsearches inside subsearches.
@@ -100,6 +189,15 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 		base += 6
 		sub = sub[6:]
 	}
+	// A command that makes its own rows may start it without the |, as
+	// in [inputlookup owners | fields user].
+	w := strings.TrimLeftFunc(sub, isSpace)
+	if i := strings.IndexFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }); i >= 0 {
+		w = w[:i]
+	}
+	if generating[strings.ToLower(w)] {
+		sub, base = "|"+sub, base-1
+	}
 	q, err := parseAt(sub, base, p.depth+1)
 	if err != nil {
 		return nil, err
@@ -109,6 +207,9 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 	}
 	return q, nil
 }
+
+// generating are the commands that make a search's rows themselves.
+var generating = map[string]bool{"inputlookup": true, "makeresults": true, "tstats": true, "eventcount": true, "multisearch": true}
 
 func isSpace(r rune) bool {
 	return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' || r == '\v'

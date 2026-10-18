@@ -1,0 +1,5 @@
+{"rule": "bfc840f5-c9c6-454c-aa13-b46fd0bf1e79", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.report_suspicious_activity_by_enduser","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"user.account.report_suspicious_activity_by_enduses","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}

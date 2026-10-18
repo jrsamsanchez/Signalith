@@ -57,6 +57,9 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			if p.macros, err = loadMacros(packFS, dir); err != nil {
 				t.Fatal(err)
 			}
+			if p.lookups, err = loadLookups(packFS, dir); err != nil {
+				t.Fatal(err)
+			}
 		}
 		listed := map[string]bool{}
 		for _, r := range p.Rules {
@@ -84,13 +87,13 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			var ruleID string
 			var verify func(tf *sigmacheck.TestFile) []error
 			if p.Format == "splunk" {
-				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path)})
+				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path), Lookups: p.lookups})
 				if err != nil {
 					t.Errorf("%s: %v", r.ID, err)
 					continue
 				}
 				ruleID = rule.ID
-				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q.Datamodel, q.Search, tf) }
+				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q, tf) }
 			} else {
 				rule, err := sigmacheck.Parse(src)
 				if err != nil {
@@ -191,8 +194,10 @@ func TestPackDetections(t *testing.T) {
 			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
 			!strings.HasPrefix(d.Query, "datamodel=Web ") && !strings.HasPrefix(d.Query, "sourcetype=aws:cloudtrail ") &&
 			!strings.Contains(d.Query, "sourcetype=azure:monitor:") && !strings.HasPrefix(d.Query, "sourcetype=o365:management:activity ") &&
-			!strings.HasPrefix(d.Query, "sourcetype=google:gcp:pubsub:message ") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server, CloudTrail, Azure, Microsoft 365 or Google Cloud events: %s", d.ID, d.Query)
+			!strings.HasPrefix(d.Query, "sourcetype=google:gcp:pubsub:message ") && !strings.Contains(d.Query, "sourcetype=OktaIM2:log ") &&
+			!strings.Contains(d.Query, "sourcetype=_json AND source=kubernetes") && !strings.HasPrefix(d.Query, "sourcetype=_json source=kubernetes ") &&
+			!strings.Contains(d.Query, "sourcetype=github:cloud:audit ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, web server, CloudTrail, Azure, Microsoft 365, Google Cloud, Okta, Kubernetes or GitHub events: %s", d.ID, d.Query)
 		}
 	}
 }

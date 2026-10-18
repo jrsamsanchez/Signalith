@@ -54,7 +54,10 @@ var windowsSources = []string{
 	"Windows Event Log Security 4741", "Windows Event Log Security 4742", "Windows Event Log Security 4781",
 	"Windows Event Log Security 4727", "Windows Event Log Security 4730", "Windows Event Log Security 4737",
 	"Windows Event Log Security 4798", "Windows Event Log Security 4799", "Windows Event Log Security 4886",
-	"Windows Event Log Security 4887",
+	"Windows Event Log Security 4887", "Windows Event Log Security 4662", "Windows Event Log Security 4723",
+	"Windows Event Log Security 4724", "Windows Event Log Security 4722", "Windows Event Log Security 4725",
+	"Windows Event Log Security 5447", "Windows Event Log Security 4728", "Windows Event Log Security 4719",
+	"Windows Event Log Security 5140", "Windows Event Log Security 4731", "Windows Event Log Security 4756",
 	// Linux audit records, which Signalith reads from the audit log.
 	"Linux Auditd Execve", "Linux Auditd Proctitle", "Linux Auditd Syscall", "Linux Auditd Path", "Linux Auditd Cwd",
 	"Linux Auditd Service Stop", "Linux Auditd Add User", "Linux Auditd Daemon Start", "Linux Auditd Daemon End",
@@ -97,17 +100,19 @@ func main() {
 		Name:   "splunk",
 		Title:  "Splunk Security Content",
 		Format: "splunk",
-		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs and Microsoft 365 detections for its audit records, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
+		Description: "Windows detections for process, file and registry events, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. " +
 			"TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.",
 		Source:     "https://github.com/splunk/security_content",
 		Version:    commit,
 		Date:       time.Now().UTC().Format("2006-01-02"),
 		License:    "Apache-2.0",
 		LicenseURL: "https://www.apache.org/licenses/LICENSE-2.0",
-		Notice: "The detections in this pack are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. " +
-			"They are shipped unchanged; Signalith converts them when it starts. Findings from them name the rule's author.",
+		Notice: "The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. " +
+			"They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.",
 	}
 	pack.UseMacros(macros)
+	lookups, lookupErrs, lookupFiles := readLookups(*splunkDir)
+	pack.UseLookups(lookups)
 	old := map[string]string{}
 	if data, err := os.ReadFile(filepath.Join(*outDir, "pack.yaml")); err == nil {
 		var p detect.Pack
@@ -136,7 +141,7 @@ func main() {
 			}
 		}
 	}
-	for _, d := range []string{"rules", "tests", "macros"} {
+	for _, d := range []string{"rules", "tests", "macros", "lookups"} {
 		if err := os.RemoveAll(filepath.Join(*outDir, d)); err != nil {
 			log.Fatal(err)
 		}
@@ -149,6 +154,7 @@ func main() {
 	skip := func(reason, file string) { skipped[reason] = append(skipped[reason], file) }
 	usedIDs := map[string]bool{}
 	usedMacros := map[string]bool{}
+	usedLookups := map[string]bool{}
 	rules, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "endpoint", "*.yml"))
 	// Web detections search the Web data model, whatever log fills it,
 	// and so do a few network ones. The other network detections are
@@ -159,10 +165,13 @@ func main() {
 	network, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "network", "*.yml"))
 	rules = append(rules, network...)
 	// Cloud detections that read CloudTrail records, Entra ID and Azure
-	// records, or Microsoft 365 audit records.
+	// records, Microsoft 365 audit records or Okta's System Log, and the
+	// application detections over Okta's System Log.
 	cloud, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "cloud", "*.yml"))
+	apps, _ := filepath.Glob(filepath.Join(*splunkDir, "detections", "application", "*.yml"))
+	cloud = append(cloud, apps...)
 	for _, f := range cloud {
-		if src, err := os.ReadFile(f); err == nil && cloudFile.Match(src) {
+		if src, err := os.ReadFile(f); err == nil && (cloudFile.Match(src) || oktaFile.Match(src)) {
 			rules = append(rules, f)
 		}
 	}
@@ -188,7 +197,7 @@ func main() {
 			continue
 		}
 		web := webSearch.MatchString(meta.Search)
-		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web}
+		opt := splcheck.ParseOptions{Network: detect.SplunkNetworkRule(rel) && !web, Lookups: lookups, LookupErrors: lookupErrs}
 		if opt.Network {
 			// A network rule over connections or DNS lookups reads its
 			// data model from any source, a network sensor's among them.
@@ -199,7 +208,8 @@ func main() {
 				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
 			}
-		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web && !cloudSearch.MatchString(meta.Search) {
+		} else if !slices.ContainsFunc(meta.DataSource, func(s string) bool { return slices.Contains(windowsSources, s) }) && !web &&
+			!cloudSearch.MatchString(meta.Search) && !slices.Equal(meta.DataSource, []string{"Okta"}) {
 			skip("no Windows Sysmon or Security log data source", rel)
 			continue
 		}
@@ -234,18 +244,14 @@ func main() {
 		}
 		tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: splcheck.Cases(rule)}
 		if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
-			if opt.Network && splcheck.IsSensorNode(rule.Node) {
-				skip("no test events: no network sensor event as Signalith stores it matches the rule", rel)
-			} else {
-				skip("no test events: no Windows event as Signalith stores it matches the rule", rel)
-			}
+			skip(splcheck.NoEventsReason(rule, tf.Cases), rel)
 			continue
 		}
 		for _, c := range recorded[rule.ID] {
 			c.Expect = splcheck.Reads(rule, c)
 			tf.Cases = append(tf.Cases, c)
 		}
-		if errs := splcheck.Verify(rule, q.Datamodel, q.Search, tf); len(errs) > 0 {
+		if errs := splcheck.Verify(rule, q, tf); len(errs) > 0 {
 			skip("converted detection disagrees with the rule", rel+": "+errs[0].Error())
 			continue
 		}
@@ -260,6 +266,9 @@ func main() {
 			log.Fatal(err)
 		}
 		markMacros(rule.Search, macros, usedMacros)
+		for _, l := range rule.Lookups {
+			usedLookups[l] = true
+		}
 		pack.Rules = append(pack.Rules, pr)
 	}
 	for name := range usedMacros {
@@ -269,6 +278,20 @@ func main() {
 		}
 		if err := os.WriteFile(filepath.Join(*outDir, "macros", filepath.Base(macroFiles[name])), src, 0o644); err != nil {
 			log.Fatal(err)
+		}
+	}
+	// The tables the rules look values up in, as security_content ships
+	// them: the CSV and the yml that says how it matches.
+	for name := range usedLookups {
+		for _, src := range []string{lookupFiles[name], strings.TrimSuffix(lookupFiles[name], ".yml") + ".csv"} {
+			data, err := os.ReadFile(src)
+			if err != nil {
+				log.Fatal(err)
+			}
+			dst := name + filepath.Ext(src)
+			if err := os.WriteFile(filepath.Join(*outDir, "lookups", dst), data, 0o644); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 	lic, err := os.ReadFile(filepath.Join(*splunkDir, "LICENSE"))
@@ -297,6 +320,46 @@ func main() {
 	fmt.Printf("%d rules shipped, %d left out (see %s)\n", len(pack.Rules), n, filepath.Join(*outDir, "REPORT.md"))
 }
 
+// readLookups reads security_content's tables (lookups/csv): those
+// Signalith reads, why it cannot read the others (and the KV store
+// lookups, which are not files), and each one's yml.
+func readLookups(dir string) (map[string]*splcheck.Lookup, map[string]error, map[string]string) {
+	lookups := map[string]*splcheck.Lookup{}
+	errs := map[string]error{}
+	files := map[string]string{}
+	metas, _ := filepath.Glob(filepath.Join(dir, "lookups", "*", "*.yml"))
+	for _, f := range metas {
+		meta, err := os.ReadFile(f)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var m struct {
+			Name string `yaml:"name"`
+			Type string `yaml:"lookup_type"`
+		}
+		if err := yaml.Unmarshal(meta, &m); err != nil || m.Name == "" {
+			continue
+		}
+		if m.Type != "csv" {
+			errs[m.Name] = fmt.Errorf("a %s lookup, which security_content does not ship as a file", m.Type)
+			continue
+		}
+		data, err := os.ReadFile(strings.TrimSuffix(f, ".yml") + ".csv")
+		if err != nil {
+			errs[m.Name] = fmt.Errorf("security_content has no CSV for it")
+			continue
+		}
+		l, err := splcheck.ParseLookup(meta, data)
+		if err != nil {
+			errs[m.Name] = err
+			continue
+		}
+		lookups[l.Name] = l
+		files[l.Name] = f
+	}
+	return lookups, errs, files
+}
+
 // markMacros records the macros a search's where clause uses, and the
 // macros those use.
 func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]bool) {
@@ -311,12 +374,17 @@ func markMacros(s string, macros map[string]*splcheck.Macro, used map[string]boo
 	}
 }
 
-// cloudSearch is a search of CloudTrail, Entra ID, Azure or Microsoft 365
-// records, and cloudFile a rule file with one.
+// cloudSearch is a search of CloudTrail, Entra ID, Azure, Microsoft 365
+// or Okta records, and cloudFile a rule file with one.
 var (
-	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
-	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`")
+	cloudSearch = regexp.MustCompile("^\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit|github_enterprise|github_organizations)`")
+	cloudFile   = regexp.MustCompile("(?m)^(?:search:\\s*['\"|>-]*)?\\s*`(cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit|github_enterprise|github_organizations)`")
 )
+
+// oktaFile is a rule file whose only data source is Okta: a tstats
+// search over the Authentication or Change data model reads Okta's
+// events.
+var oktaFile = regexp.MustCompile(`(?m)^data_source:\s*\n\s*-\s*Okta\s*\n\S`)
 
 // webSearch is a search of the Web data model.
 var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)

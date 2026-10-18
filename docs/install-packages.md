@@ -71,9 +71,14 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
   token and syslog on ports 514 and 6514, make the master key in
   `/var/lib/signalith/keys`, and start the service. The first admin password is kept in
   `/etc/signalith/initial-admin-password`, readable only by root, and
-  `sudo signalith initial-password` shows it until you change it.
+  `sudo signalith initial-password` shows it until you change it. The first sign-in
+  with it asks you to choose your own before anything else, and the file is removed
+  when you change the password with `sudo signalith passwd` (the service may not remove
+  it itself; it no longer works either way).
 - On an upgrade, keep the config, encrypt any passwords an older version kept as plain
-  text, and restart the service.
+  text, and restart the service. While the admin password is still the first one
+  Signalith made, the next sign-in with it asks for a new one, also on an install that
+  has used it for a long time.
 - On removal, stop the service and keep `/etc/signalith` and `/var/lib/signalith`, so
   installing again picks up where you left off. Delete them by hand to remove
   everything; events stay in OpenSearch.
@@ -82,7 +87,7 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
 
 Double-click `signalith-0.1.0-x64.msi` and follow the steps (it asks for administrator
 rights). When it finishes, Signalith is running as the **Signalith** service. Open
-**Signalith** from the Start menu (https://localhost:8080) and sign in as `admin`. To see
+**Signalith** from the Start menu (https://localhost:9000) and sign in as `signalithadmin`. To see
 the first password, open PowerShell **as Administrator** and run:
 
 ```powershell
@@ -106,7 +111,7 @@ It puts `signalith.exe` in `C:\Program Files\Signalith` (and on the system `PATH
 runs the same `install.ps1` as a manual install: the config and state go to
 `C:\ProgramData\Signalith`, which only SYSTEM, Administrators and the service can read;
 the service runs as its own account, `NT SERVICE\Signalith`; and firewall rules open
-the web UI and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
+the web UI, agent and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
 
 To upgrade, run the newer `.msi`: it stops the service, replaces the program, keeps the
 config, and starts the service again. **Settings > Apps** uninstalls it; that removes

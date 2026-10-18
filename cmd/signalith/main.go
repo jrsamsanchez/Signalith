@@ -34,7 +34,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -42,12 +44,15 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/notify"
+	"github.com/jrsamsanchez/signalith/internal/okta"
 	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -60,9 +65,13 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/summary"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
+	"github.com/jrsamsanchez/signalith/internal/ticketing"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"github.com/jrsamsanchez/signalith/internal/vulnscan"
@@ -90,13 +99,16 @@ Usage:
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
+  signalith agent-programs status|sign|keygen|pubkey ...  the Signalith Agent programs this server hands out, signed for agent updates
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
+  signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
-  signalith join      '<token>' [-c file] [--name] [--listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
+  signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
+  signalith bootstrap-kubernetes -prefix NAME [-opensearch=false] [-opensearch-name NAME]   make the Helm chart's Kubernetes Secrets (its setup Job runs this)
   signalith version
 
 The config file defaults to %s
@@ -145,6 +157,8 @@ func main() {
 		err = cmdInitialPassword(args)
 	case "bootstrap-docker":
 		err = cmdBootstrapDocker(args)
+	case "bootstrap-kubernetes":
+		err = cmdBootstrapKubernetes(args)
 	case "opensearch-certs":
 		err = cmdOpenSearchCerts(args)
 	case "query":
@@ -165,8 +179,12 @@ func main() {
 		err = cmdSecrets(args)
 	case "content":
 		err = cmdContent(args)
+	case "agent-programs":
+		err = cmdAgentPrograms(args)
 	case "security":
 		err = cmdSecurity(args)
+	case "audit":
+		err = cmdAudit(args)
 	case "cluster":
 		err = cmdCluster(args)
 	case "join":
@@ -183,6 +201,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
 		os.Exit(2)
 	}
+	if errors.Is(err, errTampered) {
+		os.Exit(2)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
@@ -196,7 +217,8 @@ func configFlag(fs *flag.FlagSet) *string {
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
-	listen := fs.String("listen", "0.0.0.0:8080", "address to listen on")
+	listen := fs.String("listen", "0.0.0.0:9000", "address the web page and API listen on")
+	agentListen := fs.String("agent-listen", "", "address agents send to (default: -listen's host, port "+config.DefaultAgentPort+"; off: the web port)")
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
@@ -216,7 +238,15 @@ func cmdInit(args []string) error {
 	// key where it has it.
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
+	c.Auth.AdminUser = config.DefaultAdminUser
 	c.Server.Listen = *listen
+	// Set, so the web port takes no agent traffic. By default on the web
+	// page's host: a server whose page is on loopback only takes agents on
+	// loopback only too.
+	c.Server.AgentListen = *agentListen
+	if c.Server.AgentListen == "" {
+		c.Server.AgentListen = config.DefaultAgentListen(*listen)
+	}
 	c.Server.PublicURL = *publicURL
 	// HTTPS with a certificate the server makes for itself, and no
 	// agents over plain HTTP.
@@ -260,14 +290,15 @@ func cmdInit(args []string) error {
 	}
 	fmt.Printf("Wrote %s\n\n", *path)
 	fmt.Printf("  Web UI:      %s\n", c.Server.PublicURL)
+	fmt.Printf("  Agents:      %s\n", c.AgentURL(c.Server.PublicURL))
 	fmt.Printf("  HTTPS:       the server makes its own certificate when it starts; browsers warn\n")
 	fmt.Printf("               until you trust it (see docs/https.md)\n")
 	fmt.Printf("  User:        %s\n", c.Auth.AdminUser)
 	switch {
 	case saved:
-		fmt.Printf("  Password:    show it with: signalith initial-password   (change it with: signalith passwd)\n")
+		fmt.Printf("  Password:    show it with: signalith initial-password   (you choose your own at the first sign-in)\n")
 	case generated:
-		fmt.Printf("  Password:    %s   (shown once; change it with: signalith passwd)\n", pw)
+		fmt.Printf("  Password:    %s   (shown once; you choose your own at the first sign-in)\n", pw)
 	}
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
@@ -276,6 +307,14 @@ func cmdInit(args []string) error {
 	// none), so init can say where it is and to back it up.
 	if _, err := c.Keyring().Seal("init", "make the master key"); err != nil {
 		return fmt.Errorf("making the master key: %w", err)
+	}
+	// A password Signalith made must be changed at the first sign-in with
+	// it. The packages keep it where only root can read it, so the server
+	// is told its hash (see config.FirstPassword).
+	if generated {
+		if err := config.RecordFirstPassword(config.StateDirFor(*path), h); err != nil {
+			return fmt.Errorf("cannot note the first admin password in the state folder: %w", err)
+		}
 	}
 	if src, err := c.Keyring().Source(); err == nil {
 		fmt.Printf("  Master key:  %s\n", src)
@@ -349,10 +388,36 @@ func printSyslogPorts(c *config.Config) {
 	}
 }
 
+// printWebPorts prints the web port, and the agent port when agents send
+// to one of their own, one per line with whether other machines can reach
+// it ("web 9000 any", "agents 7779 local"), for the installers' firewall
+// rules.
+func printWebPorts(c *config.Config) {
+	for _, l := range []struct{ kind, addr string }{{"web", c.Server.Listen}, {"agents", c.Server.AgentAddr()}} {
+		if host, port, err := net.SplitHostPort(l.addr); err == nil {
+			fmt.Println(l.kind, port, listenScope(host))
+		}
+	}
+}
+
+// listenScope says whether a listen host takes connections from other
+// machines ("any") or from this one alone ("local"), for installers that
+// open the firewall only for the first.
+func listenScope(host string) string {
+	if host == "localhost" {
+		return "local"
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
+		return "local"
+	}
+	return "any"
+}
+
 func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	path := configFlag(fs)
 	ports := fs.Bool("syslog-ports", false, "only print the syslog listeners, one per line: protocol, port, and the allowed senders (any, or a comma-separated list); for installers")
+	webPorts := fs.Bool("web-ports", false, "only print the web port and the agent port, one per line with any or local (web 9000 any, agents 7779 local); for installers")
 	fileFlag := settingsFileFlag(fs)
 	fs.Parse(args)
 	// -file first: the service's settings below do not replace it.
@@ -360,9 +425,9 @@ func cmdValidate(args []string) error {
 		return err
 	}
 	// The service's folders and master key, so this checks what it uses.
-	// Installers read the -syslog-ports output, so nothing else is
-	// printed then.
-	if *ports {
+	// Installers read the -syslog-ports and -web-ports output, so
+	// nothing else is printed then.
+	if *ports || *webPorts {
 		applyServiceEnv(*path)
 	} else {
 		useServiceEnv(*path, os.Stdout)
@@ -373,6 +438,10 @@ func cmdValidate(args []string) error {
 	}
 	if *ports {
 		printSyslogPorts(c)
+		return nil
+	}
+	if *webPorts {
+		printWebPorts(c)
 		return nil
 	}
 	fmt.Printf("%s is valid.\n", *path)
@@ -506,6 +575,11 @@ func cmdValidate(args []string) error {
 		}
 		fmt.Printf("%d playbooks (%d on), set on the Playbooks page.\n", len(list), on)
 	}
+	if s, err := (&ticketing.Manager{File: c.TicketingFile(), Log: slog.New(slog.DiscardHandler)}).Settings(); err != nil {
+		fmt.Println("Warning:", err)
+	} else if len(s.Connections) > 0 {
+		fmt.Printf("%d ticketing connections (Jira or ServiceNow), set on Settings > Ticketing.\n", len(s.Connections))
+	}
 	if s := syslogSummary(c); s != "" {
 		allow := "any sender"
 		if len(c.Syslog.Allow) > 0 {
@@ -605,11 +679,15 @@ func cmdPasswd(args []string) error {
 			return err
 		}
 		fmt.Printf("Password updated in %s, on this server only. It replaces the configured password: restart the server to apply it.\n", hashFile)
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// A member of a cluster that shares its users changes the built-in
 	// admin of every server, at once.
 	if done, err := passwdShared(*path, stateDir, h); done || err != nil {
+		if err == nil {
+			firstPasswordReplaced(os.Stdout, *path, stateDir)
+		}
 		return err
 	}
 	_, statErr := os.Stat(hashFile)
@@ -632,6 +710,7 @@ func cmdPasswd(args []string) error {
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
 				"(signalith passwd -local sets the password for that). Run signalith passwd again once OpenSearch answers to change the cluster's password.")
 		}
+		firstPasswordReplaced(os.Stdout, *path, stateDir)
 		return nil
 	}
 	// Only the hash changes in the file; settings from the environment
@@ -647,6 +726,7 @@ func cmdPasswd(args []string) error {
 	if os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
 		fmt.Println("Note: SIGNALITH_ADMIN_PASSWORD is set in this environment, and wherever it is set for the server it replaces the password in the file.")
 	}
+	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
 }
 
@@ -732,11 +812,34 @@ func newStore(c *config.Config) *store.Client {
 	return store.New(c.OpenSearchConnection())
 }
 
+// newSummaries starts reading which slots eng's summary indexes cover,
+// and returns the builder the summaries job runs. Summaries reach back
+// no further than ret keeps each data model's events.
+func newSummaries(ctx context.Context, c *config.Config, cl *store.Client, eng *search.Engine, ret *retention.Manager, log *slog.Logger, goFn func(func())) *summary.Builder {
+	runtime := cluster.RuntimeIndex(c.OpenSearch.IndexPrefix)
+	coverage := &summary.Coverage{Client: cl, Runtime: runtime, Log: log}
+	eng.Summaries = coverage
+	goFn(func() { coverage.Run(ctx) })
+	return &summary.Builder{
+		Client: cl, Prefix: c.OpenSearch.IndexPrefix, Runtime: runtime, Days: eng.SummaryDays,
+		KeepDays: func(model string) (int, bool) {
+			s, err := ret.Settings()
+			if err != nil {
+				return 0, false
+			}
+			p, _ := s.For(strings.ToLower(model))
+			return p.KeepDays, true
+		},
+		IndexSettings: c.OpenSearch.Replicas.IndexSettings, FieldType: ingest.FieldType, Log: log,
+	}
+}
+
 func newEngine(c *config.Config, s store.Searcher) *search.Engine {
 	return &search.Engine{Store: s, Opt: search.Options{
 		IndexPrefix:     c.OpenSearch.IndexPrefix,
 		DefaultEarliest: c.Search.DefaultEarliest,
 		MaxEvents:       c.Search.MaxEvents,
+		SummaryDays:     c.Search.SummaryDays,
 	}}
 }
 
@@ -772,6 +875,7 @@ func cmdQuery(args []string) error {
 	if tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir())); err == nil {
 		eng.Lookups = tables
 	}
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	if strings.Contains(src, "intel") || strings.Contains(src, "threatmatch") {
 		eng.Intel = intel.NewStore(intel.NewOpenSearch(newStore(c), c.OpenSearch.IndexPrefix))
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -1007,6 +1111,9 @@ type instance struct {
 	certs    *tlsauto.Manager
 	certKey  string
 	receiver *syslog.Receiver
+	// agentHandler serves the agent port, and agentPlain plain HTTP on it;
+	// nil when agents send to the web port.
+	agentHandler, agentPlain http.Handler
 	// retention is the retention manager.
 	retention *retention.Manager
 	// jobsList are the background jobs, which run only while this server
@@ -1019,6 +1126,8 @@ type instance struct {
 	cancel context.CancelFunc
 	jobs   sync.WaitGroup // what runs on every server, such as index creation
 	log    *slog.Logger
+	// tenants runs the tenants' data, when there may be tenants.
+	tenants *tenantRuntime
 }
 
 // stop ends the background jobs, retention and the syslog receiver, and
@@ -1027,6 +1136,9 @@ type instance struct {
 func (in *instance) stop() {
 	if in.node != nil {
 		in.node.SetJobs(nil)
+	}
+	if in.tenants != nil {
+		in.tenants.stop()
 	}
 	in.cancel()
 	in.jobs.Wait()
@@ -1087,6 +1199,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.certs, in.certKey = certs, certKey
 		in.jobs.Go(func() { certs.Run(ctx) })
 	}
+	// The agent port, before the parts that tell agents where to send:
+	// when the default one of a server upgraded from before 0.3 cannot be
+	// listened on, they keep sending to the web port.
+	if err := r.listenAgents(c, certs); err != nil {
+		in.cancel()
+		return nil, err
+	}
 	// The master key, again after a restart: the files saved from now on
 	// are encrypted with this config's, and their plain values with it.
 	r.useKeys(c)
@@ -1116,7 +1235,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	r.useAudit(ctx, in, c, cl, ret)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Log: log}
+	// The ingest slots and the memory for batches arriving are the whole
+	// server's: every tenant's pipeline shares them (see ingest.Limits).
+	ingestLimits := ingest.NewLimits(c.Ingest.MaxConcurrent, ingest.DefaultMaxReceiving)
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log,
+		Rollover: &ingest.Rollover{Client: cl, Prefix: c.OpenSearch.IndexPrefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
+	in.jobs.Go(func() { pipeline.Rollover.Run(ctx) })
 	pipeline.SetURLQuery(c.URLQueryMode())
 	// Each day's new field names are shared out among the servers that
 	// stored events in the last 10 minutes, and none are added to an index
@@ -1125,6 +1249,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	indexingServers := func() int { return r.node.IndexingServers(10 * time.Minute) }
 	pipeline.Servers = indexingServers
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
+	// Custom parsers admins save on the Add data page read the records
+	// agents send under their tags, and syslog from the programs they name.
+	parsers := r.parsersRegistry(c, sharedOn)
+	pipeline.Custom = parsers
 	// Closed once the index template is in place, so syslog does not
 	// create the day's first indices with the wrong field types.
 	templateReady := make(chan struct{})
@@ -1145,6 +1273,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			sc.OnTLSName = certs.NoteName
 		}
 		receiver = syslog.New(sc, pipeline, log)
+		receiver.Custom = parsers.Syslog
 		if err := receiver.Start(ctx); err != nil {
 			return nil, keyed(err, "syslog.udp", "syslog.tcp", "syslog.tls")
 		}
@@ -1179,12 +1308,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	log.Info("asset and identity lists loaded", "assets", len(lists.Assets()), "identities", len(lists.Identities()), "dir", c.LookupsDir())
 	eng.Assets = lists
 	in.jobs.Go(func() { reloadLookups(ctx, lists, log) })
+	// Every server reads which slots summary indexes cover; the server
+	// that runs the background jobs keeps them (the summaries job).
+	sumBuilder := newSummaries(ctx, c, cl, eng, ret, log, in.jobs.Go)
 	// Likewise a damaged lookup table is left out, and the rest load.
 	tables, err := lookuptables.Open(lookuptables.Dir(c.LookupsDir()))
 	if err != nil {
 		log.Error("some lookup tables could not be read and are left out", "err", err)
 	}
 	eng.Lookups = tables
+	eng.GeoIP = geoip.Open(c.GeoIPDir())
 	ibackend := intel.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	ibackend.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	indicators := intel.NewStore(ibackend)
@@ -1244,6 +1377,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			return nil, err
 		}
 	}
+	// A change of the first password that reached this server while its
+	// users moved is kept, and so is the session that made it. Checked
+	// before the shared users are in use, so sign-ins that finish meanwhile
+	// stay in the sessions carry moves.
+	cc := c
+	if parts != nil {
+		if h := keepFirstPasswordChange(ctx, parts.sessions.Docs, c, log); h != "" {
+			cc = c.WithAdminHashFile(h)
+		}
+	}
 	if r.sharedContent != nil {
 		r.sharedContent.users.use(parts)
 	}
@@ -1252,7 +1395,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if parts != nil {
 		// The sessions made while this server kept its users in its own
 		// files carry over.
-		parts.carry(ctx, r.sessions, r.people, c, log)
+		parts.carry(ctx, r.sessions, r.people, cc, log)
 		people, dir = parts.store, parts.dir
 		n := people.Count()
 		log.Info("users loaded from the shared settings", "local", n[users.SourceLocal], "directory", n[users.SourceDirectory])
@@ -1285,6 +1428,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
 	// notes the hosts that reach it and writes their last contact in bulk.
 	estore := endpoint.NewStore(cl, c.OpenSearch.IndexPrefix)
@@ -1297,6 +1442,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// their scanner; the server that runs the background jobs runs the
 	// rest.
 	vstore := vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix)
+	// The SSH and Windows logins OpenVAS signs in with, encrypted.
+	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
@@ -1306,13 +1453,28 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if err := notes.Load(); err != nil {
 		log.Error("notifications are not sent until the notifications file is fixed", "err", err)
 	}
-	sched := &detect.Scheduler{
-		Library: lib, Engine: eng, Findings: fstore, Log: log,
-		Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix}, Assets: lists,
-		MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
-		Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
+	newSched := func() *detect.Scheduler {
+		s := &detect.Scheduler{
+			Library: lib, Engine: eng, Findings: fstore, Log: log,
+			Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix}, Assets: lists,
+			MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
+			Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
+		}
+		s.SetCatchUp(c.DetectionsCatchUp())
+		s.SetSpread(c.Detections.Spread)
+		s.SetSearchBudget(c.Detections.SearchBudget)
+		return s
 	}
-	sched.SetCatchUp(c.DetectionsCatchUp())
+	sched := newSched()
+	// spread runs the detection buckets assigned to this server, when the
+	// detections are spread over the servers (see detspread.go).
+	var spread *detSpread
+	// Behavior baselines: the server that runs the background jobs learns
+	// how each user and host usually behaves, and adds risk for what is
+	// new or rare (see internal/baselines).
+	blStore := baselines.NewStore(cl, c.OpenSearch.IndexPrefix)
+	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
+		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
 	if saved, err := ret.Store.Get(); err != nil {
 		if sharedOn {
 			log.Error("the shared retention policies cannot be read from OpenSearch yet; retention is paused until they can", "err", err)
@@ -1387,6 +1549,27 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	pruns := playbooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	pruns.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// The buttons in Slack and Teams messages: linked chat accounts and
+	// where Teams app channels post are kept in <prefix>_chat, so a click
+	// may reach any server.
+	chats := chatops.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	chats.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	senders.Conversations = chats
+	// Ticketing: Jira and ServiceNow connections set on Settings >
+	// Ticketing, kept in step with cases by the server that runs the
+	// background jobs; what each ticket last sent and saw is kept in
+	// <prefix>_ticket_sync.
+	tickets := &ticketing.Manager{File: c.TicketingFile(), Log: log}
+	if err := tickets.Load(); err != nil {
+		log.Error("tickets are not kept in step until the ticketing file is fixed", "err", err)
+	}
+	tlinks := ticketing.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	tlinks.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	tsync := &ticketing.Service{Settings: tickets, Cases: cstore, Links: tlinks, Server: sampleServer, Log: log,
+		PublicURL: func() string { return c.Server.PublicURL }}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		tsync.Protected = notify.Protected{p}
+	}
 	// Sessions and the failed sign-in limits carry over a restart (shared
 	// sessions are in OpenSearch, with this server's cache of them kept).
 	r.sessions.SetIdle(c.SessionIdle())
@@ -1420,7 +1603,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	var openvas *vulnscan.OpenVAS
 	if c.Vulns.OpenVASAddress != "" {
 		openvas = &vulnscan.OpenVAS{Address: c.Vulns.OpenVASAddress, Username: c.Vulns.OpenVASUsername,
-			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile}
+			Password: c.Vulns.OpenVASPassword, CAFile: c.Vulns.OpenVASCAFile, Log: log}
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
@@ -1465,6 +1648,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Agents:       agentsInv,
 		Engine:       eng,
 		Pipeline:     pipeline,
+		Parsers:      parsers,
 		EventAge:     live,
 		Syslog:       receiver,
 		Backend:      cl,
@@ -1477,14 +1661,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards:   boards,
 		Cases:        cstore,
+		Notebooks:    nstore,
 		Respond:      responder,
 		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Chat:         &api.Chat{Store: chats},
+		Ticketing:    &api.Ticketing{Service: tsync},
 		Retention:    ret,
 		Sample:       sampleLoader,
+		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:      updater,
 		Endpoints:    estore,
 		SensorTuning: tuning,
 		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},
+		Baselines:    blStore,
 		Background:   r.backgroundContext(parent),
 		Assistant:    newAssistant(c),
 		Users:        people,
@@ -1500,12 +1689,24 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Version:      version,
 	}
 	followProxyTrust(srv)
+	// Likewise a host that stopped sending: the server that runs the
+	// background jobs writes an event when a steady source goes quiet, which
+	// the built-in detection data-source-stopped reads.
+	sourceWatch := &dashboards.SourceWatch{Engine: eng, Events: pipeline, Log: log,
+		StaleAfter: func() time.Duration { return srv.Running().StaleAfter() }}
+	if r.node != nil {
+		sourceWatch.Leader = r.node.RunsJobs
+	}
+	in.jobs.Go(func() { sourceWatch.Run(ctx) })
 	srv.KnownBrowsers = r.browsers
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
 	}
 	wireFeatures(srv, r.shared)
+	if parts == nil && r.sharedContent != nil {
+		srv.BuiltinSetHere = r.sharedContent.users.builtinSetHere(c)
+	}
 	if parts != nil {
 		srv.SessionStore, srv.KnownBrowsers, srv.SharedUsers = parts.sessions, parts.browsers, parts.api(c)
 		if rt := r.shared; rt != nil {
@@ -1528,7 +1729,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// which ones are there. Changes to existing indices and the background
 	// jobs are for the one server that runs those.
 	indicesReady := make(chan struct{})
-	var intelOK, casesOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK bool
+	var intelOK, casesOK, notebooksOK, findingsOK, notifyOK, playbooksOK, respondOK, vulnsOK, baselinesOK, chatOK, ticketsOK bool
 	in.jobs.Go(func() {
 		if !ensureTemplate(ctx, cl, c, log) {
 			return
@@ -1545,6 +1746,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the cases index; investigations will not work", "index", cstore.Index, "err", err)
 		} else {
 			casesOK = true
+		}
+		if err := nstore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the hunting notebooks index; notebooks cannot be saved", "index", nstore.Index, "err", err)
+		} else {
+			notebooksOK = true
 		}
 		if err := fstore.EnsureIndex(ctx); err != nil {
 			log.Error("could not create the findings index; detections will not run", "index", fstore.Index, "err", err)
@@ -1573,6 +1779,21 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Error("could not create the playbook runs index; playbooks will not run", "index", pruns.Index, "err", err)
 		} else {
 			playbooksOK = true
+		}
+		if err := blStore.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the behavior baselines index; behavior baselines will not learn", "index", blStore.Index, "err", err)
+		} else {
+			baselinesOK = true
+		}
+		if err := chats.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the chat index; buttons in Slack and Teams messages will not work", "index", chats.Index, "err", err)
+		} else {
+			chatOK = true
+		}
+		if err := tlinks.EnsureIndex(ctx); err != nil {
+			log.Error("could not create the ticket sync index; tickets will not be opened or kept in step", "index", tlinks.Index, "err", err)
+		} else {
+			ticketsOK = true
 		}
 		close(indicesReady)
 	})
@@ -1604,6 +1825,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.M365Cursors = func(ctx context.Context, tenant string) ([]m365.Cursor, error) {
 		return m365.Cursors(ctx, cl, runtimeIndex, tenant)
 	}
+	oktaLog := &okta.Poller{
+		Settings: func() okta.Settings { return okta.FromConfig(srv.Running()) },
+		Store:    cl, Index: runtimeIndex, Ingest: pipeline.Ingest, Log: log,
+	}
+	srv.OktaCursor = func(ctx context.Context, domain string) (okta.Cursor, bool, error) {
+		return okta.CursorOf(ctx, cl, runtimeIndex, domain)
+	}
 	in.jobsList = []cluster.Job{
 		{Name: "index upgrades", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -1614,10 +1842,19 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			upgradeIndices(ctx, log, func() bool { return r.node == nil || r.node.RunsJobs() }, []indexUpgrade{
 				{intelOK, ibackend.Index, clusterUpgrade(r.shared, "intel-fields", ibackend.Upgrade), ibackend.Replicate},
 				{casesOK, cstore.Index, clusterUpgrade(r.shared, "cases-fields", cstore.Upgrade), cstore.Replicate},
+				{notebooksOK, nstore.Index, clusterUpgrade(r.shared, "notebooks-fields", nstore.Upgrade), nstore.Replicate},
 				{findingsOK, fstore.Index, clusterUpgrade(r.shared, "findings-fields", fstore.Upgrade), fstore.Replicate},
 				{notifyOK, deliveries.Index, nil, deliveries.Replicate},
 				{playbooksOK, pruns.Index, nil, pruns.Replicate}, {respondOK, astore.Index, nil, astore.Replicate},
+				{chatOK, chats.Index, nil, chats.Replicate},
+				{ticketsOK, tlinks.Index, nil, tlinks.Replicate},
 			})
+		}},
+		{Name: "summaries", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			sumBuilder.Run(ctx)
 		}},
 		{Name: "detections", Run: func(ctx context.Context) {
 			if !ready(ctx) || !findingsOK {
@@ -1626,6 +1863,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("detection scheduler started", "detections", len(lib.List()))
 			sched.Start(ctx)
 			log.Info("detection scheduler stopped")
+		}},
+		{Name: "detection assignment", Run: func(ctx context.Context) {
+			if spread == nil || !ready(ctx) || !findingsOK {
+				return
+			}
+			spread.assign(ctx)
 		}},
 		{Name: "threat intel feeds", Run: func(ctx context.Context) {
 			if !ready(ctx) || !intelOK {
@@ -1654,11 +1897,28 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("playbooks will run for new findings that match them", "file", c.PlaybooksFile())
 			pbRunner.Run(ctx)
 		}},
+		{Name: "ticketing", Run: func(ctx context.Context) {
+			if !ready(ctx) || !ticketsOK || !casesOK {
+				return
+			}
+			// Connections can be added on the page at any time, so the
+			// sync runs even with none yet.
+			log.Info("cases with Jira or ServiceNow tickets will be kept in step with them", "file", c.TicketingFile())
+			tsync.Run(ctx)
+		}},
 		// Retention keeps running while OpenSearch refuses writes (its
 		// disk is full): its disk guard is what frees space.
 		{Name: "retention", Emergency: true, Run: func(ctx context.Context) {
 			ret.Start(ctx)
 			ret.Wait()
+		}},
+		// The baselines learn while their settings leave them on; a change
+		// there applies at the next round.
+		{Name: "behavior baselines", Run: func(ctx context.Context) {
+			if !ready(ctx) || !baselinesOK || !findingsOK {
+				return
+			}
+			behavior.Run(ctx)
 		}},
 		// Microsoft 365's audit log is read while Settings > Microsoft 365
 		// names a tenant; a change there applies at the next round.
@@ -1667,6 +1927,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				return
 			}
 			o365.Run(ctx)
+		}},
+		// Okta's System Log is read while Settings > Okta names an
+		// organization; a change there applies at the next round.
+		{Name: "okta system log", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			oktaLog.Run(ctx)
 		}},
 	}
 	if r.shared != nil {
@@ -1706,11 +1974,30 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// run, download or message, so a server that lost the job lease
 		// stops at once, even before its jobs' context ends.
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs, r.node.RunsJobs
+		tsync.Allowed = r.node.RunsJobs
 		o365.Allowed, o365.Epoch, o365.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
+		behavior.Allowed, behavior.Epoch, behavior.NodeID, behavior.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		oktaLog.Allowed, oktaLog.Epoch, oktaLog.NodeID = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID()
 		// Detection run state carries the lease epoch, so a server that
 		// lost the lease cannot write over a newer one's, and slots are
 		// worked out on OpenSearch's clock, which every server shares.
 		sched.Epoch, sched.NodeID, sched.ClusterNow = r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
+		if r.shared != nil {
+			sched.Counter = r.shared.DetectionEpochs
+			spread = newDetSpread(r.node, r.shared, tenants.Default, c.LeaderEligible(), sched, newSched(), r.detPrints, r.detPool, cl.SearchThreads,
+				func() string { return detFilesFingerprint(c, r.shared, sharedOn, true) }, log)
+			srv.SpreadScheduler = spread.sched
+			spread.views = r.detViews
+			srv.DetectionSpread = r.detViews.all
+			if c.LeaderEligible() {
+				in.jobs.Go(func() {
+					if ready(ctx) && findingsOK {
+						spread.follow(ctx, &in.jobs)
+					}
+				})
+			}
+		}
+		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = r.node.RunsJobs, r.node.Lease().Epoch, r.node.ID(), r.node.ClusterNow
 		srv.Cluster = r.node
 		srv.NodeURLChanged = func(c *config.Config) { r.node.SetNodeURL(nodeURL(c)) }
 		wireUpgrade(srv, r.node, r.shared, cl, c.OpenSearch.IndexPrefix)
@@ -1738,9 +2025,35 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.node = r.node
 	}
 	srv.Install = clusterInstall()
+	// The tenants of a multi-tenant install. A list that cannot be read
+	// leaves every tenant's users unable to sign in, rather than guess.
+	if reg, err := tenants.Open(c.TenantsFile()); err != nil {
+		log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
+	} else {
+		if parts != nil {
+			// Which tenants exist and are on is the same on every server.
+			reg.UseShared(r.sharedContent.users.docs.TenantList())
+		}
+		srv.Tenants = reg
+	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
+	if srv.Tenants != nil {
+		// Each tenant's data. While the users are shared, on the server
+		// that runs the background jobs only, once the cluster keeps
+		// tenants (tenantRuntime.Ready).
+		tr := newTenantRuntime(ctx, r, c, cl, srv.Tenants, srv, ingestLimits)
+		if parts != nil {
+			tr.sharedOK = r.shared.Tenants
+		}
+		srv.TenantRuntime, in.tenants = tr, tr
+		in.jobs.Go(tr.startAll)
+	}
 	r.srv.Store(srv)
+	if c.Server.AgentAddr() != "" {
+		in.agentHandler = srv.AgentHandler()
+		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
+	}
 	// The example ingest token of an older Docker quick start: decide
 	// whether this one was upgraded if that is still open, and end it for
 	// good once agents on plain HTTP are refused.
@@ -1756,20 +2069,22 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		// Last, once everything started: the node points at this
 		// OpenSearch, and runs these jobs while it holds the job lease.
 		settings := cluster.Settings{
-			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen,
+			Eligible: c.LeaderEligible(), Role: c.Cluster.Role, NodeURL: nodeURL(c), Listen: c.Server.Listen, AgentListen: c.Server.AgentAddr(),
 			Syslog: cluster.Syslog{UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS},
 			Fingerprints: func() cluster.Fingerprints {
-				fp := filesFingerprints(c, ret, feeds, notes, pbooks)
+				fp := filesFingerprints(c, ret, feeds, notes, pbooks, tickets)
 				fp.Users = usersFingerprint(people, dir)
 				return sharedFingerprints(fp, r.shared, sharedOn)
 			},
 			HolderFingerprints: func(holder string, fp cluster.Fingerprints) cluster.Fingerprints {
 				return holderFingerprints(fp, holder, r.shared, sharedOn)
 			},
-			Indexed:    pipeline.LastIndexed,
-			TLS:        tlsStatus,
-			OSIdentity: osIdentity,
-			Busy:       jobsBusy(ret, r.shared),
+			Indexed:     pipeline.LastIndexed,
+			TLS:         tlsStatus,
+			OSIdentity:  osIdentity,
+			Busy:        jobsBusy(ret, r.shared),
+			DetTenants:  r.detPrints.all,
+			DetReleased: r.detPrints.released,
 		}
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
@@ -1852,12 +2167,12 @@ func upgradeIndices(ctx context.Context, log *slog.Logger, allowed func() bool, 
 
 // filesFingerprints hashes this server's own files that the background
 // jobs use: retention policies, feeds, custom detections, notification
-// channels and rules, playbooks and, while a policy archives, the
+// channels and rules, playbooks, ticketing connections and, while a policy archives, the
 // archives. A server whose files differ from those of the server that
 // runs the jobs does not take them over by itself.
-func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds, notes *notify.Manager, pbooks *playbooks.Manager) cluster.Fingerprints {
+func filesFingerprints(c *config.Config, ret *retention.Manager, feeds *intel.Feeds, notes *notify.Manager, pbooks *playbooks.Manager, tickets *ticketing.Manager) cluster.Fingerprints {
 	fp := cluster.Fingerprints{Feeds: feeds.Fingerprint(), Detections: detectionsFingerprint(c.DetectionsDir()), Notify: notes.Fingerprint(),
-		Playbooks: pbooks.Fingerprint()}
+		Playbooks: pbooks.Fingerprint(), Ticketing: tickets.Fingerprint()}
 	fp.Retention, fp.Archives = ret.Fingerprint()
 	return fp
 }
@@ -2145,6 +2460,20 @@ func newFeeds(c *config.Config, indicators *intel.Store, log *slog.Logger) *inte
 		f.Protected = []string{p}
 	}
 	return f
+}
+
+// newDownloadClient returns the client of the downloads an admin picks
+// the address of, such as the behavior baselines' IP database: with the
+// rules of feed downloads, so it never reaches Signalith's own OpenSearch,
+// this machine (unless feeds may) or a cloud metadata service.
+func newDownloadClient(c *config.Config) *http.Client {
+	var protected []string
+	for _, u := range append([]string{c.OpenSearch.URL}, c.OpenSearch.URLs...) {
+		if p := intel.ProtectedAddr(u); p != "" {
+			protected = append(protected, p)
+		}
+	}
+	return intel.NewDownloadClient(c.Intel.AllowLoopbackFeeds, protected)
 }
 
 // newNotify returns the notification settings, the deliveries index and

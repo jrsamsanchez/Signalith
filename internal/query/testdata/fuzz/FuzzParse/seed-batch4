@@ -1,0 +1,2 @@
+go test fuzz v1
+string("| inputlookup max=5 t where a=\"x*\" !b IN (1,2) | eval y=if(!match(a,\"x\"),1,0) | timechart limit=0 span=1h count by a")

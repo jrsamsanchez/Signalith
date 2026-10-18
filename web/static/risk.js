@@ -356,7 +356,10 @@ async function showRiskObject(object, type) {
       el('span', { class: 'timeline__dot' }, icon('crosshair')),
       el('span', { class: 'timeline__text' }, el('b', { class: 'num' }, '+' + riNum(e.risk_score)), ' ', e.risk_message || '',
         el('span', { class: 'r-ev__meta' }, el('span', { class: 'mono' }, e.detection_id || ''),
-          e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null)),
+          e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null,
+          // A behavior baseline's event: admins can mark it as normal.
+          /^baseline-/.test(e.detection_id || '') && can('admin') && window.blMarkNormal
+            ? el('button', { type: 'button', class: 'link-btn r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null)),
       el('span', { class: 'timeline__time', title: fmtTime(e._time) }, ago(e._time)))))
       : el('p', { class: 'muted' }, 'No risk events in this period.')));
   body.removeAttribute('aria-busy');

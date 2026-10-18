@@ -5,7 +5,14 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/signalith ./cmd/signalith
-RUN mkdir -p /out/data/detections /out/data/lookups /out/data/dashboards /out/data/archive && chmod 700 /out/data/archive
+# The Signalith Agent's programs, which Signalith hands to the computers it
+# is installed on (docs/signalith-agent.md).
+RUN for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do \
+      ext=''; [ "${p%-*}" = windows ] && ext=.exe; \
+      GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/agents/signalith-agent-$p$ext ./cmd/signalith-agent || exit 1; \
+    done
+RUN mkdir -p /out/data/detections /out/data/lookups/geoip /out/data/dashboards /out/data/archive && chmod 700 /out/data/archive
 
 # Debian slim rather than distroless, for Nmap: the Vulnerabilities page
 # scans networks with it (docs/vulnerabilities.md). Only Nmap, the CA
@@ -19,6 +26,7 @@ RUN apt-get update \
  && useradd -u 65532 -g 65532 -d /home/nonroot -m -s /usr/sbin/nologin nonroot
 USER 65532:65532
 COPY --from=build /out/signalith /usr/local/bin/signalith
+COPY --from=build /out/agents /usr/share/signalith/agents
 # Writable folders for custom detections, lookups, dashboards and archived
 # days, owned by the nonroot user.
 COPY --from=build --chown=65532:65532 /out/data /var/lib/signalith
@@ -30,8 +38,8 @@ ENV SIGNALITH_STATE_DIR=/var/lib/signalith \
     SIGNALITH_LOOKUPS_DIR=/var/lib/signalith/lookups \
     SIGNALITH_DASHBOARDS_DIR=/var/lib/signalith/dashboards \
     SIGNALITH_ARCHIVE_DIR=/var/lib/signalith/archive
-# Web UI and API (HTTPS), syslog, and syslog over TLS (see
+# Web UI and API (HTTPS), agents (HTTPS), syslog, and syslog over TLS (see
 # deploy/docker/signalith.yaml).
-EXPOSE 8080 5514/udp 5514/tcp 6514/tcp
+EXPOSE 9000 7779 5514/udp 5514/tcp 6514/tcp
 ENTRYPOINT ["/usr/local/bin/signalith"]
 CMD ["serve", "-c", "/etc/signalith/signalith.yaml"]

@@ -1,0 +1,15 @@
+{"rule": "cce357cf-43a4-494a-814b-67cea90fe990", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"create"}},
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"update"}},
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true y","verb":"create"}},
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true y","verb":"update"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"podt","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"creatf"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","verb":"create"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"podt","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"update"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"update"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","requestObject.metadata.annotations.kubectl.kubernetes.io/last-applied-configuration":"x \"hostNetwork\":true x","verb":"updatf"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"pods","verb":"update"}}
+]}

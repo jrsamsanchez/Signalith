@@ -1,0 +1,5 @@
+{"rule": "40967487-139b-4811-81d9-c9767a92aa5a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"deployments","verb":"delete"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"verb":"delete"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"deployments"}}
+]}

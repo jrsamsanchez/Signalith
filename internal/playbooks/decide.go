@@ -38,6 +38,10 @@ func (e *DecidedError) Error() string {
 	return "it no longer waits for approval (it is " + strings.ReplaceAll(e.Run.Status, "_", " ") + ")"
 }
 
+// ErrOtherStep refuses a decision about a step the run no longer waits
+// on: it went on, and now waits on a later one.
+var ErrOtherStep = errors.New("that step was already decided; the playbook now waits on another step, so decide it on the Approvals page")
+
 // ErrNoteTooLong refuses an approval note that is too long.
 var ErrNoteTooLong = fmt.Errorf("the note must be at most %d characters", MaxNote)
 
@@ -48,6 +52,13 @@ var ErrNoteTooLong = fmt.Errorf("the note must be at most %d characters", MaxNot
 // case through desk (when not nil); an approval is noted when the step
 // runs.
 func Decide(ctx context.Context, runs Runs, desk Desk, id, user, note string, approve bool, now time.Time) (Run, error) {
+	return DecideStep(ctx, runs, desk, id, -1, user, note, approve, now)
+}
+
+// DecideStep is Decide for the step at index step only, as a button in a
+// chat message asks: it returns ErrOtherStep when the run waits on
+// another step. A negative step decides whichever step waits.
+func DecideStep(ctx context.Context, runs Runs, desk Desk, id string, step int, user, note string, approve bool, now time.Time) (Run, error) {
 	note = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return ' '
@@ -63,7 +74,13 @@ func Decide(ctx context.Context, runs Runs, desk Desk, id, user, note string, ap
 	}
 	run := st.Run
 	if run.Status != StatusWaiting || run.Approval == nil || !now.Before(run.Approval.Expires) {
+		if step >= 0 && run.Approval != nil && run.Approval.Step != step {
+			return Run{}, ErrOtherStep
+		}
 		return Run{}, &DecidedError{Run: run}
+	}
+	if step >= 0 && run.Approval.Step != step {
+		return Run{}, ErrOtherStep
 	}
 	now = now.UTC()
 	run.Approval.DecidedBy, run.Approval.Decided, run.Approval.Note = user, now, note

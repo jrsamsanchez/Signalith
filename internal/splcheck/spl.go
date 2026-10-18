@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"regexp"
 	"slices"
@@ -72,6 +73,21 @@ type Rule struct {
 	// none); post is the same, parsed.
 	Post string          `yaml:"-"`
 	post []query.Command `yaml:"-"`
+	// postField is the Signalith field of a field the later stages name
+	// (false for none).
+	postField func(string) (string, bool) `yaml:"-"`
+	// Lookups are the security_content tables the later stages look
+	// values up in, by their names there.
+	Lookups []string `yaml:"-"`
+	// lookups are the tables the rule may read (ParseOptions), and
+	// lookupErrs why others do not read; lookupHints the key fields of
+	// its lookups, for test events.
+	lookups     map[string]*Lookup
+	lookupErrs  map[string]error
+	lookupHints []lookupHint
+	// lookupStore holds the tables for running the later stages over test
+	// events, made on first use.
+	lookupStore *lookuptables.Store
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -172,6 +188,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
+	r.lookups, r.lookupErrs = opt.Lookups, opt.LookupErrors
 	// osquery's results are Linux events too, which Signalith keeps in
 	// another data model; Sysmon for Linux is what the rule reads here.
 	r.Linux = slices.ContainsFunc(r.DataSource, func(s string) bool {
@@ -196,6 +213,9 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 			return nil, errors.New("search is not a tstats search of Network_Traffic, Network_Resolution or Web")
 		}
 	}
+	if om, ok := oktaTstatsNode(first, r.DataSource); ok && m == nil {
+		m = om
+	}
 	if m == nil {
 		return nil, errors.New("search is not a tstats search of Endpoint.Processes, Filesystem, Registry or Web")
 	}
@@ -214,6 +234,10 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	var present []Expr
 	var post []string
 	for i, s := range stages[1:] {
+		if IsOktaTstatsNode(r.Node) && iplocationRe.MatchString(s) && !readsLocation(stages[2+i:]) {
+			// iplocation only adds columns, which no later stage reads.
+			continue
+		}
 		if limits, ok := parseLimits(s); ok && r.Threshold == nil {
 			t, err := tstatsThreshold(r.Node, m[1], m[5], limits)
 			if err != nil {
@@ -249,7 +273,14 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		}
 	}
 	if post != nil {
-		group, err := tstatsGroup(m[1], m[5])
+		aggs := m[1]
+		if IsOktaTstatsNode(r.Node) {
+			var err error
+			if aggs, err = oktaAggs(aggs, fields, post); err != nil {
+				return nil, err
+			}
+		}
+		group, err := tstatsGroup(aggs, m[5])
 		if err != nil {
 			return nil, err
 		}
@@ -273,6 +304,10 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if len(present) > 0 {
 		where = &And{Kids: append([]Expr{where}, present...)}
 	}
+	if IsOktaTstatsNode(r.Node) {
+		// Okta's events, the rule's one data source.
+		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{ingest.OktaSourcetype}}, where}}
+	}
 	r.Where = where
 	return &r, nil
 }
@@ -282,7 +317,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 // the node, and each node's fields map to the Signalith fields they are
 // stored as. The code stays in the clause as signature_id.
 var (
-	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity)`\\s+(.*)$")
+	rawRe = regexp.MustCompile("(?s)^`(powershell|sysmon|wineventlog_security|wineventlog_system|linux_auditd|cloudtrail|azure_monitor_aad|azure_monitor_activity|o365_management_activity|okta|kube_audit|github_enterprise|github_organizations)`\\s+(.*)$")
 	// rawNodes are the nodes of each source by event code.
 	rawNodes = map[string]map[string]string{
 		"powershell": {"4104": "PowerShell"},
@@ -298,7 +333,11 @@ var (
 			"4648": "ExplicitLogon", "4776": "NtlmAuth", "4771": "KerberosPreAuth", "4741": "ComputerChanged",
 			"4742": "ComputerChanged", "4781": "AccountRenamed", "4727": "GroupChanged", "4730": "GroupChanged",
 			"4737": "GroupChanged", "4798": "LocalGroupRead", "4799": "LocalGroupRead", "4886": "CertRequest",
-			"4887": "CertRequest",
+			"4887": "CertRequest", "4662": "DirectoryAccess", "4722": "AccountChanged", "4723": "AccountChanged",
+			"4724": "AccountChanged", "4725": "AccountChanged", "5447": "FilterChanged", "4728": "GroupMemberAdded",
+			"5140": "ShareAccess", "4756": "GroupMemberAdded", "4731": "GroupChanged", "4744": "GroupChanged",
+			"4749": "GroupChanged", "4754": "GroupChanged", "4759": "GroupChanged", "4783": "GroupChanged",
+			"4790": "GroupChanged",
 		},
 		// The Service Control Manager's service installed event.
 		"wineventlog_system": {"7045": "ServiceInstalled"},
@@ -312,6 +351,13 @@ var (
 		"azure_monitor_activity": {},
 		// Microsoft 365 audit records: one node (O365Node).
 		o365Source: {},
+		// Okta System Log events: one node (OktaNode).
+		oktaSource: {},
+		// Kubernetes audit events: one node (KubernetesNode).
+		kubeSource: {},
+		// GitHub audit log events: one node (GitHubNode).
+		githubEnterpriseSource: {},
+		githubOrgSource:        {},
 	}
 	// RawFields are the event fields a raw search may name on each node,
 	// with the Signalith field each is stored as.
@@ -375,11 +421,13 @@ var (
 			"SourceImage": "process_path", "TargetImage": "target_process_path",
 			"GrantedAccess": "granted_access", "CallTrace": "call_trace", "SourceUser": RawUser,
 		},
-		// A successful logon; the add-on names the logon type Logon_Type.
+		// A logon, or a failed one; the add-on names the logon type
+		// Logon_Type. Its subject is the account that asked for it.
 		"Logon": {
 			"LogonType": "logon_type", "Logon_Type": "logon_type", "TargetUserName": "user",
 			"AuthenticationPackageName": "authentication_method", "LogonProcessName": "logon_process",
 			"IpAddress": "src", "WorkstationName": "src_host", "ProcessName": "process_path",
+			"SubjectUserName": "src_user", "SubjectUserSid": "src_user_sid", "SubjectDomainName": "src_user_domain",
 		},
 		"TaskCreated": {"TaskName": "task_name", "TaskContent": "task_content", "user": "user"},
 		"ObjectAccess": {
@@ -392,7 +440,7 @@ var (
 		"DirectoryChange": {
 			"ObjectDN": "object", "ObjectGUID": "ad_object_guid", "ObjectClass": "ad_object_class",
 			"AttributeLDAPDisplayName": "ad_attribute", "AttributeValue": "ad_value", "OperationType": "ad_operation",
-			"SubjectUserName": "user",
+			"SubjectUserName": "user", "SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain",
 		},
 		"ShareAccess": {
 			"ShareName": "share_name", "ShareLocalPath": "share_path", "RelativeTargetName": "share_target",
@@ -412,9 +460,10 @@ var (
 		},
 		// A user account changed, and a member added to a local group.
 		"UserChanged": {
-			"TargetUserName": "object", "TargetSid": "object_sid", "SubjectUserName": "user", "SamAccountName": "sam_account_name",
-			"UserAccountControl": "user_account_control", "AllowedToDelegateTo": "allowed_to_delegate_to",
-			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "SidHistory": "sid_history",
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SamAccountName": "sam_account_name", "UserAccountControl": "user_account_control",
+			"AllowedToDelegateTo": "allowed_to_delegate_to", "OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value",
+			"SidHistory": "sid_history",
 		},
 		"GroupMemberAdded": {
 			"TargetUserName": "object", "TargetSid": "object_sid", "MemberSid": "member_sid", "MemberName": "member",
@@ -443,7 +492,7 @@ var (
 			"SubjectDomainName": "user_domain", "SamAccountName": "sam_account_name", "PrimaryGroupId": "primary_group_id",
 			"OldUacValue": "old_uac_value", "NewUacValue": "new_uac_value", "UserAccountControl": "user_account_control",
 			"DnsHostName": "dns_host_name", "ServicePrincipalNames": "service_principal_names",
-			"AllowedToDelegateTo": "allowed_to_delegate_to",
+			"AllowedToDelegateTo": "allowed_to_delegate_to", "SidHistory": "sid_history",
 		},
 		"AccountRenamed": {
 			"OldTargetUserName": "old_object", "NewTargetUserName": "object", "TargetDomainName": "object_domain",
@@ -463,10 +512,27 @@ var (
 			"RequestId": "cert_request_id", "Requester": "cert_requester", "Attributes": "cert_attributes",
 			"Disposition": "cert_disposition", "Subject": "cert_subject",
 		},
-		// A process terminated, and a drive read directly.
+		// An operation on a directory service object (4662): the object
+		// and its class, as recorded (often %{GUID}s), and the access.
+		"DirectoryAccess": {
+			"ObjectName": "object", "ObjectType": "object_type", "ObjectServer": "object_server", "SubjectUserName": "user",
+			"SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain", "SubjectLogonId": "logon_id",
+			"AccessMask": "access_mask", "AccessList": "access_list", "Properties": "object_properties", "Computer": "host",
+		},
+		// A user account enabled or disabled, or its password changed or
+		// reset.
+		"AccountChanged": {
+			"TargetUserName": "object", "TargetDomainName": "object_domain", "TargetSid": "object_sid", "SubjectUserName": "user",
+			"SubjectUserSid": "user_sid", "SubjectDomainName": "user_domain", "SubjectLogonId": "logon_id",
+		},
+		// A Windows Filtering Platform filter changed (5447), each value
+		// by its name (ingest.ChannelDataField).
+		"FilterChanged": securityNamedFields("5447"),
+		// A process terminated, and a drive read directly. (ProcessID,
+		// as Splunk's add-on names it, is the process that logged the
+		// event, Sysmon's own, not the one that ended.)
 		"ProcessTerminated": {
 			"Image": "process_path", "process_path": "process_path", "process_name": "process_name", "ProcessId": "process_id",
-			"ProcessID": "process_id",
 		},
 		"RawAccessRead": {
 			"Device": "device", "Image": "process_path", "process_path": "process_path", "process_name": "process_name",
@@ -490,6 +556,65 @@ var (
 	fillnullValueRe = regexp.MustCompile(`(?i)^fillnull(?:\s+value\s*=\s*\S+)?$`)
 	iplocationRe    = regexp.MustCompile(`(?i)^iplocation\s+\w+$`)
 )
+
+// securityNamedFields are the data of a Security event the parser reads
+// by name, each with the field it is stored as.
+func securityNamedFields(eventID string) map[string]string {
+	out := map[string]string{}
+	for _, n := range ingest.WindowsSecurityNames(eventID) {
+		if f, ok := ingest.ChannelDataField(ingest.SecurityChannel, n); ok {
+			out[n] = f
+		}
+	}
+	return out
+}
+
+// UnionNodes are nodes that read the events of several others, for a raw
+// search whose event codes are of each: a file created and a stream
+// written (Sysmon 11 and 15), a user and a computer account changed (4738
+// and 4742), and a group created and a member added to one (4727 and the
+// like, and 4728 and the like). A field the search names must be stored
+// the same in each.
+var UnionNodes = map[string][]string{
+	"FileOrStream":              {"Filesystem", "FileStream"},
+	"UserOrComputerChanged":     {"UserChanged", "ComputerChanged"},
+	"GroupChangedOrMemberAdded": {"GroupChanged", "GroupMemberAdded"},
+}
+
+func init() {
+	for u, parts := range UnionNodes {
+		fields := map[string]string{}
+		for raw, stored := range RawFields[parts[0]] {
+			if !slices.ContainsFunc(parts[1:], func(p string) bool { return RawFields[p][raw] != stored }) {
+				fields[raw] = stored
+			}
+		}
+		RawFields[u] = fields
+		var evs []string
+		for _, p := range parts {
+			if NodeModel[p] != NodeModel[parts[0]] {
+				panic("union node " + u + " of nodes of different data models")
+			}
+			evs = append(evs, NodeEvents[p]...)
+		}
+		NodeEvents[u] = evs
+		NodeModel[u] = NodeModel[parts[0]]
+	}
+}
+
+// unionNode is the node that reads the events of nodes (one of them, or
+// a UnionNodes node of exactly them); "" for none.
+func unionNode(nodes []string) string {
+	if len(nodes) == 1 {
+		return nodes[0]
+	}
+	for u, parts := range UnionNodes {
+		if len(parts) == len(nodes) && !slices.ContainsFunc(nodes, func(n string) bool { return !slices.Contains(parts, n) }) {
+			return u
+		}
+	}
+	return ""
+}
 
 // AuditdNode is the node of Linux audit records (the linux_auditd
 // macro). A search names no event code: each record names its type, and
@@ -680,10 +805,10 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 			if err != nil {
 				return nil, err
 			}
-			// A Microsoft 365 search renames fields one by one; a
-			// pattern (Item.* as *) is read only for Entra ID's
+			// A Microsoft 365 or Okta search renames fields one by one;
+			// a pattern (Item.* as *) is read only for Entra ID's
 			// properties.
-			if cs.node == O365Node && slices.ContainsFunc(rs, func(r rename) bool { return strings.Contains(r.from, "*") }) {
+			if cs.node != AzureNode && slices.ContainsFunc(rs, func(r rename) bool { return strings.Contains(r.from, "*") }) {
 				return nil, fmt.Errorf("rename %s is not supported", firstWords(s))
 			}
 			renames = append(renames, rs...)
@@ -754,6 +879,13 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	} else {
 		where = top[0]
 	}
+	if source == "powershell" && countField(where, eventCode) == 0 && requires(where, rawFieldPrefix+"ScriptBlockText") {
+		// Of the events of the channels the powershell macro reads, only
+		// a script block (4104) has ScriptBlockText: a search that needs
+		// it finds only those, its code named or not.
+		top = append([]Expr{&Cmp{Field: eventCode, Values: []string{"4104"}}}, top...)
+		where = &And{Kids: top}
+	}
 	var code *Cmp
 	switch source {
 	case "linux_auditd":
@@ -779,10 +911,22 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	} else if code == nil || countField(where, eventCode) != 1 {
 		return nil, fmt.Errorf("a %s search must name its event code (EventCode=...) once, at the top", source)
 	}
+	// Codes of several nodes are the node that reads them all
+	// (UnionNodes).
+	var nodes []string
 	for _, v := range codeValues(code) {
 		n := rawNodes[source][v]
-		if n == "" || (r.Node != "" && n != r.Node) {
+		if n == "" {
 			return nil, fmt.Errorf("%s event %s is not supported", source, v)
+		}
+		if !slices.Contains(nodes, n) {
+			nodes = append(nodes, n)
+		}
+	}
+	if len(nodes) > 0 {
+		n := unionNode(nodes)
+		if n == "" || (r.Node != "" && n != r.Node) {
+			return nil, fmt.Errorf("a %s search of events of %s together is not supported", source, strings.Join(nodes, " and "))
 		}
 		r.Node = n
 	}
@@ -827,8 +971,12 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 	}
 	top = append(top, regexes...)
 	top = append(top, cloudSearches...)
-	if len(top) < 2 && r.Node != AuditdNode && r.Node != CloudTrailNode && !cloud {
-		return nil, fmt.Errorf("a %s search must name a field besides its event code", source)
+	// A search may name only its event code: it finds every event of
+	// that code, as Splunk's does, and its later stages (run as written)
+	// filter them. A stats with no by fields is another thing: Splunk
+	// counts every event in one row, found or not, which is no event.
+	if stats != "" && !statsSplitRe.MatchString(stats) && r.Node != AuditdNode && r.Node != CloudTrailNode && !cloud {
+		return nil, fmt.Errorf("a %s search's stats must count by fields", source)
 	}
 	where = &And{Kids: top}
 	if len(top) == 1 {
@@ -846,8 +994,12 @@ func parseRawStages(r *Rule, source, terms string, later []string, macros map[st
 		return nil, err
 	}
 	if cloud {
-		// The records of the macro's sourcetype.
-		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{cs.sourcetype}}, where}}
+		// The records of the macro's sourcetype, and source.
+		scope := []Expr{&Cmp{Field: "sourcetype", Values: []string{cs.sourcetype}}}
+		if cs.source != "" {
+			scope = append(scope, &Cmp{Field: "source", Values: []string{cs.source}})
+		}
+		where = &And{Kids: append(scope, where)}
 	}
 	unescapeXML(where)
 	r.Where = where
@@ -891,7 +1043,8 @@ func fieldsOf(e Expr, node string, xml bool) error {
 	case *Not:
 		return fieldsOf(x.Kid, node, xml)
 	case *Cmp:
-		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node {
+		if x.Field == eventCode || node == AuditdNode && strings.HasPrefix(x.Field, "auditd_") || node == CloudTrailNode || node == AzureNode || node == O365Node || node == OktaNode ||
+			node == KubernetesNode || node == GitHubNode {
 			return nil
 		}
 		for _, f := range RawFields[node] {
@@ -928,6 +1081,21 @@ func countField(e Expr, f string) int {
 		}
 	}
 	return n
+}
+
+// requires reports whether every event e matches has field f: a
+// comparison of f (= and != alike need the field, as in Splunk), in every
+// branch of an OR or some part of an AND.
+func requires(e Expr, f string) bool {
+	switch x := e.(type) {
+	case *And:
+		return slices.ContainsFunc(x.Kids, func(k Expr) bool { return requires(k, f) })
+	case *Or:
+		return len(x.Kids) > 0 && !slices.ContainsFunc(x.Kids, func(k Expr) bool { return !requires(k, f) })
+	case *Cmp:
+		return x.Field == f
+	}
+	return false
 }
 
 func firstWords(s string) string {
@@ -967,16 +1135,21 @@ func unescapeXML(e Expr) {
 }
 
 // pipes splits a search into its stages at the | outside quotes and macro
-// backticks. The leading | of a generating command is dropped.
+// backticks. The leading | of a generating command is dropped. Outside
+// quotes, \" is a quote inside a word (*\"privileged\":true*), which
+// starts no quoted text.
 func pipes(q string) []string {
 	var out []string
 	var cur strings.Builder
 	quoted, tick, esc := false, false, false
-	for _, ch := range q {
+	rs := []rune(q)
+	for i, ch := range rs {
 		switch {
 		case esc:
 			esc = false
 		case ch == '\\' && quoted:
+			esc = true
+		case ch == '\\' && !tick && i+1 < len(rs) && (rs[i+1] == '"' || rs[i+1] == '\\'):
 			esc = true
 		case ch == '"' && !tick:
 			quoted = !quoted

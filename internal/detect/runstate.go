@@ -69,8 +69,26 @@ type DetState struct {
 	Enabled   bool      `json:"enabled"`
 	Created   time.Time `json:"created,omitzero"`
 	GoneSince time.Time `json:"gone_since,omitzero"`
-	Epoch     int64     `json:"epoch"`
-	Node      string    `json:"node,omitempty"`
+	// Epoch is the job lease's epoch it was written under, and DetEpoch
+	// the detection epoch, when it came from the detepoch counter (see
+	// epoch.go). The lease looks for the highest "epoch" in the runtime
+	// index when it is made again, so the counter's much bigger numbers
+	// have a field of their own.
+	Epoch    int64  `json:"epoch"`
+	DetEpoch int64  `json:"det_epoch,omitempty"`
+	Node     string `json:"node,omitempty"`
+}
+
+// fence is the detection epoch the document was written under.
+func (st DetState) fence() int64 { return fenceOf(st.Epoch, st.DetEpoch) }
+
+// fenceOf is the detection epoch of a document that stores the lease
+// epoch and, from the counter on, the detection epoch.
+func fenceOf(lease, det int64) int64 {
+	if det > 0 {
+		return det
+	}
+	return lease
 }
 
 // Skipped records missed slots that were older than detections.catch_up,
@@ -155,14 +173,24 @@ func (s *Scheduler) clusterNow() time.Time {
 
 // loadStates reads every detstate document into the leader's copy, once
 // per lease epoch: while the epoch stays the same, the copy is the truth.
+// With the detepoch counter on, it first takes a detection epoch for the
+// copy; turning the counter on reads the copy again under one.
 func (s *Scheduler) loadStates(ctx context.Context) error {
-	ep := s.epoch()
+	// In spread mode the buckets' epochs come with the assignment.
+	ep, counter := s.gen(), s.counter() && s.Owned == nil
 	s.mu.Lock()
-	if s.det != nil && s.loadedEpoch == ep {
+	if s.det != nil && s.loadedEpoch == ep && s.loadedCounter == counter {
 		s.mu.Unlock()
 		return nil
 	}
 	s.mu.Unlock()
+	de := ep
+	if counter {
+		var err error
+		if de, err = s.claimEpoch(ctx, ep); err != nil {
+			return err
+		}
+	}
 	rs, idx := s.runStore()
 	docs, err := rs.SearchDocs(ctx, idx, map[string]any{"term": map[string]any{"kind": kindDetState}})
 	if err != nil {
@@ -174,10 +202,10 @@ func (s *Scheduler) loadStates(ctx context.Context) error {
 		if err := json.Unmarshal(d.Source, &st); err != nil || st.DetectionID == "" {
 			continue
 		}
-		det[st.DetectionID] = &detEntry{doc: st, ver: d.Version, read: st.Epoch}
+		det[st.DetectionID] = &detEntry{doc: st, ver: d.Version, read: st.fence()}
 	}
 	s.mu.Lock()
-	s.det, s.loadedEpoch = det, ep
+	s.det, s.loadedEpoch, s.detEpoch, s.loadedCounter = det, ep, de, counter
 	// No run state at all: the first start of this version (or of a new
 	// install). The next dispatch runs each enabled rule's current slot
 	// once, as the scheduler before run state did on every start, so the
@@ -186,6 +214,25 @@ func (s *Scheduler) loadStates(ctx context.Context) error {
 	s.mu.Unlock()
 	return nil
 }
+
+// dropStale forgets what a refused write shows to be stale: the whole
+// copy, or in spread mode only the rule's entry, since its bucket alone
+// moved on (the copy is read again when this server's buckets change).
+func (s *Scheduler) dropStale(id string) {
+	if s.Owned == nil {
+		s.dropStates()
+		return
+	}
+	s.loseBucket(id)
+	s.mu.Lock()
+	delete(s.det, id)
+	s.mu.Unlock()
+}
+
+// Forget drops the scheduler's copy of the run state: it is read again,
+// under a fresh detection epoch, before the next run. The leader calls
+// it before running the rules again after they were spread.
+func (s *Scheduler) Forget() { s.dropStates() }
 
 // dropStates forgets the leader's copy, so it is read again before the
 // next run.
@@ -217,11 +264,27 @@ func (s *Scheduler) entry(id string) (detEntry, bool) {
 // decides again.
 func (s *Scheduler) writeState(ctx context.Context, e detEntry, ep int64) (adopted bool, err error) {
 	rs, idx := s.runStore()
-	if s.epoch() != ep || e.read > ep {
-		s.dropStates()
+	cur := s.gen()
+	s.mu.Lock()
+	de, loaded := s.detEpoch, s.det != nil && s.loadedEpoch == ep
+	s.mu.Unlock()
+	if s.Owned != nil {
+		// Spread mode: the epoch of the rule's bucket, while this server
+		// still runs it.
+		var mine bool
+		if de, mine = s.ownsRule(e.doc.DetectionID); !mine {
+			loaded = false
+		}
+	}
+	if cur != ep || !loaded || e.read > de {
+		s.dropStale(e.doc.DetectionID)
 		return false, errStaleEpoch
 	}
-	e.doc.Kind, e.doc.Epoch, e.doc.Node = kindDetState, ep, s.NodeID
+	lease := s.epoch()
+	e.doc.Kind, e.doc.Epoch, e.doc.DetEpoch, e.doc.Node = kindDetState, lease, 0, s.NodeID
+	if de != lease {
+		e.doc.DetEpoch = de
+	}
 	id := detStateID(e.doc.DetectionID)
 	for try := 0; ; try++ {
 		var nv store.Version
@@ -231,7 +294,7 @@ func (s *Scheduler) writeState(ctx context.Context, e detEntry, ep int64) (adopt
 			nv, err = rs.PutIf(ctx, idx, id, e.doc, e.ver, false)
 		}
 		if err == nil {
-			e.ver, e.read = nv, ep
+			e.ver, e.read = nv, de
 			s.keepState(e, ep)
 			return false, nil
 		}
@@ -250,14 +313,14 @@ func (s *Scheduler) writeState(ctx context.Context, e detEntry, ep int64) (adopt
 		if json.Unmarshal(raw, &cur) != nil {
 			cur = DetState{}
 		}
-		if cur.Epoch > ep {
-			s.dropStates()
+		if cur.fence() > de {
+			s.dropStale(e.doc.DetectionID)
 			return false, errStaleEpoch
 		}
 		if e.ver.IsZero() {
 			// Another write made it first: take what it says.
 			cur.DetectionID = e.doc.DetectionID
-			s.keepState(detEntry{doc: cur, ver: v, read: cur.Epoch}, ep)
+			s.keepState(detEntry{doc: cur, ver: v, read: cur.fence()}, ep)
 			return true, nil
 		}
 		e.ver = v
@@ -348,8 +411,20 @@ func (s *Scheduler) readStatus(ctx context.Context) (map[string]DetState, map[st
 // still returned.
 func (s *Scheduler) StatusCtx(ctx context.Context) (map[string]RunState, error) {
 	det, man, err := s.readStatus(ctx)
+	if s.Owned != nil {
+		s.gen() // this server's buckets as the assignment says now
+	}
 	s.mu.Lock()
 	for id, e := range s.det {
+		// In spread mode the copy holds every rule as read when this
+		// server's buckets last changed, but only the rules of its own
+		// buckets are kept up to date here: the others' servers write
+		// theirs.
+		if s.Owned != nil {
+			if _, mine := s.ownsRuleLocked(id); !mine {
+				continue
+			}
+		}
 		det[id] = e.doc
 	}
 	flags := maps.Clone(s.flags)

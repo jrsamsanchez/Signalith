@@ -30,7 +30,28 @@ locals {
     "sensor"       = { role = "sensor", type = "cx23", ip = "10.0.1.41", minimal = false }
     "linux-1"      = { role = "linux", type = "cx23", ip = "10.0.1.51", minimal = true }
   }
-  linux_machines = { for k, v in local.all_machines : k => v if var.size == "full" || v.minimal }
+  # The load test (docs/cloud-lab.md): two big OpenSearch nodes, one to
+  # three small Signalith servers (loadtest_servers) and the load
+  # generator. With one server and cx43 nodes that is 20 cores in all.
+  loadtest_signalith = {
+    "signalith-1" = { role = "signalith", type = "cx23", ip = "10.0.1.11", minimal = true }
+    "signalith-2" = { role = "signalith", type = "cx23", ip = "10.0.1.12", minimal = true }
+    "signalith-3" = { role = "signalith", type = "cx23", ip = "10.0.1.13", minimal = true }
+  }
+  loadtest_machines = merge(
+    { for i in range(var.loadtest_servers) : "signalith-${i + 1}" => local.loadtest_signalith["signalith-${i + 1}"] },
+    {
+      "opensearch-1" = { role = "opensearch", type = var.loadtest_opensearch_type, ip = "10.0.1.21", minimal = true }
+      "opensearch-2" = { role = "opensearch", type = var.loadtest_opensearch_type, ip = "10.0.1.22", minimal = true }
+      "loadgen"      = { role = "loadgen", type = "cx23", ip = "10.0.1.71", minimal = true }
+    },
+  )
+  # Cores of each machine type the lab uses, to keep the load test within
+  # the account's limit (vcpu_limit).
+  vcpus          = { cx23 = 2, cx33 = 4, cx43 = 8, cx53 = 16 }
+  loadtest_vcpus = sum([for k, v in local.loadtest_machines : local.vcpus[v.type]])
+  loadtest       = var.size == "loadtest"
+  linux_machines = local.loadtest ? local.loadtest_machines : { for k, v in local.all_machines : k => v if var.size == "full" || v.minimal }
   windows        = var.windows && var.size == "full"
   full           = var.size == "full"
 
@@ -45,13 +66,14 @@ locals {
   ))
 
   lab = {
-    size     = var.size
-    ref      = var.signalith_ref
-    openvas  = var.openvas
-    domain   = local.domain
-    siem     = "siem.${local.domain}"
-    lb_ip    = local.full ? local.lb_ip : ""
-    machines = [for k, v in local.linux_machines : { name = k, role = v.role, ip = v.ip }]
+    size       = var.size
+    ref        = var.signalith_ref
+    opensearch = var.opensearch_version
+    openvas    = var.openvas
+    domain     = local.domain
+    siem       = "siem.${local.domain}"
+    lb_ip      = local.full ? local.lb_ip : ""
+    machines   = [for k, v in local.linux_machines : { name = k, role = v.role, ip = v.ip }]
   }
 }
 
@@ -91,7 +113,7 @@ resource "hcloud_firewall" "lab" {
     description = "Signalith web page"
     direction   = "in"
     protocol    = "tcp"
-    port        = "8080"
+    port        = "9000"
     source_ips  = ["${local.home_ip}/32"]
   }
   rule {
@@ -143,8 +165,26 @@ resource "hcloud_server" "linux" {
   # only used on their first boot.
   lifecycle {
     ignore_changes = [user_data]
+    # Hetzner refuses machines past the account's core limit halfway
+    # through an apply: say so before anything is made.
+    precondition {
+      condition     = !local.loadtest || local.loadtest_vcpus <= var.vcpu_limit
+      error_message = "The load test's machines need ${local.loadtest_vcpus} cores, more than vcpu_limit (${var.vcpu_limit}), the account's limit. With more than one Signalith server use -var loadtest_opensearch_type=cx33, or ask Hetzner to raise the limit and set vcpu_limit to the new one."
+    }
   }
   depends_on = [hcloud_network_subnet.lab]
+}
+
+# In the load test, OpenSearch keeps its data on a volume of its own: a
+# terabyte a day does not fit the machines' disks. lab-setup mounts it.
+resource "hcloud_volume" "opensearch" {
+  for_each  = local.loadtest ? toset(["opensearch-1", "opensearch-2"]) : toset([])
+  name      = "signalith-lab-${each.key}"
+  size      = var.loadtest_volume_gb
+  server_id = hcloud_server.linux[each.key].id
+  format    = "ext4"
+  automount = false
+  labels    = { lab = "signalith" }
 }
 
 # Windows is installed from the Hetzner Console (docs/cloud-lab.md), or
@@ -192,12 +232,34 @@ resource "hcloud_load_balancer_service" "web" {
   count            = local.full ? 1 : 0
   load_balancer_id = hcloud_load_balancer.lab[0].id
   protocol         = "tcp"
-  listen_port      = 8080
-  destination_port = 8080
+  listen_port      = 9000
+  destination_port = 9000
   proxyprotocol    = true
   health_check {
     protocol = "http"
-    port     = 8080
+    port     = 9000
+    interval = 10
+    timeout  = 5
+    retries  = 3
+    http {
+      path         = "/readyz"
+      tls          = true
+      status_codes = ["200"]
+    }
+  }
+}
+
+# Agents send to their own port, 7779, which also answers /readyz.
+resource "hcloud_load_balancer_service" "agents" {
+  count            = local.full ? 1 : 0
+  load_balancer_id = hcloud_load_balancer.lab[0].id
+  protocol         = "tcp"
+  listen_port      = 7779
+  destination_port = 7779
+  proxyprotocol    = true
+  health_check {
+    protocol = "http"
+    port     = 7779
     interval = 10
     timeout  = 5
     retries  = 3

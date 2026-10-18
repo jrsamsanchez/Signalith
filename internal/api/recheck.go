@@ -45,6 +45,12 @@ func (rt *router) selfSensitive(pattern string, h http.HandlerFunc) {
 	rt.add(route{Pattern: pattern, Role: users.Viewer, Anytime: true, Recheck: true}, h)
 }
 
+// viewerSensitive registers a route every signed-in user may use that
+// asks for the password or code again, like sensitive.
+func (rt *router) viewerSensitive(pattern string, h http.HandlerFunc) {
+	rt.add(route{Pattern: pattern, Role: users.Viewer, Recheck: true}, h)
+}
+
 func (s *Server) routeRecheck(api *router) {
 	api.self("POST /api/me/recheck", s.handleRecheck)
 }
@@ -78,6 +84,16 @@ func (s *Server) recheckNeeded(w http.ResponseWriter, r *http.Request, p *princi
 	case s.userStore().MFAOn(p.Username):
 		v["error"] = "Enter your password or a code from your authenticator app to make this change."
 		v["with"] = "password_or_code"
+		m, _ := s.userStore().MFA(p.Username)
+		if !m.AppOn() {
+			v["error"] = "Enter your password or a recovery code to make this change."
+		}
+		if len(m.Passkeys) > 0 {
+			if here, why := s.passkeyPlace(r); why == "" && len(passkeyUserOf(p.Username, m, here).keys) > 0 {
+				v["error"] = "Use your passkey, or enter your password, to make this change."
+				v["passkey"] = true
+			}
+		}
 	default:
 		v["error"] = "Enter your password to make this change."
 		v["with"] = "password"
@@ -86,14 +102,15 @@ func (s *Server) recheckNeeded(w http.ResponseWriter, r *http.Request, p *princi
 	return true
 }
 
-// handleRecheck takes the password, or a two-step code, again. Wrong
-// ones count toward the sign-in limits.
+// handleRecheck takes the password, a two-step code or a passkey again.
+// Wrong ones count toward the sign-in limits.
 func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	p := principalOf(r)
 	var req struct {
-		Password string `json:"password"`
-		Code     string `json:"code"`
+		Password string         `json:"password"`
+		Code     string         `json:"code"`
+		Passkey  *passkeyAnswer `json:"passkey"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -109,7 +126,7 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := strings.TrimSpace(req.Code)
-	if code == "" && req.Password == "" {
+	if code == "" && req.Password == "" && req.Passkey == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "wrong_password", "field": "password",
 			"error": "Enter your password."})
 		return
@@ -121,7 +138,28 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	with := "password"
-	if code != "" {
+	if req.Passkey != nil {
+		_, err := s.checkPasskey(r, ceremonyCheck, p.Username, p.token, req.Passkey)
+		var se *signInError
+		switch {
+		case errors.Is(err, errPasskeyWrong), errors.Is(err, errPasskeyCloned):
+			f := attempt.Fail()
+			s.Log.Warn("recheck refused", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
+				[]any{"reason", "passkey not accepted", "locked_out", f.LockedOut()})...)
+			s.noteFailure(from, f)
+			writeSignInError(w, err)
+			return
+		case errors.As(err, &se):
+			attempt.Done()
+			writeSignInError(w, err)
+			return
+		case err != nil:
+			attempt.Done()
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		with = string(users.CodePasskey)
+	} else if code != "" {
 		res, err := s.userStore().UseMFACode(changeContext(r), p.Username, code)
 		switch {
 		case errors.Is(err, users.ErrWrongCode), errors.Is(err, users.ErrMFAOff):
@@ -174,7 +212,7 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 // server.tls covers server.tls_cert).
 var protectedSettings = []string{"auth", "server.tls", "server.listen", "server.trusted_proxies", "server.client_header",
 	"server.shared_addresses", "server.proxy_protocol", "opensearch", "cluster.opensearch_url", "syslog.allow",
-	"syslog.tls", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields"}
+	"syslog.tls", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields", "okta", "m365"}
 
 func protectedSetting(key string) bool {
 	for _, p := range protectedSettings {

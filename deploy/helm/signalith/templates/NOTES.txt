@@ -1,0 +1,43 @@
+{{- $full := include "signalith.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+Signalith is starting{{ if .Values.opensearch.enabled }} with its own OpenSearch{{ end }}. The first start takes a few minutes:
+
+  kubectl -n {{ $ns }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+1. Show the first admin password (sign in as signalithadmin, or admin on a release installed before 0.3.1):
+
+  kubectl -n {{ $ns }} get secret {{ $full }}-secrets -o jsonpath='{.data.initial-admin-password}' | base64 -d; echo
+
+  Once you have changed it, delete it from the Secret:
+
+  kubectl -n {{ $ns }} patch secret {{ $full }}-secrets --type=json -p '[{"op":"remove","path":"/data/initial-admin-password"}]'
+
+2. Open Signalith:
+{{- if eq .Values.server.service.type "LoadBalancer" }}
+
+  kubectl -n {{ $ns }} get service {{ $full }}   # its EXTERNAL-IP: the web page on port {{ .Values.server.port }}, agents on {{ include "signalith.agentPort" . }}
+{{- if not .Values.server.service.loadBalancerSourceRanges }}
+
+  WARNING: server.service.loadBalancerSourceRanges is empty, so the sign-in
+  page is reachable from any network the load balancer is on. List the
+  networks that may connect there, and turn on two-factor sign-in.
+{{- end }}
+{{- else if eq .Values.server.service.type "NodePort" }}
+
+  kubectl -n {{ $ns }} get service {{ $full }}   # any node's address, at the node port shown
+{{- else }}
+
+  kubectl -n {{ $ns }} port-forward service/{{ $full }} {{ .Values.server.port }}:{{ .Values.server.port }}
+  # then https://localhost:{{ .Values.server.port }}
+{{- end }}
+
+  The browser warns about the certificate until you trust Signalith's CA:
+  "Download the server certificate" on the sign-in page (docs/https.md).
+{{- if not .Values.server.publicURL }}
+
+Agents outside the cluster need Signalith's address: set server.publicURL
+to the address they reach it at, then helm upgrade. Agents send to the
+same host on port {{ include "signalith.agentPort" . }}.
+{{- end }}
+
+Guide: https://signalith.io/docs/kubernetes/

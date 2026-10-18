@@ -1,0 +1,34 @@
+# 10,000 events a second of about 500 bytes for four hours, with the
+# same 200 agents and 5 analysts as tb-day, for the cloud lab's
+# detection spread run (sudo lab-loadtest spread on signalith-1, with
+# loadtest_servers = 2 or 3 in deploy/lab; see docs/cloud-lab.md). The
+# load stays well below tb-day's 25k so the detections are measured on a
+# healthy cluster while lab-loadtest turns detections.spread on, restarts
+# one server and kills another. lab-loadtest spread sends the agents to
+# every server's agent port (it rewrites agent_targets and ca_file in a
+# copy of this file); as it is here, everything goes to signalith-1. Its
+# numbers are recorded rather than judged, except events the agents drop.
+name: spread-10k
+description: 10k events/s for 4 hours with 5 analysts searching, while detections are spread over the servers.
+targets: [https://signalith-1.lab.internal:9000]
+agent_targets: [https://signalith-1.lab.internal:7779]
+ca_file: /root/loadtest/ca.pem
+credentials:
+  admin_file: /root/loadtest/admin.txt
+  token_file: /root/loadtest/token.txt
+drain: 10m
+phases:
+  - {name: warm, for: 10m, agents: {n: 200, rate: 10000, event_bytes: 500, switch_on_error: true}, users: {n: 5, think: 30s, create: true}}
+  - {name: 10k, for: 4h, agents: {n: 200, rate: 10000, event_bytes: 500, switch_on_error: true}, users: {n: 5, think: 30s, create: true}}
+criteria:
+  - {name: ingest_events_per_second, phase: warm}
+  - {name: ingest_events_per_second, phase: 10k}
+  - {name: ingest_p99_ms, phase: 10k}
+  - {name: ingest_error_rate, phase: 10k}
+  - {name: search_p95_ms, phase: 10k}
+  - {name: page_p95_ms, phase: 10k}
+  - {name: events_undelivered}
+  # A server is restarted and another one killed on purpose: the agents
+  # send to the others meanwhile (switch_on_error), so none should drop.
+  - {name: events_dropped, max: 0}
+  - {name: generator_lag_ms}

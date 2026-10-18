@@ -1,0 +1,4 @@
+{"rule": "74176142-4684-4d8a-8b0a-713257e7df8e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"ipmo Microsoft.ActiveDirectory.Management.dll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

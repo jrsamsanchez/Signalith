@@ -46,6 +46,10 @@ type Scenario struct {
 	Needs []string `yaml:"needs"`
 	// Targets are the servers' web addresses, or one load balancer's.
 	Targets []string `yaml:"targets"`
+	// AgentTargets are the addresses the agents send to, when the servers
+	// take agents on a port of their own (server.agent_listen); empty
+	// sends them to Targets.
+	AgentTargets []string `yaml:"agent_targets"`
 	// CAFile and CAFiles are the certificate authorities that sign the
 	// targets' HTTPS certificates; empty uses the system's.
 	CAFile  string   `yaml:"ca_file"`
@@ -88,7 +92,7 @@ type SyslogTargets struct {
 // Credentials name the files the secrets are read from. Secrets are
 // never written in scenario files, flags or reports.
 type Credentials struct {
-	// AdminFile holds "user:password" (or a password for admin).
+	// AdminFile holds "user:password" (or a password for signalithadmin).
 	AdminFile string `yaml:"admin_file"`
 	// TokenFile holds an agent token.
 	TokenFile string `yaml:"token_file"`
@@ -154,6 +158,10 @@ type AgentLoad struct {
 	// agent behind DNS round robin may; by default an agent keeps its
 	// target, as Fluent Bit with one Host does.
 	SwitchOnError bool `yaml:"switch_on_error"`
+	// BufferMB caps the memory all agents' unsent batches hold together;
+	// past it new batches are dropped and counted, as Fluent Bit's
+	// Mem_Buf_Limit does. Default 512.
+	BufferMB int `yaml:"buffer_mb"`
 }
 
 // SyslogLoad is simulated syslog devices.
@@ -252,6 +260,7 @@ var criteria = map[string]string{
 	"events_lost":                    "events the agents had stored (2xx) that are not in OpenSearch",
 	"events_duplicated":              "events stored more than once",
 	"events_undelivered":             "events still unsent when the run ended",
+	"events_dropped":                 "events the agents dropped because their buffers were full (buffer_mb)",
 	"ingest_error_rate":              "share of agent requests answered other than 2xx",
 	"ingest_p99_ms":                  "99th percentile agent request time",
 	"syslog_send_errors":             "syslog messages that could not be written",

@@ -51,10 +51,18 @@ type ChannelInput struct {
 	// one with a value sets it, one without keeps the stored value, one
 	// with clear removes it, and stored ones not listed are removed.
 	Headers []HeaderInput `json:"headers"`
-	// SigningSecret sets the webhook signing secret; empty keeps the
-	// stored one and ClearSigningSecret removes it.
+	// SigningSecret sets the webhook signing secret, or a Slack app's;
+	// empty keeps the stored one and ClearSigningSecret removes it.
 	SigningSecret      string `json:"signing_secret"`
 	ClearSigningSecret bool   `json:"clear_signing_secret"`
+
+	// The Azure bot of a Teams app channel. AppPassword sets its client
+	// secret; empty keeps the stored one.
+	AppID       string `json:"app_id"`
+	TenantID    string `json:"tenant_id"`
+	AppPassword string `json:"app_password"`
+	// ApproveInChat lets the Approve button approve playbook steps.
+	ApproveInChat bool `json:"approve_in_chat"`
 
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
@@ -118,6 +126,7 @@ const looksEncrypted = "cannot start with enc:v and a number and a colon, which 
 
 var (
 	idForm     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
+	guidForm   = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	headerName = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,100}$")
 	// reservedHeaders are set by Signalith or by the HTTP client.
 	reservedHeaders = []string{"host", "content-length", "content-type", "transfer-encoding", "connection", "x-signalith-signature", "user-agent"}
@@ -279,7 +288,7 @@ func (in ChannelInput) channel(old *Channel, w string) (Channel, []Problem) {
 		add("name", msg)
 	}
 	if !slices.Contains(Types, c.Type) {
-		add("type", "pick the kind of channel: Slack, Teams, email or webhook")
+		add("type", "pick the kind of channel: Slack, Teams, Teams app, email or webhook")
 		return c, probs
 	}
 	if old != nil && old.Type != c.Type {
@@ -309,6 +318,10 @@ func (in ChannelInput) channel(old *Channel, w string) (Channel, []Problem) {
 		probs = append(probs, in.email(&c, old, add, secret)...)
 		return c, probs
 	}
+	if c.Type == TypeTeamsApp {
+		in.teamsApp(&c, old, add, secret)
+		return c, probs
+	}
 	// Webhook, Slack and Teams post to a URL.
 	newURL := strings.TrimSpace(in.URL)
 	switch {
@@ -329,6 +342,20 @@ func (in ChannelInput) channel(old *Channel, w string) (Channel, []Problem) {
 		if msg := checkURL(c.URL, c.AllowLoopback); msg != "" {
 			add("url", msg)
 		}
+	}
+	if c.Type == TypeSlack {
+		// A Slack app's signing secret checks what Slack sends here; it
+		// is never sent anywhere, so it stays when the URL changes.
+		switch {
+		case in.SigningSecret != "":
+			if secret("signing_secret", in.SigningSecret) {
+				c.SigningSecret = in.SigningSecret
+			}
+		case in.ClearSigningSecret || old == nil:
+		default:
+			c.SigningSecret = old.SigningSecret
+		}
+		c.ApproveInChat = in.ApproveInChat && c.SigningSecret != ""
 	}
 	if c.Type != TypeWebhook {
 		return c, probs
@@ -488,6 +515,36 @@ func (in ChannelInput) email(c *Channel, old *Channel, add func(field, msg strin
 	return nil
 }
 
+// teamsApp fills the bot settings of a Teams app channel.
+func (in ChannelInput) teamsApp(c *Channel, old *Channel, add func(field, msg string), secret func(field, v string) bool) {
+	c.AppID = strings.ToLower(strings.TrimSpace(in.AppID))
+	c.TenantID = strings.ToLower(strings.TrimSpace(in.TenantID))
+	c.ApproveInChat = in.ApproveInChat
+	if !guidForm.MatchString(c.AppID) {
+		add("app_id", "enter the Azure bot's Microsoft App ID, as shown on its Configuration page (like 1b2c3d4e-...)")
+	}
+	if !guidForm.MatchString(c.TenantID) {
+		add("tenant_id", "enter the Microsoft Entra tenant ID the bot is registered in (like 5f6a7b8c-...)")
+	}
+	// The client secret is only sent to Microsoft for the bot it was
+	// entered for.
+	moved := old != nil && (old.AppID != c.AppID || old.TenantID != c.TenantID)
+	switch {
+	case in.AppPassword != "":
+		if secret("app_password", in.AppPassword) {
+			c.AppPassword = in.AppPassword
+		}
+	case old == nil || old.AppPassword == "":
+	case moved:
+		add("app_password", "enter the client secret again for the new app ID or tenant: a saved secret is only sent for the bot it was entered for")
+	default:
+		c.AppPassword = old.AppPassword
+	}
+	if c.AppPassword == "" {
+		add("app_password", "enter a client secret of the bot's app registration (Certificates & secrets)")
+	}
+}
+
 // parseAddr checks one email address and returns it in its usual form.
 func parseAddr(s string) (string, error) {
 	if strings.ContainsAny(s, "\r\n") {
@@ -526,9 +583,9 @@ func validHost(h string) bool {
 }
 
 // isLocalhost reports whether h names this machine: localhost or a
-// loopback address.
+// loopback address. A name ending in dots ("localhost.") is the same name.
 func isLocalhost(h string) bool {
-	h = strings.ToLower(strings.Trim(h, "[]"))
+	h = strings.TrimRight(strings.ToLower(strings.Trim(h, "[]")), ".")
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
 		return true
 	}

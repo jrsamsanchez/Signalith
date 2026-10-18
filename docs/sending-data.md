@@ -4,12 +4,15 @@ description: Send events to Signalith with Fluent Bit agents and syslog, what ea
 
 # Agents and syslog
 
-Signalith takes events from three kinds of senders:
+Signalith takes events from these kinds of senders:
 
+- the **[Signalith Agent](signalith-agent.md)**, installed with one line per computer: it
+  runs Fluent Bit for you, with nothing to configure by hand;
 - **Fluent Bit agents** on Windows and Linux, set up from the **Add data** page;
 - **syslog** (RFC 5424, RFC 3164 and CEF) from firewalls, switches, appliances and
   servers without an agent;
-- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md)).
+- **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md));
+- tools built for Splunk's HTTP Event Collector, once turned on (see [Splunk HEC senders](hec.md)).
 
 ## Agents
 
@@ -27,9 +30,60 @@ only: the agent token is what lets an agent in. OpenTelemetry Collector configur
 send the second header only; Signalith takes a Collector's computer name from its events.
 
 Agents on other machines must send to an address they can reach, such as
-`https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that
-page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by
-default, through this computer's firewall.
+`https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on that
+page (or set `server.public_url` or `SIGNALITH_PUBLIC_URL`; agents use its host on the
+agent port), and allow the agent port, 7779 by default, through this computer's firewall,
+besides the web port, 9000 by default.
+
+### The agent port
+
+Agents send to a port of their own, apart from the web page and API: Fluent Bit, the
+OpenTelemetry Collector (OTLP), osquery and network sensors. The web page is on port 9000
+and agents send to port 7779, by default. Both use the same HTTPS certificate.
+
+The agent port takes only what agents need: events (`/api/ingest`, and OTLP's
+`/api/otlp/v1/logs`, and [HEC](hec.md)'s `/services/collector/...` when turned on), osquery (`/api/osquery/...`), the network sensor's own requests, the CA certificate
+(`/api/tls/ca.pem`), the sensor install script (`/api/sensor/install.sh`), and `/livez`
+and `/readyz` for load balancer health checks. It serves no web page and no API. Once
+`server.agent_listen` is set, the web port turns agents away with 503 and a message
+naming the agent port.
+
+Set it with `server.agent_listen` (or `SIGNALITH_AGENT_LISTEN`), on the **Settings** page
+as **Agent address**:
+
+```yaml
+server:
+  listen: 0.0.0.0:9000        # web page and API
+  agent_listen: 0.0.0.0:7779  # agents
+```
+
+`server.agent_listen: off` sends agents to the web port, as before 0.3. When you change
+the agent port, set each agent up again from **Add data**: agents that send to the old
+port stop sending.
+
+**Add data** writes the agent port into each configuration: **Agents send to** takes the
+host of the server's address and port 7779. With several servers, each server's choice
+uses that server's own agent port. A firewall must let in both ports, and a load balancer
+in front of several servers must forward both (see [Load balancers](load-balancers.md)).
+
+### Upgrading to 0.3
+
+New installs (`signalith init`, the installers and the Docker compose files) set
+`server.agent_listen`, so their web port never takes agent traffic. A server installed
+before 0.3 has no `server.agent_listen` in its `signalith.yaml`. It keeps its web port
+(such as 8080), listens for agents on that address's host at port 7779, and still takes
+agents on the web port, with a warning in the log for each one, so nothing stops sending.
+To move over:
+
+1. Allow port 7779 through the firewall, and through any load balancer.
+2. Set up each agent again from **Add data**; the new configuration sends to port 7779.
+3. Set `server.agent_listen`, such as `0.0.0.0:7779`, so the web port stops taking
+   agents. The next release stops taking agents on the web port anyway.
+
+The Docker quick start is different: its updated files publish 9000 and 7779 and set
+`server.agent_listen`, so after the update open `https://localhost:9000` and set up each
+agent again from **Add data** (see
+[Upgrading to 0.3](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-to-03-the-agent-port)).
 
 ## What each source becomes
 
@@ -40,19 +94,22 @@ or detection covers every source of the same kind.
 | --- | --- |
 | Windows Security log: 4624, 4625 logons; 4648 explicit credentials; 4768, 4769, 4771 Kerberos; 4776 NTLM credential checks | Authentication |
 | Windows Security log: 4688 process creation | Endpoint |
-| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4732, 4737, 4756 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 1102 log cleared | Change |
+| Windows Security log: 4720, 4726, 4738, 4781 accounts; 4722, 4725 accounts enabled and disabled; 4723, 4724 password changes and resets; 4741, 4742 computer accounts; 4727, 4728, 4729, 4730, 4731, 4732, 4737, 4744, 4749, 4754, 4756, 4759, 4783, 4790 group changes; 4798, 4799 group listings; 4698, 4699, 4701, 4702 scheduled tasks; 4886, 4887 certificates; 4662 directory object operations; 1102 log cleared | Change |
 | Windows Security log: 5140, 5145 network share access | Filesystem |
 | Sysmon: 1 process create, 5 process terminated, 8 remote thread, 9 raw disk read, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](detections.md#powershell-script-blocks)) | Script |
+| PowerShell module logging: 4103 (same channel), and the Windows PowerShell log: 400, 403, 600, 800 (see [Detections](detections.md#powershell-module-logging-and-the-windows-powershell-log)) | Script; Other |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux audit log (auditd: audit.log, or its syslog plugin; each program start also joined into one process launch, see [Detections](detections.md#linux-audit-log-auditd)) | Other, sourcetype `linux:audit`; program starts in Endpoint |
 | Apache and Nginx access logs (/var/log/nginx, /var/log/apache2, /var/log/httpd; see [Detections](detections.md#web-server-access-logs)) | Web |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
+| Splunk HEC senders ([Splunk HEC senders](hec.md)) | by sourcetype: Authentication, Web and the cloud sources' models; Other for the rest |
 | Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
 | Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
+| A log you saved a parser for on **Add data → Any other log** ([Any other log](custom-logs.md)) | The data model you chose, with the parser's sourcetype |
 | Anything else | Other (searchable by text and fields) |
 
 sshd prints the user name a client sends, and on a failed key sign-in the key ID of the
@@ -68,6 +125,11 @@ records of at most 1 MB each, nested at most 32 levels deep; Fluent Bit's reques
 far smaller. A request over a limit is refused with 413 (400 for broken JSON) and a
 message saying what to change, and nothing from it is stored. When many agents send at
 once, the extra requests wait their turn and then get 503, so Fluent Bit sends them again.
+A server writes 32 batches at once (`ingest.max_concurrent`, under Settings > Web; lower it
+on a server with little memory). While others wait, one agent token gets at most a quarter
+of them, so one busy agent cannot hold up the rest. In [multi-tenant mode](multi-tenant.md)
+these slots, and the memory for batches arriving described below, are shared by all tenants,
+and no one tenant takes more than half of either while others wait.
 
 A batch is read in full before it waits for its turn, so a slow sender never holds up
 other agents. Batches still arriving may hold 256 MB of memory in all, and one sender (an

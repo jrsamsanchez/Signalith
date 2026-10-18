@@ -3,13 +3,15 @@
 # the trusted proxy that sends PROXY protocol headers, and its address as
 # the public one.
 server:
-  listen: 0.0.0.0:8080
-  # HAProxy's address: agents and browsers reach either server through it.
-  # Agents on other machines need this computer's address instead.
+  listen: 0.0.0.0:9000
+  agent_listen: 0.0.0.0:7779
+  # HAProxy's address: browsers reach either server through it on 8443,
+  # and agents on 7779. Agents on other machines need this computer's
+  # address instead.
   public_url: https://localhost:8443
   # HAProxy, the only address that may send PROXY protocol headers.
   trusted_proxies: [172.30.11.10]
-  # Read the header on the web port, so sign-in limits, the audit log and
+  # Read the header on the web and agent ports, so sign-in limits, the audit log and
   # agent limits see each client's own address.
   proxy_protocol: true
   tls:
@@ -41,7 +43,10 @@ search:
 retention:
   days: 90
 auth:
-  admin_user: admin
+  # The built-in admin's name on a new install. An install made before
+  # 0.3.1 keeps the name it has (admin): the name its servers share is
+  # used, so it signs in as before.
+  admin_user: signalithadmin
 cluster:
   # May run the background jobs (detections, threat intel downloads,
   # retention). Servers that share one OpenSearch take turns; turn it off

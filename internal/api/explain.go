@@ -16,6 +16,9 @@ func Explain(q *query.Query) []string {
 	if len(q.Commands) > 0 {
 		if c, ok := q.Commands[0].(*query.InputLookup); ok {
 			first := "Read the rows of the lookup table " + c.Table
+			if c.Where != nil {
+				first += " where " + describeExpr(c.Where)
+			}
 			if c.Max > 0 {
 				first += fmt.Sprintf(", at most %d", c.Max)
 			}
@@ -32,6 +35,16 @@ func Explain(q *query.Query) []string {
 			}
 			steps = append(steps, first+".")
 			for _, c := range q.Commands[1:] {
+				steps = append(steps, describeCommand(c))
+			}
+			return steps
+		}
+	}
+	if len(q.Commands) > 0 {
+		switch q.Commands[0].(type) {
+		case *query.EventCount, *query.MultiSearch, *query.Set:
+			// The rows come from the command itself, not from a search.
+			for _, c := range q.Commands {
 				steps = append(steps, describeCommand(c))
 			}
 			return steps
@@ -114,6 +127,8 @@ func describeExpr(e query.Expr) string {
 		return "not " + describeExpr(e.Child)
 	case *query.Text:
 		return fmt.Sprintf("the raw event contains %q", e.Value)
+	case *query.Subsearch:
+		return "the fields match a row of the subsearch [" + e.Query.String() + "]"
 	case *query.In:
 		return fmt.Sprintf("%s is one of %s", e.Field, strings.Join(e.Values, ", "))
 	case *query.Compare:
@@ -204,6 +219,29 @@ func ordinal(n int) string {
 
 func describeCommand(c query.Command) string {
 	switch c := c.(type) {
+	case *query.InputLookup:
+		s := "Add the rows of the lookup table " + c.Table
+		if c.Where != nil {
+			s += " where " + describeExpr(c.Where)
+		}
+		if c.Max > 0 {
+			s += fmt.Sprintf(", at most %d", c.Max)
+		}
+		return s + ", after the rows so far."
+	case *query.OutputLookup:
+		s := "Write the rows to the lookup table " + c.Table
+		switch {
+		case c.Append == nil:
+			s += ", which must not exist yet"
+		case *c.Append:
+			s += ", after the rows it has"
+		default:
+			s += ", replacing what it holds"
+		}
+		if c.Max > 0 {
+			s += fmt.Sprintf(", at most %d rows", c.Max)
+		}
+		return s + ", and keep them as they are."
 	case *query.Stats:
 		s := "Calculate " + describeAggs(c.Aggs)
 		if len(c.By) > 0 {
@@ -258,6 +296,59 @@ func describeCommand(c query.Command) string {
 			parts[i] = fmt.Sprintf("%s for %g to %g", r.Name, r.Lo, r.Hi)
 		}
 		return "Set range by " + c.Field + ": " + strings.Join(parts, ", ") + ", otherwise " + c.DefaultName() + "."
+	case *query.Replace:
+		parts := make([]string, 0, len(c.Pairs))
+		for _, p := range c.Pairs {
+			parts = append(parts, strconv.Quote(p[0])+" with "+strconv.Quote(p[1]))
+		}
+		where := "every field"
+		if len(c.Fields) > 0 {
+			where = strings.Join(c.Fields, ", ")
+		}
+		return "Replace " + strings.Join(parts, ", ") + " in " + where + "."
+	case *query.Accum:
+		return "Set " + c.AccumName() + " to the running total of " + c.Field + "."
+	case *query.Delta:
+		return fmt.Sprintf("Set %s to %s minus its value %d rows with a number earlier.", c.DeltaName(), c.Field, c.P)
+	case *query.AutoRegress:
+		return "Copy " + c.Field + " from earlier rows into " + strings.Join(c.Names(), ", ") + "."
+	case *query.Transpose:
+		s := fmt.Sprintf("Turn the first %d rows into columns, one row per field with its name in %s", c.Rows, c.ColumnName)
+		if c.HeaderField != "" {
+			s += " and columns named by " + c.HeaderField
+		}
+		return s + "."
+	case *query.FillDown:
+		if len(c.Fields) == 0 {
+			return "Give each row missing a field that field's value in the last row that has it."
+		}
+		return "Give each row missing " + strings.Join(c.Fields, ", ") + " the value in the last row that has it."
+	case *query.AddInfo:
+		return "Add the search's time range and run time (info_min_time, info_max_time, info_search_time) to each row."
+	case *query.Trendline:
+		names := make([]string, 0, len(c.Trends))
+		for _, t := range c.Trends {
+			names = append(names, t.Name())
+		}
+		return "Add the moving averages " + strings.Join(names, ", ") + "."
+	case *query.Concurrency:
+		return fmt.Sprintf("Set %s to how many rows were in progress when each started, using %s as the start and %s as the duration in seconds.", c.Output, c.Start, c.Duration)
+	case *query.Contingency:
+		return "Count each pair of " + c.RowField + " and " + c.ColField + " values in a table, one row per " + c.RowField + " and one column per " + c.ColField + "."
+	case *query.Format:
+		return "Turn the rows into one search that matches them, in a field named search."
+	case *query.Return:
+		return fmt.Sprintf("Turn the first %d rows with a value into search terms, in a field named search.", c.Count)
+	case *query.MakeContinuous:
+		return "Add an empty row for each " + c.Span + " of " + c.Field + " that no row has, and sort the rows by " + c.Field + "."
+	case *query.FieldSummary:
+		return "Describe each field: how many rows have it, its distinct and most common values, and for numbers min, max, mean and stdev."
+	case *query.Map:
+		return fmt.Sprintf("For each of the first %d rows, run the search %s with the row's values in place of its $field$ names, and keep the rows those searches find.", c.Max, strconv.Quote(c.Search))
+	case *query.IPLocation:
+		return "Add where the IP address in " + c.Field + " is, from the GeoIP database: " + strings.Join(c.Fields(), ", ") + "."
+	case *query.XMLKV:
+		return "Extract the text of each XML element in " + c.Field + " as a field named by its tag."
 	case *query.ForEach:
 		return "For each field matching " + strings.Join(c.Fields, ", ") + ", run: " + c.Body + "."
 	case *query.Rex:
@@ -334,6 +425,9 @@ func describeCommand(c query.Command) string {
 			s += "; rows missing one of these fields are kept"
 		} else {
 			s += "; rows missing one of these fields are dropped"
+		}
+		if len(c.SortBy) > 0 {
+			s += "; then sort by " + describeSortKeys(c.SortBy)
 		}
 		return s + "."
 	case *query.Fillnull:
@@ -415,15 +509,7 @@ func describeCommand(c query.Command) string {
 		s := strings.Join(parts, " and ")
 		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
-		parts := make([]string, len(c.Keys))
-		for i, k := range c.Keys {
-			dir := "lowest first"
-			if k.Desc {
-				dir = "highest first"
-			}
-			parts[i] = k.Field + " (" + dir + ")"
-		}
-		return "Sort by " + strings.Join(parts, ", then ") + "."
+		return "Sort by " + describeSortKeys(c.Keys) + "."
 	case *query.Head:
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
 	case *query.Table:
@@ -483,8 +569,140 @@ func describeCommand(c query.Command) string {
 		return "Keep only rows where " + c.Field + " matches the regular expression " + c.Pattern + "."
 	case *query.MakeResults:
 		return fmt.Sprintf("Make %d rows holding only the current time.", c.Count)
+	case *query.EventCount:
+		which := "every index a search reads"
+		if len(c.Indexes) > 0 {
+			which = "the indexes matching " + strings.Join(c.Indexes, ", ")
+		}
+		if c.Summarize {
+			return "Count the events stored in " + which + ", whatever their time."
+		}
+		return "Count the events stored in " + which + ", whatever their time, one row per index."
 	case *query.Append:
 		return "Add the rows of a subsearch after these. The subsearch: " + strings.Join(Explain(c.Sub), " ")
+	case *query.Extract:
+		s := fmt.Sprintf("Read up to %d key%svalue pairs from the first %d characters of _raw into fields, keeping the values of fields the events already have", c.Limit, c.KVDelim[:1], c.MaxChars)
+		if c.MVAdd {
+			s += "; a repeated key gives a multivalue field"
+		}
+		return s + "."
+	case *query.Outlier:
+		which := "every field with numbers"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		side := "above the 75th percentile plus"
+		if c.UseLower {
+			side = "outside the 25th to 75th percentiles by more than"
+		}
+		limit := side + " " + strconv.FormatFloat(c.Param, 'f', -1, 64) + " times the distance between the 25th and 75th percentiles"
+		if c.Remove {
+			return "Remove rows whose numbers in " + which + " are " + limit + "."
+		}
+		return "Set numbers in " + which + " that are " + limit + " to that bound."
+	case *query.Gauge:
+		return "Make one row for a gauge: x is " + c.Value + ", and y1, y2, ... are the range values."
+	case *query.Geostats:
+		s := fmt.Sprintf("Count %s in map squares of %s by %s degrees of %s and %s", describeAggs(c.Aggs),
+			strconv.FormatFloat(c.SpanLat, 'f', -1, 64), strconv.FormatFloat(c.SpanLon, 'f', -1, 64), c.LatField, c.LonField)
+		if c.By != "" {
+			s += ", one column per " + c.By
+		}
+		return s + "."
+	case *query.AnomalyDetection:
+		which := "every field"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		how := "few rows share"
+		if c.Method == "zscore" {
+			how = "is far from the field's mean"
+		}
+		s := fmt.Sprintf("Find rows where a value of %s %s (probability below %s)", which, how, strconv.FormatFloat(c.PThresh, 'f', -1, 64))
+		switch c.Action {
+		case "filter":
+			s += " and keep only those"
+		case "annotate":
+			s += " and mark every row with isOutlier, probable_cause and log_event_prob"
+		case "summary":
+			s += " and count them"
+		}
+		return s + "."
+	case *query.Correlate:
+		return "Show, for each pair of fields, the share of rows that have both."
+	case *query.Predict:
+		var names []string
+		for _, f := range c.Fields {
+			names = append(names, f.Field)
+		}
+		s := fmt.Sprintf("Forecast %s with %s, with %d%% and %d%% bounds", strings.Join(names, ", "), predictAlgorithm(c.Algorithm), c.Upper, c.Lower)
+		if c.Holdback > 0 {
+			s += fmt.Sprintf(", learning from all but the last %d rows", c.Holdback)
+		}
+		if c.FutureTimespan > c.Holdback {
+			s += fmt.Sprintf(", and add %d future rows", c.FutureTimespan-c.Holdback)
+		}
+		return s + "."
+	case *query.Set:
+		var parts []string
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		which := map[string]string{"union": "the rows of either", "diff": "the rows only one of them has", "intersect": "the rows both have"}[c.Op]
+		return "Start with " + which + " of these two subsearches. " + strings.Join(parts, " ")
+	case *query.KMeans:
+		which := "their numbers"
+		if len(c.Fields) > 0 {
+			which = strings.Join(c.Fields, ", ")
+		}
+		s := fmt.Sprintf("Group rows into %d clusters by %s (k-means, %s distance, best of %d runs) and number them in %s", c.K, which, c.Distance, c.Reps, c.ClusterField)
+		if c.ShowCentroid {
+			s += ", with each cluster's centre in centroid_ fields"
+		}
+		return s + "."
+	case *query.SetFields:
+		var parts []string
+		for _, v := range c.Values {
+			parts = append(parts, fmt.Sprintf("%s to %q", v.Field, v.Value))
+		}
+		return "Set " + strings.Join(parts, ", ") + " on every row."
+	case *query.XPath:
+		s := "Set " + c.OutField + " to the text of " + c.Path + " in the XML of " + c.Field
+		if c.HasDefault {
+			s += fmt.Sprintf(", or %q where it finds none", c.Default)
+		}
+		return s + "."
+	case *query.Abstract:
+		return fmt.Sprintf("Shorten each event's _raw to its %d lines with the most words.", c.MaxLines)
+	case *query.Highlight:
+		return "Mark " + strings.Join(c.Terms, ", ") + " in the results; the rows stay as they are."
+	case *query.MultiSearch:
+		parts := make([]string, 0, len(c.Subs))
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		return "Start with the rows of these subsearches together, newest first. " + strings.Join(parts, " ")
+	case *query.Timewrap:
+		s := "Lay each " + c.Span + " of the chart side by side: one column per series and period, with the rows at the times of the latest period"
+		if c.Now {
+			s += ", which ends now"
+		}
+		return s + "."
+	case *query.Cluster:
+		s := fmt.Sprintf("Group rows whose %s is at least %s alike (%s) and number the groups in %s", c.Field, strconv.FormatFloat(c.Threshold, 'f', -1, 64), c.Match, c.LabelField)
+		if !c.LabelOnly {
+			s += ", keeping the first row of each"
+		}
+		if c.ShowCount {
+			s += "; " + c.CountField + " is each group's size"
+		}
+		return s + "."
+	case *query.Union:
+		parts := make([]string, 0, len(c.Subs))
+		for i, s := range c.Subs {
+			parts = append(parts, fmt.Sprintf("Subsearch %d: %s", i+1, strings.Join(Explain(s), " ")))
+		}
+		return "Add the rows of each subsearch after these. " + strings.Join(parts, " ")
 	case *query.AppendPipe:
 		parts := make([]string, len(c.Commands))
 		for i, cmd := range c.Commands {
@@ -543,4 +761,31 @@ func describeCommand(c query.Command) string {
 			"threat_match_value, threat_source and threat_weight describing the match."
 	}
 	return query.CommandString(c)
+}
+
+// predictAlgorithm says what a predict algorithm models.
+func predictAlgorithm(a string) string {
+	switch a {
+	case "LL":
+		return "a moving level"
+	case "LLT":
+		return "a level and trend"
+	case "LLP":
+		return "a level and repeating season"
+	}
+	return "a level, trend and repeating season"
+}
+
+// describeSortKeys says how sort keys order rows: count (highest first),
+// then user (lowest first).
+func describeSortKeys(keys []query.SortKey) string {
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		dir := "lowest first"
+		if k.Desc {
+			dir = "highest first"
+		}
+		parts[i] = k.Field + " (" + dir + ")"
+	}
+	return strings.Join(parts, ", then ")
 }

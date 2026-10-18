@@ -179,20 +179,30 @@ func applyRangeMap(ctx context.Context, res *Result, c *query.RangeMap) error {
 // a field name are left alone.
 func applyForEach(ctx context.Context, res *Result, c *query.ForEach) error {
 	matched := map[string]string{}
+	ev := evaluatorFor(ctx)
+	// Each name is tried once, however many rows have it.
+	try := fieldMatcher(ev, len(c.Fields), func(f string) bool {
+		if !query.ForEachName.MatchString(f) {
+			return false
+		}
+		m, ok := c.Match(f)
+		if !ok {
+			return false
+		}
+		if len(matched) >= query.MaxForEachFields {
+			res.Truncated = true
+			return false
+		}
+		matched[f] = m
+		return true
+	})
 	for i, r := range res.Rows {
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		for f := range r {
-			if _, ok := matched[f]; ok || !query.ForEachName.MatchString(f) {
-				continue
-			}
-			if m, ok := c.Match(f); ok {
-				if len(matched) >= query.MaxForEachFields {
-					res.Truncated = true
-					continue
-				}
-				matched[f] = m
+			if _, ok := try(f); !ok {
+				return ev.err
 			}
 		}
 	}

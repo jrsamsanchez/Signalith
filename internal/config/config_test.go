@@ -28,7 +28,7 @@ func TestInitSaveLoadRoundTrip(t *testing.T) {
 	if !got.CheckPassword("admin", "correct horse") || got.CheckPassword("admin", "wrong") {
 		t.Error("password check failed")
 	}
-	if got.Server.PublicURL != "https://127.0.0.1:8080" {
+	if got.Server.PublicURL != "https://127.0.0.1:9000" {
 		t.Errorf("public url = %s", got.Server.PublicURL)
 	}
 }
@@ -47,15 +47,15 @@ func TestValidationListsEveryProblem(t *testing.T) {
 	}
 }
 
-// opensearch.shards adds number_of_shards to the event index settings
-// only when it asks for more than one, so a configuration without it
-// gives the template OpenSearch had before.
+// opensearch.shards adds number_of_shards to the event index settings:
+// automatic when it is not set (sized from the data nodes when the
+// template is written), none for one, or the number asked for.
 func TestEventIndexSettings(t *testing.T) {
 	for _, tc := range []struct {
 		shards int
 		want   map[string]any
 	}{
-		{0, map[string]any{"auto_expand_replicas": "0-1"}},
+		{0, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": "auto"}},
 		{1, map[string]any{"auto_expand_replicas": "0-1"}},
 		{3, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}},
 	} {
@@ -67,6 +67,26 @@ func TestEventIndexSettings(t *testing.T) {
 	o := OpenSearch{Replicas: "2", Shards: 2}
 	if got := o.EventIndexSettings(); !reflect.DeepEqual(got, map[string]any{"number_of_replicas": 2, "number_of_shards": 2}) {
 		t.Errorf("replicas 2, shards 2: %v", got)
+	}
+}
+
+// opensearch.rollover_gb is 40 GB when not set, and only a size from
+// MinRolloverGB to MaxRolloverGB is taken.
+func TestRolloverGB(t *testing.T) {
+	if got := (&OpenSearch{}).RolloverBytes(); got != 40<<30 {
+		t.Errorf("default: %d bytes", got)
+	}
+	if got := (&OpenSearch{RolloverGB: 25}).RolloverBytes(); got != 25<<30 {
+		t.Errorf("25 GB: %d bytes", got)
+	}
+	for gb, ok := range map[int]bool{0: true, 10: true, 200: true, 5: false, 201: false, -1: false} {
+		c := Default()
+		c.OpenSearch.RolloverGB = gb
+		err := c.Validate()
+		bad := err != nil && strings.Contains(err.Error(), "rollover_gb")
+		if bad == ok {
+			t.Errorf("rollover_gb %d: problem %v, want %v", gb, bad, !ok)
+		}
 	}
 }
 

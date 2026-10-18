@@ -111,12 +111,17 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 		parseDefender(eventID, str(r, "Message"), in, &ev)
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		parseScriptBlock(in, &ev)
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4103":
+		parseModuleLog(in, &ev)
+	case strings.EqualFold(channel, WindowsPowerShellChannel):
+		parseClassicPowerShell(eventID, str(r, "ProviderName"), in, &ev)
 	}
 	return ev
 }
 
 // PowerShellChannel is where PowerShell logs script blocks (4104) once
-// script block logging is turned on.
+// script block logging is turned on, and the commands pipelines run
+// (4103) once module logging is.
 const PowerShellChannel = "Microsoft-Windows-PowerShell/Operational"
 
 // parseScriptBlock reads a PowerShell script block event (4104). A long
@@ -179,6 +184,10 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 			f["logon_process"] = strings.TrimSpace(at(in, 11))
 			f["process_path"] = at(in, 18)
 			f["process_name"] = baseName(at(in, 18))
+			// The account that asked for the logon, as for 4624.
+			f["src_user_sid"] = at(in, 0)
+			f["src_user"] = at(in, 1)
+			f["src_user_domain"] = at(in, 2)
 			sub := strings.ToLower(at(in, 9))
 			if reason, ok := windowsFailureReasons[sub]; ok {
 				f["reason"] = reason
@@ -452,6 +461,7 @@ func parseWindowsSecurity(eventID string, in []string, ev *Event) {
 		f["action"] = "modified"
 		f["object_category"] = "directory_object"
 		f["signature"] = "A directory service object was modified"
+		f["user_sid"] = at(in, 2)
 		f["user"] = at(in, 3)
 		f["user_domain"] = at(in, 4)
 		f["logon_id"] = at(in, 5)
@@ -667,15 +677,48 @@ func parseWindowsSecurityNamed(eventID string, d map[string]string, ev *Event) {
 		f["old_object"] = d["OldTargetUserName"]
 		f["object_domain"] = d["TargetDomainName"]
 		f["object_sid"] = d["TargetSid"]
-	case "4727", "4730", "4737":
-		// A security-enabled global group created, deleted or changed.
+	case "4722", "4723", "4724", "4725":
+		// A user account enabled (4722) or disabled (4725), and its
+		// password changed by the user (4723) or reset by another
+		// account (4724). The account that acted is the subject.
+		ev.Model = "Change"
+		f["object_category"] = "user"
+		f["action"] = "modified"
+		f["signature"] = map[string]string{
+			"4722": "A user account was enabled",
+			"4723": "An attempt was made to change an account's password",
+			"4724": "An attempt was made to reset an account's password",
+			"4725": "A user account was disabled",
+		}[eventID]
+		subject(d, f)
+		f["object"] = d["TargetUserName"]
+		f["object_domain"] = d["TargetDomainName"]
+		f["object_sid"] = d["TargetSid"]
+	case "4727", "4730", "4737", "4731", "4744", "4749", "4754", "4759", "4783", "4790":
+		// A security-enabled global group created, deleted or changed,
+		// and the other kinds of group created: local, global and
+		// universal, security-enabled or not (distribution), and
+		// Authorization Manager's basic application and LDAP query
+		// groups. All of them have the data of 4727.
 		ev.Model = "Change"
 		f["object_category"] = "group"
-		f["action"] = map[string]string{"4727": "created", "4730": "deleted", "4737": "modified"}[eventID]
+		f["action"] = "created"
+		if eventID == "4730" {
+			f["action"] = "deleted"
+		} else if eventID == "4737" {
+			f["action"] = "modified"
+		}
 		f["signature"] = map[string]string{
 			"4727": "A security-enabled global group was created",
 			"4730": "A security-enabled global group was deleted",
 			"4737": "A security-enabled global group was changed",
+			"4731": "A security-enabled local group was created",
+			"4744": "A security-disabled local group was created",
+			"4749": "A security-disabled global group was created",
+			"4754": "A security-enabled universal group was created",
+			"4759": "A security-disabled universal group was created",
+			"4783": "A basic application group was created",
+			"4790": "An LDAP query group was created",
 		}[eventID]
 		subject(d, f)
 		f["object"] = d["TargetUserName"]

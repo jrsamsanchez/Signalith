@@ -334,6 +334,19 @@ var knownFields = func() map[string]string {
 	for _, k := range gcpMapped {
 		m[k] = kw
 	}
+	// Okta System Log events (okta.go): the event's own fields.
+	for _, k := range oktaMapped {
+		m[k] = kw
+	}
+	// GitHub audit log events (github.go): the event's own fields.
+	for _, k := range githubMapped {
+		m[k] = kw
+	}
+	// Kubernetes audit events (kubernetes.go): the event's own fields,
+	// some deeper than a sender's names may go.
+	for _, k := range kubernetesMapped {
+		m[k] = kw
+	}
 	// The fields the shipped cloud rules read (rulefields.go).
 	for _, k := range cloudRuleFields {
 		m[k] = kw
@@ -583,3 +596,11 @@ func onlyKnown(f map[string]any) int {
 
 // dayOf is the index day of a time.
 func dayOf(t time.Time) string { return t.UTC().Format("2006.01.02") }
+
+// FieldType returns the OpenSearch type the index template maps a field
+// Signalith produces to (keyword, long, double, ip, date, text or
+// wildcard), and false for a name it leaves to dynamic mapping.
+func FieldType(name string) (string, bool) {
+	t, ok := knownFields[name]
+	return t, ok
+}

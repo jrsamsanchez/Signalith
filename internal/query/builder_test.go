@@ -64,6 +64,7 @@ func TestFromQueryRejectsComplexQueries(t *testing.T) {
 		`NOT a=1`,
 		`a=1 | where x > 1`,
 		`a=1 | stats count, dc(x)`,
+		`a=1 | dedup user sortby -_time`,
 	} {
 		q := mustParse(t, src)
 		if _, ok := FromQuery(q); ok {

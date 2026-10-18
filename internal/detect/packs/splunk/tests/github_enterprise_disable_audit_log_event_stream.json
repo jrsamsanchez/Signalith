@@ -1,0 +1,5 @@
+{"rule": "7bc111cc-7f1b-4be7-99fa-50cf8d2e7564", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.destroy"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.destroz"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

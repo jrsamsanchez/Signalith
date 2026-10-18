@@ -1,0 +1,15 @@
+# Signalith's client certificate (CN=signalith) gets the signalith_server
+# role from roles.yml, and so does each server's own certificate when
+# several Signalith servers share one OpenSearch (CN=signalith-server-<name>,
+# from the same CA). The pattern is signalith-server-*, not signalith-*,
+# which would also match the admin certificate (CN=signalith-admin). That
+# one needs no role: OpenSearch trusts it fully
+# (plugins.security.authcz.admin_dn).
+_meta:
+  type: "rolesmapping"
+  config_version: 2
+
+signalith_server:
+  users:
+    - "signalith"
+    - "signalith-server-*"

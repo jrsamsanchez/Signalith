@@ -70,7 +70,7 @@ up to 50 addresses of each, in memory only. Computers and agents on the server i
 aren't counted: what they send doesn't cross the network.
 
 - Good: HTTPS is on; or HTTPS is off but Signalith answers only on this computer
-  (such as `127.0.0.1:8080`); or a trusted reverse proxy serves HTTPS.
+  (such as `127.0.0.1:9000`); or a trusted reverse proxy serves HTTPS.
 - Needs attention: a proxy serves HTTPS, but people signed in, or agents sent events,
   to Signalith directly over plain HTTP; or HTTPS is left to a reverse proxy that
   Signalith believes only because `signalith.yaml` was written before HTTPS was the
@@ -84,7 +84,7 @@ the listen address so only the proxy reaches Signalith
 ([Behind a reverse proxy](https.md#behind-a-reverse-proxy)).
 
 **How to check by hand:** from another computer,
-`curl -sI http://siem.example.com:8080/` prints `Location: https://...` when Signalith
+`curl -sI http://siem.example.com:9000/` prints `Location: https://...` when Signalith
 serves HTTPS itself.
 
 ### HTTPS certificate
@@ -111,7 +111,7 @@ in its log when it starts.
 **How to check by hand:**
 
 ```sh
-openssl s_client -connect siem.example.com:8080 -servername siem.example.com </dev/null 2>/dev/null \
+openssl s_client -connect siem.example.com:9000 -servername siem.example.com </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -enddate -ext subjectAltName
 ```
 
@@ -177,6 +177,26 @@ apart: its events don't cross the network.
 names it. See [Upgrading from plain HTTP](https.md#upgrading-from-plain-http).
 
 **How to check by hand:** the **Health** page lists agents that send over plain HTTP.
+
+### Agent port
+
+Shown unless `server.agent_listen` is `off`, which sends agents to the web port on
+purpose.
+
+**Looks at:** **Agent address** (`server.agent_listen`). A server installed before 0.3
+doesn't set it, so its web port still takes agents besides the agent port (7779). The web
+page then has to be reachable from every computer that runs an agent.
+
+- Good: agents send to a port of their own, and the web port turns them away.
+- Needs attention: the web port still takes agents, or no agent port could be opened
+  because port 7779 is taken.
+
+**To fix:** let port 7779 through the firewall and any load balancer, set each agent up
+again from **Add data**, then set **Agent address**, such as `0.0.0.0:7779`. See
+[Upgrading to 0.3](sending-data.md#upgrading-to-03).
+
+**How to check by hand:** the log warns once a day for each agent that still sends to the
+web port.
 
 ### Syslog
 
@@ -529,8 +549,8 @@ less on the **Settings** page.
 ### Two-step sign-in
 
 **Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
-whether people who sign in with a password must also enter a code from an
-authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+whether people who sign in with a password must also use a passkey or a code from
+an authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
 users get their second step from their identity provider.
 
 - Good: `admins` or `everyone`.
@@ -590,6 +610,25 @@ or Signalith couldn't yet ask OpenSearch which it is. See
    is.
 
 See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
+
+### API tokens
+
+Shown when there are API tokens that are accepted: tokens made on **Settings > API
+tokens** for the AI tools server or your own scripts. See
+[API tokens](ai-tools.md#api-tokens).
+
+**Looks at:** whether each accepted token expires. A token that never expires keeps
+working until someone revokes it, even if it leaks or the tool it was made for is long
+gone. Tokens made before Signalith had expiry never expire.
+
+- Good: every accepted token expires ("Every API token expires (N active).").
+- Needs attention: one or more tokens never expire; the check names them.
+
+**To fix:**
+
+1. On **Settings > API tokens**, make a new token for each tool the check names, one
+   that expires (90 days unless you pick another time).
+2. Put the new token in the tool's settings, then revoke the old one.
 
 ### Signalith's OpenSearch account
 
@@ -764,8 +803,8 @@ server:
 Signalith can't see these, so it says so once rather than showing **Can't tell** for
 them every time:
 
-- **Firewalls**: which computers can reach Signalith's ports (8080 by default, and the
-  syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
+- **Firewalls**: which computers can reach Signalith's ports (9000 for the web page and
+  7779 for agents by default, and the syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
   and of the network.
 - **Backups**, and whether the master key is kept apart from them (see
   [Backing up the key](encryption.md#backing-up-the-key)).

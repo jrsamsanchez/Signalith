@@ -22,10 +22,17 @@ until_ok() {
 }
 
 until_ok 600 "HAProxy passes /readyz on" sh -c "curl -sfk $LB/readyz | grep -q '\"ready\":true'"
-PW=$($COMPOSE exec -T signalith-a signalith initial-password | tail -n 1)
+FIRST=$($COMPOSE exec -T signalith-a signalith initial-password | tail -n 1)
 TOKEN=$($COMPOSE exec -T signalith-a cat /run/signalith-secrets/ingest-token)
-api() { curl -sfk -u "admin:$PW" "$LB$1"; }
-until_ok 120 "both servers are listed" sh -c "curl -sfk -u 'admin:$PW' $LB/api/cluster | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if sum(s[\"state\"]==\"ready\" for s in v[\"servers\"])==2 else 1)'"
+# The first password Signalith made allows only choosing a new one. Until
+# the servers share their users each keeps its own, so each try first
+# replaces it on whichever server still has it.
+PW=$(head -c 18 /dev/urandom | od -An -tx1 | tr -d ' \n')
+change="curl -sfk -o /dev/null -u 'signalithadmin:$FIRST' -H 'Content-Type: application/json' -d '{\"current_password\":\"$FIRST\",\"new_password\":\"$PW\"}' $LB/api/me/password || true"
+api() { curl -sfk -u "signalithadmin:$PW" "$LB$1"; }
+until_ok 120 "both servers are listed" sh -c "$change; curl -sfk -u 'signalithadmin:$PW' $LB/api/cluster | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if sum(s[\"state\"]==\"ready\" for s in v[\"servers\"])==2 else 1)'"
+# Both servers have the new password: each answers it.
+until_ok 60 "the new password works on both servers" sh -c "$change; for i in 1 2 3 4 5 6; do curl -sfk -o /dev/null -u 'signalithadmin:$PW' $LB/api/health || exit 1; done"
 
 batch() {
   curl -sfk -o /dev/null -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \

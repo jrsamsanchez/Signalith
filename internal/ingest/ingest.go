@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,13 +82,28 @@ type Pipeline struct {
 	// MaxEventAge is how old an event's own time may be and still be its
 	// event time (zero: DefaultMaxEventAge); see TimeUsable.
 	MaxEventAge time.Duration
+	// Limits, when set, are the ingest slots and receive budget this
+	// pipeline shares with others, such as every tenant's pipeline; then
+	// MaxConcurrent and MaxReceiving are not used. nil gives the pipeline
+	// Limits of its own.
+	Limits *Limits
+	// Tenant is the tenant whose events this pipeline takes, "" for the
+	// default tenant: what its requests are counted under in Limits.
+	Tenant string
 	// MaxConcurrent caps the ingest requests Admit lets in at once
-	// (default 8), which bounds the memory decoding and writing use.
+	// (default DefaultMaxConcurrent) when Limits is nil. Memory is capped
+	// by MaxReceiving; this bounds how many bulk writes run against
+	// OpenSearch together.
 	MaxConcurrent int
 	// MaxReceiving caps the memory request bodies hold, from their first
-	// byte until they have been written (default DefaultMaxReceiving); one
-	// sender may hold a quarter of it. See ReadBody.
+	// byte until they have been written (default DefaultMaxReceiving),
+	// when Limits is nil; one sender may hold a quarter of it. See
+	// ReadBody.
 	MaxReceiving int64
+	// Custom parses the records sent under a custom parser's tag
+	// (CustomTagPrefix); nil leaves them to the built-in parsers. Set it
+	// before the pipeline takes records.
+	Custom CustomParsers
 	// Log, when set, gets a warning (at most once a minute per kind) when
 	// events are refiled under their arrival time or lose fields.
 	Log *slog.Logger
@@ -98,6 +112,9 @@ type Pipeline struct {
 	// loader sets it, on a pipeline of its own: every other pipeline
 	// removes the marker from what senders send (see Reserved).
 	SampleMark string
+	// Rollover, when set, picks the part of a busy day's index events go
+	// to (see Rollover); nil writes every event to its day's index.
+	Rollover *Rollover
 	// Servers returns how many servers share each day's field-name
 	// budgets: those that stored events in the last 10 minutes (see
 	// cluster.Node.IndexingServers). nil is this server alone.
@@ -116,20 +133,15 @@ type Pipeline struct {
 	names   fieldBudget
 	procs   ProcessTracker
 	counter fieldCounter
-	slots   chan struct{}
-	slotsMu sync.Mutex
-	warnMu  sync.Mutex
-	warned  map[string]time.Time
+	// ownLimits are the pipeline's own Limits, when Limits is nil.
+	ownLimitsOnce sync.Once
+	ownLimits     *Limits
+	warnMu        sync.Mutex
+	warned        map[string]time.Time
 
 	// plaintext lists the agents that sent over plain HTTP, and refused
 	// the ones whose batches were turned away.
 	plaintext, refused senderLog
-
-	// recvUsed is the receive budget in use, and recvBy each sender's
-	// part of it (see ReadBody).
-	recvMu   sync.Mutex
-	recvUsed int64
-	recvBy   map[netip.Addr]int64
 }
 
 // Stats counts what the pipeline has processed since start, for the health page.
@@ -282,7 +294,12 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		end := min(start+batchEvents, len(records))
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
-			events = append(events, Normalize(tag, r, p.now()))
+			if ev, drop := p.normalize(tag, r, p.now()); !drop {
+				events = append(events, ev)
+			}
+		}
+		if len(events) == 0 {
+			continue
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {
@@ -352,7 +369,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		nReserved := p.dropReserved(ev.Fields, &reserved)
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
-		// carries its own marker instead.
+		// carries its own marker instead, and the origin an event of it
+		// names (as a sensor's token would send it), so detections that
+		// believe only such events fire on the sample too.
 		if p.SampleMark == "" {
 			o := ev.Origin
 			if o.IsZero() {
@@ -360,6 +379,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+		} else {
+			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
@@ -374,7 +395,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Model = "Other"
 		}
 		day := dayOf(ev.Time)
-		index := datamodel.IndexName(prefix, ev.Model, day)
+		index := p.Rollover.Index(datamodel.IndexName(prefix, ev.Model, day))
 		isFull, asked := full[index]
 		if !asked && hasUnknown(ev.Fields) {
 			isFull = p.mappingFull(ctx, index)
@@ -590,39 +611,13 @@ func (p *Pipeline) warn(kind, msg string, args ...any) {
 // sender should retry shortly (Fluent Bit does on a 503).
 var ErrBusy = errors.New("Signalith is busy writing other events; send again in a few seconds")
 
-// Admit waits up to wait for one of MaxConcurrent ingest slots and returns
-// the function that frees it, or ErrBusy. Take a slot once the request
-// body has arrived (see ReadBody) and hold it while the body is decoded
-// and written: that bounds the memory and OpenSearch writes ingest uses
-// however many agents send at once, and a slow sender cannot hold a slot.
-func (p *Pipeline) Admit(ctx context.Context, wait time.Duration) (func(), error) {
-	p.slotsMu.Lock()
-	if p.slots == nil {
-		n := p.MaxConcurrent
-		if n <= 0 {
-			n = 8
-		}
-		p.slots = make(chan struct{}, n)
-	}
-	slots := p.slots
-	p.slotsMu.Unlock()
-	release := func() { <-slots }
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	default:
-	}
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	case <-t.C:
-		return nil, ErrBusy
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
+// DefaultMaxConcurrent is how many ingest requests are decoded and written
+// at once when Pipeline.MaxConcurrent is not set. Each request waits on its
+// bulk write to OpenSearch, so too few slots leave both the server's CPU
+// and OpenSearch idle: in the lab load test 8 slots held one 2-core server
+// to about 11,000 events a second with OpenSearch mostly idle. The bodies
+// those requests hold stay capped by MaxReceiving whatever this is.
+const DefaultMaxConcurrent = 32
 
 // Document returns the OpenSearch document for an event, dropping empty
 // values so searches like user=* only match real values. The event time,
@@ -861,6 +856,12 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 		ev = ParseO365(r)
 	case tag == GCPTag || strings.HasPrefix(tag, GCPTag+".") || IsGCPRecord(r):
 		ev = ParseGCP(r)
+	case tag == OktaTag || strings.HasPrefix(tag, OktaTag+".") || IsOktaRecord(r):
+		ev = ParseOkta(r)
+	case isKubernetesTag(tag) || IsKubernetesRecord(r):
+		ev = ParseKubernetes(kubeLine(r))
+	case tag == GitHubTag || strings.HasPrefix(tag, GitHubTag+".") || githubSniffTag(tag) && IsGitHubRecord(r):
+		ev = ParseGitHub(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)
 	case strings.HasPrefix(tag, "linux.clamav"):
