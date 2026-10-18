@@ -230,8 +230,11 @@ if [ -n "$vol" ] && ! mountpoint -q /var/lib/opensearch; then
   mount /var/lib/opensearch
 fi
 if ! dpkg -s opensearch >/dev/null 2>&1; then
-  curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   series="${VERSION%%.*}.x"
+  # OpenSearch 3 packages are signed with a newer release key than 2's.
+  key=opensearch-release.pgp
+  [ "$series" != 2.x ] || key=opensearch.pgp
+  curl -fsSL "https://artifacts.opensearch.org/publickeys/$key" | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   # No demo security settings: the lab's own are put in place below. The
