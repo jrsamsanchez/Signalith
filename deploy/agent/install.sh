@@ -636,7 +636,11 @@ osquery_install() {
 # configuration: Signalith is its management server, and its enroll
 # secret is the agent token. It runs while the flags file exists, in a
 # service of its own because it reads the whole computer, which the
-# agent's narrower service may not.
+# agent's narrower service may not. Anything in the agent's service could
+# write the flags file, so before osquery starts, the agent program checks
+# it here, as root outside that service, and osquery runs with the
+# checked copy in a folder only this service can write. Extensions stay
+# off whatever the file says.
 [Unit]
 Description=osquery for the Signalith Agent
 Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md
@@ -645,7 +649,10 @@ After=network-online.target
 ConditionPathExists=$CONF_DIR/osquery.flags
 
 [Service]
-ExecStart=$OSQUERYD --flagfile=$CONF_DIR/osquery.flags
+RuntimeDirectory=signalith-osquery
+RuntimeDirectoryMode=0700
+ExecStartPre=$PROGRAM osquery-flags $CONF_DIR/osquery.flags /run/signalith-osquery/osquery.flags
+ExecStart=$OSQUERYD --flagfile=/run/signalith-osquery/osquery.flags --disable_extensions=true
 Restart=always
 RestartSec=10
 UMask=0077

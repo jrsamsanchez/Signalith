@@ -30,7 +30,9 @@ import (
 // reading files, may not, and Fluent Bit stays in that narrow service. A
 // path unit restarts osquery's service whenever the agent changes the
 // flags file, and the service runs only while the file exists; the agent
-// asks systemd how it is.
+// asks systemd how it is. That service checks the file again before
+// osquery starts (CheckOsqueryFlags), since anything in the agent's
+// service could have written it.
 
 // osqueryCollector is what runs osquery: a proc, or a unitProc on Linux.
 type osqueryCollector interface {
@@ -310,4 +312,43 @@ func (u *unitProc) check(ctx context.Context) {
 	default:
 		u.setState(agentproto.StateFailed, "its service "+u.unit+" is "+active+"; "+logs)
 	}
+}
+
+// CheckOsqueryFlags checks an osquery flags file as osquery's own
+// service starts, outside the agent's sandbox (signalith-agent
+// osquery-flags, in ExecStartPre), and returns the checked copy that
+// osquery runs with. Anything in the agent's service can write the file,
+// Fluent Bit included, so the agent's own check is not enough: each line
+// must be a flag a server may give (agentproto.OsqueryFlagAllowed) or
+// one of the agent's own, with the very value the agent writes.
+func CheckOsqueryFlags(p Paths, text string) (string, error) {
+	own := map[string]bool{}
+	for _, f := range p.localOsqueryFlags(true) {
+		own[f] = true
+	}
+	var keep []string
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !own[line] && !agentproto.OsqueryFlagAllowed(line) {
+			name, _, _ := strings.Cut(line, "=")
+			return "", fmt.Errorf("line %d of osquery's flags (%.60q) is not a flag the agent writes, so osquery was not started", i+1, name)
+		}
+		keep = append(keep, line)
+	}
+	if !containsLine(keep, "--disable_extensions=true") {
+		return "", errors.New("osquery's flags do not turn extensions off, so osquery was not started")
+	}
+	return strings.Join(keep, "\n") + "\n", nil
+}
+
+func containsLine(lines []string, s string) bool {
+	for _, l := range lines {
+		if l == s {
+			return true
+		}
+	}
+	return false
 }

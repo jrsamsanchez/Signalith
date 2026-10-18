@@ -73,6 +73,9 @@ func TestOsqueryFlagAllowed(t *testing.T) {
 		"--database_path=/tmp/x":               false,
 		"tls_hostname=x":                       false,
 		"--tls_hostname=a\x00b":                false,
+		"--utc=true --extensions_autoload=/x":  false,
+		"--utc=true\t--x=/y":                   false,
+		"--tls_hostname=[fd00::5]:7779":        true,
 		"":                                     false,
 	} {
 		if got := OsqueryFlagAllowed(line); got != want {

@@ -107,7 +107,8 @@ that folder and prints the commands instead of running them.
   comes from osquery's own signed package repository on Linux, its signing key pinned the
   same way; on Windows the script downloads the osquery MSI version it pins and installs
   it only when its Authenticode signature is valid (or its SHA-256 is the one given with
-  `-OsquerySha256`). Sysmon is
+  `-OsquerySha256`); checking it against a SHA-256 in Signalith's signed content updates
+  comes with signed agent updates, as for Fluent Bit's zip. Sysmon is
   downloaded from Microsoft and used only when Microsoft's signature on it is valid. The
   agent program comes from your Signalith server, and the script checks its SHA-256
   against the one Signalith gives with it.
@@ -131,7 +132,10 @@ that folder and prints the commands instead of running them.
   its folder or the one above it is not owned by SYSTEM or Administrators), and Fluent Bit and osquery run in a job object, so they never outlive the
   agent. On Linux osquery runs in a service of its own, `signalith-osquery`, because it
   reads the whole computer, which the agent's fenced-in service may not: Fluent Bit,
-  which reads log lines anyone can write to, stays fenced in.
+  which reads log lines anyone can write to, stays fenced in. Before osquery starts, its
+  service checks the settings the agent wrote, outside the agent's service, and osquery
+  runs with the checked copy with extensions off, so nothing in the agent's service can
+  hand osquery more.
 
 ## On the computer
 

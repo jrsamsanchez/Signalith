@@ -260,3 +260,27 @@ func TestUnitProc(t *testing.T) {
 	u.set(nil)
 	check(agentproto.StateOff, "")
 }
+
+// osquery's service checks the flags file again, outside the agent's
+// sandbox: only the flags the agent writes pass.
+func TestCheckOsqueryFlags(t *testing.T) {
+	p := testPaths(t)
+	good, _ := p.osqueryFlagsFile(&agentproto.Config{CA: "x", Osquery: &agentproto.Osquery{Flags: "--tls_hostname=siem:7779\n--utc\n"}})
+	out, err := CheckOsqueryFlags(p, good)
+	if err != nil || !strings.Contains(out, "--tls_hostname=siem:7779\n") || strings.Contains(out, "#") {
+		t.Fatalf("the agent's own file: %v\n%s", err, out)
+	}
+	for name, bad := range map[string]string{
+		"extensions":      good + "--extensions_autoload=/var/lib/signalith-agent/x.ext\n",
+		"extensions on":   strings.Replace(good, "--disable_extensions=true", "--disable_extensions=false", 1),
+		"extensions kept": strings.Replace(good, "--disable_extensions=true\n", "", 1),
+		"other secret":    strings.Replace(good, "--enroll_secret_path="+p.tokenFile(), "--enroll_secret_path=/tmp/x", 1),
+		"unknown":         good + "--logger_path=/tmp\n",
+		"space":           good + "--utc=true --extensions_autoload=/x\n",
+		"not a flag":      good + "extensions_autoload=/x\n",
+	} {
+		if _, err := CheckOsqueryFlags(p, bad); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

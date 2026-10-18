@@ -359,7 +359,9 @@ func TestAgentScriptDryRunOsquery(t *testing.T) {
 			}
 			unit := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-osquery.service"))
 			for _, want := range []string{"ConditionPathExists=/etc/signalith-agent/osquery.flags\n",
-				"ExecStart=/opt/osquery/bin/osqueryd --flagfile=/etc/signalith-agent/osquery.flags\n", "NoNewPrivileges=yes\n", "Restart=always\n"} {
+				"ExecStartPre=/usr/local/sbin/signalith-agent osquery-flags /etc/signalith-agent/osquery.flags /run/signalith-osquery/osquery.flags\n",
+				"ExecStart=/opt/osquery/bin/osqueryd --flagfile=/run/signalith-osquery/osquery.flags --disable_extensions=true\n",
+				"RuntimeDirectoryMode=0700\n", "NoNewPrivileges=yes\n", "Restart=always\n"} {
 				if !strings.Contains(unit, want) {
 					t.Errorf("osquery unit has no %q:\n%s", want, unit)
 				}

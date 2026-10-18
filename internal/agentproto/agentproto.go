@@ -101,6 +101,11 @@ var osqueryFlagNames = map[string]bool{
 	"disable_events": true, "enable_file_events": true, "enable_ntfs_event_publisher": true, "utc": true,
 }
 
+// osqueryFlagValue is what a value of those flags may hold: a host and
+// port, a route, a number or true; no spaces, which could start another
+// flag.
+var osqueryFlagValue = regexp.MustCompile(`^[A-Za-z0-9._:/\[\]-]*$`)
+
 // OsqueryFlagAllowed says whether a server may give osquery the flag
 // line (--name or --name=value).
 func OsqueryFlagAllowed(line string) bool {
@@ -109,7 +114,7 @@ func OsqueryFlagAllowed(line string) bool {
 		return false
 	}
 	name, value, _ := strings.Cut(name, "=")
-	return osqueryFlagNames[name] && !strings.ContainsAny(value, "\x00\r\n")
+	return osqueryFlagNames[name] && osqueryFlagValue.MatchString(value)
 }
 
 // Status is what an agent reports: itself and each collector it runs.
