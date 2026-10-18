@@ -41,19 +41,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows = out
 	case *query.Sort:
-		sort.SliceStable(res.Rows, func(i, j int) bool {
-			for _, k := range c.Keys {
-				cmp := compareValues(res.Rows[i][k.Field], res.Rows[j][k.Field])
-				if cmp == 0 {
-					continue
-				}
-				if k.Desc {
-					return cmp > 0
-				}
-				return cmp < 0
-			}
-			return false
-		})
+		sortRows(res.Rows, c.Keys)
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -130,7 +118,10 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Rex:
 		return applyRex(ctx, res, c)
 	case *query.Dedup:
-		return applyDedup(ctx, res, c)
+		if err := applyDedup(ctx, res, c); err != nil {
+			return err
+		}
+		sortRows(res.Rows, c.SortBy)
 	case *query.Fillnull:
 		applyFillnull(res, c)
 	case *query.EventStats:
@@ -191,6 +182,38 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		return applyContingency(ctx, res, c)
 	case *query.Format:
 		return applyFormat(ctx, res, c)
+	case *query.Return:
+		return applyReturn(ctx, res, c)
+	case *query.MakeContinuous:
+		return applyMakeContinuous(ctx, res, c)
+	case *query.Geostats:
+		return applyGeostats(ctx, res, c)
+	case *query.Extract:
+		return applyExtract(ctx, res, c)
+	case *query.Outlier:
+		return applyOutlier(ctx, res, c)
+	case *query.Gauge:
+		return applyGauge(ctx, res, c)
+	case *query.Timewrap:
+		return applyTimewrap(ctx, res, c)
+	case *query.Cluster:
+		return applyCluster(ctx, res, c)
+	case *query.XPath:
+		return applyXPath(ctx, res, c)
+	case *query.Abstract:
+		return applyAbstract(ctx, res, c)
+	case *query.AnomalyDetection:
+		return applyAnomalyDetection(ctx, res, c)
+	case *query.Correlate:
+		return applyCorrelate(ctx, res, c)
+	case *query.Predict:
+		return applyPredict(ctx, res, c)
+	case *query.SetFields:
+		return applySetFields(ctx, res, c)
+	case *query.KMeans:
+		return applyKMeans(ctx, res, c)
+	case *query.Highlight:
+		// The results view marks terms itself; the rows stay as they are.
 	case *query.MVExpand:
 		return applyMVExpand(ctx, res, c)
 	case *query.MakeMV:
@@ -790,4 +813,24 @@ func checkPatterns(q *query.Query) error {
 		}
 	}
 	return err
+}
+
+// sortRows sorts rows by keys, keeping the order of rows that tie.
+func sortRows(rows []Row, keys []query.SortKey) {
+	if len(keys) == 0 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, k := range keys {
+			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			if cmp == 0 {
+				continue
+			}
+			if k.Desc {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+		return false
+	})
 }

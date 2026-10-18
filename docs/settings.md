@@ -102,17 +102,31 @@ copy, they get the setting when a server starts running the background jobs.
 Copies someone set on them by hand in OpenSearch are kept.
 
 **Shards**, in the same card, is how many primary shards each new day's events get,
-per data model. It is `1` unless you change it, which suits a few GB a day. When the
-busiest data model, often Endpoint, stores tens of GB a day, give it more: about one
-shard per OpenSearch data node, so a day is spread over the nodes and no shard grows
-past about 50 GB, which is where OpenSearch slows down. Up to 64, and never more than
-the number of OpenSearch data nodes: Signalith uses one per data node when you ask for
-more. That limit is there because OpenSearch refuses new indices once a node holds
-1,000 shards (`cluster.max_shards_per_node`), and each day adds an index per data
-model, so too many shards would stop new events at the start of a day. A change applies
-to the next day's events after a restart; days already stored keep the shards they
-have, and a day restored from an archive gets the current setting. Findings,
-investigations and threat intel always have one shard; they are small.
+per data model. It is automatic unless you change it: one per OpenSearch data node, up
+to 8, so every node writes and merges a share of each day instead of one node doing a
+whole day's merges. On one node that is one shard. Enter a number to fix it, up to 64;
+Signalith never uses more than the number of OpenSearch data nodes. That limit is there
+because OpenSearch refuses new indices once a node holds 1,000 shards
+(`cluster.max_shards_per_node`), and each day adds an index per data model, so too many
+shards would stop new events at the start of a day. For the same reason, automatic
+gives one shard per data model while OpenSearch already holds more than half the
+shards it allows, and logs a warning saying so. A change applies to the next day's
+events after a restart (with automatic, a data node added also counts within a few
+minutes); days already stored keep the shards they have, and a day restored from an
+archive gets the current setting. Findings, investigations and threat intel always
+have one shard; they are small.
+
+**Rollover size**, in the same card, keeps shards from growing without bound on a busy
+day. Once a day's index of one data model holds 40 GB per primary shard (or the size
+you enter, from 10 to 200 GB), that day's events continue in a new index with `-2`
+after the day, as in `signalith-network-2026.10.17-2`, then `-3`, and so on. Shards
+of 30 to 50 GB are what OpenSearch recommends for logs: a much larger shard merges
+ever larger files while it is written, which slows storing events with the CPUs
+mostly idle, and takes hours to move or recover. Searches, summaries, retention,
+cold storage and the archive treat every part as that day; each part is its own
+index on the Data retention page. Each server checks the size of the days being
+written every minute. An event sent again after its day rolled over is stored again
+in the new part rather than counted as a duplicate.
 
 ## HTTPS
 
@@ -428,7 +442,7 @@ change off the page.
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. On servers that share their settings, `signalith cluster apply` renames it (see [apply](cluster-cli.md#apply)). |
 | `auth.ldap` | The Users page sets up directory sign-in. |
 | `auth.oidc`, `auth.saml`, `auth.scim` | The **Single sign-on** tab of Settings; see [sso.md](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
-| `auth.users_file`, `intel.feeds_file`, `notify.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
+| `auth.users_file`, `intel.feeds_file`, `notify.file`, `ticketing.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |
 

@@ -3,8 +3,8 @@
 // so a server can take newer rules without a new Signalith release.
 //
 // A bundle is a gzipped tar file holding content.json (Manifest) and
-// packs/<name>/ with each pack's manifest, rules, macros and licence, as
-// in the source tree but without the test events. Its signature is an
+// packs/<name>/ with each pack's manifest, rules, macros, lookup tables
+// and licence, as in the source tree but without the test events. Its signature is an
 // Ed25519 signature of the whole file, in a text file next to it. A server
 // only installs a bundle signed by a key in TrustedKeys, in a format it
 // reads, and newer than the one it has.
@@ -194,7 +194,7 @@ func Build(packsDir string, now time.Time) ([]byte, *Manifest, error) {
 		m.Packs = append(m.Packs, PackInfo{Name: d.Name(), Version: pm.Version, Rules: len(pm.Rules)})
 		files = append(files, file{"packs/" + d.Name() + "/pack.yaml", manifest})
 		var names []string
-		for _, pat := range []string{"rules/*.yml", "macros/*.yml", "LICENSE*"} {
+		for _, pat := range []string{"rules/*.yml", "macros/*.yml", "lookups/*.yml", "lookups/*.csv", "LICENSE*"} {
 			got, err := filepath.Glob(filepath.Join(dir, filepath.FromSlash(pat)))
 			if err != nil {
 				return nil, nil, err

@@ -25,7 +25,7 @@ var (
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
 		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "intel", "posture",
 		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
-		"endpoints", "agents", "agent-tokens", "users", "baselines",
+		"endpoints", "agents", "agent-tokens", "agent", "users", "ticketing", "baselines",
 	}
 	// platformResources are about the server itself, shared by every
 	// tenant: only the provider's own users may use them, and always in
@@ -36,25 +36,39 @@ var (
 	// parsers (one set that reads every tenant's records) and the chat
 	// accounts linked for the buttons in Slack and Teams messages, whose
 	// clicks the default tenant's server answers.
+	// The summaries' status lists every tenant's, so it is the provider's
+	// too.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "summaries",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,
-	// scripts): a tenant's own users could reach the provider's network
-	// with them, so only the provider's users may change them.
+	// scripts, Jira and ServiceNow): a tenant's own users could reach the
+	// provider's network with them, so only the provider's users may
+	// change them.
 	providerManaged = []string{
 		"POST /api/intel/feeds", "PUT /api/intel/feeds/{name}", "DELETE /api/intel/feeds/{name}",
 		"POST /api/intel/feeds/test", "POST /api/intel/feeds/{name}/refresh", "POST /api/intel/catalog",
 		"POST /api/intel/taxii/collections", "PUT /api/notify", "POST /api/notify/test",
 		"PUT /api/respond/config", "POST /api/respond/test",
+		"PUT /api/ticketing", "POST /api/ticketing/test",
 	}
 	// tenantVisible are routes about the server every user may use, the
 	// same for every tenant: the web UI asks every user which cluster
 	// features are on.
 	tenantVisible = []string{"GET /api/cluster/features"}
 )
+
+// webUIPage reports whether a route outside /api/ is the web UI's page or
+// its versioned files, which are the same for every tenant.
+func webUIPage(pattern string) bool {
+	_, path, ok := strings.Cut(pattern, " ")
+	if !ok {
+		path = pattern
+	}
+	return path == "/" || strings.HasPrefix(path, "/v/")
+}
 
 // routeResource returns the resource of a route pattern, and false for a
 // path outside /api/.
@@ -74,15 +88,18 @@ func routeResource(pattern string) (string, bool) {
 // routeScope classifies a route pattern: platform (provider users only,
 // in the default tenant's server), managed (a tenant's data that only
 // provider users may change), shared (the same for everyone: the web UI's
-// files and tenantVisible), else the request's tenant's. An /api/ route of
-// a resource in no list is a platform route.
+// pages and files, and tenantVisible), else the request's tenant's. A
+// route of no list, inside /api/ or out, is a platform route.
 func routeScope(pattern string) (platform, managed, shared bool) {
 	if slices.Contains(tenantVisible, pattern) {
 		return false, false, true
 	}
 	res, ok := routeResource(pattern)
 	if !ok {
-		return false, false, true
+		if webUIPage(pattern) {
+			return false, false, true
+		}
+		return true, false, false
 	}
 	if !slices.Contains(tenantResources, res) {
 		return true, false, false
@@ -176,10 +193,15 @@ func (s *Server) dispatchTo(rt route, p *principal) (t *Server, other bool) {
 // does): the agent is told to send again later, as its batch would
 // otherwise be refused and lost.
 func (s *Server) agentTenant(r *http.Request) (t *Server, wait bool) {
+	return s.tokenTenant(bearerToken(r))
+}
+
+// tokenTenant is agentTenant for an agent token however the request
+// carries it.
+func (s *Server) tokenTenant(tok string) (t *Server, wait bool) {
 	if s.TenantID != "" || s.TenantRuntime == nil {
 		return nil, false
 	}
-	tok := bearerToken(r)
 	if tok == "" {
 		return nil, false
 	}
@@ -349,6 +371,25 @@ type tenantView struct {
 	Name     string `json:"name"`
 	Disabled bool   `json:"disabled,omitempty"`
 	Default  bool   `json:"default,omitempty"`
+	// Created and CreatedBy are listed for Settings > Tenants.
+	Created   *time.Time `json:"created,omitempty"`
+	CreatedBy string     `json:"created_by,omitempty"`
+}
+
+// tenantsOff says why tenants cannot be added or changed here now, the
+// way tenantsWritable refuses it, or "" when they can: Settings > Tenants
+// shows it before anyone tries.
+func (s *Server) tenantsOff() string {
+	switch {
+	case s.Tenants == nil:
+		return "the list of tenants cannot be read; see the server's log"
+	case s.TenantRuntime == nil:
+		return "this server cannot run tenants"
+	}
+	if err := s.TenantRuntime.Ready(); err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 // handleListTenants lists the tenants a provider user may switch to, the
@@ -364,10 +405,19 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, t := range ts {
-			list = append(list, tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled})
+			v := tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled, CreatedBy: t.CreatedBy}
+			if !t.Created.IsZero() {
+				v.Created = &t.Created
+			}
+			list = append(list, v)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tenants": list, "active": p.Active, "enabled": len(list) > 1})
+	out := map[string]any{"tenants": list, "active": p.Active, "enabled": len(list) > 1}
+	// "off" is for the admins who add and change tenants.
+	if p.runsServer() {
+		out["off"] = s.tenantsOff()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleSwitchTenant moves the provider user's session to another tenant.

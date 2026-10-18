@@ -35,8 +35,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,524 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,185 from Splunk Security Content,
+- Content packs of tested community rules: 2,560 from
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,283 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 - [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain
@@ -64,8 +64,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
-  with one line on Linux, Windows or Docker, shared settings, users and detections, one
-  certificate authority, rolling upgrades, draining and removing a server, and
+  with one line on Linux, Windows or Docker, shared settings, users and detections,
+  [detections spread over the servers](servers.md#the-background-jobs) with each server's
+  detection health on the Servers page, one certificate authority, rolling upgrades, draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
   the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
@@ -84,11 +85,11 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   activity log through an Event Hub and the OpenTelemetry Collector, with 108 SigmaHQ and
   30 Splunk Entra ID rules.
 - [Microsoft 365](microsoft-365.md) audit log, read from Microsoft with no agent, with 17
-  SigmaHQ and 19 Splunk Microsoft 365 rules.
-- [Okta](okta.md) System Log, read from Okta with no agent, with 19 SigmaHQ and 12 Splunk
+  SigmaHQ and 54 Splunk Microsoft 365 rules.
+- [Okta](okta.md) System Log, read from Okta with no agent, with 19 SigmaHQ and 13 Splunk
   Okta rules.
 - [Kubernetes audit logs](kubernetes-audit.md), posted by the API server's audit webhook or
-  tailed from its log file, with 15 SigmaHQ and 11 Splunk Kubernetes rules.
+  tailed from its log file, with 15 SigmaHQ and 13 Splunk Kubernetes rules.
 - [GitHub audit log](github-audit-log.md) of GitHub Enterprise Cloud and Server, streamed
   through an Azure event hub or sent by a script, with 12 SigmaHQ and 18 Splunk GitHub rules.
 - [Google Cloud](google-cloud.md) audit logs through a log sink, Pub/Sub and the
@@ -122,6 +123,13 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
+
+**One agent per computer**
+:   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
+    what to collect, so nobody edits a Fluent Bit or osquery configuration. Linux,
+    Windows (with osquery and optional Sysmon) and macOS (with osquery) are in, and what
+    each group of computers collects is chosen on the Endpoints page. Signed updates with
+    automatic rollback are built, and switch on once the release key is set up.
 
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and

@@ -1,0 +1,651 @@
+{
+ "3cx_ioc_domains": [
+  "domain",
+  "isIOC",
+  "Description"
+ ],
+ "ace_access_rights_lookup": [
+  "access_rights_string",
+  "access_rights_value"
+ ],
+ "ace_flag_lookup": [
+  "flag_string",
+  "flag_value"
+ ],
+ "ace_type_lookup": [
+  "ace_type_string",
+  "ace_type_value"
+ ],
+ "advanced_audit_policy_guids": [
+  "Category",
+  "SubCategory",
+  "GUID"
+ ],
+ "api_call_by_user_baseline": [
+  "_key",
+  "arn",
+  "latestCount",
+  "numDataPoints",
+  "avgApiCalls",
+  "stdevApiCalls"
+ ],
+ "applockereventcodes": [
+  "EventCode",
+  " Description"
+ ],
+ "asr_rules": [
+  "ID",
+  "ASR_Rule"
+ ],
+ "attacker_tools": [
+  "attacker_tool_names",
+  "description"
+ ],
+ "aws_service_accounts": [
+  "identity"
+ ],
+ "baseline_blocked_outbound_connections": [
+  "src_ip",
+  "numDataPoints",
+  "latestCount",
+  "avgBlockedConnections",
+  "stdevBlockedConnections"
+ ],
+ "brandMonitoring_lookup": [
+  "domain",
+  "domain_abuse"
+ ],
+ "browser_app_list": [
+  "browser_process_name",
+  "browser_object_path",
+  "isAllowed"
+ ],
+ "browser_process_and_path": [
+  "browser_process_name",
+  "browser_process_path",
+  "is_valid_browser_path"
+ ],
+ "builtin_groups_lookup": [
+  "builtin_group_string",
+  "builtin_group_name"
+ ],
+ "char_conversion_matrix": [
+  "_mkv_child",
+  "_timediff",
+  "ascii",
+  "base64bin",
+  "base64char",
+  "bin",
+  "dec",
+  "hex"
+ ],
+ "cisco_secure_firewall_appid_remote_mgmt_and_desktop_tools": [
+  "appName",
+  "appName1",
+  "appDescription",
+  "category"
+ ],
+ "cisco_secure_firewall_filetype_lookup": [
+  "Id",
+  "Name",
+  "Description"
+ ],
+ "cisco_snort_ids_to_threat_mapping": [
+  "threat",
+  "signature_id",
+  "category",
+  "message"
+ ],
+ "cloud_instances_enough_data": [
+  "_key",
+  "filter",
+  "enough_data"
+ ],
+ "decommissioned_buckets": [
+  "_key",
+  "bucketName",
+  "hosts",
+  "firstEvent",
+  "lastEvent",
+  "events",
+  "policy_details",
+  "website_details",
+  "accountIds",
+  "userARNs",
+  "awsRegions"
+ ],
+ "detection_subcategory_map": [
+  "ai_system",
+  "data_sources",
+  "detection_name",
+  "detection_status",
+  "detection_type",
+  "analytic_stories",
+  "rmf_function",
+  "subcategory_ids",
+  "mapping_confidence",
+  "mapping_source",
+  "mapping_reason"
+ ],
+ "discovered_dns_records": [
+  "count",
+  "domain",
+  "type",
+  "query",
+  "answer"
+ ],
+ "domain_admins": [
+  "username"
+ ],
+ "domain_controllers": [
+  "sAMAccountName",
+  "isDC"
+ ],
+ "domains": [
+  "domain",
+  "isValidDomain"
+ ],
+ "dynamic_dns_providers_default": [
+  "dynamic_dns_domains",
+  " isDynDNS_default"
+ ],
+ "dynamic_dns_providers_local": [
+  "dynamic_dns_domains",
+  " isDynDNS_local"
+ ],
+ "hijacklibs": [
+  "library",
+  "islibrary"
+ ],
+ "hijacklibs_loaded": [
+  "islibrary",
+  "library",
+  "excludes",
+  "ttp",
+  "comment"
+ ],
+ "images_to_repository": [
+  "image",
+  " repository"
+ ],
+ "is_net_windows_file": [
+  "filename",
+  "originalFileName",
+  "netFile"
+ ],
+ "is_nirsoft_software": [
+  "filename",
+  "nirsoftFile"
+ ],
+ "is_suspicious_file_extension_lookup": [
+  "file_name",
+  "suspicious"
+ ],
+ "is_windows_system_file": [
+  "filename",
+  "systemFile"
+ ],
+ "k8s_container_network_io_baseline": [
+  "_key",
+  "avg_outbound_network_io",
+  "avg_inbound_network_io",
+  "stdev_outbound_network_io",
+  "stdev_inbound_network_io",
+  "count",
+  "last_seen"
+ ],
+ "k8s_container_network_io_ratio_baseline": [
+  "_key",
+  "avg_outbound_network_io",
+  "avg_inbound_network_io",
+  "stdev_outbound_network_io",
+  "stdev_inbound_network_io",
+  "count",
+  "last_seen"
+ ],
+ "k8s_process_resource_baseline": [
+  "_key",
+  "host.name",
+  "k8s.cluster.name",
+  "k8s.node.name",
+  "process.executable.name",
+  "avg_process.cpu.time",
+  "avg_process.cpu.utilization",
+  "avg_process.disk.io",
+  "avg_process.disk.operations",
+  "avg_process.memory.usage",
+  "avg_process.memory.utilization",
+  "avg_process.memory.virtual",
+  "avg_process.threads",
+  "stdev_process.cpu.time",
+  "stdev_process.cpu.utilization",
+  "stdev_process.disk.io",
+  "stdev_process.disk.operations",
+  "stdev_process.memory.usage",
+  "stdev_process.memory.utilization",
+  "stdev_process.memory.virtual",
+  "stdev_process.threads"
+ ],
+ "k8s_process_resource_ratio_baseline": [
+  "_key",
+  "avg_cpu:mem",
+  "stdev_cpu:mem",
+  "avg_cpu:disk",
+  "stdev_cpu:disk",
+  "avg_mem:disk",
+  "stdev_mem:disk",
+  "avg_cpu:threads",
+  "stdev_cpu:threads",
+  "avg_disk:threads",
+  "avg_disk:threads",
+  "count",
+  "last_seen"
+ ],
+ "legit_domains": [
+  "domain",
+  " isLegit"
+ ],
+ "linux_tool_discovery_process": [
+  "process"
+ ],
+ "local_file_inclusion_paths": [
+  "local_file_inclusion_paths",
+  " lfi_path"
+ ],
+ "lolbas_file_path": [
+  "lolbas_file_name",
+  "lolbas_file_path",
+  "description"
+ ],
+ "loldrivers": [
+  "driver_name",
+  "driver_description",
+  "is_driver"
+ ],
+ "lookup_rare_process_allow_list_default": [
+  "process",
+  "allow_list"
+ ],
+ "lookup_rare_process_allow_list_local": [
+  "process",
+  "allow_list"
+ ],
+ "lookup_uncommon_processes_default": [
+  "process_name",
+  "uncommon_default",
+  "category_default",
+  "analytic_story_default",
+  "kill_chain_phase_default",
+  "mitre_attack_default"
+ ],
+ "lookup_uncommon_processes_local": [
+  "process_name",
+  "uncommon_local",
+  "category_local",
+  "analytic_story_local",
+  "kill_chain_phase_local",
+  "mitre_attack_local"
+ ],
+ "malicious_powershell_strings": [
+  "command",
+  "toolkit",
+  "match",
+  "description"
+ ],
+ "malware_user_agents": [
+  "malware_user_agent",
+  "malware"
+ ],
+ "mandatory_job_for_workflow": [
+  "workflow_name",
+  " job_name"
+ ],
+ "mandatory_step_for_job": [
+  "job_name",
+  " step_name"
+ ],
+ "msad_guid_lookup": [
+  "displayName",
+  "guid",
+  "type"
+ ],
+ "network_acl_activity_baseline": [
+  "arn",
+  "latestCount",
+  "numDataPoints",
+  "avgApiCalls",
+  "stdevApiCalls"
+ ],
+ "nirsoft_utilities_lookup": [
+  "original_file_name",
+  "description"
+ ],
+ "nist_ai_rmf_subcategories": [
+  "function",
+  "category_id",
+  "category_text",
+  "subcategory_id",
+  "subcategory_text"
+ ],
+ "previously_seen_S3_access_from_remote_ip": [
+  "_key",
+  "bucket_name",
+  "remote_ip",
+  "earliest",
+  "latest"
+ ],
+ "previously_seen_api_calls_from_user_roles": [
+  "_key",
+  "earliest",
+  "latest",
+  "userName",
+  "eventName"
+ ],
+ "previously_seen_aws_cross_account_activity": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "requestingAccountId",
+  "requestedAccountId"
+ ],
+ "previously_seen_aws_regions": [
+  "_key",
+  "earliest",
+  "latest",
+  "awsRegion"
+ ],
+ "previously_seen_cloud_api_calls_per_user_role": [
+  "_key",
+  "user",
+  "command",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "enough_data"
+ ],
+ "previously_seen_cloud_compute_creations_by_user": [
+  "_key",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "user",
+  "enough_data"
+ ],
+ "previously_seen_cloud_compute_images": [
+  "_key",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "image_id",
+  "enough_data"
+ ],
+ "previously_seen_cloud_compute_instance_types": [
+  "_key",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "instance_type",
+  "enough_data"
+ ],
+ "previously_seen_cloud_instance_modifications_by_user": [
+  "_key",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "user",
+  "enough_data"
+ ],
+ "previously_seen_cloud_provisioning_activity_sources": [
+  "_key",
+  "src",
+  "City",
+  "Country",
+  "Region",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "enough_data"
+ ],
+ "previously_seen_cloud_regions": [
+  "_key",
+  "firstTimeSeen",
+  "lastTimeSeen",
+  "vendor_region",
+  "enough_data"
+ ],
+ "previously_seen_cmd_line_arguments": [
+  "firstTime",
+  "lastTime",
+  "process"
+ ],
+ "previously_seen_ec2_amis_lookup": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "amiID"
+ ],
+ "previously_seen_ec2_instance_types_lookup": [
+  "_key",
+  "earliest",
+  "latest",
+  "instanceType"
+ ],
+ "previously_seen_ec2_launches_by_user_lookup": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "arn"
+ ],
+ "previously_seen_ec2_modifications_by_user": [
+  "arn",
+  "firstTime",
+  "lastTime"
+ ],
+ "previously_seen_gcp_storage_access_from_remote_ip": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "bucket_name",
+  "remote_ip",
+  "operation",
+  "request_uri"
+ ],
+ "previously_seen_provisioning_activity_src": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "sourceIPAddress",
+  "City",
+  "Region",
+  "Country"
+ ],
+ "previously_seen_running_windows_services": [
+  "_key",
+  "service",
+  "firstTimeSeen",
+  "lastTimeSeen"
+ ],
+ "previously_seen_users_console_logins": [
+  "_key",
+  "firstTime",
+  "lastTime",
+  "user",
+  "src",
+  "City",
+  "Region",
+  "Country"
+ ],
+ "privileged_azure_ad_roles": [
+  "azureadrole",
+  "azuretemplateid",
+  "isprvilegedadrole",
+  "description"
+ ],
+ "prohibited_apps_launching_cmd": [
+  "prohibited_applications",
+  "isProhibited"
+ ],
+ "prohibited_processes": [
+  "app",
+  "note"
+ ],
+ "pua_named_pipes": [
+  "pua_pipe_name",
+  "tool",
+  "description",
+  "type"
+ ],
+ "pua_user_agents": [
+  "pua_user_agent",
+  "tool",
+  "description"
+ ],
+ "ransomware_extensions_lookup": [
+  "Extensions",
+  "Name"
+ ],
+ "ransomware_notes_lookup": [
+  "ransomware_notes",
+  " status"
+ ],
+ "remote_access_software": [
+  "description",
+  "remote_domain",
+  "remote_utility",
+  "remote_utility_fileinfo",
+  "remote_appid",
+  "isutility",
+  "category",
+  "comment_reference",
+  "last_update"
+ ],
+ "remote_access_software_exceptions": [
+  "_key",
+  "asset",
+  "software",
+  "exception_date",
+  "exception_ttl_days",
+  "exception",
+  "comment"
+ ],
+ "renamed_lolbas_binaries": [
+  "original_file_name",
+  "description"
+ ],
+ "renamed_popular_3rd_party_binaries": [
+  "original_file_name",
+  "description"
+ ],
+ "renamed_windows_command_interpreter_binaries": [
+  "original_file_name",
+  "description"
+ ],
+ "rmm_user_agents": [
+  "rmm_user_agent",
+  "tool"
+ ],
+ "s3_deletion_baseline": [
+  "_key",
+  "arn",
+  "latestCount",
+  "numDataPoints",
+  "avgApiCalls",
+  "stdevApiCalls"
+ ],
+ "scripting_tools_user_agents": [
+  "tool",
+  "tool_user_agent"
+ ],
+ "security_group_activity_baseline": [
+  "_key",
+  "arn",
+  "latestCount",
+  "numDataPoints",
+  "avgApiCalls",
+  "stdevApiCalls"
+ ],
+ "security_services_lookup": [
+  "service",
+  "description",
+  "category"
+ ],
+ "splunk_risky_command": [
+  "splunk_risky_command",
+  "description",
+  "vulnerable_versions",
+  "CVE"
+ ],
+ "sslbl_ssl_certificate_blacklist": [
+  "Listingdate",
+  "SHA1",
+  "Listingreason"
+ ],
+ "suspicious_c2_named_pipes": [
+  "suspicious_pipe_name",
+  "tool",
+  "description"
+ ],
+ "suspicious_c2_user_agents": [
+  "c2_user_agent",
+  "tool",
+  "description"
+ ],
+ "suspicious_named_pipes": [
+  "suspicious_pipe_name",
+  "tool",
+  "description",
+  "type"
+ ],
+ "suspicious_ports_list": [
+  "dest_port",
+  "comment",
+  "confidence",
+  "category"
+ ],
+ "suspicious_rmm_named_pipes": [
+  "suspicious_pipe_name",
+  "tool",
+  "description"
+ ],
+ "suspicious_writes_lookup": [
+  "file",
+  " note"
+ ],
+ "threat_snort_count": [
+  "threat",
+  "description",
+  "distinct_count_snort_ids"
+ ],
+ "typo_squatted_python_packages": [
+  "typosquatted_package_name",
+  "comment",
+  "package_official_url"
+ ],
+ "windows_protocol_handlers": [
+  "handler",
+  "ishandler"
+ ],
+ "windows_suspicious_services": [
+  "service_name",
+  "service_path",
+  "tool_name",
+  "tool_category",
+  "tool_type",
+  "severity",
+  "comment",
+  "reference"
+ ],
+ "windows_suspicious_tasks": [
+  "task_name",
+  "task_command",
+  "task_arguments",
+  "tool",
+  "tool_category",
+  "tool_type",
+  "link",
+  "severity",
+  "comment",
+  "reference"
+ ],
+ "zoom_first_time_child_process": [
+  "_key",
+  "dest",
+  "process_name",
+  "firstTimeSeen",
+  "lastTimeSeen"
+ ]
+}

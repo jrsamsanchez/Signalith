@@ -9,7 +9,7 @@ output "watch_setup" {
 }
 
 output "admin_password" {
-  description = "Prints the admin password (user admin) the setup chose."
+  description = "Prints the admin password (user signalithadmin) the setup chose."
   value       = "ssh root@${hcloud_server.linux["signalith-1"].ipv4_address} cat /root/lab/admin-password"
 }
 

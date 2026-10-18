@@ -229,15 +229,18 @@ secrets listed, service accounts created, sidecars patched into a deployment, an
 requests refused as unauthorized or forbidden. One, potential enumeration activity, is
 experimental and is left out.
 
-The Splunk Security Content pack has 11 Kubernetes rules: secrets read with an unusual
+The Splunk Security Content pack has 13 Kubernetes rules: secrets read with an unusual
 user agent, by an unusual group or user, privileged and host-network pods created or
 updated, cron jobs, DaemonSets and node port services created, pods created in the
-default and system namespaces, suspicious images pulled, and create requests refused.
+default and system namespaces, suspicious images pulled, create requests refused, and
+scanning: more than 5 refused anonymous requests from one address. The two scanning
+rules group by the address's country and city (`iplocation`), so they need a GeoIP
+database an admin adds (see [GeoIP database for iplocation](lookups.md#geoip-database-for-iplocation));
+without one each run fails with an error the detection shows.
 The rules that read an allowed list (`kube_allowed_user_agents` and the like) ship with
 Splunk's sample values; set your own in the rule's search after turning it on. Of
-Splunk's 13 production rules that read the audit log, 2 are left out because they need
-`iplocation` to name a country and city, which Signalith has no database for, and one
-because it also compares the country; one more is experimental (`REPORT.md` in each pack
+Splunk's production rules that read the audit log, one is left out because it compares
+the country after filling every empty field (`fillnull`); one more is experimental (`REPORT.md` in each pack
 lists every rule left out and why). Turn them on from each pack's page like any other
 rules.
 

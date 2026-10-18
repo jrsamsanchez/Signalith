@@ -46,7 +46,7 @@ sign in, and what each may do), and Signalith starts after it. If the first comm
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 The second command shows the admin password. Open https://localhost:9000 and sign
-in as `admin` with it; since Signalith made that password, you then choose your own
+in as `signalithadmin` with it; since Signalith made that password, you then choose your own
 before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
@@ -180,7 +180,7 @@ same):
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
 4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. You are asked to choose your own password before anything else (an install
+   before: `admin` on an install made before 0.3.1, `signalithadmin` on a newer one. You are asked to choose your own password before anything else (an install
    that still uses the first password Signalith made is asked once, after any upgrade,
    however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
@@ -377,6 +377,7 @@ Supported sources in Phase 1:
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
 | Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](docs/detections.md#powershell-script-blocks)) | Script |
+| PowerShell module logging: 4103 (same channel), and the Windows PowerShell log: 400, 403, 600, 800 (see [Detections](docs/detections.md#powershell-module-logging-and-the-windows-powershell-log)) | Script; Other |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
@@ -517,8 +518,8 @@ New users get a temporary password they replace at their first sign-in. People c
 also sign in with their **Active Directory or LDAP** account, with their role coming
 from their groups; set it up and test it on the same page. Single sign-on with
 **Microsoft Entra ID, Okta, Google, Keycloak** or another OpenID Connect provider is set
-up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The `admin` account from
-`signalith.yaml` stays as a break-glass account that always works. See
+up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The built-in admin from
+`signalith.yaml` (`signalithadmin`) stays as a break-glass account that always works. See
 [docs/users.md](docs/users.md).
 
 ### HTTPS
@@ -661,16 +662,17 @@ are counted for each person's own address, not the proxy's. See
 | `opensearch.tls_skip_verify` | `false` | Skip OpenSearch certificate checks. Lab use only: anyone on the path can read and change traffic; Signalith warns while it is on |
 | `opensearch.proxy` | none | Proxy for OpenSearch traffic (`http://`, `https://` or `socks5://`; or `SIGNALITH_OPENSEARCH_PROXY`). `HTTP_PROXY` and `HTTPS_PROXY` are never used for OpenSearch; when one is set and OpenSearch cannot be reached, the error says so |
 | `opensearch.allow_insecure_http` | `false` | Allow `username`/`password` over plain http to another machine. Off, such a config is refused with an explanation |
-| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD` |
+| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD`, with `-2` and so on after the day for the parts of a busy day |
 | `opensearch.replicas` | `auto` | Extra copies of each new day's events on other OpenSearch nodes: `auto` (one copy once OpenSearch has more than one node, none on one node) or a whole number such as `0`. Days already stored keep theirs; applies after a restart |
-| `opensearch.shards` | `1` | Primary shards for each new day's events, per data model, up to 64 and at most one per OpenSearch data node. One suits a few GB a day; give more, about one per OpenSearch data node, when the busiest data model stores tens of GB a day. Days already stored keep theirs; applies after a restart |
+| `opensearch.shards` | automatic | Primary shards for each new day's events, per data model. Automatic (`0` or unset) is one per OpenSearch data node, up to 8, and one while OpenSearch holds more than half the shards it allows. A number fixes it, up to 64 and at most one per data node. Days already stored keep theirs; applies after a restart |
+| `opensearch.rollover_gb` | `40` | GB per primary shard after which a day's index of a data model continues in a new one (`<prefix>-<datamodel>-YYYY.MM.DD-2`, and so on), from 10 to 200. Applies after a restart |
 | `search.default_earliest` | `-24h` | Time range when a query sets none |
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Folder for archived days |
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](#data-retention) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
-| `auth.admin_user`, `auth.admin_password_hash` | `admin` | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
+| `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
@@ -700,6 +702,7 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
 | `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
+| `ticketing.file` | `<lookups.dir>/tickets.yaml` | Where Jira and ServiceNow connections set on the **Ticketing** page are saved, with their API tokens, passwords and client secrets encrypted (file mode 0600). See [docs/ticketing.md](docs/ticketing.md) |
 | `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
@@ -718,7 +721,7 @@ Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_OIDC_CLIENT_SECRET` (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_TICKETING_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,
 `SIGNALITH_NODE_URL`, and `SIGNALITH_LEADER_ELIGIBLE`, `true` or `false`, for `cluster.leader_eligible`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
@@ -900,8 +903,8 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,524 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,185
+- **Content packs** add community rules, off until you turn them on: 2,560 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,283
   Windows, Linux, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With

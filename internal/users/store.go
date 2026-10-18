@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 )
@@ -151,6 +152,46 @@ func ValidUsername(name string) error {
 	return nil
 }
 
+// ErrTenantSuffix refuses a provider user whose name ends like a tenant
+// user's.
+var ErrTenantSuffix = errors.New("names ending in @ and a word with no dot, like alice@acme, are kept for tenant users; " +
+	"use a full email address or a name without @")
+
+// TenantUsername returns the name a tenant's user is kept under: what
+// was typed with "@" and the tenant ID after it, so no tenant's user
+// can take, or find out about, a name of the provider's or of another
+// tenant. A name already ending in "@<tenant>" is kept as it is; any
+// other @ is refused.
+func TenantUsername(name, tenant string) (string, error) {
+	name = NormalizeUsername(name)
+	local, found := strings.CutSuffix(name, "@"+tenant)
+	if found && local == "" {
+		found = false
+	}
+	if !found {
+		local = name
+	}
+	if strings.Contains(local, "@") {
+		return "", fmt.Errorf("a tenant user's name cannot have @ in it: Signalith adds @%s itself", tenant)
+	}
+	full := local + "@" + tenant
+	if err := ValidUsername(full); err != nil {
+		return "", fmt.Errorf("usernames are letters, digits, dots, dashes or underscores, starting with a letter or digit, and at most %d long here", 63-len(tenant))
+	}
+	return full, nil
+}
+
+// tenantLike reports whether name ends in "@" and something that could
+// be a tenant ID (TenantUsername): names the provider's users cannot take.
+func tenantLike(name string) bool {
+	i := strings.LastIndexByte(name, '@')
+	if i < 0 {
+		return false
+	}
+	suffix := name[i+1:]
+	return suffix == tenants.Default || tenants.ValidID(suffix) == nil
+}
+
 func validName(name string) error {
 	if len([]rune(name)) > 100 {
 		return errors.New("keep the name under 100 characters")
@@ -177,10 +218,11 @@ func validEmail(email string) error {
 // MinPasswordLength is the shortest password Signalith accepts.
 const MinPasswordLength = 8
 
-// HashPassword returns a bcrypt hash of a password, after checking its
-// length. A password someone is choosing goes through CheckNewPassword
+// HashPassword returns a bcrypt hash of a password, normalized
+// (NormalizePassword), after checking its length. A password someone is choosing goes through CheckNewPassword
 // first.
 func HashPassword(pw string) (string, error) {
+	pw = NormalizePassword(pw)
 	if err := checkLength(pw); err != nil {
 		return "", err
 	}
@@ -190,9 +232,37 @@ func HashPassword(pw string) (string, error) {
 
 // ComparePassword reports whether pw is the password hash was made from by
 // HashPassword (or by any bcrypt tool, for a password of up to 72 bytes).
+// A hash made before passwords were normalized matches the password as it
+// was typed then, so nobody whose password has such characters is locked
+// out.
 func ComparePassword(hash, pw string) bool {
-	return hash != "" && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
+	if hash == "" {
+		return false
+	}
+	n := NormalizePassword(pw)
+	if bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(n)) == nil {
+		return true
+	}
+	return n != pw && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
 }
+
+// NormalizePassword returns pw in Unicode normalization form NFKC, as NIST
+// SP 800-63B asks, so a password typed on another keyboard or system
+// that composes accents or full-width characters differently still
+// matches. A password over maxNormalizeBytes is returned as it is: it is
+// far over MaxPasswordLength, so it is refused or cannot match, and
+// normalizing a megabyte sent to the sign-in page would cost the server
+// half a second of work.
+func NormalizePassword(pw string) string {
+	if len(pw) > maxNormalizeBytes {
+		return pw
+	}
+	return norm.NFKC.String(pw)
+}
+
+// maxNormalizeBytes is the longest password NormalizePassword changes:
+// 16 KB, many times MaxPasswordLength in any script.
+const maxNormalizeBytes = 16 << 10
 
 // bcryptLimit is the most bytes of a password bcrypt reads.
 const bcryptLimit = 72
@@ -221,7 +291,14 @@ var dummyHash = sync.OnceValue(func() []byte {
 
 // WasteTime does the work of checking a password without a user, so
 // sign-in failures take the same time whatever the reason.
-func WasteTime(pw string) { _ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw)) }
+// It checks twice where ComparePassword would.
+func WasteTime(pw string) {
+	n := NormalizePassword(pw)
+	_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(n))
+	if n != pw {
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw))
+	}
+}
 
 // GeneratePassword returns a random temporary password such as
 // "kq7m-3xhp-9tvd-w2fa": 16 characters (about 79 bits) from letters and
@@ -466,8 +543,21 @@ func (s *Store) hold() (func(), error) {
 // Create adds a local user.
 func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	name := NormalizeUsername(in.Username)
+	if in.Tenant != "" {
+		if err := tenants.ValidID(in.Tenant); err != nil {
+			return User{}, fieldError("tenant", err)
+		}
+		full, err := TenantUsername(name, in.Tenant)
+		if err != nil {
+			return User{}, fieldError("username", err)
+		}
+		name = full
+	}
 	if err := ValidUsername(name); err != nil {
 		return User{}, fieldError("username", err)
+	}
+	if in.Tenant == "" && tenantLike(name) {
+		return User{}, fieldError("username", ErrTenantSuffix)
 	}
 	if s.reserved(name) {
 		return User{}, fieldError("username", ErrReserved)
@@ -484,11 +574,6 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	}
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
-	}
-	if in.Tenant != "" {
-		if err := tenants.ValidID(in.Tenant); err != nil {
-			return User{}, fieldError("tenant", err)
-		}
 	}
 	if err := CheckNewPassword(name, in.Password); err != nil {
 		return User{}, fieldError("password", err)
@@ -812,6 +897,9 @@ func (s *Store) SeeDirectoryUser(ctx context.Context, d DirectoryUser) (User, er
 			return recordUser(r), nil
 		}
 		// Their first sign-in.
+		if tenantLike(name) {
+			return User{}, ErrTenantSuffix
+		}
 		r, err = s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Source: SourceDirectory, Name: d.Name, Email: d.Email,
 			Role: d.Role, DN: d.DN, Created: now, Updated: now, LastSignIn: &now}, Epoch: 1})
 		if errors.Is(err, ErrExists) && try < 3 {

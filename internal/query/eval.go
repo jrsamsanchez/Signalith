@@ -291,7 +291,8 @@ func lexEval(src string, base int) ([]evalTok, error) {
 		case c == ',':
 			toks = append(toks, evalTok{etComma, ",", base + i})
 			i++
-		case c >= '0' && c <= '9':
+		case c >= '0' && c <= '9', c == '.' && i+1 < len(src) && src[i+1] >= '0' && src[i+1] <= '9' && !afterValue(toks):
+			// .25 is a number where a value starts; after a value, . joins.
 			start := i
 			for i < len(src) && src[i] >= '0' && src[i] <= '9' {
 				i++
@@ -317,7 +318,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			if i < len(src) && isEvalIdentRune(src[i]) {
 				return nil, errorf(base+start, "%q is not a number or a field name; quote field names that start with a digit, like '%s'", src[start:i+1], src[start:i+1])
 			}
-			toks = append(toks, evalTok{etNum, src[start:i], base + start})
+			text := src[start:i]
+			if text[0] == '.' {
+				text = "0" + text
+			}
+			toks = append(toks, evalTok{etNum, text, base + start})
 		case c == '"' || c == '\'':
 			start := i
 			i++
@@ -370,6 +375,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			}
 			switch op {
 			case "+", "-", "*", "/", "%", ".", "=", "==", "!=", "<", "<=", ">", ">=":
+			case "!":
+				// !x is NOT x, as Splunk's eval takes it.
+				toks = append(toks, evalTok{etIdent, "NOT", base + start})
+				i++
+				continue
 			default:
 				return nil, errorf(base+start, "unexpected %q in expression", op)
 			}
@@ -429,7 +439,23 @@ func describeEval(t evalTok) string {
 	if t.kind == etQIdent {
 		return quoteSingle(t.text)
 	}
-	return `"` + t.text + `"`
+	return quote(t.text)
+}
+
+// afterValue reports whether the last token ends a value, so a . that
+// follows joins strings rather than starting a number.
+func afterValue(toks []evalTok) bool {
+	if len(toks) == 0 {
+		return false
+	}
+	t := toks[len(toks)-1]
+	switch t.kind {
+	case etNum, etStr, etQIdent, etRParen:
+		return true
+	case etIdent:
+		return !evalKeywords[strings.ToUpper(t.text)]
+	}
+	return false
 }
 
 // ParseEvalExpr parses a value expression on its own.
@@ -459,6 +485,11 @@ func parseEvalCommand(src string, base int) (*Eval, error) {
 	c := &Eval{}
 	for {
 		t := p.next()
+		if n := p.peek(); t.kind == etOp && t.text == "-" && n.kind == etIdent && n.pos == t.pos+1 {
+			// -time=_time: Splunk takes a name that starts with -.
+			p.next()
+			t = evalTok{etQIdent, "-" + n.text, t.pos}
+		}
 		if t.kind != etIdent && t.kind != etQIdent && t.kind != etStr || t.text == "" {
 			return nil, errorf(t.pos, "eval expects name=expression, for example: eval kb=bytes/1024")
 		}
@@ -533,6 +564,31 @@ func (p *evalParser) binary(prec int) (EvalExpr, error) {
 		return nil, err
 	}
 	for {
+		if prec == precCompare && p.keyword("IN") && p.toks[p.i+1].kind == etLParen {
+			// x IN (a, b) is in(x, a, b).
+			if err := p.node(); err != nil {
+				return nil, err
+			}
+			p.next()
+			p.next() // (
+			c := &Call{Func: "in", Args: []EvalExpr{l}}
+			for {
+				a, err := p.expr()
+				if err != nil {
+					return nil, err
+				}
+				c.Args = append(c.Args, a)
+				t := p.next()
+				if t.kind == etRParen {
+					break
+				}
+				if t.kind != etComma {
+					return nil, errorf(t.pos, `expected "," or ")" in IN list`)
+				}
+			}
+			l = c
+			continue
+		}
 		op, opPrec := p.binaryOp()
 		if op == "" || opPrec != prec {
 			return l, nil

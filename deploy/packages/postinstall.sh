@@ -46,7 +46,7 @@ if [ ! -e "$config" ]; then
   printf '\n%s\n' "$started"
   cat <<'MSG'
 
-  Sign in:   https://<this server>:9000 as admin
+  Sign in:   https://<this server>:9000 as signalithadmin
   Password:  sudo signalith initial-password
   Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
              in this server's firewall for other machines.

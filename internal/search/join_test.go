@@ -44,7 +44,7 @@ func TestJoinWithSubsearch(t *testing.T) {
 		t.Errorf("columns = %v", res.Columns)
 	}
 	// The subsearch searched the outer time range, in its data model.
-	if len(fs.indexes) < 2 || fs.indexes[1] != "signalith-change-*" || !strings.Contains(asJSON(fs.bodies[1]), `"gte":"now-7d"`) {
+	if len(fs.indexes) < 2 || !namesDays(fs.indexes[1], "signalith-change-") || !strings.Contains(asJSON(fs.bodies[1]), `"gte":"now-7d"`) {
 		t.Errorf("subsearch = %v %v", fs.indexes, fs.bodies)
 	}
 

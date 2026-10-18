@@ -562,6 +562,41 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	return out.Status, err
 }
 
+// AutoShards is number_of_shards in the event index settings when
+// opensearch.shards is automatic: ingest.PutIndexTemplate replaces it
+// with a number sized from the data nodes before the template is written.
+const AutoShards = "auto"
+
+// ShardRoom returns how many shard copies the cluster holds and how many
+// it allows: cluster.max_shards_per_node (1,000 unless set) times the
+// data nodes. OpenSearch refuses to create an index past that limit.
+func (c *Client) ShardRoom(ctx context.Context) (used, limit int, err error) {
+	var health struct {
+		Nodes      int `json:"number_of_data_nodes"`
+		Active     int `json:"active_shards"`
+		Unassigned int `json:"unassigned_shards"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &health); err != nil {
+		return 0, 0, err
+	}
+	var set map[string]map[string]any
+	err = c.Do(ctx, http.MethodGet, "/_cluster/settings?include_defaults=true&flat_settings=true&filter_path=*.cluster.max_shards_per_node", nil, &set)
+	if err != nil {
+		return 0, 0, err
+	}
+	per := 1000
+	for _, scope := range []string{"transient", "persistent", "defaults"} {
+		if v, ok := set[scope]["cluster.max_shards_per_node"]; ok {
+			var n int
+			if _, err := fmt.Sscan(fmt.Sprint(v), &n); err == nil && n > 0 {
+				per = n
+				break
+			}
+		}
+	}
+	return health.Active + health.Unassigned, per * max(health.Nodes, 1), nil
+}
+
 // DataNodes returns how many data nodes the cluster has.
 func (c *Client) DataNodes(ctx context.Context) (int, error) {
 	var out struct {
@@ -569,6 +604,26 @@ func (c *Client) DataNodes(ctx context.Context) (int, error) {
 	}
 	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
 	return out.N, err
+}
+
+// SearchThreads returns the size of the search thread pool summed over
+// the data nodes: how many searches OpenSearch runs at once.
+func (c *Client) SearchThreads(ctx context.Context) (int, error) {
+	var out struct {
+		Nodes map[string]struct {
+			ThreadPool struct {
+				Search struct {
+					Size int `json:"size"`
+				} `json:"search"`
+			} `json:"thread_pool"`
+		} `json:"nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_nodes/data:true/thread_pool?filter_path=nodes.*.thread_pool.search.size", nil, &out)
+	n := 0
+	for _, nd := range out.Nodes {
+		n += nd.ThreadPool.Search.Size
+	}
+	return n, err
 }
 
 // BulkItemError describes one rejected document in a bulk request.

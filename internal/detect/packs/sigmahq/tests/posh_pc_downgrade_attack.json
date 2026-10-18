@@ -1,0 +1,5 @@
+{"rule": "6331d09b-4785-4c13-980f-f96661356249", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"EngineVersion=2."}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"HostVersion=2.EngineVersion=2."}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

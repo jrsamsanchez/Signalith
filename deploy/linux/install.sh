@@ -242,6 +242,10 @@ Wants=network-online.target
 Type=simple
 User=signalith
 Group=signalith
+# Run as root ("+"), and never stopping the start ("-"): notes next to the
+# config file that the built-in admin still has the first password, which
+# only root can read, so the server asks for a new one at the next sign-in.
+ExecStartPre=-+/usr/local/bin/signalith initial-password -c /etc/signalith/signalith.yaml -note
 ExecStart=/usr/local/bin/signalith serve -c /etc/signalith/signalith.yaml
 Restart=on-failure
 RestartSec=5
@@ -387,7 +391,7 @@ systemctl enable --now signalith >/dev/null 2>&1 || fail "Signalith is installed
 say "Signalith is installed and its service is running."
 cat <<'MSG'
 
-  Sign in:   https://<this server>:9000 as admin
+  Sign in:   https://<this server>:9000 as signalithadmin
   Password:  sudo signalith initial-password
   Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
              in this server's firewall for other machines.

@@ -214,6 +214,11 @@ func TestDedupCommand(t *testing.T) {
 	if !reflect.DeepEqual(res.Rows, []Row{{"host": "h1"}, {"host": "h2"}}) {
 		t.Errorf("consecutive rows = %v", res.Rows)
 	}
+	// sortby sorts the rows dedup keeps, as in Splunk.
+	res, _ = runEvents(t, `* | dedup user sortby +user | table user, host`)
+	if !reflect.DeepEqual(res.Rows, []Row{{"user": "amy", "host": "h1"}, {"user": "bob", "host": "h1"}}) {
+		t.Errorf("sortby rows = %v", res.Rows)
+	}
 }
 
 func TestFillnullCommand(t *testing.T) {

@@ -67,7 +67,8 @@ allow, the page reloads to match the new role and says why.
 
 ## The built-in admin
 
-The account in `auth.admin_user` (`admin` unless you changed it) always works, even
+The account in `auth.admin_user` (`signalithadmin` on a new install, `admin` on one made
+before 0.3.1, unless you changed it) always works, even
 when the directory server is down or every other admin has been removed, so you can
 always get back in. It shows on the Users page as **Built-in** and cannot be edited,
 disabled or deleted there. Change its password on the server (on servers that share
@@ -112,7 +113,7 @@ Scripts that sign in with the first password must choose a new one first, as an 
 would:
 
 ```sh
-curl -sk -u "admin:$FIRST" -H 'Content-Type: application/json' \
+curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
   -d "{\"current_password\":\"$FIRST\",\"new_password\":\"$NEW\"}" \
   https://localhost:9000/api/me/password
 ```
@@ -175,6 +176,11 @@ A new password, chosen on the Users page, at **Change password**, with
   characters in order (`12345678`, `abcdefgh`, `87654321`);
 - not containing the username (for usernames of 3 or more characters), and not
   `signalith` with only digits or symbols added (`Signalith2026!`).
+
+Passwords are compared in Unicode normalization form NFKC, as NIST SP 800-63B asks: an
+accented letter typed as one character or as a letter plus an accent, and full-width
+characters, all match the same password, and the rules above check that form. A
+password set before this keeps working as it was typed then.
 
 These follow NIST SP 800-63B: there are no rules about mixing upper case, digits or
 symbols. Passwords set before these rules are not checked
@@ -434,10 +440,12 @@ Some changes ask for your password again when you have not entered it in the las
   sign-in;
 - making an API token, an agent token or a token to add a server, accepting an old
   shared agent token, approving a new server, and rotating the cluster key;
+- changing what the Signalith Agents of an install line collect, since turning a log
+  off hides what happens on those computers;
 - changing retention policies, the default or the disk guard, and running retention
   now;
-- switching certificate authority, and saving response actions, playbooks or
-  notifications, or removing the detection content pack;
+- switching certificate authority, and saving response actions, playbooks,
+  notifications or ticketing connections, or removing the detection content pack;
 - linking a Slack or Teams account to yourself, making a code to link one, or confirming
   that a Teams app channel moves to another Teams channel;
 - saving the networks to scan for vulnerabilities, and adding, changing or removing a
@@ -1031,7 +1039,7 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
-`POST /api/otlp/v1/logs` (which take an [agent token](agent-tokens.md), never a session or
+`POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
 [endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
@@ -1049,6 +1057,12 @@ sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the senso
 arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
 minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
+`GET /api/agent/install.sh`, `GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh` (the
+[Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the four routes the script and the agent call with the agent's token,
+`GET /api/agent/program` (the agent program), `GET /api/agent/manifest` (the programs' signed
+manifest, for updates), `GET /api/agent/config` (what the agent runs) and
+`POST /api/agent/status` (how its collectors run); all four take only an active token made for
+the Signalith Agent.
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
 [sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
@@ -1074,13 +1088,13 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
 `DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
 
-**Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
 `GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
+`GET /api/cases/{id}`, `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
@@ -1101,7 +1115,7 @@ clicks still need the Analyst role), and the web UI.
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
 `PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
 `POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes
@@ -1121,13 +1135,16 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 **Admin:** `POST /api/tenants` and `PATCH /api/tenants/{id}` (adding a [tenant](multi-tenant.md), renaming it or turning it off; the provider's admins only), `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
 with a DNS check; see [load-balancers.md](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
-[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
+[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/agent/install` (the line that installs the
+[Signalith Agent](signalith-agent.md)), `GET /api/sensors` (every network
 sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
 [network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
-(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+(see [agent-tokens.md](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
+Signalith Agents of an install line collect; see
+[signalith-agent.md](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
@@ -1152,6 +1169,7 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
 `POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
@@ -1172,6 +1190,8 @@ page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /
 run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
 `/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
 `GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
+`/api/ticketing` route (`GET` and `PUT /api/ticketing`, `POST /api/ticketing/test`: Settings >
+Ticketing; see [ticketing.md](ticketing.md)), every
 `/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
 `GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc`, `/api/auth/saml` and `/api/auth/scim` route below (the last
@@ -1185,14 +1205,14 @@ four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/
 itself rather than one tenant's data are refused to tenants' users, whatever their role:
 every `/api/settings`, `/api/cluster` (but `GET /api/cluster/features`), `/api/security`,
 `/api/tls`, `/api/auth`, `/api/audit`, `/api/requests`, `/api/tenants`, `/api/api-tokens`,
-`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers` and `/api/chat` route. So are the routes
+`/api/compliance`, `/api/vulns`, `/api/sensor`, `/api/sensors`, `/api/parsers`, `/api/chat` and `/api/summaries` route. So are the routes
 that make the server send requests to addresses a user gives, though they change a
 tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `DELETE /api/intel/feeds/{name}`, `POST /api/intel/feeds/test`,
 `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `PUT /api/notify`, `POST /api/notify/test`,
-`PUT /api/respond/config` and `POST /api/respond/test`. Every other route works on the
-tenant the request is in.
+`PUT /api/respond/config`, `POST /api/respond/test`, `PUT /api/ticketing` and
+`POST /api/ticketing/test`. Every other route works on the tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer
@@ -1289,7 +1309,7 @@ that lasts 15 minutes; then send the change again. A wrong password answers `400
 ```json
 {
   "users": [
-    {"username": "admin", "name": "", "email": "", "role": "admin", "source": "builtin",
+    {"username": "signalithadmin", "name": "", "email": "", "role": "admin", "source": "builtin",
      "disabled": false, "must_change_password": false, "created": null, "updated": null,
      "last_sign_in": "2026-10-12T15:35:22Z", "you": true, "actions": []},
     {"username": "alice", "name": "Alice Admin", "email": "alice@corp.example.com",

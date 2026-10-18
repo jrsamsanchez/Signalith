@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/datamodel"
 )
 
 // Cluster is what retention needs from OpenSearch. OpenSearch implements
@@ -236,7 +238,9 @@ const dayLayout = "2006.01.02"
 // ParseIndex splits a daily event index name, <prefix>-<category>-
 // YYYY.MM.DD, into its category and day. It reports false for every other
 // name, including indices of other prefixes and unknown categories, which
-// retention never touches.
+// retention never touches. The parts a busy day is split into
+// (<prefix>-<category>-YYYY.MM.DD-2 and so on, see ingest.Rollover) are
+// indices of that day too.
 //
 // It also accepts the monthly indices of KindMonthly categories,
 // <prefix>_<category>-YYYY.MM, whose day is the first of the month.
@@ -245,6 +249,9 @@ func ParseIndex(prefix, name string) (category string, day time.Time, ok bool) {
 		return parseMonthly(rest)
 	}
 	rest, ok := strings.CutPrefix(name, prefix+"-")
+	if day, n, isPart := datamodel.SplitPart(rest); ok && isPart && n > 1 {
+		rest = day
+	}
 	if !ok || len(rest) < len(dayLayout)+2 || rest[len(rest)-len(dayLayout)-1] != '-' {
 		return "", time.Time{}, false
 	}

@@ -19,7 +19,7 @@ import (
 // hashes the template says so): a server only replaces a template of a
 // lower version, so an older Signalith started next to a newer one does
 // not put its older template back.
-const TemplateVersion = 40
+const TemplateVersion = 44
 
 // totalFieldsLimit is index.mapping.total_fields.limit: the most fields one
 // daily index may have. It leaves room above the known fields, a day's
@@ -30,7 +30,7 @@ const totalFieldsLimit = 2400
 // templateHash is the SHA-256 of IndexTemplate("p", auto replicas) as
 // JSON, which TestTemplateVersionBumped compares, so a change to the
 // template cannot go out without a new TemplateVersion.
-const templateHash = "3afdf4984fe18f0d5cee7b21982dd67780f1ea519a66effd2271b3041de0f1ac"
+const templateHash = "27436f25f1a55b620f18d4e1f2f28041bfb01ef3e02f9ff99d2c746afb6a2566"
 
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw
@@ -53,8 +53,8 @@ const templateHash = "3afdf4984fe18f0d5cee7b21982dd67780f1ea519a66effd2271b3041d
 //
 // replicas are the index settings for extra copies on other nodes (see
 // config.Replicas.IndexSettings): number_of_replicas, or
-// auto_expand_replicas, and number_of_shards when opensearch.shards asks
-// for more than one (see config.OpenSearch.EventIndexSettings). They
+// auto_expand_replicas, and number_of_shards when more than one (see
+// config.OpenSearch.EventIndexSettings, and fitShards for automatic). They
 // apply to each new day's indices; days already stored keep the copies
 // and shards they have.
 func IndexTemplate(prefix string, replicas map[string]any) map[string]any {
@@ -138,6 +138,10 @@ func RestoreIndexTemplate(ctx context.Context, cl *store.Client, prefix string, 
 }
 
 func putTemplate(ctx context.Context, cl *store.Client, prefix string, replicas map[string]any, log *slog.Logger, onlyOlder bool) (bool, error) {
+	// Automatic shards follow the data nodes: a restore check rewrites a
+	// template of this version whose shards no longer fit them, as every
+	// server sizes them the same way from the same cluster.
+	auto := fmt.Sprint(replicas["number_of_shards"]) == store.AutoShards
 	replicas, err := fitShards(ctx, cl, prefix, replicas, log)
 	if err != nil {
 		return false, err
@@ -154,7 +158,9 @@ func putTemplate(ctx context.Context, cl *store.Client, prefix string, replicas 
 					"template", prefix, "version", v, "this_version", TemplateVersion)
 			}
 			return false, nil
-		case v == TemplateVersion && (onlyOlder || sameReplicas(stored, replicas)):
+		case v == TemplateVersion && sameReplicas(stored, replicas):
+			return false, nil
+		case v == TemplateVersion && onlyOlder && !auto:
 			return false, nil
 		}
 	}
@@ -164,39 +170,87 @@ func putTemplate(ctx context.Context, cl *store.Client, prefix string, replicas 
 	if errors.As(err, &se) && se.Status == http.StatusBadRequest && strings.Contains(se.Body, "wildcard") {
 		err = cl.PutIndexTemplate(ctx, prefix, withoutWildcard(tmpl))
 	}
+	if err == nil && log != nil && found {
+		log.Info("index template updated; new days' indices get its settings", "template", prefix,
+			"shards", tmpl["template"].(map[string]any)["settings"].(map[string]any)["number_of_shards"])
+	}
 	return err == nil, err
 }
 
-// fitShards caps number_of_shards at the number of OpenSearch data
-// nodes. OpenSearch refuses new indices once a node holds
-// cluster.max_shards_per_node shards (1,000 by default), and each day adds
-// an index per data model, so more shards than nodes would fill that
-// limit sooner than one shard per index does on one node, and stop
-// ingestion at the start of a day. With at most one shard per node, each
-// node holds no more per day than a single node holds with the default.
+// MaxAutoShards is the most primary shards an automatic opensearch.shards
+// gives each day's index: past that, each search of a day would fan out to
+// more shards than it gains from, and rollover (see Rollover) keeps the
+// shards of a busy day small instead.
+const MaxAutoShards = 8
+
+// autoShardRoom is the share of the cluster's shard limit in use above
+// which automatic shards fall back to one per index: each day adds an
+// index per data model, and once the limit is reached OpenSearch refuses
+// new indices, which stops ingestion at the start of a day.
+const autoShardRoom = 0.5
+
+// roomLogged is set once this process has warned that automatic shards
+// fell back to one, so the template checks every few minutes do not
+// repeat it.
+var roomLogged atomic.Bool
+
+// fitShards sets number_of_shards for the data nodes OpenSearch has.
+//
+// Automatic (store.AutoShards) is one primary per data node, up to
+// MaxAutoShards, so each node writes and merges a share of every day
+// rather than one node doing a whole day's merges; on one node it is one.
+// It is one as well while the cluster already holds more than half the
+// shards it allows, so more shards cannot be what stops ingestion.
+//
+// A number is capped at the number of data nodes. OpenSearch refuses new
+// indices once a node holds cluster.max_shards_per_node shards (1,000 by
+// default), and each day adds an index per data model, so more shards
+// than nodes would fill that limit sooner than one shard per index does
+// on one node, and stop ingestion at the start of a day. With at most one
+// shard per node, each node holds no more per day than a single node
+// holds with one.
 func fitShards(ctx context.Context, cl *store.Client, prefix string, settings map[string]any, log *slog.Logger) (map[string]any, error) {
+	auto := fmt.Sprint(settings["number_of_shards"]) == store.AutoShards
 	var want int
-	fmt.Sscan(fmt.Sprint(settings["number_of_shards"]), &want)
-	if want <= 1 {
-		return settings, nil
+	if !auto {
+		fmt.Sscan(fmt.Sprint(settings["number_of_shards"]), &want)
+		if want <= 1 {
+			return settings, nil
+		}
 	}
 	nodes, err := cl.DataNodes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not count OpenSearch's data nodes for opensearch.shards: %w", err)
 	}
 	nodes = max(nodes, 1)
-	if want <= nodes {
-		return settings, nil
-	}
-	if log != nil {
-		log.Warn("opensearch.shards is more than OpenSearch's data nodes; each new day's events get one shard per data node instead",
-			"template", prefix, "shards", want, "data_nodes", nodes)
-	}
 	out := maps.Clone(settings)
-	if nodes == 1 {
+	if auto {
+		want = min(nodes, MaxAutoShards)
+		if want > 1 {
+			used, limit, err := cl.ShardRoom(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("could not read OpenSearch's shard limit for automatic opensearch.shards: %w", err)
+			}
+			if float64(used) > autoShardRoom*float64(limit) {
+				if log != nil && !roomLogged.Swap(true) {
+					log.Warn("OpenSearch holds more than half the shards it allows, so each new day's events get one shard per data model instead of one per data node; "+
+						"keep fewer days, or raise cluster.max_shards_per_node",
+						"template", prefix, "shards_in_use", used, "shard_limit", limit)
+				}
+				want = 1
+			}
+		}
+	} else if want > nodes {
+		if log != nil {
+			log.Warn("opensearch.shards is more than OpenSearch's data nodes; each new day's events get one shard per data node instead",
+				"template", prefix, "shards", want, "data_nodes", nodes)
+		}
+		want = nodes
+	}
+	if want <= 1 {
 		delete(out, "number_of_shards")
 	} else {
-		out["number_of_shards"] = nodes
+		out["number_of_shards"] = want
 	}
 	return out, nil
 }

@@ -30,6 +30,7 @@ func (s *Server) routeTokens(api *router) {
 	api.sensitive("POST /api/agent-tokens", s.handleCreateToken)
 	api.admin("PATCH /api/agent-tokens/{id}", s.handleRenameToken)
 	api.admin("POST /api/agent-tokens/{id}/revoke", s.handleRevokeToken)
+	api.sensitive("PUT /api/agent-tokens/{id}/collect", s.handleSetCollect)
 	api.admin("POST /api/agent-tokens/legacy/{id}/refuse", s.handleRefuseLegacy)
 	api.sensitive("POST /api/agent-tokens/legacy/{id}/accept", s.handleAcceptLegacy)
 }
@@ -285,6 +286,62 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "agent token revoked", "token_id", tok.ID, "token_name", tok.Name, "hosts_removed", hosts)
 	writeJSON(w, http.StatusOK, map[string]any{"token": tok, "hosts_removed": hosts})
+}
+
+// handleSetCollect sets what the Signalith Agents of an install line
+// collect (the Endpoints page's agent settings).
+func (s *Server) handleSetCollect(w http.ResponseWriter, r *http.Request) {
+	var req agenttokens.Collect
+	if !readStrictTokenBody(w, r, &req) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	tok, old, err := s.tokens().SetCollect(ctx, r.PathValue("id"), req, userOf(r))
+	if err != nil {
+		s.writeTokenError(w, err)
+		return
+	}
+	if tok.Collect != nil && old != *tok.Collect {
+		s.audit(r, "agent collection settings changed", "token_id", tok.ID, "token_name", tok.Name,
+			"old", collectSummary(old), "new", collectSummary(*tok.Collect))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": tok})
+}
+
+// collectSummary is a Collect for the audit log, as on/off words.
+func collectSummary(c agenttokens.Collect) string {
+	onOff := func(v string) string {
+		if v == agenttokens.CollectOff {
+			return "off"
+		}
+		return "on"
+	}
+	linux := c.LinuxLog
+	if linux == "" {
+		linux = "auto"
+	}
+	return "osquery=" + onOff(c.Osquery) + " sysmon=" + onOff(c.Sysmon) + " powershell=" + onOff(c.PowerShell) +
+		" linux_log=" + linux + " web_logs=" + onOff(c.WebLogs) + " audit_log=" + onOff(c.AuditLog) + " updates=" + onOff(c.Updates)
+}
+
+// readStrictTokenBody is readTokenBody refusing fields v does not have,
+// so a misspelt setting is not quietly left at its default.
+func readStrictTokenBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	var raw json.RawMessage
+	if !readTokenBody(w, r, &raw) {
+		return false
+	}
+	if len(raw) == 0 {
+		return true
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("request body: "+err.Error()))
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleRefuseLegacy(w http.ResponseWriter, r *http.Request) {

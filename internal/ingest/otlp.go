@@ -482,9 +482,11 @@ func otlpWindows(b map[string]any) Event {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
 			}
-		} else if channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel) {
-			// An Application or Code Integrity event's data is searched
-			// as a whole, so its values go in by name.
+		} else if channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel) ||
+			strings.EqualFold(channel, WindowsPowerShellChannel) {
+			// An Application, Code Integrity or Windows PowerShell
+			// event's data is searched as a whole, so its values go in
+			// by name.
 			for _, k := range slices.Sorted(maps.Keys(values)) {
 				ordered = append(ordered, values[k])
 			}
@@ -533,6 +535,8 @@ func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 		return e.data, ok
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4103":
+		return moduleLogSchema, true
 	case IsNamedChannel(channel):
 		e, ok := namedChannelEvent(channel, eventID)
 		return e.data, ok
@@ -610,6 +614,14 @@ var windowsSchema = map[string][]string{
 		"UserAccountControl", "UserParameters", "SidHistory"},
 	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
 		"SubjectLogonId"},
+	"4722": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4723": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId", "PrivilegeList"},
+	"4724": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4725": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
 	"4728": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
 		"SubjectDomainName", "SubjectLogonId"},
 	"4732": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
@@ -637,6 +649,11 @@ var windowsSchema = map[string][]string{
 		"SamAccountName", "SidHistory"},
 	"4737": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList",
 		"SamAccountName", "SidHistory"},
+	// The other groups created (4731 local, 4744 local distribution, 4749
+	// global distribution, 4754 and 4759 universal, 4783 basic
+	// application, 4790 LDAP query) have the data of 4727.
+	"4731": groupCreatedSchema, "4744": groupCreatedSchema, "4749": groupCreatedSchema, "4754": groupCreatedSchema,
+	"4759": groupCreatedSchema, "4783": groupCreatedSchema, "4790": groupCreatedSchema,
 	"4730": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"},
 	"4798": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CallerProcessId",
 		"CallerProcessName"},
@@ -651,6 +668,10 @@ var windowsSchema = map[string][]string{
 	"5140": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectType", "IpAddress", "IpPort", "ShareName",
 		"ShareLocalPath", "AccessMask", "AccessList"},
 }
+
+// groupCreatedSchema is the data of a group created (4727 and the like).
+var groupCreatedSchema = []string{"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+	"SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SamAccountName", "SidHistory"}
 
 // hexID is an OTLP trace or span ID as lower-case hex, or "" when it is
 // empty or all zeros (not set).
@@ -687,5 +708,9 @@ func otlpInt(raw json.RawMessage) (int64, bool) {
 }
 
 // WindowsSecurityNames returns the names of a Security event's data
-// values in schema order, for the events the Windows parser reads.
-func WindowsSecurityNames(eventID string) []string { return windowsSchema[eventID] }
+// values in schema order, for the events the Windows parser reads (by
+// position or by name).
+func WindowsSecurityNames(eventID string) []string {
+	s, _ := windowsSchemaFor(SecurityChannel, "", eventID)
+	return s
+}

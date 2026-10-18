@@ -358,6 +358,45 @@ certificate (use the first one). `add-to-opensearch.yml` lists every node in
 Node names may not be `signalith` or start with `signalith-`: those are for Signalith's own
 certificates.
 
+## OpenSearch's own audit log
+
+Signalith keeps its own audit log of what people do (see [audit.md](audit.md)). OpenSearch
+keeps one too, of who tried to reach it: failed sign-ins, requests refused for missing
+permissions, TLS and certificate errors, and every change to its security settings.
+Successful requests are left out, since they are Signalith's own searches and writes.
+These records go to OpenSearch's log rather than an index, so Signalith's certificate,
+which can write to the indices, cannot change them.
+
+The Docker quick start, the Helm chart and the files `signalith opensearch-certs` makes
+turn it on. To read it:
+
+- Docker: `docker compose -f deploy/docker/docker-compose.yml logs opensearch | grep -i audit`
+- Linux: `grep -i audit /var/log/opensearch/*.log`
+- Windows: the `logs` folder of the OpenSearch install.
+
+On OpenSearch set up before this, do these two steps in this order.
+
+1. Load Signalith's `audit.yml`. Once the security settings are loaded, OpenSearch takes
+   what it logs from `audit.yml` in its `opensearch-security` folder rather than from
+   `opensearch.yml`, and the one that comes with OpenSearch logs request bodies. Signalith's
+   makes the same choices as the lines below. The Docker quick start and the Helm chart load
+   it for you. Without Docker, copy `opensearch/opensearch-security/audit.yml` from the files
+   `signalith opensearch-certs` makes into the `opensearch-security` folder and load it with
+   `securityadmin.sh -f audit.yml -t audit` (the certificates and host as when you loaded the
+   other files). This changes nothing yet while the audit type is still `noop`.
+2. Add these lines to `opensearch.yml` in place of `plugins.security.audit.type: noop`, and
+   restart OpenSearch:
+
+    ```yaml
+    plugins.security.audit.type: log4j
+    plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.log_request_body: false
+    plugins.security.audit.config.exclude_sensitive_headers: true
+    ```
+
+Loading `audit.yml` first means OpenSearch never logs request bodies, even for a moment.
+
 ## Renewing
 
 The CA and the certificates last 10 years. In the Docker quick start, the setup step makes

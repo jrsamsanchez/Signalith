@@ -107,10 +107,14 @@ const (
 	// them to a server that runs a newer version once it is ready (see
 	// maybeYield), so upgrade-check need not ask for the leader last.
 	FeatureYieldNewer = "yield_newer"
+	// FeatureDetectionSpread: the server runs the detections of the
+	// buckets assigned to it (detections.spread), and its heartbeat
+	// carries its tenants' detection fingerprints (DetTenants).
+	FeatureDetectionSpread = "detection_spread"
 )
 
 // features are this version's, as its heartbeats list them.
-var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain, FeatureYieldNewer}
+var features = []string{FeatureSampleData, FeatureIndexedAt, FeatureDrain, FeatureYieldNewer, FeatureDetectionSpread}
 
 // Server states in heartbeats.
 const (
@@ -202,6 +206,16 @@ type Heartbeat struct {
 	// Features lists what this server's version can do that an older one
 	// cannot, where another server must know it (see FeatureSampleData).
 	Features []string `json:"features,omitempty"`
+	// DetTenants is, per tenant this server runs, a fingerprint of the
+	// files its detections use (rules and lookups): the server running the
+	// background jobs gives a tenant's detection buckets only to servers
+	// whose fingerprint matches its own.
+	DetTenants map[string]string `json:"det_tenants,omitempty"`
+	// DetReleased is, per tenant, the detection buckets this server is
+	// handing over and has no run of in flight, each with the detection
+	// epoch it held it under: the server running the background jobs then
+	// gives them to their new owner at once.
+	DetReleased map[string]map[int]int64 `json:"det_released,omitempty"`
 	// IndexedAt is the last time this server stored an event; nil before
 	// the first, and from versions before it was kept, which do not list
 	// FeatureIndexedAt (see Node.IndexingServers).
@@ -429,6 +443,9 @@ type Fingerprints struct {
 	Notify string `json:"notify,omitempty"`
 	// Playbooks is the playbooks; "" when a server has none.
 	Playbooks string `json:"playbooks,omitempty"`
+	// Ticketing is the Jira and ServiceNow connections; "" when a
+	// server has none.
+	Ticketing string `json:"ticketing,omitempty"`
 	// Archives names the archive folder (its id file), only while some
 	// retention policy archives: servers that share one folder share it.
 	Archives string `json:"archives,omitempty"`
@@ -459,6 +476,10 @@ func (f Fingerprints) Combined() string {
 		h.Write([]byte("playbooks:" + f.Playbooks))
 		h.Write([]byte{0})
 	}
+	if f.Ticketing != "" {
+		h.Write([]byte("ticketing:" + f.Ticketing))
+		h.Write([]byte{0})
+	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
@@ -484,7 +505,7 @@ func differWords(what, a, b string) string {
 
 // Differ lists the parts that differ between f and o, in words: "retention
 // policies", "threat intel feeds", "detections folder", "notification
-// channels", "playbooks", "archive folder".
+// channels", "playbooks", "ticketing connections", "archive folder".
 func (f Fingerprints) Differ(o Fingerprints) []string {
 	var out []string
 	if f.Retention != o.Retention {
@@ -501,6 +522,9 @@ func (f Fingerprints) Differ(o Fingerprints) []string {
 	}
 	if f.Playbooks != o.Playbooks {
 		out = append(out, "playbooks")
+	}
+	if f.Ticketing != o.Ticketing {
+		out = append(out, "ticketing connections")
 	}
 	if f.Archives != o.Archives {
 		out = append(out, "archive folder")

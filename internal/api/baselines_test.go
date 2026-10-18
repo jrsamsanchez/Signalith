@@ -128,10 +128,10 @@ func TestTenantBaselines(t *testing.T) {
 		_, view := doAs(t, ts, user, "role-password", "GET", "/api/baselines", "")
 		return doAs(t, ts, user, "role-password", "PUT", "/api/baselines", `{"version":"`+view["version"].(string)+`","settings":`+settings+`}`)
 	}
-	if code, view := doAs(t, ts, "ada", "role-password", "GET", "/api/baselines", ""); code != 200 || view["ip_database_fixed"] != true {
+	if code, view := doAs(t, ts, "ada@acme", "role-password", "GET", "/api/baselines", ""); code != 200 || view["ip_database_fixed"] != true {
 		t.Fatalf("acme's admin reads %d %v", code, view)
 	}
-	if code, body := save("ada", `{"learning_days":21}`); code != 200 {
+	if code, body := save("ada@acme", `{"learning_days":21}`); code != 200 {
 		t.Fatalf("acme's admin saves %d %v", code, body)
 	}
 	if set, _, _ := theirs.Settings(ctx); set.LearningDays != 21 {
@@ -141,7 +141,7 @@ func TestTenantBaselines(t *testing.T) {
 		t.Errorf("acme's admin changed the default tenant's settings: %+v", set)
 	}
 	for _, src := range []string{"https://mirror.example/ip2asn.tsv.gz", "file:ip2asn.tsv", "off"} {
-		if code, body := save("ada", `{"learning_days":21,"ip_database":"`+src+`"}`); code != 403 || body["code"] != "provider_only" {
+		if code, body := save("ada@acme", `{"learning_days":21,"ip_database":"`+src+`"}`); code != 403 || body["code"] != "provider_only" {
 			t.Errorf("acme's admin sets the IP database to %s: %d %v", src, code, body)
 		}
 	}

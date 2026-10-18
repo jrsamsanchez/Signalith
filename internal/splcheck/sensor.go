@@ -25,6 +25,10 @@ type ParseOptions struct {
 	// Network reads a tstats search over Network_Traffic or
 	// Network_Resolution as one over a sensor node.
 	Network bool
+	// Lookups are the tables a lookup stage may read, by their names in
+	// security_content, and LookupErrors why others cannot be read.
+	Lookups      map[string]*Lookup
+	LookupErrors map[string]error
 }
 
 // IsSensorNode reports whether a node is a sensor node.

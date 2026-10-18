@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -34,8 +35,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
+	"github.com/jrsamsanchez/signalith/internal/ticketing"
 )
 
 // tenantRuntime runs the data of each tenant other than the default one
@@ -191,13 +194,15 @@ func (t *tenantRuntime) Servers() []*api.Server {
 // Changed starts tenant id when it exists and is on, and stops it when
 // it is turned off or gone.
 func (t *tenantRuntime) Changed(_ context.Context, id string) error {
+	// The list is read under changing, so of two changes made at once the
+	// later one reads the later list, and the tenant ends as it says.
+	t.changing.Lock()
+	defer t.changing.Unlock()
 	tn, err := t.reg.Get(id)
 	if err != nil && !errors.Is(err, tenants.ErrNotFound) {
 		return err
 	}
 	want := err == nil && !tn.Disabled
-	t.changing.Lock()
-	defer t.changing.Unlock()
 	t.mu.Lock()
 	cur, stopped := t.running[id], t.stopped
 	if !want && cur != nil {
@@ -283,6 +288,9 @@ func (ti *tenantInstance) stop() {
 	ti.jobs.Wait()
 }
 
+// tenantFolderID matches the IDs tenants.ValidID allows.
+var tenantFolderID = regexp.MustCompile(`^[a-z][a-z0-9]{1,23}$`)
+
 // start builds tenant id's server, as runner.start builds the default
 // tenant's, from the tenant's own config. What a tenant cannot have yet
 // is left out (see docs/multi-tenant.md): syslog, Microsoft 365,
@@ -291,6 +299,11 @@ func (ti *tenantInstance) stop() {
 func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	if err := tenants.ValidID(id); err != nil {
 		return nil, err
+	}
+	// The same rule as a pattern, which CodeQL can see: the ID names the
+	// tenant's folder, and every file its server reads is in it.
+	if !tenantFolderID.MatchString(id) {
+		return nil, fmt.Errorf("tenant ID %q cannot name a folder", id)
 	}
 	// The settings in use now, with those applied at once since start.
 	c := t.front.Running().ForTenant(id)
@@ -314,7 +327,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log}
+	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log,
+		Rollover: &ingest.Rollover{Client: cl, Prefix: prefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)
@@ -375,13 +389,20 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		log.Error("notifications are not sent until the notifications file is fixed", "err", err)
 	}
 	runtimeIndex := cluster.RuntimeIndex(prefix)
-	sched := &detect.Scheduler{
-		Library: lib, Engine: eng, Findings: fstore, Log: log,
-		Risk: &risk.Store{Client: cl, Prefix: prefix}, Assets: lists,
-		MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
-		Runtime:           cl, RuntimeIndex: runtimeIndex,
+	newSched := func() *detect.Scheduler {
+		s := &detect.Scheduler{
+			Library: lib, Engine: eng, Findings: fstore, Log: log,
+			Risk: &risk.Store{Client: cl, Prefix: prefix}, Assets: lists,
+			MaxFindingsPerRun: c.Detections.MaxFindingsPerRun,
+			Runtime:           cl, RuntimeIndex: runtimeIndex,
+		}
+		s.SetCatchUp(c.DetectionsCatchUp())
+		s.SetSpread(c.Detections.Spread)
+		s.SetSearchBudget(c.Detections.SearchBudget)
+		return s
 	}
-	sched.SetCatchUp(c.DetectionsCatchUp())
+	sched := newSched()
+	var spread *detSpread
 	server, nodeID := "", ""
 	if t.r.node != nil {
 		server, nodeID = t.r.node.Name(), t.r.node.ID()
@@ -422,6 +443,21 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	blStore := baselines.NewStore(cl, prefix)
 	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: prefix},
 		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
+	// The tenant's Jira and ServiceNow connections, in its own folder,
+	// kept in step with its own cases only; what each ticket last sent
+	// and saw is in its own <prefix>_ticket_sync. Its OAuth tokens and
+	// Jira accounts are remembered by its own Service.
+	tickets := &ticketing.Manager{File: c.TicketingFile(), Log: log}
+	if err := tickets.Load(); err != nil {
+		log.Error("tickets are not kept in step until the ticketing file is fixed", "err", err)
+	}
+	tlinks := ticketing.NewOpenSearch(cl, prefix)
+	tlinks.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	tsync := &ticketing.Service{Settings: tickets, Cases: cstore, Links: tlinks, Server: server, Log: log,
+		PublicURL: func() string { return c.Server.PublicURL }}
+	if p := intel.ProtectedAddr(c.OpenSearch.URL); p != "" {
+		tsync.Protected = notify.Protected{p}
+	}
 	// The tenant's agent tokens, in its own runtime index: no token of the
 	// default tenant's or another tenant's is accepted for its data.
 	tokens := &agenttokens.Registry{Client: cl, Prefix: prefix, Log: log, Node: func() string { return nodeID }}
@@ -470,8 +506,10 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Respond:    responder,
 		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
 		Baselines:  blStore,
+		Ticketing:  &api.Ticketing{Service: tsync},
 		Retention:  ret,
 		Sample:     sampleLoader,
+		SetupGuide: &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
 		Content:    updater,
 		Endpoints:  estore,
 		Background: front.Background,
@@ -501,8 +539,16 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		ret.Leader = func() (bool, string) { return t.r.node.RunsJobs(), t.r.node.JobHolder() }
 		ret.Fence = t.r.node.Check
 		sched.Allowed, feeds.Allowed, dispatcher.Allowed, pbRunner.Allowed = t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs, t.r.node.RunsJobs
+		tsync.Allowed = t.r.node.RunsJobs
 		sched.Epoch, sched.NodeID, sched.ClusterNow = t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 		behavior.Allowed, behavior.Epoch, behavior.NodeID, behavior.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
+		if t.r.shared != nil {
+			sched.Counter = t.r.shared.DetectionEpochs
+			spread = newDetSpread(t.r.node, t.r.shared, id, c.LeaderEligible(), sched, newSched(), t.r.detPrints, t.r.detPool, cl.SearchThreads,
+				func() string { return detFilesFingerprint(c, t.r.shared, t.sharedOK != nil, false) }, log)
+			srv.SpreadScheduler = spread.sched
+			spread.views = t.r.detViews
+		}
 		sumBuilder.Allowed, sumBuilder.Epoch, sumBuilder.Node, sumBuilder.Now = t.r.node.RunsJobs, t.r.node.Lease().Epoch, t.r.node.ID(), t.r.node.ClusterNow
 	}
 	if t.sharedOK != nil && ret.Archive != nil {
@@ -521,6 +567,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			return
 		}
 		ti.jobs.Go(func() { keepTemplate(ctx, cl, c, log) })
+		ti.jobs.Go(func() { pipeline.Rollover.Run(ctx) })
 		intelOK := ibackend.EnsureIndex(ctx) == nil
 		if intelOK {
 			ti.jobs.Go(func() { indicators.Watch(ctx, time.Minute, log) })
@@ -532,24 +579,48 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		if !baselinesOK {
 			log.Error("could not create the tenant's behavior baselines index; its baselines do not learn until it is started again", "index", blStore.Index)
 		}
-		for _, e := range []interface{ EnsureIndex(context.Context) error }{cstore, nstore, estore, astore} {
+		cerr := cstore.EnsureIndex(ctx)
+		if cerr != nil {
+			log.Error("could not create an index of the tenant", "index", cstore.Index, "err", cerr)
+		}
+		casesOK := cerr == nil
+		for _, e := range []interface{ EnsureIndex(context.Context) error }{nstore, estore, astore} {
 			if err := e.EnsureIndex(ctx); err != nil {
 				log.Error("could not create an index of the tenant", "err", err)
 			}
 		}
+		terr := tlinks.EnsureIndex(ctx)
+		if terr != nil {
+			log.Error("could not create the tenant's ticket sync index; its tickets will not be opened or kept in step", "index", tlinks.Index, "err", terr)
+		}
+		ticketsOK := terr == nil
 		if !intelOK || !findingsOK || !notifyOK || !playbooksOK {
 			log.Error("could not create the tenant's indices; its detections, feeds, notifications and playbooks do not run until it is started again")
 			return
 		}
+		if spread != nil && c.LeaderEligible() {
+			spread.follow(ctx, &ti.jobs)
+		}
 		runWhileLeader(ctx, t.leader, []cluster.Job{
 			{Name: "summaries", Run: sumBuilder.Run},
 			{Name: "detections", Run: sched.Start},
+			{Name: "detection assignment", Run: func(ctx context.Context) {
+				if spread != nil {
+					spread.assign(ctx)
+				}
+			}},
 			{Name: "threat intel feeds", Run: feeds.Start},
 			{Name: "notifications", Run: dispatcher.Run},
 			{Name: "playbooks", Run: pbRunner.Run},
 			{Name: "behavior baselines", Run: func(ctx context.Context) {
 				if baselinesOK {
 					behavior.Run(ctx)
+				}
+			}},
+			{Name: "ticketing", Run: func(ctx context.Context) {
+				// The tenant's own connections, cases and links only.
+				if ticketsOK && casesOK {
+					tsync.Run(ctx)
 				}
 			}},
 			{Name: "retention", Run: func(ctx context.Context) {

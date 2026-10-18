@@ -91,7 +91,7 @@ docker compose -f deploy/docker/docker-compose.cluster.yml up -d
 docker compose -f deploy/docker/docker-compose.cluster.yml exec signalith-a signalith initial-password
 ```
 
-Open `https://localhost:8443` and sign in as `admin`. The Servers page lists both
+Open `https://localhost:8443` and sign in as `signalithadmin`. The Servers page lists both
 servers, and the Health page's **All servers** card shows what each received. Stop one
 (`docker compose -f deploy/docker/docker-compose.cluster.yml stop signalith-b`) and
 keep working. Each server still has its own certificate authority there, so the

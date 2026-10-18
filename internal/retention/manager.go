@@ -1721,6 +1721,17 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		cv.Pending = Summarize(cs, cr)
 		byCat[c.ID] = cv
 	}
+	// A busy day can be split into parts (ingest.Rollover), each its own
+	// index: the day counts once, whatever it is split into.
+	seen := map[string]bool{}
+	once := func(kind, cat, ds string) bool {
+		k := kind + "|" + cat + "|" + ds
+		if seen[k] {
+			return false
+		}
+		seen[k] = true
+		return true
+	}
 	for _, ix := range st.snap.Indices {
 		cat, day, ok := ParseIndex(m.Prefix, ix.Name)
 		if !ok {
@@ -1728,27 +1739,31 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 			continue
 		}
 		cv := byCat[cat]
+		ds := day.Format(time.DateOnly)
 		cv.Docs += ix.Docs
 		if ix.Cold != nil {
-			cv.ColdDays++
+			if once("cold", cat, ds) {
+				cv.ColdDays++
+				ov.Cold.Days++
+			}
 			cv.ColdBytes += ix.Bytes
-			ov.Cold.Days++
 			ov.Cold.Bytes += ix.Bytes
 		} else {
 			cv.Bytes += ix.Bytes
 		}
-		cv.Days++
-		ds := day.Format(time.DateOnly)
+		if once("day", cat, ds) {
+			cv.Days++
+		}
 		if cv.OldestDay == "" || ds < cv.OldestDay {
 			cv.OldestDay = ds
 		}
 		if ds > cv.NewestDay {
 			cv.NewestDay = ds
 		}
-		if ix.Compacted() && ix.Cold == nil {
+		if ix.Compacted() && ix.Cold == nil && once("compacted", cat, ds) {
 			cv.CompactedDays++
 		}
-		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today {
+		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today && once("restored", cat, ds) {
 			cv.RestoredDays++
 		}
 		if ix.DiskBlocked {

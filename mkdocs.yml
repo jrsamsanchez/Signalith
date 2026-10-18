@@ -120,8 +120,10 @@ nav:
       - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
   - Data intake:
+      - Signalith Agent: signalith-agent.md
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
+      - Splunk HEC senders: hec.md
       - Endpoints (osquery): endpoints.md
       - Wazuh alerts: wazuh.md
       - Network sensor (Zeek, Suricata): network-sensor.md
@@ -148,6 +150,7 @@ nav:
       - Dashboards: dashboards.md
       - Response actions: response-actions.md
       - Notifications: notifications.md
+      - Ticketing (Jira, ServiceNow): ticketing.md
       - Playbooks: playbooks.md
       - Compliance: compliance.md
   - Administration:

@@ -21,6 +21,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"gopkg.in/yaml.v3"
@@ -635,6 +636,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
 		{Key: "playbooks.file", Label: "Playbooks file", Path: c.PlaybooksFile(), Source: c.Source("playbooks.file")},
+		{Key: "ticketing.file", Label: "Ticketing file", Path: c.TicketingFile(), Source: c.Source("ticketing.file")},
 	}
 	// Whoever reads the page is not in Signalith's working folder.
 	for i := range paths {
@@ -1172,11 +1174,22 @@ func (s *Server) useLive(next *config.Config, applied []string) {
 	if changed("search.") && s.Engine != nil {
 		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents, next.Search.SummaryDays)
 	}
-	if changed("detections.max_findings_per_run") && s.Scheduler != nil {
-		s.Scheduler.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
-	}
-	if changed("detections.catch_up") && s.Scheduler != nil {
-		s.Scheduler.SetCatchUp(next.DetectionsCatchUp())
+	for _, sched := range []*detect.Scheduler{s.Scheduler, s.SpreadScheduler} {
+		if sched == nil {
+			continue
+		}
+		if changed("detections.max_findings_per_run") {
+			sched.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
+		}
+		if changed("detections.catch_up") {
+			sched.SetCatchUp(next.DetectionsCatchUp())
+		}
+		if changed("detections.spread") {
+			sched.SetSpread(next.Detections.Spread)
+		}
+		if changed("detections.search_budget") {
+			sched.SetSearchBudget(next.Detections.SearchBudget)
+		}
 	}
 	if changed("assistant.") {
 		s.liveAI.Store(&liveModel{c: next.AssistantClient()})

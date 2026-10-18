@@ -1,0 +1,4 @@
+{"rule": "c70e019b-1479-4b65-b0cc-cd0c6093a599", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"EngineVersion=5.HostVersion=3."}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

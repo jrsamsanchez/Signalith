@@ -1,0 +1,15 @@
+{"rule": "04430b4e-5ca8-4e88-98b5-d6bcf54f8393", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x python x x ruby x x perl x x lwp:: x x php x x guzzle x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x python x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x ruby x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x perl x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x lwp:: x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x php x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x guzzle x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x python x x ruby x x perl x x lwp:: x x php x x guzzle y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"-"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"unknown"}}
+]}

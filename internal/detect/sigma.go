@@ -287,6 +287,12 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"scriptblocktext": "script_block_text", "path": "script_path", "scriptblockid": "script_block_id",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
 		},
+		// A pipeline module logging recorded (4103): its payload is kept
+		// as the text that ran, its context as the event's data.
+		"ps_module": {
+			"payload": "script_block_text", "contextinfo": "event_data",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
 	}
 }()
 
@@ -311,7 +317,12 @@ var sigmaWindowsEvents = map[string][]string{
 	"process_access":       {"10"},
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
-	"system":               {"7045"},
+	"ps_module":            {"4103"},
+	// The Windows PowerShell log's engine (400) and provider (600)
+	// starting.
+	"ps_classic_start":          {"400"},
+	"ps_classic_provider_start": {"600"},
+	"system":                    {"7045"},
 	"windefend": {"1006", "1007", "1008", "1009", "1015", "1116", "1117", "1118", "1119", "1121", "1122", "1123", "1124",
 		"1125", "1126", "1127", "1128", "1150", "1151", "2000", "2001", "2002", "2003", "2004", "2006", "3002", "5000",
 		"5001", "5004", "5007", "5008", "5009", "5010", "5011", "5012", "5013", "5101"},
@@ -499,6 +510,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 		case "codeintegrity-operational":
 			// Code Integrity's log, each rule naming its events.
 			category = "code_integrity"
+		case "powershell-classic":
+			// The Windows PowerShell log, whatever the event, searching
+			// its data (Data).
+			category = "powershell_classic"
 		case "sysmon":
 			// Sysmon's own events, by event ID: its file blocks (27, 28,
 			// 29) are file events, the rest (a configuration change)
@@ -737,6 +752,12 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
 		case "code_integrity":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
+		case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+			st := &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.WindowsPowerShellChannel}
+			if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
+				return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
+			}
+			return st
 		}
 		if ch, ok := sigmaNamedChannels[category]; ok {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
@@ -822,11 +843,12 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Image_Load"
 	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
 		return "Endpoint"
-	case "ps_script":
+	case "ps_script", "ps_module":
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named",
+		"powershell_classic", "ps_classic_start", "ps_classic_provider_start":
 		return "Other"
 	case "sysmon_file_block":
 		return "Filesystem"
@@ -929,7 +951,8 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "system_event" {
 		return c.systemField(name)
 	}
-	if c.category == "application" || c.category == "code_integrity" {
+	switch c.category {
+	case "application", "code_integrity", "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
 		return c.eventDataField(name)
 	}
 	if ch, ok := sigmaNamedChannels[c.category]; ok {

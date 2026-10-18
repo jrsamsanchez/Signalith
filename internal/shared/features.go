@@ -32,6 +32,7 @@ var Features = []Feature{
 	{"key_rotation", "Rotate the cluster key", LevelKeyRotation, (*Runtime).KeyRotation},
 	{"api_tokens", "API tokens", LevelAPITokens, (*Runtime).APITokens},
 	{"tenants", "Tenants (multi-tenant mode)", LevelTenants, (*Runtime).Tenants},
+	{"detection_epochs", "Detection run state ready to spread across servers", LevelDetectionEpochs, (*Runtime).DetectionEpochs},
 }
 
 // FeatureState is whether a feature is on, on this server, and if not

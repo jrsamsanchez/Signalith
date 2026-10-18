@@ -733,7 +733,7 @@ func toFloat(v any) (float64, bool) {
 }
 
 // dayIndices returns the days (YYYY.MM.DD) that have an event index of
-// model.
+// model, or a part of one (see datamodel.SplitPart).
 func (b *Builder) dayIndices(ctx context.Context, model string) (map[string]bool, error) {
 	names, err := b.Client.ListIndices(ctx, rawPattern(b.Prefix, model))
 	if err != nil {
@@ -745,7 +745,8 @@ func (b *Builder) dayIndices(ctx context.Context, model string) (map[string]bool
 	out := map[string]bool{}
 	pre := datamodel.IndexName(b.Prefix, model, "")
 	for _, n := range names {
-		if d, ok := strings.CutPrefix(n, pre); ok && len(d) == len("2006.01.02") {
+		day, _, ok := datamodel.SplitPart(n)
+		if d, cut := strings.CutPrefix(day, pre); ok && cut && len(d) == len("2006.01.02") {
 			out[d] = true
 		}
 	}

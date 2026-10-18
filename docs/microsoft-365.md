@@ -100,7 +100,8 @@ Every value is kept as text, because the same field holds a number in one worklo
 records and text in another's. Each event also gets the data model fields of what it is:
 
 - A **sign-in** (`UserLoggedIn`, `UserLoginFailed`) is an **Authentication** event, with
-  `action` success or failure, `user`, `src`, `user_agent`, `reason` and
+  `action` success or failure, `user`, `src`, `user_agent`, `os` (the operating system its
+  `DeviceProperties` name, `OS` to Splunk's add-on), `reason` and
   `authentication_method`.
 - A **change** (an operation such as `New-`, `Set-`, `Add-`, `Remove-`, `Update`,
   `Delete`) is a **Change** event, with `action` (created, modified, deleted), `command`,
@@ -126,14 +127,14 @@ alerts for impossible travel, activity from anonymous or suspicious addresses,
 suspicious inbox forwarding, ransomware activity, mass file deletion and users restricted
 from sending mail.
 
-The Splunk Security Content pack has 19 Microsoft 365 rules: MFA turned off, service
+The Splunk Security Content pack has 54 Microsoft 365 rules: MFA turned off, service
 principals added or given new credentials, app roles granted, mail security settings
 (anti-phishing, Safe Links, Safe Attachments, anti-malware) changed, content searches
 started or exported, admins reading a user's mail, apps reading mailboxes through EWS or
 Microsoft Graph, malware found in SharePoint, suspicious mail delivered, the PST export
 alert, and counts that catch password spraying, MFA fatigue, SSO errors and sign-ins
-with many apps and user agents. Rules that use `eval`, `spath`, `fromjson`, `rex` or
-lookups are left out, and so are rules that name an Exchange cmdlet's parameter as a
+with many apps, user agents or operating systems. Rules whose later stages Signalith
+would read differently from Splunk are left out (`REPORT.md` says why), and so are rules that name an Exchange cmdlet's parameter as a
 field (`Role`, `AccessRights`): Signalith keeps parameters only in `Parameters{}.Name` and
 `Parameters{}.Value`. Turn them on from each pack's page like any other rules.
 

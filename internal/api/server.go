@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -52,6 +53,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
@@ -76,7 +78,13 @@ type Server struct {
 	// findings queue; when nil those endpoints return 503.
 	Detections *detect.Library
 	Scheduler  *detect.Scheduler
-	Findings   findings.Store
+	// SpreadScheduler runs the detection buckets assigned to this server
+	// when detections are spread over servers; nil when they cannot be.
+	SpreadScheduler *detect.Scheduler
+	// DetectionSpread returns how each tenant's detections are spread over
+	// the servers, for GET /api/cluster; nil when they cannot be.
+	DetectionSpread func(ctx context.Context) []detect.SpreadView
+	Findings        findings.Store
 	// Assets holds the asset and identity lists; nil disables them.
 	Assets *assets.Store
 	// Intel holds threat intel indicators and Feeds downloads them; nil
@@ -101,6 +109,9 @@ type Server struct {
 	// Chat answers the buttons in Slack and Teams messages; nil disables
 	// them.
 	Chat *Chat
+	// Ticketing backs the Ticketing page and the case page's Tickets
+	// panel; nil disables them.
+	Ticketing *Ticketing
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
@@ -123,6 +134,9 @@ type Server struct {
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
+	// SetupGuide keeps each user's answers to the setup guide; nil keeps
+	// them in this server's memory.
+	SetupGuide setupguide.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -257,6 +271,11 @@ type Server struct {
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
+	// AgentPrograms are the Signalith Agent programs this server hands to
+	// the computers it is installed on; nil looks in the usual folder
+	// (clusterinstall.DefaultProgramsDir).
+	AgentPrograms     *clusterinstall.Programs
+	agentProgramsOnce sync.Once
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
@@ -290,7 +309,8 @@ type Server struct {
 	testMu            sync.Mutex     // one connection test at a time
 	aiModels          modelCache     // model lists read from the AI model's service
 	sampleJob         sampleJob      // the one running sample-data load or remove
-	pageCache         pages          // index.html and login.html, rendered
+	setupGuideMem     setupguide.Memory
+	pageCache         pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
 	// expired API token (tokenRefused).
@@ -400,6 +420,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeDetections(api)
 	s.routeRisk(api)
 	s.routeBaselines(api)
+	s.routeSummaries(api)
 	s.routeLookupTables(api)
 	s.routeParsers(api)
 	s.routeAsk(api)
@@ -412,6 +433,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRespond(api)
 	s.routePlaybooks(api)
 	s.routeChat(mux, api)
+	s.routeTicketing(api)
 	s.routeUsers(api)
 	s.routeSSO(api)
 	s.routeSAML(api)
@@ -419,6 +441,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
+	s.routeSetupGuide(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)
@@ -432,6 +455,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeAgentManaged(mux, api)
 	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)
@@ -844,13 +868,22 @@ type searchRequest struct {
 	Query    string `json:"query"`
 	Earliest string `json:"earliest,omitempty"` // time picker; overridden by earliest= in the query
 	Latest   string `json:"latest,omitempty"`
+	// WriteLookups lets the query's outputlookup write, for an admin who
+	// ran it on purpose (the Search page's Run); re-runs leave it out.
+	WriteLookups bool `json:"write_lookups,omitempty"`
 }
 
 func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Query, bool) {
+	q, _, ok := s.parseSearchRequest(w, r)
+	return q, ok
+}
+
+// parseSearchRequest is parseRequest that also returns the request.
+func (s *Server) parseSearchRequest(w http.ResponseWriter, r *http.Request) (*query.Query, searchRequest, bool) {
 	var req searchRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		req.Query = "*"
@@ -858,7 +891,7 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	q, err := query.Parse(req.Query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if q.Earliest == "" {
 		q.Earliest = req.Earliest
@@ -866,16 +899,19 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	if q.Latest == "" {
 		q.Latest = req.Latest
 	}
-	return q, true
+	return q, req, true
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q, ok := s.parseRequest(w, r)
+	q, req, ok := s.parseSearchRequest(w, r)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if req.WriteLookups && mayWriteLookups(principalOf(r)) {
+		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
+	}
 	res, err := s.Engine.Execute(ctx, q)
 	if err != nil {
 		writeSearchError(w, err)

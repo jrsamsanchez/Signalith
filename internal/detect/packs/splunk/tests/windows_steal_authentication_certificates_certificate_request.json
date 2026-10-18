@@ -1,0 +1,4 @@
+{"rule": "747d7800-2eaa-422d-b994-04d8bb9e06d0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4886","data":{"Attributes":"CertificateTemplate:User","RequestId":"42","Requester":"CORP\\tester"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4887","data":{"Attributes":"CertificateTemplate:User","Disposition":"3","RequestId":"42","Requester":"CORP\\tester","Subject":"CN=tester","SubjectKeyIdentifier":"-"}}
+]}

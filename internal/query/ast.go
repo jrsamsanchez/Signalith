@@ -54,6 +54,13 @@ type In struct {
 // Text is a free-text term matched against the raw event.
 type Text struct{ Value string }
 
+// Subsearch is a search in [ ] among a search's terms. It runs first,
+// and its result rows become terms: each row the AND of its fields'
+// values, the rows ORed, as Splunk's format command writes them.
+type Subsearch struct{ Query *Query }
+
+func (e *Subsearch) String() string { return "[search " + e.Query.String() + "]" }
+
 func (e *And) String() string { return "(" + joinExprs(e.Children, " AND ") + ")" }
 func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")" }
 func (e *Not) String() string { return "NOT " + e.Child.String() }
@@ -129,6 +136,21 @@ func quote(v string) string {
 // formatName quotes a column name in table or as rename's old name unless
 // it reads back as the same name: a bare word, or a stats column such as
 // dc(user). An alias or a new name is quoted with FormatValue.
+// sortKeysString writes sort keys as sort and dedup sortby read them.
+func sortKeysString(ks []SortKey) string {
+	keys := make([]string, len(ks))
+	for i, k := range ks {
+		if k.Desc {
+			keys[i] = "-" + k.Field
+		} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
+			keys[i] = "+" + k.Field // the sign is part of the name
+		} else {
+			keys[i] = k.Field
+		}
+	}
+	return strings.Join(keys, ", ")
+}
+
 func formatName(n string) string {
 	if i := strings.IndexByte(n, '('); i > 0 && strings.HasSuffix(n, ")") && isAggFunc(strings.ToLower(n[:i])) {
 		if inner := n[i+1 : len(n)-1]; inner != "" && FormatValue(inner) == inner {
@@ -183,7 +205,13 @@ type Timechart struct {
 	Span string
 	Aggs []Agg
 	By   string
+	// Limit is how many of the by field's values become series: 0 the
+	// default of 10, NoTimechartLimit as many as Signalith charts.
+	Limit int
 }
+
+// NoTimechartLimit is timechart limit=0.
+const NoTimechartLimit = -1
 
 // Top returns the most common values: top limit=10 src by dest.
 type Top struct {
@@ -328,6 +356,12 @@ func CommandString(c Command) string {
 		if c.Span != "" {
 			s += " span=" + optionValue(c.Span)
 		}
+		switch {
+		case c.Limit == NoTimechartLimit:
+			s += " limit=0"
+		case c.Limit > 0 && c.Limit != 10:
+			s += " limit=" + strconv.Itoa(c.Limit)
+		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
 			s += " by " + c.By
@@ -362,17 +396,7 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
-		keys := make([]string, len(c.Keys))
-		for i, k := range c.Keys {
-			if k.Desc {
-				keys[i] = "-" + k.Field
-			} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
-				keys[i] = "+" + k.Field // the sign is part of the name
-			} else {
-				keys[i] = k.Field
-			}
-		}
-		return "sort " + strings.Join(keys, ", ")
+		return "sort " + sortKeysString(c.Keys)
 	case *Head:
 		return "head " + strconv.Itoa(c.N)
 	case *Table:
@@ -405,12 +429,50 @@ func CommandString(c Command) string {
 		return lookupString(c)
 	case *InputLookup:
 		return inputLookupString(c)
+	case *EventCount:
+		return eventCountString(c)
+	case *OutputLookup:
+		return outputLookupString(c)
 	case *Transaction:
 		return transactionString(c)
 	case *Join:
 		return joinString(c)
 	case *Append:
 		return "append [search " + c.Sub.String() + "]"
+	case *Union:
+		return unionString(c)
+	case *Geostats:
+		return geostatsString(c)
+	case *Extract:
+		return extractString(c)
+	case *Outlier:
+		return outlierString(c)
+	case *Gauge:
+		return gaugeString(c)
+	case *MultiSearch:
+		return multiSearchString(c)
+	case *Timewrap:
+		return timewrapString(c)
+	case *Cluster:
+		return clusterString(c)
+	case *XPath:
+		return xpathString(c)
+	case *Abstract:
+		return abstractString(c)
+	case *Highlight:
+		return highlightString(c)
+	case *AnomalyDetection:
+		return anomalyString(c)
+	case *Correlate:
+		return correlateString(c)
+	case *Predict:
+		return predictString(c)
+	case *Set:
+		return setString(c)
+	case *SetFields:
+		return setFieldsString(c)
+	case *KMeans:
+		return kmeansString(c)
 	case *AppendPipe:
 		return appendPipeString(c)
 	case *StreamStats:
@@ -457,6 +519,8 @@ func CommandString(c Command) string {
 		return rowCmdString(c)
 	case *Concurrency, *Contingency, *Format:
 		return shapeCmdString(c)
+	case *Return, *MakeContinuous:
+		return returnCmdString(c)
 	case *Enrich:
 		if len(c.Fields) == 0 {
 			return "enrich"

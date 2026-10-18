@@ -243,6 +243,9 @@ var Registry = []Setting{
 	{Key: "ingest.max_event_age", Scope: ScopeCluster, Section: "general", Label: "Oldest event time", Type: TypeDuration,
 		Help:        "Events from agents and syslog that say they are older than this are filed under the time they arrived, with their own time kept in device_time. Raise it to load old logs.",
 		Placeholder: "30d", EmptyMeans: "7d, or the shortest retention period when that is shorter"},
+	{Key: "ingest.hec", Scope: ScopeCluster, Section: "general", Label: "Splunk HEC senders", Type: TypeBool,
+		Help: "Accept events from senders built for Splunk's HTTP Event Collector (HEC), such as Splunk logging libraries and the OpenTelemetry Collector's splunk_hec exporter, " +
+			"at /services/collector on the agent port, over HTTPS only. Each sender uses an agent token, sent as Authorization: Splunk <token>."},
 	{Key: "ingest.url_query", Scope: ScopeCluster, Section: "general", Label: "Query strings in web addresses", Type: TypeChoice,
 		Help: "The part of a web address after the ? can carry tokens, session IDs and passwords. As web requests are stored (from a network sensor, a web server's log or an IDS alert), " +
 			"Hide values keeps the parameter names (?user=REDACTED&token=REDACTED), and Remove keeps only the address up to the ?, in the url, uri_query and http_referrer fields and the raw event. " +
@@ -364,10 +367,13 @@ var Registry = []Setting{
 			"Or enter a number: 0 for none. Days already stored keep the copies they have.",
 		Placeholder: "auto", EmptyMeans: "auto", check: checkReplicas},
 	{Key: "opensearch.shards", Scope: ScopeCluster, Section: "opensearch", Label: "Shards", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxShards),
-		Help: "Primary shards for each new day's events, per data model. One, the default, suits a few GB a day. Give more to a system whose busiest data model stores tens of GB a day, " +
-			"about one shard per OpenSearch data node, so a day is spread over the nodes and no shard grows past about 50 GB. More shards than data nodes are not used. " +
-			"Days already stored keep theirs; a day restored from an archive gets this setting.",
-		Placeholder: "1", EmptyMeans: "1"},
+		Help: "Primary shards for each new day's events, per data model. Automatic (empty or 0), the default, gives one per OpenSearch data node, up to 8, so every node writes and merges a share of each day. " +
+			"Enter a number to fix it; more shards than data nodes are not used. Days already stored keep theirs; a day restored from an archive gets this setting.",
+		Placeholder: "auto", EmptyMeans: "automatic"},
+	{Key: "opensearch.rollover_gb", Scope: ScopeCluster, Section: "opensearch", Label: "Rollover size (GB per shard)", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxRolloverGB),
+		Help: "How large a day's index of one data model may grow, per primary shard, before that day's events continue in a new index (such as signalith-network-2026.10.17-2). " +
+			"Smaller shards merge, move and recover faster. Searches, retention and archives treat the parts of a day as that day.",
+		Placeholder: "40", EmptyMeans: "40"},
 	{Key: "cluster.opensearch_url", Scope: ScopeCluster, Section: "opensearch", Label: "Address for new servers", Type: TypeURL, SharedOnly: true,
 		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +
 			"each server's own Address above may be, for one, 127.0.0.1.",
@@ -427,6 +433,13 @@ var Registry = []Setting{
 	{Key: "detections.catch_up", Scope: ScopeCluster, Section: "detections", Label: "Make up missed runs", Type: TypeDuration,
 		Help:        "When detections could not run, for example while every server was stopped, how far back the missed runs are made up once they run again. Older ones are skipped and shown on the Detections page. 0 turns this off.",
 		Placeholder: "6h", EmptyMeans: "6h"},
+	{Key: "detections.spread", Scope: ScopeCluster, Section: "detections", Label: "Spread detections over servers", Type: TypeBool,
+		Help: "Run detections on every server that may run background work, each rule on one of them, instead of all on one server. " +
+			"Takes effect once every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
+	{Key: "detections.search_budget", Scope: ScopeCluster, Section: "detections", Label: "Detection searches at once", Type: TypeNumber, Min: intp(0), Max: intp(4096),
+		Help: "While detections are spread over servers, how many detection searches all servers together run at once; each server runs its share. " +
+			"Empty or 0 means half the searches OpenSearch can run at once. Servers run fewer for a while when OpenSearch is slow.",
+		Placeholder: "automatic", EmptyMeans: "automatic"},
 	{Key: "detections.content_updates", Scope: ScopeServer, Section: "detections", Label: "Content pack updates", Type: TypeChoice,
 		Help: "Newer SigmaHQ and Splunk rules, tested and signed by the Signalith project, without a new Signalith release. " +
 			"Manual: an admin checks for them on the Detections page, or uploads them on a computer without internet access. " +
@@ -639,6 +652,7 @@ var Excluded = map[string]Exclusion{
 	"notify.file":                {ScopeBootstrap, "The Notifications page keeps its channels and rules there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.file":              {ScopeBootstrap, "The Response actions page keeps its actions there, and a page cannot move a file it depends on. Shown under About this server."},
 	"playbooks.file":             {ScopeBootstrap, "The Playbooks page keeps its playbooks there, and a page cannot move a file it depends on. Shown under About this server."},
+	"ticketing.file":             {ScopeBootstrap, "The Ticketing page keeps its connections there, and a page cannot move a file it depends on. Shown under About this server."},
 	"response.scripts_dir":       {ScopeServer, "It decides which programs response actions may run, so only signalith.yaml or SIGNALITH_RESPONSE_SCRIPTS_DIR can set it, never a page. Shown under About this server."},
 	"vulns.openvas_address":      {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
 	"vulns.openvas_username":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},

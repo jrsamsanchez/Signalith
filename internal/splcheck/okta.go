@@ -2,6 +2,7 @@ package splcheck
 
 import (
 	"cmp"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -92,6 +93,11 @@ func oktaField(name string) (string, bool) {
 	if f, ok := oktaCIM[name]; ok {
 		return f, true
 	}
+	// Okta's device object is stored as okta_device, as device is a
+	// field of other events (ingest.OktaSigmaField).
+	if rest, ok := strings.CutPrefix(name, "device."); ok {
+		name = "okta_device." + rest
+	}
 	return name, ingest.OktaField(name)
 }
 
@@ -145,4 +151,32 @@ func oktaRecord(ev map[string]string) sigmacheck.Case {
 	set("target{}.type", "AppInstance")
 	set("target{}.displayName", "Example App")
 	return sigmacheck.Case{Channel: sigmacheck.OktaChannel, EventID: "log", Data: data}
+}
+
+// oktaAggRe is an aggregation of a tstats search over Okta's events,
+// with the field it reads and the name it gives the result.
+var oktaAggRe = regexp.MustCompile(`(?i)\b\w+\((?:Authentication|All_Changes)\.(\w+)\)(?:\s+as\s+(\w+))?`)
+
+// oktaAggs returns a tstats search's aggregations over Okta's events
+// without those of a field the data model does not have (values of
+// Authentication.method, which is not a CIM field): Splunk's tstats reads
+// no value of it, so the result is not there. One whose result a later
+// stage names is refused.
+func oktaAggs(aggs string, fields, later []string) (string, error) {
+	var err error
+	out := oktaAggRe.ReplaceAllStringFunc(aggs, func(a string) string {
+		m := oktaAggRe.FindStringSubmatch(a)
+		if slices.Contains(fields, m[1]) {
+			return a
+		}
+		name := cmp.Or(m[2], m[0])
+		word := regexp.MustCompile(`(^|[^\w.])` + regexp.QuoteMeta(name) + `([^\w.]|$)`)
+		for _, s := range later {
+			if word.MatchString(postMacros.ReplaceAllString(s, "")) {
+				err = fmt.Errorf("field %s is not a field of Okta's events in the data model", m[1])
+			}
+		}
+		return ""
+	})
+	return out, err
 }

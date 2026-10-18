@@ -489,6 +489,12 @@ func CloudTrailRecord(host string, t time.Time, data map[string]string) map[stri
 			}
 			m = next
 		}
+		if l, ok := testList(data[k]); ok {
+			// A whole list (a bucket's grants, a scan's findings),
+			// written as JSON.
+			m[parts[len(parts)-1]] = l
+			continue
+		}
 		m[parts[len(parts)-1]] = data[k]
 	}
 	return r

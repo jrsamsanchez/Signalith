@@ -787,8 +787,10 @@ See [Network detections](detections.md#network-detections) for each one's rule a
 threshold. The content packs also have rules for this data, off until you turn them
 on: 45 SigmaHQ rules (Zeek SMB, DCE-RPC, Kerberos, RDP and certificate rules, DNS
 rules such as mining pools and Cobalt Strike names, and web proxy rules such as
-malicious user agents and paste sites) and 5 Splunk network rules (Cisco Smart Install,
-the F5 iControl REST exploit, ngrok, protocol on an unusual port, Tor). The web rules
+malicious user agents and paste sites) and 9 Splunk network rules (Cisco Smart Install,
+the F5 iControl REST exploit, ngrok, protocol on an unusual port, Tor, Kerberos
+coercion through DNS, long DNS queries, the 3CX supply chain attack's domains and
+remote management tools' user agents). The web rules
 of both packs, written for web server logs, also search the sensor's web requests (see
 [Network rules](detections.md#network-rules-zeek-dns-proxy-and-firewall) and
 [Content packs](detections.md#content-packs)).

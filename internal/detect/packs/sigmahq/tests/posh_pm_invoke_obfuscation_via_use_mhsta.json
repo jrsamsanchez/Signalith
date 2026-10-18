@@ -1,0 +1,4 @@
+{"rule": "07ad2ea8-6a55-4ac6-bf3e-91b8e59676eb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"\u0026\u0026set(window.close).runvbscript:createobjectmshta"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

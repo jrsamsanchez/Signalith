@@ -174,3 +174,30 @@ func TestLookupDoesNotWaitForALoad(t *testing.T) {
 		t.Fatalf("during a load: %+v, %v", loc, err)
 	}
 }
+
+// TestFromBytes: a store of a database in memory reads it and no folder,
+// and refuses a file that is not a City or Country database.
+func TestFromBytes(t *testing.T) {
+	b, err := geoiptest.Build("GeoLite2-City", testNets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := FromBytes(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f, err := s.Status(); f == "" || err != nil {
+		t.Errorf("Status = %q, %v", f, err)
+	}
+	loc, found, err := s.Lookup(netip.MustParseAddr("81.2.69.160"), "en")
+	if err != nil || !found || loc.City != "London" {
+		t.Errorf("got %+v %v %v", loc, found, err)
+	}
+	if _, found, err := s.Lookup(netip.MustParseAddr("10.0.0.1"), "en"); found || err != nil {
+		t.Errorf("private: found=%v err=%v", found, err)
+	}
+	asn, _ := geoiptest.Build("GeoLite2-ASN", testNets)
+	if _, err := FromBytes(asn); err == nil {
+		t.Error("an ASN database was read")
+	}
+}

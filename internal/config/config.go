@@ -60,6 +60,7 @@ type Config struct {
 	Notify     Notify     `yaml:"notify,omitempty"`
 	Response   Response   `yaml:"response,omitempty"`
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
+	Ticketing  Ticketing  `yaml:"ticketing,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 
 	// path is where the file was loaded from.
@@ -554,11 +555,40 @@ type OpenSearch struct {
 	// on other nodes: "auto" (the default) or a whole number.
 	Replicas Replicas `yaml:"replicas"`
 	// Shards is how many primary shards each new day's event indices
-	// get: 0 or 1 is one, the default. More spread a data model that
-	// stores tens of GB a day over the OpenSearch nodes; at most one
-	// per data node is used. Days already stored keep theirs; a day
-	// restored from an archive gets the current setting.
+	// get. 0, the default, is automatic: one per OpenSearch data node, up
+	// to ingest.MaxAutoShards, so a day's events are written and merged
+	// on every node. A number fixes it; at most one per data node is
+	// used. Days already stored keep theirs; a day restored from an
+	// archive gets the current setting.
 	Shards int `yaml:"shards,omitempty"`
+	// RolloverGB is how large, in GB per primary shard, a day's index of
+	// a data model may grow before that day's events continue in a new
+	// index (signalith-network-2026.10.17-2, and so on). 0 is
+	// DefaultRolloverGB.
+	RolloverGB int `yaml:"rollover_gb,omitempty"`
+}
+
+// DefaultRolloverGB is opensearch.rollover_gb when it is not set: shards
+// of 30 to 50 GB are what OpenSearch recommends for logs, big enough not
+// to waste the per-shard cost and small enough to merge, move and
+// recover quickly.
+const DefaultRolloverGB = 40
+
+// MinRolloverGB and MaxRolloverGB bound opensearch.rollover_gb. Below
+// 10 GB a busy day would make enough indices to crowd the cluster's shard
+// limit; above 200 GB a shard takes hours to move to another node.
+const (
+	MinRolloverGB = 10
+	MaxRolloverGB = 200
+)
+
+// RolloverBytes returns opensearch.rollover_gb in bytes, or the default.
+func (o *OpenSearch) RolloverBytes() int64 {
+	gb := o.RolloverGB
+	if gb <= 0 {
+		gb = DefaultRolloverGB
+	}
+	return int64(gb) << 30
 }
 
 // Replicas is opensearch.replicas: "auto", or a whole number of extra
@@ -609,11 +639,16 @@ func (r Replicas) IndexSettings() map[string]any {
 const MaxShards = 64
 
 // EventIndexSettings returns the index settings each new day's event
-// indices get: the replicas settings (see Replicas.IndexSettings) and,
-// when opensearch.shards asks for more than one, number_of_shards.
+// indices get: the replicas settings (see Replicas.IndexSettings) and
+// number_of_shards: store.AutoShards when opensearch.shards is 0, which
+// ingest.PutIndexTemplate sizes from the data nodes, or the number when
+// it asks for more than one.
 func (o *OpenSearch) EventIndexSettings() map[string]any {
 	s := o.Replicas.IndexSettings()
-	if o.Shards > 1 {
+	switch {
+	case o.Shards == 0:
+		s["number_of_shards"] = store.AutoShards
+	case o.Shards > 1:
 		s["number_of_shards"] = o.Shards
 	}
 	return s
@@ -943,6 +978,10 @@ type Ingest struct {
 	// writes to OpenSearch at once; more wait their turn. 0 means 32.
 	// Lower it on a server with little memory.
 	MaxConcurrent int `yaml:"max_concurrent,omitempty"`
+	// HEC turns on the intake for senders built for Splunk's HTTP Event
+	// Collector (/services/collector/event and /raw on the agent port),
+	// which take an agent token. Off by default. See docs/hec.md.
+	HEC bool `yaml:"hec,omitempty"`
 }
 
 // URLQueryMode returns ingest.url_query: keep, redact or drop, keep when
@@ -1098,6 +1137,14 @@ type Detections struct {
 	// CatchUp is how far back detection runs missed while no server ran
 	// them are made up, such as 6h; "0" turns that off. Empty means 6h.
 	CatchUp string `yaml:"catch_up,omitempty"`
+	// Spread runs each tenant's detections on every server that may run
+	// background work, each rule on one of them, instead of all on the
+	// server running the background jobs. Off by default.
+	Spread bool `yaml:"spread,omitempty"`
+	// SearchBudget is how many detection searches every server together
+	// runs at once while detections are spread; 0 means half the searches
+	// OpenSearch's data nodes run at once.
+	SearchBudget int `yaml:"search_budget,omitempty"`
 	// ContentUpdates is how newer content pack rules arrive: manual (an
 	// admin checks or uploads on the Detections page) or daily (checked
 	// and installed every day). Empty means manual.
@@ -1456,6 +1503,24 @@ func (c *Config) PlaybooksFile() string {
 	return filepath.Join(c.LookupsDir(), "playbooks.yaml")
 }
 
+// Ticketing sets where the Jira and ServiceNow connections set on the
+// Ticketing page are kept (see docs/ticketing.md).
+type Ticketing struct {
+	// File keeps the connections, with their tokens and passwords
+	// encrypted. Default: tickets.yaml in lookups.dir. A relative path is
+	// relative to the folder this config file is in.
+	File string `yaml:"file,omitempty"`
+}
+
+// TicketingFile returns the file that keeps the ticketing connections
+// set on the Ticketing page.
+func (c *Config) TicketingFile() string {
+	if c.Ticketing.File != "" {
+		return c.resolve(c.Ticketing.File)
+	}
+	return filepath.Join(c.LookupsDir(), "tickets.yaml")
+}
+
 // ResponseScriptsDir returns the folder script actions run programs from.
 func (c *Config) ResponseScriptsDir() string {
 	if c.Response.ScriptsDir != "" {
@@ -1516,14 +1581,33 @@ func (c *Config) DetectionsCatchUp() time.Duration {
 	return detect.DefaultCatchUp
 }
 
-// Default returns a config with every default filled in.
+// DefaultAdminUser is the built-in admin's name on a new install, one
+// that is not the first name a password-guessing attack tries.
+const DefaultAdminUser = "signalithadmin"
+
+// LegacyAdminUser is the built-in admin's name in a config file that
+// names none: installs from before 0.3.1 were made with it, and keep it,
+// so an upgrade never changes the name anyone signs in with.
+const LegacyAdminUser = "admin"
+
+// KeptLegacyAdmin reports whether a cluster's built-in admin, named
+// builtin, kept the name from before 0.3.1 while auth.admin_user is
+// configured: a Docker or Kubernetes install that was upgraded, whose
+// config now names DefaultAdminUser. The cluster's name is used, as for
+// any other difference, but that is expected, not a mistake to warn of.
+func KeptLegacyAdmin(builtin, configured string) bool {
+	return strings.EqualFold(builtin, LegacyAdminUser) && strings.EqualFold(configured, DefaultAdminUser)
+}
+
+// Default returns a config with every default filled in. A new install
+// sets auth.admin_user to DefaultAdminUser (signalith init writes it).
 func Default() *Config {
 	return &Config{
 		Server:     Server{Listen: "127.0.0.1:9000"},
 		OpenSearch: OpenSearch{URL: "http://127.0.0.1:9200", IndexPrefix: "signalith", Replicas: ReplicasAuto},
 		Search:     Search{DefaultEarliest: "-24h", MaxEvents: 10000, SummaryDays: 30},
 		Retention:  Retention{Days: 90},
-		Auth:       Auth{AdminUser: "admin"},
+		Auth:       Auth{AdminUser: LegacyAdminUser},
 		Detections: Detections{Dir: "detections", Scheduler: true, MaxFindingsPerRun: 100, CatchUp: "6h"},
 		Lookups:    Lookups{Dir: "lookups"},
 		Dashboards: Dashboards{Dir: "dashboards", StaleAfter: "2h"},
@@ -1711,6 +1795,14 @@ func LoadUnchecked(path string) (*Config, error) {
 	return readAndEnv(path)
 }
 
+// LoadFileOnly reads signalith.yaml with defaults and the environment,
+// like LoadUnchecked, but nothing from the state folder: no password the
+// page saved there, and no first-password note. It is for root, which
+// should not read files the service owns.
+func LoadFileOnly(path string) (*Config, error) {
+	return readFileEnv(path, false)
+}
+
 // Saved is the configuration as saved, whether or not it is valid:
 // signalith.yaml, the settings changed on the Settings page, and the
 // environment. The Settings page shows it.
@@ -1842,7 +1934,11 @@ func (c *Config) readFiles(path string) (*Config, error) {
 
 // readAndEnv reads signalith.yaml with defaults and the environment,
 // without decrypting it.
-func readAndEnv(path string) (*Config, error) {
+func readAndEnv(path string) (*Config, error) { return readFileEnv(path, true) }
+
+// readFileEnv is readAndEnv, reading the state folder's files only when
+// state is true.
+func readFileEnv(path string, state bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -1874,12 +1970,16 @@ func readAndEnv(path string) (*Config, error) {
 	if err := c.applyEnv(); err != nil {
 		return nil, err
 	}
-	if err := c.applyAdminHashFile(); err != nil {
-		return nil, err
+	if state {
+		if err := c.applyAdminHashFile(); err != nil {
+			return nil, err
+		}
 	}
 	c.syncEligible()
-	c.readDockerUpgrade()
-	c.readFirstPassword()
+	if state {
+		c.readDockerUpgrade()
+		c.readFirstPassword()
+	}
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
 	return c, nil
@@ -2202,6 +2302,10 @@ func (c *Config) applyEnv() error {
 		c.Playbooks.File = v
 		c.fromEnv("playbooks.file", "SIGNALITH_PLAYBOOKS_FILE")
 	}
+	if v := os.Getenv("SIGNALITH_TICKETING_FILE"); v != "" {
+		c.Ticketing.File = v
+		c.fromEnv("ticketing.file", "SIGNALITH_TICKETING_FILE")
+	}
 	if v := os.Getenv("SIGNALITH_RESPONSE_SCRIPTS_DIR"); v != "" {
 		c.Response.ScriptsDir = v
 		c.fromEnv("response.scripts_dir", "SIGNALITH_RESPONSE_SCRIPTS_DIR")
@@ -2459,7 +2563,10 @@ func (c *Config) Validate() error {
 		p = append(p, "opensearch.replicas must be auto or a whole number of 0 or more")
 	}
 	if c.OpenSearch.Shards < 0 || c.OpenSearch.Shards > MaxShards {
-		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 to %d (0 and 1 both mean one shard)", MaxShards))
+		p = append(p, fmt.Sprintf("opensearch.shards: enter a number from 0 (automatic) to %d", MaxShards))
+	}
+	if g := c.OpenSearch.RolloverGB; g != 0 && (g < MinRolloverGB || g > MaxRolloverGB) {
+		p = append(p, fmt.Sprintf("opensearch.rollover_gb: enter a number of GB from %d to %d, or leave it empty for %d", MinRolloverGB, MaxRolloverGB, DefaultRolloverGB))
 	}
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")
@@ -2586,6 +2693,9 @@ func (c *Config) Validate() error {
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
 		p = append(p, "detections.max_findings_per_run must be between 1 and 10000")
+	}
+	if c.Detections.SearchBudget < 0 || c.Detections.SearchBudget > detect.MaxSearchBudget {
+		p = append(p, fmt.Sprintf("detections.search_budget must be between 0 (automatic) and %d", detect.MaxSearchBudget))
 	}
 	if v := strings.TrimSpace(c.Detections.CatchUp); v != "" && v != "0" {
 		if d, err := detect.ParseDuration(v); err != nil || d < 0 || d > detect.MaxCatchUp {
@@ -3029,6 +3139,9 @@ const header = `# Signalith configuration.
 #                    SIGNALITH_RESPONSE_SCRIPTS_DIR can set it)
 # playbooks.file     where the Playbooks page keeps its playbooks (default
 #                    lookups.dir/playbooks.yaml; SIGNALITH_PLAYBOOKS_FILE overrides it)
+# ticketing.file     where the Ticketing page keeps its Jira and ServiceNow connections
+#                    (default lookups.dir/tickets.yaml; SIGNALITH_TICKETING_FILE
+#                    overrides it); see docs/ticketing.md
 # cluster.node_name  this server's name on the Servers page (default: this computer's
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:

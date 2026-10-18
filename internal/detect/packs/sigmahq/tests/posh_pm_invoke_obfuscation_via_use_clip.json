@@ -1,0 +1,4 @@
+{"rule": "ebdf49d8-b89c-46c9-8fdf-2c308406f6bd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"ECHOCLIP\u0026\u0026CLIPBOARD"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

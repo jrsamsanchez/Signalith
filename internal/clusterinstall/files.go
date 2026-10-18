@@ -19,23 +19,31 @@ import (
 	"github.com/jrsamsanchez/signalith/deploy"
 )
 
-// The scripts' names in GET /api/cluster/join/<name>, and the network
-// sensor's (GET /api/sensor/install.sh).
+// The scripts' names in GET /api/cluster/join/<name>, the network
+// sensor's (GET /api/sensor/install.sh) and the Signalith Agent's (GET
+// /api/agent/install.sh and install.ps1).
 const (
-	ScriptSH     = "install.sh"
-	ScriptPS1    = "install.ps1"
-	ScriptSensor = "sensor-install.sh"
+	ScriptSH       = "install.sh"
+	ScriptPS1      = "install.ps1"
+	ScriptSensor   = "sensor-install.sh"
+	ScriptAgent    = "agent-install.sh"
+	ScriptAgentPS1 = "agent-install.ps1"
+	ScriptAgentMac = "agent-install-macos.sh"
 )
 
 // ScriptSHA is the SHA-256 of each install script, in hex, which the
 // pasted lines check before they run one.
 type ScriptSHA struct {
-	SH     string `json:"sh"`
-	PS1    string `json:"ps1"`
-	Sensor string `json:"sensor"`
+	SH       string `json:"sh"`
+	PS1      string `json:"ps1"`
+	Sensor   string `json:"sensor"`
+	Agent    string `json:"agent"`
+	AgentPS1 string `json:"agent_ps1"`
+	AgentMac string `json:"agent_macos"`
 }
 
-var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1), Sensor: hexSHA(deploy.SensorInstallSH)}
+var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1), Sensor: hexSHA(deploy.SensorInstallSH),
+	Agent: hexSHA(deploy.AgentInstallSH), AgentPS1: hexSHA(deploy.AgentInstallPS1), AgentMac: hexSHA(deploy.AgentInstallMacOS)}
 
 // ScriptSHA256 returns the scripts' SHA-256.
 func ScriptSHA256() ScriptSHA { return scriptSHA }
@@ -50,6 +58,12 @@ func Script(name string) ([]byte, string, bool) {
 		return deploy.InstallPS1, scriptSHA.PS1, true
 	case ScriptSensor:
 		return deploy.SensorInstallSH, scriptSHA.Sensor, true
+	case ScriptAgent:
+		return deploy.AgentInstallSH, scriptSHA.Agent, true
+	case ScriptAgentPS1:
+		return deploy.AgentInstallPS1, scriptSHA.AgentPS1, true
+	case ScriptAgentMac:
+		return deploy.AgentInstallMacOS, scriptSHA.AgentMac, true
 	}
 	return nil, "", false
 }

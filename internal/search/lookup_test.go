@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -151,6 +152,24 @@ func TestInputLookup(t *testing.T) {
 	}
 }
 
+func TestInputLookupAppend(t *testing.T) {
+	e := lookupEngine(t)
+	res, err := e.Run(context.Background(), `| inputlookup max=1 owners | eval src="first" | inputlookup append=t owners | stats count by src`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[count:1 src:first]]" {
+		t.Errorf("rows = %s", got)
+	}
+	res, err = e.Run(context.Background(), `| makeresults | eval user="x" | inputlookup append=true owners | eval n=1 | stats sum(n) as n`)
+	if err != nil || fmt.Sprint(res.Rows) != "[map[n:4]]" {
+		t.Errorf("rows = %v, %v", res, err)
+	}
+	if _, err := e.Run(context.Background(), `| makeresults | inputlookup append=t nope`); err == nil {
+		t.Error("appended a missing table")
+	}
+}
+
 func TestInputLookupSkipsEmptyCells(t *testing.T) {
 	st, _ := lookuptables.Open("")
 	if _, err := st.Put("t", []byte("a,b\n1,\n,2\n")); err != nil {
@@ -184,5 +203,61 @@ func TestLookupCountsAgainstTheBudget(t *testing.T) {
 	var qe *QueryError
 	if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLookupWildcards(t *testing.T) {
+	st, _ := lookuptables.Open("")
+	if _, err := st.PutWithOptions("tools", []byte("path,note\n*/psexec*.exe,psexec\n/usr/bin/*,system\n/opt/x,exact\n"),
+		lookuptables.Options{Wildcard: []string{"path"}, IgnoreCase: true}); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Lookups: st}
+	for p, want := range map[string]string{"C:/Tools/PsExec64.EXE": "psexec", "/usr/bin/ls": "system", "/OPT/X": "exact", "/opt/y": "<nil>"} {
+		got := runRows(t, e, `| makeresults | eval p="`+p+`" | lookup local=t update=false tools path AS p OUTPUT note`, "note")
+		if !reflect.DeepEqual(got, []string{want}) {
+			t.Errorf("%s: note = %v, want %s", p, got, want)
+		}
+	}
+}
+
+func TestEvalInOperator(t *testing.T) {
+	res, err := (&Engine{}).Run(context.Background(), `| makeresults | eval t="B" | eval a=if(t IN ("A", "B"), 1, 0), b=if(NOT t IN ("A"), 1, 0) | where t IN ("B") | table a, b`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[a:1 b:1]]" {
+		t.Errorf("rows = %s", got)
+	}
+}
+
+func TestInputLookupWhere(t *testing.T) {
+	e := lookupEngine(t)
+	res, err := e.Run(context.Background(), `| inputlookup owners where team=Data NOT owner=Kim | table user, owner`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(res.Rows); got != "[map[owner:Sam user:amy]]" || res.Matched != 1 {
+		t.Errorf("rows = %s, matched %d", got, res.Matched)
+	}
+	e.Opt.MaxEvents = 1
+	if res, err = e.Run(context.Background(), `| inputlookup owners where team=Data`); err != nil || len(res.Rows) != 1 || !res.Truncated || res.Matched != 2 {
+		t.Errorf("res = %+v, %v", res, err)
+	}
+	if res, err = e.Run(context.Background(), `| makeresults | inputlookup append=t owners where user=bob | stats count`); err != nil || fmt.Sprint(res.Rows) != "[map[count:2]]" {
+		t.Errorf("append where = %v, %v", res, err)
+	}
+}
+
+func TestTimechartLimit(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | timechart span=1h count by host`:           `"size":10`,
+		`* | timechart limit=3 span=1h count by host`:   `"size":3`,
+		`* | timechart limit=0 span=1h count by host`:   `"size":100`,
+		`* | timechart limit=500 span=1h count by host`: `"size":100`,
+	} {
+		if body := asJSON(compile(t, src).Body); !strings.Contains(body, want) {
+			t.Errorf("%s: %s", src, body)
+		}
 	}
 }

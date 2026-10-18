@@ -1,10 +1,15 @@
 package detect
 
 import (
+	"context"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 func TestSplunkDetection(t *testing.T) {
@@ -66,6 +71,51 @@ search: |
 			t.Errorf("%s: does not parse back: %v", d.Query, err)
 		}
 	}
+	// A regular expression with word boundaries, which OpenSearch cannot
+	// search, runs after the filter, as Splunk reads it; one that must not
+	// match, or is one of several joined by OR, is refused. The filter
+	// keeps the pattern without its boundaries, which matches every
+	// value the whole one does.
+	later := map[string]string{
+		`| regex process="(?i)\\.(key|pem)\\b"`:                              `process=~"(?i:\\.(KEY|PEM)(?:))"`,
+		`| where match(process, "\\biex\\b") AND match(process_path, "^C:")`: `process=~"(?:)iex(?:)" AND process_path=~^C:`,
+	}
+	for stage, want := range later {
+		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
+		d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r)
+		if err != nil || !strings.Contains(d.Query, want) || !strings.Contains(d.Query, "\n| regex process=") {
+			t.Errorf("%s: %v %+v", stage, err, d)
+			continue
+		}
+		q, err := query.Parse(d.Query)
+		if err != nil || q.String() != d.Query {
+			t.Errorf("%s: does not parse back: %v", d.Query, err)
+			continue
+		}
+		rows, err := search.RunCommands(context.Background(), []map[string]any{
+			{"process": `reg.exe x.KEY`}, {"process": `iex foo`}, {"process": `x.keys`}, {"process": `xiex`}, {"other": "x"},
+		}, q.Commands)
+		if err != nil || len(rows) != 1 {
+			t.Errorf("%s: kept %v %v", stage, rows, err)
+		}
+	}
+	for _, stage := range []string{
+		`| where match(process, "\\biex\\b") OR match(process_path, "^C:")`,
+		`| regex process="\\biex\\b"`,
+	} {
+		r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | `drop_dm_object_name(Processes)`\n  "+stage+"\n", 1))
+		if stage == `| regex process="\\biex\\b"` {
+			// The only term: there is nothing OpenSearch searches by.
+			r = []byte(strings.Replace(string(r), "where Processes.process_name=reg.exe Processes.user!=SYSTEM", "where Processes.process=*", 1))
+			if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err != nil || !strings.HasSuffix(d.Query, `| regex process="\\biex\\b"`) {
+				t.Errorf("%s: %v %+v", stage, err, d)
+			}
+			continue
+		}
+		if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
+			t.Errorf("%s accepted: %s", stage, d.Query)
+		}
+	}
 	// Lookarounds are not RE2, so such a rule is refused.
 	r := []byte(strings.Replace(string(src), "by Processes.dest\n", "by Processes.dest\n  | regex process=\"(?<!x)y\"\n", 1))
 	if _, err := PackDetection(p, PackRule{ID: "splunk-x"}, r); err == nil {
@@ -92,4 +142,132 @@ search: |
 		d.Schedule != "5m" || d.Lookback != "25m" {
 		t.Errorf("distinct count = %v %+v", err, d)
 	}
+}
+
+// eventsSearcher answers every search with its events.
+type eventsSearcher []map[string]any
+
+func (s eventsSearcher) Search(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
+	hits := make([]any, len(s))
+	for i, d := range s {
+		hits[i] = map[string]any{"_source": d}
+	}
+	return map[string]any{"hits": map[string]any{"total": map[string]any{"value": len(s)}, "hits": hits}}, nil
+}
+
+// The splunk pack's rules look values up in the tables it ships, which
+// every lookup store reads under the pack's names.
+func TestSplunkPackLookups(t *testing.T) {
+	ps, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack *Pack
+	for _, p := range ps {
+		if p.Name == "splunk" {
+			pack = p
+		}
+	}
+	if pack == nil || pack.Lookups()["pua_named_pipes"] == nil {
+		t.Fatal("the splunk pack has no pua_named_pipes table")
+	}
+	store, _ := lookuptables.Open("")
+	tb, ok := store.Get("splunk-pua_named_pipes")
+	if !ok || tb.Pack != "splunk" || !tb.IgnoreCase || len(tb.Wildcard) != 1 {
+		t.Fatalf("store has %+v, %v", tb, ok)
+	}
+	var d *Detection
+	for _, x := range ds {
+		if x.ID == "splunk-windows-pua-named-pipe" {
+			d = x
+		}
+	}
+	if d == nil || !strings.Contains(d.Query, "| lookup splunk-pua_named_pipes pua_pipe_name AS pipe_name OUTPUT tool, description") {
+		t.Fatalf("detection %v", d)
+	}
+	q, err := query.Parse(d.Query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stages before the lookup run over the event, then the lookup
+	// as a search runs it, with the server's store, then the rest.
+	at := slices.IndexFunc(q.Commands, func(c query.Command) bool { _, ok := c.(*query.Lookup); return ok })
+	for pipe, want := range map[string]int{`\\.\pipe\psexesvc-x`: 1, `\\.\pipe\mojo.1`: 0} {
+		ctx := context.Background()
+		ev := map[string]any{"dest": "h", "process_path": `C:\x.exe`, "process_name": "x.exe", "signature_id": 17, "pipe_name": pipe}
+		rows, err := search.RunCommands(ctx, []map[string]any{ev}, q.Commands[:at])
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("%s: before the lookup: %v, %v", pipe, rows, err)
+		}
+		eng := &search.Engine{Store: eventsSearcher{rows[0]}, Lookups: store}
+		res, err := eng.Execute(search.Background(ctx), &query.Query{Commands: []query.Command{q.Commands[at], &query.Head{N: 2}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs := make([]map[string]any, len(res.Rows))
+		for i, r := range res.Rows {
+			docs[i] = r
+		}
+		rows, err = search.RunCommands(ctx, docs, q.Commands[at+1:])
+		if err != nil || len(rows) != want {
+			t.Errorf("%s: rows %v, %v; want %d", pipe, rows, err, want)
+		}
+	}
+	// Packs of a content update without tables leave none; going back
+	// to the built-in packs brings them back.
+	UsePacks([]*Pack{}, nil, "test")
+	if _, ok := store.Get("splunk-pua_named_pipes"); ok {
+		t.Error("a content update without the table keeps it")
+	}
+	UsePacks(nil, nil, "")
+	if _, ok := store.Get("splunk-pua_named_pipes"); !ok {
+		t.Error("the built-in packs' table is not back")
+	}
+}
+
+// TestSplunkGeoIPRules: the pack's rules that run iplocation are tagged
+// geoip and say in their guidance that they need a GeoIP database; no
+// other rule runs it. With no database, a run fails with the search's
+// error rather than finding rows without locations.
+func TestSplunkGeoIPRules(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, d := range ds {
+		runs := strings.Contains(d.Query, "iplocation")
+		tagged := slices.Contains(d.Tags, "geoip")
+		if runs != tagged || tagged != strings.HasPrefix(d.Guidance, GeoIPSetup) {
+			t.Errorf("%s: iplocation %v, tag %v, guidance %q", d.ID, runs, tagged, d.Guidance)
+		}
+		if runs {
+			got = append(got, d.ID)
+		}
+	}
+	slices.Sort(got)
+	want := []string{"splunk-kubernetes-access-scanning", "splunk-kubernetes-scanning-by-unauthenticated-ip-address", "splunk-okta-user-logins-from-multiple-cities"}
+	if !slices.Equal(got, want) {
+		t.Errorf("rules running iplocation: %q", got)
+	}
+	for _, d := range ds {
+		if d.ID != want[0] {
+			continue
+		}
+		q, err := query.Parse(d.Query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		eng := &search.Engine{Store: emptySearcher{}, GeoIP: geoip.Open(t.TempDir())}
+		if _, err := eng.Execute(context.Background(), q); err == nil || !strings.Contains(err.Error(), "iplocation needs a GeoIP database") || ErrorKind(err) != ErrorQuery {
+			t.Errorf("with no database: %v", err)
+		}
+	}
+}
+
+// emptySearcher finds no events.
+type emptySearcher struct{}
+
+func (emptySearcher) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	return map[string]any{"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}}}, nil
 }

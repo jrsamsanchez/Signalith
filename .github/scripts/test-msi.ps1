@@ -32,6 +32,8 @@ function Wait-Up {
   Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 50 -ErrorAction SilentlyContinue
   throw "Signalith does not answer on https://localhost:9000 (or 8080)"
 }
+# The previous release named the built-in admin admin, which the upgrade
+# keeps.
 function Test-SignIn([string]$Password) {
   $body = @{ username = "admin"; password = $Password } | ConvertTo-Json
   Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null

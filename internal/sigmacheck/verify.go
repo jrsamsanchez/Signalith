@@ -23,7 +23,10 @@ const (
 	ApplicationChannel   = ingest.ApplicationChannel
 	CodeIntegrityChannel = ingest.CodeIntegrityChannel
 	PowerShellChannel    = ingest.PowerShellChannel
-	DefenderChannel      = ingest.DefenderChannel
+	// WindowsPowerShellChannel is Windows PowerShell's classic log, whose
+	// events' data Sigma's rules search as a whole (Data).
+	WindowsPowerShellChannel = ingest.WindowsPowerShellChannel
+	DefenderChannel          = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
@@ -91,7 +94,7 @@ const RepeatSpan = 30 * time.Second
 
 // Copies are a case's events, each with the time offset it happens at:
 // the event itself, or each of its repeats, spread over RepeatSpan, the
-// Vary fields numbered (tester1, tester2...).
+// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...).
 func (c Case) Copies() ([]Case, []time.Duration) {
 	if c.Repeat <= 1 {
 		c.Repeat, c.Vary = 0, nil
@@ -104,7 +107,12 @@ func (c Case) Copies() ([]Case, []time.Duration) {
 		cp.Repeat, cp.Vary = 0, nil
 		cp.Data = maps.Clone(c.Data)
 		for _, f := range c.Vary {
-			cp.Data[f] += strconv.Itoa(i + 1)
+			// A computer account keeps its $ at the end (WS1$, WS2$).
+			v, dollar := strings.CutSuffix(cp.Data[f], "$")
+			cp.Data[f] = v + strconv.Itoa(i+1)
+			if dollar {
+				cp.Data[f] += "$"
+			}
 		}
 		out[i] = cp
 		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)
@@ -161,7 +169,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		}
 		return out, true
 	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
-		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+		strings.EqualFold(c.Channel, PowerShellChannel) && (c.EventID == "4104" || c.EventID == "4103"):
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -175,10 +183,11 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out[k] = v
 		}
 		return out, true
-	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || ingest.IsNamedChannel(c.Channel):
-		// Application and Code Integrity log rules name the provider and
-		// the event's data values (Data); Firewall and BITS log rules
-		// their events' data by name.
+	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || c.Channel == WindowsPowerShellChannel ||
+		ingest.IsNamedChannel(c.Channel):
+		// Application, Code Integrity and Windows PowerShell log rules
+		// name the provider and the event's data values (Data); Firewall
+		// and BITS log rules their events' data by name.
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -216,9 +225,17 @@ func (c Case) SigmaView() (map[string]string, bool) {
 	return nil, false
 }
 
+// cloudTags are the tags of the cloud channels whose recorded records a
+// case may hold as they were sent (_raw).
+var cloudTags = map[string]string{
+	CloudTrailChannel: ingest.CloudTrailTag, AzureChannel: ingest.AzureTag, O365Channel: ingest.O365Tag,
+	OktaChannel: ingest.OktaTag,
+}
+
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, an audit or access log line, else
-// a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, a
+// cloud record (as recorded, when the case holds it as _raw), else a
+// Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
 		return c.zeekRecord(host, t)
@@ -228,6 +245,18 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if raw, ok := c.Data["_raw"]; ok && cloudTags[c.Channel] != "" {
+		// A recorded cloud record (Splunk's attack_data), as it was
+		// sent.
+		d := json.NewDecoder(strings.NewReader(raw))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			r = map[string]any{"message": raw}
+		}
+		r["hostname"] = host
+		return cloudTags[c.Channel], r
 	}
 	if c.Channel == CloudTrailChannel {
 		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
@@ -285,6 +314,13 @@ var sysmonEvents = map[string]string{
 	"dns_query":            "22",
 	"file_delete":          "26",
 	"ps_script":            "4104",
+	"ps_module":            "4103",
+	// The Windows PowerShell log: its engine and providers starting, or
+	// (service: powershell-classic) any of its events, a pipeline run
+	// first.
+	"ps_classic_start":          "400",
+	"ps_classic_provider_start": "600",
+	"powershell_classic":        "800",
 	// Windows System log rules (service: system) are about services
 	// installed, or name the other System events they are about (a
 	// service changing state, by default).
@@ -374,6 +410,10 @@ func init() {
 	Bases["system_event"] = map[string]string{}
 	Bases["application"] = map[string]string{}
 	Bases["code_integrity"] = map[string]string{}
+	// Windows PowerShell log rules search the event's data as a whole.
+	Bases["powershell_classic"] = map[string]string{}
+	Bases["ps_classic_start"] = map[string]string{}
+	Bases["ps_classic_provider_start"] = map[string]string{}
 	for service := range ingest.NamedChannelServices {
 		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
 	}
@@ -427,8 +467,10 @@ func init() {
 // from.
 func Channel(category string) string {
 	switch category {
-	case "ps_script":
+	case "ps_script", "ps_module":
 		return PowerShellChannel
+	case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+		return WindowsPowerShellChannel
 	case "system", "system_event":
 		return SystemChannel
 	case "application":
@@ -566,6 +608,14 @@ var Bases = map[string]map[string]string{
 		"ScriptBlockText": "Get-ChildItem -Path D:\\apps\\work | Select-Object Name",
 		"ScriptBlockId":   "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
 		"Path":            `D:\apps\scripts\report.ps1`,
+	},
+	"ps_module": {
+		"ContextInfo": "Severity = Informational\n        Host Name = ConsoleHost\n        Host Version = 5.1.19041.1\n" +
+			"        Host Application = D:\\apps\\launcher\\launcher.exe --run\n        Engine Version = 5.1.19041.1\n" +
+			"        Command Name = Get-ChildItem\n        Command Type = Cmdlet\n        Script Name = \n" +
+			"        User = CORP\\tester\n        Shell ID = Microsoft.PowerShell",
+		"UserData": "",
+		"Payload":  "CommandInvocation(Get-ChildItem): \"Get-ChildItem\"\nParameterBinding(Get-ChildItem): name=\"Path\"; value=\"D:\\apps\\work\"",
 	},
 	"security_4624": {
 		"SubjectUserSid": "S-1-5-18", "SubjectUserName": "WS1$", "SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7",
@@ -807,6 +857,9 @@ func init() {
 var sysmonAlso = map[string][]string{
 	"registry_event": {"12", "14"},
 	"file_delete":    {"23"},
+	// A Windows PowerShell log rule (service: powershell-classic) is
+	// about any of its events.
+	"powershell_classic": {"400", "403", "600"},
 }
 
 // SysmonEventIDs returns every Sysmon event ID a log source category
