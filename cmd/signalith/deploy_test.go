@@ -345,7 +345,7 @@ func TestDockerConfigLoads(t *testing.T) {
 	}
 	pw, _ := os.ReadFile(filepath.Join(sigDir, initialPasswordFile))
 	token, _ := os.ReadFile(filepath.Join(sigDir, ingestTokenFile))
-	if !c.CheckPassword("admin", strings.TrimSpace(string(pw))) || !slices.Equal(c.Ingest.Tokens, []string{strings.TrimSpace(string(token))}) {
+	if !c.CheckPassword("signalithadmin", strings.TrimSpace(string(pw))) || !slices.Equal(c.Ingest.Tokens, []string{strings.TrimSpace(string(token))}) {
 		t.Errorf("secrets not taken from the files: tokens %v", c.Ingest.Tokens)
 	}
 	// A new install refuses agents on plain HTTP: no plaintext_ingest is
@@ -567,7 +567,7 @@ func dockerUpgrade(t *testing.T, path string, setup time.Time) {
 	h, _ := config.HashPassword("an admin password")
 	c.Auth.AdminPasswordHash = h
 	req, _ := http.NewRequest("GET", d.web.URL+"/api/agents/config?os=windows", nil)
-	req.SetBasicAuth("admin", "an admin password")
+	req.SetBasicAuth(c.Auth.AdminUser, "an admin password")
 	resp, err := d.web.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

@@ -94,7 +94,7 @@ func TestPasswdKeepsEnvironmentSecretsOutOfTheFile(t *testing.T) {
 		os.Unsetenv(k)
 	}
 	c, err := config.Load(path)
-	if err != nil || !c.CheckPassword("admin", "second password") {
+	if err != nil || !c.CheckPassword("signalithadmin", "second password") {
 		t.Fatalf("new password does not work: %v", err)
 	}
 }
