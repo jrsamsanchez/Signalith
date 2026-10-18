@@ -36,7 +36,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
 - Content packs of tested community rules: 2,616 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,309 from Splunk Security Content,
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,310 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 - [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain

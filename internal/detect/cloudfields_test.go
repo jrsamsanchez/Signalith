@@ -9,6 +9,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 // cloudSourcetypes are the sourcetypes of cloud records, whose field
@@ -36,7 +37,11 @@ func TestCloudRuleFieldsMapped(t *testing.T) {
 			continue
 		}
 		for _, f := range queryFields(q) {
-			// _time is the event's time, @timestamp.
+			// _time is the event's time, @timestamp, and _raw its text,
+			// stored as message.
+			if f == search.RawField {
+				f = search.StoredRawField
+			}
 			if f != "_time" && !ingest.KnownField(f) && !slices.Contains(missing, f) {
 				missing = append(missing, f)
 			}

@@ -143,10 +143,19 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 					tag, rec := w.Record(host, at)
 					records[tag] = append(records[tag], rec)
 				}
+				// Other groups' events at the same time, the baseline an
+				// outlier rule compares the case's count with.
+				for _, b := range c.Baseline {
+					copies, offsets := b.Copies()
+					for k, cp := range copies {
+						tag, rec := cp.Record(host, at.Add(offsets[k]))
+						records[tag] = append(records[tag], rec)
+					}
+				}
 				// A Linux program start, as auditd records it too.
 				// (Not for a case with events a join reads, which are
 				// Sysmon's.)
-				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 {
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 && len(c.Baseline) == 0 {
 					rc.hosts = append(rc.hosts, host+"-auditd")
 					if c.Expect {
 						rc.positives[host+"-auditd"] = true

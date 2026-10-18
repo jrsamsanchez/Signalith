@@ -1157,6 +1157,9 @@ func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
 				if b := r.bursts(c); b != nil {
 					*bursts++
 					out = append(out, b...)
+					// Counts compared with others': the repeat among
+					// other groups' ordinary counts.
+					out = append(out, r.baselines(b[0])...)
 				}
 			}
 		}
@@ -1396,7 +1399,9 @@ func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
 	}
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
-		docs, model := StoredCopies(c)
+		// The case's events and its baseline's, which the filter must
+		// all match.
+		docs, model := StoredAll(c)
 		doc := docs[0]
 		inModel := InModel(r.Node, model)
 		matched := inModel

@@ -234,6 +234,10 @@ rules:
     rule_id: a520b1fe-cc9e-4f56-b762-18354594c52f
     file: aws_successful_single_factor_authentication.yml
     path: detections/cloud/aws_successful_single_factor_authentication.yml
+  - id: splunk-aws-unusual-number-of-failed-authentications-from-ip
+    rule_id: 0b5c9c2b-e2cb-4831-b4f1-af125ceb1386
+    file: aws_unusual_number_of_failed_authentications_from_ip.yml
+    path: detections/cloud/aws_unusual_number_of_failed_authentications_from_ip.yml
   - id: splunk-aws-updateloginprofile
     rule_id: 2a9b80d3-6a40-4115-11ad-212bf3d0d111
     file: aws_updateloginprofile.yml
