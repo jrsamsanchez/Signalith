@@ -440,6 +440,8 @@ Some changes ask for your password again when you have not entered it in the las
   sign-in;
 - making an API token, an agent token or a token to add a server, accepting an old
   shared agent token, approving a new server, and rotating the cluster key;
+- changing what the Signalith Agents of an install line collect, since turning a log
+  off hides what happens on those computers;
 - changing retention policies, the default or the disk guard, and running retention
   now;
 - switching certificate authority, and saving response actions, playbooks,
@@ -1139,7 +1141,9 @@ sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning`
 [network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
-(see [agent-tokens.md](agent-tokens.md#commands)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+(see [agent-tokens.md](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
+Signalith Agents of an install line collect; see
+[signalith-agent.md](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,

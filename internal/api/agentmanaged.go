@@ -141,7 +141,7 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 	// The configuration the agent will fetch must be possible too (see
 	// handleSensorInstall).
 	for _, goos := range []string{"linux", "windows"} {
-		opts := s.agentManagedOptions(server, goos, agentFacts{}, certs)
+		opts := s.agentManagedOptions(server, goos, agentFacts{}, agenttokens.Collect{}, certs)
 		if _, err := agents.Generate(opts); errors.Is(err, agents.ErrNoNameToCheck) {
 			fieldError("server", err)
 			return
@@ -162,9 +162,10 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentFacts are what an agent says about its computer when it fetches
-// its configuration, which decide what the configuration collects until
-// an admin chooses: which file the Linux sign-in log is in, and whether
-// Sysmon runs and osquery is installed.
+// its configuration, which decide what the configuration collects where
+// an admin has not chosen otherwise (agenttokens.Collect, set on the
+// Endpoints page for each install line): which file the Linux sign-in log
+// is in, and whether Sysmon runs and osquery is installed.
 type agentFacts struct {
 	// Source is the Linux sign-in log: file (auth.log or secure) or
 	// journal (the systemd journal only).
@@ -173,10 +174,27 @@ type agentFacts struct {
 	Osquery bool
 }
 
+// with returns the facts as the admin's choices c leave them: a
+// collector turned off counts as missing, and a sign-in log chosen
+// replaces the one the agent found.
+func (f agentFacts) with(c agenttokens.Collect) agentFacts {
+	if c.Sysmon == agenttokens.CollectOff {
+		f.Sysmon = false
+	}
+	if c.Osquery == agenttokens.CollectOff {
+		f.Osquery = false
+	}
+	if c.LinuxLog != "" {
+		f.Source = c.LinuxLog
+	}
+	return f
+}
+
 // agentManagedOptions are the Fluent Bit options of an agent on goos that
-// sends to server, with the certificate made by certs (nil when Signalith
-// does not serve HTTPS itself).
-func (s *Server) agentManagedOptions(server, goos string, f agentFacts, certs *tlsauto.Manager) agents.Options {
+// sends to server and collects as c says, with the certificate made by
+// certs (nil when Signalith does not serve HTTPS itself).
+func (s *Server) agentManagedOptions(server, goos string, f agentFacts, c agenttokens.Collect, certs *tlsauto.Manager) agents.Options {
+	f = f.with(c)
 	o := agents.Options{OS: goos, ServerURL: server, Token: agents.EnvToken, Version: s.Version, Managed: true,
 		Recycle: s.agentRecycleFor(), Sysmon: f.Sysmon}
 	switch goos {
@@ -185,8 +203,10 @@ func (s *Server) agentManagedOptions(server, goos string, f agentFacts, certs *t
 		if f.Source == "journal" {
 			o.LinuxSource = "journal"
 		}
+		o.NoWebLogs = c.WebLogs == agenttokens.CollectOff
+		o.NoAuditLog = c.AuditLog == agenttokens.CollectOff
 	case "windows":
-		o.PowerShell = true
+		o.PowerShell = c.PowerShell != agenttokens.CollectOff
 	}
 	agentTLS(&o, certs)
 	return o
@@ -256,13 +276,16 @@ func agentPlatform(r *http.Request) (goos, goarch string, err error) {
 // made by the same generator as every agent's for the address the agent
 // reaches this server at (?server=), which reads the token from the agent (so the
 // file holds no secret), the certificate authority, and osquery's flags
-// when the computer has osquery (?osquery=true). A configuration
+// when the computer has osquery (?osquery=true). What it collects is what
+// the computer has, as the admin's choices for the agent's install line
+// leave it (agenttokens.Collect). A configuration
 // that has not changed since the revision the agent has is answered 304.
 func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request) {
 	if s.agentManagedTenant(w, r, (*Server).handleAgentManagedConfig) {
 		return
 	}
-	if _, ok := s.agentManagedToken(w, r); !ok {
+	who, ok := s.agentManagedToken(w, r)
+	if !ok {
 		return
 	}
 	goos, _, err := agentPlatform(r)
@@ -291,9 +314,11 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 	facts := agentFacts{Source: q.Get("source"), Sysmon: q.Get("sysmon") == "true", Osquery: q.Get("osquery") == "true"}
+	// What the admin chose for the agent's install line.
+	collect := s.tokens().Collect(who.ID)
 	cfg := agentproto.Config{PollSeconds: agentPollSeconds}
 	if goos == "linux" || goos == "windows" {
-		opts := s.agentManagedOptions(server, goos, facts, certs)
+		opts := s.agentManagedOptions(server, goos, facts, collect, certs)
 		a, err := agents.Generate(opts)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -301,7 +326,7 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		}
 		cfg.FluentBit = &agentproto.FluentBit{Config: a.Config}
 		cfg.CA = a.CA
-		if facts.Osquery {
+		if facts.with(collect).Osquery {
 			cfg.Osquery = agentOsquery(goos, opts)
 		}
 	}

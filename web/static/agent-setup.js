@@ -22,7 +22,7 @@
   const WAIT_FOR = 30 * 60 * 1000;
   const OS_KEY = 'signalith.agentInstallOS';
   const SYSMON_LICENSE = 'https://learn.microsoft.com/sysinternals/license-terms';
-  const LATER = ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit and osquery running.'];
+  const LATER = ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit and osquery running. Change what each line collects on Endpoints > What hosts collect.'];
   const NEEDS = {
     linux: [
       ['server', 'A Linux computer', 'Ubuntu 22.04 or 24.04, Debian 12 or 13, RHEL, Rocky, Alma or Oracle Linux 8 or 9, or Amazon Linux 2023.'],
