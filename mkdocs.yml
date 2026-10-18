@@ -120,6 +120,7 @@ nav:
       - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
   - Data intake:
+      - Signalith Agent: signalith-agent.md
       - Agents and syslog: sending-data.md
       - OpenTelemetry: opentelemetry.md
       - Splunk HEC senders: hec.md

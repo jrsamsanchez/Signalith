@@ -998,6 +998,25 @@ func (l *Loader) EventsSince(ctx context.Context, d time.Duration) int {
 	return out.Count
 }
 
+// AnyEventSince reports whether at least one event arrived in the last d:
+// true or false, or an error when OpenSearch could not tell. It stops at
+// the first event found, so it stays quick on a busy install.
+func (l *Loader) AnyEventSince(ctx context.Context, d time.Duration) (bool, error) {
+	if l.OS == nil {
+		return false, errNoDocs
+	}
+	var out struct {
+		Count int `json:"count"`
+	}
+	body := map[string]any{"query": map[string]any{"range": map[string]any{"@timestamp": map[string]any{
+		"gte": l.now().Add(-d).UTC().Format(time.RFC3339)}}}}
+	path := "/" + url.PathEscape(l.Prefix+"-*") + "/_count?ignore_unavailable=true&allow_no_indices=true&terminate_after=1"
+	if err := l.OS.Do(ctx, "POST", path, body, &out); err != nil {
+		return false, err
+	}
+	return out.Count > 0, nil
+}
+
 // CannotFire lists the built-in detections the load did not run (both are
 // off by default) and what to do to see them fire, for the status reply.
 func (l *Loader) CannotFire() map[string]string {

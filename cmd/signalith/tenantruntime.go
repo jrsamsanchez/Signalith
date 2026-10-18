@@ -34,6 +34,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/ticketing"
@@ -501,6 +502,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Ticketing:  &api.Ticketing{Service: tsync},
 		Retention:  ret,
 		Sample:     sampleLoader,
+		SetupGuide: &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
 		Content:    updater,
 		Endpoints:  estore,
 		Background: front.Background,

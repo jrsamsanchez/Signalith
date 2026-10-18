@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
@@ -52,6 +53,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
@@ -132,6 +134,9 @@ type Server struct {
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
+	// SetupGuide keeps each user's answers to the setup guide; nil keeps
+	// them in this server's memory.
+	SetupGuide setupguide.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -266,6 +271,11 @@ type Server struct {
 	// Install hands new servers the install scripts and this server's
 	// program; nil turns that off.
 	Install *ClusterInstall
+	// AgentPrograms are the Signalith Agent programs this server hands to
+	// the computers it is installed on; nil looks in the usual folder
+	// (clusterinstall.DefaultProgramsDir).
+	AgentPrograms     *clusterinstall.Programs
+	agentProgramsOnce sync.Once
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
@@ -299,7 +309,8 @@ type Server struct {
 	testMu            sync.Mutex     // one connection test at a time
 	aiModels          modelCache     // model lists read from the AI model's service
 	sampleJob         sampleJob      // the one running sample-data load or remove
-	pageCache         pages          // index.html and login.html, rendered
+	setupGuideMem     setupguide.Memory
+	pageCache         pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
 	// expired API token (tokenRefused).
@@ -430,6 +441,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
+	s.routeSetupGuide(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)
@@ -443,6 +455,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeClusterOSIdentity(api)
 	s.routeClusterInstall(mux, api)
 	s.routeSensor(mux, api)
+	s.routeAgentManaged(mux, api)
 	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)

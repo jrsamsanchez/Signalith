@@ -46,7 +46,7 @@ sign in, and what each may do), and Signalith starts after it. If the first comm
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
 The second command shows the admin password. Open https://localhost:9000 and sign
-in as `admin` with it; since Signalith made that password, you then choose your own
+in as `signalithadmin` with it; since Signalith made that password, you then choose your own
 before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
@@ -180,7 +180,7 @@ same):
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
 4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. You are asked to choose your own password before anything else (an install
+   before: `admin` on an install made before 0.3.1, `signalithadmin` on a newer one. You are asked to choose your own password before anything else (an install
    that still uses the first password Signalith made is asked once, after any upgrade,
    however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
@@ -518,8 +518,8 @@ New users get a temporary password they replace at their first sign-in. People c
 also sign in with their **Active Directory or LDAP** account, with their role coming
 from their groups; set it up and test it on the same page. Single sign-on with
 **Microsoft Entra ID, Okta, Google, Keycloak** or another OpenID Connect provider is set
-up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The `admin` account from
-`signalith.yaml` stays as a break-glass account that always works. See
+up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The built-in admin from
+`signalith.yaml` (`signalithadmin`) stays as a break-glass account that always works. See
 [docs/users.md](docs/users.md).
 
 ### HTTPS
@@ -672,7 +672,7 @@ are counted for each person's own address, not the proxy's. See
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Folder for archived days |
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](#data-retention) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
-| `auth.admin_user`, `auth.admin_password_hash` | `admin` | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
+| `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |

@@ -87,7 +87,7 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
 
 Double-click `signalith-0.1.0-x64.msi` and follow the steps (it asks for administrator
 rights). When it finishes, Signalith is running as the **Signalith** service. Open
-**Signalith** from the Start menu (https://localhost:9000) and sign in as `admin`. To see
+**Signalith** from the Start menu (https://localhost:9000) and sign in as `signalithadmin`. To see
 the first password, open PowerShell **as Administrator** and run:
 
 ```powershell

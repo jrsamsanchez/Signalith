@@ -114,6 +114,14 @@ admin_password() {
   if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
 }
 
+# admin_user is the built-in admin's name in signalith-1's config:
+# signalithadmin on a new install, admin on one made before 0.3.1.
+admin_user() {
+  local u
+  u=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
+  echo "${u:-signalithadmin}"
+}
+
 # login signs in as the built-in admin, keeping the session in the jar $1.
 # The password goes to curl on its input, not its command line. One whose
 # change Signalith took though curl did not hear back is still in
@@ -122,7 +130,7 @@ login() {
   local pw
   for pw in "" "$LAB/admin-password.new"; do
     if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
-    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) '{username: "admin", password: ($p | rtrimstr("\n"))}' |
+    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) --arg u "$(admin_user)" '{username: $u, password: ($p | rtrimstr("\n"))}' |
       curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
         --data-binary @- https://localhost:9000/api/login >/dev/null; then
       [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
@@ -230,8 +238,11 @@ if [ -n "$vol" ] && ! mountpoint -q /var/lib/opensearch; then
   mount /var/lib/opensearch
 fi
 if ! dpkg -s opensearch >/dev/null 2>&1; then
-  curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   series="${VERSION%%.*}.x"
+  # OpenSearch 3 packages are signed with a newer release key than 2's.
+  key=opensearch-release.pgp
+  [ "$series" != 2.x ] || key=opensearch.pgp
+  curl -fsSL "https://artifacts.opensearch.org/publickeys/$key" | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   # No demo security settings: the lab's own are put in place below. The
@@ -628,7 +639,7 @@ loadgen() {
   scp -q -i "$LAB/id_lab" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$LAB/known_hosts" -o LogLevel=ERROR \
     "$LAB/signalith-loadgen" "$LAB/src/loadtest/tb-day.yaml" "$LAB/src/loadtest/spread-10k.yaml" /var/lib/signalith/tls/ca.pem "root@$(ip_of loadgen):/root/loadtest/"
   printf '%s\n' "$token" | on loadgen 'umask 077 && cat >/root/loadtest/token.txt'
-  { printf 'admin:'; admin_password; } | on loadgen 'umask 077 && cat >/root/loadtest/admin.txt'
+  { printf '%s:' "$(admin_user)"; admin_password; } | on loadgen 'umask 077 && cat >/root/loadtest/admin.txt'
   on loadgen 'chmod 600 /root/loadtest/*; chmod 700 /root/loadtest/signalith-loadgen; /root/loadtest/signalith-loadgen check /root/loadtest/tb-day.yaml /root/loadtest/spread-10k.yaml' >/dev/null
   install -m 755 "$LAB/src/deploy/lab/lab-loadtest.sh" /usr/local/sbin/lab-loadtest
 }
@@ -664,7 +675,7 @@ say "Lab ready."
 cat <<MSG
 
   Signalith:  https://$public:9000
-  User:       admin
+  User:       $(admin_user)
   Password:   sudo cat $pwfile  (on signalith-1)
 
   Agents and the sensor send to https://$SIEM:7779$([ -n "$LB_IP" ] && echo " (the load balancer)").

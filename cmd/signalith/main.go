@@ -65,6 +65,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/summary"
@@ -98,6 +99,7 @@ Usage:
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
+  signalith agent-programs status|sign|keygen|pubkey ...  the Signalith Agent programs this server hands out, signed for agent updates
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
@@ -177,6 +179,8 @@ func main() {
 		err = cmdSecrets(args)
 	case "content":
 		err = cmdContent(args)
+	case "agent-programs":
+		err = cmdAgentPrograms(args)
 	case "security":
 		err = cmdSecurity(args)
 	case "audit":
@@ -234,6 +238,7 @@ func cmdInit(args []string) error {
 	// key where it has it.
 	useServiceEnv(*path, os.Stdout)
 	c := config.Default()
+	c.Auth.AdminUser = config.DefaultAdminUser
 	c.Server.Listen = *listen
 	// Set, so the web port takes no agent traffic. By default on the web
 	// page's host: a server whose page is on loopback only takes agents on
@@ -1663,6 +1668,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Ticketing:    &api.Ticketing{Service: tsync},
 		Retention:    ret,
 		Sample:       sampleLoader,
+		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:      updater,
 		Endpoints:    estore,
 		SensorTuning: tuning,
