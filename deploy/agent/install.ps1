@@ -138,7 +138,7 @@ function Fail([string]$Text, [string]$Fix = "") {
 # certificate authority, against that authority only (and the name in the
 # address either way). The callback is per request, so nothing else in
 # this PowerShell is affected.
-if (-not ("SignalithAgentInstall.Fetch1" -as [type])) {
+if (-not ("SignalithAgentInstall.Fetch2" -as [type])) {
   # PowerShell 7 warns that HttpWebRequest is old; it is the one API both
   # PowerShells have that checks a certificate per request.
   Add-Type -IgnoreWarnings -WarningAction SilentlyContinue -TypeDefinition @'
@@ -151,7 +151,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace SignalithAgentInstall {
-  public class Fetch1 {
+  public class Fetch2 {
     readonly bool insecure;
     readonly List<X509Certificate2> pinned = new List<X509Certificate2>();
     readonly List<string> pins = new List<string>();
@@ -160,11 +160,20 @@ namespace SignalithAgentInstall {
 
     // insecure is only for downloading the certificate authority, whose
     // fingerprint the script checks itself.
-    public Fetch1(bool insecure) { this.insecure = insecure; }
+    public Fetch2(bool insecure) { this.insecure = insecure; }
 
     public static string Sha256(byte[] b) {
       using (var h = SHA256.Create()) {
         return BitConverter.ToString(h.ComputeHash(b)).Replace("-", "").ToLowerInvariant();
+      }
+    }
+
+    // Sha256File is a file's SHA-256 (Get-FileHash is missing where
+    // Windows PowerShell starts with PowerShell 7's module path).
+    public static string Sha256File(string path) {
+      using (var h = SHA256.Create())
+      using (var f = File.OpenRead(path)) {
+        return BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
       }
     }
 
@@ -327,7 +336,7 @@ function Assert-Owned([string]$Path) {
 
 function Same-Bytes([byte[]]$A, [string]$Path) {
   if (-not (Test-Path -LiteralPath $Path)) { return $false }
-  return [SignalithAgentInstall.Fetch1]::Sha256($A) -eq [SignalithAgentInstall.Fetch1]::Sha256([IO.File]::ReadAllBytes($Path))
+  return [SignalithAgentInstall.Fetch2]::Sha256($A) -eq [SignalithAgentInstall.Fetch2]::Sha256([IO.File]::ReadAllBytes($Path))
 }
 
 # Put-Bytes writes $Bytes to $Path when they differ from what is there:
@@ -422,7 +431,7 @@ function Fetch-CA([string]$Which, [string]$Want) {
   if ($Which -ne "current") { $q = "?which=$Which" }
   $out = Join-Path $script:tmp "ca-$Which.pem"
   # Not checked by a certificate: the fingerprint below is.
-  $insecure = New-Object SignalithAgentInstall.Fetch1 $true
+  $insecure = New-Object SignalithAgentInstall.Fetch2 $true
   $code = $insecure.Get("$From/api/tls/ca.pem$q", "", $out, 30, $false)
   if ($code -eq 0) {
     Fail "Could not reach Signalith at ${From}: $($insecure.Error)" "Check that this computer can reach it (Test-NetConnection), that the address is right, and that no firewall is in between, then run the line again."
@@ -435,7 +444,7 @@ function Fetch-CA([string]$Which, [string]$Want) {
     Fail "Signalith at $From handed out $n certificates where it hands out one." "$again If it still fails, someone may be in between this computer and Signalith."
   }
   $der = [Convert]::FromBase64String(($blocks[0].Groups[1].Value -replace '\s', ''))
-  if ([SignalithAgentInstall.Fetch1]::Sha256($der) -ne $Want) {
+  if ([SignalithAgentInstall.Fetch2]::Sha256($der) -ne $Want) {
     Fail "This Signalith's certificate authority is not the one the line names." "$again If it still fails, someone may be in between this computer and Signalith."
   }
   $script:sig.Pin($der)
@@ -445,7 +454,7 @@ function Fetch-CA([string]$Which, [string]$Want) {
 
 function Check-CA {
   if (-not $CaSha256) {
-    $script:sig = New-Object SignalithAgentInstall.Fetch1 $false
+    $script:sig = New-Object SignalithAgentInstall.Fetch2 $false
     $code = $script:sig.Get("$From/", "", (Join-Path $script:tmp "root"), 30, $false)
     if ($code -eq 0) {
       Fail "Could not reach Signalith at $From over HTTPS with this computer's trusted certificate authorities: $($script:sig.Error)" "Check the address; if Signalith uses its own certificate authority, copy the line again from Add data: it then names it with -CaSha256."
@@ -453,7 +462,7 @@ function Check-CA {
     Ok "Signalith at $From (certificate checked by this computer's trusted authorities)"
     return
   }
-  $script:sig = New-Object SignalithAgentInstall.Fetch1 $false
+  $script:sig = New-Object SignalithAgentInstall.Fetch2 $false
   Fetch-CA "current" $CaSha256
   if ($NextCaSha256) { Fetch-CA "next" $NextCaSha256 }
   Ok "Signalith at $From, its certificate authority is the one the line names"
@@ -531,7 +540,7 @@ function FluentBit-Install {
     $script:changed = $true
     return
   } else {
-    $pub = New-Object SignalithAgentInstall.Fetch1 $false
+    $pub = New-Object SignalithAgentInstall.Fetch2 $false
     $code = $pub.Get($FluentBitUrl, "", $zip, 600, $true)
     if ($code -ne 200) {
       Fail "Could not download Fluent Bit from $FluentBitUrl ($(if ($code) { "it answered $code" } else { $pub.Error }))." "Check that this computer reaches packages.fluentbit.io; without internet access, download the zip elsewhere and run the line again with -FluentBitZip <path to the zip>."
@@ -547,7 +556,7 @@ function FluentBit-Install {
     }
   }
   if ($want) {
-    $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $got = [SignalithAgentInstall.Fetch2]::Sha256File($zip)
     if ($got -ne $want) { Fail "The Fluent Bit zip is not the one expected (its SHA-256 is $got, not $want), so it was not installed." "Download it again; if it keeps failing, it was changed on its way here." }
     Ok "Fluent Bit zip checked (SHA-256 $($got.Substring(0, 12)))"
   }
@@ -703,7 +712,7 @@ function Sysmon-Install {
     return
   }
   $zip = Join-Path $script:tmp "Sysmon.zip"
-  $pub = New-Object SignalithAgentInstall.Fetch1 $false
+  $pub = New-Object SignalithAgentInstall.Fetch2 $false
   $code = $pub.Get($SysmonUrl, "", $zip, 300, $true)
   if ($code -ne 200) {
     Fail "Could not download Sysmon from $SysmonUrl ($(if ($code) { "it answered $code" } else { $pub.Error }))." "Check that this computer reaches download.sysinternals.com, or run the line without -Sysmon."
@@ -760,9 +769,9 @@ function Agent-Program {
   }
   $want = $script:sig.Sha256Header.ToLowerInvariant()
   if ($want -notmatch '^[0-9a-f]{64}$') { Fail "Signalith did not say the agent program's SHA-256." "Run the line again." }
-  $got = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
+  $got = [SignalithAgentInstall.Fetch2]::Sha256File($out)
   if ($got -ne $want) { Fail "The agent program downloaded is not whole (its SHA-256 differs)." "Run the line again." }
-  if (-not (Test-Path -LiteralPath $Program) -or (Get-FileHash -LiteralPath $Program -Algorithm SHA256).Hash.ToLowerInvariant() -ne $got) {
+  if (-not (Test-Path -LiteralPath $Program) -or [SignalithAgentInstall.Fetch2]::Sha256File($Program) -ne $got) {
     Stop-Agent
     Copy-Item -LiteralPath $out -Destination $Program -Force
     Manifest-Add "file $Program"

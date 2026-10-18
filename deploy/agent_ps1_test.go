@@ -119,6 +119,10 @@ func (w *agentWindows) run(t *testing.T, token string, args ...string) (string, 
 	}
 	cmd += "; exit $LASTEXITCODE"
 	c := exec.Command(w.shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", cmd)
+	// Windows PowerShell started from PowerShell 7 (as go test is on the
+	// runners) would load 7's modules; a person's Windows PowerShell has
+	// its own.
+	c.Env = withoutPSModulePath(os.Environ())
 	var out bytes.Buffer
 	c.Stdout, c.Stderr = &out, &out
 	err := c.Run()
@@ -290,4 +294,14 @@ func TestAgentPS1RefusesLinkedFolders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withoutPSModulePath(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if !strings.HasPrefix(strings.ToUpper(kv), "PSMODULEPATH=") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
