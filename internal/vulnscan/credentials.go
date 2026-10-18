@@ -25,8 +25,11 @@ import (
 // Scan logins let OpenVAS sign in to the hosts it scans, so that it can
 // check the installed packages and patches from inside instead of only
 // what the network shows: a credentialed scan. A login is SSH (Linux and
-// other Unix systems, a private key or a password) or SMB (Windows, a
-// password). Networks name the logins to use, by ID.
+// other Unix systems, a private key or a password), SMB (Windows, a
+// password), ESXi (VMware hosts, a password) or SNMP (network devices:
+// SNMPv3 with SHA authentication and AES privacy, or an SNMPv1/v2c
+// community when a device has nothing better). Networks name the logins
+// to use, by ID.
 //
 // The private keys and passwords are encrypted (Keys) before they are
 // stored, bound to the login they belong to, and are never sent back to
@@ -37,8 +40,10 @@ import (
 
 // Login kinds.
 const (
-	LoginSSH = "ssh"
-	LoginSMB = "smb"
+	LoginSSH  = "ssh"
+	LoginSMB  = "smb"
+	LoginESXi = "esxi"
+	LoginSNMP = "snmp"
 )
 
 // SSH sign-in methods.
@@ -47,12 +52,22 @@ const (
 	AuthPassword = "password"
 )
 
+// SNMP sign-in methods: v3 is a user with an authentication and a privacy
+// password (SHA and AES); community is SNMPv1/v2c, sent in the clear.
+const (
+	AuthSNMPv3    = "v3"
+	AuthCommunity = "community"
+)
+
 const (
 	maxLogins      = 50
 	maxSecretLen   = 16 << 10
 	maxPasswordLen = 256
-	credentialsID  = "credentials"
-	kindLogins     = "credentials"
+	// minSNMPLen is the shortest SNMPv3 password (RFC 3414), also asked of
+	// a community so it cannot be guessed in a few tries.
+	minSNMPLen    = 8
+	credentialsID = "credentials"
+	kindLogins    = "credentials"
 )
 
 // loginUserRE is a user name OpenVAS can sign in with: letters, digits
@@ -80,21 +95,26 @@ type Credential struct {
 	Name     string `json:"name"`
 	Kind     string `json:"kind"`
 	Username string `json:"username"`
-	// Auth is key or password, for SSH; SMB is always a password.
+	// Auth is key or password, for SSH; v3 or community, for SNMP; SMB
+	// and ESXi are always a password.
 	Auth string `json:"auth"`
 	// Port is the SSH port, 22 unless set.
 	Port int `json:"port,omitempty"`
-	// Secret is the private key (PEM) or the password, encrypted.
+	// Secret is the private key (PEM), the password, the SNMPv3
+	// authentication password or the SNMP community, encrypted.
 	Secret string `json:"secret"`
 	// Passphrase is the private key's passphrase, encrypted, if it has
 	// one.
-	Passphrase string    `json:"passphrase,omitempty"`
-	UpdatedBy  string    `json:"updated_by,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitzero"`
+	Passphrase string `json:"passphrase,omitempty"`
+	// Privacy is the SNMPv3 privacy (encryption) password, encrypted.
+	Privacy   string    `json:"privacy,omitempty"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }
 
 // LoginInput is a login an admin saves. An empty Secret keeps the saved
-// one, as does an empty Passphrase unless ClearPassphrase is set.
+// one, as do an empty Privacy and an empty Passphrase unless
+// ClearPassphrase is set.
 type LoginInput struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -105,6 +125,7 @@ type LoginInput struct {
 	Secret          string `json:"secret"`
 	Passphrase      string `json:"passphrase"`
 	ClearPassphrase bool   `json:"clear_passphrase"`
+	Privacy         string `json:"privacy"`
 }
 
 // LoginView is a login as the API shows it: never its secrets.
@@ -125,15 +146,18 @@ type LoginView struct {
 
 // Login is a login decrypted for one scan.
 type Login struct {
-	Kind, Username, Auth string
-	Port                 int
-	Secret, Passphrase   string
+	Kind, Username, Auth        string
+	Port                        int
+	Secret, Passphrase, Privacy string
 }
 
 // String keeps the secrets out of logs and error messages.
 func (l *Login) String() string {
 	if l == nil {
 		return "<no login>"
+	}
+	if l.Auth == AuthCommunity {
+		return l.Kind + " community login"
 	}
 	return l.Kind + " login " + l.Username
 }
@@ -160,6 +184,10 @@ func (c Credential) View(keys Keys) LoginView {
 	if keys != nil {
 		_, err := keys.Open(secretField(c, "secret"), c.Secret)
 		v.Readable = err == nil && secrets.IsSealed(c.Secret)
+		if c.Auth == AuthSNMPv3 {
+			_, err := keys.Open(secretField(c, "privacy"), c.Privacy)
+			v.Readable = v.Readable && err == nil && secrets.IsSealed(c.Privacy)
+		}
 	}
 	return v
 }
@@ -268,11 +296,30 @@ func (s *Store) putLogins(ctx context.Context, list []Credential, v store.Versio
 func LoginUsers(set Settings, id string) []string {
 	var out []string
 	for _, t := range set.Targets {
-		if t.SSHLogin == id || t.SMBLogin == id {
+		if slices.ContainsFunc(t.loginRefs(), func(r loginRef) bool { return r.id == id }) {
 			out = append(out, t.Name)
 		}
 	}
 	return out
+}
+
+// loginRef is a login a network names, the kind it must be, and what the
+// page calls it.
+type loginRef struct{ id, kind, what string }
+
+// loginRefs are the logins t may name, set or not.
+func (t Target) loginRefs() []loginRef {
+	return []loginRef{
+		{t.SSHLogin, LoginSSH, "SSH login"},
+		{t.SMBLogin, LoginSMB, "Windows login"},
+		{t.ESXiLogin, LoginESXi, "ESXi login"},
+		{t.SNMPLogin, LoginSNMP, "SNMP login"},
+	}
+}
+
+// hasLogin says whether t names any login.
+func (t Target) hasLogin() bool {
+	return slices.ContainsFunc(t.loginRefs(), func(r loginRef) bool { return r.id != "" })
 }
 
 // buildLogin checks in and makes the login to store, keeping prev's
@@ -292,9 +339,13 @@ func (s *Store) buildLogin(in LoginInput, prev *Credential, list []Credential) (
 		}
 	}
 	if prev != nil && prev.Kind != c.Kind {
-		return c, inputErrorf("%s: a login cannot change between SSH and Windows; add a new one instead", c.Name)
+		return c, inputErrorf("%s: a login cannot change what it signs in to (SSH, Windows, ESXi or SNMP); add a new one instead", c.Name)
 	}
-	if !loginUserRE.MatchString(c.Username) {
+	community := c.Kind == LoginSNMP && c.Auth == AuthCommunity
+	if community {
+		// A community is the whole sign-in: there is no user.
+		c.Username = ""
+	} else if !loginUserRE.MatchString(c.Username) {
 		return c, inputErrorf("%s: the user name may have letters, digits and . _ - @ $, and DOMAIN\\ in front for Windows", c.Name)
 	}
 	switch c.Kind {
@@ -311,10 +362,18 @@ func (s *Store) buildLogin(in LoginInput, prev *Credential, list []Credential) (
 		if c.Auth != AuthKey && c.Auth != AuthPassword {
 			return c, inputErrorf("%s: sign in with a key or a password", c.Name)
 		}
-	case LoginSMB:
+	case LoginSMB, LoginESXi:
 		c.Auth, c.Port = AuthPassword, 0
+	case LoginSNMP:
+		c.Port = 0
+		if c.Auth != AuthSNMPv3 && c.Auth != AuthCommunity {
+			return c, inputErrorf("%s: sign in with SNMPv3 or an SNMPv1/v2c community", c.Name)
+		}
+		if strings.Contains(c.Username, `\`) {
+			return c, inputErrorf("%s: an SNMP user name has no DOMAIN\\ in front", c.Name)
+		}
 	default:
-		return c, inputErrorf("%s: a login is SSH (Linux) or SMB (Windows)", c.Name)
+		return c, inputErrorf("%s: a login is SSH (Linux), SMB (Windows), ESXi or SNMP", c.Name)
 	}
 	if prev != nil && prev.Auth != c.Auth && in.Secret == "" {
 		return c, inputErrorf("%s: enter the %s, as it now signs in with one", c.Name, secretWord(c.Auth))
@@ -324,8 +383,14 @@ func (s *Store) buildLogin(in LoginInput, prev *Credential, list []Credential) (
 	if in.Secret == "" && prev == nil {
 		return c, inputErrorf("%s: enter the %s", c.Name, secretWord(c.Auth))
 	}
-	if c.Auth != AuthKey && in.Passphrase != "" {
+	if c.Auth != AuthKey && (in.Passphrase != "" || in.ClearPassphrase) {
 		return c, inputErrorf("%s: only a private key has a passphrase", c.Name)
+	}
+	if c.Auth != AuthSNMPv3 && in.Privacy != "" {
+		return c, inputErrorf("%s: only an SNMPv3 login has a privacy password", c.Name)
+	}
+	if err := s.buildPrivacy(&c, in, prev); err != nil {
+		return c, err
 	}
 	switch {
 	case in.Secret != "":
@@ -366,9 +431,76 @@ func (s *Store) buildLogin(in LoginInput, prev *Credential, list []Credential) (
 	return c, nil
 }
 
+// buildPrivacy sets an SNMPv3 login's privacy password: a new one, or the
+// saved one. It must differ from the authentication password, so that
+// one leaked does not give away the other.
+func (s *Store) buildPrivacy(c *Credential, in LoginInput, prev *Credential) error {
+	if c.Auth != AuthSNMPv3 {
+		return nil
+	}
+	if in.Privacy == "" {
+		if prev == nil || prev.Auth != AuthSNMPv3 || prev.Privacy == "" {
+			return inputErrorf("%s: enter the privacy password, which encrypts what the device sends", c.Name)
+		}
+		c.Privacy = prev.Privacy
+		if in.Secret == "" {
+			return nil
+		}
+		saved, err := s.Keys.Open(secretField(*c, "privacy"), prev.Privacy)
+		if err != nil {
+			return inputErrorf("%s: the saved privacy password cannot be decrypted on this server; enter it again", c.Name)
+		}
+		if saved == in.Secret {
+			return inputErrorf("%s: use a privacy password that differs from the authentication password", c.Name)
+		}
+		return nil
+	}
+	if err := checkSNMPSecret(c.Name, "privacy password", in.Privacy); err != nil {
+		return err
+	}
+	auth := in.Secret
+	if auth == "" && prev != nil && prev.Auth == AuthSNMPv3 {
+		saved, err := s.Keys.Open(secretField(*c, "secret"), prev.Secret)
+		if err != nil {
+			return inputErrorf("%s: the saved authentication password cannot be decrypted on this server; enter it again", c.Name)
+		}
+		auth = saved
+	}
+	if auth == in.Privacy {
+		return inputErrorf("%s: use a privacy password that differs from the authentication password", c.Name)
+	}
+	sealed, err := s.Keys.Seal(secretField(*c, "privacy"), in.Privacy)
+	if err != nil {
+		return err
+	}
+	c.Privacy = sealed
+	return nil
+}
+
+// checkSNMPSecret checks an SNMPv3 password or a community: long enough
+// not to be guessed, and never a well-known default.
+func checkSNMPSecret(name, what, v string) error {
+	if len(v) < minSNMPLen {
+		return inputErrorf("%s: the %s must be at least %d characters", name, what, minSNMPLen)
+	}
+	if len(v) > maxPasswordLen || strings.ContainsFunc(v, unicode.IsControl) {
+		return inputErrorf("%s: the %s is longer than %d characters or has a line break or other control character", name, what, maxPasswordLen)
+	}
+	return nil
+}
+
+// defaultCommunities are communities devices ship with, which anyone
+// can guess.
+var defaultCommunities = []string{"public", "private", "community", "password", "secret", "admin", "manager", "monitor", "snmp", "cisco", "default"}
+
 func secretWord(auth string) string {
-	if auth == AuthKey {
+	switch auth {
+	case AuthKey:
 		return "private key"
+	case AuthSNMPv3:
+		return "authentication password"
+	case AuthCommunity:
+		return "community"
 	}
 	return "password"
 }
@@ -381,6 +513,18 @@ func checkSecret(c Credential, secret, phrase string) error {
 	}
 	if len(secret) > maxSecretLen {
 		return inputErrorf("%s: that is too long for a %s", c.Name, secretWord(c.Auth))
+	}
+	switch c.Auth {
+	case AuthSNMPv3:
+		return checkSNMPSecret(c.Name, secretWord(c.Auth), secret)
+	case AuthCommunity:
+		if err := checkSNMPSecret(c.Name, secretWord(c.Auth), secret); err != nil {
+			return err
+		}
+		if slices.ContainsFunc(defaultCommunities, func(d string) bool { return strings.HasPrefix(strings.ToLower(secret), d) && len(secret) < len(d)+4 }) {
+			return inputErrorf("%s: that community is a well-known default anyone can guess; set a long random one on the devices", c.Name)
+		}
+		return nil
 	}
 	if c.Auth != AuthKey {
 		// OpenVAS gets it in XML, which cannot carry control characters.
@@ -486,6 +630,14 @@ func (s *Store) OpenLogin(ctx context.Context, id string) (*Login, error) {
 		return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its %s again in Settings > Scanners", c.Name, secretWord(c.Auth))
 	}
 	l := &Login{Kind: c.Kind, Username: c.Username, Auth: c.Auth, Port: c.Port, Secret: secret}
+	if c.Auth == AuthSNMPv3 {
+		if !secrets.IsSealed(c.Privacy) {
+			return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its passwords again in Settings > Scanners", c.Name)
+		}
+		if l.Privacy, err = s.Keys.Open(secretField(c, "privacy"), c.Privacy); err != nil {
+			return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its passwords again in Settings > Scanners", c.Name)
+		}
+	}
 	if c.Passphrase != "" {
 		if l.Passphrase, err = s.Keys.Open(secretField(c, "passphrase"), c.Passphrase); err != nil {
 			return nil, fmt.Errorf("the scan login %s cannot be decrypted on this server; enter its key and passphrase again in Settings > Scanners", c.Name)
@@ -496,28 +648,36 @@ func (s *Store) OpenLogin(ctx context.Context, id string) (*Login, error) {
 
 // ScanLogins are the logins OpenVAS signs in with for one scan.
 type ScanLogins struct {
-	SSH, SMB *Login
+	SSH, SMB, ESXi, SNMP *Login
+}
+
+// all lists the logins set, in a fixed order.
+func (l ScanLogins) all() []*Login {
+	var out []*Login
+	for _, x := range []*Login{l.SSH, l.SMB, l.ESXi, l.SNMP} {
+		if x != nil {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // loginsFor decrypts the logins t names.
 func (s *Store) loginsFor(ctx context.Context, t Target) (ScanLogins, error) {
 	var out ScanLogins
-	var err error
-	if t.SSHLogin != "" {
-		if out.SSH, err = s.OpenLogin(ctx, t.SSHLogin); err != nil {
-			return out, err
+	slots := map[string]**Login{LoginSSH: &out.SSH, LoginSMB: &out.SMB, LoginESXi: &out.ESXi, LoginSNMP: &out.SNMP}
+	for _, ref := range t.loginRefs() {
+		if ref.id == "" {
+			continue
 		}
-		if out.SSH.Kind != LoginSSH {
-			return ScanLogins{}, errors.New("its SSH login is a Windows login; edit the network and pick another")
+		l, err := s.OpenLogin(ctx, ref.id)
+		if err != nil {
+			return ScanLogins{}, err
 		}
-	}
-	if t.SMBLogin != "" {
-		if out.SMB, err = s.OpenLogin(ctx, t.SMBLogin); err != nil {
-			return out, err
+		if l.Kind != ref.kind {
+			return ScanLogins{}, fmt.Errorf("its %s is a login of another kind; edit the network and pick another", ref.what)
 		}
-		if out.SMB.Kind != LoginSMB {
-			return ScanLogins{}, errors.New("its Windows login is an SSH login; edit the network and pick another")
-		}
+		*slots[ref.kind] = l
 	}
 	return out, nil
 }
@@ -530,14 +690,14 @@ func checkLoginRefs(set Settings, list []Credential) error {
 		kind[c.ID] = c.Kind
 	}
 	for _, t := range set.Targets {
-		for _, ref := range []struct{ id, want, what string }{{t.SSHLogin, LoginSSH, "SSH login"}, {t.SMBLogin, LoginSMB, "Windows login"}} {
+		for _, ref := range t.loginRefs() {
 			if ref.id == "" {
 				continue
 			}
 			if !t.OpenVAS {
 				return inputErrorf("%s: only OpenVAS scans sign in to hosts; turn OpenVAS on or set %s to None", t.Name, ref.what)
 			}
-			if k, ok := kind[ref.id]; !ok || k != ref.want {
+			if k, ok := kind[ref.id]; !ok || k != ref.kind {
 				return inputErrorf("%s: its %s was removed or is not one; reload the page and pick another", t.Name, ref.what)
 			}
 		}
@@ -548,11 +708,7 @@ func checkLoginRefs(set Settings, list []Credential) error {
 // CheckLogins checks the logins the networks of set name against the
 // saved ones.
 func (s *Store) CheckLogins(ctx context.Context, set Settings) error {
-	need := false
-	for _, t := range set.Targets {
-		need = need || t.SSHLogin != "" || t.SMBLogin != ""
-	}
-	if !need {
+	if !slices.ContainsFunc(set.Targets, Target.hasLogin) {
 		return nil
 	}
 	list, _, err := s.Logins(ctx)
@@ -583,6 +739,9 @@ func (s *Store) ResealLogins(ctx context.Context, reseal func(field, sealed stri
 				return fmt.Errorf("the scan login %s: %w", c.Name, err)
 			}
 			if c.Passphrase, err = reseal(secretField(*c, "passphrase"), c.Passphrase); err != nil {
+				return fmt.Errorf("the scan login %s: %w", c.Name, err)
+			}
+			if c.Privacy, err = reseal(secretField(*c, "privacy"), c.Privacy); err != nil {
 				return fmt.Errorf("the scan login %s: %w", c.Name, err)
 			}
 		}

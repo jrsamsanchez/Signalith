@@ -75,6 +75,24 @@ func TestVulnLogins(t *testing.T) {
 	if code, o, _ := call(t, ts, "DELETE", "/api/vulns/logins/nope", "", "admin", "s3cret-pass", nil); code != 404 {
 		t.Fatalf("removed a missing login: %d %v", code, o)
 	}
+
+	// SNMPv3: both passwords stay out of the answer, the list and the
+	// logs; the audit record says the privacy password changed.
+	const auth, priv = "Snmp-auth-pass-1", "Snmp-priv-pass-1"
+	code, out, raw = call(t, ts, "PUT", "/api/vulns/logins/sw", `{"name":"Switches","kind":"snmp","username":"scan","auth":"v3","secret":"`+auth+`","privacy":"`+priv+`"}`, "admin", "s3cret-pass", nil)
+	if code != 200 || out["readable"] != true || strings.Contains(raw, auth) || strings.Contains(raw, priv) || strings.Contains(raw, "enc:") {
+		t.Fatalf("save SNMP %d %s", code, raw)
+	}
+	if _, _, raw = call(t, ts, "GET", "/api/vulns/logins", "", "admin", "s3cret-pass", nil); strings.Contains(raw, priv) || strings.Contains(raw, "enc:") {
+		t.Fatalf("list %s", raw)
+	}
+	if strings.Contains(logs.String(), priv) || !strings.Contains(logs.String(), "privacy_changed=true") {
+		t.Fatalf("logs:\n%s", logs.String())
+	}
+	_, out, _ = call(t, ts, "GET", "/api/vulns", "", "admin", "s3cret-pass", nil)
+	if code, o, _ := call(t, ts, "PUT", "/api/vulns/settings", net("esxi_login", "sw"), "admin", "s3cret-pass", nil); code != 400 {
+		t.Fatalf("an SNMP login as ESXi: %d %v", code, o)
+	}
 }
 
 // With no encryption key, nothing is saved.

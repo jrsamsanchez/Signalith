@@ -54,13 +54,16 @@ type Target struct {
 	// OpenVAS also scans the network with OpenVAS after Nmap, on a scanner
 	// where it is set up: deeper, but much slower.
 	OpenVAS bool `json:"openvas,omitempty"`
-	// SSHLogin and SMBLogin are the IDs of the scan logins OpenVAS signs
-	// in to the hosts with, over SSH (Linux) and SMB (Windows); "" scans
-	// without signing in.
-	SSHLogin string   `json:"ssh_login,omitempty"`
-	SMBLogin string   `json:"smb_login,omitempty"`
-	Schedule Schedule `json:"schedule"`
-	Enabled  bool     `json:"enabled"`
+	// SSHLogin, SMBLogin, ESXiLogin and SNMPLogin are the IDs of the scan
+	// logins OpenVAS signs in to the hosts with, over SSH (Linux), SMB
+	// (Windows), the VMware API (ESXi) and SNMP (network devices); ""
+	// scans without signing in.
+	SSHLogin  string   `json:"ssh_login,omitempty"`
+	SMBLogin  string   `json:"smb_login,omitempty"`
+	ESXiLogin string   `json:"esxi_login,omitempty"`
+	SNMPLogin string   `json:"snmp_login,omitempty"`
+	Schedule  Schedule `json:"schedule"`
+	Enabled   bool     `json:"enabled"`
 	// Scanner is the node ID of the server that scans this network, one
 	// that can reach it (in its network zone): "" is the server that runs
 	// the background jobs.
@@ -201,10 +204,12 @@ func (t *Target) Validate() error {
 	if t.Gentle && t.OpenVAS {
 		return inputErrorf("%s: OpenVAS cannot scan a network in gentle mode: it sends far more traffic than fragile devices may take. Turn one of them off", t.Name)
 	}
-	if !validLoginRef(t.SSHLogin) || !validLoginRef(t.SMBLogin) {
-		return inputErrorf("%s: its scan login is not valid; reload the page and pick another", t.Name)
+	for _, ref := range t.loginRefs() {
+		if !validLoginRef(ref.id) {
+			return inputErrorf("%s: its %s is not valid; reload the page and pick another", t.Name, ref.what)
+		}
 	}
-	if !t.OpenVAS && (t.SSHLogin != "" || t.SMBLogin != "") {
+	if !t.OpenVAS && t.hasLogin() {
 		return inputErrorf("%s: only OpenVAS scans sign in to hosts; turn OpenVAS on or set the logins to None", t.Name)
 	}
 	t.Scanner = strings.TrimSpace(t.Scanner)

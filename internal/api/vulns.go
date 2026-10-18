@@ -605,8 +605,8 @@ func vulnChanges(before, after vulnscan.Settings) []string {
 		p, ok := old[t.ID]
 		delete(old, t.ID)
 		if !ok {
-			out = append(out, fmt.Sprintf("%s added: scans %s, skips %s, scanner %s, SSH login %s, Windows login %s",
-				t.Name, list(t.Networks), list(t.Exclude), or(t.Scanner), or(t.SSHLogin), or(t.SMBLogin)))
+			out = append(out, fmt.Sprintf("%s added: scans %s, skips %s, scanner %s, SSH login %s, Windows login %s, ESXi login %s, SNMP login %s",
+				t.Name, list(t.Networks), list(t.Exclude), or(t.Scanner), or(t.SSHLogin), or(t.SMBLogin), or(t.ESXiLogin), or(t.SNMPLogin)))
 			continue
 		}
 		for _, d := range []struct{ what, was, now string }{
@@ -616,6 +616,8 @@ func vulnChanges(before, after vulnscan.Settings) []string {
 			{"OpenVAS", fmt.Sprint(p.OpenVAS), fmt.Sprint(t.OpenVAS)},
 			{"SSH login", or(p.SSHLogin), or(t.SSHLogin)},
 			{"Windows login", or(p.SMBLogin), or(t.SMBLogin)},
+			{"ESXi login", or(p.ESXiLogin), or(t.ESXiLogin)},
+			{"SNMP login", or(p.SNMPLogin), or(t.SNMPLogin)},
 		} {
 			if d.was != d.now {
 				out = append(out, fmt.Sprintf("%s: %s %s -> %s", t.Name, d.what, d.was, d.now))

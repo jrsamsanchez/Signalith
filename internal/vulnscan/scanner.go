@@ -599,7 +599,8 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 			}
 			s.sweepOpenVAS(ctx, ov)
 			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID,
-				"ssh_login", logins.SSH != nil, "windows_login", logins.SMB != nil)
+				"ssh_login", logins.SSH != nil, "windows_login", logins.SMB != nil,
+				"esxi_login", logins.ESXi != nil, "snmp_login", logins.SNMP != nil)
 			var oerr error
 			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, logins, func(p float64) {
 				pmu.Lock()
