@@ -4986,6 +4986,10 @@ rules:
     rule_id: 953322db-128a-4ce9-8e89-56e039e33d98
     file: windows_suspect_process_with_authentication_traffic.yml
     path: detections/endpoint/windows_suspect_process_with_authentication_traffic.yml
+  - id: splunk-windows-suspicious-burst-of-password-changes
+    rule_id: 0dcfcab9-e936-43bc-8203-005e17dc0744
+    file: windows_suspicious_burst_of_password_changes.yml
+    path: detections/endpoint/windows_suspicious_burst_of_password_changes.yml
   - id: splunk-windows-suspicious-c2-named-pipe
     rule_id: 90599d85-dc2a-4d4c-8c59-9485c3665828
     file: windows_suspicious_c2_named_pipe.yml
