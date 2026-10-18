@@ -145,6 +145,7 @@ nav:
       - Behavior baselines: baselines.md
       - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
+      - Attack storyline: storyline.md
       - AI tools (MCP): ai-tools.md
       - Threat intel: threat-intel.md
       - Dashboards: dashboards.md

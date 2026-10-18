@@ -23,7 +23,7 @@ var (
 	// tenant's own server.
 	tenantResources = []string{
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
-		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "intel", "posture",
+		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "storyline", "intel", "posture",
 		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
 		"endpoints", "agents", "agent-tokens", "agent", "users", "ticketing", "baselines",
 	}

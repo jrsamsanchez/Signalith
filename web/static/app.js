@@ -498,6 +498,9 @@ function showPage(name, opts = {}) {
 // notebooks.js picks up from hashNotebook, and Investigations the case to
 // open, as in #cases?id=…, which cases.js picks up from hashCase.
 let hashSource = false;
+// pageQuery is the rest of an address such as #storyline?type=user&object=bob,
+// for the page to read when it opens (and clear).
+let pageQuery = '';
 let hashNotebook = null;
 let hashCase = '';
 function pageFromHash() {
@@ -508,6 +511,7 @@ function pageFromHash() {
   try { name = decodeURIComponent(name); } catch (_) { return null; }
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  pageQuery = name === 'data' ? '' : query;
   if (name === 'notebooks') {
     hashNotebook = new URLSearchParams(query).get('id') || null;
     hashSource = !!hashNotebook;
@@ -593,7 +597,7 @@ slideOver.addEventListener('change', syncInspectInert);
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
-  risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
+  risk: 'risk scores', storyline: 'attack story kill chain timeline graph mitre att&ck tactics intrusion entities incident', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
   compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',

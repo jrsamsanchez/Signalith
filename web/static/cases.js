@@ -476,9 +476,10 @@ function caseHead(c, linked) {
         el('span', { title: fullTime(c.created) }, `Opened ${ago(c.created)}` + (c.created_by ? ` by ${c.created_by}` : '')),
         dotsep(),
         el('span', { title: fullTime(c.updated) }, `Updated ${ago(c.updated)}`))),
-    editable ? el('div', { class: 'c-head__actions' },
-      el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond'),
-      action) : null);
+    el('div', { class: 'c-head__actions' },
+      storylineButton({ case: c.id }, { label: 'Storyline', title: 'See this case’s findings with every other finding and risk event about its entities, in ATT&CK order' }),
+      editable ? el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond') : null,
+      editable ? action : null));
 }
 
 // caseRespond opens the Respond dialog (respond.js) with the case's
