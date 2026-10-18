@@ -50,18 +50,25 @@ type osEndpoint struct {
 // osCard is GET /api/cluster/opensearch. Counts are nil when OpenSearch
 // did not say (an older version, or a user without the right to ask).
 type osCard struct {
-	Status           string       `json:"status"`
-	Problem          string       `json:"problem,omitempty"`
-	Nodes            *int         `json:"nodes"`
-	DataNodes        *int         `json:"data_nodes"`
-	ManagerEligible  *int         `json:"manager_eligible"`
-	UnassignedShards *int         `json:"unassigned_shards"`
-	Disk             []osDisk     `json:"disk"`
-	NoReplicas       []string     `json:"no_replicas"`
-	ReplicasSetting  string       `json:"replicas_setting"`
-	SuggestAuto      bool         `json:"suggest_auto"`
-	Endpoints        []osEndpoint `json:"endpoints"`
-	Warnings         []string     `json:"warnings"`
+	Status           string   `json:"status"`
+	Problem          string   `json:"problem,omitempty"`
+	Nodes            *int     `json:"nodes"`
+	DataNodes        *int     `json:"data_nodes"`
+	ManagerEligible  *int     `json:"manager_eligible"`
+	UnassignedShards *int     `json:"unassigned_shards"`
+	Disk             []osDisk `json:"disk"`
+	NoReplicas       []string `json:"no_replicas"`
+	ReplicasSetting  string   `json:"replicas_setting"`
+	SuggestAuto      bool     `json:"suggest_auto"`
+	// PrimariesTogether lists today's event indices (and their parts)
+	// whose primary shards all sit on one node, though there are several
+	// data nodes: that node alone does their indexing work.
+	PrimariesTogether []string `json:"primaries_together"`
+	// PreferPrimary is cluster.routing.allocation.balance.prefer_primary,
+	// nil when not known.
+	PreferPrimary *bool        `json:"prefer_primary"`
+	Endpoints     []osEndpoint `json:"endpoints"`
+	Warnings      []string     `json:"warnings"`
 }
 
 // handleClusterOpenSearch says how safe the OpenSearch cluster is from
@@ -76,7 +83,7 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	conf := s.conf()
-	out := osCard{Disk: []osDisk{}, NoReplicas: []string{}, Endpoints: []osEndpoint{}, Warnings: []string{},
+	out := osCard{Disk: []osDisk{}, NoReplicas: []string{}, PrimariesTogether: []string{}, Endpoints: []osEndpoint{}, Warnings: []string{},
 		ReplicasSetting: strings.TrimSpace(string(conf.OpenSearch.Replicas))}
 	for _, e := range oc.Endpoints() {
 		oe := osEndpoint{URL: e.URL, Down: e.Down, Reason: e.Reason}
@@ -126,6 +133,7 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 		for i := range out.Disk {
 			out.Disk[i].Low, out.Disk[i].High, out.Disk[i].Flood = low, high, flood
 		}
+		out.PreferPrimary = clusterBool(settings, "cluster.routing.allocation.balance.prefer_primary")
 	}
 	prefix := conf.OpenSearch.IndexPrefix
 	var indices []struct {
@@ -142,6 +150,28 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 		sort.Strings(out.NoReplicas)
 	}
 
+	if out.DataNodes != nil && *out.DataNodes > 1 {
+		var shards []struct {
+			Index  string `json:"index"`
+			Shard  string `json:"shard"`
+			PriRep string `json:"prirep"`
+			Node   string `json:"node"`
+		}
+		today := url.PathEscape(prefix + "-*-" + time.Now().UTC().Format("2006.01.02") + "*")
+		if oc.Do(ctx, http.MethodGet, "/_cat/shards/"+today+"?format=json&h=index,shard,prirep,node", nil, &shards) == nil {
+			nodes := map[string]map[string]bool{}
+			for _, sh := range shards {
+				if sh.PriRep != "p" || sh.Node == "" || sh.Index == "" {
+					continue
+				}
+				if nodes[sh.Index] == nil {
+					nodes[sh.Index] = map[string]bool{}
+				}
+				nodes[sh.Index][sh.Shard+"\x00"+sh.Node] = true
+			}
+			out.PrimariesTogether = primariesTogether(nodes)
+		}
+	}
 	if n, err := strconv.Atoi(out.ReplicasSetting); err == nil && n == 0 && out.DataNodes != nil && *out.DataNodes > 1 {
 		out.SuggestAuto = true
 	}
@@ -168,6 +198,14 @@ func osWarnings(c osCard) []string {
 				d.Node, *d.UsedPercent, *d.Low))
 		}
 	}
+	if n := len(c.PrimariesTogether); n > 0 {
+		text := fmt.Sprintf("Every primary shard of %d of today's %s on one OpenSearch node, so that node alone does %s indexing work.",
+			n, plural(n, "event indices is", "event indices are"), plural(n, "its", "their"))
+		if c.PreferPrimary == nil || !*c.PreferPrimary {
+			text += " Set cluster.routing.allocation.balance.prefer_primary to true, so OpenSearch spreads primary shards over the nodes."
+		}
+		w = append(w, text)
+	}
 	if len(c.NoReplicas) > 0 && c.DataNodes != nil && *c.DataNodes > 1 {
 		w = append(w, fmt.Sprintf("%d Signalith %s no copy on another node: losing the node %s on loses %s.",
 			len(c.NoReplicas), plural(len(c.NoReplicas), "index has", "indices have"), plural(len(c.NoReplicas), "it is", "they are"),
@@ -181,6 +219,42 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// primariesTogether lists the indices with two or more primary shards,
+// all on one node, from each index's set of "shard\x00node" of its
+// primaries.
+func primariesTogether(prims map[string]map[string]bool) []string {
+	out := []string{}
+	for idx, set := range prims {
+		if len(set) < 2 {
+			continue
+		}
+		nodes := map[string]bool{}
+		for k := range set {
+			_, node, _ := strings.Cut(k, "\x00")
+			nodes[node] = true
+		}
+		if len(nodes) == 1 {
+			out = append(out, idx)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// clusterBool reads a true/false cluster setting from the transient,
+// persistent or default settings, in that order; nil when it is not there.
+func clusterBool(settings map[string]map[string]any, key string) *bool {
+	for _, layer := range []string{"transient", "persistent", "defaults"} {
+		if v, ok := settings[layer][key]; ok {
+			if b, err := strconv.ParseBool(strings.TrimSpace(fmt.Sprint(v))); err == nil {
+				return &b
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
 // watermark returns a disk watermark as a percentage, from the

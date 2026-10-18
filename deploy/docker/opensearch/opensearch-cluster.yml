@@ -17,6 +17,11 @@ cluster.initial_cluster_manager_nodes: ["opensearch", "opensearch-2", "opensearc
 # resets on every restart.
 node.store.allow_mmap: false
 
+# Spread each index's primary shards over the nodes, not only the number
+# of shards: the primaries do most of the indexing work, and OpenSearch
+# may otherwise put every primary of a day's index on one node.
+cluster.routing.allocation.balance.prefer_primary: true
+
 # Each node has its own certificate from Signalith's OpenSearch CA, made by
 # the setup service with -nodes 3: node.pem for the first node, node-2.pem
 # and node-3.pem for the others.
