@@ -405,10 +405,15 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 		}
 	}
 	src := filepath.Join(home, "config")
-	for _, name := range []string{"jvm.options", "log4j2.properties"} {
-		if err := copyFile(filepath.Join(src, name), filepath.Join(l.Config(), name)); err != nil {
-			return err
-		}
+	if err := copyFile(filepath.Join(src, "log4j2.properties"), filepath.Join(l.Config(), "log4j2.properties")); err != nil {
+		return err
+	}
+	jvm, err := os.ReadFile(filepath.Join(src, "jvm.options"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(l.Config(), "jvm.options"), []byte(JVMOptions(l, string(jvm))), 0o600); err != nil {
+		return err
 	}
 	// The release's other security files (action groups, tenants, ...),
 	// then Signalith's.
@@ -433,6 +438,28 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(l.Config(), "opensearch.yml"), []byte(Settings(l, port)), 0o600)
+}
+
+// JVMOptions is the release's jvm.options with its paths, which are
+// relative to the folder Java starts in, moved to Data: heap dumps and
+// crash logs go there, not to the program's folder, which the service
+// cannot write to. The garbage collector's log is left out, as Java cannot
+// take a Windows path (C:...) in its -Xlog option.
+func JVMOptions(l Layout, release string) string {
+	var b strings.Builder
+	b.WriteString("# The release's jvm.options, with paths in " + l.Data + " (written by Signalith).\n")
+	for _, line := range strings.Split(strings.ReplaceAll(release, "\r\n", "\n"), "\n") {
+		switch {
+		case strings.Contains(line, "-Xlog:gc") || strings.Contains(line, "-Xloggc:"):
+			continue
+		case strings.HasSuffix(line, "-XX:HeapDumpPath=data"):
+			line = strings.TrimSuffix(line, "data") + l.DataDir()
+		case strings.Contains(line, "-XX:ErrorFile=logs/"):
+			line = strings.Replace(line, "-XX:ErrorFile=logs/", "-XX:ErrorFile="+l.Logs()+string(filepath.Separator), 1)
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
 }
 
 // Settings is opensearch.yml.

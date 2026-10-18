@@ -186,6 +186,11 @@ func testLayout(t *testing.T) Layout {
 	return Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
 }
 
+// releaseJVM is the part of OpenSearch's jvm.options with paths in it.
+const releaseJVM = "-XX:+HeapDumpOnOutOfMemoryError\r\n-XX:HeapDumpPath=data\r\n-XX:ErrorFile=logs/hs_err_pid%p.log\r\n" +
+	"8:-Xloggc:logs/gc.log\r\n9-:-Xlog:gc*,gc+age=trace,safepoint:file=logs/gc.log:utctime,pid,tags:filecount=32,filesize=64m\r\n" +
+	"-Djava.io.tmpdir=${OPENSEARCH_TMPDIR}\r\n"
+
 func TestStateAndConfig(t *testing.T) {
 	l := testLayout(t)
 	if st, err := LoadState(l); st != nil || err != nil {
@@ -202,7 +207,7 @@ func TestStateAndConfig(t *testing.T) {
 
 	home := l.VersionHome("3.9.0")
 	for name, body := range map[string]string{
-		"config/jvm.options":                            "-Xms1g\n",
+		"config/jvm.options":                            releaseJVM,
 		"config/log4j2.properties":                      "status = error\n",
 		"config/opensearch-security/action_groups.yml":  "_meta: {}\n",
 		"config/opensearch-security/internal_users.yml": "admin: demo\n",
@@ -258,6 +263,16 @@ func TestStateAndConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(l.Security(), "action_groups.yml")); err != nil {
 		t.Error("the release's other security files were not copied")
+	}
+	jvm, _ := os.ReadFile(filepath.Join(l.Config(), "jvm.options"))
+	for _, want := range []string{"-XX:+HeapDumpOnOutOfMemoryError\n", "-XX:HeapDumpPath=" + l.DataDir() + "\n",
+		"-XX:ErrorFile=" + filepath.Join(l.Logs(), "hs_err_pid%p.log") + "\n", "-Djava.io.tmpdir=${OPENSEARCH_TMPDIR}\n"} {
+		if !strings.Contains(string(jvm), want) {
+			t.Errorf("jvm.options lacks %q:\n%s", want, jvm)
+		}
+	}
+	if strings.Contains(string(jvm), "=logs/") || strings.Contains(string(jvm), "gc.log") || strings.Contains(string(jvm), "\r") {
+		t.Errorf("jvm.options has a relative path or a CR:\n%s", jvm)
 	}
 	heap, _ := os.ReadFile(filepath.Join(l.Config(), "jvm.options.d", "heap.options"))
 	if !strings.Contains(string(heap), "-Xmx2048m") {
