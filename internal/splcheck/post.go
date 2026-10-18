@@ -54,6 +54,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	outs := map[string]*lookupOut{}
 	grouped := group != ""
 	located := false
+	counts := map[string]bool{}
 	var groupStages []string
 	if group != "" {
 		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
@@ -159,12 +160,29 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		}
 		parts = append(parts, s)
 		scan = append(scan, s)
+		if fix := stdevFix(s, counts); fix != "" {
+			parts = append(parts, fix)
+		}
 		grouped = grouped || strings.HasPrefix(s, "stats ") || strings.HasPrefix(s, "table ")
 	}
 	if len(parts) == 0 && !r.sub {
 		return nil
 	}
 	text := strings.Join(parts, "\n| ")
+	if !r.sub {
+		// Counts compared with each other (an eventstats after a stats)
+		// in the stages after a tstats search's own grouping.
+		if own, err := query.Parse("* | " + text); err == nil {
+			span, err := compareStages(own.Commands)
+			if err != nil {
+				return err
+			}
+			if span > 0 && group != "" {
+				return fmt.Errorf("a tstats search whose later stages compare counts within time buckets is not supported")
+			}
+			r.PostSpan, r.PostCompared = max(r.PostSpan, span), span > 0
+		}
+	}
 	named := strings.Join(scan, "\n| ")
 	if group != "" && len(parts) == 0 {
 		// A join's subsearch with no stages after its grouping.
@@ -514,7 +532,18 @@ func tstatsGroup(aggs, by string) (group string, span time.Duration, err error) 
 	aggs = strings.TrimSpace(nodeFieldRe.ReplaceAllString(aggs, "$1"))
 	by = strings.TrimSpace(nodeFieldRe.ReplaceAllString(by, "$1"))
 	if m := timeSpanRe.FindStringSubmatch(by); m != nil {
-		span = parseSpan(m[1]+m[3], m[2]+m[4])
+		// Each run searches the span plus the time since the last run,
+		// so a longer span costs a longer search: at most a day. (Six
+		// digits keep the number from overflowing a duration.)
+		if n := m[1] + m[3]; len(n) <= 6 {
+			span = parseSpan(n, m[2]+m[4])
+		}
+		if n := m[1] + m[3]; strings.Trim(n, "0") == "" {
+			return "", 0, fmt.Errorf("a tstats search grouped by time in spans of 0 is not supported")
+		}
+		if span <= 0 || span > maxTstatsSpan {
+			return "", 0, fmt.Errorf("a tstats search grouped by time in spans longer than %s is not supported", formatSpan(maxTstatsSpan))
+		}
 		by = timeSpanRe.ReplaceAllString(by, " "+timeBucket+" ")
 	}
 	if strings.Contains(by, "span") || strings.Contains(aggs, "`") {
@@ -546,6 +575,18 @@ func tstatsGroup(aggs, by string) (group string, span time.Duration, err error) 
 var timeSpanRe = regexp.MustCompile(`(?i)\b_time\s+span\s*=\s*(\d+)([smh])\b|\bspan\s*=\s*(\d+)([smh])\s+_time\b`)
 
 const timeBucket = "time_bucket"
+
+// maxTstatsSpan is the longest time span a tstats search may group by,
+// which bounds the time each run of its detection searches.
+const maxTstatsSpan = 24 * time.Hour
+
+// formatSpan writes a span as hours (24h) or minutes.
+func formatSpan(d time.Duration) string {
+	if d%time.Hour == 0 {
+		return strconv.Itoa(int(d/time.Hour)) + "h"
+	}
+	return strconv.Itoa(int(d/time.Minute)) + "m"
+}
 
 // Each run of a rule grouped by time searches its span plus the time
 // since the last run, so each bucket is whole in some run, and the

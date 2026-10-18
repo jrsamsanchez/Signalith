@@ -77,8 +77,16 @@ type Rule struct {
 	Post string          `yaml:"-"`
 	post []query.Command `yaml:"-"`
 	// PostSpan is the span of a tstats search's own grouping by time
-	// (by _time span=1h) whose later stages run as Post; 0 for none.
+	// (by _time span=1h) whose later stages run as Post, or of the time
+	// buckets a raw search's later stages compare counts within
+	// (PostCompared); 0 for none.
 	PostSpan time.Duration `yaml:"-"`
+	// PostCompared is set for later stages that count events by group
+	// in time buckets of PostSpan (bucket span=10m _time, stats ... by
+	// _time, src) and compare the groups of each bucket with each other
+	// (eventstats avg(n), stdev(n) by _time): the detection keeps a
+	// bucket's rows only from a run whose window holds the whole bucket.
+	PostCompared bool `yaml:"-"`
 	// postField is the Signalith field of a field the later stages name
 	// (false for none).
 	postField func(string) (string, bool) `yaml:"-"`

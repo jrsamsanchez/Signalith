@@ -1232,13 +1232,36 @@ and each group is found once a day. Fields of Splunk's add-ons that only restate
 which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
 `authentication_method`) are left out of the grouping; an event's `Computer` is
 `host`. A rule ships only when its test events carry every field it groups by and
-counts. Counts compared with an average (`eventstats`) run as later stages (below), but
-no single test event reaches one, so none ship yet.
+counts.
+
+Counts compared with each other (a later `eventstats avg(n), stdev(n)` after a `stats`,
+keeping a group above the average by some standard deviations) run as later stages
+(below). Splunk compares the groups of its whole search window (by default the hour that
+ended 10 minutes before each hourly run), so a rule that compares counts over the whole
+search, or across time buckets (`eventstats ... by src` after `stats ... by _time, src`),
+depends on that window and is left out. So is any other later stage that reads the
+search's other rows (`eventstats` over the events or a `tstats` search's rows,
+`streamstats`, `anomalydetection`, `outlier`, `predict`, `trendline`, `delta`, `accum`,
+`autoregress`): its answer depends on how long a window it sees. One that compares the groups of each time bucket
+(`bucket span=10m _time`, `stats ... by _time, src`, `eventstats ... by _time`) ships when
+the span divides 10 minutes, so Splunk's window holds each bucket whole: each run searches
+the span plus the time since the last run (every 5 minutes), and the detection keeps a
+bucket's rows only from a run whose window holds the whole bucket (`addinfo` and a `where`
+at the end), since a part of a bucket may stand out where the whole does not. A bucket is
+compared at the first run after it ends; events that arrive later are not counted in it
+(Splunk's default waits 10 minutes). Splunk's standard deviation of a single value is 0,
+and Signalith's is null, so after the `eventstats` a null standard deviation of a count is
+set to 0 (`eval std=coalesce(std, 0)`). Its test events are the repeated event among other
+groups' events at the same time, one each (`"baseline"` in the test file): the rule must
+find the repeat among enough others to stand out, and not find it when another group is as
+high, or among fewer others (with the sample standard deviation, one group stands out
+from the others by at most (n-1)/√n standard deviations, so three need ten others).
 
 A `tstats` search grouped by time (`by _time span=1h dest`) whose other later stages
 run as written (below) puts each event's time in its bucket first (`bin _time span=3600s
 as time_bucket`), groups by the bucket and names it `_time`, so `min(_time)` and
-`max(_time)` still read the events' own times. Buckets are aligned to UTC (an hour
+`max(_time)` still read the events' own times. The span may be at most 24 hours, which
+bounds how far back each run searches; a rule with a longer span is left out. Buckets are aligned to UTC (an hour
 bucket starts on the hour in UTC). Splunk aligns them to the searching user's time
 zone, which is the same for zones a whole number of hours from UTC, and for spans in
 minutes that divide an hour, in any zone a whole number of those minutes off; in a

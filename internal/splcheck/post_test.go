@@ -97,6 +97,11 @@ func TestPostRefuses(t *testing.T) {
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h Processes.dest | search count=1":                                       "part of a bucket",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest _time span=1m | eventstats avg(count) as a by dest | where count > a": "search window",
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1h _time span=1m Processes.dest | eval x=1":                               "twice",
+		// Spans longer than a day would make each run search too long.
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=25h Processes.dest | eval x=1":                   "longer than 24h",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=1441m Processes.dest | eval x=1":                 "longer than 24h",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=99999999999999999999s Processes.dest | eval x=1": "longer than 24h",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by _time span=0m Processes.dest | eval x=1":                    "spans of 0",
 	} {
 		if _, err := Parse(rule(search), testMacros); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v, want %q", search, err, want)

@@ -651,6 +651,13 @@ const GeoIPSetup = "Setup: this rule runs iplocation, which needs a GeoIP City d
 // written. When they end in groups, each is found once a day.
 func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 	d.Query = q.String() + "\n| " + rule.Post
+	if rule.PostCompared {
+		// Counts compared within each time bucket: only a bucket the
+		// run's window holds whole, as Splunk's hourly window does, is
+		// kept (a part of one may stand out where the whole does not).
+		d.Query += fmt.Sprintf("\n| addinfo\n| where relative_time(_time, \"+0s\") >= info_min_time AND relative_time(_time, \"+%ds\") <= info_max_time\n| fields - info_min_time, info_max_time, info_search_time",
+			int64(rule.PostSpan/time.Second))
+	}
 	// In canonical form; Validate reports a query that does not parse.
 	if pq, err := query.Parse(d.Query); err == nil {
 		if err := splunkJoins(pq, rule); err != nil {
