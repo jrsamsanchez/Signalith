@@ -54,7 +54,6 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	outs := map[string]*lookupOut{}
 	grouped := group != ""
 	located := false
-	counts := map[string]bool{}
 	var groupStages []string
 	if group != "" {
 		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
@@ -160,9 +159,6 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		}
 		parts = append(parts, s)
 		scan = append(scan, s)
-		if fix := stdevFix(s, counts); fix != "" {
-			parts = append(parts, fix)
-		}
 		grouped = grouped || strings.HasPrefix(s, "stats ") || strings.HasPrefix(s, "table ")
 	}
 	if len(parts) == 0 && !r.sub {

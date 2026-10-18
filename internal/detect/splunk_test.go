@@ -272,6 +272,54 @@ func TestSplunkGeoIPRules(t *testing.T) {
 	}
 }
 
+// A rule that compares the counts of each time bucket keeps a bucket's
+// rows only from a run whose window holds the whole bucket, and a source
+// alone in its bucket has a standard deviation of 0, as in Splunk, so it
+// stands out by its count alone.
+func TestSplunkComparedBuckets(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d *Detection
+	for _, x := range ds {
+		if x.ID == "splunk-aws-unusual-number-of-failed-authentications-from-ip" {
+			d = x
+		}
+	}
+	if d == nil || !strings.Contains(d.Query, "| where _time >= info_min_time AND _time + 600 <= info_max_time") || strings.Contains(d.Query, "coalesce") {
+		t.Fatalf("detection %v", d)
+	}
+	q, err := query.Parse(d.Query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The rows of the stats, one source alone in each 10-minute bucket,
+	// then the stages after it over a run's window, 10:00 to 10:20.
+	at := slices.IndexFunc(q.Commands, func(c query.Command) bool { _, ok := c.(*query.Stats); return ok })
+	run, err := query.Parse("earliest=2026-10-16T10:00:00Z latest=2026-10-16T10:20:00Z *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Commands = append(run.Commands, q.Commands[at+1:]...)
+	var rows eventsSearcher
+	for _, at := range []string{"09:50", "10:00", "10:10", "10:15"} {
+		rows = append(rows, map[string]any{"@timestamp": "2026-10-16T" + at + ":00Z", "src": "10.0.0." + at[3:], "distinct_attempts": 11})
+	}
+	res, err := (&search.Engine{Store: rows}).Execute(search.Background(context.Background()), run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []any
+	for _, r := range res.Rows {
+		got = append(got, r["src"])
+	}
+	// 09:50 starts before the window and 10:15 ends after it.
+	if !slices.Equal(got, []any{"10.0.0.00", "10.0.0.10"}) {
+		t.Errorf("sources %v, want the buckets of 10:00 and 10:10", got)
+	}
+}
+
 // emptySearcher finds no events.
 type emptySearcher struct{}
 
