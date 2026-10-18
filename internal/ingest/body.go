@@ -147,13 +147,15 @@ func bodySeed(tag string, body []byte) [sha256.Size]byte {
 
 // recordID is the document ID of the record at pos in the request seed
 // identifies: the same in every send of that request, and different for
-// identical records within it.
+// identical records within it. The records of one request share the
+// seed's first bytes, so OpenSearch's check that an ID is new reads one
+// spot of the index for the whole request instead of a random spot per
+// record, which on a large index is what limits how fast it can store.
 func recordID(seed [sha256.Size]byte, pos int) string {
-	var b [sha256.Size + 8]byte
-	copy(b[:], seed[:])
-	binary.BigEndian.PutUint64(b[sha256.Size:], uint64(pos))
-	sum := sha256.Sum256(b[:])
-	return base64.RawURLEncoding.EncodeToString(sum[:18])
+	var b [18]byte
+	copy(b[:14], seed[:14])
+	binary.BigEndian.PutUint32(b[14:], uint32(pos))
+	return base64.RawURLEncoding.EncodeToString(b[:])
 }
 
 // checkBody reads a body without keeping what it decodes and returns how
