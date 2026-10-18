@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,310 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,307 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1239,7 +1239,10 @@ keeping a group above the average by some standard deviations) run as later stag
 (below). Splunk compares the groups of its whole search window (by default the hour that
 ended 10 minutes before each hourly run), so a rule that compares counts over the whole
 search, or across time buckets (`eventstats ... by src` after `stats ... by _time, src`),
-depends on that window and is left out. One that compares the groups of each time bucket
+depends on that window and is left out. So is any other later stage that reads the
+search's other rows (`eventstats` over the events or a `tstats` search's rows,
+`streamstats`, `anomalydetection`, `outlier`, `predict`, `trendline`, `delta`, `accum`,
+`autoregress`): its answer depends on how long a window it sees. One that compares the groups of each time bucket
 (`bucket span=10m _time`, `stats ... by _time, src`, `eventstats ... by _time`) ships when
 the span divides 10 minutes, so Splunk's window holds each bucket whole: each run searches
 the span plus the time since the last run (every 5 minutes), and the detection keeps a

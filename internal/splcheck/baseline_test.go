@@ -17,8 +17,13 @@ func TestCompareStages(t *testing.T) {
 		strings.Replace(head, "2m", "15m", 1) + " | eventstats avg(n) as a BY _time | where n > a":                 "cuts them in parts",
 		head + " | eventstats median(n) as a BY _time | where n > a":                                               "not supported",
 		head + " | eventstats avg(n) as a BY _time | sort - n":                                                     "not supported",
+		// Rows compared with the search's other rows, counted or not.
+		head + " | anomalydetection n": "anomalydetection across the whole search",
+		"`wineventlog_security` EventCode=4768 | eventstats dc(TargetUserName) as d by src_ip | where d > 2":                                                                     "eventstats across the whole search",
+		"`wineventlog_security` EventCode=4768 | streamstats count as c by src_ip | where c > 2":                                                                                 "streamstats across the whole search",
+		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=a.exe by Processes.dest Processes.process | eventstats avg(count) as a | where count > a": "eventstats across the whole search",
 	} {
-		r, err := Parse(rule(search), nil)
+		r, err := Parse(rule(search), testMacros)
 		if want == "" {
 			if err != nil {
 				t.Errorf("%s: %v", search, err)

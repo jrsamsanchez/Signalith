@@ -28,7 +28,14 @@ import (
 
 // windowCompare is why a comparison of counts over the whole search is
 // left out.
-const windowCompare = "a later eventstats of counts across the whole search depends on Splunk's search window"
+const windowCompare = "a later eventstats across the whole search depends on Splunk's search window"
+
+// windowStages are the later stages whose rows depend on the other rows
+// of the search: Splunk runs them over its whole search window.
+var windowStages = map[string]bool{
+	"eventstats": true, "streamstats": true, "anomalydetection": true, "outlier": true, "predict": true,
+	"trendline": true, "delta": true, "accum": true, "autoregress": true,
+}
 
 // splunkWindowStep is how far apart the edges of Splunk's default search
 // windows are: each hourly run searches from 70 to 10 minutes before it.
@@ -51,6 +58,15 @@ func compareStages(cmds []query.Command) (time.Duration, error) {
 			if stats >= 0 && compare < 0 {
 				compare = i
 			}
+		}
+	}
+	// Other stages that compare rows with each other (a running count,
+	// an anomaly or outlier model, an eventstats of the events) read the
+	// whole search too. Only an eventstats after the stats may compare
+	// within each bucket (checked below).
+	for i, c := range cmds {
+		if windowStages[c.Name()] && (compare < 0 || i < stats || c.Name() != "eventstats") {
+			return 0, fmt.Errorf("a later %s across the whole search depends on Splunk's search window", c.Name())
 		}
 	}
 	if compare < 0 {

@@ -224,6 +224,12 @@ func main() {
 			// One over Sysmon's events is endpoint content, left to the
 			// endpoint rules.
 			r, err := splcheck.ParseWith(src, macros, opt)
+			if err != nil && sensorSearch.MatchString(meta.Search) {
+				// A search of connections or DNS lookups that does not
+				// convert says why.
+				skip("does not convert exactly: "+short(err), rel)
+				continue
+			}
 			if err != nil || !splcheck.IsSensorNode(r.Node) {
 				skip("network detection that is not a tstats search of connections or DNS lookups", rel)
 				continue
@@ -408,6 +414,10 @@ var oktaFile = regexp.MustCompile(`(?m)^data_source:\s*\n\s*-\s*Okta\s*\n\S`)
 
 // webSearch is a search of the Web data model.
 var webSearch = regexp.MustCompile(`(?i)\bfrom\s+datamodel=Web\b`)
+
+// sensorSearch is a tstats search of connections or DNS lookups, the data
+// models a network rule reads from any source.
+var sensorSearch = regexp.MustCompile(`(?i)^\s*\|\s*tstats\b[^|]*\bfrom\s+datamodel\s*=\s*"?(Network_Traffic|Network_Resolution)\b`)
 
 var quoted = regexp.MustCompile(`"[^"]*"|\b[A-Z][a-z]+\.\w+`)
 

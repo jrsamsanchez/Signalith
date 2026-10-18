@@ -162,10 +162,6 @@ rules:
     rule_id: 0b80e2c8-c746-4ddb-89eb-9efd892220cf
     file: aws_ecr_container_scanning_findings_medium.yml
     path: detections/cloud/aws_ecr_container_scanning_findings_medium.yml
-  - id: splunk-aws-exfiltration-via-anomalous-getobject-api-activity
-    rule_id: e4384bbf-5835-4831-8d85-694de6ad2cc6
-    file: aws_exfiltration_via_anomalous_getobject_api_activity.yml
-    path: detections/cloud/aws_exfiltration_via_anomalous_getobject_api_activity.yml
   - id: splunk-aws-exfiltration-via-batch-service
     rule_id: 04455dd3-ced7-480f-b8e6-5469b99e98e2
     file: aws_exfiltration_via_batch_service.yml
@@ -794,10 +790,6 @@ rules:
     rule_id: 8551252d-b5b6-4b6e-8a82-51460aeb29a3
     file: dns_kerberos_coercion.yml
     path: detections/network/dns_kerberos_coercion.yml
-  - id: splunk-dns-query-length-with-high-standard-deviation
-    rule_id: 1a67f15a-f4ff-4170-84e9-08cf6f75d6f5
-    file: dns_query_length_with_high_standard_deviation.yml
-    path: detections/network/dns_query_length_with_high_standard_deviation.yml
   - id: splunk-domain-account-discovery-with-dsquery
     rule_id: b1a8ce04-04c2-11ec-bea7-acde48001122
     file: domain_account_discovery_with_dsquery.yml
@@ -2822,10 +2814,6 @@ rules:
     rule_id: 09e5c72a-4c0d-11ec-aa29-3e22fbd008af
     file: svchost_lolbas_execution_process_spawn.yml
     path: detections/endpoint/svchost_lolbas_execution_process_spawn.yml
-  - id: splunk-system-information-discovery-detection
-    rule_id: 8e99f89e-ae58-4ebc-bf52-ae0b1a277e72
-    file: system_information_discovery_detection.yml
-    path: detections/endpoint/system_information_discovery_detection.yml
   - id: splunk-system-processes-run-from-unexpected-locations
     rule_id: a34aae96-ccf8-4aef-952c-3ea21444444d
     file: system_processes_run_from_unexpected_locations.yml
