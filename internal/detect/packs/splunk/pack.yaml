@@ -4582,6 +4582,10 @@ rules:
     rule_id: c6149154-c9d8-11eb-9da7-acde48001122
     file: windows_registry_modification_for_safe_mode_persistence.yml
     path: detections/endpoint/windows_registry_modification_for_safe_mode_persistence.yml
+  - id: splunk-windows-registry-payload-injection
+    rule_id: c6b2d80f-179a-41a1-b95e-ce5601d7427a
+    file: windows_registry_payload_injection.yml
+    path: detections/endpoint/windows_registry_payload_injection.yml
   - id: splunk-windows-registry-sip-provider-modification
     rule_id: 3b4e18cb-497f-4073-85ad-1ada7c2107ab
     file: windows_registry_sip_provider_modification.yml

@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,308 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,309 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1235,6 +1235,29 @@ which event it is (`signature`, `vendor_product`, `dvc`, `app`, `user_id`,
 counts. Counts compared with an average (`eventstats`) run as later stages (below), but
 no single test event reaches one, so none ship yet.
 
+A `tstats` search grouped by time (`by _time span=1h dest`) whose other later stages
+run as written (below) puts each event's time in its bucket first (`bin _time span=3600s
+as time_bucket`), groups by the bucket and names it `_time`, so `min(_time)` and
+`max(_time)` still read the events' own times. Buckets are aligned to UTC (an hour
+bucket starts on the hour in UTC). Splunk aligns them to the searching user's time
+zone, which is the same for zones a whole number of hours from UTC, and for spans in
+minutes that divide an hour, in any zone a whole number of those minutes off; in a
+zone such as India's (UTC+5:30), hour buckets start half an hour apart. As for a
+count, each run searches the span plus the time since the last run (every minute for
+spans under 5 minutes, every 5 minutes otherwise), so each bucket is whole in some
+run, and the buckets at the edges of a run are parts of buckets. So such a rule ships
+only when a part of a bucket cannot keep a row the whole bucket would not: its later
+filters may only test that a value is at least or more than a number (`where count > 10`).
+A rule with a `<`, `!=`, `=`, `NOT`, `IN` or `isnull` in a later `where` or `search`, or a
+`<`, `!=`, `NOT`, `IN` or `isnull` in a later `eval`, is left out, and so is one whose
+later `stats` takes a smallest value, an average or a percentile of its rows (other than
+`min(firstTime)`), whose later `eval` or `where` reads `_time`, or with a stage that compares
+or regroups the buckets (`eventstats`, `streamstats`, `bin`, `sort`, `head`, `dedup`), since
+its answer depends on Splunk's search window (by default the hour that ended 10 minutes
+before each hourly run). A bucket Splunk finds is found too, once it is whole (Splunk's
+own hourly window sees a bucket in parts, so this can also find a bucket whose parts
+each fall short).
+
 A test that only leaves out the other platform's events (`NOT Processes.os="Linux"` in
 a Windows rule) is always true for the rule's own events, whether Splunk's add-on sets
 `os` or not, so it is dropped; other tests of `os` or `vendor_product` are left out.
@@ -1254,7 +1277,7 @@ with a field it counts distinct values of different each time (`"vary"`), next t
 smaller repeat that the rule must not find. When none of the events made from the
 `where` clause comes through, the tests the later stages make of fields the clause
 leaves open (`search process IN (...)` after a `tstats`, `like()` and `match()`, a
-`rex` a later stage reads, a `regex` stage) are added to the clause to make more
+`rex` a later stage reads, a `regex` stage, a length a later `where` needs, as in `eval n=len(x) | where n > 512`) are added to the clause to make more
 events, and failing that, the program runs from a folder other than System32 (for a
 rule that leaves System32 out), a library loads from its program's own folder, or a
 share access writes; whether the rule finds each is still what its search, run as
