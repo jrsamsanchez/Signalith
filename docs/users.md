@@ -1088,7 +1088,7 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
 `DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
 
-**Viewer:** `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,

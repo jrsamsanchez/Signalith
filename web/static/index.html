@@ -255,6 +255,9 @@
       <summary class="tenant-btn" id="tenant-btn" aria-label="Tenant" title="Switch tenant"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span class="tenant-btn__name" id="tenant-name"></span><svg class="icon tenant-btn__chev" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg></summary>
       <div class="menu__panel tenant-menu" id="tenant-menu" role="menu" aria-label="Tenants"></div>
     </details>
+    <!-- The setup guide's button (setup.js), while a started guide has
+         steps left. -->
+    <button class="setup-chip hidden" type="button" id="setup-chip" aria-haspopup="dialog" aria-controls="setup-guide"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg><span class="setup-chip__label">Setup</span><span class="setup-chip__count" id="setup-chip-count"></span></button>
     <button class="btn btn--ghost btn--icon theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme"><svg class="icon when-light" aria-hidden="true"><use href="#i-moon"/></svg><svg class="icon when-dark" aria-hidden="true"><use href="#i-sun"/></svg></button>
     <details class="menu" id="user-menu">
       <summary class="user-btn" aria-label="Account menu"><span class="avatar" id="user-avatar" aria-hidden="true"></span><span class="user-name" id="user-name"></span><svg class="icon" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
@@ -263,6 +266,7 @@
         <div class="menu__sep"></div>
         <div class="menu__row"><span>Theme</span><div class="seg seg--sm" role="group" aria-label="Theme"><button type="button" data-set-theme="light" aria-label="Light" title="Light"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg></button><button type="button" data-set-theme="dark" aria-label="Dark" title="Dark"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></button><button type="button" data-set-theme="" aria-label="Match system" title="Match system"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></button></div></div>
         <div class="menu__sep"></div>
+        <button class="menu__item hidden" type="button" id="setup-open" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#i-list-checks"/></svg>Setup guide <span class="menu__hint" id="setup-hint" aria-hidden="true"></span></button>
         <button class="menu__item" type="button" id="about-open" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>About Signalith <span class="menu__hint" id="user-menu-version" aria-hidden="true"></span></button>
         <div class="menu__sep"></div>
         <button class="menu__item hidden" type="button" id="change-password"><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg>Change password</button>
@@ -1960,6 +1964,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
   </div>
   <p class="about__license">Apache License 2.0</p>
 </dialog>
+<dialog id="setup-guide" class="modal setup" aria-labelledby="setup-title" aria-describedby="setup-desc"></dialog>
 <div id="toast" class="toast hidden" role="status"></div>
 <script src="app.js"></script>
 <script src="levels.js"></script>
@@ -2005,5 +2010,6 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers-upgrade.js"></script>
 <script src="servers-join.js"></script>
 <script src="audit.js"></script>
+<script src="setup.js"></script>
 </body>
 </html>

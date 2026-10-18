@@ -91,6 +91,42 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
 
 [Sample data](sample-data.md) has a guided tour of the attacks it contains.
 
+## The setup guide
+
+The first time you sign in, Signalith offers a short **setup guide**: a few steps that
+take a new install from "running" to "watching". Each step says why it matters, opens the
+page that does it, and is checked off by itself once Signalith sees it done, so the guide
+also shows what an install still lacks. For an admin the steps are:
+
+1. **Turn on two-step sign-in** for your own account, with an authenticator app or a
+   passkey (skipped for single sign-on users, whose identity provider handles it).
+2. **Bring in your logs**: the guide opens **Add data** at the one-line install of the
+   Signalith Agent for Windows, Linux and macOS, or load the [sample data](sample-data.md)
+   to try things first. Done once events arrive.
+3. **Get told when something fires**: an e-mail, Slack, Teams or webhook channel on
+   **Settings > Notifications** ([Notifications](notifications.md)).
+4. **Add your team**: their own accounts on **Settings > Users**, directory sign-in or
+   single sign-on, so nobody shares the admin account ([Users and roles](users.md)).
+5. **Fix what the security check finds** on **Settings > Security**: HTTPS, encryption,
+   OpenSearch and the other checks ([Security](security.md)). Done when nothing is at risk.
+6. **Connect an AI model** (optional) for plain-English questions on **Settings > Server**
+   ([Investigate with AI](investigate.md) covers what is sent).
+7. **Run your first search** with the **Query guide** and the Ask box.
+
+Analysts and viewers get a shorter guide: two-step sign-in, the findings queue and a
+first search.
+
+Nothing in the guide changes a setting by itself, and every step can be left for later:
+
+- **Skip this step** moves on and remembers it as skipped.
+- **Ask me later** puts the guide away for a day.
+- **Don't ask again** stops it from opening by itself.
+
+While you work through it, a **Setup** button at the top of the page shows how many steps
+are left and opens the guide again. **Setup guide** in the account menu opens it at any
+time, even after **Don't ask again**. Your answers are your own and follow you to any
+browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have their own.
+
 ## Linux
 
 1. Install OpenSearch 2.x or 3.x

@@ -65,6 +65,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/summary"
@@ -1667,6 +1668,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Ticketing:    &api.Ticketing{Service: tsync},
 		Retention:    ret,
 		Sample:       sampleLoader,
+		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:      updater,
 		Endpoints:    estore,
 		SensorTuning: tuning,
