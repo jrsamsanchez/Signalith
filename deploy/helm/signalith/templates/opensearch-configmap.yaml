@@ -22,6 +22,10 @@ data:
       {{- range $i := until (int .Values.opensearch.replicas) }}
       - {{ $os }}-{{ $i }}
       {{- end }}
+    # Spread each index's primary shards over the nodes, not only the number
+    # of shards: the primaries do most of the indexing work, and OpenSearch
+    # may otherwise put every primary of a day's index on one node.
+    cluster.routing.allocation.balance.prefer_primary: true
     {{- end }}
     # Do not depend on the node's vm.max_map_count.
     node.store.allow_mmap: false

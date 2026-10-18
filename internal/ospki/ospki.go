@@ -404,5 +404,20 @@ plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANT
 plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
 plugins.security.audit.config.log_request_body: false
 plugins.security.audit.config.exclude_sensitive_headers: true
+` + clusterBalance(peers)
+}
+
+// clusterBalance is, for a node of a cluster, the setting that spreads
+// each index's primary shards over the nodes. OpenSearch otherwise only
+// balances how many shards each node holds, and may put every primary of
+// a day's index on one node while the others hold its replicas, so that
+// one node does nearly all the indexing work.
+func clusterBalance(peers []string) string {
+	if len(peers) == 0 {
+		return ""
+	}
+	return `# Spread each index's primary shards over the nodes, not only the
+# number of shards: the primaries do most of the indexing work.
+cluster.routing.allocation.balance.prefer_primary: true
 `
 }
