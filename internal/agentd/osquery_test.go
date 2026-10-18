@@ -48,7 +48,7 @@ func fakeOsqueryd() {
 	<-c
 }
 
-// osquerydExe is the test program under the name osqueryd.
+// osquerydExe is a copy of the test program named osqueryd.
 func osquerydExe(t *testing.T) string {
 	t.Helper()
 	exe, err := os.Executable()
@@ -59,9 +59,8 @@ func osquerydExe(t *testing.T) string {
 	if filepath.Ext(exe) == ".exe" {
 		dst += ".exe"
 	}
-	if os.Link(exe, dst) == nil {
-		return dst
-	}
+	// A copy, not a link: Windows cannot remove a link to the running
+	// test program when the test ends.
 	b, err := os.ReadFile(exe)
 	if err != nil {
 		t.Fatal(err)
