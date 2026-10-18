@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -97,6 +98,20 @@ type Contact struct {
 	// Sensor is the newest status line in the batch of a sensor the
 	// sensor install script built (ingest.Result.Sensor), nil for none.
 	Sensor *ingest.SensorStatus
+	// Managed is the status a Signalith Agent reported (POST
+	// /api/agent/status, already cleaned), nil for a batch of events. A
+	// status alone keeps what the row's batches said about the agent's
+	// tag, intake and configuration.
+	Managed *agentproto.Status
+}
+
+// ManagedStatus is what a Signalith Agent last reported, and when a
+// server got it.
+type ManagedStatus struct {
+	agentproto.Status
+	Received time.Time `json:"received"`
+	// Token is the agent token the status came with.
+	Token string `json:"token,omitempty"`
 }
 
 // Doc is an inventory document: how one server heard from one agent.
@@ -131,6 +146,9 @@ type Doc struct {
 	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
 	// SensorToken is the token the status line in Sensor came with.
 	SensorToken string `json:"sensor_token,omitempty"`
+	// Managed is what the Signalith Agent on the computer last reported,
+	// for one the agent runs.
+	Managed *ManagedStatus `json:"managed,omitempty"`
 }
 
 // sensorTakeover is how long a sensor's status line holds its row
@@ -432,6 +450,22 @@ func (v *Inventory) Note(c Contact) {
 		v.agents[key] = e
 	}
 	d := &e.doc
+	if c.Managed != nil {
+		// A Signalith Agent's status: the agent's batches (its Fluent
+		// Bit's) say how the computer sends; the status says how its
+		// collectors run.
+		d.Managed = &ManagedStatus{Status: *c.Managed, Received: now, Token: c.TokenID}
+		if d.Intake == "" {
+			d.Intake = c.Intake
+		}
+		d.Name, d.Address, d.Local, d.Transport = name, c.Address, c.Local, transport
+		if d.Token == "" {
+			d.Token, d.TokenName = c.TokenID, c.TokenName
+		}
+		d.LastSeen = now
+		e.dirty = true
+		return
+	}
 	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, c.Tag, c.Intake, transport, c.Local
 	d.Token, d.TokenName, d.CA, d.ConfigVersion, d.ServerCA = c.TokenID, c.TokenName, ca, version, serverCA
 	d.LastSeen = now
@@ -823,6 +857,9 @@ type Agent struct {
 	// Sensor is the newest status line any server got from it, for a
 	// sensor the install script built.
 	Sensor *ingest.SensorStatus `json:"sensor,omitempty"`
+	// Managed is the newest status any server got from the Signalith
+	// Agent on the computer, for one the agent runs.
+	Managed *ManagedStatus `json:"managed,omitempty"`
 }
 
 // ReasonRetiredCA: the agent's configuration trusts only certificate
@@ -942,6 +979,9 @@ func Merge(docs []Doc, now time.Time) []Agent {
 		if d.Sensor != nil && (a.Sensor == nil || sensorReceived(d.Sensor).After(sensorReceived(a.Sensor))) {
 			a.Sensor = d.Sensor
 		}
+		if d.Managed != nil && (a.Managed == nil || d.Managed.Received.After(a.Managed.Received)) {
+			a.Managed = d.Managed
+		}
 		addUnique(&a.Addresses, d.Address)
 		addUnique(&a.Servers, d.Server)
 		addUnique(&a.Transports, d.Transport)
@@ -1048,10 +1088,11 @@ func sensorReceived(s *ingest.SensorStatus) time.Time {
 
 // Silent says whether agent a is silent at now: nothing from it in
 // SilentAfter, or in SensorSilentAfter for a sensor that sends a status
-// line. The Endpoints and Health pages both go by it.
+// line or a computer the Signalith Agent runs, which reports every 5
+// minutes. The Endpoints and Health pages both go by it.
 func Silent(a Agent, now time.Time) bool {
 	after := SilentAfter
-	if a.Sensor != nil {
+	if a.Sensor != nil || a.Managed != nil {
 		after = SensorSilentAfter
 	}
 	return now.Sub(a.LastSeen) > after

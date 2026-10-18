@@ -4,7 +4,9 @@
 #   deploy/packages/build.sh VERSION OUTDIR [BINDIR]
 #
 # BINDIR holds signalith-linux-amd64 and signalith-linux-arm64 (built here
-# when it is left out). Needs nFPM on the PATH. To sign the packages, set
+# when it is left out). The Signalith Agent's programs, which the server
+# hands to the computers it is installed on (docs/signalith-agent.md), are
+# built here for every platform the packages carry. Needs nFPM on the PATH. To sign the packages, set
 # SIGNALITH_GPG_KEY_FILE to an ASCII-armoured private key (and
 # NFPM_PASSPHRASE when it has one).
 set -eu
@@ -33,6 +35,13 @@ stage=$work/stage
 mkdir -p "$stage"
 sed 's#/usr/local/bin/signalith#/usr/bin/signalith#g' "$root/deploy/systemd/signalith.service" > "$stage/signalith.service"
 cp "$here"/nfpm.yaml "$here"/*.sh "$root/LICENSE" "$root/NOTICE" "$root/README.md" "$stage/"
+mkdir -p "$stage/agents"
+for p in linux-amd64 linux-arm64 windows-amd64; do
+  ext=''
+  [ "${p%-*}" = windows ] && ext=.exe
+  (cd "$root" && GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X main.version=$version" -o "$stage/agents/signalith-agent-$p$ext" ./cmd/signalith-agent)
+done
 
 export SIGNALITH_VERSION=$version
 export NFPM_SIGNING_KEY_FILE=${SIGNALITH_GPG_KEY_FILE:-} NFPM_SIGNING_KEY_ID=${SIGNALITH_GPG_KEY_ID:-}

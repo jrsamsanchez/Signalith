@@ -62,6 +62,9 @@ const (
 	// PurposeSensor is a network sensor: Fluent Bit sending Zeek's and
 	// Suricata's logs.
 	PurposeSensor = "sensor"
+	// PurposeAgent is the Signalith Agent, which runs the collectors of
+	// the computers installed from one Add data line.
+	PurposeAgent = "agent"
 )
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
@@ -124,7 +127,7 @@ const OldExampleName = "Old example token"
 // ValidPurpose reports whether p is a purpose a token may have.
 func ValidPurpose(p string) bool {
 	switch p {
-	case "", PurposeLinux, PurposeWindows, PurposeOTel, PurposeOsquery, PurposeSensor:
+	case "", PurposeLinux, PurposeWindows, PurposeOTel, PurposeOsquery, PurposeSensor, PurposeAgent:
 		return true
 	}
 	return false
@@ -195,7 +198,7 @@ func errNameInvalid() *Error {
 
 func errPurposeInvalid() *Error {
 	return &Error{Status: http.StatusBadRequest, Code: CodePurposeInvalid, Field: "purpose",
-		Msg: "The purpose must be linux, windows, otel, osquery, sensor or empty."}
+		Msg: "The purpose must be linux, windows, otel, osquery, sensor, agent or empty."}
 }
 
 func errNotFound() *Error {

@@ -1055,6 +1055,11 @@ sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the senso
 arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
 minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
+`GET /api/agent/install.sh` (the [Signalith Agent](signalith-agent.md)'s install script, also
+public), and the three routes the script and the agent call with the agent's token,
+`GET /api/agent/program` (the agent program), `GET /api/agent/config` (what the agent runs) and
+`POST /api/agent/status` (how its collectors run); all three take only an active token made for
+the Signalith Agent.
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
 [sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
@@ -1127,7 +1132,8 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 **Admin:** `POST /api/tenants` and `PATCH /api/tenants/{id}` (adding a [tenant](multi-tenant.md), renaming it or turning it off; the provider's admins only), `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
 with a DNS check; see [load-balancers.md](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
-[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/sensors` (every network
+[network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/agent/install` (the line that installs the
+[Signalith Agent](signalith-agent.md)), `GET /api/sensors` (every network
 sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
 [network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,

@@ -124,6 +124,12 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
 
+**One agent per computer**
+:   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
+    what to collect, so nobody edits a Fluent Bit configuration. Linux is in; Windows
+    (with optional Sysmon), osquery inside the agent, choosing what each group collects
+    from the Endpoints page, signed updates and macOS come next.
+
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and
     detections. The first step, [multi-tenant mode](multi-tenant.md) on a single server,

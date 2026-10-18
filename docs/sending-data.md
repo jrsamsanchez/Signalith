@@ -6,6 +6,8 @@ description: Send events to Signalith with Fluent Bit agents and syslog, what ea
 
 Signalith takes events from these kinds of senders:
 
+- the **[Signalith Agent](signalith-agent.md)**, installed with one line per computer: it
+  runs Fluent Bit for you, with nothing to configure by hand;
 - **Fluent Bit agents** on Windows and Linux, set up from the **Add data** page;
 - **syslog** (RFC 5424, RFC 3164 and CEF) from firewalls, switches, appliances and
   servers without an agent;
