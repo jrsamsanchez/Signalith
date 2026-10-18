@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 )
 
@@ -32,10 +33,14 @@ var (
 	hintRexRe    = regexp.MustCompile(`(?i)\brex\s+field=\s*"?([A-Za-z_][\w.{}]*)"?\s+("(?:[^"\\]|\\.)*")`)
 	hintRegexRe  = regexp.MustCompile(`(?i)\bregex\s+'?([A-Za-z_][\w.{}]*)'?\s*=\s*("(?:[^"\\]|\\.)*")`)
 	hintNotRe    = regexp.MustCompile(`(?i)\bNOT\s*\(?\s*$`)
-	// copyRe is an eval assignment that copies a field, or its lower or
+	// replaceRe is an eval assignment of a field with some text taken
+	// out (and its case changed); firstArgRe of a coalesce() whose first
+	// argument is a field, or of an mvmap() or mvfilter(match()) of a
+	// field's values; copyRe one that copies a field, or its lower or
 	// upper case.
-	replaceRe = regexp.MustCompile(`(?i)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*replace\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,`)
-	copyRe    = regexp.MustCompile(`(?i)(?:^|,)\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:(?:lower|upper)\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*(?:,|$)`)
+	replaceRe  = regexp.MustCompile(`(?i)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:(?:lower|upper)\(\s*)?replace\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,`)
+	firstArgRe = regexp.MustCompile(`(?i)^\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:coalesce|mvmap|mvfilter\(\s*match)\(\s*'?([A-Za-z_][\w.{}]*)'?\s*,`)
+	copyRe     = regexp.MustCompile(`(?i)(?:^|,)\s*'?([A-Za-z_][\w.{}]*)'?\s*=\s*(?:(?:lower|upper)\(\s*)?'?([A-Za-z_][\w.{}]*)'?\s*\)?\s*(?:,|$)`)
 )
 
 // lenRe is an eval assignment of a field's length; maxHintLen is the
@@ -47,10 +52,10 @@ const maxHintLen = 4096
 // rexGroupRe is a named group of a regular expression.
 var rexGroupRe = regexp.MustCompile(`\(\?P?<([A-Za-z_]\w*)>`)
 
-// unquote reads a double-quoted string of the search language.
+// unquote reads a double-quoted string of the search language, whose \\
+// is a backslash and \" a quote (as Signalith's search reads it).
 func unquote(s string) string {
-	s = strings.TrimSuffix(strings.TrimPrefix(s, `"`), `"`)
-	return strings.ReplaceAll(s, `\"`, `"`)
+	return splString(strings.TrimSuffix(strings.TrimPrefix(s, `"`), `"`))
 }
 
 // hints are a rule's later stages' tests of fields, as comparisons of
@@ -65,11 +70,11 @@ func (r *Rule) hints() []Expr {
 	alias := map[string]string{}
 	for _, s := range stages {
 		s = strings.TrimSpace(s)
-		if len(r.lookupHints) > 0 || IsChannelNode(r.Node) {
-			// A lookup's key field may be a rename or a rex's of the
-			// field Signalith stores, and so may a field a channel
-			// node's later search tests (rename param1 as
-			// display_name).
+		{
+			// A field a later stage tests may be a rename or a rex's of
+			// the field Signalith stores: a lookup's key field, a
+			// channel node's rename param1 as display_name, a request
+			// parameter a CloudTrail rule renames.
 			if q, err := query.Parse("* | " + s); err == nil && len(q.Commands) == 1 {
 				switch c := q.Commands[0].(type) {
 				case *query.Rename:
@@ -115,6 +120,10 @@ func (r *Rule) hints() []Expr {
 				alias[m[1]] = m[2]
 			} else if m := replaceRe.FindStringSubmatch(part); m != nil && m[1] != m[2] {
 				// A field with some text taken out is close to it.
+				alias[m[1]] = m[2]
+			} else if m := firstArgRe.FindStringSubmatch(part); m != nil && m[1] != m[2] {
+				// The field when it is set (coalesce), or each of its
+				// values (mvmap, mvfilter).
 				alias[m[1]] = m[2]
 			}
 		}
@@ -318,15 +327,20 @@ func (r *Rule) hinted() (pos, neg []map[string]string) {
 	if len(base) == 0 {
 		return nil, nil
 	}
-	// Only a test of a field the node's events carry can help.
+	// Only a test of a field the node's events carry can help: those of
+	// one of the first events (a registry value's data is a value's, not
+	// a key's).
 	var hs []Expr
 	for _, h := range r.hints() {
 		c := h.(*Cmp)
-		ev := maps.Clone(base[0])
-		ev[c.Field] = example(lit{field: c.Field, values: c.Values, re: c.Regex}, rand.New(rand.NewSource(1)))
-		if ev[c.Field] != "" && slices.ContainsFunc(r.records(ev), func(rc sigmacheck.Case) bool {
-			doc, _ := Stored(rc)
-			return View(doc)[c.Field] != ""
+		v := example(lit{field: c.Field, values: c.Values, re: c.Regex}, rand.New(rand.NewSource(1)))
+		if v != "" && slices.ContainsFunc(base[:min(len(base), maxHintBases)], func(b map[string]string) bool {
+			ev := maps.Clone(b)
+			ev[c.Field] = v
+			return slices.ContainsFunc(r.records(ev), func(rc sigmacheck.Case) bool {
+				doc, _ := Stored(rc)
+				return View(doc)[c.Field] != ""
+			})
 		}) {
 			hs = append(hs, h)
 		}
@@ -361,6 +375,9 @@ func (r *Rule) hinted() (pos, neg []map[string]string) {
 const (
 	maxHints  = 16
 	maxHinted = 48
+	// maxHintBases is how many of the where clause's events a hint's
+	// field is looked for in.
+	maxHintBases = 4
 )
 
 // records are the events of the rule's platform that carry a field-level
@@ -454,5 +471,75 @@ func NoEventsReason(r *Rule, cases []sigmacheck.Case) string {
 	if strings.Contains(r.Post, "stdev(") {
 		return "no test events: the rule's later stages keep only outliers above a baseline (average and standard deviation) of earlier counts"
 	}
+	switch stage, missing := r.dropStage(cases); {
+	case len(missing) > 0:
+		return "no test events: the rule's later stats groups by " + strings.Join(missing[:min(len(missing), 3)], ", ") +
+			", which none of the " + src + " events that match its filter has"
+	case stage != "":
+		return "no test events: the rule's later " + stage + " keeps none of the " + src + " events that match its filter"
+	}
 	return "no test events: the rule's later stages keep none of the " + src + " events that match its filter"
 }
+
+// dropStage is the later stage that keeps none of the rows of the test
+// events the rule's filter matches, of the event whose rows get furthest
+// ("" when it cannot say), with the fields a stats groups by that none
+// of the rows before it has.
+func (r *Rule) dropStage(cases []sigmacheck.Case) (string, []string) {
+	stages := strings.Split(r.Post, "\n| ")
+	if len(stages) != len(r.post) {
+		return "", nil
+	}
+	// rows are the rows of an event's docs after the first k stages.
+	rows := func(docs []map[string]any, k int) ([]search.Row, error) {
+		rr := *r
+		rr.post = r.post[:k]
+		return rr.runPost(docs)
+	}
+	best := -1
+	var bestDocs []map[string]any
+	for _, c := range cases {
+		if !reads(r, c) {
+			continue
+		}
+		docs, _ := StoredAll(c)
+		for k := range r.post {
+			out, err := rows(docs, k+1)
+			if err != nil {
+				break
+			}
+			if len(out) == 0 {
+				if k > best {
+					best, bestDocs = k, docs
+				}
+				break
+			}
+		}
+	}
+	if best < 0 {
+		return "", nil
+	}
+	before, err := rows(bestDocs, best)
+	if err != nil {
+		return "", nil
+	}
+	if s, ok := r.post[best].(*query.Stats); ok {
+		var missing []string
+		for _, f := range s.By {
+			if !slices.ContainsFunc(before, func(row search.Row) bool { return View(row)[f] != "" }) {
+				missing = append(missing, f)
+			}
+		}
+		if len(missing) > 0 {
+			return "", missing
+		}
+	}
+	stage := strings.Join(strings.Fields(stages[best]), " ")
+	if len(stage) > maxStageText {
+		stage = strings.ToValidUTF8(stage[:maxStageText], "") + "…"
+	}
+	return stage, nil
+}
+
+// maxStageText is how much of a stage a reason quotes.
+const maxStageText = 60

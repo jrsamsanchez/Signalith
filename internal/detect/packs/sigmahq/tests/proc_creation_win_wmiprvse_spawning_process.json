@@ -1,0 +1,9 @@
+{"rule": "d21374ff-f574-44a7-9998-4a8c8bf33d7d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"LogonId":"x","ParentImage":"\\WmiPrvSe.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"LogonId":"0x3e7","ParentImage":"\\WmiPrvSe.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"LogonId":"x","ParentImage":"\\WmiPrvSe.exe","User":"AUTHORI"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WerFault.exe","LogonId":"x","ParentImage":"\\WmiPrvSe.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\WmiPrvSE.exe","LogonId":"x","ParentImage":"\\WmiPrvSe.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\WmiPrvSe.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"LogonId":"x"}}
+]}

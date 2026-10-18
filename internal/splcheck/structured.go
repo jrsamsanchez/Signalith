@@ -93,6 +93,30 @@ type shape struct {
 	// finds are the entries a find picks: the list's field it tests and
 	// the regular expression.
 	finds []find
+	// ties are places a stage compares with each other (where
+	// process=process_path), which need the same value.
+	ties []tie
+	// pieces are how many pieces a stage needs a place's value split
+	// into, by the place's key.
+	pieces map[string]pieceCount
+}
+
+// A tie is two places whose values a stage compares, ignoring case when
+// fold.
+type tie struct {
+	a, b place
+	fold bool
+	// rest, when set, is a place whose value follows b's in a's
+	// (like(process_path, process_current_directory.process_name)).
+	rest *place
+}
+
+// A pieceCount is how many pieces a value split at sep must have:
+// exactly n, or at least n.
+type pieceCount struct {
+	sep   string
+	n     int
+	exact bool
 }
 
 type find struct {
@@ -107,7 +131,7 @@ var (
 	mvindexFindRe = regexp.MustCompile(`(?i)^mvindex\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*mvfind\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)\s*\)$`)
 	mvfindRe      = regexp.MustCompile(`(?i)mvfind\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)`)
 	splitRe       = regexp.MustCompile(`(?i)^split\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)$`)
-	copyExprRe    = regexp.MustCompile(`(?i)^(?:(?:lower|upper|trim|ltrim|rtrim|coalesce|replace|mvappend)\s*\(\s*)?('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:[,)].*)?$`)
+	copyExprRe    = regexp.MustCompile(`(?i)^(?:(?:lower|upper|trim|ltrim|rtrim|coalesce|replace|mvappend)\s*\(\s*)*('[^']+'|[A-Za-z_][\w.{}]*)\s*(?:[,)].*)?$`)
 	countedRe     = regexp.MustCompile(`(?i)^(?:coalesce\s*\(\s*)?mvcount\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)`)
 	condGtRe      = regexp.MustCompile(`(?i)'?([A-Za-z_]\w*)'?\s*>=?\s*('?[A-Za-z_]\w*'?|\d+)`)
 	spathArgRe    = regexp.MustCompile(`(?i)\b(input|output|path)\s*=\s*("[^"]*"|\S+)`)
@@ -123,16 +147,96 @@ var (
 	mvindexArgRe  = regexp.MustCompile(`^(-?\d+)$|^([A-Za-z_]\w*)\s*(?:-\s*(\d+))?$`)
 )
 
+// Ties, counts of pieces and the tests of an eval's if() or case().
+var (
+	// condTieRe is a comparison of two places: fields, their lower or
+	// upper case, or a piece of a split field.
+	condTieRe = regexp.MustCompile(`(?i)(` + tieSide + `)\s*==?\s*(` + tieSide + `)`)
+	// likeTieRe is a like() of a field with another's value inside.
+	likeTieRe = regexp.MustCompile(`(?i)\blike\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*"%"\s*\.\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\.\s*"%"\s*\)`)
+	// likeJoinRe is a like() of a field with two others' values joined.
+	likeJoinRe = regexp.MustCompile(`(?i)\blike\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\.\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*\)`)
+	// condNumRe is a comparison of a field with a number.
+	condNumRe = regexp.MustCompile(`('[^']+'|[A-Za-z_][\w.{}]*)\s*(>=|>|==|=)\s*(\d+)\b`)
+	// splitCountRe is a count of a field's pieces, less some.
+	splitCountRe = regexp.MustCompile(`(?i)^mvcount\s*\(\s*split\s*\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)\s*\)\s*(?:-\s*(\d+))?$`)
+	condExprRe   = regexp.MustCompile(`(?is)^(?:if|case)\s*\(.*\)$`)
+	splitPieceRe = regexp.MustCompile(`(?i)^mvindex\(\s*split\(\s*('[^']+'|[A-Za-z_][\w.{}]*)\s*,\s*("(?:[^"\\]|\\.)*")\s*\)\s*,\s*(\d+)\s*\)$`)
+	foldRe       = regexp.MustCompile(`(?i)^(?:lower|upper)\(\s*(.*?)\s*\)$`)
+)
+
+const (
+	tieField = `'[^']+'|[A-Za-z_][\w.{}]*`
+	tiePiece = `mvindex\(\s*split\(\s*(?:` + tieField + `)\s*,\s*"(?:[^"\\]|\\.)*"\s*\)\s*,\s*\d+\s*\)`
+	tieSide  = `(?:(?:lower|upper)\(\s*(?:` + tiePiece + `|` + tieField + `)\s*\)|` + tiePiece + `|` + tieField + `)`
+	// maxCondDepth is how deep the tests of if()s are read, and
+	// maxPieces the most pieces a split value is made of.
+	maxCondDepth = 3
+	maxPieces    = 16
+)
+
+// An evalCond is the test of an eval's if(), or of a case()'s first
+// branch, and the value it gives when the test holds.
+type evalCond struct {
+	cond, then string
+}
+
+// A pieceVar is a count of the pieces of a place's value split at sep,
+// less offset.
+type pieceVar struct {
+	src    place
+	sep    string
+	offset int
+}
+
+// condOf reads an eval's if(test, a, b), or case(test, a, ...).
+func condOf(expr string) (evalCond, bool) {
+	open := strings.IndexByte(expr, '(')
+	args := splitTop(expr[open+1 : len(expr)-1])
+	if len(args) < 2 || strings.HasPrefix(strings.ToLower(expr), "if") && len(args) != 3 {
+		return evalCond{}, false
+	}
+	cond, then := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
+	if strings.EqualFold(cond, "true()") || strings.EqualFold(then, "null()") || strings.EqualFold(then, "null") {
+		return evalCond{}, false
+	}
+	return evalCond{cond, strings.Trim(then, `'"`)}, true
+}
+
+// sidePlace is the place a side of a tie reads, and whether the
+// comparison ignores case; false for a word that is not a field.
+func sidePlace(s string, resolve func(string) place) (place, bool, bool) {
+	fold := false
+	if m := foldRe.FindStringSubmatch(s); m != nil {
+		s, fold = m[1], true
+	}
+	if m := splitPieceRe.FindStringSubmatch(s); m != nil {
+		return resolve(m[1]).then(step{kind: 's', arg: unquote(m[2]), group: m[3]}), fold, true
+	}
+	switch strings.ToLower(strings.Trim(s, "'")) {
+	case "and", "or", "not", "null", "true", "false", "like", "in":
+		return place{}, false, false
+	}
+	return resolve(s), fold, true
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
 // shapeOf reads what a rule's later stages need of an event.
 func (r *Rule) shapeOf() *shape {
-	sh := &shape{tests: map[string][]lit{}, present: map[string]bool{}, places: map[string]place{}}
+	sh := &shape{tests: map[string][]lit{}, present: map[string]bool{}, places: map[string]place{}, pieces: map[string]pieceCount{}}
 	vars := map[string]place{}
 	counts := map[string]string{} // a count of a list's entries: the list's field
 	finds := map[string]int{}     // an index a find picks
 	splits := map[string]place{}  // a split value, and its separator
 	seps := map[string]string{}
-	var auto []place // values spath reads every field of
-	props := false   // rename properties.* as *
+	conds := map[string]evalCond{}     // what an eval's if() or case() tests
+	pieceVars := map[string]pieceVar{} // a count of a split value's pieces
+	tied := map[string]bool{}          // places a tie already gives a value
+	var auto []place                   // values spath reads every field of
+	props := false                     // rename properties.* as *
 	unq := func(s string) string { return strings.Trim(s, `'"`) }
 	resolve := func(name string) place {
 		name = unq(name)
@@ -197,6 +301,177 @@ func (r *Rule) shapeOf() *shape {
 		need(at(p, fmt.Sprintf("f%d", n)), &lit{field: "v", values: []string{re}, re: true})
 		return n
 	}
+	// test reads what a where or search condition needs of an event. A
+	// bare word is a field in a where (and an eval's test), and a value in
+	// a search, which so compares no two fields.
+	var test func(cond string, depth int, where bool)
+	test = func(cond string, depth int, where bool) {
+		if depth > maxCondDepth {
+			return
+		}
+		negated := func(at int) bool { return condNotRe.MatchString(cond[:at]) }
+		// Two places compared with each other (where process=process_path,
+		// like(process, "%".parent_process."%")): of tests in an OR, the
+		// first that ties a place.
+		addTie := func(a, b place, fold bool) {
+			if tied[a.key()] || tied[b.key()] || a.key() == b.key() {
+				return
+			}
+			tied[a.key()], tied[b.key()] = true, true
+			sh.ties = append(sh.ties, tie{a: a, b: b, fold: fold})
+			need(a, nil)
+			need(b, nil)
+		}
+		for _, m := range condTieRe.FindAllStringSubmatchIndex(cond, -1) {
+			if !where || negated(m[0]) || m[0] > 0 && strings.ContainsRune("!<>=.'{}_", rune(cond[m[0]-1])) ||
+				m[0] > 0 && isWordByte(cond[m[0]-1]) || m[1] < len(cond) && (cond[m[1]] == '(' || isWordByte(cond[m[1]])) {
+				continue
+			}
+			a, foldA, okA := sidePlace(cond[m[2]:m[3]], resolve)
+			b, foldB, okB := sidePlace(cond[m[4]:m[5]], resolve)
+			if okA && okB {
+				addTie(a, b, foldA || foldB)
+			}
+		}
+		for _, m := range likeJoinRe.FindAllStringSubmatchIndex(cond, -1) {
+			a, b, rest := resolve(cond[m[2]:m[3]]), resolve(cond[m[4]:m[5]]), resolve(cond[m[6]:m[7]])
+			if !negated(m[0]) && !tied[b.key()] {
+				tied[b.key()] = true
+				sh.ties = append(sh.ties, tie{a: a, b: b, rest: &rest})
+				need(b, nil)
+			}
+		}
+		for _, m := range likeTieRe.FindAllStringSubmatchIndex(cond, -1) {
+			if !negated(m[0]) {
+				// The value contains the other's: is the same.
+				addTie(resolve(cond[m[2]:m[3]]), resolve(cond[m[4]:m[5]]), false)
+			}
+		}
+		for _, m := range condNumRe.FindAllStringSubmatchIndex(cond, -1) {
+			name, op, num := unq(cond[m[2]:m[3]]), cond[m[4]:m[5]], cond[m[6]:m[7]]
+			if negated(m[0]) {
+				continue
+			}
+			if c, ok := conds[name]; ok && (op == "=" || op == "==") && c.then == num {
+				// The number an if() gives when its test holds.
+				test(c.cond, depth+1, true)
+				continue
+			}
+			// A count of a split value's pieces compared with a number.
+			pv, ok := pieceVars[name]
+			if !ok {
+				continue
+			}
+			n, _ := strconv.Atoi(num)
+			if op == ">" {
+				n++
+			}
+			if n += pv.offset; n < 1 || n > maxPieces {
+				continue
+			}
+			k := pv.src.key()
+			sh.places[k] = pv.src
+			sh.pieces[k] = pieceCount{sep: pv.sep, n: n, exact: op == "=" || op == "=="}
+		}
+		for _, m := range condInRe.FindAllStringSubmatchIndex(cond, -1) {
+			if negated(m[0]) {
+				continue
+			}
+			var vals []string
+			for _, q := range quotedRe.FindAllString(cond[m[4]:m[5]], -1) {
+				vals = append(vals, unquote(q))
+			}
+			if len(vals) > 0 {
+				need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
+			}
+		}
+		for _, m := range condMvInRe.FindAllStringSubmatchIndex(cond, -1) {
+			// A test of a field's values against a list (multiIn, inStarCompared).
+			if negated(m[0]) {
+				continue
+			}
+			var vals, exact []string
+			for _, q := range quotedRe.FindAllString(cond[m[4]:m[5]], -1) {
+				vals = append(vals, unquote(q))
+				exact = append(exact, regexp.QuoteMeta(unquote(q)))
+			}
+			switch {
+			case len(vals) == 0:
+			case strings.Contains(cond[m[4]:m[5]], "*"):
+				// in() compares exactly: a * is the character.
+				need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: []string{"^(?:" + strings.Join(exact, "|") + ")$"}, re: true})
+			default:
+				need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
+			}
+		}
+		for _, m := range condEqRe.FindAllStringSubmatchIndex(cond, -1) {
+			name, op, val := cond[m[2]:m[3]], strings.TrimSpace(cond[m[4]:m[5]]), cond[m[6]:m[7]]
+			if negated(m[0]) || strings.EqualFold(name, "NOT") {
+				continue
+			}
+			if c, ok := conds[unq(name)]; ok {
+				// The value an eval's if() or case() gives when its
+				// test holds: the test.
+				if op == "=" && unq(val) == c.then {
+					test(c.cond, depth+1, true)
+				}
+				continue
+			}
+			quoted := strings.HasPrefix(val, `"`)
+			if !quoted {
+				if _, bound := vars[val]; bound || strings.EqualFold(val, "null") || r.postField != nil && func() bool { _, ok := r.postField(val); return ok }() {
+					continue
+				}
+				if _, isNum := strconv.ParseFloat(val, 64); isNum == nil {
+					continue
+				}
+			}
+			v := val
+			if quoted {
+				v = unquote(val)
+			}
+			switch strings.ToLower(op) {
+			case "=":
+				need(resolve(name), &lit{field: "v", values: []string{v}})
+			case "like":
+				need(resolve(name), &lit{field: "v", values: []string{strings.ReplaceAll(v, "%", "*")}})
+			case "!=":
+				need(resolve(name), nil)
+				need(resolve(name), &lit{field: "v", values: []string{v}, neg: true})
+			}
+		}
+		for _, m := range condGtRe.FindAllStringSubmatch(cond, -1) {
+			// A count of a rex's matches above another's, or above
+			// a number: what it counts is there.
+			if g, ok := counts[m[1]]; ok {
+				need(resolve(g), nil)
+			}
+		}
+		for _, m := range condFnRe.FindAllStringSubmatchIndex(cond, -1) {
+			if negated(m[0]) {
+				continue
+			}
+			fn, name := strings.ToLower(cond[m[2]:m[3]]), cond[m[4]:m[5]]
+			if _, ok := finds[unq(name)]; ok {
+				continue
+			}
+			if c, ok := conds[unq(name)]; ok {
+				if fn == "isnotnull" {
+					test(c.cond, depth+1, true)
+				}
+				continue
+			}
+			switch {
+			case fn == "isnotnull":
+				need(resolve(name), nil)
+			case m[6] < 0:
+			case fn == "like":
+				need(resolve(name), &lit{field: "v", values: []string{strings.ReplaceAll(unquote(cond[m[6]:m[7]]), "%", "*")}})
+			case fn == "match":
+				need(resolve(name), &lit{field: "v", values: []string{unquote(cond[m[6]:m[7]])}, re: true})
+			}
+		}
+	}
 	stats := false
 	for _, s := range strings.Split(r.Post, "\n| ") {
 		s = strings.TrimSpace(s)
@@ -211,6 +486,8 @@ func (r *Rule) shapeOf() *shape {
 				name, expr := m[1], strings.TrimSpace(m[2])
 				old, had := vars[name]
 				delete(vars, name)
+				delete(conds, name)
+				delete(pieceVars, name)
 				for _, f := range mvfindRe.FindAllStringSubmatch(expr, -1) {
 					if n := addFind(f[1], unquote(f[2])); n >= 0 {
 						finds[name] = n
@@ -249,14 +526,26 @@ func (r *Rule) shapeOf() *shape {
 							vars[name] = at(p, fmt.Sprintf("f%d", n))
 						}
 					}
+				case splitCountRe.MatchString(expr):
+					f := splitCountRe.FindStringSubmatch(expr)
+					off, _ := strconv.Atoi(f[3])
+					pieceVars[name] = pieceVar{resolve(f[1]), unquote(f[2]), off}
 				case mvcountRe.MatchString(expr):
-					counts[name] = unq(mvcountRe.FindStringSubmatch(expr)[1])
+					src := unq(mvcountRe.FindStringSubmatch(expr)[1])
+					counts[name] = src
+					if sp, ok := splits[src]; ok {
+						pieceVars[name] = pieceVar{sp, seps[src], 0}
+					}
 				case countedRe.MatchString(expr):
 					// A count of a rex's matches (coalesce(mvcount(g), 0)).
 					counts[name] = unq(countedRe.FindStringSubmatch(expr)[1])
 				case splitRe.MatchString(expr):
 					f := splitRe.FindStringSubmatch(expr)
 					splits[name], seps[name] = resolve(f[1]), unquote(f[2])
+				case condExprRe.MatchString(expr):
+					if c, ok := condOf(expr); ok {
+						conds[name] = c
+					}
 				case copyExprRe.MatchString(expr):
 					src := copyExprRe.FindStringSubmatch(expr)[1]
 					if strings.EqualFold(src, "null") || strings.EqualFold(src, "true") || strings.EqualFold(src, "false") {
@@ -319,6 +608,11 @@ func (r *Rule) shapeOf() *shape {
 				// of a list of objects, or JSON in a value.
 				vars[out] = resolve(in).into(path)
 			}
+		case "regex":
+			// A field's value must match (regex script_name="\.js$").
+			if m := regexStageRe.FindStringSubmatch(s); m != nil {
+				need(resolve(m[1]), &lit{field: "v", values: []string{splString(m[2])}, re: true})
+			}
 		case "rex":
 			m := rexStageRe.FindStringSubmatch(s)
 			if m == nil || strings.Contains(s, "mode=sed") {
@@ -338,91 +632,7 @@ func (r *Rule) shapeOf() *shape {
 				need(resolve(field), &lit{field: "v", values: []string{re}, re: true})
 			}
 		case "where", "search":
-			cond := rest
-			negated := func(at int) bool { return condNotRe.MatchString(cond[:at]) }
-			for _, m := range condInRe.FindAllStringSubmatchIndex(cond, -1) {
-				if negated(m[0]) {
-					continue
-				}
-				var vals []string
-				for _, q := range quotedRe.FindAllString(cond[m[4]:m[5]], -1) {
-					vals = append(vals, unquote(q))
-				}
-				if len(vals) > 0 {
-					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
-				}
-			}
-			for _, m := range condMvInRe.FindAllStringSubmatchIndex(cond, -1) {
-				// A test of a field's values against a list (multiIn, inStarCompared).
-				if negated(m[0]) {
-					continue
-				}
-				var vals, exact []string
-				for _, q := range quotedRe.FindAllString(cond[m[4]:m[5]], -1) {
-					vals = append(vals, unquote(q))
-					exact = append(exact, regexp.QuoteMeta(unquote(q)))
-				}
-				switch {
-				case len(vals) == 0:
-				case strings.Contains(cond[m[4]:m[5]], "*"):
-					// in() compares exactly: a * is the character.
-					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: []string{"^(?:" + strings.Join(exact, "|") + ")$"}, re: true})
-				default:
-					need(resolve(cond[m[2]:m[3]]), &lit{field: "v", values: vals})
-				}
-			}
-			for _, m := range condEqRe.FindAllStringSubmatchIndex(cond, -1) {
-				name, op, val := cond[m[2]:m[3]], strings.TrimSpace(cond[m[4]:m[5]]), cond[m[6]:m[7]]
-				if negated(m[0]) || strings.EqualFold(name, "NOT") {
-					continue
-				}
-				quoted := strings.HasPrefix(val, `"`)
-				if !quoted {
-					if _, bound := vars[val]; bound || strings.EqualFold(val, "null") || r.postField != nil && func() bool { _, ok := r.postField(val); return ok }() {
-						continue
-					}
-					if _, isNum := strconv.ParseFloat(val, 64); isNum == nil {
-						continue
-					}
-				}
-				v := val
-				if quoted {
-					v = unquote(val)
-				}
-				switch strings.ToLower(op) {
-				case "=":
-					need(resolve(name), &lit{field: "v", values: []string{v}})
-				case "like":
-					need(resolve(name), &lit{field: "v", values: []string{strings.ReplaceAll(v, "%", "*")}})
-				case "!=":
-					need(resolve(name), nil)
-				}
-			}
-			for _, m := range condGtRe.FindAllStringSubmatch(cond, -1) {
-				// A count of a rex's matches above another's, or above
-				// a number: what it counts is there.
-				if g, ok := counts[m[1]]; ok {
-					need(resolve(g), nil)
-				}
-			}
-			for _, m := range condFnRe.FindAllStringSubmatchIndex(cond, -1) {
-				if negated(m[0]) {
-					continue
-				}
-				fn, name := strings.ToLower(cond[m[2]:m[3]]), cond[m[4]:m[5]]
-				if _, ok := finds[unq(name)]; ok {
-					continue
-				}
-				switch {
-				case fn == "isnotnull":
-					need(resolve(name), nil)
-				case m[6] < 0:
-				case fn == "like":
-					need(resolve(name), &lit{field: "v", values: []string{strings.ReplaceAll(unquote(cond[m[6]:m[7]]), "%", "*")}})
-				case fn == "match":
-					need(resolve(name), &lit{field: "v", values: []string{unquote(cond[m[6]:m[7]])}, re: true})
-				}
-			}
+			test(rest, 0, strings.EqualFold(word, "where"))
 		case "lookup":
 			// A value of the table for the field it looks up.
 			for _, h := range r.lookupHints {
@@ -461,6 +671,10 @@ type tree struct {
 	json    map[string]*tree
 	split   map[string]*tree // by separator and index
 	rex     map[string]*tree // by regular expression and group
+	// orig is the event's own value, kept when the tests take it, and
+	// pieces how many pieces a split of it must have.
+	orig   string
+	pieces *pieceCount
 }
 
 func (t *tree) kid(m *map[string]*tree, k string) *tree {
@@ -507,21 +721,22 @@ func (t *tree) value(name string, change *tree, extra []lit) string {
 		}
 		b, _ := json.Marshal(doc)
 		return string(b)
-	case len(t.split) > 0:
-		for _, k := range slices.Sorted(maps.Keys(t.split)) {
-			sep, idx, _ := strings.Cut(k, "\x00")
-			v := t.split[k].render(name, change)
-			if idx == "0" {
-				return v + sep + "test"
-			}
-			return "test" + sep + v
-		}
+	case len(t.split) > 0 || t.pieces != nil:
+		return t.pieced(name, change)
 	case len(t.rex) > 0:
+		// The event's own value, when it has one, with text each group
+		// needs after it (unless the value already gives the group
+		// what it needs).
 		var parts []string
+		if t.orig != "" {
+			parts = append(parts, t.orig)
+		}
 		for _, k := range slices.Sorted(maps.Keys(t.rex)) {
 			re, group, _ := strings.Cut(k, "\x00")
 			kid := t.rex[k]
 			v := ""
+			had, _ := placeValue(place{steps: []step{{kind: 'r', arg: re, group: group}}}, func(string) string { return t.orig })
+			kid.orig = had
 			if kid.constrained() || kid == change {
 				// A value the group's own pattern takes too.
 				var own []lit
@@ -536,37 +751,147 @@ func (t *tree) value(name string, change *tree, extra []lit) string {
 				}
 				v = kid.render(group, change, own...)
 			}
+			if had != "" && (v == had || v == "") {
+				continue
+			}
 			if ex := rexExample(re, group, v); ex != "" {
 				parts = append(parts, ex)
 			}
 		}
-		return strings.Join(parts, ", ")
+		sep := ", "
+		if t.orig != "" {
+			sep = " "
+		}
+		return strings.Join(parts, sep)
 	}
 	if tests := append(slices.Clone(t.tests), extra...); len(t.tests) > 0 {
+		if t.orig != "" && t != change && accepts(tests, t.orig) {
+			return t.orig
+		}
 		if v, ok := satisfy(tests); ok {
 			return v
 		}
+	} else if t.orig != "" {
+		return t.orig
 	}
 	return "test-" + strings.ToLower(lastName(name))
+}
+
+// pieced is the value of a tree split into pieces: the event's own
+// pieces, or placeholders, as many as its count needs (placeholders
+// before the last piece, which is often a file name or a program's
+// argument; the last ones dropped first), with the value each index the
+// stages read needs.
+func (t *tree) pieced(name string, change *tree) string {
+	var sep string
+	if t.pieces != nil {
+		sep = t.pieces.sep
+	}
+	at := map[int]*tree{}
+	var last *tree
+	for _, k := range slices.Sorted(maps.Keys(t.split)) {
+		s, idx, _ := strings.Cut(k, "\x00")
+		if sep == "" {
+			sep = s
+		}
+		if s != sep {
+			continue
+		}
+		if idx == "-1" {
+			last = t.split[k]
+		} else if n, err := strconv.Atoi(idx); err == nil && n >= 0 && n < maxPieces {
+			at[n] = t.split[k]
+		}
+	}
+	var pieces []string
+	if t.orig != "" && sep != "" {
+		pieces = strings.Split(t.orig, sep)
+	}
+	n := 2
+	for i := range at {
+		n = max(n, i+1)
+	}
+	if t.pieces != nil && (t.pieces.exact || t.pieces.n > n) {
+		n = t.pieces.n
+	}
+	for len(pieces) < n {
+		pieces = slices.Insert(pieces, max(len(pieces)-1, 0), "test")
+	}
+	if t.pieces != nil && t.pieces.exact && len(pieces) > n {
+		pieces = append(pieces[:n-1], pieces[len(pieces)-1])
+	}
+	set := func(i int, kid *tree) {
+		kid.orig = pieces[i]
+		pieces[i] = kid.render(name, change)
+	}
+	for _, i := range slices.Sorted(maps.Keys(at)) {
+		if i < len(pieces) {
+			set(i, at[i])
+		}
+	}
+	if last != nil {
+		set(len(pieces)-1, last)
+	}
+	return strings.Join(pieces, sep)
+}
+
+// accepts reports whether every test takes a value.
+func accepts(tests []lit, v string) bool {
+	for _, l := range tests {
+		if l.neg == slices.ContainsFunc(l.values, func(p string) bool { return l.matches(p, v) }) {
+			return false
+		}
+	}
+	return true
+}
+
+// placeValue is the value of a place in an event (own is a field's
+// value): a field's, a piece of it split, or a rex group of it.
+func placeValue(p place, own func(string) string) (string, bool) {
+	v := own(p.base)
+	for _, s := range p.steps {
+		if v == "" {
+			break
+		}
+		switch s.kind {
+		case 's':
+			pieces := strings.Split(v, s.arg)
+			i, err := strconv.Atoi(s.group)
+			if i < 0 {
+				i += len(pieces)
+			}
+			if err != nil || i < 0 || i >= len(pieces) {
+				return "", false
+			}
+			v = pieces[i]
+		case 'r':
+			re, err := compiled(s.arg)
+			if err != nil {
+				return "", false
+			}
+			m := re.FindStringSubmatch(v)
+			if g := re.SubexpIndex(s.group); m == nil || g < 0 {
+				return "", false
+			} else {
+				v = m[g]
+			}
+		default:
+			return "", false
+		}
+	}
+	return v, v != ""
 }
 
 // satisfy is a value every test accepts: one written as a test's pattern
 // reads (a glob's text with or without what its * stand for, a regular
 // expression's text), else one assign makes.
 func satisfy(tests []lit) (string, bool) {
-	ok := func(c string) bool {
-		if c == "" {
-			return false
-		}
-		for _, l := range tests {
-			if !slices.ContainsFunc(l.values, func(p string) bool { return l.matches(p, c) }) {
-				return false
-			}
-		}
-		return true
-	}
+	ok := func(c string) bool { return c != "" && accepts(tests, c) }
 	var cands []string
 	for _, l := range tests {
+		if l.neg {
+			continue
+		}
 		p := l.values[0]
 		if l.re {
 			lit := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(p, "(?i)"), "^"), "$")
@@ -601,6 +926,21 @@ func groupSpan(pat, group string) (int, int) {
 		switch pat[i] {
 		case '\\':
 			i++
+		case '[':
+			// A class, whose ( and ) are characters (a ] first in it is
+			// one too).
+			i++
+			if i < len(pat) && pat[i] == '^' {
+				i++
+			}
+			if i < len(pat) && pat[i] == ']' {
+				i++
+			}
+			for ; i < len(pat) && pat[i] != ']'; i++ {
+				if pat[i] == '\\' {
+					i++
+				}
+			}
 		case '(':
 			depth++
 		case ')':
@@ -714,10 +1054,52 @@ func (r *Rule) structured(ev map[string]string) (pos, neg []map[string]string) {
 		doc, _ := Stored(c)
 		maps.Copy(stored, View(doc))
 	}
+	own := func(base string) string {
+		if strings.Contains(base, "{") {
+			return ""
+		}
+		return cmp.Or(ev[base], stored[base])
+	}
+	// A tie's places get one value: the one a place has, given to the
+	// other (to a field rather than a piece of one when both have
+	// theirs), or the same placeholder for both.
+	for _, t := range sh.ties {
+		va, oka := placeValue(t.a, own)
+		vb, okb := placeValue(t.b, own)
+		var to []place
+		v := vb
+		if t.rest != nil {
+			// b is a's value without rest's at its end.
+			vr, okr := placeValue(*t.rest, own)
+			if !oka || !okr || !strings.HasSuffix(va, vr) || len(va) == len(vr) {
+				continue
+			}
+			to, v = []place{t.b}, va[:len(va)-len(vr)]
+		}
+		switch {
+		case t.rest != nil:
+		case oka && okb && (va == vb || t.fold && strings.EqualFold(va, vb)):
+			continue
+		case okb && (!oka || len(t.a.steps) == 0):
+			to = []place{t.a}
+		case oka:
+			to, v = []place{t.b}, va
+		default:
+			to, v = []place{t.a, t.b}, "test-"+strings.ToLower(lastName(t.a.base))
+		}
+		pat := "^" + regexp.QuoteMeta(v) + "$"
+		if t.fold {
+			pat = "(?i)" + pat
+		}
+		for _, p := range to {
+			sh.places[p.key()] = p
+			sh.tests[p.key()] = append(sh.tests[p.key()], lit{field: "v", values: []string{pat}, re: true})
+		}
+	}
 	roots := map[string]*tree{}
 	for _, k := range slices.Sorted(maps.Keys(sh.places)) {
 		p := sh.places[k]
-		if len(p.steps) == 0 && !strings.Contains(p.base, "{") && len(sh.tests[k]) == 0 {
+		if len(p.steps) == 0 && !strings.Contains(p.base, "{") && len(sh.tests[k]) == 0 && sh.pieces[k] == (pieceCount{}) {
 			if p.base == "" || stored[p.base] != "" || ev[p.base] != "" {
 				continue // already there
 			}
@@ -729,7 +1111,7 @@ func (r *Rule) structured(ev map[string]string) (pos, neg []map[string]string) {
 			continue
 		}
 		if roots[p.base] == nil {
-			roots[p.base] = &tree{}
+			roots[p.base] = &tree{orig: own(p.base)}
 		}
 		t := roots[p.base]
 		for _, s := range p.steps {
@@ -744,6 +1126,9 @@ func (r *Rule) structured(ev map[string]string) (pos, neg []map[string]string) {
 		}
 		t.tests = append(t.tests, sh.tests[k]...)
 		t.present = t.present || sh.present[k]
+		if pc, ok := sh.pieces[k]; ok {
+			t.pieces = &pc
+		}
 	}
 	if len(roots) == 0 {
 		return nil, nil

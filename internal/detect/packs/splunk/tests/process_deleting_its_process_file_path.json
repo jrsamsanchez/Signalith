@@ -1,0 +1,10 @@
+{"rule": "f7eda4bc-871c-11eb-b110-acde48001122", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del x","Image":"x \\cmd.exe","IntegrityLevel":"test-process_integrity_level","OriginalFileName":"test-original_file_name","ParentCommandLine":"x  /c  x x  del x","ParentImage":"test-parent_process_path","ParentProcessId":"4000","ProcessId":"4242","User":"test-user"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del x","Image":"x \\cmd.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"x  /c  x x  del x","NewProcessId":"0x1092","NewProcessName":"x \\cmd.exe","ProcessId":"0xfa0","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del y","Image":"x \\cmd.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x \\cmd.exe","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del x","Image":"x \\cmd.exf","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del x","ParentProcessId":"4000","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x  /c  x x  del x","Image":"x \\cmd.exe","IntegrityLevel":"test-process_integrity_level","OriginalFileName":"test-original_file_name","ParentCommandLine":"x  /c  x x  del y","ParentImage":"test-parent_process_path","ParentProcessId":"4000","ProcessId":"4242","User":"test-user"}}
+]}

@@ -774,6 +774,10 @@ func parseRaw(r *Rule, source, terms string, later []string, macros map[string]*
 		switch {
 		case cloud:
 			return cs.field(f, nil)
+		case r.Node == AuditdNode && (f == "host" || f == "dest"):
+			// The host the record came from, which no record names
+			// itself (as for a count, threshold.go).
+			return "host", true
 		case r.Node == AuditdNode:
 			return ingest.AuditdField(f)
 		case r.Node == CloudTrailNode:

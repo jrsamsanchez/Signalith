@@ -1,0 +1,15 @@
+{"rule": "5c80b618-0dbb-46e6-acbb-03d90bcb6d83", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"x","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files (x86)\\Avant Browser\\\\avant.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files\\BraveSoftware\\\\brave.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Users\\ \\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsSense.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"\\AppData\\Local\\Discord\\\\Discord.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files (x86)\\Microsoft\\EdgeCore\\\\msedge.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files (x86)\\Falkon\\\\falkon.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"azurewebsites.net","Image":"C:\\Users\\ \\AppData\\Local\\Mozilla Firefox\\firefox.exe","Initiated":"true"}}
+]}

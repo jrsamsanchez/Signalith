@@ -1,0 +1,16 @@
+{"rule": "ed74fe75-7594-4b4b-ae38-e38e3fd2eb23", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"x","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Windows\\System32\\mstsc.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"\\Avast\\AvastSvc.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Windows\\System32\\dns.exe","Initiated":"true","Protocol":"udp","SourcePort":"53"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"\\Ranger\\SentinelRanger.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Program Files\\SplunkUniversalForwarder\\bin\\","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"\\RDCMan.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"\\RTSApp.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"\\thor64.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"3389","Image":"C:\\Program Files\\TSplus\\Java\\bin\\HTML5service.exe","Initiated":"true"}},
+  {"expect":true,"source":"sigmahq","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"-","DestinationIp":"0:0:0:0:0:0:0:1","DestinationIsIpv6":"true","DestinationPort":"3389","DestinationPortName":"-","Image":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","Initiated":"true","ProcessGuid":"570E49AA-37C4-6A94-030D-000000001800","ProcessId":"2828","Protocol":"tcp","RuleName":"technique_id=T1059.001,technique_name=PowerShell","SourceHostname":"-","SourceIp":"0:0:0:0:0:0:0:1","SourceIsIpv6":"true","SourcePort":"63155","SourcePortName":"-","User":"SigmaCatchVm\\frack113","UtcTime":"2026-08-30 14:05:13.038"}}
+]}

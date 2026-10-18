@@ -1,0 +1,18 @@
+{"rule": "8be88f46-f7e8-4ae6-b15e-cf1b13392834", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/sudoersx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /etc/sudoersx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/etc/sudoersx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/etc/sudoersx"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /etc/sudoersy"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /etc/sudoersy"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{"name":"/ /etc/sudoersx"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"name":"/ /etc/sudoersx"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{"name":"/ /etc/sudoersx"}}
+]}

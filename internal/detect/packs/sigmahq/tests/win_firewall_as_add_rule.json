@@ -1,0 +1,13 @@
+{"rule": "cde0a575-7d3d-4a49-9817-b8004a7bf105", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"Action":"2","ApplicationPath":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"C:\\PerfLogs\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"C:\\Windows\\ehome\\","ModifyingApplication":"C:\\Windows\\System32\\oobe\\Setup.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"C:\\Windows\\WinSxS\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"SYSTEM","ModifyingApplication":"C:\\Windows\\System32\\dllhost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"x","ModifyingApplication":"C:\\Windows\\WinSxS\\\\TiWorker.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"C:\\Program Files\\Windows Defender\\ \\MsMpEng.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"","ModifyingApplication":"C:\\Windows\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{"ApplicationPath":"C:\\Windows\\SystemApps\\","ModifyingApplication":"C:\\Windows\\System32\\svchost.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2004","data":{}}
+]}

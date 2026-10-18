@@ -297,6 +297,11 @@ func copyConstraints(c constraints) constraints {
 // the given bases (the fields a typical event of the log source has, which
 // the rule's own values override), so rules that exclude events missing a
 // field still get events. The seed makes the result repeatable.
+//
+// When no event comes of that, it tries again with the fields the rule
+// needs set (present): those an excluded selection tests for being
+// missing or empty (not CommandLine: null), and those a pattern of only
+// wildcards matches when set (contains: '*').
 func (r *Rule) Synthesize(seed int64, bases ...map[string]string) (*Synthesis, error) {
 	if len(bases) == 0 {
 		bases = []map[string]string{nil}
@@ -304,6 +309,20 @@ func (r *Rule) Synthesize(seed int64, bases ...map[string]string) (*Synthesis, e
 	if r.HasKeywords() {
 		return nil, errors.New("rule searches free text; only field rules get test events")
 	}
+	out, err := r.synthesize(seed, bases, false)
+	if errors.Is(err, errNoMatch) {
+		return r.synthesize(seed, bases, true)
+	}
+	return out, err
+}
+
+// errNoMatch is synthesize's error when it makes no event the rule
+// matches.
+var errNoMatch = errors.New("could not make an event the rule matches")
+
+// synthesize is Synthesize, with the fields the rule needs set when
+// present is.
+func (r *Rule) synthesize(seed int64, bases []map[string]string, present bool) (*Synthesis, error) {
 	rng := rand.New(rand.NewSource(seed))
 	terms := dnf(r.cond, false)
 	out := &Synthesis{}
@@ -334,11 +353,22 @@ func (r *Rule) Synthesize(seed int64, bases ...map[string]string) (*Synthesis, e
 			if bad {
 				break
 			}
+			var set map[string]bool
+			if present {
+				set = needSet(term, cs)
+			}
 			vals, ok := build(rng, cs)
 			if !ok {
 				continue
 			}
 			base := bases[attempt%len(bases)]
+			for f := range set {
+				if base[f] != "" && len(cs[f]) == 1 {
+					// The typical event's own value, rather than one
+					// made only to be set.
+					delete(vals, f)
+				}
+			}
 			ev := merge(base, vals)
 			m, err := r.Match(ev)
 			if err != nil {
@@ -357,9 +387,53 @@ func (r *Rule) Synthesize(seed int64, bases ...map[string]string) (*Synthesis, e
 		}
 	}
 	if len(out.Positive) == 0 {
-		return nil, errors.New("could not make an event the rule matches")
+		return nil, errNoMatch
 	}
 	return out, nil
+}
+
+// needSet adds to a term's constraints that the fields it needs set are
+// set (see Synthesize), and returns them.
+func needSet(term []lit, cs constraints) map[string]bool {
+	set := map[string]bool{}
+	for f, fcs := range cs {
+		for _, c := range fcs {
+			if c.how != "re" && c.how != "null" && c.how != "exists" && c.pattern != "" && strings.Trim(c.pattern, "*") == "" {
+				set[f] = true
+			}
+		}
+	}
+	for _, l := range term {
+		if !l.neg {
+			continue
+		}
+		for _, alt := range l.sel.alts {
+			if len(alt) == 1 && missingTest(alt[0]) {
+				set[alt[0].field] = true
+			}
+		}
+	}
+	for f := range set {
+		cs[f] = append(cs[f], constraint{how: "exists"})
+	}
+	return set
+}
+
+// missingTest reports whether a field condition holds only when the
+// field is missing or empty (Image: null, Image: ”, Image|exists: false).
+func missingTest(fc *fieldCond) bool {
+	if len(fc.mods) == 1 && fc.mods[0] == "exists" {
+		return fc.values[0] != nil && strings.EqualFold(*fc.values[0], "false")
+	}
+	if len(fc.mods) > 0 {
+		return false
+	}
+	for _, v := range fc.values {
+		if v != nil && *v != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // negatives adds, for each excluded selection in a term, an event that

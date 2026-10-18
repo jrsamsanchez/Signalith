@@ -333,8 +333,8 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,616 rules from
-[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,116 Windows rules
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,638 rules from
+[SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,138 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
 [the Linux audit log](#linux-audit-log-auditd)), 56 macOS rules (see
@@ -503,7 +503,7 @@ stay in Other as well, for the auditd rules. The 103 SigmaHQ Linux process rules
 fire on these launches as they do on Sysmon for Linux events: CI checks each of
 their test events both ways.
 
-40 SigmaHQ rules (`service: auditd`) and 46 Splunk rules (the `linux_auditd` macro)
+40 SigmaHQ rules (`service: auditd`) and 52 Splunk rules (the `linux_auditd` macro)
 read these records, for example capabilities discovery, clipboard and screen capture,
 hidden files run, kernel modules loaded, firewalls turned off, `LD_PRELOAD` and
 `/etc/ld.so.preload` changes, SUID binaries made, and audit or Sysmon stopped. Each
@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,309 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,328 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
