@@ -211,7 +211,9 @@ func TestStateAndConfig(t *testing.T) {
 		os.MkdirAll(filepath.Dir(p), 0o755)
 		os.WriteFile(p, []byte(body), 0o644)
 	}
-	ospki.KeyBits = 1024
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
 	if err := MakeCerts(l, time.Now()); err != nil {
 		t.Fatal(err)
 	}

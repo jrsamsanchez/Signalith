@@ -120,7 +120,9 @@ func shortWaits(t *testing.T) {
 
 func TestInstallOpenSearch(t *testing.T) {
 	shortWaits(t)
-	ospki.KeyBits = 1024
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
 	d := t.TempDir()
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
 	fakeRelease(t, l, oslocal.Version)
