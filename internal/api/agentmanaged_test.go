@@ -53,6 +53,11 @@ func TestManagedAgentInstallScriptIsPublic(t *testing.T) {
 	if code != 200 || body != string(deploy.AgentInstallSH) || h.Get("X-Signalith-SHA256") != hex.EncodeToString(sum[:]) {
 		t.Errorf("install.sh: %d %v", code, h)
 	}
+	code, h, body = sensorGet(t, ts, agentproto.RouteInstallPS1, "")
+	sum = sha256.Sum256(deploy.AgentInstallPS1)
+	if code != 200 || body != string(deploy.AgentInstallPS1) || h.Get("X-Signalith-SHA256") != hex.EncodeToString(sum[:]) {
+		t.Errorf("install.ps1: %d %v", code, h)
+	}
 }
 
 func TestManagedAgentInstallLine(t *testing.T) {
@@ -71,6 +76,13 @@ func TestManagedAgentInstallLine(t *testing.T) {
 		"--version test --token -", "echo '" + agents.TokenPlaceholder + "'", clusterinstall.ScriptSHA256().Agent} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line has no %q:\n%s", want, line)
+		}
+	}
+	win, _ := out["windows"].(string)
+	for _, want := range []string{"https://siem.example.com:7779/api/agent/install.ps1", "-From $u -CaSha256 " + ca + " -Version test -Token -",
+		"'" + agents.TokenPlaceholder + "' | & $f", strings.ToUpper(clusterinstall.ScriptSHA256().AgentPS1)} {
+		if !strings.Contains(win, want) {
+			t.Errorf("Windows line has no %q:\n%s", want, win)
 		}
 	}
 	if out["ca_sha256"] != ca || out["token_placeholder"] != agents.TokenPlaceholder || out["add_name"] != nil {
@@ -151,7 +163,7 @@ func TestManagedAgentConfig(t *testing.T) {
 		t.Errorf("journal: %d %s", code, body)
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(path, "os=linux", "os=windows", 1), agent)
-	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith\\Agent\\ca.pem`) {
+	if code != 200 || !strings.Contains(body, `C:\\ProgramData\\Signalith Agent\\ca.pem`) {
 		t.Errorf("windows: %d %s", code, body)
 	}
 	code, _, body = sensorGet(t, ts, strings.Replace(strings.Replace(path, "os=linux", "os=darwin", 1), "amd64", "arm64", 1), agent)

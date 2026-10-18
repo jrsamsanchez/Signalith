@@ -29,7 +29,7 @@ type Paths struct {
 func DefaultPaths() Paths {
 	switch runtime.GOOS {
 	case "windows":
-		data := `C:\ProgramData\Signalith\Agent`
+		data := `C:\ProgramData\Signalith Agent`
 		prog := os.Getenv("ProgramFiles")
 		if prog == "" {
 			prog = `C:\Program Files`

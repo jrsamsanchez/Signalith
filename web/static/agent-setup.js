@@ -10,24 +10,43 @@
 // line holds the token placeholder until Copy, which makes the token
 // (agentTokEnsure) and puts it in. After a copy, the card waits for the
 // agent: it reads api/agents every 10 seconds, for up to 30 minutes, until
-// an agent with the new token reports.
+// an agent with the new token reports. Linux and Windows each have their
+// line; on Windows the line can also install Sysmon (-Sysmon), which the
+// script downloads from Microsoft.
 'use strict';
 
 (function () {
   const WAIT_EVERY = 10000;
   const WAIT_FOR = 30 * 60 * 1000;
-  const NEEDS = [
-    ['server', 'A Linux computer', 'Ubuntu 22.04 or 24.04, Debian 12 or 13, RHEL, Rocky, Alma or Oracle Linux 8 or 9, or Amazon Linux 2023.'],
-    ['globe', 'Outbound HTTPS', 'To Signalith, and to packages.fluentbit.io for Fluent Bit. Nothing has to reach the computer.'],
-    ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit running.'],
-  ];
+  const OS_KEY = 'signalith.agentInstallOS';
+  const SYSMON_LICENSE = 'https://learn.microsoft.com/sysinternals/license-terms';
+  const LATER = ['refresh-cw', 'Nothing to edit later', 'The agent asks Signalith what to collect every few minutes and keeps Fluent Bit running.'];
+  const NEEDS = {
+    linux: [
+      ['server', 'A Linux computer', 'Ubuntu 22.04 or 24.04, Debian 12 or 13, RHEL, Rocky, Alma or Oracle Linux 8 or 9, or Amazon Linux 2023.'],
+      ['globe', 'Outbound HTTPS', 'To Signalith, and to packages.fluentbit.io for Fluent Bit. Nothing has to reach the computer.'],
+      LATER,
+    ],
+    windows: [
+      ['monitor', 'A Windows computer', 'Windows 10 or 11, or Windows Server 2016 or later, 64-bit x86.'],
+      ['globe', 'Outbound HTTPS', 'To Signalith, to packages.fluentbit.io for Fluent Bit, and to Microsoft for Sysmon if you add it. Nothing has to reach the computer.'],
+      LATER,
+    ],
+  };
   // S.data is the latest line as the server sent it, S.wait the wait for
-  // the agent after a copy.
-  const S = { data: null, seq: 0, error: null, wait: null };
+  // the agent after a copy, S.os the system picked and S.sysmon whether
+  // the Windows line installs Sysmon too.
+  const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', sysmon: false };
+  try {
+    if (localStorage.getItem(OS_KEY) === 'windows') S.os = 'windows';
+  } catch (_) { /* storage may be blocked */ }
 
   const card = $('agent-setup');
   const box = $('agent-install');
-  $('agent-install-needs').replaceChildren(...NEEDS.map(([ic, title, text]) => el('li', {}, icon(ic), el('span', {}, el('b', {}, title), text))));
+  function drawNeeds() {
+    $('agent-install-needs').replaceChildren(...NEEDS[S.os].map(([ic, title, text]) => el('li', {}, icon(ic), el('span', {}, el('b', {}, title), text))));
+  }
+  drawNeeds();
   pageHooks.push((name) => { if (name !== 'data') stopWait(); });
 
   // agentInstallSync is called by app.js each time the setup card loads:
@@ -111,34 +130,81 @@
       box.replaceChildren();
       return;
     }
+    const win = S.os === 'windows';
     const copyBtn = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', id: 'agent-install-copy' }, icon('copy'), el('span', {}, 'Copy'));
     copyBtn.addEventListener('click', () => copyLine(copyBtn));
+    const seg = el('div', { class: 'seg seg--sm agent-install__os', role: 'group', 'aria-label': 'Kind of computer' },
+      ...[['linux', 'Linux'], ['windows', 'Windows']].map(([os, label]) => {
+        const b = el('button', { type: 'button', 'aria-pressed': String(S.os === os) }, label);
+        b.addEventListener('click', () => pickOS(os));
+        return b;
+      }));
     const programs = d.programs || [];
-    const missing = ['linux-amd64', 'linux-arm64'].filter((p) => !programs.includes(p));
+    const missing = (win ? ['windows-amd64'] : ['linux-amd64', 'linux-arm64']).filter((p) => !programs.includes(p));
+    let missingText = 'This server has no agent program to hand out.';
+    if (!win && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'linux-arm64' ? 'ARM' : 'x86') + ' computers.';
+    if (win) missingText = 'This server has no agent program for Windows.';
     const noProgram = missing.length
       ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
-        el('div', {}, el('b', {}, missing.length === 2 ? 'This server has no agent program to hand out.' : 'This server has no agent program for ' + (missing[0] === 'linux-arm64' ? 'ARM' : 'x86') + ' computers.'),
-          el('p', {}, 'Released versions of Signalith (packages, Docker image) carry them; a build from source does not. Until then, set up Fluent Bit by hand with the Linux option.')))
+        el('div', {}, el('b', {}, missingText),
+          el('p', {}, 'Released versions of Signalith (packages, Docker image) carry them; a build from source does not. Until then, set up Fluent Bit by hand with the ' + (win ? 'Windows' : 'Linux') + ' option.')))
       : null;
+    let sysmon = null;
+    if (win) {
+      const box = el('input', { type: 'checkbox', id: 'agent-install-sysmon' });
+      box.checked = S.sysmon;
+      box.addEventListener('change', () => {
+        S.sysmon = box.checked;
+        const pre = $('agent-install-line');
+        if (pre) pre.replaceChildren(...agentTokShown(currentLine(), true));
+      });
+      sysmon = el('div', { class: 'agent-install__sysmon' },
+        el('label', { class: 'check' }, box, el('span', {}, el('b', {}, 'Also install Sysmon'), ' for detailed process, network and registry events')),
+        el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, 'The script downloads it from Microsoft and checks Microsoft signed it. Choosing it accepts the ',
+          el('a', { href: SYSMON_LICENSE, target: '_blank', rel: 'noopener' }, 'Sysinternals license', icon('external-link', 'icon--xs')),
+          '. A computer that has Sysmon already keeps its own configuration.')));
+    }
     const ca = d.ca_sha256
       ? el('p', { class: 'hint' }, icon('fingerprint'), el('span', {}, 'The computer trusts Signalith’s certificate authority only if its fingerprint is ',
         el('span', { class: 'mono', title: d.ca_sha256 }, d.ca_sha256.slice(0, 16) + '…'), d.next_ca_sha256 ? ', or the next one’s while it is being switched.' : '.'))
       : null;
     // replaceChildren, unlike el, would show a null as the text "null".
     box.replaceChildren(...[
+      seg,
       noProgram,
+      sysmon,
       el('div', { class: 'agent-file sensor-line' },
-        el('div', { class: 'agent-file__bar' }, icon('terminal'), el('span', { class: 'agent-file__name' }, 'Run on each computer, as a user who can use sudo'),
+        el('div', { class: 'agent-file__bar' }, icon('terminal'),
+          el('span', { class: 'agent-file__name' }, win ? 'Run on each computer, in PowerShell opened with Run as administrator' : 'Run on each computer, as a user who can use sudo'),
           el('span', { class: 'spacer' }), copyBtn),
-        el('pre', { class: 'sensor-line__text', id: 'agent-install-line', tabindex: '0', 'aria-label': 'The line to run on each computer' }, ...agentTokShown(d.linux, true))),
-      el('p', { class: 'hint' }, icon('info'), el('span', {}, d.note)),
+        el('pre', { class: 'sensor-line__text', id: 'agent-install-line', tabindex: '0', 'aria-label': 'The line to run on each computer' }, ...agentTokShown(currentLine(), true))),
+      el('p', { class: 'hint' }, icon('info'), el('span', {}, win ? d.windows_note : d.note)),
       ca,
       el('p', { class: 'hint' }, icon('list-checks'), el('span', {}, 'It checks the computer and the token before it installs anything, and says what stopped it. Add ',
-        el('code', {}, '--dry-run /tmp/agent'), ' to the end to see what it would change (it writes the files under that folder). Running it again is safe. ',
+        el('code', {}, win ? '-DryRun $env:TEMP\\agent' : '--dry-run /tmp/agent'), ' to the end to see what it would change (it writes the files under that folder). Running it again is safe. ',
         el('a', { href: 'https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md', target: '_blank', rel: 'noopener' }, 'Signalith Agent guide', icon('external-link', 'icon--xs')))),
-      el('p', { class: 'hint' }, icon('monitor'), el('span', {}, 'Windows and macOS: the agent is coming to them next. Until then, use the Windows option to set up Fluent Bit.')),
+      el('p', { class: 'hint' }, icon('laptop'), el('span', {}, 'macOS: the agent is coming next. Until then, use the osquery option for Macs.')),
       el('div', { id: 'agent-install-wait', role: 'status', 'aria-live': 'polite' })].filter(Boolean));
     drawWait();
+  }
+
+  // currentLine is the line for the system picked, with -Sysmon when
+  // chosen.
+  function currentLine() {
+    const d = S.data;
+    if (!d) return '';
+    if (S.os !== 'windows') return d.linux;
+    return d.windows + (S.sysmon ? ' -Sysmon' : '');
+  }
+
+  function pickOS(os) {
+    if (S.os === os) return;
+    S.os = os;
+    try { localStorage.setItem(OS_KEY, os); } catch (_) { /* storage may be blocked */ }
+    drawNeeds();
+    render();
+    const b = box.querySelector('.agent-install__os [aria-pressed="true"]');
+    if (b) b.focus();
   }
 
   async function copyLine(btn) {
@@ -148,8 +214,8 @@
       return;
     }
     if (!(await agentEnsureName())) return;
-    if (agentTokNeeded(S.data.linux) && !(await agentTokEnsure())) return;
-    const line = agentTokFill(S.data.linux);
+    if (agentTokNeeded(currentLine()) && !(await agentTokEnsure())) return;
+    const line = agentTokFill(currentLine());
     // agentTokEnsure drew the line again: copy with the new button
     const b = $('agent-install-copy') || btn;
     agentSetupCopy(line, b);

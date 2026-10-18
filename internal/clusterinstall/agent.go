@@ -46,11 +46,20 @@ type AgentCommands struct {
 	Linux        string `json:"linux"`
 	Note         string `json:"note"`
 	ScriptSHA256 string `json:"script_sha256"`
+	// Windows is the line for an elevated PowerShell, and WindowsNote
+	// its note.
+	Windows       string `json:"windows"`
+	WindowsNote   string `json:"windows_note"`
+	WindowsSHA256 string `json:"windows_script_sha256"`
 }
 
 // AgentSystems are the systems the agent install script supports, as the
 // page and the docs say them.
 const AgentSystems = "Ubuntu 22.04 or 24.04, Debian 12 or 13, Red Hat Enterprise Linux, Rocky Linux, AlmaLinux or Oracle Linux 8 or 9, and Amazon Linux 2023 (64-bit x86 or ARM)"
+
+// AgentWindowsSystems are the Windows versions the agent install script
+// supports.
+const AgentWindowsSystems = "Windows 10 or 11 and Windows Server 2016 or later (64-bit x86)"
 
 func (l *AgentLine) check() error {
 	if err := checkURL(l.URL); err != nil {
@@ -95,7 +104,38 @@ func AgentLines(l AgentLine) (AgentCommands, error) {
 	line += " --version " + l.Version + " --token -"
 	note := "Runs on " + AgentSystems + ". The line holds a new token for the computers you install it on: anyone with it can send data as them, so don't share it. " +
 		"It starts with a space, which keeps it out of the shell's history on Ubuntu and Debian; elsewhere, clear the history after running it (history -c)."
-	return AgentCommands{Linux: line, Note: note, ScriptSHA256: sha}, nil
+	c := AgentCommands{Linux: line, Note: note, ScriptSHA256: sha}
+	c.Windows, c.WindowsSHA256 = agentWindowsLine(l, base)
+	c.WindowsNote = "Runs on " + AgentWindowsSystems + ", in PowerShell opened with Run as administrator (Windows PowerShell 5.1 or PowerShell 7). " +
+		"The line holds a new token for the computers you install it on: anyone with it can send data as them, so don't share it. " +
+		"The script takes the line out of PowerShell's saved history when it is done."
+	return c, nil
+}
+
+// agentWindowsLine is the Windows line: as for the server's own join
+// line, Windows PowerShell 5.1 needs the certificate check turned off for
+// the one download (and back on after it), PowerShell 7 has
+// -SkipCertificateCheck. The token goes to the script through the
+// pipeline, in the same PowerShell, so it is on no program's command
+// line.
+func agentWindowsLine(l AgentLine, base string) (string, string) {
+	sha := scriptSHA.AgentPS1
+	u := base + agentproto.RouteInstallPS1
+	line := fmt.Sprintf("$u='%s'; $f=Join-Path $env:TEMP 'signalith-agent-install.ps1'; $ProgressPreference='SilentlyContinue'; "+
+		"if ($PSVersionTable.PSVersion.Major -ge 6) { Invoke-WebRequest '%s' -OutFile $f -SkipCertificateCheck -MaximumRedirection 0 } "+
+		"else { [Net.ServicePointManager]::SecurityProtocol='Tls12'; [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; "+
+		"try { Invoke-WebRequest '%s' -OutFile $f -UseBasicParsing -MaximumRedirection 0 } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; "+
+		"if ((Get-FileHash $f -Algorithm SHA256).Hash -ne '%s') { throw 'The downloaded script is not the one this line names, so it was not run.' }; "+
+		"Set-ExecutionPolicy -Scope Process Bypass -Force; '%s' | & $f -From $u",
+		base, u, u, strings.ToUpper(sha), agents.TokenPlaceholder)
+	if l.CASHA256 != "" {
+		line += " -CaSha256 " + l.CASHA256
+	}
+	if l.NextCASHA256 != "" {
+		line += " -NextCaSha256 " + l.NextCASHA256
+	}
+	line += " -Version " + l.Version + " -Token -"
+	return line, sha
 }
 
 var programName = regexp.MustCompile(`^signalith-agent-[a-z0-9]+-[a-z0-9]+(\.exe)?$`)

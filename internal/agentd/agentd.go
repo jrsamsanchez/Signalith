@@ -41,6 +41,9 @@ type Agent struct {
 	// Version is the agent's own version.
 	Version string
 	Log     *slog.Logger
+	// Out gets what the collectors write, each line marked with the
+	// collector's name; nil is the standard error.
+	Out io.Writer
 	// Name is the computer's name, sent to the server and to Fluent Bit
 	// (HOSTNAME); empty is os.Hostname.
 	Name string
@@ -99,6 +102,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		return err
 	}
 	a.fluentBit = newProc("fluentbit", a.Log, a.now, a.reportSoon)
+	if a.Out != nil {
+		a.fluentBit.out = a.Out
+	}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

@@ -31,12 +31,29 @@ func TestAgentLines(t *testing.T) {
 	if !strings.Contains(c.Note, "Ubuntu 22.04") || !strings.Contains(c.Note, "don't share it") || !strings.Contains(c.Note, "history") {
 		t.Errorf("note %q", c.Note)
 	}
+	psum := sha256.Sum256(deploy.AgentInstallPS1)
+	if c.WindowsSHA256 != hex.EncodeToString(psum[:]) || c.WindowsSHA256 != ScriptSHA256().AgentPS1 {
+		t.Errorf("Windows script SHA-256 %s", c.WindowsSHA256)
+	}
+	for _, want := range []string{"$u='https://siem:7779'", "Invoke-WebRequest 'https://siem:7779/api/agent/install.ps1' -OutFile $f -SkipCertificateCheck",
+		"ServerCertificateValidationCallback=$null", "-ne '" + strings.ToUpper(c.WindowsSHA256) + "'",
+		"'" + agents.TokenPlaceholder + "' | & $f -From $u -CaSha256 " + caSum + " -Version 0.4.0 -Token -"} {
+		if !strings.Contains(c.Windows, want) {
+			t.Errorf("Windows line has no %q:\n%s", want, c.Windows)
+		}
+	}
+	if !strings.Contains(c.WindowsNote, "Run as administrator") || !strings.Contains(c.WindowsNote, "don't share it") {
+		t.Errorf("Windows note %q", c.WindowsNote)
+	}
 	c, _ = AgentLines(AgentLine{URL: "https://siem:7779", Version: "dev", CASHA256: caSum, NextCASHA256: strings.Repeat("a", 64)})
+	if !strings.Contains(c.Windows, "-CaSha256 "+caSum+" -NextCaSha256 "+strings.Repeat("a", 64)+" -Version dev") {
+		t.Errorf("next CA, Windows: %s", c.Windows)
+	}
 	if !strings.Contains(c.Linux, "--ca-sha256 "+caSum+" --next-ca-sha256 "+strings.Repeat("a", 64)+" --version dev") {
 		t.Errorf("next CA: %s", c.Linux)
 	}
 	c, _ = AgentLines(AgentLine{URL: "https://siem.example.com", Version: "dev"})
-	if strings.Contains(c.Linux, "--ca-sha256") {
+	if strings.Contains(c.Linux, "--ca-sha256") || strings.Contains(c.Windows, "-CaSha256") {
 		t.Errorf("public CA: %s", c.Linux)
 	}
 	for name, l := range map[string]AgentLine{

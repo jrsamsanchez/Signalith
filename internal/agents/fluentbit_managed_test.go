@@ -36,14 +36,14 @@ func TestGenerateManaged(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		line("tls.ca_file", `C:\ProgramData\Signalith\Agent\ca.pem`),
-		line("storage.path", `C:\ProgramData\Signalith\Agent\fluent-bit\signalith-buffer`),
+		line("tls.ca_file", `C:\ProgramData\Signalith Agent\ca.pem`),
+		line("storage.path", `C:\ProgramData\Signalith Agent\fluent-bit\signalith-buffer`),
 	} {
 		if !strings.Contains(win.Config, want) {
 			t.Errorf("windows config missing %q:\n%s", want, win.Config)
 		}
 	}
-	if win.ConfigPath != `C:\ProgramData\Signalith\Agent\fluent-bit.conf` || len(win.Steps) != 0 {
+	if win.ConfigPath != `C:\ProgramData\Signalith Agent\fluent-bit.conf` || len(win.Steps) != 0 {
 		t.Errorf("windows: %s %v", win.ConfigPath, win.Steps)
 	}
 }

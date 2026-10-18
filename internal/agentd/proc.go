@@ -30,6 +30,8 @@ type proc struct {
 	// changed is told whenever the state changes, so the agent reports
 	// at once.
 	changed func()
+	// out gets what the collector writes.
+	out io.Writer
 
 	mu       sync.Mutex
 	spec     *procSpec
@@ -65,7 +67,7 @@ var (
 
 func newProc(name string, log *slog.Logger, now func() time.Time, changed func()) *proc {
 	return &proc{name: name, log: log, now: now, changed: changed, kick: make(chan struct{}, 1),
-		state: agentproto.StateOff, since: now(), tail: &lineRing{max: 20}}
+		state: agentproto.StateOff, since: now(), tail: &lineRing{max: 20}, out: os.Stderr}
 }
 
 // set gives the collector a new spec; the loop applies it.
@@ -223,6 +225,9 @@ func (p *proc) start(s *procSpec) (chan error, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	if err := keepWithAgent(cmd.Process); err != nil {
+		p.log.Warn("the collector may outlive the agent if the agent stops unexpectedly", "collector", p.name, "err", err)
+	}
 	p.log.Info("started a collector", "collector", p.name, "pid", cmd.Process.Pid)
 	p.procMu.Lock()
 	p.cmd = cmd
@@ -273,7 +278,7 @@ func (p *proc) copyLines(r io.Reader) {
 			continue
 		}
 		p.tail.add(line)
-		fmt.Fprintf(os.Stderr, "[%s] %s\n", p.name, line)
+		fmt.Fprintf(p.out, "[%s] %s\n", p.name, line)
 	}
 	// Whatever is left after a line too long to keep.
 	_, _ = io.Copy(io.Discard, r)

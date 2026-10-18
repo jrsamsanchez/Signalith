@@ -22,8 +22,8 @@ import (
 // The Signalith Agent (Add data > Signalith Agent): one program per
 // computer that runs the collectors for it (see internal/agentproto). The
 // page makes the pasted line (GET /api/agent/install); the line downloads
-// the install script (GET /api/agent/install.sh, public like the
-// sensor's). The script and then the agent hold an agent token made for
+// the install script (GET /api/agent/install.sh, or install.ps1 for
+// Windows, public like the sensor's). The script and then the agent hold an agent token made for
 // the agent (purpose agent): with it the script downloads the agent
 // program (GET /api/agent/program) and the agent fetches its
 // configuration (GET /api/agent/config) and reports its status (POST
@@ -44,6 +44,7 @@ const agentPollSeconds = 300
 
 func (s *Server) routeAgentManaged(mux *http.ServeMux, api *router) {
 	mux.HandleFunc("GET "+agentproto.RouteInstallSH, s.handleInstallScript(clusterinstall.ScriptAgent))
+	mux.HandleFunc("GET "+agentproto.RouteInstallPS1, s.handleInstallScript(clusterinstall.ScriptAgentPS1))
 	api.admin("GET /api/agent/install", s.handleAgentInstall)
 }
 
@@ -139,10 +140,12 @@ func (s *Server) handleAgentInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	// The configuration the agent will fetch must be possible too (see
 	// handleSensorInstall).
-	opts := s.agentManagedOptions(server, "linux", agentFacts{}, certs)
-	if _, err := agents.Generate(opts); errors.Is(err, agents.ErrNoNameToCheck) {
-		fieldError("server", err)
-		return
+	for _, goos := range []string{"linux", "windows"} {
+		opts := s.agentManagedOptions(server, goos, agentFacts{}, certs)
+		if _, err := agents.Generate(opts); errors.Is(err, agents.ErrNoNameToCheck) {
+			fieldError("server", err)
+			return
+		}
 	}
 	c, err := clusterinstall.AgentLines(line)
 	var fe *clusterinstall.FieldError

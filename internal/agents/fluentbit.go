@@ -125,7 +125,7 @@ type Options struct {
 const (
 	ManagedLinuxConfDir     = "/etc/signalith-agent"
 	ManagedLinuxStateDir    = "/var/lib/signalith-agent"
-	ManagedWindowsDataDir   = `C:\ProgramData\Signalith\Agent`
+	ManagedWindowsDataDir   = `C:\ProgramData\Signalith Agent`
 	managedLinuxFluentBit   = ManagedLinuxStateDir + "/fluent-bit"
 	managedWindowsFluentBit = ManagedWindowsDataDir + `\fluent-bit`
 )

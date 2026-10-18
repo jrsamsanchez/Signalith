@@ -21,25 +21,27 @@ import (
 
 // The scripts' names in GET /api/cluster/join/<name>, the network
 // sensor's (GET /api/sensor/install.sh) and the Signalith Agent's (GET
-// /api/agent/install.sh).
+// /api/agent/install.sh and install.ps1).
 const (
-	ScriptSH     = "install.sh"
-	ScriptPS1    = "install.ps1"
-	ScriptSensor = "sensor-install.sh"
-	ScriptAgent  = "agent-install.sh"
+	ScriptSH       = "install.sh"
+	ScriptPS1      = "install.ps1"
+	ScriptSensor   = "sensor-install.sh"
+	ScriptAgent    = "agent-install.sh"
+	ScriptAgentPS1 = "agent-install.ps1"
 )
 
 // ScriptSHA is the SHA-256 of each install script, in hex, which the
 // pasted lines check before they run one.
 type ScriptSHA struct {
-	SH     string `json:"sh"`
-	PS1    string `json:"ps1"`
-	Sensor string `json:"sensor"`
-	Agent  string `json:"agent"`
+	SH       string `json:"sh"`
+	PS1      string `json:"ps1"`
+	Sensor   string `json:"sensor"`
+	Agent    string `json:"agent"`
+	AgentPS1 string `json:"agent_ps1"`
 }
 
 var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1), Sensor: hexSHA(deploy.SensorInstallSH),
-	Agent: hexSHA(deploy.AgentInstallSH)}
+	Agent: hexSHA(deploy.AgentInstallSH), AgentPS1: hexSHA(deploy.AgentInstallPS1)}
 
 // ScriptSHA256 returns the scripts' SHA-256.
 func ScriptSHA256() ScriptSHA { return scriptSHA }
@@ -56,6 +58,8 @@ func Script(name string) ([]byte, string, bool) {
 		return deploy.SensorInstallSH, scriptSHA.Sensor, true
 	case ScriptAgent:
 		return deploy.AgentInstallSH, scriptSHA.Agent, true
+	case ScriptAgentPS1:
+		return deploy.AgentInstallPS1, scriptSHA.AgentPS1, true
 	}
 	return nil, "", false
 }
