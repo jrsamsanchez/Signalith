@@ -114,6 +114,23 @@ it, and warns while it is missing). Keep a copy of the private key somewhere saf
 offline. To replace a key, add the new public key next to the old one, release, switch
 the secret, and remove the old key in a later release.
 
+### Agent updates
+
+[Signalith Agents](signalith-agent.md#updates) update themselves only to agent programs
+listed in a manifest signed with the release key, an Ed25519 key of the same kind as the
+content key. The release build signs it with `signalith agent-programs sign -version
+<version> -dir <folder of agent programs>`, which reads the private key from the
+`SIGNALITH_AGENT_KEY` environment variable only. Agents trust the public keys in
+`internal/agentproto/release.keys`; while that file lists none, agents do not update
+themselves and the build signs nothing.
+
+To set it up, make a key the same way as the content key (or with
+`signalith agent-programs keygen`), add the private key line as the `SIGNALITH_AGENT_KEY`
+repository secret, and add the public key line to `internal/agentproto/release.keys`.
+Agents built with that file trust the key from then on, so keep a copy of the private
+key somewhere safe and offline. To replace it, add the new public key next to the old
+one, release, switch the secret, and remove the old key in a later release.
+
 ### Windows code signing
 
 The **Release** workflow signs the `.msi` and `signalith-windows-amd64.exe` with

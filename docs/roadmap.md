@@ -128,7 +128,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 :   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
     what to collect, so nobody edits a Fluent Bit or osquery configuration. Linux and
     Windows (with osquery and optional Sysmon) are in, and what each group of computers
-    collects is chosen on the Endpoints page; signed updates and macOS come next.
+    collects is chosen on the Endpoints page. Signed updates with automatic rollback are
+    built, and switch on once the release key is set up; macOS comes next.
 
 **Tenants**
 :   Several teams or customers on one install, each with its own data, users and

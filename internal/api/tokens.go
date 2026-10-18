@@ -322,7 +322,7 @@ func collectSummary(c agenttokens.Collect) string {
 		linux = "auto"
 	}
 	return "osquery=" + onOff(c.Osquery) + " sysmon=" + onOff(c.Sysmon) + " powershell=" + onOff(c.PowerShell) +
-		" linux_log=" + linux + " web_logs=" + onOff(c.WebLogs) + " audit_log=" + onOff(c.AuditLog)
+		" linux_log=" + linux + " web_logs=" + onOff(c.WebLogs) + " audit_log=" + onOff(c.AuditLog) + " updates=" + onOff(c.Updates)
 }
 
 // readStrictTokenBody is readTokenBody refusing fields v does not have,

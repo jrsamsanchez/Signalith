@@ -211,15 +211,19 @@ window.sensorText = (function () {
   // A computer the Signalith Agent runs reports every 5 minutes
   // (a.managed): its version, its system, whether it got its
   // configuration, and each collector it runs with its state.
-  const COLLECTOR = { fluentbit: 'Fluent Bit', osquery: 'osquery' };
+  // "update" is a signed update the agent is installing, or one that
+  // failed and was undone.
+  const COLLECTOR = { fluentbit: 'Fluent Bit', osquery: 'osquery', update: 'Update' };
   const STATE = { running: 'running', starting: 'starting', failed: 'stopped', missing: 'not installed', off: 'off' };
+  const UPDATE_STATE = { starting: 'installing', failed: 'failed' };
   const collectorName = (c) => COLLECTOR[c.name] || c.name;
+  const stateOf = (c) => (c.name === 'update' && UPDATE_STATE[c.state]) || STATE[c.state] || c.state;
 
   // managedTrouble is the short word for what is wrong, or ''.
   function managedTrouble(m) {
     if (!m) return '';
     const bad = (m.components || []).find((c) => c.state === 'failed' || c.state === 'missing');
-    if (bad) return collectorName(bad) + ' ' + STATE[bad.state];
+    if (bad) return collectorName(bad) + ' ' + stateOf(bad);
     if (m.config_error) return 'Can’t get its configuration';
     return '';
   }
@@ -227,7 +231,7 @@ window.sensorText = (function () {
   // managedLine is the row's second line: "Agent 0.4.0 · Fluent Bit
   // 4.0.3 running · Ubuntu 24.04 LTS".
   function managedLine(m) {
-    const parts = ['Agent ' + (m.version || '')].concat((m.components || []).map((c) => [collectorName(c), c.version, STATE[c.state] || c.state].filter(Boolean).join(' ')));
+    const parts = ['Agent ' + (m.version || '')].concat((m.components || []).map((c) => [collectorName(c), c.version, stateOf(c)].filter(Boolean).join(' ')));
     if (m.system) parts.push(m.system);
     return parts.join(' · ');
   }
@@ -235,15 +239,18 @@ window.sensorText = (function () {
   function managedFacts(m) {
     const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
     const trouble = managedTrouble(m);
-    // Where to read a collector's last lines on the computer: osquery has
-    // its own service on Linux; on Windows both write to agent.log.
+    // Where to read a collector's last lines on the computer: osquery and
+    // the updater have their own services on Linux; on Windows the updater
+    // writes updater.log and the rest agent.log.
     const logCommand = (c) => m.os === 'windows'
-      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\agent.log\' -Tail 50'
-      : 'sudo journalctl -u ' + (c.name === 'osquery' ? 'signalith-osquery' : 'signalith-agent') + ' -n 50';
+      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\' + (c.name === 'update' ? 'updater' : 'agent') + '.log\' -Tail 50'
+      : 'sudo journalctl -u ' + ({ osquery: 'signalith-osquery', update: 'signalith-agent-update' }[c.name] || 'signalith-agent') + ' -n 50';
     const why = [];
     if (m.config_error) why.push('It could not get a new configuration from Signalith, so it keeps the one it has: ' + m.config_error);
     for (const c of m.components || []) {
-      if (c.state === 'missing') why.push(collectorName(c) + ' is not installed. Run the line from Add data > Signalith Agent again on the computer.');
+      if (c.name === 'update') {
+        if (c.state === 'failed') why.push(['The update to ' + c.version + ' did not go in, and the agent kept the version it has. See why on the computer with ', el('code', {}, logCommand(c)), '.']);
+      } else if (c.state === 'missing') why.push(collectorName(c) + ' is not installed. Run the line from Add data > Signalith Agent again on the computer.');
       else if (c.state === 'failed') why.push([collectorName(c) + ' stopped' + (c.restarts ? ' (' + c.restarts + (c.restarts === 1 ? ' restart' : ' restarts') + ')' : '') + '. The agent starts it again; see why on the computer with ', el('code', {}, logCommand(c)), '.']);
     }
     return [
@@ -251,7 +258,7 @@ window.sensorText = (function () {
       el('dl', { class: 'ep-facts' },
         ...fact('Version', m.version),
         ...fact('System', [m.system, m.arch].filter(Boolean).join(', ')),
-        ...(m.components || []).flatMap((c) => fact(collectorName(c), [c.version, (STATE[c.state] || c.state) + (c.since ? ' since ' + new Date(c.since).toLocaleString() : '')].filter(Boolean).join(', '))),
+        ...(m.components || []).flatMap((c) => fact(collectorName(c), [c.version, stateOf(c) + (c.since ? ' since ' + new Date(c.since).toLocaleString() : '')].filter(Boolean).join(', '))),
         ...fact('Configuration', m.config_error ? 'Could not get a new one' : m.revision ? 'Up to date (' + m.revision.slice(0, 8) + ')' : 'None yet'),
         ...fact('Started', m.started ? new Date(m.started).toLocaleString() : ''),
         ...fact('Status sent', m.received ? new Date(m.received).toLocaleString() + ' (' + ago(m.received) + ')' : '')),
@@ -800,6 +807,16 @@ window.sensorText = (function () {
     ['audit_log', 'Audit log', 'Linux: auditd’s records'],
   ];
 
+  // updatesSwitch pauses automatic updates for one install line, which is
+  // also how to roll a release out to a few computers first.
+  function updatesSwitch(c, change) {
+    const sw = el('input', { type: 'checkbox', onchange: () => change('updates', sw.checked ? '' : 'off') });
+    sw.checked = c.updates !== 'off';
+    return el('div', { class: 'ep-set__switches ep-set__updates' },
+      el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, 'Automatic updates'),
+        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))));
+  }
+
   function agentCollectSection(lines, edits) {
     const sec = el('section', { class: 'ep-set__group' },
       el('div', {}, el('h4', { class: 'ep-set__title' }, 'Signalith Agent'),
@@ -826,7 +843,8 @@ window.sensorText = (function () {
           return el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, label), el('span', { class: 'hint' }, hint)));
         })),
         el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Linux sign-ins'),
-          seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')));
+          seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')),
+        updatesSwitch(c, change));
     };
     pick.addEventListener('change', () => { cur = pick.value; draw(); });
     draw();

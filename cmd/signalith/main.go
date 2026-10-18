@@ -98,6 +98,7 @@ Usage:
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
   signalith content   status|install|remove [-c file] ...  content pack updates (newer tested rules)
+  signalith agent-programs status|sign|keygen|pubkey ...  the Signalith Agent programs this server hands out, signed for agent updates
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
@@ -177,6 +178,8 @@ func main() {
 		err = cmdSecrets(args)
 	case "content":
 		err = cmdContent(args)
+	case "agent-programs":
+		err = cmdAgentPrograms(args)
 	case "security":
 		err = cmdSecurity(args)
 	case "audit":

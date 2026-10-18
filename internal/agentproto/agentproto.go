@@ -64,6 +64,9 @@ type Config struct {
 	// Osquery is osquery's part, for an agent whose computer has osquery
 	// (it says so when it asks); nil runs none.
 	Osquery *Osquery `json:"osquery,omitempty"`
+	// Update offers the agent a newer version of itself, from the signed
+	// manifest of the programs the server hands out; nil offers none.
+	Update *Update `json:"update,omitempty"`
 }
 
 // FluentBit is Fluent Bit's part of a Config.

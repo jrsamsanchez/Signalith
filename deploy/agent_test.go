@@ -250,13 +250,22 @@ func TestAgentScriptDryRun(t *testing.T) {
 	for _, want := range []string{"Signalith at https://siem.example.com:7779, its certificate authority is the one the line names",
 		"the token is an agent token Signalith knows", "would download https://packages.fluentbit.io/fluentbit.key",
 		"https://packages.fluentbit.io/ubuntu/noble noble main", "would run: env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fluent-bit",
-		"would run: systemctl mask --now fluent-bit.service", "would run: systemctl enable --now signalith-agent.service"} {
+		"would run: systemctl mask --now fluent-bit.service", "would run: systemctl enable --now signalith-agent.service",
+		"would run: systemctl enable --now signalith-agent-update.path"} {
 		if !strings.Contains(out, want) && !strings.Contains(readFile(t, filepath.Join(root, "etc/apt/sources.list.d/signalith-fluent-bit.list")), want) {
 			t.Errorf("output has no %q:\n%s", want, out)
 		}
 	}
 	if got := readFile(t, filepath.Join(m.dir, "config-url")); !strings.Contains(got, "/api/agent/config?os=linux&arch="+runtime.GOARCH+"&server=https://siem.example.com:7779") {
 		t.Errorf("config asked as %s", got)
+	}
+	// The updater runs the installed program, outside the agent's sandbox,
+	// when the agent has an update ready.
+	if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent-update.service")); !strings.Contains(got, "ExecStart=/usr/local/sbin/signalith-agent install-update") {
+		t.Errorf("updater unit:\n%s", got)
+	}
+	if got := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent-update.path")); !strings.Contains(got, "PathExists=/var/lib/signalith-agent/update/ready") {
+		t.Errorf("updater path unit:\n%s", got)
 	}
 	if got := readFile(t, filepath.Join(root, "usr/local/sbin/signalith-agent")); got != string(m.program) {
 		t.Errorf("program: %q", got)

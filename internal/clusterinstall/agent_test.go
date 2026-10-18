@@ -1,6 +1,8 @@
 package clusterinstall
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/deploy"
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/agents"
 )
 
@@ -123,5 +126,65 @@ func TestAgentPrograms(t *testing.T) {
 	want = sha256.Sum256([]byte("three"))
 	if sum != hex.EncodeToString(want[:]) {
 		t.Errorf("after upgrade: %s", sum)
+	}
+}
+
+func TestSignedPrograms(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := agentproto.ReleaseKeys
+	t.Cleanup(func() { agentproto.ReleaseKeys = old })
+	dir := t.TempDir()
+	p := &Programs{Dir: dir}
+	if _, err := SignPrograms(dir, "1.0.0", priv); err == nil {
+		t.Error("signed an empty folder")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "signalith-agent-linux-amd64"), []byte("one"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"dev", "1.0", "1.0.0;x"} {
+		if _, err := SignPrograms(dir, v, priv); err == nil {
+			t.Errorf("signed version %q", v)
+		}
+	}
+	m, err := SignPrograms(dir, "1.0.0", priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("one"))
+	if m.Programs["linux-amd64"] != hex.EncodeToString(sum[:]) || len(m.Programs) != 1 {
+		t.Errorf("manifest: %+v", m)
+	}
+
+	// A build that trusts no key hands out no manifest and offers nothing.
+	agentproto.ReleaseKeys = nil
+	if _, _, _, err := p.Manifest(); !errors.Is(err, ErrNoManifest) {
+		t.Errorf("no keys: %v", err)
+	}
+	agentproto.ReleaseKeys = []ed25519.PublicKey{pub}
+	if _, _, got, err := p.Manifest(); err != nil || got.Version != "1.0.0" {
+		t.Fatalf("manifest: %v %+v", err, got)
+	}
+	if u, err := p.Update("linux", "amd64", "0.9.0"); err != nil || u == nil || u.Version != "1.0.0" || u.SHA256 != m.Programs["linux-amd64"] {
+		t.Errorf("update: %+v %v", u, err)
+	}
+	for _, c := range [][3]string{{"linux", "amd64", "1.0.0"}, {"linux", "amd64", "dev"}, {"windows", "amd64", "0.9.0"}} {
+		if u, err := p.Update(c[0], c[1], c[2]); u != nil || err != nil {
+			t.Errorf("%v: %+v %v", c, u, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "signalith-agent-linux-amd64"), []byte("changed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := p.Update("linux", "amd64", "0.9.0"); u != nil || err == nil {
+		t.Errorf("changed program: %+v %v", u, err)
+	}
+	if err := os.Remove(filepath.Join(dir, agentproto.SignatureFile)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := p.Manifest(); !errors.Is(err, ErrNoManifest) {
+		t.Errorf("no signature: %v", err)
 	}
 }

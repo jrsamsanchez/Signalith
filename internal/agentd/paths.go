@@ -29,6 +29,10 @@ type Paths struct {
 	// OsqueryUnit is the systemd service that runs osquery on Linux; ""
 	// where the agent runs osquery itself.
 	OsqueryUnit string
+	// Program is the agent program as installed, Prev the copy of the
+	// version before an update (kept for going back), and Service the
+	// agent's service (systemd unit or Windows service name).
+	Program, Prev, Service string
 }
 
 // DefaultPaths are the paths on this system.
@@ -40,11 +44,14 @@ func DefaultPaths() Paths {
 		if prog == "" {
 			prog = `C:\Program Files`
 		}
-		return Paths{Conf: data, State: data, FluentBit: filepath.Join(prog, "Signalith Agent", "fluent-bit", "bin", "fluent-bit.exe"),
-			Osqueryd: filepath.Join(prog, "osquery", "osqueryd", "osqueryd.exe")}
+		dir := filepath.Join(prog, "Signalith Agent")
+		return Paths{Conf: data, State: data, FluentBit: filepath.Join(dir, "fluent-bit", "bin", "fluent-bit.exe"),
+			Osqueryd: filepath.Join(prog, "osquery", "osqueryd", "osqueryd.exe"),
+			Program:  filepath.Join(dir, "signalith-agent.exe"), Prev: filepath.Join(dir, "signalith-agent.prev.exe"), Service: "SignalithAgent"}
 	default:
 		return Paths{Conf: "/etc/signalith-agent", State: "/var/lib/signalith-agent", FluentBit: "/opt/fluent-bit/bin/fluent-bit",
-			Osqueryd: "/opt/osquery/bin/osqueryd", OsqueryUnit: "signalith-osquery.service"}
+			Osqueryd: "/opt/osquery/bin/osqueryd", OsqueryUnit: "signalith-osquery.service",
+			Program: "/usr/local/sbin/signalith-agent", Prev: "/usr/local/lib/signalith-agent/signalith-agent.prev", Service: "signalith-agent.service"}
 	}
 }
 

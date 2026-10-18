@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -432,5 +434,96 @@ func TestManagedAgentTalksToServer(t *testing.T) {
 	conf, err := os.ReadFile(filepath.Join(p.Conf, "fluent-bit.conf"))
 	if err != nil || !strings.Contains(string(conf), "${SIGNALITH_TOKEN}") || strings.Contains(string(conf), token) {
 		t.Errorf("fluent-bit.conf: %v\n%s", err, conf)
+	}
+}
+
+func TestManagedAgentUpdate(t *testing.T) {
+	ts, s := newSensorServer(t)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := agentproto.ReleaseKeys
+	agentproto.ReleaseKeys = []ed25519.PublicKey{pub}
+	t.Cleanup(func() { agentproto.ReleaseKeys = old })
+	dir := t.TempDir()
+	prog := []byte("agent program 2.0.0\n")
+	if err := os.WriteFile(filepath.Join(dir, agentproto.ProgramName("linux", "amd64")), prog, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.AgentPrograms = &clusterinstall.Programs{Dir: dir}
+	id, agent := makeToken(t, ts, "Web servers", "agent")
+	path := agentproto.RouteConfig + "?" + url.Values{"os": {"linux"}, "arch": {"amd64"}, "server": {"https://siem.example.com:7779"}}.Encode()
+	fetch := func(version string) agentproto.Config {
+		t.Helper()
+		code, _, body := agentDo(t, ts, "GET", path, agent, "", "", map[string]string{agentproto.HeaderVersion: version})
+		var cfg agentproto.Config
+		if code != 200 || json.Unmarshal([]byte(body), &cfg) != nil {
+			t.Fatalf("config: %d %s", code, body)
+		}
+		return cfg
+	}
+
+	// Without a signed manifest there is nothing to offer.
+	if cfg := fetch("1.0.0"); cfg.Update != nil {
+		t.Errorf("offered without a manifest: %+v", cfg.Update)
+	}
+	if code, _, body := sensorGet(t, ts, agentproto.RouteManifest, agent); code != 404 || !strings.Contains(body, "no signed manifest") {
+		t.Errorf("manifest missing: %d %s", code, body)
+	}
+
+	if _, err := clusterinstall.SignPrograms(dir, "2.0.0", priv); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(prog)
+	if cfg := fetch("1.0.0"); cfg.Update == nil || cfg.Update.Version != "2.0.0" || cfg.Update.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Errorf("update: %+v", cfg.Update)
+	}
+	for _, v := range []string{"2.0.0", "2.1.0", "dev", ""} {
+		if cfg := fetch(v); cfg.Update != nil {
+			t.Errorf("offered %s to version %q", cfg.Update.Version, v)
+		}
+	}
+	code, _, body := sensorGet(t, ts, agentproto.RouteManifest, agent)
+	var ans agentproto.ManifestAnswer
+	if code != 200 || json.Unmarshal([]byte(body), &ans) != nil {
+		t.Fatalf("manifest: %d %s", code, body)
+	}
+	if m, err := agentproto.VerifyManifest(agentproto.ReleaseKeys, []byte(ans.Manifest), []byte(ans.Signature)); err != nil || m.Version != "2.0.0" {
+		t.Errorf("manifest answer: %v %+v", err, m)
+	}
+	if code, _, _ := sensorGet(t, ts, agentproto.RouteManifest, ""); code != 401 {
+		t.Errorf("manifest without a token: %d", code)
+	}
+
+	// Paused for the install line: no offer until it is turned back on.
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"updates":"off"}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("pause: %d %s", code, raw)
+	}
+	if cfg := fetch("1.0.0"); cfg.Update != nil {
+		t.Errorf("offered while paused: %+v", cfg.Update)
+	}
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"updates":"on"}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("resume: %d %s", code, raw)
+	}
+	if cfg := fetch("1.0.0"); cfg.Update == nil {
+		t.Error("not offered after resuming")
+	}
+
+	// A program that is not the one signed is never offered.
+	if err := os.WriteFile(filepath.Join(dir, agentproto.ProgramName("linux", "amd64")), []byte("something else, and longer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := fetch("1.0.0"); cfg.Update != nil {
+		t.Errorf("offered a program that is not the signed one: %+v", cfg.Update)
+	}
+	// Nor is anything signed by a key the agents do not trust.
+	other, _, _ := ed25519.GenerateKey(rand.Reader)
+	agentproto.ReleaseKeys = []ed25519.PublicKey{other}
+	if err := os.WriteFile(filepath.Join(dir, agentproto.ProgramName("linux", "amd64")), prog, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := fetch("1.0.0"); cfg.Update != nil {
+		t.Errorf("offered with an untrusted signature: %+v", cfg.Update)
 	}
 }

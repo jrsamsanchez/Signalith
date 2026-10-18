@@ -28,6 +28,9 @@ type Collect struct {
 	WebLogs string `json:"web_logs,omitempty"`
 	// AuditLog is "" (read the Linux audit log) or "off".
 	AuditLog string `json:"audit_log,omitempty"`
+	// Updates is "" (the agents update themselves to the signed release
+	// programs the server hands out) or "off" (paused).
+	Updates string `json:"updates,omitempty"`
 }
 
 // Off values.
@@ -59,7 +62,7 @@ func CleanCollect(c Collect) (Collect, string, bool) {
 	for _, f := range []struct {
 		name string
 		v    *string
-	}{{"osquery", &c.Osquery}, {"sysmon", &c.Sysmon}, {"powershell", &c.PowerShell}, {"web_logs", &c.WebLogs}, {"audit_log", &c.AuditLog}} {
+	}{{"osquery", &c.Osquery}, {"sysmon", &c.Sysmon}, {"powershell", &c.PowerShell}, {"web_logs", &c.WebLogs}, {"audit_log", &c.AuditLog}, {"updates", &c.Updates}} {
 		if !onOff(f.v) {
 			return Collect{}, f.name, false
 		}
