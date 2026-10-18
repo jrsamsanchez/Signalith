@@ -15,6 +15,10 @@ on:
         required: false
       SIGNALITH_GPG_PASSPHRASE:
         required: false
+      # The release key the agent programs are signed with
+      # (docs/releasing.md); only the Release workflow passes it.
+      SIGNALITH_AGENT_KEY:
+        required: false
     outputs:
       version:
         value: ${{ jobs.versions.outputs.version }}
@@ -96,6 +100,7 @@ jobs:
           VERSION: ${{ needs.versions.outputs.version }}
           GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
           NFPM_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+          SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
         run: |
           if [ -n "$GPG_KEY" ]; then
             export SIGNALITH_GPG_KEY_FILE="$RUNNER_TEMP/signing-key.asc"

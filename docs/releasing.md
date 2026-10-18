@@ -118,11 +118,15 @@ the secret, and remove the old key in a later release.
 
 [Signalith Agents](signalith-agent.md#updates) update themselves only to agent programs
 listed in a manifest signed with the release key, an Ed25519 key of the same kind as the
-content key. The release build signs it with `signalith agent-programs sign -version
-<version> -dir <folder of agent programs>`, which reads the private key from the
-`SIGNALITH_AGENT_KEY` environment variable only. Agents trust the public keys in
-`internal/agentproto/release.keys`; while that file lists none, agents do not update
-themselves and the build signs nothing.
+content key. With the `SIGNALITH_AGENT_KEY` repository secret set, the **Release**
+workflow signs the agent programs in the `.deb` and `.rpm` packages and in the container
+image (`signalith agent-programs sign -version <version> -dir <folder of agent
+programs>`, which reads the key from the environment only; the image build gets it as a
+build secret, so it stays out of the image). Agents trust the public keys in
+`internal/agentproto/release.keys`; `sign` refuses a key that is not listed there, so a
+release with the secret set but its public key missing fails instead of shipping
+updates no agent would take. Without the secret, nothing is signed and agents do not
+update themselves. CI never gets the key.
 
 To set it up, make a new key the same way as the content key (or with
 `signalith agent-programs keygen`); use a key of its own, never the content key, so each

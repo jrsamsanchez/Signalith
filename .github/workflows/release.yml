@@ -31,6 +31,7 @@ jobs:
     secrets:
       SIGNALITH_GPG_PRIVATE_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
       SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+      SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
 
   image:
     needs: packages
@@ -70,6 +71,8 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ env.VERSION }}
+          secrets: |
+            agent_key=${{ secrets.SIGNALITH_AGENT_KEY }}
           tags: ${{ steps.tags.outputs.tags }}
           push: ${{ env.PUBLISH == 'true' }}
           sbom: true

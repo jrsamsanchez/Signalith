@@ -6,7 +6,8 @@
 # BINDIR holds signalith-linux-amd64 and signalith-linux-arm64 (built here
 # when it is left out). The Signalith Agent's programs, which the server
 # hands to the computers it is installed on (docs/signalith-agent.md), are
-# built here for every platform the packages carry. Needs nFPM on the PATH. To sign the packages, set
+# built here for every platform the packages carry, and signed when
+# SIGNALITH_AGENT_KEY holds the release key. Needs nFPM on the PATH. To sign the packages, set
 # SIGNALITH_GPG_KEY_FILE to an ASCII-armoured private key (and
 # NFPM_PASSPHRASE when it has one).
 set -eu
@@ -42,6 +43,11 @@ for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do
   (cd "$root" && GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.version=$version" -o "$stage/agents/signalith-agent-$p$ext" ./cmd/signalith-agent)
 done
+# With the release key (the Release workflow passes it), sign the agent
+# programs so agents update themselves to them (docs/releasing.md).
+if [ -n "${SIGNALITH_AGENT_KEY:-}" ]; then
+  (cd "$root" && go run ./cmd/signalith agent-programs sign -version "$version" -dir "$stage/agents")
+fi
 
 export SIGNALITH_VERSION=$version
 export NFPM_SIGNING_KEY_FILE=${SIGNALITH_GPG_KEY_FILE:-} NFPM_SIGNING_KEY_ID=${SIGNALITH_GPG_KEY_ID:-}
