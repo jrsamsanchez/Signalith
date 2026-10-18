@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Paths are where the agent keeps its files and finds the collectors. The
@@ -161,9 +162,21 @@ func writeFile(path string, b []byte, perm os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := renameRetry(tmp, path); err != nil {
 		os.Remove(tmp)
 		return err
 	}
 	return nil
+}
+
+// renameRetry renames, trying again for a moment on Windows, where a
+// rename over a file someone is reading (the install script waiting on
+// the health file, say) fails until they close it.
+func renameRetry(from, to string) error {
+	err := os.Rename(from, to)
+	for i := 0; err != nil && runtime.GOOS == "windows" && i < 25; i++ {
+		time.Sleep(20 * time.Millisecond)
+		err = os.Rename(from, to)
+	}
+	return err
 }
