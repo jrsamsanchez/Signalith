@@ -100,9 +100,9 @@ also shows what an install still lacks. For an admin the steps are:
 
 1. **Turn on two-step sign-in** for your own account, with an authenticator app or a
    passkey (skipped for single sign-on users, whose identity provider handles it).
-2. **Bring in your logs**: install an agent or point syslog at Signalith on the
-   **Add data** page, or load the [sample data](sample-data.md) to try things first.
-   Done once events arrive.
+2. **Bring in your logs**: the guide opens **Add data** at the one-line install of the
+   Signalith Agent for Windows, Linux and macOS, or load the [sample data](sample-data.md)
+   to try things first. Done once events arrive.
 3. **Get told when something fires**: an e-mail, Slack, Teams or webhook channel on
    **Settings > Notifications** ([Notifications](notifications.md)).
 4. **Add your team**: their own accounts on **Settings > Users**, directory sign-in or

@@ -37,11 +37,22 @@
       go: () => { const b = $('mfa-open'); if (b) b.click(); },
     },
     data: {
-      icon: 'database', title: 'Bring in your logs',
-      why: 'Install an agent on Windows or Linux, point syslog at Signalith or connect a cloud service. Not ready yet? Load a week of sample data from the same page to try things first.',
+      icon: 'zap', title: 'Bring in your logs',
+      why: 'Install the Signalith Agent with one line on each Windows, Linux or Mac computer. Signalith tells it what to collect and keeps it running, so there is nothing to configure by hand. Not ready yet? Load a week of sample data from the same page to try things first.',
       done: 'Events are arriving.',
       unknown: 'Signalith could not check for events just now.',
-      action: 'Open Add data', page: 'data',
+      action: 'Install the Signalith Agent',
+      // Add data opens on the Signalith Agent's install line.
+      go: () => {
+        showPage('data');
+        const r = document.querySelector('input[name=os][value=agent]');
+        if (r && !r.checked) {
+          r.checked = true;
+          r.dispatchEvent(new Event('change'));
+        }
+        const line = $('agent-install');
+        if (line) requestAnimationFrame(() => line.scrollIntoView({ block: 'center' }));
+      },
     },
     notify: {
       icon: 'bell', title: 'Get told when something fires',
