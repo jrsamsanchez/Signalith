@@ -315,12 +315,18 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 ### Windows
 
-1. Install OpenSearch 2.x or 3.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
-2. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
+The `.msi` installer from the [latest release](https://github.com/jrsamsanchez/Signalith/releases/latest)
+installs OpenSearch too ([docs/install-packages.md](docs/install-packages.md#windows)). To install by hand:
+
+1. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
-   .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+   .\install.ps1
    ```
-   This writes `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and starts it.
+   This installs OpenSearch on this computer (listening on this computer only, over HTTPS, with
+   Signalith signing in with a certificate), writes `C:\ProgramData\Signalith\signalith.yaml`, installs
+   the **Signalith** service and starts it. To use an OpenSearch of your own instead, add
+   `-OpenSearchUrl https://<its address>:9200` and secure it as
+   [docs/opensearch-security.md](docs/opensearch-security.md) says.
    Open https://localhost:9000 (see [HTTPS](#https) to stop the certificate warning).
    The service runs as its own account, `NT SERVICE\Signalith`, and only SYSTEM, Administrators and
    that account can read `C:\ProgramData\Signalith`. To upgrade, put the new `signalith.exe` next to
@@ -333,8 +339,6 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
    again, as Administrator, so the service may read it. Before going back
    to an older version, run `signalith secrets decrypt` (see
    [docs/encryption.md](docs/encryption.md#going-back-to-an-older-version)).
-3. Secure OpenSearch and have Signalith sign in with a certificate:
-   [docs/opensearch-security.md](docs/opensearch-security.md).
 
 ### Send data
 

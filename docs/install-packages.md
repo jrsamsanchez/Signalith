@@ -10,10 +10,11 @@ packages that install Signalith as a service in one step:
 | Windows 10, 11, Server 2019 and later (64-bit) | `signalith-<version>-x64.msi` |
 | Docker | `ghcr.io/jrsamsanchez/signalith:<version>` |
 
-Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x, which you install
-first ([Linux](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/),
-[Windows](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
-The packages expect it at `http://127.0.0.1:9200`; if yours is elsewhere, change the
+Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x or 3.x. The
+Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)).
+On Linux, install it first
+([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)):
+the Linux packages expect it at `http://127.0.0.1:9200`; if yours is elsewhere, change the
 address afterwards on the **Settings** page (**OpenSearch** > **Address**). Then
 [secure OpenSearch](opensearch-security.md) and give Signalith a certificate to sign in
 with.
@@ -86,7 +87,9 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
 ## Windows
 
 Double-click `signalith-0.1.0-x64.msi` and follow the steps (it asks for administrator
-rights). When it finishes, Signalith is running as the **Signalith** service. Open
+rights). It installs OpenSearch as well, which it downloads (about 1 GB), so the first
+install takes a few minutes. When it finishes, Signalith and OpenSearch are running as
+the **Signalith** and **SignalithOpenSearch** services. Open
 **Signalith** from the Start menu (https://localhost:9000) and sign in as `signalithadmin`. To see
 the first password, open PowerShell **as Administrator** and run:
 
@@ -102,6 +105,13 @@ protected your PC". [Check the download](#check-a-download) first, then click
 For a silent install, for example from a deployment tool:
 
 ```powershell
+msiexec /i signalith-0.1.0-x64.msi /qn
+```
+
+To use an OpenSearch you already run instead of installing one, give its address (then
+[secure it](opensearch-security.md) and give Signalith a certificate to sign in with):
+
+```powershell
 msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 ```
 
@@ -114,8 +124,48 @@ the service runs as its own account, `NT SERVICE\Signalith`; and firewall rules 
 the web UI, agent and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
 
 To upgrade, run the newer `.msi`: it stops the service, replaces the program, keeps the
-config, and starts the service again. **Settings > Apps** uninstalls it; that removes
-the service and its firewall rules and keeps `C:\ProgramData\Signalith`.
+config, and starts the service again. It upgrades the OpenSearch it installed too, when
+the new release pins a newer one, keeping its data. **Settings > Apps** uninstalls it;
+that removes the services, OpenSearch's program and the firewall rules, and keeps
+`C:\ProgramData\Signalith` and `C:\ProgramData\SignalithOpenSearch` (OpenSearch's
+settings, certificates and events), so installing again carries on with them. Delete
+those folders by hand to remove everything.
+
+### OpenSearch on Windows
+
+On a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
+Signalith the same way the [Docker quick start](getting-started.md#docker-quick-start)
+does:
+
+- It downloads the official OpenSearch release for Windows (version 3.9.0) from
+  `artifacts.opensearch.org` and installs it only if its SHA-512 is the one pinned in
+  Signalith, so a changed download is refused. OpenSearch is open source under the
+  Apache License 2.0; it is downloaded from OpenSearch, not shipped inside the `.msi`,
+  which keeps the installer small.
+- The program goes to `C:\Program Files\Signalith\OpenSearch`, where only
+  administrators can change it. Its settings, data and logs go to
+  `C:\ProgramData\SignalithOpenSearch`, which only SYSTEM, Administrators and OpenSearch's
+  service can use.
+- It runs as the **SignalithOpenSearch** service under its own account,
+  `NT SERVICE\SignalithOpenSearch`, which may change only its own settings, data and logs.
+- It listens on this computer only (`127.0.0.1`, port 9200, or the next free one), over
+  HTTPS with certificates from a CA of its own that the installer makes. It accepts only
+  certificates from that CA: Signalith's, and an admin certificate for OpenSearch's
+  security tools. There are no passwords and no demo users; the CA's key stays in
+  `C:\ProgramData\SignalithOpenSearch\ca`, which neither service can read.
+- Its Java heap is a quarter of the computer's memory, from 1 to 8 GB.
+
+A computer without internet access: download
+`opensearch-3.9.0-windows-x64.zip` from
+[opensearch.org](https://opensearch.org/downloads.html) on another computer, copy it
+over, and install with:
+
+```powershell
+msiexec /i signalith-0.1.0-x64.msi OPENSEARCHZIP=C:\Downloads\opensearch-3.9.0-windows-x64.zip
+```
+
+`signalith opensearch status`, in PowerShell as Administrator, shows what is installed.
+OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
 
 ## Docker image
 

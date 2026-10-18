@@ -106,6 +106,7 @@ Usage:
   signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
   signalith service   install|uninstall|start|stop     manage the Windows service
+  signalith opensearch install|remove|status [-zip FILE]   the OpenSearch the Windows installer sets up on this computer
   signalith opensearch-certs [-ca-dir DIR] -node NAME [-san ...] [-peer ...] -out DIR   certificates to secure your own OpenSearch
   signalith bootstrap-docker [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]   prepare the Docker quick start (its setup service runs this)
   signalith bootstrap-kubernetes -prefix NAME [-opensearch=false] [-opensearch-name NAME]   make the Helm chart's Kubernetes Secrets (its setup Job runs this)
@@ -159,6 +160,8 @@ func main() {
 		err = cmdBootstrapDocker(args)
 	case "bootstrap-kubernetes":
 		err = cmdBootstrapKubernetes(args)
+	case "opensearch":
+		err = cmdOpenSearch(args)
 	case "opensearch-certs":
 		err = cmdOpenSearchCerts(args)
 	case "query":
@@ -222,6 +225,9 @@ func cmdInit(args []string) error {
 	publicURL := fs.String("public-url", "", "URL agents use to reach this server (default: derived from -listen)")
 	osURL := fs.String("opensearch", "http://127.0.0.1:9200", "OpenSearch URL")
 	osUser := fs.String("opensearch-user", "", "OpenSearch username")
+	osCA := fs.String("opensearch-ca", "", "OpenSearch's CA certificate file (opensearch.ca_file)")
+	osCert := fs.String("opensearch-cert", "", "certificate file Signalith signs in to OpenSearch with (opensearch.cert_file)")
+	osKey := fs.String("opensearch-key", "", "that certificate's key file (opensearch.key_file)")
 	osInsecure := fs.Bool("opensearch-allow-insecure-http", false, "allow the OpenSearch username and password over plain http to another machine (sets opensearch.allow_insecure_http; prefer https)")
 	password := fs.String("admin-password", "", "admin password (default: generate one)")
 	syslogUDP := fs.String("syslog-udp", "0.0.0.0:514", "address to receive syslog on over UDP (empty: off)")
@@ -253,6 +259,7 @@ func cmdInit(args []string) error {
 	c.Server.TLS = &config.ServerTLS{Mode: config.TLSAuto, PlaintextIngest: "deny"}
 	c.OpenSearch.URL = *osURL
 	c.OpenSearch.Username = *osUser
+	c.OpenSearch.CAFile, c.OpenSearch.CertFile, c.OpenSearch.KeyFile = *osCA, *osCert, *osKey
 	c.OpenSearch.AllowInsecureHTTP = *osInsecure
 	// New installs receive syslog right away; existing configs without a
 	// syslog section keep it off.
