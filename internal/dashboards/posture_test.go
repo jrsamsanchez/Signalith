@@ -68,8 +68,8 @@ func postureExec(t *testing.T, fail string) *fakeExec {
 		switch {
 		case strings.Contains(s, "max(_time)"):
 			return table([]string{"host", "sourcetype", "last_seen", "count"},
-				search.Row{"host": "web1", "sourcetype": "linux:auth", "last_seen": now.Add(-5 * time.Minute).UnixMilli(), "count": int64(900)},
-				search.Row{"host": "DC01", "sourcetype": "WinEventLog:Security", "last_seen": float64(now.Add(-26 * time.Hour).UnixMilli()), "count": int64(40)})
+				search.Row{"host": "web1", "sourcetype": "linux:auth", "last_seen": now.Add(-5 * time.Minute).Unix(), "count": int64(900)},
+				search.Row{"host": "DC01", "sourcetype": "WinEventLog:Security", "last_seen": float64(now.Add(-26 * time.Hour).Unix()), "count": int64(40)})
 		case strings.Contains(s, "by risk_object"):
 			return table([]string{"risk_object", "risk_object_type", "risk_score"}, search.Row{"risk_object": "bob", "risk_object_type": "user", "risk_score": int64(160)})
 		case strings.Contains(s, "by detection_id"):

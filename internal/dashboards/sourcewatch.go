@@ -144,11 +144,11 @@ func (w *SourceWatch) Check(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		ms, ok := toFloatAny(r["last_seen"])
+		sec, ok := toFloatAny(r["last_seen"])
 		if !ok {
 			continue
 		}
-		if last := time.UnixMilli(int64(ms)).UTC(); last.Before(cutoff) {
+		if last := time.Unix(0, int64(sec*1e9)).UTC(); last.Before(cutoff) {
 			quiet[k] = last
 		}
 	}

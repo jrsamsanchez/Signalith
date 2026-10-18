@@ -74,6 +74,33 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 // aggValue reads one stats function's result from the aggregation named
 // name inside container (the response's aggregations or a bucket).
 func aggValue(a query.Agg, container map[string]any, name string) any {
+	v := rawAggValue(a, container, name)
+	if a.Field == "_time" {
+		return timeSeconds(a, v)
+	}
+	return v
+}
+
+// timeSeconds converts a number OpenSearch computed over event times,
+// in milliseconds since 1970, to seconds, as Splunk gives _time: min,
+// max, avg and the rest are epoch seconds, var is in seconds squared.
+// Other values (values(), first() and so on) pass through.
+func timeSeconds(a query.Agg, v any) any {
+	f, ok := asFloat(v)
+	if !ok {
+		return v
+	}
+	switch {
+	case a.Func == "var":
+		return numOut(f / 1e6)
+	case a.Func == "min", a.Func == "max", a.Func == "avg", a.Func == "sum", a.Func == "range",
+		a.Func == "median", a.Func == "stdev", query.Percentile(a.Func) > 0:
+		return numOut(f / 1e3)
+	}
+	return v
+}
+
+func rawAggValue(a query.Agg, container map[string]any, name string) any {
 	m, _ := container[name].(map[string]any)
 	if m == nil {
 		return nil
@@ -172,7 +199,14 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 			}
 		}
 	}
-	if f, ok := asFloat(v); ok {
+	f, ok := asFloat(v)
+	if !ok && a.Field == "_time" {
+		// Events carry _time as text; its number is epoch seconds.
+		if t, isTime := toTime(v); isTime {
+			f, ok = float64(t.Unix())+float64(t.Nanosecond())/1e9, true
+		}
+	}
+	if ok {
 		s.numeric++
 		s.sum += f
 		s.min = math.Min(s.min, f)
