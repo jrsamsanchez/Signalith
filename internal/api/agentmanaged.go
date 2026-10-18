@@ -36,6 +36,7 @@ var agentManagedRoutes = []string{
 	"GET " + agentproto.RouteConfig,
 	"POST " + agentproto.RouteStatus,
 	"GET " + agentproto.RouteProgram,
+	"GET " + agentproto.RouteManifest,
 }
 
 // agentPollSeconds is how often an agent fetches its configuration and
@@ -54,6 +55,7 @@ func (s *Server) routeAgentManagedIntake(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+agentproto.RouteConfig, s.handleAgentManagedConfig)
 	mux.HandleFunc("POST "+agentproto.RouteStatus, s.handleAgentManagedStatus)
 	mux.HandleFunc("GET "+agentproto.RouteProgram, s.handleAgentManagedProgram)
+	mux.HandleFunc("GET "+agentproto.RouteManifest, s.handleAgentManagedManifest)
 }
 
 // agentPrograms returns the agent programs this server hands out.
@@ -330,6 +332,7 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 			cfg.Osquery = agentOsquery(goos, opts)
 		}
 	}
+	cfg.Update = s.agentUpdate(r, goos, collect)
 	cfg.Revision = agentproto.RevisionOf(cfg)
 	etag := `"` + cfg.Revision + `"`
 	w.Header().Set("ETag", etag)
@@ -339,6 +342,47 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// agentUpdate is the update to offer the agent of r, nil when there is
+// none or the admin paused updates for its install line. The agent says
+// its version in a header; it checks the update against the signed
+// manifest itself.
+func (s *Server) agentUpdate(r *http.Request, goos string, c agenttokens.Collect) *agentproto.Update {
+	if c.Updates == agenttokens.CollectOff {
+		return nil
+	}
+	u, err := s.agentPrograms().Update(goos, r.URL.Query().Get("arch"), r.Header.Get(agentproto.HeaderVersion))
+	if err != nil && !errors.Is(err, clusterinstall.ErrNoManifest) && !errors.Is(err, clusterinstall.ErrNoProgram) {
+		s.Log.Warn("cannot offer agents an update", "err", err)
+	}
+	if err != nil {
+		return nil
+	}
+	return u
+}
+
+// handleAgentManagedManifest hands an agent the signed manifest of the
+// programs, to check an update with.
+func (s *Server) handleAgentManagedManifest(w http.ResponseWriter, r *http.Request) {
+	if s.agentManagedTenant(w, r, (*Server).handleAgentManagedManifest) {
+		return
+	}
+	if _, ok := s.agentManagedToken(w, r); !ok {
+		return
+	}
+	data, sig, _, err := s.agentPrograms().Manifest()
+	if errors.Is(err, clusterinstall.ErrNoManifest) {
+		writeError(w, http.StatusNotFound, errors.New("this server's agent programs have no signed manifest, so agents do not update themselves from it"))
+		return
+	}
+	if err != nil {
+		s.Log.Warn("cannot hand out the agent manifest", "err", err)
+		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent programs' manifest"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, agentproto.ManifestAnswer{Manifest: string(data), Signature: string(sig)})
 }
 
 // agentOsquery is the osquery part of the configuration of an agent

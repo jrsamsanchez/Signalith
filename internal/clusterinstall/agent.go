@@ -1,8 +1,10 @@
 package clusterinstall
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -264,4 +266,115 @@ func (p *Programs) Open(goos, goarch string) (*os.File, int64, string, error) {
 	p.sums[name] = programSum{stamp: stamp, sum: sum}
 	p.mu.Unlock()
 	return f, stamp.size, sum, nil
+}
+
+// ErrNoManifest is returned when the programs have no signed manifest
+// this build trusts (a development build, or a release made before
+// agents updated themselves): agents are offered no update.
+var ErrNoManifest = errors.New("the agent programs have no signed manifest")
+
+// Manifest returns the signed manifest of the programs (ManifestFile and
+// SignatureFile next to them), checked against the release keys:
+// the manifest as signed, its signature, and what it says. The programs
+// it lists are not read here; Update checks the one an agent gets.
+func (p *Programs) Manifest() (data, sig []byte, m *agentproto.Manifest, err error) {
+	dir := p.dir()
+	if dir == "" {
+		return nil, nil, nil, ErrNoManifest
+	}
+	read := func(name string, max int64) ([]byte, error) {
+		f, err := os.Open(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		b, err := io.ReadAll(io.LimitReader(f, max+1))
+		if err == nil && int64(len(b)) > max {
+			err = fmt.Errorf("%s is larger than a release makes", name)
+		}
+		return b, err
+	}
+	data, err = read(agentproto.ManifestFile, agentproto.MaxManifestBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil, ErrNoManifest
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	sig, err = read(agentproto.SignatureFile, 1024)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil, ErrNoManifest
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	m, err = agentproto.VerifyManifest(agentproto.ReleaseKeys, data, sig)
+	if errors.Is(err, agentproto.ErrNoReleaseKey) {
+		return nil, nil, nil, ErrNoManifest
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return data, sig, m, nil
+}
+
+// Update is the update to offer an agent of goos/goarch that runs
+// version, nil when there is none: the manifest is newer, lists that
+// platform, and the program this server hands out is the one it lists.
+func (p *Programs) Update(goos, goarch, version string) (*agentproto.Update, error) {
+	_, _, m, err := p.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	if !agentproto.Newer(m.Version, version) {
+		return nil, nil
+	}
+	want, ok := m.Programs[goos+"-"+goarch]
+	if !ok {
+		return nil, nil
+	}
+	f, _, sum, err := p.Open(goos, goarch)
+	if err != nil {
+		return nil, err
+	}
+	f.Close()
+	if sum != want {
+		return nil, fmt.Errorf("the agent program for %s-%s is not the one its signed manifest lists", goos, goarch)
+	}
+	return &agentproto.Update{Version: m.Version, SHA256: want}, nil
+}
+
+// SignPrograms writes the signed manifest of the programs in dir, which
+// are version: the release build runs it (signalith agent sign) with the
+// release key.
+func SignPrograms(dir, version string, priv ed25519.PrivateKey) (*agentproto.Manifest, error) {
+	m := &agentproto.Manifest{Format: agentproto.ManifestFormat, Version: version, Programs: map[string]string{}}
+	if !agentproto.Newer(version, "0.0.0") {
+		return nil, fmt.Errorf("%q is not a release version", version)
+	}
+	p := &Programs{Dir: dir}
+	for _, pl := range p.Available() {
+		goos, goarch, _ := strings.Cut(pl, "-")
+		f, _, sum, err := p.Open(goos, goarch)
+		if err != nil {
+			return nil, err
+		}
+		f.Close()
+		m.Programs[pl] = sum
+	}
+	if len(m.Programs) == 0 {
+		return nil, fmt.Errorf("%s holds no agent program", dir)
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(dir, agentproto.ManifestFile), data, 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, agentproto.SignatureFile), agentproto.SignManifest(priv, data), 0o644); err != nil {
+		return nil, err
+	}
+	return m, nil
 }

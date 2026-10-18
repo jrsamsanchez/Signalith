@@ -79,6 +79,11 @@ OSQUERY_UNIT=signalith-osquery.service
 OSQUERY_PATH=signalith-osquery-flags.path
 OSQUERY_RESTART=signalith-osquery-flags.service
 OSQUERYD=/opt/osquery/bin/osqueryd
+# The updater, which installs a signed update the agent got ready. It runs
+# outside the agent's sandbox, which cannot write the program, and a path
+# unit starts it when the agent writes the ready file (internal/agentd).
+UPDATE_UNIT=signalith-agent-update.service
+UPDATE_PATH=signalith-agent-update.path
 
 from=''
 ca_sha=''
@@ -770,6 +775,50 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 WantedBy=multi-user.target
 UNIT
   manifest_add "unit $UNIT"
+  put "/etc/systemd/system/$UPDATE_UNIT" 0644 root:root agent <<UNIT
+# Written by the Signalith Agent install script (deploy/agent/install.sh).
+# Installs an update the agent got ready in $STATE_DIR/update. The agent's
+# own service cannot write the program, so this service does it. It trusts
+# nothing the agent left: it checks the release's signature with its own
+# keys, copies the program here and checks the copy, keeps the version
+# before, restarts the agent, and goes back to the version before if the
+# new one does not work. It is fenced in too: it writes only the program,
+# the copy of the version before and the update folder.
+[Unit]
+Description=Install a signed Signalith Agent update
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/signalith-agent.md
+
+[Service]
+Type=oneshot
+ExecStart=$PROGRAM install-update
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=${PROGRAM%/*} $LIB_DIR $STATE_DIR
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UNIT
+  put "/etc/systemd/system/$UPDATE_PATH" 0644 root:root agent <<UNIT
+# Written by the Signalith Agent install script (deploy/agent/install.sh).
+# Starts the updater when the agent has an update ready.
+[Unit]
+Description=Signalith Agent updates
+
+[Path]
+PathExists=$STATE_DIR/update/ready
+Unit=$UPDATE_UNIT
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  manifest_add "unit $UPDATE_PATH"
+  manifest_add "unit $UPDATE_UNIT"
 }
 
 # health prints what the agent last wrote about item $1 in its health file
@@ -790,9 +839,11 @@ agent_start() {
       run systemctl enable --now "$OSQUERY_PATH"
       run systemctl enable "$OSQUERY_UNIT"
     fi
+    run systemctl enable --now "$UPDATE_PATH"
     run systemctl enable --now "$UNIT"
     return 0
   fi
+  systemctl enable --now "$UPDATE_PATH" >/dev/null 2>&1 || fail "Could not start the unit that installs agent updates." "sudo systemctl status $UPDATE_PATH"
   if [ "$osquery" = yes ]; then
     # Before the agent starts: its first flags start osquery.
     systemctl enable "$OSQUERY_UNIT" >/dev/null 2>&1 || fail "Could not enable osquery's service." "sudo systemctl status $OSQUERY_UNIT"

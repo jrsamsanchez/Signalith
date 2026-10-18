@@ -8,6 +8,9 @@
 //	signalith-agent osquery-flags <in> <out>
 //	                          check osquery's flags and write the checked
 //	                          copy (osquery's Linux service runs this)
+//	signalith-agent install-update
+//	                          install a signed update the agent got
+//	                          ready (the updater runs this)
 package main
 
 import (
@@ -57,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	paths := agentd.DefaultPaths()
 	switch args[0] {
+	case "install-update":
+		return installUpdate(paths, stderr)
 	case "run":
 		a, err := newAgent(paths, stderr)
 		if err != nil {
@@ -93,6 +98,20 @@ func newAgent(paths agentd.Paths, w io.Writer) (*agentd.Agent, error) {
 		Log: slog.New(slog.NewTextHandler(w, nil)), Out: w}
 	a.Log.Info("Signalith Agent starting", "version", version, "server", settings.Server)
 	return a, nil
+}
+
+// installUpdate installs the update the agent got ready, logging to w
+// (the journal on Linux, the updater's log on Windows).
+func installUpdate(paths agentd.Paths, w io.Writer) error {
+	if err := agentd.CheckFolders(paths); err != nil {
+		return err
+	}
+	w = updateLog(paths, w)
+	u := &agentd.Updater{Paths: paths, Version: version, Service: agentService(paths),
+		Log: slog.New(slog.NewTextHandler(w, nil))}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return u.Install(ctx)
 }
 
 // osqueryFlags checks the flags file in and writes the checked copy to

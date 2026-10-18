@@ -136,6 +136,10 @@ that folder and prints the commands instead of running them.
   service checks the settings the agent wrote, outside the agent's service, and osquery
   runs with the checked copy with extensions off, so nothing in the agent's service can
   hand osquery more.
+- **Updates are signed.** An agent updates itself only to a program listed in a manifest
+  signed with the Signalith release key, whose public key is built into the agent, and
+  only to a newer version. A server that was broken into can hand out neither a program
+  of its own nor an older one with a known flaw. See [Updates](#updates).
 
 ## On the computer
 
@@ -224,6 +228,7 @@ configuration, within 5 minutes; nothing needs to be done on the computers.
 | **Web server logs** | Off stops reading Apache's and Nginx's access logs on Linux |
 | **Audit log** | Off stops reading the Linux audit log |
 | **Linux sign-ins** | Where sign-ins are read from: where the computer writes them (the default), `auth.log` or `secure`, or the systemd journal |
+| **Automatic updates** | Off keeps the line's computers on the version they run (see [Updates](#updates)) |
 
 Turning a log off hides what happens on those computers, so saving asks for your
 password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
@@ -277,6 +282,37 @@ Ticking it accepts the [Sysinternals license](https://learn.microsoft.com/sysint
 The agent tells Signalith that Sysmon runs, and Signalith adds Sysmon's log to what Fluent
 Bit reads. `-Uninstall` removes Sysmon only if the script installed it.
 
+## Updates
+
+Agents keep themselves up to date with the Signalith server: when the server is upgraded
+to a release with a newer agent, each agent installs it on its own within a few minutes,
+and nothing needs to be done on the computers.
+
+How it works, and why it is safe:
+
+1. The release build signs a manifest listing each agent program's SHA-256 and the
+   version. The server hands out the programs and the manifest it came with.
+2. The agent downloads the manifest and the program, and checks the manifest's
+   signature with the release key built into it, that the version is newer than its
+   own, and that the program's SHA-256 is the one listed. It then runs the new program
+   once to see it starts.
+3. The updater installs it: on Linux the `signalith-agent-update` service, which runs
+   outside the agent's fenced-in service (the agent itself cannot change its own
+   program); on Windows a copy of the agent. The updater checks the signature and the
+   SHA-256 again itself, keeps the version before, and restarts the agent.
+4. If the new version does not report within 3 minutes, or does not keep running, the
+   updater puts the version before back and restarts it. The computer's row on the
+   **Endpoints** page then says the update failed, with the reason.
+
+To hold a group of computers at the version they run, turn **Automatic updates** off for
+their install line in **Endpoints > What hosts collect**. That is also how to roll a
+release out in stages: leave updates on for a small test line first, and turn them on for
+the others once it looks good. Turning updates back on lets the line catch up.
+
+Agents installed before signed updates, and builds made from source (which have no
+release key), do not update themselves; run the install line again to upgrade them.
+To see what the server hands out, run `signalith agent-programs status` on it.
+
 ## Computers without internet access
 
 On Windows, download `fluent-bit-<version>-win64.zip` (the version is at the top of the
@@ -317,6 +353,7 @@ The install line says what stopped it and how to fix it. The common ones:
 | Signalith refused the token | Make the line again on **Add data**: the token was revoked, or the line was cut off when copied. |
 | This Signalith's certificate authority is not the one the line names | Copy the line again. If it keeps failing, something between the computer and Signalith is answering in its place. |
 | This Signalith has no agent program | Signalith was built from source. Released versions (packages, Docker image) carry the agent programs. |
+| Update failed | The agent went back to the version before. `sudo journalctl -u signalith-agent-update -n 50` (Linux) or `C:\ProgramData\Signalith Agent\updater.log` (Windows) shows why. |
 | Fluent Bit is not running | `sudo journalctl -u signalith-agent -n 50` (Linux) or `agent.log` (Windows) shows Fluent Bit's last lines. |
 | osquery is not running yet | `sudo journalctl -u signalith-osquery -n 50` (Linux) or `agent.log` (Windows) shows osquery's last lines. |
 | The osquery MSI has no valid signature | Check the MSI's SHA-256 against the one on osquery's download page and add `-OsquerySha256 <hex>`, or run the line without `-Osquery`. |
@@ -331,8 +368,10 @@ not get its configuration, has a warning, with their last lines.
 
 The server side is in `internal/api/agentmanaged.go`: `GET /api/agent/install` (admins)
 makes the line, and the routes the script and agent call with the agent token are
-`GET /api/agent/program`, `GET /api/agent/config` (answered `304` when the agent has the
-latest) and `POST /api/agent/status`. What the agent and server say to each other is in
+`GET /api/agent/program`, `GET /api/agent/manifest` (the programs' signed manifest),
+`GET /api/agent/config` (answered `304` when the agent has the latest; it offers an
+update in `update`) and `POST /api/agent/status`. Updates are in
+`internal/agentd/update.go` and the release key in `internal/agentproto/release.keys`. What the agent and server say to each other is in
 `internal/agentproto`. The agent is `cmd/signalith-agent` and `internal/agentd`; the
 install scripts are `deploy/agent/install.sh` and `deploy/agent/install.ps1` (served at
 `GET /api/agent/install.sh` and `GET /api/agent/install.ps1`). The server hands out the agent programs in

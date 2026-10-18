@@ -63,7 +63,13 @@ type Agent struct {
 	osqueryRun string
 	started    time.Time
 
+	// updateTried is when the agent last tried to get each version ready.
+	updateTried map[string]time.Time
+	// runUpdater starts the updater; nil is startUpdater. Tests replace it.
+	runUpdater func() error
+
 	mu        sync.Mutex
+	update    *agentproto.Component
 	cfg       *agentproto.Config
 	configErr string
 	reported  bool
@@ -164,6 +170,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			poll = time.Duration(agentPoll(a.cfg)) * time.Second
 			a.mu.Unlock()
 			wait = poll
+			a.checkUpdate(ctx)
 		}
 		a.sendStatus(ctx)
 		// Report again soon after a collector changes state, between
@@ -464,10 +471,14 @@ func (a *Agent) Status() agentproto.Status {
 		rev = a.cfg.Revision
 	}
 	oq := a.osqueryComponent()
+	up := a.update
 	a.mu.Unlock()
 	comps := []agentproto.Component{a.fluentBit.component()}
 	if oq != nil {
 		comps = append(comps, *oq)
+	}
+	if up != nil {
+		comps = append(comps, *up)
 	}
 	return agentproto.Status{
 		Version: a.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, System: systemName(),

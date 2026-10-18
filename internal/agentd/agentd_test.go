@@ -35,6 +35,10 @@ func TestMain(m *testing.M) {
 		fakeOsqueryd()
 		return
 	}
+	if v := os.Getenv("AGENTD_FAKE_AGENT_VERSION"); v != "" && len(os.Args) == 2 && os.Args[1] == "version" {
+		fmt.Println(v)
+		return
+	}
 	if mode := os.Getenv("AGENTD_FAKE_FLUENTBIT"); mode != "" {
 		fakeFluentBit(mode)
 		return

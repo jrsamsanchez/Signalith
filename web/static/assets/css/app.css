@@ -5021,6 +5021,7 @@ dialog.ep-set { width: min(620px, calc(100vw - 32px)); }
 .ep-set__title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
 .ep-set__agent { display: flex; flex-direction: column; gap: var(--sp-3); }
 .ep-set__switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+.ep-set__updates { grid-template-columns: 1fr; padding-top: var(--sp-3); box-shadow: inset 0 1px 0 var(--line-subtle); }
 .ep-set__switch { align-items: flex-start; }
 .ep-set__switch input { flex: none; margin-top: 2px; }
 .ep-set__switch > span { display: flex; flex-direction: column; gap: 2px; }

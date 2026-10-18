@@ -85,3 +85,18 @@ func (s *service) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 		}
 	}
 }
+
+// agentService is the agent's Windows service.
+func agentService(p agentd.Paths) agentd.ServiceControl {
+	return agentd.WindowsService{Name: p.Service}
+}
+
+// updateLog is the updater's log, updater.log in the agent's state
+// folder: the updater runs on its own, with no console.
+func updateLog(p agentd.Paths, w io.Writer) io.Writer {
+	f, err := safelog.OpenRotating(filepath.Join(p.State, "updater.log"), safelog.DefaultMaxSize, safelog.DefaultBackups)
+	if err != nil {
+		return w
+	}
+	return f
+}
