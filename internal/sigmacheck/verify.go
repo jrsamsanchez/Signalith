@@ -86,6 +86,11 @@ type Case struct {
 	// time (Copies).
 	Repeat int      `json:"repeat,omitempty"`
 	Vary   []string `json:"vary,omitempty"`
+	// With are other events that happen on the same host at the same
+	// time, for a rule that joins events of two kinds (a program start
+	// and the file it writes): the case is the rule's first kind, and
+	// these the events its join's subsearch reads.
+	With []Case `json:"with,omitempty"`
 }
 
 // RepeatSpan is how far apart in time the first and last of a repeated
@@ -94,8 +99,10 @@ const RepeatSpan = 30 * time.Second
 
 // Copies are a case's events, each with the time offset it happens at:
 // the event itself, or each of its repeats, spread over RepeatSpan, the
-// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...).
+// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...). The
+// events With it are not among them.
 func (c Case) Copies() ([]Case, []time.Duration) {
+	c.With = nil
 	if c.Repeat <= 1 {
 		c.Repeat, c.Vary = 0, nil
 		return []Case{c}, []time.Duration{0}

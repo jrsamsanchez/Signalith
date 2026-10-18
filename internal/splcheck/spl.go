@@ -91,6 +91,16 @@ type Rule struct {
 	// lookupStore holds the tables for running the later stages over test
 	// events, made on first use.
 	lookupStore *lookuptables.Store
+	// Joins are the later stages' join stages, in order: each joins the
+	// rows to those of a tstats subsearch (see Join).
+	Joins []*Join `yaml:"-"`
+	// sub is set for a join's subsearch, whose rows are its tstats
+	// grouping even when no stage follows it.
+	sub bool
+	// macros and opt are what the search was read with, for its
+	// subsearches.
+	macros map[string]*Macro
+	opt    ParseOptions
 }
 
 // Score is the risk the rule assigns, 0 when it names none.
@@ -154,6 +164,14 @@ var NodeRenames = map[string]map[string]string{
 	"All_Traffic": {"app": "process_path", "dest_ip": "dest", "src_ip": "src"},
 }
 
+// endpointDest are the Endpoint nodes whose dest is the computer that
+// logged the event (Computer, Signalith's host), as security_content's
+// data sources map Sysmon's events to them. Only the later stages of a
+// rule with a join, and its subsearch's, read it as host: the other
+// rules' later stages read dest as the CIM's unknown, as they always
+// have.
+var endpointDest = map[string]bool{"Processes": true, "Filesystem": true, "Registry": true}
+
 // nodeField is the Signalith field a node's field is stored as.
 func nodeField(node, f string) string {
 	if r, ok := NodeRenames[node][f]; ok {
@@ -191,6 +209,12 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 	if r.ID == "" || r.Name == "" || r.Search == "" {
 		return nil, errors.New("not a detection: name, id and search are required")
 	}
+	return r.parse(macros, opt)
+}
+
+// parse reads the rule's search.
+func (r *Rule) parse(macros map[string]*Macro, opt ParseOptions) (*Rule, error) {
+	r.macros, r.opt = macros, opt
 	r.lookups, r.lookupErrs = opt.Lookups, opt.LookupErrors
 	// osquery's results are Linux events too, which Signalith keeps in
 	// another data model; Sysmon for Linux is what the rule reads here.
@@ -206,7 +230,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		return nil, errors.New("empty search")
 	}
 	if m := rawRe.FindStringSubmatch(stages[0]); m != nil {
-		return parseRaw(&r, m[1], m[2], stages[1:], macros)
+		return parseRaw(r, m[1], m[2], stages[1:], macros)
 	}
 	first := summariesRe.ReplaceAllString("| "+stages[0], "")
 	m := tstatsRe.FindStringSubmatch(first)
@@ -279,6 +303,10 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 			break
 		}
 	}
+	if post == nil && r.sub {
+		// A join's subsearch gives its grouping's rows.
+		post = []string{}
+	}
 	if post != nil {
 		aggs := m[1]
 		if IsOktaTstatsNode(r.Node) {
@@ -291,7 +319,11 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		if err != nil {
 			return nil, err
 		}
+		joined := r.sub || slices.ContainsFunc(post, func(s string) bool { return joinStageRe.MatchString(s) })
 		field := func(f string) (string, bool) {
+			if joined && f == "dest" && endpointDest[r.Node] {
+				return "host", true
+			}
 			if !slices.Contains(fields, f) {
 				return "", false
 			}
@@ -322,7 +354,7 @@ func ParseWith(src []byte, macros map[string]*Macro, opt ParseOptions) (*Rule, e
 		where = &And{Kids: []Expr{&Cmp{Field: "sourcetype", Values: []string{ingest.OktaSourcetype}}, where}}
 	}
 	r.Where = where
-	return &r, nil
+	return r, nil
 }
 
 // Raw event searches: a source macro, then terms on the event's own
@@ -1155,11 +1187,13 @@ func unescapeXML(e Expr) {
 // pipes splits a search into its stages at the | outside quotes and macro
 // backticks. The leading | of a generating command is dropped. Outside
 // quotes, \" is a quote inside a word (*\"privileged\":true*), which
-// starts no quoted text.
+// starts no quoted text. A join stage's subsearch, in [ ], is part of
+// the stage.
 func pipes(q string) []string {
 	var out []string
 	var cur strings.Builder
 	quoted, tick, esc := false, false, false
+	depth := 0
 	rs := []rune(q)
 	for i, ch := range rs {
 		switch {
@@ -1173,7 +1207,11 @@ func pipes(q string) []string {
 			quoted = !quoted
 		case ch == '`' && !quoted:
 			tick = !tick
-		case ch == '|' && !quoted && !tick:
+		case ch == '[' && !quoted && !tick && (depth > 0 || joinWordRe.MatchString(cur.String())):
+			depth++
+		case ch == ']' && !quoted && !tick && depth > 0:
+			depth--
+		case ch == '|' && !quoted && !tick && depth == 0:
 			if s := strings.TrimSpace(cur.String()); s != "" {
 				out = append(out, s)
 			}

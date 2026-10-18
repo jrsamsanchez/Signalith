@@ -1178,6 +1178,10 @@ rules:
     rule_id: 8281ce42-5c50-11ec-82d2-acde48001122
     file: java_class_file_download_by_java_user_agent.yml
     path: detections/web/java_class_file_download_by_java_user_agent.yml
+  - id: splunk-java-writing-jsp-file
+    rule_id: eb65619c-4f8d-4383-a975-d352765d344b
+    file: java_writing_jsp_file.yml
+    path: detections/endpoint/java_writing_jsp_file.yml
   - id: splunk-jenkins-arbitrary-file-read-cve-2024-23897
     rule_id: c641260d-2b48-4eb1-b1e8-2cc5b8b99ab1
     file: jenkins_arbitrary_file_read_cve_2024_23897.yml
@@ -2806,6 +2810,10 @@ rules:
     rule_id: 2827c0fd-e1be-4868-ae25-59d28e0f9d4f
     file: suspicious_wevtutil_usage.yml
     path: detections/endpoint/suspicious_wevtutil_usage.yml
+  - id: splunk-suspicious-writes-to-windows-recycle-bin
+    rule_id: b5541828-8ffd-4070-9d95-b3da4de924cb
+    file: suspicious_writes_to_windows_recycle_bin.yml
+    path: detections/endpoint/suspicious_writes_to_windows_recycle_bin.yml
   - id: splunk-svchost-lolbas-execution-process-spawn
     rule_id: 09e5c72a-4c0d-11ec-aa29-3e22fbd008af
     file: svchost_lolbas_execution_process_spawn.yml
@@ -3646,6 +3654,10 @@ rules:
     rule_id: b34bcf35-5380-4b00-b208-5531303fb751
     file: windows_hosts_file_access.yml
     path: detections/endpoint/windows_hosts_file_access.yml
+  - id: splunk-windows-http-network-communication-from-msiexec
+    rule_id: b0fd38c7-f71a-43a2-870e-f3ca06bcdd99
+    file: windows_http_network_communication_from_msiexec.yml
+    path: detections/endpoint/windows_http_network_communication_from_msiexec.yml
   - id: splunk-windows-iis-components-add-new-module
     rule_id: 38fe731c-1f13-43d4-b878-a5bbe44807e3
     file: windows_iis_components_add_new_module.yml
@@ -4414,6 +4426,10 @@ rules:
     rule_id: f40a5edd-8086-4ad8-868a-805270e9b167
     file: windows_privilege_escalation_attempt_via_msi_rollback.yml
     path: detections/endpoint/windows_privilege_escalation_attempt_via_msi_rollback.yml
+  - id: splunk-windows-privilege-escalation-user-process-spawn-system-pr
+    rule_id: c9687a28-39ad-43c6-8bcf-eaf061ba0cbe
+    file: windows_privilege_escalation_user_process_spawn_system_process.yml
+    path: detections/endpoint/windows_privilege_escalation_user_process_spawn_system_process.yml
   - id: splunk-windows-process-accessing-ironlanguages-repository-on-git
     rule_id: bcdc2543-8c33-44c8-a723-5b7b93e06788
     file: windows_process_accessing_ironlanguages_repository_on_github.yml

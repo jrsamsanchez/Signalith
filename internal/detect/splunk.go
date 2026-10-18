@@ -543,7 +543,9 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if rule.Threshold != nil {
 		splunkThreshold(d, q, rule)
 	} else if rule.Post != "" {
-		splunkPost(d, q, rule)
+		if err := splunkPost(d, q, rule); err != nil {
+			return nil, err
+		}
 	}
 	d.Origin = &Origin{
 		Pack: p.Name, PackTitle: p.Title, Rule: rule.ID, Author: strings.TrimSpace(rule.Author),
@@ -647,15 +649,54 @@ const GeoIPSetup = "Setup: this rule runs iplocation, which needs a GeoIP City d
 
 // splunkPost runs a rule's later stages after its filter, as they are
 // written. When they end in groups, each is found once a day.
-func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) {
+func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 	d.Query = q.String() + "\n| " + rule.Post
 	// In canonical form; Validate reports a query that does not parse.
 	if pq, err := query.Parse(d.Query); err == nil {
+		if err := splunkJoins(pq, rule); err != nil {
+			return err
+		}
 		d.Query = pq.String()
+	} else if len(rule.Joins) > 0 {
+		return err
 	}
 	if by := rule.PostGroups(); len(by) > 0 {
 		groupedBy(d, rule, by)
 	}
+	return nil
+}
+
+// splunkJoins gives each join of a rule's later stages its subsearch's
+// search: the subsearch's data model and converted filter, and the regex
+// stages that run right after it, before its own later stages.
+func splunkJoins(q *query.Query, rule *splcheck.Rule) error {
+	i := 0
+	for _, c := range q.Commands {
+		j, ok := c.(*query.Join)
+		if !ok {
+			continue
+		}
+		if i >= len(rule.Joins) {
+			return fmt.Errorf("the later stages have more joins than the rule")
+		}
+		sub := rule.Joins[i].Sub
+		filter, later, err := SplunkSearch(sub)
+		if err != nil {
+			return fmt.Errorf("join's subsearch: %w", err)
+		}
+		j.Sub.Datamodel = splcheck.NodeModel[sub.Node]
+		j.Sub.Search = filter
+		var cmds []query.Command
+		for _, re := range later {
+			cmds = append(cmds, re)
+		}
+		j.Sub.Commands = append(cmds, j.Sub.Commands...)
+		i++
+	}
+	if i != len(rule.Joins) {
+		return fmt.Errorf("the later stages have fewer joins than the rule")
+	}
+	return nil
 }
 
 // cloudNode reports whether a node is a cloud service's records:

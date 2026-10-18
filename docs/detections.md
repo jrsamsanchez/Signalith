@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,304 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,308 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1283,10 +1283,24 @@ that compares two
 fields (`where process_name != service_process`) has both quoted, so Signalith compares
 the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
-(`stats ... by`), each group is found once a day. Lookups, `join`, `transaction`,
+(`stats ... by`), each group is found once a day. Lookups, `transaction`,
 `spath` and the functions Signalith lacks are left out for now;
 `internal/detect/packs/splunk/REPORT.md` lists every rule left out and why. The same
 CI checks as the SigmaHQ pack run on it.
+
+Rules that pair two events (a program start and the file it writes, the connection it
+makes or the program it starts) convert when they `join` a `tstats` subsearch over
+another Endpoint node or Sysmon's connections: the detection runs Signalith's `join`,
+its subsearch the other node's converted filter followed by its own grouping and later
+stages. A `dest` the join reads is the computer that logged the event (`host`), as
+security_content's data sources map Sysmon's events. A join is left out when it matches
+on a field Signalith keeps differently or Splunk's add-on does not document (a user, a
+registry value's data, a connection's `src` or `dest`, a row's `_time`), and so is a
+subsearch grouped by time (`_time span=1h`). Sysmon's network connections keep their
+process ID for this. Each test of such a rule is an event with the events the
+subsearch reads (`"with"` in the test file), on the same host: the pair the rule
+finds, and the same event alone, with its partner sharing another value, or with a
+partner the subsearch leaves out, which it must not.
 
 Each rule is also checked on the real attack it was written for: Splunk records one
 for most rules (`tests.attack_data`, from [attack_data](https://github.com/splunk/attack_data)).

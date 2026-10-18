@@ -427,6 +427,9 @@ func NoEventsReason(r *Rule, cases []sigmacheck.Case) string {
 	if !slices.ContainsFunc(cases, func(c sigmacheck.Case) bool { return reads(r, c) }) {
 		return "no test events: no " + src + " event as Signalith stores it matches the rule"
 	}
+	if len(r.Joins) > 0 {
+		return "no test events: no " + src + " events the rule's join joins"
+	}
 	if strings.Contains(r.Post, "stdev(") {
 		return "no test events: the rule's later stages keep only outliers above a baseline (average and standard deviation) of earlier counts"
 	}

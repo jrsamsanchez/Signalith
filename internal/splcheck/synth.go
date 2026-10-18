@@ -1085,6 +1085,9 @@ var wordRe = regexp.MustCompile(`^[DQ]WORD \((0x[0-9a-fA-F]+)\)$`)
 // Windows events that carry it, and whether the rule must match each is
 // what Eval says of the event as stored.
 func Cases(r *Rule) []sigmacheck.Case {
+	if len(r.Joins) > 0 {
+		return r.joinCases()
+	}
 	pos, neg := Events(r.Where)
 	bursts := 0
 	out := r.cases(append(pos, neg...), &bursts)
@@ -1387,6 +1390,10 @@ func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
 		regexes = append(regexes, c)
 	}
 	var errs []error
+	subs, err := joinQueries(r, q)
+	if err != nil {
+		return []error{err}
+	}
 	for i, c := range tf.Cases {
 		where := fmt.Sprintf("case %d (%s %s, expect %v)", i, c.Channel, c.EventID, c.Expect)
 		docs, model := StoredCopies(c)
@@ -1396,7 +1403,20 @@ func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
 		for _, d := range docs {
 			matched = matched && Eval(r.Where, View(d))
 		}
-		if got := matched && r.KeepsAll(docs); got != c.Expect {
+		// The events with the case, which each join's subsearch reads
+		// as Splunk does (its where clause) and as the detection does
+		// (its filter).
+		splunkJoins := r.splunkJoins(c.With)
+		detectJoins := &joinInput{with: c.With, reads: func(j int, w sigmacheck.Case) bool { return subs[j].reads(w) }}
+		for k, w := range c.With {
+			for j := range r.Joins {
+				if a, b := splunkJoins.reads(j, w), detectJoins.reads(j, w); a != b {
+					errs = append(errs, fmt.Errorf("%s: event %d with it (%s %s): the Splunk rule's join %d says %v, the detection's %v for %s",
+						where, k, w.Channel, w.EventID, j+1, a, b, sigmacheck.String(w.Data)))
+				}
+			}
+		}
+		if got := matched && r.keepsWith(docs, splunkJoins); got != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the Splunk rule says %v for %s", where, got, sigmacheck.String(View(doc))))
 			continue
 		}
@@ -1422,7 +1442,7 @@ func Verify(r *Rule, q *query.Query, tf *sigmacheck.TestFile) []error {
 			m = err == nil && len(rows) == len(docs)
 		}
 		// The detection runs the rule's later stages after its filter.
-		m = m && r.KeepsAll(docs)
+		m = m && r.keepsWith(docs, detectJoins)
 		if m != c.Expect {
 			errs = append(errs, fmt.Errorf("%s: the detection says %v for %s", where, m, sigmacheck.String(c.Data)))
 		}

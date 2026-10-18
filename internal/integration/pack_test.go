@@ -138,8 +138,15 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 					tag, rec := cp.Record(host, at.Add(offsets[k]))
 					records[tag] = append(records[tag], rec)
 				}
+				// The events a join's subsearch reads, on the same host.
+				for _, w := range c.With {
+					tag, rec := w.Record(host, at)
+					records[tag] = append(records[tag], rec)
+				}
 				// A Linux program start, as auditd records it too.
-				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 {
+				// (Not for a case with events a join reads, which are
+				// Sysmon's.)
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 {
 					rc.hosts = append(rc.hosts, host+"-auditd")
 					if c.Expect {
 						rc.positives[host+"-auditd"] = true
@@ -184,6 +191,13 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 					t.Fatal(err)
 				}
 				q.Search = &query.And{Children: []query.Expr{q.Search, &query.Compare{Field: "host", Op: "=", Value: h}}}
+				for _, c := range q.Commands {
+					// A join's subsearch reads the case's own events, not
+					// another case's that share its values.
+					if j, ok := c.(*query.Join); ok {
+						j.Sub.Search = &query.And{Children: []query.Expr{j.Sub.Search, &query.Compare{Field: "host", Op: "=", Value: h}}}
+					}
+				}
 				q.Earliest = "-1h"
 				res, err := eng.Execute(ctx, q)
 				if err != nil {
