@@ -28,14 +28,16 @@ jobs:
     uses: ./.github/workflows/packages.yml
     with:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+      sign: ${{ github.event_name == 'push' }}
     secrets:
       SIGNALITH_GPG_PRIVATE_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
       SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
-      SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
 
   image:
     needs: packages
     runs-on: ubuntu-latest
+    # For the agent release key, as in packages.yml.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
       contents: read
       packages: write
