@@ -144,6 +144,31 @@ outside `docs/` with a full `https://github.com/jrsamsanchez/Signalith/blob/main
 address. Some docs are read by tests (`users.md`, `security.md`, `dashboards.md`), so
 keep their headings and lists in shape.
 
+## Code review
+
+Every change to `main` goes through a pull request; nothing is pushed to `main`
+directly. Before a pull request is merged:
+
+- Every required CI check is green on its latest commit.
+- A reviewer other than the author has read the diff. Until the project has a second
+  maintainer, the maintainer reviews outside contributions and an automated reviewer
+  checks the maintainer's own.
+- Changes to sign-in, sessions, tokens, intake, search, storage, the cluster, AI
+  features or deployment also get a security review against the
+  [threat model](https://signalith.io/docs/threat-model/).
+- Reviewers check that the change does what it says, has tests that would fail without
+  it, keeps the docs current, adds no new dependency without a reason, and follows the
+  code style above.
+
+Review comments are answered in the pull request: either fixed, or answered with why not.
+
+## First contributions
+
+Issues labeled
+[good first issue](https://github.com/jrsamsanchez/Signalith/labels/good%20first%20issue)
+are small, self-contained tasks for new contributors. Comment on one to say you are
+taking it. See [GOVERNANCE.md](GOVERNANCE.md) for who decides what.
+
 ## Commits and pull requests
 
 - Branch from `main` and keep one topic per pull request.

@@ -1366,7 +1366,9 @@ detections and searches answered in under a second
 
 ## Building
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes, and
+[GOVERNANCE.md](GOVERNANCE.md) for who maintains the project. The
+[architecture](https://signalith.io/docs/architecture/) page gives the high-level design.
 
 Requires the Go version in `go.mod` (1.26.9) or newer.
 
