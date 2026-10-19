@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # A Signalith test lab on Hetzner Cloud: see docs/cloud-lab.md.
 #
 #   terraform apply     builds it (signalith-1 then installs everything)

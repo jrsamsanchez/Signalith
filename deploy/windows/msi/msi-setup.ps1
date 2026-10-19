@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Run by the .msi package, as SYSTEM, after it has put the files in place:
 # runs install.ps1 from this folder for a new install, an upgrade or a
 # repair, keeping a new install's admin password for

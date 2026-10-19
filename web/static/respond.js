@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Response actions: the Respond dialog analysts open on a finding or a
 // case, the past runs shown there, and the Response actions page where
 // admins set the actions up. The server checks everything again; see

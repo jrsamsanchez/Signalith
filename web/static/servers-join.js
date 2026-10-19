@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: Add a server, and servers waiting for approval.
 //
 // Add a server opens a dialog that first asks what is being added: a

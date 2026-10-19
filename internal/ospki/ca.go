@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ospki
 
 // Keeping the CA and issuing more certificates under it: renewals, more

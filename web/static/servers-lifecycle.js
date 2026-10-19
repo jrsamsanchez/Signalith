@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: draining, removing and moving work between servers, and
 // rotating the cluster key. Each server's side panel (serverPanels) gets
 // a part with Drain or Resume, Move the background jobs here, and Remove

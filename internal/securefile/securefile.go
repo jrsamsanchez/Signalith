@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package securefile writes files that hold passwords and keys: whole or
 // not at all, and readable only by Signalith's own account.
 //

@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Sign-in page. Posts the form as JSON and, on success, returns to the page
 // the user first asked for.
 'use strict';

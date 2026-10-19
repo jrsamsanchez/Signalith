@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command signalith-loadgen puts load on Signalith servers and checks how
 // they hold up: simulated agents, syslog devices, people using the pages,
 // password guessing and settings changes, against one server or several

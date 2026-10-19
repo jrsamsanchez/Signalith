@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package geoiptest writes small GeoIP databases in the MaxMind DB format
 // for tests, so they need no downloaded file.
 package geoiptest

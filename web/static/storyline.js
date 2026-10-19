@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Attack storyline: the findings and risk events about a user, system or
 // address, and the entities and activity that tie them together, as one
 // story ordered by ATT&CK tactic. Opened from a finding, an investigation,

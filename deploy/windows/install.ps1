@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs or upgrades Signalith as a Windows service.
 # Run in an elevated PowerShell from the folder that contains signalith.exe:
 #   .\install.ps1

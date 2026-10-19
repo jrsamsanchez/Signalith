@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Checks deploy\windows\install.ps1 without installing anything: that it
 # parses, and that New-PrivateFolder makes a folder owned by
 # Administrators that only SYSTEM and Administrators may use, with no

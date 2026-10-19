@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package agents generates Fluent Bit and OpenTelemetry Collector
 // configurations, and osquery setups, so nobody has to write agent config
 // by hand: pick the OS, copy the file, restart the agent.

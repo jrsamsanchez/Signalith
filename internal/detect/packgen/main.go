@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command packgen builds the SigmaHQ content pack from a checkout of
 // https://github.com/SigmaHQ/sigma. It converts every Windows rule of the
 // log sources Signalith parses, makes test events for each one (and uses

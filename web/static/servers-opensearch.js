@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: the OpenSearch part of this server's side panel. It says how safe OpenSearch is from
 // losing a node (health, nodes, disks, Signalith indices with no copy on
 // another node) and which of this server's OpenSearch addresses it skips

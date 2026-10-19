@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package setupguide keeps what each user chose about the setup guide,
 // the walkthrough Signalith offers on first use: whether to show it, when
 // to ask again, and which steps they skipped or opened.

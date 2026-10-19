@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings > Network sensors (admins): each sensor that sends to
 // Signalith, whether it is healthy and a checklist that says what to fix;
 // the rule tuning every sensor with Suricata fetches (rules to turn off,

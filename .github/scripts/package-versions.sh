@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Picks the versions the package jobs build, for $GITHUB_OUTPUT:
 #   version   what this run builds: $1 when given (a release), else one
 #             patch above the latest release, marked -ci (0.1.1-ci.42)

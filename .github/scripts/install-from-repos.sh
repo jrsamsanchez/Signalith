@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs Signalith from the apt and dnf repositories at URL in Ubuntu,
 # Debian, Rocky Linux and Fedora containers, with every signature checked,
 # and checks the installed version.

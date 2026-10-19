@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clustertls keeps one certificate authority for the whole
 // cluster: the tls document of the shared settings holds its certificate,
 // its key sealed under the cluster key, and the names every server's

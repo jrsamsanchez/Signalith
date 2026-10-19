@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Vulnerabilities page (analysts and admins): what the network scans
 // found. Hosts lists every host up on a scanned network, worst first, and
 // opens one for its open ports and the CVEs in the software on them;

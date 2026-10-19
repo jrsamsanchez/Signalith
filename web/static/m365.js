@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data: Microsoft 365. Signalith reads the tenant's audit log itself,
 // from Microsoft's Office 365 Management Activity API, once an app
 // registered in Entra ID is entered in Settings > Microsoft 365. Nothing

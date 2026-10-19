@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package deploy holds the install scripts a Signalith server hands to a
 // new server joining it (Servers > Add a server), to a new network sensor
 // (Add data > Network sensor > Set up a new sensor), and to a computer

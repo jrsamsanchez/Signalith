@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Investigate with AI (analysts): from a finding, gather its evidence,
 // show exactly what will be sent to the AI model, let the model run a few
 // read-only searches, and show its verdict with a timeline, the evidence

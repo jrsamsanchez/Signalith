@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command signalith is the Signalith SIEM server and admin CLI.
 package main
 

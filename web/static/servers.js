@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page (admins): the Signalith servers that share this OpenSearch,
 // and the one that runs the background jobs (detections, threat intel
 // downloads and retention). It only shows; it is live while open, so a

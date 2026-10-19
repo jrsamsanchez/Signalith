@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package nlq turns plain-English questions into Signalith queries, such
 // as "failed logins from 203.0.113.9 in the last 24 hours" or "top 10 users
 // with failed logins". It works offline with a vocabulary of security

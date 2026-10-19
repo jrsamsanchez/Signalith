@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data: Any other log. An admin pastes or uploads a sample of a log
 // Signalith has no parser for; the server suggests how to read it
 // (api/parsers/analyze), previews the events and the detections that

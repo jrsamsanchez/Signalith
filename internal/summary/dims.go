@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package summary keeps summary indexes: per data model and 5-minute
 // slot, how many events had each combination of the model's main fields
 // (its dimensions), with sums of a few numeric fields. Searches that only

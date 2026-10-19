@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds the Signalith test lab. Terraform puts this script on signalith-1,
 # and lab-setup.service runs it once after the first boot, writing to
 # /var/log/lab-setup.log. From signalith-1 it reaches every other machine

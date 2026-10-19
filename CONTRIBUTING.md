@@ -98,6 +98,7 @@ fails, it says what is missing:
 | A setting in `signalith.yaml` | An entry in the settings registry in [`internal/config/settings.go`](internal/config/settings.go), or in its `Excluded` list with the reason it is not on the Settings page | `TestRegistryCoversEveryConfigSetting` |
 | A built-in detection that is on by default | Events in the sample data that make it fire ([`internal/sample`](internal/sample)) | `TestRecipeEveryEnabledDetectionHasData` |
 | A security check | A section with the check's title in [`docs/security.md`](docs/security.md) | `TestEveryCheckHasADocsSection` |
+| A source file (`.go`, `.js`, `.css`, `.sh`, `.ps1`, `.py`, `.tf`) | The copyright and `SPDX-License-Identifier: Apache-2.0` lines at the top; `python3 .github/scripts/add-license-headers.py` adds them | `TestEverySourceFileHasALicenseHeader` |
 
 ## Code style
 

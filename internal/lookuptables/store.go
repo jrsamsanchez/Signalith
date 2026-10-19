@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package lookuptables keeps the CSV tables the search command lookup
 // reads: an admin uploads a table on Settings > Lookups, and a search adds
 // its columns to events whose field matches a key column, as in

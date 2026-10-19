@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ospki makes the certificates that secure OpenSearch for
 // Signalith, so no demo certificate or well-known password is ever used: a
 // certificate authority (CA) of its own, a certificate for the OpenSearch

@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Tests the whole lab end to end: run "sudo lab-e2e" on signalith-1 once
 # "Lab ready." shows in /var/log/lab-setup.log. It makes the lab do what
 # Signalith should notice (failed logons, sudo, a new account, the EICAR

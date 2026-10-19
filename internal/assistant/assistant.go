@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package assistant asks an AI model to write a Signalith query for a
 // question the offline translator could not fully understand. It is off
 // unless configured, and it sends only the question, the query language

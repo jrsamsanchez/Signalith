@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ingest turns raw records from agents (Fluent Bit) into normalized
 // events and writes them to OpenSearch. Each source type has a parser that
 // maps the record onto a data model; unrecognized events land in "Other"

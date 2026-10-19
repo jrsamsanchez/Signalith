@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clustercfg puts the content of the shared settings to use:
 // the threat intel feed list and its status, the retention policies and
 // the settings of the Settings page, as documents of the shared

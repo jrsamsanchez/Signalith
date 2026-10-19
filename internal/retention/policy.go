@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package retention decides how long each kind of data is kept and
 // enforces it. Daily event indices are compacted, archived and deleted by
 // per-category policies, resolved and closed findings and cases are

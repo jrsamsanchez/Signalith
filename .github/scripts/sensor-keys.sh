@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Checks the repository signing keys the sensor install script pins
 # (KEY_FPR_* in deploy/sensor/install.sh) against what each publisher
 # serves today, so a key a vendor rotates, or a pin left empty, fails CI.

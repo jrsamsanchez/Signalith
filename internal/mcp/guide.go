@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package mcp
 
 // languageGuide is a short guide to the query language for the model. The

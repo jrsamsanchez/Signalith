@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Usage: ci-changes.sh BASE_SHA
 # Prints, as name=true or name=false, which of CI's slower jobs that aren't
 # required checks a pull request needs, from the files it changes since

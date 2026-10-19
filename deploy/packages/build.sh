@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds Signalith's Linux packages: .deb and .rpm for amd64 and arm64.
 #
 #   deploy/packages/build.sh VERSION OUTDIR [BINDIR]

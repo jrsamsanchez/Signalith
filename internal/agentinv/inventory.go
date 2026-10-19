@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package agentinv keeps the list of agents that send events, across every
 // server that shares an OpenSearch: which computers send, to which
 // servers, over HTTPS or plain HTTP, with which agent token, and whether

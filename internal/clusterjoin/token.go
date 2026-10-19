@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterjoin adds a server to a cluster with a one-use join
 // token, or by an admin's approval of its fingerprint.
 //

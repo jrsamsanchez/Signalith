@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterlib keeps the detection library and the custom
 // dashboards of a cluster in the shared settings (internal/shared), so
 // every server reads and changes the same ones: the custom detections

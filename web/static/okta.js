@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data: Okta. Signalith reads the organization's System Log itself,
 // from Okta's System Log API, once an API service app is entered in
 // Settings > Okta. Nothing is installed. The steps add that app; below

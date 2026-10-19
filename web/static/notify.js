@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Notifications page (admins): channels (where messages go: Slack, Teams,
 // email or a webhook), rules (which findings go to which channels) and
 // the latest deliveries. The server keeps channels and rules in one file

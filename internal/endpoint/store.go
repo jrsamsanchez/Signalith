@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package endpoint manages hosts that run osquery. Signalith is their
 // osquery management server: hosts enroll with an ingest token over
 // osquery's TLS remote API (the same one Fleet and other managers use),

@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Dashboards: the built-in security posture summary, built-in panel
 // dashboards such as Malware (read-only; they can be copied), and custom
 // dashboards of query panels. Charts here are drawn with the shared .chart, .rank,

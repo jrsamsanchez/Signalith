@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 output "signalith" {
   description = "Open this in your browser once the setup has finished."
   value       = "https://${hcloud_server.linux["signalith-1"].ipv4_address}:9000"

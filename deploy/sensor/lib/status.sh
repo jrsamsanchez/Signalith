@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # The sensor's status line, every 5 minutes (signalith-sensor-status.timer):
 # appends one JSON line to /var/log/signalith-sensor/status.json, which the

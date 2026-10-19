@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package syslog receives syslog over UDP, TCP and TLS from systems that
 // cannot run an agent (firewalls, switches, routers, appliances and
 // servers), reads RFC 5424, RFC 3164 with its common real-world variants,

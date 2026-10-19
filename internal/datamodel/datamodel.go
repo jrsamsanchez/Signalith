@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package datamodel defines Signalith's common field model. Field names
 // follow Splunk's CIM so ES analysts recognize them, and every parser maps
 // its source onto one of these models.

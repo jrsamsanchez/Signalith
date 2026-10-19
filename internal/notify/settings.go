@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package notify sends a message to email, a webhook, Slack or Microsoft
 // Teams when a detection raises a finding that matters, so nobody has to
 // watch the Findings page to learn of it.

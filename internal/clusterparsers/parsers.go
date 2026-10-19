@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterparsers keeps the custom parsers in the shared settings
 // of a cluster, so every server parses alike whichever one an agent sends
 // to. A server that is not a member keeps them in its state folder

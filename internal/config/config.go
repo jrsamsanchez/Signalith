@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package config loads and validates signalith.yaml. Every setting has a
 // working default, so a fresh install needs only the file "signalith init"
 // writes, and validation errors say exactly which line to fix.

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package respond runs response actions: an analyst, or later a playbook,
 // disables a directory account, blocks an IP or domain through a
 // firewall's API or a SOAR webhook, or runs a script such as one that

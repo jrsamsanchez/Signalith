@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package agentd is the Signalith Agent: it fetches what to collect from
 // Signalith, writes the collectors' configuration, keeps them running and
 // reports how they are (see internal/agentproto for what it says to the

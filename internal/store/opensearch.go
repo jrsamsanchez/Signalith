@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package store talks to OpenSearch over its REST API using only net/http,
 // so the server stays a single dependency-light binary on Windows and Linux.
 package store

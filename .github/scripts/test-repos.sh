@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds the apt and dnf repositories from PKGDIR with a throwaway signing
 # key, serves them on this machine, and installs Signalith from them in
 # Ubuntu, Debian, Rocky Linux and Fedora containers, with every signature

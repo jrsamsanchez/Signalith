@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package security checks how a Signalith server is set up and says what
 // to fix first. Every check is a pure function over Facts, so the server
 // (GET /api/security, the Security page) and the CLI (signalith security)

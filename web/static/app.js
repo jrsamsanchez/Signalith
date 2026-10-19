@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Signalith web UI. Plain JavaScript, no build step, so the server can
 // embed it and run on Windows and Linux without Node.
 'use strict';

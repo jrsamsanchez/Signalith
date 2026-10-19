@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Findings queue, detection management and ATT&CK coverage.
 'use strict';
 

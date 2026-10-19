@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package okta reads an Okta organization's System Log from Okta's System
 // Log API and hands its events to the ingest pipeline.
 //

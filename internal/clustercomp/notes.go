@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clustercomp keeps the admins' notes on compliance controls in
 // the shared settings of a cluster, so every server shows the same notes
 // on the Compliance page and in its reports. A server that is not a member

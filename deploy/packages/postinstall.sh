@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # After the files are in place. A first install writes a starter config
 # (HTTPS on, a generated admin password kept for "signalith
 # initial-password", syslog on 514 and 6514) and starts the service.

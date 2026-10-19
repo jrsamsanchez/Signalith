@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: the cluster's one certificate authority. Once the cluster
 // has one, every server's HTTPS certificate comes from it, so a single CA
 // file works for agents and browsers on every server; a card under the

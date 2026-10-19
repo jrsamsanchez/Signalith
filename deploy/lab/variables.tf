@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # The Hetzner Cloud API token is read from the HCLOUD_TOKEN environment
 # variable, never from a file in this folder.
 

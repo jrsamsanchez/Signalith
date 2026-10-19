@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sensortune keeps the Suricata rule tuning admins edit on
 // Settings > Network sensors: the rules to turn off (disable.conf), the
 // limits and suppressions (threshold.config) and their own rules

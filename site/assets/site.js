@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Signalith website: theme switch, nav, product tour, install tabs, copy buttons,
 // the hero's event floor and reveal-on-scroll. No dependencies.
 'use strict';

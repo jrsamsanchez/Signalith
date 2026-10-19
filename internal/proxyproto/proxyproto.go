@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package proxyproto reads the PROXY protocol header (versions 1 and 2)
 // that a load balancer passing TCP connections on writes before the
 // client's own bytes, so Signalith sees the address of the browser, agent

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cases stores investigations: a case groups related findings with
 // the analyst's notes, the searches they ran and the events they pinned,
 // like a SOC investigation.

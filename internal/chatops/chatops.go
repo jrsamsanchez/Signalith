@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package chatops answers the buttons in Slack and Microsoft Teams
 // messages: an analyst approves or rejects a playbook step, or
 // acknowledges a finding, from the chat, without opening Signalith.

@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Passkeys (WebAuthn) in the browser, for the sign-in page and the app.
 // The server sends its options as JSON, with binary values in base64url;
 // navigator.credentials wants them as bytes, and its answer goes back as

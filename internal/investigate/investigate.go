@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package investigate runs Investigate with AI on a finding. It gathers
 // the finding's events, where its users, hosts and addresses show up,
 // threat intel matches and related findings; lets an AI model run a few

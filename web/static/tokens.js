@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data > Agent tokens (admins): the tokens agents send with, one per
 // agent or group. A new token is shown once, in the dialog that creates it
 // (or in the config Add data hands out; see app.js); Signalith keeps only a
