@@ -777,7 +777,7 @@ password spraying and MFA fatigue. They name fields as Splunk's add-on does, whi
 Signalith keeps too: a list's values by Splunk's name for them
 (`properties.targetResources{}.modifiedProperties{}.newValue`), any of which a search
 matches. After `rename properties.* as *`, a later `search` or `stats` reads the fields by
-their old names. Most rules that use `eval`, `spath`, `rex` or `transaction`, and the
+their old names. Most rules that use `eval`, `spath` or `rex`, and the
 Intune rules, are left out; a lookup of privileged roles reads the table the pack ships. To send Entra ID and Azure logs, see
 [Entra ID and Azure](azure.md).
 
@@ -909,7 +909,7 @@ derives, so they are left out. To send the audit logs, see
 
 ### Splunk Security Content
 
-**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,328 Windows,
+**Splunk Security Content** (`internal/detect/packs/splunk`) holds 1,330 Windows,
 Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections from Splunk's Threat Research Team
 ([security_content](https://github.com/splunk/security_content)), pinned to one
 commit. They are the production TTP and anomaly rules that search the CIM
@@ -1329,8 +1329,20 @@ that compares two
 fields (`where process_name != service_process`) has both quoted, so Signalith compares
 the fields' values as Splunk does. A dotted field (`userIdentity.userName`)
 is quoted, as Splunk reads it as one field. When the stages end in groups
-(`stats ... by`), each group is found once a day. Lookups, `transaction`,
-`spath` and the functions Signalith lacks are left out for now;
+(`stats ... by`), each group is found once a day. A later `transaction` runs as
+Signalith's when Splunk's search window cannot change what it finds: it needs
+`startswith=` and `endswith=` (so a transaction is the events from a start to its end,
+wherever the window begins) and `maxspan=`, or a later test that keeps only a short
+transaction (`where duration<300`, or `eval x=case(duration<300,"TRUE")` then
+`search x=TRUE`). Each run then searches that span plus the time since the last run, so
+every transaction Splunk finds is whole in some run (one that straddles the edge of
+Splunk's hourly window is found too). A later `stats` grouped by a field the transaction
+makes multivalue counts the transaction under each value, as Splunk's does; a later
+`eval`, `where` or `search` of such a field is left out. Its test events are runs of
+events: a start and its end, which it finds, and the end too late, before the start,
+alone or of another object, which it does not. A `map` search is left out: it reads
+each row's other events (a logon by its `TargetLogonId`) from Splunk's whole window,
+however long before. `spath` and the functions Signalith lacks are left out for now;
 `internal/detect/packs/splunk/REPORT.md` lists every rule left out and why. The same
 CI checks as the SigmaHQ pack run on it.
 

@@ -673,7 +673,8 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 	if span := rule.PostSpan; span > 0 {
 		// Grouped by time: as a count is (splunkThreshold), each run
 		// searches the span plus the time since the last run, so each
-		// bucket is whole in some run.
+		// bucket is whole in some run. The same holds for the longest
+		// transaction a later transaction keeps.
 		every := min(max(span, time.Minute), 5*time.Minute)
 		d.Schedule = formatDuration(every)
 		d.Lookback = formatDuration(span + every)

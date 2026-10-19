@@ -154,10 +154,16 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 						records[tag] = append(records[tag], rec)
 					}
 				}
+				// The events that follow the case: a transaction's end,
+				// after its start.
+				for _, th := range c.Then {
+					tag, rec := th.Record(host, at.Add(time.Duration(th.Later)*time.Second))
+					records[tag] = append(records[tag], rec)
+				}
 				// A Linux program start, as auditd records it too.
 				// (Not for a case with events a join reads, which are
 				// Sysmon's.)
-				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 && len(c.Baseline) == 0 {
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 && len(c.Baseline) == 0 && len(c.Then) == 0 {
 					rc.hosts = append(rc.hosts, host+"-auditd")
 					if c.Expect {
 						rc.positives[host+"-auditd"] = true

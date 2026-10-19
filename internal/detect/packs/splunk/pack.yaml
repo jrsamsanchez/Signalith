@@ -4,7 +4,7 @@ title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
 version: 13bf1750b21768c03a2237ecfd27b54644bc6de9
-date: "2026-10-18"
+date: "2026-10-19"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -390,6 +390,10 @@ rules:
     rule_id: bb093c30-d860-4858-a56e-cd0895d5b49c
     file: azure_ad_user_consent_denied_for_oauth_application.yml
     path: detections/cloud/azure_ad_user_consent_denied_for_oauth_application.yml
+  - id: splunk-azure-ad-user-enabled-and-password-reset
+    rule_id: 1347b9e8-2daa-4a6f-be73-b421d3d9e268
+    file: azure_ad_user_enabled_and_password_reset.yml
+    path: detections/cloud/azure_ad_user_enabled_and_password_reset.yml
   - id: splunk-azure-ad-user-immutableid-attribute-updated
     rule_id: 0c0badad-4536-4a84-a561-5ff760f3c00e
     file: azure_ad_user_immutableid_attribute_updated.yml
@@ -2982,6 +2986,10 @@ rules:
     rule_id: 8a1259cb-0ea7-409c-8bfe-74bad89259f9
     file: windows_ad_serviceprincipalname_added_to_domain_account.yml
     path: detections/endpoint/windows_ad_serviceprincipalname_added_to_domain_account.yml
+  - id: splunk-windows-ad-short-lived-domain-account-serviceprincipalnam
+    rule_id: b681977c-d90c-4efc-81a5-c58f945fb541
+    file: windows_ad_short_lived_domain_account_serviceprincipalname.yml
+    path: detections/endpoint/windows_ad_short_lived_domain_account_serviceprincipalname.yml
   - id: splunk-windows-ad-sid-history-attribute-modified
     rule_id: 1155e47d-307f-4247-beab-71071e3a458c
     file: windows_ad_sid_history_attribute_modified.yml

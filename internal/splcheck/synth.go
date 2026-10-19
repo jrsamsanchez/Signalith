@@ -1022,10 +1022,19 @@ func Stored(c sigmacheck.Case) (map[string]any, string) {
 	return ev.Document(), ev.Model
 }
 
+// storedNow is when a test event happens.
+var storedNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+// storedLater is an event that follows a case (Then) as Signalith stores
+// it, Later seconds after the case.
+func storedLater(c sigmacheck.Case) map[string]any {
+	return c.Stored("test-host", storedNow.Add(time.Duration(c.Later)*time.Second)).Document()
+}
+
 // StoredCopies are a case's events as Signalith stores them, each of a
 // repeated case's copies at its own time, with their data model.
 func StoredCopies(c sigmacheck.Case) ([]map[string]any, string) {
-	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	now := storedNow
 	cs, at := c.Copies()
 	docs := make([]map[string]any, len(cs))
 	model := ""
@@ -1151,6 +1160,15 @@ func (r *Rule) cases(evs []map[string]string, bursts *int) []sigmacheck.Case {
 			matched := InModel(r.Node, model) && Eval(r.Where, View(doc))
 			c.Expect = matched && r.Keeps(doc)
 			out = append(out, c)
+			if matched && !c.Expect && *bursts < maxBursts && r.txnIndex() >= 0 {
+				// A later transaction keeps a run of events: a start,
+				// then its end.
+				if seq := r.sequences(c); seq != nil {
+					*bursts++
+					out = append(out, seq...)
+				}
+				continue
+			}
 			if matched && !c.Expect && *bursts < maxBursts {
 				// The later stages may count events: the same event,
 				// repeated, may come through.
