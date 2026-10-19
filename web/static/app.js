@@ -485,7 +485,7 @@ function showPage(name, opts = {}) {
   }
   hashSource = false;
   if (switching) window.scrollTo(0, 0);
-  if (name === 'data') { loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
+  if (name === 'data') { setSourcePicking(false); loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
   if (name === 'health') loadHealth();
   if (typeof onPageShown === 'function') onPageShown(name);
   try { localStorage.setItem('signalith.page', name); } catch (_) { /* storage may be blocked */ }
@@ -2556,6 +2556,45 @@ try {
   agentServerEl.value = location.protocol === 'https:' && /^http:\/\//i.test(saved) ? 'https://' + saved.slice(7) : saved;
 } catch (_) { /* storage may be blocked */ }
 document.querySelectorAll('input[name=os]').forEach((r) => r.addEventListener('change', () => loadDataSource()));
+
+// ---------- add data: choosing a source ----------
+// Once a source is chosen only its card stays on screen, so its steps sit
+// right below it; "Choose a different source" brings the whole list back.
+// Arrow keys only move the choice: a click, Enter or Space settles it.
+function setSourcePicking(on, focus) {
+  const agentPickEl = $('agent-pick');
+  const was = agentPickEl.dataset.state === 'choosing';
+  agentPickEl.dataset.state = on ? 'choosing' : 'chosen';
+  $('agent-pick-change').setAttribute('aria-expanded', String(on));
+  if (was === on || !focus) return;
+  const checked = document.querySelector('input[name=os]:checked');
+  if (on && checked) checked.focus({ preventScroll: true });
+  const top = agentPickEl.getBoundingClientRect().top;
+  if (on || top < 0 || top > innerHeight * 0.4) {
+    agentPickEl.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+}
+$('agent-pick-change').addEventListener('click', () => setSourcePicking(true, true));
+$('agent-pick-list').addEventListener('click', (e) => {
+  if ($('agent-pick').dataset.state !== 'choosing' || !e.target.closest('.agent-os__card')) return;
+  // the click a label passes on to its radio, or one from the keyboard
+  if (e.target.tagName === 'INPUT' && e.detail === 0) return;
+  setTimeout(() => setSourcePicking(false, true));
+});
+$('agent-pick-list').addEventListener('keydown', (e) => {
+  if ($('agent-pick').dataset.state !== 'choosing' || e.target.name !== 'os') return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (!e.target.checked) {
+      e.target.checked = true;
+      e.target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setSourcePicking(false, true);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    setSourcePicking(false, true);
+  }
+});
 $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);

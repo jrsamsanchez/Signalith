@@ -2628,7 +2628,26 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 
 /* source: selectable cards (three a row), the real radio drawn at the
    right. Top aligned, so the titles line up when one description wraps. */
-#page-data .agent-os { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+#page-data .agent-os { display: grid; gap: var(--sp-5); min-width: 0; margin: 0; padding: 0; border: 0; }
+#page-data .agent-os__group { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); min-width: 0; }
+#page-data .agent-os__heading { grid-column: 1 / -1; margin: 0; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+/* choosing a source: the whole list while choosing; once chosen, only the
+   chosen card stays, so its steps sit right below it */
+#page-data .agent-pick { display: grid; gap: var(--sp-3); min-width: 0; scroll-margin-top: calc(var(--topbar-h, 56px) + 16px); }
+#page-data .agent-pick__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-4); }
+#page-data .agent-pick__title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+#page-data .agent-pick[data-state="choosing"] .agent-pick__change { display: none; }
+#page-data .agent-pick[data-state="chosen"] :is(.agent-os__heading, .agent-os__else) { display: none; }
+#page-data .agent-pick[data-state="chosen"] :is(.agent-os__group:not(:has(input:checked)), .agent-os__card:not(:has(input:checked))) { display: none; }
+#page-data .agent-pick[data-state="chosen"] .agent-os__group { grid-template-columns: minmax(0, 1fr); }
+#page-data .agent:has(.agent-pick[data-state="choosing"]) > .agent-setup { display: none; }
+
+/* why the agent: short reasons under its description */
+#page-data .agent-os__text .agent-os__why { display: grid; gap: 4px; margin-top: 8px; }
+#page-data .agent-os__text .agent-os__why > span { display: flex; align-items: flex-start; gap: 8px; color: var(--text-2); }
+#page-data .agent-os__why .icon { flex: none; width: 14px; height: 14px; margin-top: 3px; color: var(--accent); }
+#page-data .agent-os__text .agent-os__else { margin-top: 8px; }
 #page-data .agent-os__card { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; cursor: pointer; transition: box-shadow var(--t-fast); }
 #page-data .agent-os__card:hover { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); }
 #page-data .agent-os__card:has(input:checked) { box-shadow: 0 0 0 1.5px var(--accent), var(--shadow-sm); }
@@ -2803,10 +2822,10 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data #syslog-main > .alert p { margin-top: 2px; }
 
 @media (max-width: 1180px) {
-  #page-data .agent-os { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #page-data .agent-os__group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
-  #page-data .agent-os { grid-template-columns: minmax(0, 1fr); }
+  #page-data .agent-os__group { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   #page-data .agent-addr__row { flex-direction: column; align-items: stretch; gap: 6px; }
