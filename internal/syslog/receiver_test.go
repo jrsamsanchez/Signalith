@@ -120,10 +120,12 @@ func sendUDP(t *testing.T, to string, msgs ...string) {
 func TestUDP(t *testing.T) {
 	bulk := &capture{}
 	r, p, _ := start(t, Config{UDP: "127.0.0.1:0"}, bulk)
-	sendUDP(t, addr(t, r, "udp"), "<38>1 2026-10-12T13:59:00Z web1 sshd 811 - - Failed password for root from 192.0.2.4 port 40122 ssh2\n")
+	// A recent timestamp: one older than DefaultMaxAge is filed under the day it arrived.
+	sent := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	sendUDP(t, addr(t, r, "udp"), "<38>1 "+sent.Format(time.RFC3339)+" web1 sshd 811 - - Failed password for root from 192.0.2.4 port 40122 ssh2\n")
 	waitFor(t, "the event", func() bool { return bulk.count() == 1 })
 	d := bulk.all()[0]
-	if d.Index != "sig-authentication-2026.10.12" {
+	if d.Index != "sig-authentication-"+sent.Format("2006.01.02") {
 		t.Errorf("index = %s", d.Index)
 	}
 	check(t, "udp", d.Doc, map[string]any{"user": "root", "action": "failure", "host": "web1", "dvc": "127.0.0.1", "sourcetype": "syslog", "app": "sshd"})
@@ -209,12 +211,13 @@ func TestTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	msg := "<86>1 2026-10-12T13:00:00Z web1 useradd 900 - - new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash"
+	sent := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	msg := "<86>1 " + sent.Format(time.RFC3339) + " web1 useradd 900 - - new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash"
 	fmt.Fprintf(c, "%d %s", len(msg), msg)
 	waitFor(t, "the event", func() bool { return bulk.count() == 1 })
 	c.Close()
 	d := bulk.all()[0]
-	if d.Index != "sig-change-2026.10.12" || d.Doc["object"] != "backdoor" {
+	if d.Index != "sig-change-"+sent.Format("2006.01.02") || d.Doc["object"] != "backdoor" {
 		t.Errorf("event = %s %v", d.Index, d.Doc)
 	}
 	if s := r.Stats(); s.Senders[0].Protocol != "tls" {
