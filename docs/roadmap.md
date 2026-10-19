@@ -30,6 +30,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   questions that become queries, a visual query builder, and an optional AI model.
 - A Docker quick start, [packages](install-packages.md) for Linux and Windows, signed
   apt and dnf repositories, and a [Helm chart](kubernetes.md) for Kubernetes.
+- A first-use [setup guide](getting-started.md#the-setup-guide) that opens the page for
+  each step and ticks it off once it is done.
 
 **Detect and triage**
 
@@ -56,6 +58,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 - Investigation cases that collect findings, notes, searches and evidence, and
   [Investigate with AI](investigate.md) for a first verdict on a finding.
+- An [attack storyline](storyline.md) that shows one intrusion as a single story: the
+  ATT&CK tactics it reached, a timeline and the entities that tie it together.
 - [Hunting notebooks](hunting-notebooks.md): saved, shareable hunts of notes and searches
   tagged to ATT&CK, with seven starter hunts.
 - [Notifications](notifications.md) to email, webhooks, Slack and Microsoft Teams, with
@@ -63,6 +67,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   playbook steps from chat, and
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
   step.
+- [Jira and ServiceNow tickets](ticketing.md) for cases, kept in step both ways.
+- [Several teams or customers](multi-tenant.md) on one install, each with its own data,
+  users, detections and behavior baselines, managed on **Settings > Tenants** with a
+  tenant picker in the top bar.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
   with one line on Linux, Windows or Docker, shared settings, users and detections,
   [detections spread over the servers](servers.md#the-background-jobs) with each server's
@@ -103,7 +111,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   optional help from AI.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, ranked with
   CISA KEV and EPSS, a scanner for each network zone, and OpenVAS for deeper scans, with
-  [encrypted SSH and Windows logins](vulnerabilities.md#credentialed-openvas-scans).
+  [encrypted SSH, Windows, VMware ESXi and SNMP logins](vulnerabilities.md#credentialed-openvas-scans).
 - A read-only [MCP server](ai-tools.md) for AI tools, with API tokens.
 
 **Built in from the start**
@@ -131,15 +139,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     each group of computers collects is chosen on the Endpoints page. Signed updates with
     automatic rollback switch on with the next release, which carries the release key.
 
-**Tenants**
-:   Several teams or customers on one install, each with its own data, users and
-    detections. The first step, [multi-tenant mode](multi-tenant.md) on a single server,
-    is in; the Settings page and a tenant picker come next.
+**OpenSearch in the Windows installer**
+:   The `.msi` sets up OpenSearch as well, so Windows needs no separate install step.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
-
-**Tickets in Jira and ServiceNow**
-:   Open a Jira or ServiceNow ticket from a finding or a playbook.
 
 **A signed Windows installer**
 :   A code-signed `.msi` (see the [code signing policy](code-signing.md)).

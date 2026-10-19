@@ -655,7 +655,7 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 		// Counts compared within each time bucket: only a bucket the
 		// run's window holds whole, as Splunk's hourly window does, is
 		// kept (a part of one may stand out where the whole does not).
-		d.Query += fmt.Sprintf("\n| addinfo\n| where relative_time(_time, \"+0s\") >= info_min_time AND relative_time(_time, \"+%ds\") <= info_max_time\n| fields - info_min_time, info_max_time, info_search_time",
+		d.Query += fmt.Sprintf("\n| addinfo\n| where _time >= info_min_time AND _time + %d <= info_max_time\n| fields - info_min_time, info_max_time, info_search_time",
 			int64(rule.PostSpan/time.Second))
 	}
 	// In canonical form; Validate reports a query that does not parse.

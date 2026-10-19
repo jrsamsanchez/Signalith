@@ -8,8 +8,8 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
-// Scan logins are the SSH and Windows accounts OpenVAS signs in to hosts
-// with. Their keys and passwords are written here and never read back:
+// Scan logins are the SSH, Windows, ESXi and SNMP accounts OpenVAS signs
+// in to hosts with. Their keys and passwords are written here and never read back:
 // the page gets each login's name, user name and whether this server can
 // decrypt it, and nothing else.
 
@@ -79,7 +79,7 @@ func (s *Server) handleSaveVulnLogin(w http.ResponseWriter, r *http.Request) {
 	// The audit record says what changed, never the key or password.
 	s.audit(r, "vulnerability scan login saved", "login", c.Name, "id", c.ID, "type", c.Kind,
 		"username", c.Username, "auth", c.Auth, "secret_changed", in.Secret != "",
-		"passphrase_changed", in.Passphrase != "" || in.ClearPassphrase)
+		"passphrase_changed", in.Passphrase != "" || in.ClearPassphrase, "privacy_changed", in.Privacy != "")
 	writeJSON(w, http.StatusOK, c.View(s.Vulns.Store.Keys))
 }
 

@@ -120,38 +120,6 @@ func compareStages(cmds []query.Command) (time.Duration, error) {
 	return span, nil
 }
 
-// stdevFix returns, for a later eventstats that takes the standard
-// deviation (or variance) of a count an earlier stats made, the eval
-// that makes it 0 for a group of one row, as Splunk's is ("" for none);
-// Signalith's is null for one value. A row of the stats always has its
-// count, so a null is one row's. counts are the count columns of the
-// latest stats, which a stats stage resets.
-func stdevFix(stage string, counts map[string]bool) string {
-	q, err := query.Parse("* | " + stage)
-	if err != nil || len(q.Commands) != 1 {
-		return ""
-	}
-	switch c := q.Commands[0].(type) {
-	case *query.Stats:
-		clear(counts)
-		for _, a := range c.Aggs {
-			counts[a.Column()] = a.Func == "count" || a.Func == "dc"
-		}
-	case *query.EventStats:
-		var fix []string
-		for _, a := range c.Aggs {
-			if (a.Func == "stdev" || a.Func == "var") && counts[a.Field] {
-				f := quoteField(a.Column())
-				fix = append(fix, f+"=coalesce("+f+", 0)")
-			}
-		}
-		if len(fix) > 0 {
-			return "eval " + strings.Join(fix, ", ")
-		}
-	}
-	return ""
-}
-
 // baselineGroups are how many other groups a baseline is tried with,
 // fewest first. With the sample standard deviation, one group of n
 // stands out from the others by at most (n-1)/√n standard deviations, so

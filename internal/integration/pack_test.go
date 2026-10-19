@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // TestPackRulesAgainstOpenSearch repeats the content pack check against a
@@ -240,6 +242,13 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		}
 		q.Commands = append(cmds, &query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}})
 		res, err := eng.Execute(ctx, q)
+		// A 1 GB test node can trip OpenSearch's parent circuit breaker
+		// (429) while it collects garbage after the bulk loads; that is
+		// the node, not the rule, so give it a moment and ask again.
+		for wait := 2 * time.Second; tooBusy(err) && wait <= 8*time.Second; wait *= 2 {
+			time.Sleep(wait)
+			res, err = eng.Execute(ctx, q)
+		}
 		if err != nil {
 			t.Errorf("%s: %v", rc.det.ID, err)
 			failed++
@@ -264,4 +273,11 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			t.Fatal("too many failures")
 		}
 	}
+}
+
+// tooBusy says whether OpenSearch refused a search for lack of memory (a
+// circuit breaker's 429) rather than for anything in the search.
+func tooBusy(err error) bool {
+	var se *store.Error
+	return errors.As(err, &se) && se.Status == http.StatusTooManyRequests
 }
