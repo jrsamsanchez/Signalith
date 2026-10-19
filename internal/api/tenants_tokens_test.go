@@ -46,7 +46,7 @@ const (
 
 // tenantFront is the default tenant's server, running acme (with its own
 // shared token) and off (turned off).
-func tenantFront(t *testing.T) (*Server, *Server, *someTenants, func(path, body, token string) (int, map[string]any)) {
+func tenantFront(t *testing.T) (front, acme *Server, rt *someTenants, url string) {
 	t.Helper()
 	reg, err := tenants.Open(tenants.File(t.TempDir()))
 	if err != nil {
@@ -62,7 +62,7 @@ func tenantFront(t *testing.T) (*Server, *Server, *someTenants, func(path, body,
 	if _, err := reg.Change("off", nil, &off, "test"); err != nil {
 		t.Fatal(err)
 	}
-	rt := &someTenants{}
+	rt = &someTenants{}
 	for id, tok := range map[string]string{"acme": acmeToken, "off": offToken} {
 		newTestServerWith(t, func(s *Server) {
 			s.Tenants, s.TenantID = reg, id
@@ -71,18 +71,13 @@ func tenantFront(t *testing.T) (*Server, *Server, *someTenants, func(path, body,
 			rt.srvs = append(rt.srvs, s)
 		})
 	}
-	var front *Server
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		front = s
 		s.Tenants = reg
 		s.TenantRuntime = rt
 		s.Config.Ingest.HEC = true
 	})
-	acme := rt.Server("acme")
-	return front, acme, rt, func(path, body, token string) (int, map[string]any) {
-		t.Helper()
-		return hecSend(t, ts.URL, path, "Splunk "+token, body, nil)
-	}
+	return front, rt.Server("acme"), rt, ts.URL
 }
 
 // An agent token belongs to at most one tenant: the default tenant's
@@ -135,15 +130,15 @@ func TestTokenTenant(t *testing.T) {
 // the event; while another server runs the tenants the sender is told to
 // send again.
 func TestHECTenantToken(t *testing.T) {
-	_, _, rt, send := tenantFront(t)
+	_, _, rt, url := tenantFront(t)
 	event := `{"event":"hello","host":"app1"}`
-	code, out := send("/services/collector/event", event, acmeToken)
+	code, out := hecSend(t, url, "/services/collector/event", "Splunk "+acmeToken, event, nil)
 	if code != http.StatusOK || out["text"] != "Success" {
 		t.Errorf("acme's event: %d %v", code, out)
 	}
 	notNow := errors.New("another server runs the tenants")
 	rt.ready.Store(&notNow)
-	code, out = send("/services/collector/event", event, acmeToken)
+	code, out = hecSend(t, url, "/services/collector/event", "Splunk "+acmeToken, event, nil)
 	if code != http.StatusServiceUnavailable || out["text"] != tenantAgentWait {
 		t.Errorf("while another server runs acme: %d %v", code, out)
 	}
