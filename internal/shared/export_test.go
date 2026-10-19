@@ -80,3 +80,47 @@ func TestRetireConfigChangedWhileCopied(t *testing.T) {
 		t.Errorf("write block: %s", set)
 	}
 }
+
+// Each step of a retirement that OpenSearch refuses stops it with the
+// config index kept and no copy left behind.
+func TestRetireConfigFaults(t *testing.T) {
+	const prefix = "rt"
+	retired := RetiredConfigIndex(prefix, "20261015T120000")
+	for _, c := range []struct {
+		name, want string
+		fault      func(method, path string) bool
+	}{
+		{"block", "could not stop writes", func(m, p string) bool { return m == http.MethodPut && strings.HasSuffix(p, "/_settings") }},
+		{"read", "could not read", func(m, p string) bool { return strings.Contains(p, "/_search") }},
+		{"make the copy", "could not make " + retired, func(m, p string) bool { return m == http.MethodPut && p == "/"+retired }},
+		{"copy", "could not copy", func(m, p string) bool { return strings.Contains(p, "_bulk") }},
+		{"count", "could not count the documents of " + retired, func(m, p string) bool { return strings.HasPrefix(p, "/"+retired+"/_count") }},
+		{"delete", "could not delete it", func(m, p string) bool { return m == http.MethodDelete && p == "/"+ConfigIndex(prefix) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fake := ostest.New(t)
+			cl := store.New(store.Config{URL: fake.URL})
+			for i := range 2 {
+				fake.Put(ConfigIndex(prefix), fmt.Sprintf("doc:%d", i), map[string]any{"kind": "doc", "rev": i, "body": "{}"})
+			}
+			fake.SetFault(func(method, path string) *ostest.Fault {
+				if c.fault(method, path) {
+					return &ostest.Fault{Status: http.StatusInternalServerError, Type: "internal_error"}
+				}
+				return nil
+			})
+			_, err := RetireConfig(context.Background(), cl, prefix, "20261015T120000")
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err %v, want %q", err, c.want)
+			}
+			fake.SetFault(nil)
+			idx := fake.Indices()
+			if !slices.Contains(idx, ConfigIndex(prefix)) || slices.Contains(idx, retired) {
+				t.Errorf("indices after: %v", idx)
+			}
+		})
+	}
+	if (ExportTarget{}).Logger() == nil {
+		t.Error("no logger")
+	}
+}
