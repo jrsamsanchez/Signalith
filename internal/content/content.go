@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package content makes, signs, checks and keeps detection content
 // updates: the content packs (internal/detect/packs) as one signed bundle,
 // so a server can take newer rules without a new Signalith release.

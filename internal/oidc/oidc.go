@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package oidc signs people in with an OpenID Connect identity provider,
 // such as Microsoft Entra ID, Okta, Google or Keycloak: the authorization
 // code flow with PKCE, for a confidential client (with a client secret)

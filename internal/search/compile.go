@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package search compiles parsed queries into OpenSearch requests, runs them,
 // and applies the remaining pipe commands to the results in Go.
 package search

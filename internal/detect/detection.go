@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package detect runs scheduled detections, like Splunk ES correlation
 // searches. A detection is a query, a schedule and a lookback window; each
 // result row it returns becomes a finding, unless the throttle says an

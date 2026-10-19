@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package httpserver builds the web server Signalith serves its UI, API
 // and agent ingest on, with timeouts and connection and request limits so
 // slow, idle or numerous clients cannot tie it up before anyone has signed

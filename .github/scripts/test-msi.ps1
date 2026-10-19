@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs, upgrades and uninstalls Signalith's .msi on this machine (a CI
 # runner, as Administrator), checking the service and signing in each time.
 #   test-msi.ps1 -Previous prev.msi -New new.msi -Version 0.1.1-ci.42

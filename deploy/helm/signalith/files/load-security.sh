@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Loads OpenSearch's security settings for Signalith's Docker quick start:
 # who may sign in (only certificates from Signalith's own OpenSearch CA)
 # and what each may do (the files in security/). docker-compose.yml runs

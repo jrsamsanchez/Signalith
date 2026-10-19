@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Writes llms-full.txt: site/llms.txt followed by every documentation page, in
 # the order of the nav in mkdocs.yml, as plain Markdown, for AI assistants and
 # search tools that read a whole site in one file (https://llmstxt.org).

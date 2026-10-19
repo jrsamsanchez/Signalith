@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Smoke test of the Helm chart, run by .github/workflows/helm.yml after
 # installing it with ci/kind-values.yaml into a namespace that enforces the
 # restricted Pod Security Standard: the servers and the scanner form one

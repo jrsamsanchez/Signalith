@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Smoke test of the load balancer lab (docker-compose.cluster.yml), run
 # weekly by .github/workflows/cluster-smoke.yml: agents and syslog through
 # HAProxy reach both servers, each client is seen by its own address, and

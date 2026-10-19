@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command signalith-agent is the Signalith Agent, the one program a
 // computer needs to send its logs to Signalith. The line from Add data >
 // Signalith Agent installs it as a service; see docs/signalith-agent.md.

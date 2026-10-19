@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command attackgen checks the Splunk pack against the real attack
 // recordings its rules name (tests.attack_data in each rule, from
 // https://github.com/splunk/attack_data): each recorded Windows event,

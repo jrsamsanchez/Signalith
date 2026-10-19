@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings > Single sign-on (admins): signing in with an identity provider
 // over OpenID Connect (Microsoft Entra ID, Okta, Google, Keycloak) or SAML
 // 2.0 (AD FS, Okta, Entra ID), each on its own tab of the page.

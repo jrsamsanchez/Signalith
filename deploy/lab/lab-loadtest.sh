@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # lab-loadtest: the cloud lab's terabyte-a-day load test (docs/cloud-lab.md).
 # It needs the lab made with size = "loadtest", and runs on signalith-1:
 #

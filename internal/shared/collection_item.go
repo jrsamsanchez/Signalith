@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 // Item returns a copy of the item name with its version and who changed

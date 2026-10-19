@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package redact hides secrets in values Signalith shows or logs, such as
 // a password or API key someone put in a configured URL.
 package redact

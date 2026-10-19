@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package oslocal installs OpenSearch on the same computer as Signalith,
 // for the Windows installer: the official OpenSearch release for Windows,
 // at the version pinned here and checked against the SHA-512 pinned here,

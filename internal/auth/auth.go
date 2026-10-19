@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package auth keeps sign-in sessions for the web UI and limits password
 // guessing. Sessions live in memory: a restart from the Settings page keeps
 // them, but stopping the server signs everyone out; API clients can keep

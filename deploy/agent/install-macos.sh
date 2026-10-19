@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs the Signalith Agent on a Mac: one program that runs osquery for
 # it, with Signalith as osquery's management server. It fetches what to
 # collect from Signalith every few minutes, keeps osquery running with

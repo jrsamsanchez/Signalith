@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command splunkgen builds the Splunk security_content pack from a
 // checkout of https://github.com/splunk/security_content: every
 // production TTP and anomaly detection over Windows process, file and

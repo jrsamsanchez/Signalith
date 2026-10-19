@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command splcorpus collects the searches of a Splunk security_content
 // checkout, with its macros expanded, into the corpus TestSplunkCorpus
 // runs: every detection that is not deprecated, every baseline and every

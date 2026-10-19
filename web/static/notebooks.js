@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Hunting notebooks: saved hunts made of notes and searches in order, each
 // search with what it found when it last ran, tagged with the ATT&CK
 // techniques the hunt looks for. Starter hunts are built in.

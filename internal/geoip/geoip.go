@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package geoip finds where an IP address is, for the search command
 // iplocation, from a GeoIP database in the MaxMind DB format (.mmdb) that
 // an admin puts in the geoip folder next to the lookup tables: a free

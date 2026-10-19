@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs, upgrades and removes Signalith's .deb on this machine (a CI
 # runner with systemd), checking the service and signing in each time.
 #   test-deb.sh PREVIOUS.deb NEW.deb NEW_VERSION

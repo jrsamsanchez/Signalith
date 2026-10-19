@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ruledraft drafts a detection from a plain-English description,
 // such as "more than 10 failed logins from the same source in 5 minutes".
 // The draft is a whole rule: the search, how often it runs and how far

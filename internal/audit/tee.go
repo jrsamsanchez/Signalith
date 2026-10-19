@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package audit turns the server's audit log lines into documents in
 // OpenSearch, so that the audit trail of every server in a cluster can be
 // searched in one place. A log line is an audit line when it carries the

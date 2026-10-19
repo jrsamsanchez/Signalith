@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Ticketing page (admins): connections to Jira (Cloud or Data Center) and
 // ServiceNow, which cases open tickets in and stay in step with. The server
 // keeps them in one file and takes them whole (PUT api/ticketing): every

@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Investigations: cases that group findings with the analyst's notes, the
 // searches they ran and the events they pinned.
 'use strict';

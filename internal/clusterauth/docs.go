@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterauth keeps the users, the directory sign-in settings and
 // the sign-in sessions of the servers of a cluster in OpenSearch, so a
 // person signs in once and is known on every server: the users as signed

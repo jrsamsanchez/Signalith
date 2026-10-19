@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package notebooks stores hunting notebooks: saved, shareable threat
 // hunts made of notes and searches in order, each search with a snapshot
 // of what it found when it last ran, tagged with the ATT&CK techniques

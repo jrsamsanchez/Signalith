@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterinstall hands a new server what it needs to install
 // Signalith and join a cluster: the install scripts (deploy/linux/install.sh
 // and deploy/windows/install.ps1), this server's own program for a machine

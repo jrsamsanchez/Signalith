@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package saml
 
 // The identity providers the Single sign-on tab knows.

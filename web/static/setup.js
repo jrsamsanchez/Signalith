@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Setup guide: a short walkthrough each user is offered on first use. It
 // lists the few steps that take a new install from running to watching
 // (two-step sign-in, data, notifications, the team, the security check,

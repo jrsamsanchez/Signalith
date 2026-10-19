@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package upgradecheck says whether one more server of a cluster may be
 // upgraded now, and which one next: signalith cluster upgrade-check
 // prints it, and the Servers page shows it as a checklist.

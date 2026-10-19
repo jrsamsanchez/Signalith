@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings > Lookups (admins): the CSV tables the lookup command reads.
 // Each table is uploaded whole; the first line names its columns. A
 // search adds columns from the rows whose key column matches a field:

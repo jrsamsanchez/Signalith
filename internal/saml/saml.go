@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package saml is single sign-on with a SAML 2.0 identity provider, such
 // as AD FS, Okta or Microsoft Entra ID, in the Web Browser SSO profile:
 // Signalith sends the browser to the provider with an AuthnRequest

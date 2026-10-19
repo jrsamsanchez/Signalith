@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings > Behavior baselines (admins): what each check has learned of
 // your users and hosts, its risk score and switch, the exceptions that
 // hold its risk back, and how long it learns and remembers. The server

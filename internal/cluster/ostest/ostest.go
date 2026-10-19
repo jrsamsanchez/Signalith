@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ostest is an in-memory OpenSearch for tests. It keeps documents
 // with real _seq_no, _primary_term and _version behaviour, so writes that
 // name a version (if_seq_no and if_primary_term) succeed or conflict as

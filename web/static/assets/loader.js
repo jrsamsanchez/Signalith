@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Reloads the page when one of its scripts or stylesheets fails to load.
 // The server names them under v/<version>/, which only a server of that
 // version serves: behind a load balancer during an upgrade, a page from

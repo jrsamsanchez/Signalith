@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package secrets encrypts the passwords and API keys Signalith stores, so
 // that a copy of signalith.yaml or of the server's own files (a backup, a
 // support ticket, a Git commit) does not give them away.

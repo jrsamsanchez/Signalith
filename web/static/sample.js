@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Sample data: a clean card on the Add data page that loads a week of
 // made-up activity with a few attacks hidden in it, so Signalith can be
 // tried on real-looking data, and removes it in one click. Admins only;

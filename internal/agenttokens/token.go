@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package agenttokens keeps the tokens agents send events with: one per
 // agent or group of agents, made on the Add data page or with signalith
 // tokens create, shown once and kept only as a SHA-256 fingerprint.

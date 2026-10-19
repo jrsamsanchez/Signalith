@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package splcheck reads Splunk security_content detections: the YAML
 // rule, the tstats search over a CIM data model node, and the where clause
 // that selects events, with the project's macros expanded. It evaluates

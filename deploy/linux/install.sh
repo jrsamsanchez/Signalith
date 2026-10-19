@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs Signalith on Linux as a systemd service, and joins it to the
 # servers of an existing Signalith (a cluster) or sets it up as a first
 # server.

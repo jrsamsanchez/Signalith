@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tenants keeps the tenants of a multi-tenant install: the separate
 // customers one Signalith serves (see docs/multi-tenant.md).
 //

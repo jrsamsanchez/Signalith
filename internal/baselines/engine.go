@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package baselines learns how each user and host usually behaves, and
 // adds risk to them when they do something new or rare: a sign-in from a
 // new country or network, or at an unusual hour; a rare program on a host;

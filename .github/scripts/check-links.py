@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 """Check every link on signalith.io as built from a checkout.
 
 Usage: check-links.py <repo> [--external]

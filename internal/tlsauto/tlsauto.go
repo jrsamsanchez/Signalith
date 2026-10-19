@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tlsauto gives Signalith an HTTPS certificate with no setup. In
 // auto mode it makes a small certificate authority (CA) of its own on first
 // start, and from it a server certificate for every name and address the

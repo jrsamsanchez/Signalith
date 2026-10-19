@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Tenants (multi-tenant mode): the customers one install serves, each
 // with its own data and users. Settings > Tenants lets the provider's
 // admins add, rename and turn off tenants; the picker in the top bar lets

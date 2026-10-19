@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings page (admins): how the server runs. The sections, the settings
 // in them and what each one does come from api/settings (the registry in
 // internal/config/settings.go); this page only draws them. Changes wait in

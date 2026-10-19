@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Prepares the capture port named on the command line, for
 # signalith-sensor-capture.service: up and listening to every packet

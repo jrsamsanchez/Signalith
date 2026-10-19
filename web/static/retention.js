@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Data retention: how long each kind of data is kept, the default policy
 // and disk guard, a preview of every change before it is saved, archived
 // days and restores, and what retention did lately. Every /api/retention

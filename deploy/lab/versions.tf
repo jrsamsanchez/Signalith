@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 terraform {
   required_version = ">= 1.5"
   required_providers {

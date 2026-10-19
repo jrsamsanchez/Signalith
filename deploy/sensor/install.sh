@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds a Signalith network sensor: Zeek and Suricata watch a copy of
 # your network's traffic (a switch's mirror port, or a TAP) and the Fluent
 # Bit agent sends what they log to Signalith.
@@ -1857,6 +1859,8 @@ sensor_helper() {
     capture-up.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Prepares the capture port named on the command line, for
 # signalith-sensor-capture.service: up and listening to every packet
@@ -1958,6 +1962,8 @@ HELPER
     status.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # The sensor's status line, every 5 minutes (signalith-sensor-status.timer):
 # appends one JSON line to /var/log/signalith-sensor/status.json, which the
@@ -2146,6 +2152,8 @@ HELPER
     rules-update.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Updates the Suricata rules and applies the rule tuning set on Signalith
 # (Settings > Network sensors). suricata-update has Suricata test the

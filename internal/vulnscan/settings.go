@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package vulnscan scans the networks an admin lists with Nmap, on a
 // schedule or on demand, and matches the software versions it finds to
 // known vulnerabilities (CVEs) from the U.S. National Vulnerability

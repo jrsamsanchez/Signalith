@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Features that wait for older servers. While servers run mixed versions
 // during a rolling upgrade, a feature that comes with a newer cluster
 // level stays off until every server runs a version that supports it.

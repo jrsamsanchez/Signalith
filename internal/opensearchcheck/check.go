@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package opensearchcheck checks, from one machine, that Signalith can use
 // an OpenSearch the way a server of a cluster must: it answers, its
 // certificate is valid for its name, it takes Signalith's sign-in, it has

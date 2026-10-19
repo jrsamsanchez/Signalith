@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package query parses the Signalith query language: a pipe-based search
 // language that reads like SPL. A query is a search expression followed by
 // zero or more commands separated by "|":

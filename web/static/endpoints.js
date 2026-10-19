@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Endpoints page (analysts and admins): hosts running osquery that report
 // to Signalith, and the log agents (Fluent Bit, OpenTelemetry Collectors)
 // that send events, matched to the hosts by computer name. Hosts lists

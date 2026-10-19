@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package oidctest is a small OpenID Connect provider for tests: discovery,
 // an authorization endpoint that signs in whoever the test says, a token
 // endpoint that checks the client secret and the PKCE verifier, a key set

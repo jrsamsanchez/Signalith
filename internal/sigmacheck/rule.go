@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sigmacheck evaluates Sigma rules directly, by the Sigma
 // specification, and makes test events for them. It is a second,
 // independent reading of a rule: the detection content checks make

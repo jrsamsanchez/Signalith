@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs the Signalith Agent on a Linux computer: one program that runs
 # the collectors for it. It fetches what to collect from Signalith every
 # few minutes, writes Fluent Bit's configuration, keeps Fluent Bit running

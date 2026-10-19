@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ticketing keeps Signalith cases in step with tickets in Jira
 // (Cloud or Data Center) and ServiceNow.
 //

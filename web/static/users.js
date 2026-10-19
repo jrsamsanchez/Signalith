@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Users page (admins): the people who can sign in and their roles, and
 // directory (LDAP or Active Directory) sign-in. Also the account menu's
 // Change password, which every local user has.

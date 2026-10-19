@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package scim reads and writes the parts of SCIM 2.0 (RFC 7643 and RFC
 // 7644) that identity providers such as Microsoft Entra ID and Okta use to
 // provision users into an application: the User resource, the filters

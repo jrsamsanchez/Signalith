@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package onboard helps an admin bring in logs Signalith has no parser
 // for. Given a sample, it works out the format (JSON, key=value, CSV,
 // CEF, LEEF, syslog, or a regular expression for free text), suggests a

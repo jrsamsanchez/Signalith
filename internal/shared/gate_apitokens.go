@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 // Level 9 keeps API tokens (Settings > API tokens) in the shared

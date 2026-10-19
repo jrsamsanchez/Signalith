@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Chat accounts: linking a Slack or Teams account to the signed-in user,
 // so that their clicks on the buttons in Signalith's messages count as
 // theirs. Slack sends an unlinked user a link to #chat-link/<token>,

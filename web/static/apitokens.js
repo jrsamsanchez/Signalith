@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings > API tokens (admins): named tokens a program reads through
 // the API with, such as the AI tools server (signalith mcp). A token is
 // shown once, in the dialog that creates it; Signalith keeps only a

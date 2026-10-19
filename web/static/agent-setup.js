@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data > Signalith Agent.
 //
 // One line per computer installs the Signalith Agent (api/agent/install):

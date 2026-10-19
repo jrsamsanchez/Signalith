@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package samltest is a SAML 2.0 identity provider for tests: it has a
 // signing key, publishes metadata, and makes signed responses, honest or
 // not.

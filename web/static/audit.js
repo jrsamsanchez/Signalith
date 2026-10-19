@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Audit page (admins): who changed what, on every server that shares this
 // OpenSearch, searched by time, server, user, action and words. Users and
 // Settings link here with a filter set (openAudit).

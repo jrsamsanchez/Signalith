@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Threat intel: feeds (added on this page or in signalith.yaml), the
 // indicators they bring, manual add and CSV upload.
 // Uses the ri* helpers (states, inspectors, alerts) from risk.js and the

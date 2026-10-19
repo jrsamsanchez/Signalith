@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: the upgrade checklist (multi-server design 4.9). A card
 // under the list of servers says whether the next server may be upgraded
 // now, as signalith cluster upgrade-check does, and gives each server its

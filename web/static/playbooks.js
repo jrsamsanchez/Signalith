@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Playbooks (admins) and Approvals (analysts). A playbook runs steps in
 // order when a detection raises a finding: notify a channel, run a
 // response action (after an analyst approves it, for disruptive ones),
