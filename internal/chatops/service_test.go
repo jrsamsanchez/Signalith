@@ -33,6 +33,7 @@ type fakeDesk struct {
 	decided []string
 	acked   []string
 	err     error
+	ackErr  error
 	owner   string
 }
 
@@ -56,6 +57,9 @@ func (d *fakeDesk) Decide(_ context.Context, runID string, step int, user, note 
 func (d *fakeDesk) Acknowledge(_ context.Context, findingID, user, note string) (Ack, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.ackErr != nil {
+		return Ack{}, d.ackErr
+	}
 	d.acked = append(d.acked, findingID+"/"+user+"/"+note)
 	return Ack{Title: "Brute force", Owner: d.owner}, nil
 }
