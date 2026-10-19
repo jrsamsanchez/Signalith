@@ -58,6 +58,14 @@ func TestDockerQuickStartKeepsPlainSyslogOnUpgrade(t *testing.T) {
 		if c.Syslog.UDP != "" || c.Syslog.TCP != "" || c.PlainSyslogKept() {
 			t.Errorf("new install has plain syslog: %+v", c.Syslog)
 		}
+		// A damaged decision is made again as TLS only, though the folder
+		// now holds Signalith's own files.
+		if err := os.WriteFile(PlainSyslogFileIn(state), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if p, made, err := DecidePlainSyslog(c, now); err != nil || !made || p.Kept {
+			t.Errorf("damaged file decided as %+v made %v: %v", p, made, err)
+		}
 	})
 
 	t.Run("upgraded install", func(t *testing.T) {

@@ -81,10 +81,14 @@ func DecidePlainSyslog(c *Config, now time.Time) (*PlainSyslog, bool, error) {
 		return nil, false, nil
 	}
 	dir := c.StateDir()
-	if p, err := ReadPlainSyslog(dir); err == nil && p != nil {
-		return p, false, nil
+	old, err := ReadPlainSyslog(dir)
+	if err == nil && old != nil {
+		return old, false, nil
 	}
-	p := &PlainSyslog{Kept: HoldsState(dir), Decided: now.UTC()}
+	// A damaged file means the decision was made before, so the state
+	// folder may hold this install's own files by now: decide against
+	// plain syslog rather than read them as an older install's.
+	p := &PlainSyslog{Kept: err == nil && HoldsState(dir), Decided: now.UTC()}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return nil, false, err

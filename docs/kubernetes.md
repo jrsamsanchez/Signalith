@@ -77,7 +77,8 @@ The web Service is `ClusterIP` by default. To reach it from outside the cluster:
   (which listen on 5514) and the network policy, and `false` keeps it off. Left at `auto`,
   **an upgrade keeps plain syslog as it was**: on when the release's `signalith-syslog`
   Service already takes UDP or TCP 514, as releases before 0.3.1 did (the chart looks it
-  up in the cluster; `helm template` renders a new install). The chart sets it in the
+  up in the cluster). `helm template`, Argo CD and Flux render without the cluster, so
+  they render a new install: set `server.syslog.plain: true` there if devices send to 514. The chart sets it in the
   servers' environment, so their Settings and Add data pages show it as set there.
 - **An ingress controller**: Signalith serves HTTPS itself and agents send their own token,
   so pass connections through (TLS passthrough, such as ingress-nginx's
