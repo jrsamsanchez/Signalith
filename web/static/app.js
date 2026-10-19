@@ -2583,6 +2583,13 @@ async function ask(question, mode) {
       kids.push(el('span', { class: 'ask-read__label' }, 'Not understood:'), el('span', { class: 'ask-unknown' }, ...res.unknown.map((w) => el('code', {}, w))));
       if (!askInfo.ai_available) kids.push(el('span', { class: 'ask-read__label' }, 'Try field names from the Fields list, or edit the query.'));
     }
+    // Without an AI model only the built-in translator answers, and the
+    // Use AI switch stays hidden: say where to set one up.
+    if (!askInfo.ai_available && ((res.unknown || []).length || !res.confidence)) {
+      kids.push(pageAllowed('settings')
+        ? el('button', { type: 'button', class: 'link-btn', onclick: () => window.openSetting && window.openSetting('assistant.provider') }, 'Set up an AI model to write queries from questions like this')
+        : el('span', { class: 'ask-read__label' }, 'An admin can set up an AI model to write queries from questions like this.'));
+    }
   }
   if (res.ai_error) kids.push(el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'The AI model failed, so this is the built-in translation: ' + res.ai_error));
   const switchTo = res.source !== 'ai' && askInfo.ai_available ? ['Ask the AI model instead', 'ai'] : res.source === 'ai' ? ['Use the built-in translator instead', 'rules'] : null;

@@ -455,14 +455,14 @@ var Registry = []Setting{
 		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
 
 	{Key: "assistant.provider", Scope: ScopeCluster, Section: "assistant", Label: "Provider", Type: TypeChoice,
-		Help: "Who runs the model. OpenAI or compatible includes Ollama, LM Studio and vLLM on your own hardware.",
+		Help: "Who runs the model. For a model on your own hardware (Ollama, LM Studio, vLLM) or OpenAI itself, pick Local model or OpenAI-compatible.",
 		Choices: []Choice{{"", "Off"}, {assistant.Anthropic, "Anthropic"},
-			{assistant.OpenAI, "OpenAI or compatible"}}},
+			{assistant.OpenAI, "Local model or OpenAI-compatible"}}},
 	{Key: "assistant.url", Scope: ScopeCluster, Section: "assistant", Label: "Address", Type: TypeURL,
 		Help:        "Where the model runs: the provider's own service, a model server on your own hardware such as Ollama, or another compatible service.",
 		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: noSecretIn("put the key in API key below")},
 	{Key: "assistant.model", Scope: ScopeCluster, Section: "assistant", Label: "Model", Type: TypeText,
-		Help:        "Which model answers. With an API key saved, the list comes from the provider itself. Required for OpenAI or compatible, such as llama3.1 with Ollama.",
+		Help:        "Which model answers. With an API key saved, the list comes from the provider itself. Required for a local model or OpenAI-compatible service, such as llama3.1 with Ollama.",
 		Placeholder: "llama3.1", EmptyMeans: "the provider's default model", problem: modelProblem},
 	{Key: "assistant.api_key", Scope: ScopeCluster, Section: "assistant", Label: "API key", Type: TypeSecret,
 		Help: "Only sent to the provider's address it was entered for. Local models often need none.",
@@ -1187,7 +1187,7 @@ func caScopeProblem(c *Config) string {
 // modelProblem asks for a model where the provider needs one named.
 func modelProblem(c *Config) string {
 	if c.Assistant.Provider == assistant.OpenAI && strings.TrimSpace(c.Assistant.Model) == "" {
-		return "Enter the model's name: OpenAI or compatible needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
+		return "Enter the model's name: a local model or OpenAI-compatible service needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
 	}
 	return ""
 }
