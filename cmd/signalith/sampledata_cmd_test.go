@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/sample"
 )
 
 // sampleConfig writes a signalith.yaml whose folders are in a temporary
@@ -30,6 +31,22 @@ func sampleConfig(t *testing.T, url string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// The command says what another sample-data job does, and where it runs.
+func TestSampleJobWords(t *testing.T) {
+	for _, c := range []struct {
+		a           sample.Activity
+		verb, where string
+	}{
+		{sample.Activity{Op: "load"}, "loaded", ""},
+		{sample.Activity{Op: "remove", Server: "siem-a"}, "removed", " on the server siem-a"},
+		{sample.Activity{Op: "load", Server: "laptop", Command: true}, "loaded", " with the signalith sample-data command on laptop"},
+	} {
+		if v, w := sampleVerb(&c.a), sampleWhereCmd(&c.a); v != c.verb || w != c.where {
+			t.Errorf("%+v: %q %q", c.a, v, w)
+		}
+	}
 }
 
 func TestSampleDataCommandUsage(t *testing.T) {
