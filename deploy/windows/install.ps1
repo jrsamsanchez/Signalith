@@ -1,6 +1,17 @@
 # Installs or upgrades Signalith as a Windows service.
 # Run in an elevated PowerShell from the folder that contains signalith.exe:
-#   .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+#   .\install.ps1
+# A new install also installs OpenSearch on this computer (signalith
+# opensearch install): the official release for Windows, checked against
+# the SHA-512 Signalith pins, as the SignalithOpenSearch service, which
+# runs as its own account and listens on this computer only, over HTTPS,
+# with certificates from a CA of its own. Signalith signs in to it with a
+# certificate; no password is made. -OpenSearchZip uses a copy of the
+# release's .zip instead of downloading it (a computer without internet
+# access). To use an OpenSearch you run yourself instead, give its address:
+#   .\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200
+# An upgrade upgrades the OpenSearch Signalith installed, keeping its data;
+# an OpenSearch of your own is left as it is.
 # To upgrade, put the new signalith.exe next to this script and run it
 # again: it stops the service, replaces the program, keeps the config and
 # data, encrypts passwords and keys still stored as plain text, and starts
@@ -34,7 +45,9 @@
 # -Sha256 the SHA-256 it must have (also for -Binary, a program file to use
 # instead of the signalith.exe next to this script).
 param(
-  [string]$OpenSearchUrl = "http://127.0.0.1:9200",
+  # Empty: a new install installs OpenSearch on this computer.
+  [string]$OpenSearchUrl = "",
+  [string]$OpenSearchZip = "",
   # The web page and API; agents send to 7779 (server.agent_listen).
   [string]$Listen = "0.0.0.0:9000",
   [string]$SyslogUdp = "0.0.0.0:514",
@@ -228,8 +241,10 @@ foreach ($item in @(Get-Item -LiteralPath $ConfigDir -Force) + @(Get-ChildItem -
   }
 }
 # A new install starts from an empty folder: files someone left there
-# before Signalith was installed are not trusted.
-if (-not (Test-Path -LiteralPath $config) -and @(Get-ChildItem -LiteralPath $ConfigDir -Force).Count -gt 0) {
+# before Signalith was installed are not trusted. The opensearch folder is
+# Signalith's certificate for the OpenSearch it installs, which a new
+# install that stopped part way may have made already.
+if (-not (Test-Path -LiteralPath $config) -and @(Get-ChildItem -LiteralPath $ConfigDir -Force | Where-Object { $_.Name -ne "opensearch" }).Count -gt 0) {
   throw "$ConfigDir already has files in it but no signalith.yaml, so it was not made by this script. Check what is in it, move it aside (or delete it if you don't need it), and run this script again."
 }
 
@@ -262,6 +277,22 @@ if (-not $InstallDir.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIg
 if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($exe)) { Copy-Item -Force $source $exe }
 if ($download) { Remove-Item -Force -LiteralPath $download -ErrorAction SilentlyContinue }
 
+# OpenSearch on this computer: on a new install unless another one was
+# given (or this computer joins a cluster, which has its own), and on
+# every upgrade of an install that has it.
+$osDir = Join-Path $env:ProgramData "SignalithOpenSearch"
+$osState = Join-Path $osDir "installed.json"
+$osClient = Join-Path $ConfigDir "opensearch"
+$managed = (Test-Path -LiteralPath $osState) -or (-not $Join -and -not $OpenSearchUrl -and -not (Test-Path -LiteralPath $config))
+if ($managed) {
+  Write-Host ""
+  Write-Host "OpenSearch"
+  $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
+  if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
+  Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
+}
+if (-not $OpenSearchUrl) { $OpenSearchUrl = "http://127.0.0.1:9200" }
+
 if ($Join) {
   # Writes this server's settings and keys (and signalith.yaml when there
   # is none); the service is installed and started below.
@@ -285,7 +316,16 @@ if ($Join) {
   }
 } elseif (-not (Test-Path -LiteralPath $config)) {
   # -flag=value keeps an empty value, which PowerShell would otherwise drop.
-  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-opensearch", $OpenSearchUrl, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  if ($managed) {
+    $port = (Get-Content -Raw -LiteralPath $osState | ConvertFrom-Json).port
+    $initArgs += @("-opensearch", "https://127.0.0.1:$port",
+      "-opensearch-ca", (Join-Path $osClient "opensearch-ca.pem"),
+      "-opensearch-cert", (Join-Path $osClient "opensearch-client.pem"),
+      "-opensearch-key", (Join-Path $osClient "opensearch-client-key.pem"))
+  } else {
+    $initArgs += @("-opensearch", $OpenSearchUrl)
+  }
   if ($SavePassword) { $initArgs += "-save-password" }
   Invoke-Checked "signalith init" { & $exe @initArgs }
 } else {
@@ -361,6 +401,7 @@ if ($LASTEXITCODE -ne 0) {
   }
 }
 Write-Host "Signalith is running. Open https://localhost:$webPort"
+if ($managed) { Write-Host "OpenSearch runs on this computer as the SignalithOpenSearch service; its data is in $osDir." }
 if ($agentPort) { Write-Host "Agents send to port $agentPort; set them up from the Add data page." }
 Write-Host "Your browser warns about the certificate until you trust Signalith's own CA ($ConfigDir\tls\ca.pem); docs\https.md says how."
 Write-Host "The master key for the passwords and keys Signalith stores is in $ConfigDir\keys, protected for this computer only."

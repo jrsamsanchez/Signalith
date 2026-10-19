@@ -8,14 +8,14 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you; on Linux and Windows you install OpenSearch first and then Signalith
-next to it.
+runs both for you, and so does Windows: its installer sets up OpenSearch too. On Linux
+you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
 | [Linux](#linux) | A systemd service on a server | OpenSearch, then a few commands |
-| [Windows](#windows) | A Windows service | OpenSearch, then one script |
+| [Windows](#windows) | A Windows service | One installer (OpenSearch included) |
 
 ## Docker quick start
 
@@ -171,24 +171,29 @@ Older versions cannot read encrypted values: before going back to one, run
 
 ## Windows
 
-1. Install OpenSearch 2.x or 3.x for Windows
-   ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
-2. In an elevated PowerShell, from the folder holding `signalith.exe` and
+The easiest way is the `.msi` installer: see [Install from packages](install-packages.md#windows).
+It installs OpenSearch as well, so there is nothing to set up first. To install by hand
+instead:
+
+1. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:
 
     ```powershell
-    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+    .\install.ps1
     ```
 
-    This writes `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith**
-    service and starts it. The service runs as its own account,
-    `NT SERVICE\Signalith`, and only SYSTEM, Administrators and that account can read
-    `C:\ProgramData\Signalith`.
+    This installs OpenSearch on this computer (see
+    [OpenSearch on Windows](install-packages.md#opensearch-on-windows)), writes
+    `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and
+    starts it. The service runs as its own account, `NT SERVICE\Signalith`, and only
+    SYSTEM, Administrators and that account can read `C:\ProgramData\Signalith`. To use an
+    OpenSearch you run yourself instead, give its address:
+    `.\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200`, then
+    [secure it](opensearch-security.md).
 
-3. Open https://localhost:9000 and sign in as `signalithadmin`
-   ([trust the certificate](https.md#trust-the-certificate) to stop the warning).
-4. Secure OpenSearch and have Signalith sign in with a certificate:
-   [Securing OpenSearch](opensearch-security.md).
+2. Open https://localhost:9000 and sign in as `signalithadmin`
+   ([trust the certificate](https.md#trust-the-certificate) to stop the warning). To see
+   the first password, run `signalith initial-password` in PowerShell as Administrator.
 
 To upgrade, put the new `signalith.exe` next to the script and run it again: it stops
 the service, replaces the program, encrypts passwords an older version kept as plain

@@ -79,4 +79,40 @@ Write-Host "== Install again: the kept config and password are used"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall.log"
 Wait-Up
 Test-SignIn $password
-Write-Host "The .msi installs, upgrades and uninstalls cleanly."
+Write-Host "== A new install sets up OpenSearch on this computer"
+Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall-2.log"
+Remove-Item -Recurse -Force "$env:ProgramData\Signalith"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh.log"
+# The pinned SHA-512 is the one OpenSearch publishes for the release.
+$status = (& $exe opensearch status) -join "`n"
+Write-Host $status
+if ($status -notmatch "Release installed: (\S+), SHA-512 ([0-9a-f]{128})") { throw "opensearch status does not name the release" }
+$relUrl, $pin = $Matches[1], $Matches[2]
+$published = [Text.Encoding]::ASCII.GetString((Invoke-WebRequest "$relUrl.sha512" -UseBasicParsing).RawContentStream.ToArray())
+if (($published -split "\s+")[0].ToLower() -ne $pin) { throw "the pinned SHA-512 $pin is not the one published for $relUrl ($published)" }
+$os = Get-CimInstance Win32_Service -Filter "Name='SignalithOpenSearch'"
+if (-not $os -or $os.State -ne "Running") { throw "the SignalithOpenSearch service is not running" }
+if ($os.StartName -ne "NT SERVICE\SignalithOpenSearch") { throw "OpenSearch runs as $($os.StartName)" }
+$osPort = (Get-Content -Raw "$env:ProgramData\SignalithOpenSearch\installed.json" | ConvertFrom-Json).port
+$listen = @(Get-NetTCPConnection -State Listen -LocalPort $osPort | ForEach-Object { $_.LocalAddress } | Sort-Object -Unique)
+if (($listen -join ",") -ne "127.0.0.1") { throw "OpenSearch listens on $($listen -join ', '), want 127.0.0.1 only" }
+# Only a certificate from its CA signs in: no password works.
+$code = 0
+try { Invoke-WebRequest "https://127.0.0.1:$osPort/" -SkipCertificateCheck -UseBasicParsing -Headers @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:admin")) } | Out-Null } catch { $code = [int]$_.Exception.Response.StatusCode }
+if ($code -ne 401) { throw "OpenSearch answered $code to the demo password, want 401" }
+if ((Get-Content -Raw $config) -notmatch "https://127\.0\.0\.1:$osPort") { throw "signalith.yaml does not use the OpenSearch on this computer" }
+Wait-Up
+for ($i = 0; $i -lt 60; $i++) {
+  try { Invoke-WebRequest "https://localhost:$($script:port)/readyz" -SkipCertificateCheck -UseBasicParsing | Out-Null; $ready = $true; break } catch { Start-Sleep 3 }
+}
+if (-not $ready) { Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 50 -ErrorAction SilentlyContinue; throw "Signalith is not ready with the OpenSearch on this computer" }
+$password = (& $exe initial-password).Trim()
+$body = @{ username = "signalithadmin"; password = $password } | ConvertTo-Json
+Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+
+Write-Host "== Uninstall removes OpenSearch's service and program, and keeps its data"
+Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall-3.log"
+if (Get-Service SignalithOpenSearch -ErrorAction SilentlyContinue) { throw "the SignalithOpenSearch service is still there" }
+if (Test-Path "$env:ProgramFiles\Signalith\OpenSearch") { throw "OpenSearch's program is still there" }
+if (-not (Test-Path "$env:ProgramData\SignalithOpenSearch\data")) { throw "OpenSearch's data was not kept" }
+Write-Host "The .msi installs, upgrades and uninstalls cleanly, with OpenSearch."

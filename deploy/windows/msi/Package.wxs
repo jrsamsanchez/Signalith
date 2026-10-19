@@ -5,10 +5,16 @@
     .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Out dist
 
   It puts signalith.exe and install.ps1 in C:\Program Files\Signalith and
-  runs install.ps1, which writes the config in C:\ProgramData\Signalith on a
-  new install, protects that folder, installs the Signalith service to run
-  as NT SERVICE\Signalith, starts it and opens its firewall ports: the same
-  steps as installing by hand (docs/install-packages.md). Silent install:
+  runs install.ps1, which on a new install installs OpenSearch on this
+  computer (downloaded, and checked against the SHA-512 Signalith pins),
+  writes the config in C:\ProgramData\Signalith, protects that folder,
+  installs the Signalith service to run as NT SERVICE\Signalith, starts it
+  and opens its firewall ports: the same steps as installing by hand
+  (docs/install-packages.md). Silent install:
+    msiexec /i signalith-0.1.0-x64.msi /qn
+  without internet access, with the OpenSearch release's .zip copied here:
+    msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHZIP=C:\path\opensearch-3.9.0-windows-x64.zip
+  or with an OpenSearch of your own instead:
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
@@ -26,12 +32,13 @@
     <Property Id="ARPHELPLINK" Value="https://signalith.io/docs/" />
     <Property Id="ARPURLINFOABOUT" Value="https://signalith.io" />
 
-    <!-- The OpenSearch address for a new install (msiexec ... OPENSEARCHURL=...).
-         An earlier install's answer is used again; an existing config is
-         always kept, and the address can be changed on the Settings page. -->
-    <Property Id="OPENSEARCHURL" Value="http://127.0.0.1:9200" Secure="yes">
-      <RegistrySearch Id="PreviousOpenSearchUrl" Root="HKLM" Key="Software\Signalith" Name="OpenSearchUrl" Type="raw" />
-    </Property>
+    <!-- An OpenSearch of your own for a new install (msiexec ...
+         OPENSEARCHURL=...) instead of the one Signalith installs; an
+         existing config is always kept, and the address can be changed on
+         the Settings page. OPENSEARCHZIP is the OpenSearch release's .zip
+         to install instead of downloading it. -->
+    <Property Id="OPENSEARCHURL" Secure="yes" />
+    <Property Id="OPENSEARCHZIP" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Signalith" />
@@ -59,9 +66,6 @@
       <Component Bitness="always64">
         <File Id="NOTICE.txt" Source="..\..\..\NOTICE" Name="NOTICE.txt" KeyPath="yes" />
       </Component>
-      <Component Id="Settings" Bitness="always64">
-        <RegistryValue Root="HKLM" Key="Software\Signalith" Name="OpenSearchUrl" Type="string" Value="[OPENSEARCHURL]" KeyPath="yes" />
-      </Component>
     </ComponentGroup>
 
     <StandardDirectory Id="ProgramMenuFolder">
@@ -79,17 +83,23 @@
     <!-- install.ps1 runs as SYSTEM after the files are in place, on install,
          upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
     <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;[OPENSEARCHURL]&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot;" />
     <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
     <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith agents','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
+    <!-- On uninstall (not an upgrade), the OpenSearch install.ps1 installed:
+         its service and program; its data stays in
+         C:\ProgramData\SignalithOpenSearch. Output in
+         C:\Windows\Temp\signalith-uninstall.log. -->
+    <CustomAction Id="RemoveOpenSearch" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;&amp; '[INSTALLFOLDER]signalith.exe' opensearch remove *&gt; (Join-Path $env:windir 'Temp\signalith-uninstall.log')&quot;" />
     <InstallExecuteSequence>
       <Custom Action="SetUpSignalith" Before="InstallFinalize" Condition="NOT REMOVE" />
       <Custom Action="RemoveFirewallRules" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="RemoveOpenSearch" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
-    <!-- Welcome with the licence, install, finish. OpenSearch's address is
-         OPENSEARCHURL for a silent install, else changed on the Settings page. -->
+    <!-- Welcome with the licence, install, finish. -->
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <WixVariable Id="WixUIBannerBmp" Value="banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="dialog.bmp" />
