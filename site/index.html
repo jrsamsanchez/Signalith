@@ -44,7 +44,7 @@
       "codeRepository": "https://github.com/jrsamsanchez/signalith",
       "programmingLanguage": "Go",
       "keywords": "SIEM, open source SIEM, security monitoring, log management, threat detection, Sigma rules, MITRE ATT&CK, OpenSearch, Fluent Bit, risk-based alerting, AI",
-      "featureList": ["Pipe-style search language and plain-English questions", "More than 3,800 tested SigmaHQ and Splunk Security Content detection rules", "Findings queue, risk-based alerting and investigation cases", "Threat intel feeds and vulnerability scanning", "Investigate with AI and a read-only MCP server for AI tools", "HTTPS, encryption, roles, single sign-on and audit logging by default"],
+      "featureList": ["Pipe-style search language and plain-English questions", "More than 3,900 tested SigmaHQ and Splunk Security Content detection rules", "Findings queue, risk-based alerting and investigation cases", "Threat intel feeds and vulnerability scanning", "Investigate with AI and a read-only MCP server for AI tools", "HTTPS, encryption, roles, single sign-on and audit logging by default"],
       "sameAs": ["https://github.com/jrsamsanchez/Signalith"],
       "softwareHelp": "https://signalith.io/docs/",
       "image": "https://signalith.io/assets/og.jpg",
@@ -98,6 +98,9 @@
 <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/></symbol>
 <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></symbol>
 <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
+<symbol id="i-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
 <symbol id="i-volume-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></symbol>
 <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></symbol>
 <symbol id="i-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></symbol>
@@ -213,7 +216,7 @@
 <!-- Strip of facts -->
 <section class="facts" aria-label="At a glance">
   <div class="wrap facts__in">
-    <div><b>3,800+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
+    <div><b>3,900+</b><span>tested detection rules from SigmaHQ and Splunk</span></div>
     <div><b>ATT&amp;CK</b><span>mapping on every rule, with a coverage map</span></div>
     <div><b>2</b><span>platforms: Windows and Linux packages</span></div>
     <div><b>$0</b><span>license cost, Apache 2.0</span></div>
@@ -258,12 +261,17 @@
       <article class="card" data-clip="detections">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,560 SigmaHQ and 1,283 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
+        <p>2,638 SigmaHQ and 1,328 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
       </article>
       <article class="card" data-clip="findings">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
         <h3>Findings and risk-based alerting</h3>
         <p>A triage queue with owners, statuses and bulk actions. Weak signals add risk to users and hosts instead of flooding it, behavior baselines add risk for first-seen and rare activity, and exceptions and maintenance windows keep noisy rules quiet.</p>
+      </article>
+      <article class="card" data-clip="storyline">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-route"/></svg></span>
+        <h3>Attack storyline</h3>
+        <p>Everything Signalith knows about one intrusion as one story: the ATT&amp;CK tactics it reached and in what order, a timeline of its findings and risk events, and the users, hosts, addresses and processes that tie it together. Open it from a finding, a case or the Risk page.</p>
       </article>
       <article class="card" data-clip="investigate">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-sparkles"/></svg></span>
@@ -285,6 +293,11 @@
         <h3>One server or several</h3>
         <p>Add a server from the Servers page with one line for Linux, Windows or Docker, or run them on Kubernetes with the Helm chart. Servers share users, settings and detections, take over each other&rsquo;s jobs, can split the detections between them, upgrade one at a time and can be drained and removed. Put them behind a load balancer and the real sender of every connection is kept.</p>
       </article>
+      <article class="card" data-clip="agent">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></span>
+        <h3>The Signalith Agent</h3>
+        <p>One line installs it on Linux, Windows or macOS. It sets up Fluent Bit and osquery from their publishers, and Sysmon on Windows if you choose, then asks Signalith what to collect, so nobody edits a configuration file. Choose what they collect on the Endpoints page.</p>
+      </article>
       <article class="card" data-clip="network">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
         <h3>Network sensor</h3>
@@ -293,12 +306,12 @@
       <article class="card" data-clip="vulns">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-bug"/></svg></span>
         <h3>Vulnerability scanning</h3>
-        <p>Nmap scans matched to CVEs from the National Vulnerability Database, ranked by what attackers exploit today (CISA KEV and EPSS). Place a scanner inside each network zone, and add OpenVAS with encrypted SSH or Windows logins for deeper scans.</p>
+        <p>Nmap scans matched to CVEs from the National Vulnerability Database, ranked by what attackers exploit today (CISA KEV and EPSS). Place a scanner inside each network zone, and add OpenVAS with encrypted SSH, Windows, VMware ESXi or SNMP logins for deeper scans.</p>
       </article>
       <article class="card" data-clip="endpoints">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
         <h3>Endpoints with osquery</h3>
-        <p>File changes, hardware and software inventory, and configuration checks from osquery on Windows and Linux, managed from Signalith. Wazuh agent alerts come in too.</p>
+        <p>File changes, hardware and software inventory, and configuration checks from osquery on Windows, Linux and macOS, managed from Signalith. Wazuh agent alerts come in too.</p>
       </article>
       <article class="card" data-clip="malware">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg></span>
@@ -313,7 +326,7 @@
       <article class="card" data-clip="cases">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg></span>
         <h3>Investigation cases</h3>
-        <p>Group the findings of one incident with notes, searches and pinned evidence on a single timeline. Close the case and its findings close with it.</p>
+        <p>Group the findings of one incident with notes, searches and pinned evidence on a single timeline, and open a Jira or ServiceNow ticket that stays in step with it. Close the case and its findings close with it.</p>
       </article>
       <article class="card" data-clip="notebooks">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span>
@@ -339,6 +352,11 @@
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
         <h3>Sign in your way</h3>
         <p>Local users, Active Directory or LDAP, or single sign-on with OpenID Connect or SAML 2.0 and SCIM provisioning. Two-step sign-in with a passkey or an authenticator app, or a passkey alone with no password.</p>
+      </article>
+      <article class="card" data-clip="tenants">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></span>
+        <h3>Separate teams on one install</h3>
+        <p>Serve several teams or customers from one install, each with its own events, findings, detections, dashboards and users. Add tenants on one Settings page and switch between them with the tenant picker, while a tenant&rsquo;s own users see only their data.</p>
       </article>
     </div>
   </div>
@@ -427,7 +445,7 @@
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Passwords checked against NIST 800-63B:</b> about 2,000 commonly used passwords are refused, and sessions have a time limit.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent</b> on a port of its own, apart from the web page, so one lost machine is revoked without touching the rest.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Tamper-evident audit log:</b> every change is chained and signed, and API tokens expire.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>AI that reads logs as data:</b> text from events is fenced off from the AItext in an event can&rsquo;t give the AI instructions, and its searches are read-only.rsquo;s instructions, and its searches are read-only.</span></li>
+        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>AI that reads logs as data:</b> text in an event can&rsquo;t give the AI instructions, and its searches are read-only.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
         <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
@@ -466,7 +484,7 @@ cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><s
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml up -d</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
           <li><p>Show the admin password:</p>
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Open <code>https://localhost:9000</code> and sign in as <code>admin</code>. Then go to <b>Add data</b> and choose <b>Load sample data</b> to see it in action.</p></li>
+          <li><p>Open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>. A short setup guide takes it from there, or go to <b>Add data</b> and choose <b>Load sample data</b> to see it in action.</p></li>
         </ol>
       </div>
 
@@ -480,7 +498,7 @@ sudo apt update &amp;&amp; sudo apt install signalith</code></pre><button class=
           <li><p>Or on Red Hat, Rocky, Alma or Fedora. Either way Signalith starts as a systemd service:</p>
 <div class="code"><pre><code>sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
 sudo dnf install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Show the admin password, then open <code>https://&lt;server&gt;:9000</code> and sign in as <code>admin</code>.</p>
+          <li><p>Show the admin password, then open <code>https://&lt;server&gt;:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>sudo signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
       </div>
@@ -489,7 +507,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
         <ol class="steps">
           <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <code>signalith-&lt;version&gt;-x64.msi</code> from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>.</p></li>
           <li><p>Double-click it and follow the steps. It installs and starts the <b>Signalith</b> service under its own account.</p></li>
-          <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>admin</code>.</p>
+          <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
       </div>
@@ -508,20 +526,20 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
     </div>
     <div class="soon">
       <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
-        <div><h3>Tickets in Jira and ServiceNow</h3><p>Open a Jira or ServiceNow ticket from a finding or a playbook.</p></div>
-      </article>
-      <article class="soon__item">
-        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span>
-        <div><h3>Separate teams on one install</h3><p>Tenants that keep each team&rsquo;s or customer&rsquo;s data, users and detections apart. The first step is in; a Settings page and a tenant picker come next.</p></div>
-      </article>
-      <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-package"/></svg></span>
         <div><h3>A signed Windows installer</h3><p>A code-signed <code>.msi</code>, so Windows trusts the installer and the service it puts in place.</p></div>
       </article>
       <article class="soon__item">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
+        <div><h3>OpenSearch in the Windows installer</h3><p>The <code>.msi</code> sets up OpenSearch as well, so Windows needs no separate install step.</p></div>
+      </article>
+      <article class="soon__item">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
+        <div><h3>Lab load numbers</h3><p>Sizing measured on separate lab machines and an OpenSearch cluster, not only a CI runner.</p></div>
+      </article>
+      <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
-        <div><h3>Version 1.0</h3><p>An outside security review, load test numbers from a real lab, and then 1.0.</p></div>
+        <div><h3>Version 1.0</h3><p>An outside security review, a public demo, and then 1.0.</p></div>
       </article>
     </div>
   </div>
