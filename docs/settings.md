@@ -413,7 +413,7 @@ CPU without a GPU may need `15m` or more). A result is marked out of date as soo
 of the settings it used changes.
 
 The AI assistant's **Address** lists the usual addresses for the provider chosen:
-the provider's own service, and for OpenAI or compatible also Ollama, LM Studio and
+the provider's own service, and for **Local model or OpenAI-compatible** also Ollama, LM Studio and
 vLLM on this computer (in Docker, on the computer running Docker) and other
 compatible services. **Other** takes any address. **Model** lists the models the
 provider offers: with an API key saved (or for a model server that needs none), the

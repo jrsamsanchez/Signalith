@@ -1407,11 +1407,11 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 		case a.Provider == "":
 			fields["assistant.provider"] = "Choose a provider to test."
 		case a.Provider != assistant.Anthropic && a.Provider != assistant.OpenAI:
-			fields["assistant.provider"] = "Choose Anthropic or OpenAI or compatible."
+			fields["assistant.provider"] = "Choose Anthropic, or Local model or OpenAI-compatible."
 		case a.URL != "" && config.Origin(a.URL) == "":
 			fields["assistant.url"] = "Enter an address like http://localhost:11434/v1, or leave it empty."
 		case a.Provider == assistant.OpenAI && a.Model == "":
-			fields["assistant.model"] = "Enter the model's name: OpenAI or compatible needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
+			fields["assistant.model"] = "Enter the model's name: a local model or OpenAI-compatible service needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
 		case a.Provider == assistant.Anthropic && a.APIKey == "":
 			fields["assistant.api_key"] = "Enter the API key."
 		}
