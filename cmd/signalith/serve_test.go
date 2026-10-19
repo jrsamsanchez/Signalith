@@ -159,6 +159,51 @@ func TestServeStartsAndStops(t *testing.T) {
 	}
 }
 
+// A file the server cannot read is logged and left out; the server still
+// starts.
+func TestServeStartsWithFilesItCannotRead(t *testing.T) {
+	serveEnv(t)
+	t.Setenv("SIGNALITH_LDAP_BIND_PASSWORD", "made-up-bind-password")
+	t.Setenv("SIGNALITH_OPENVAS_USERNAME", "")
+	t.Setenv("SIGNALITH_OPENVAS_PASSWORD", "")
+	fos := newFakeOpenSearch(t)
+	syslogAddr := freeAddr(t)
+	path, addr := serveConfig(t, fos, "syslog:\n  tcp: "+syslogAddr+"\n  allow: [127.0.0.1]\n"+
+		"vulns:\n  openvas_address: "+filepath.ToSlash(filepath.Join(t.TempDir(), "gvmd.sock"))+"\n  openvas_username: scanner\n  openvas_password: made-up-pass\n")
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, c.NotifyFile(), "channels: [unclosed")
+	writeTestFile(t, c.PlaybooksFile(), "playbooks: [:")
+	writeTestFile(t, c.TicketingFile(), "connections: [\n")
+	writeTestFile(t, c.TenantsFile(), "{not json")
+	writeTestFile(t, filepath.Join(c.DetectionsDir(), "broken.yaml"), "name: [\n")
+	writeTestFile(t, filepath.Join(c.DashboardsDir(), "broken.yaml"), "title: [\n")
+	logs := &syncBuffer{}
+	stop := runServe(t, path, addr, logs)
+	if err := stop(); err != nil {
+		t.Fatalf("serve: %v\n%s", err, logs.String())
+	}
+	for _, want := range []string{
+		"notifications are not sent until the notifications file is fixed",
+		"playbooks do not start until the playbooks file is fixed",
+		"tickets are not kept in step until the ticketing file is fixed",
+		"the list of tenants cannot be read",
+		"detection skipped",
+		"dashboard file has errors",
+		"SIGNALITH_LDAP_BIND_PASSWORD is set but signalith.yaml has no auth.ldap",
+		"127.0.0.1",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("the log lacks %q", want)
+		}
+	}
+	if strings.Contains(logs.String(), "made-up-") {
+		t.Error("the log shows a password")
+	}
+}
+
 func TestServeRefusesABadConfig(t *testing.T) {
 	serveEnv(t)
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
