@@ -1,0 +1,29 @@
+name: Links
+# Every night, builds the website and docs as the Website workflow does and
+# checks every link on them: internal pages and #anchors, and each outside
+# page once. It fails when an internal link is broken or an outside page is
+# gone (404, 410, or its host isn't found); sites that turn scripts away or
+# are briefly down are listed as warnings in the log.
+on:
+  schedule:
+    - cron: '20 0 * * *'
+  workflow_dispatch:
+
+# The job only reads the code; it may not push, comment or change settings.
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install the docs tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/mkdocs"
+          "$RUNNER_TEMP/mkdocs/bin/python" -m pip install --disable-pip-version-check -r docs/requirements.txt
+      - name: Check every link
+        env:
+          MKDOCS: ${{ runner.temp }}/mkdocs/bin/mkdocs
+        run: python3 -I .github/scripts/check-links.py . --external
