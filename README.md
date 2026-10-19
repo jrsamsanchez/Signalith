@@ -1305,10 +1305,10 @@ From the shell: `signalith query "datamodel=Authentication | top user"` or add
 ## Architecture
 
 ```
-Fluent Bit agents ──HTTPS──▶ signalith (Go) ──REST──▶ OpenSearch
- (Windows, Linux)            ingest, parse,          events by data model and day
-syslog devices ─UDP/TCP/TLS▶ query compiler,
-                             web UI and API ◀── analyst browser
+Signalith Agent ──HTTPS────▶ signalith (Go) ──REST──▶ OpenSearch
+ (Fluent Bit, osquery;       ingest, parse,          events by data model and day
+  Windows, Linux, macOS)     query compiler,
+syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 ```
 
 | Path | What it holds |
