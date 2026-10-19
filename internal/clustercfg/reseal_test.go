@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
@@ -58,6 +60,75 @@ func TestMergeSettings(t *testing.T) {
 	if err != nil || len(itemIDs(again.Added, MergeSetting)) != 0 {
 		t.Errorf("merge again: %v %+v", err, again)
 	}
+}
+
+// The default policy and the disk guard merge as the policies do: added
+// when the cluster has none, reported and held when they differ.
+func TestMergeRetentionDefaultAndGuard(t *testing.T) {
+	ctx := context.Background()
+	withRetention := func(t *testing.T, dir string, def int, disk int) *config.Config {
+		c := authConfig(t, dir, "")
+		if err := retention.NewStore(RetentionFile(c)).Update(func(s *retention.Saved) {
+			if def > 0 {
+				s.Default = &retention.Policy{KeepDays: def}
+			}
+			if disk > 0 {
+				s.Guard = &retention.Guard{MaxDiskPercent: disk, MinDays: 3}
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	t.Run("added", func(t *testing.T) {
+		o := newOS(t)
+		dirA := t.TempDir()
+		a := newAuthMember(t, o, "siem-a", dirA, authConfig(t, dirA, ""), nil)
+		dirB := t.TempDir()
+		b := newAuthMember(t, o, "siem-b", dirB, withRetention(t, dirB, 100, 80), a.key())
+		b.cycle()
+		rep, err := Merge(ctx, b.docs, b.files, "signalith join", MergeOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := itemIDs(rep.Added, MergeRetention); !slices.Equal(got, []string{"default", "guard"}) {
+			t.Errorf("added %v", got)
+		}
+		a.cycle()
+		rb, _ := a.docs.Retention().Get()
+		if rb.Default == nil || rb.Default.KeepDays != 100 || rb.Guard == nil || rb.Guard.MaxDiskPercent != 80 || rb.Confirm != nil {
+			t.Errorf("shared retention = %+v", rb)
+		}
+	})
+	t.Run("differ", func(t *testing.T) {
+		o := newOS(t)
+		dirA := t.TempDir()
+		a := newAuthMember(t, o, "siem-a", dirA, withRetention(t, dirA, 200, 85), nil)
+		dirB := t.TempDir()
+		b := newAuthMember(t, o, "siem-b", dirB, withRetention(t, dirB, 100, 80), a.key())
+		b.cycle()
+		rep, err := Merge(ctx, b.docs, b.files, "signalith join", MergeOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := itemIDs(rep.Differ, MergeRetention); !slices.Equal(got, []string{"default", "guard"}) {
+			t.Errorf("differ %v", got)
+		}
+		if !rep.Held {
+			t.Error("differing defaults did not hold retention")
+		}
+		a.cycle()
+		rb, _ := a.docs.Retention().Get()
+		if rb.Default == nil || rb.Default.KeepDays != 200 || rb.Guard.MaxDiskPercent != 85 {
+			t.Errorf("the cluster's retention changed: %+v", rb)
+		}
+	})
+	t.Run("no cluster key", func(t *testing.T) {
+		if _, err := Merge(ctx, NewDocs(), Files{}, "x", MergeOptions{}); err == nil {
+			t.Error("merged without a cluster key")
+		}
+	})
 }
 
 // A key rotation seals the shared settings' secrets again: the new key
