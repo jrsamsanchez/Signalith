@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Checks the chart's plain syslog switch (server.syslog.plain): syslog over
 # TLS only on a new install, plain syslog over UDP and TCP with
 # server.syslog.plain=true, and off with false. helm template reads nothing
