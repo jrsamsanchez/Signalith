@@ -1075,6 +1075,13 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The first start of the Docker quick start with this version decides
+	// whether it keeps the plain syslog its older signalith.yaml had,
+	// before anything is written in the state folder (see
+	// config.DecidePlainSyslog).
+	if c, err = decidePlainSyslog(path, c, log); err != nil {
+		return err
+	}
 	// The identity, its lock, the heartbeat and the job lease belong to
 	// the process: an in-process restart keeps them.
 	node, log, err := openNode(c, log)

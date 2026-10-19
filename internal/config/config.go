@@ -134,6 +134,9 @@ type Config struct {
 	// send the example ingest token (see OldToken), nil until decided.
 	quickStart    bool
 	dockerUpgrade *DockerUpgrade
+	// plainSyslogKept is true when an upgraded Docker quick start keeps
+	// the plain syslog its older signalith.yaml had (see keepPlainSyslog).
+	plainSyslogKept bool
 }
 
 // PublicURLDerived reports whether server.public_url was worked out from
@@ -1988,6 +1991,7 @@ func readFileEnv(path string, state bool) (*Config, error) {
 	if state {
 		c.readDockerUpgrade()
 		c.readFirstPassword()
+		c.keepPlainSyslog()
 	}
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()

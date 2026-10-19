@@ -180,13 +180,15 @@ and the Helm chart all leave it off. Many network devices can only send plain sy
 for them, turn it on as below, and limit who may send with
 **Allowed senders** (below).
 
-**Upgrading:** an existing install is unchanged. Package, Windows and hand-made installs
-keep their `signalith.yaml`, which an upgrade never changes, so plain syslog stays on
-where it was on, and settings saved on the Settings page stay saved. The Docker quick
-start and the Helm chart take their settings from the files you update: after `git pull`
-the quick start's `signalith.yaml` has plain syslog off, so turn it on again on Add data
-if devices send to port 514 (it is then kept in the `signalith-data` volume); on Helm,
-set `server.syslog.plain=true` (an upgrade with `--reuse-values` keeps it on by itself).
+**Upgrading:** an existing install keeps plain syslog as it was. Package, Windows and
+hand-made installs keep their `signalith.yaml`, which an upgrade never changes, and
+settings saved on the Settings page stay saved. A Docker quick start set up before keeps
+UDP and TCP on 5514 (514 on the host) although the new `signalith.yaml` has them off:
+its first start with this version sees Signalith's own files in the `signalith-data`
+volume, notes the answer in `plain-syslog.json` there, and never decides again; a new
+install's empty volume stays on TLS only. A Helm upgrade keeps plain syslog when the
+release's syslog Service takes port 514, unless `server.syslog.plain` says otherwise.
+Turn plain syslog off on the Settings page once every device sends over TLS.
 
 Open **Add data** and pick **Syslog** for copy-ready setup for rsyslog, syslog-ng, Cisco IOS
 and ASA, Palo Alto, FortiGate, pfSense and OPNsense, UniFi and Windows, with this server's

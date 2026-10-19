@@ -64,8 +64,10 @@ dashboards:
 # Syslog from firewalls, switches and servers without an agent, over TLS
 # on port 6514 (on this machine and in the container).
 #
-# Plain syslog over UDP and TCP is off: it is unencrypted, and anyone who
-# can reach the port can send fake events. For devices that cannot send
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. An install set up
+# before keeps it on, on 5514 (Signalith decides once, at its first start
+# with this file, and notes it in plain-syslog.json in signalith-data). For devices that cannot send
 # over TLS, turn it on with "Turn on plain syslog" on the Add data page
 # (Syslog), which saves it in the signalith-data volume, or set udp and tcp
 # below to 0.0.0.0:5514. The container cannot open ports below 1024, so it

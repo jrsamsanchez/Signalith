@@ -82,11 +82,13 @@ server:
     enabled: true
     # Plain syslog over UDP and TCP 514, for devices that cannot send over
     # TLS. It is unencrypted and anyone who can reach the port can send
-    # fake events, so it is off: true adds UDP and TCP 514 to the Service
-    # (the pods listen on 5514). Releases installed before 0.3.1 had it on;
-    # set this to keep it on after an upgrade. The servers' Settings page
-    # shows it locked, since the chart sets it.
-    plain: false
+    # fake events. true adds UDP and TCP 514 to the Service (the pods listen
+    # on 5514); false leaves it off. Unset (auto): a new install is TLS
+    # only, and an upgrade keeps plain syslog as it was, on when the
+    # release's syslog Service already takes 514 (as releases before 0.3.1
+    # did). The servers' Settings page shows it locked, since the chart
+    # sets it.
+    plain: auto
     service:
       type: ClusterIP
       annotations: {}

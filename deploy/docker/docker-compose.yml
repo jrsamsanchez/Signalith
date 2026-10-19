@@ -232,8 +232,9 @@ services:
       # Agents (Fluent Bit, OpenTelemetry, osquery, network sensors), over
       # HTTPS with the same certificate.
       - "7779:7779"
-      # Plain syslog (off until you turn it on on the Add data page, so
-      # nothing answers here until then): devices send to this machine on
+      # Plain syslog (off on a new install until you turn it on on the Add
+      # data page, so nothing answers here until then; an install set up
+      # before keeps it on): devices send to this machine on
       # port 514, which reaches the container's 5514 (it cannot open ports
       # below 1024). If another syslog server already uses 514 here, change
       # the left side, e.g. "1514:5514/udp", and syslog.public_port in

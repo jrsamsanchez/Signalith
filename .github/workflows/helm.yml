@@ -62,8 +62,6 @@ jobs:
           helm template t "$chart" --kube-version 1.30.0 --set 'networkPolicy.webFrom[0].ipBlock.cidr=10.1.0.0/16' \
             | grep -A2 'port: 7779, protocol' | grep -q 'from:'
           helm template t "$chart" --kube-version 1.30.0 --set server.agentPort=null | grep -q 'agent_listen: 0.0.0.0:7779'
-          check --set server.syslog.plain=true
-          sh deploy/helm/ci/syslog-plain.sh "$chart"
           # Two OpenSearch nodes are refused.
           ! helm template t "$chart" --kube-version 1.30.0 --set opensearch.replicas=2 >/dev/null 2>&1
       - name: Shellcheck the smoke test

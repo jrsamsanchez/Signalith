@@ -197,8 +197,7 @@ same):
    sending over plain `http://` (behind Docker Desktop they share one address, so it names
    them by the computer names in their events). On each of them, install the configuration
    from the **Add data** page again; it gives the agent a token of its own and moves it to
-   HTTPS. Syslog devices that send plain syslog to port 514 need it turned on again (see
-   [Upgrading to 0.3.1: syslog over TLS only](#upgrading-to-031-syslog-over-tls-only)). If you had set a token of your own in
+   HTTPS. Syslog devices need no change. If you had set a token of your own in
    `SIGNALITH_INGEST_TOKEN`, add that line back under `environment:` of the `signalith`
    service in `docker-compose.yml` and run step 2 again; new agents still get their own
    token.
@@ -214,22 +213,14 @@ same):
 #### Upgrading to 0.3.1: syslog over TLS only
 
 A new install takes syslog over TLS (port 6514) only: plain syslog over UDP and TCP 514 is
-unencrypted and can be forged, so it is off until you turn it on. An existing install keeps
-what it has: package, Windows and hand-made installs keep their `signalith.yaml`, which is
-never changed on an upgrade, and a setting saved on the **Settings** or **Add data** page
-stays saved.
-
-The Docker quick start and the Helm chart take their settings from the files you update,
-so after the upgrade they take syslog over TLS only too:
-
-- **Docker quick start**: `git pull` brings a `signalith.yaml` with plain syslog off. If
-  devices send to port 514, choose **Turn on plain syslog (UDP and TCP)** on **Add data** >
-  **Syslog**, then **Restart now**. That saves it in the `signalith-data` volume, so later
-  updates keep it. (If `git stash` kept your own edits to `signalith.yaml`, `git stash show
-  -p` shows them.)
-- **Helm**: set `server.syslog.plain=true` to keep UDP and TCP 514 on the syslog Service.
-  An upgrade with `--reuse-values` from an older release keeps plain syslog on by itself,
-  since its values have no `server.syslog.plain`.
+unencrypted and can be forged, so it is off until you turn it on. An upgrade keeps plain
+syslog as it was, so devices that send to port 514 need no change: package, Windows and
+hand-made installs keep their `signalith.yaml`; a Docker quick start that was set up before
+keeps it on although the new `signalith.yaml` has it off (decided once, at its first start
+with this version, and noted in `plain-syslog.json` in the `signalith-data` volume); and a
+Helm upgrade keeps it when the release's syslog Service takes port 514. Once every device
+sends over TLS, turn plain syslog off on the **Settings** page (Syslog), or with
+`server.syslog.plain=false` on Helm.
 
 #### Upgrading to 0.3: the agent port
 

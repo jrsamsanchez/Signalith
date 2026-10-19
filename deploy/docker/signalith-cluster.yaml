@@ -65,8 +65,10 @@ dashboards:
 # Syslog from firewalls, switches and servers without an agent, over TLS
 # on port 6514, which the load balancer passes to both servers.
 #
-# Plain syslog over UDP and TCP is off: it is unencrypted, and anyone who
-# can reach the port can send fake events. For devices that cannot send
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. A lab set up
+# before keeps it on, on 5514 (decided once by each server, see
+# signalith.yaml). For devices that cannot send
 # over TLS, set udp and tcp below to 0.0.0.0:5514 (the container cannot
 # open ports below 1024; the load balancer takes TCP on port 514 and
 # passes it to 5514), or turn it on with "Turn on plain syslog" on each

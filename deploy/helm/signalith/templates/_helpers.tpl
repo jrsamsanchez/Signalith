@@ -84,13 +84,29 @@ capabilities:
 
 {{/*
 "true" when the servers take plain syslog over UDP and TCP (5514 in the
-pods, 514 on the Service), else "". server.syslog.plain turns it on; an
-upgrade whose reused values are from before the setting (it is missing,
-not false) keeps it on, as those releases had it.
+pods, 514 on the Service), else "". server.syslog.plain true or false
+decides. Unset (or "auto"), a new install takes syslog over TLS only, and
+an upgrade keeps plain syslog as it was: on when the release's syslog
+Service already takes UDP or TCP 514, as releases before 0.3.1 did.
+(helm template, which reads nothing from the cluster, renders a new
+install.)
 */}}
 {{- define "signalith.plainSyslog" -}}
 {{- $s := .Values.server.syslog -}}
-{{- if and $s.enabled (or $s.plain (kindIs "invalid" $s.plain)) }}true{{ end -}}
+{{- $on := false -}}
+{{- if $s.enabled -}}
+{{- if kindIs "bool" $s.plain -}}
+{{- $on = $s.plain -}}
+{{- else if .Release.IsUpgrade -}}
+{{- $svc := lookup "v1" "Service" .Release.Namespace (printf "%s-syslog" (include "signalith.fullname" .)) -}}
+{{- range (dig "spec" "ports" (list) $svc) -}}
+{{- if eq (int (get . "port")) 514 -}}
+{{- $on = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $on }}true{{ end -}}
 {{- end }}
 
 {{/* The config file, signalith.yaml, for a server (role "") or a scanner. */}}
