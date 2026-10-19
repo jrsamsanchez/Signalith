@@ -70,7 +70,11 @@ type simAgent struct {
 	id     int
 	host   string
 	target int
-	queue  chan *agentBatch
+	// home is the target the agent starts on, and left is when it last
+	// switched away from it (see homeAfter).
+	home  int
+	left  time.Time
+	queue chan *agentBatch
 	// next is the next sequence number; only the scheduler uses it.
 	next int64
 	mu   sync.Mutex
@@ -81,6 +85,13 @@ type simAgent struct {
 // agentQueue is how many batches one agent buffers before the generator
 // drops new ones, as Fluent Bit stops reading when its buffer is full.
 const agentQueue = 256
+
+// homeAfter is how long an agent that switched targets on an error
+// stays away before it tries its own target again, as an agent behind
+// DNS round robin resolves the name again once its answer expires. So a
+// server that restarts gets its agents back rather than leaving their
+// load on the others for the rest of the run.
+var homeAfter = time.Minute
 
 // defaultBufferMB is AgentLoad.BufferMB when it is not set.
 const defaultBufferMB = 512
@@ -132,7 +143,7 @@ func (f *Fleet) agent(i int) *simAgent {
 	for len(f.agents) <= i {
 		id := len(f.agents)
 		a := &simAgent{id: id, host: fmt.Sprintf("agent-%04d", id), target: id % len(f.targets),
-			queue: make(chan *agentBatch, agentQueue), next: 1}
+			home: id % len(f.targets), queue: make(chan *agentBatch, agentQueue), next: 1}
 		f.agents = append(f.agents, a)
 		f.wg.Add(1)
 		go f.sender(a)
@@ -241,6 +252,9 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			f.m.Add("agent_events_undelivered", b.events())
 			return
 		}
+		if a.target != a.home && time.Since(a.left) >= homeAfter {
+			a.target = a.home
+		}
 		target := a.target
 		status, ans, err := f.send(a, b)
 		switch {
@@ -266,6 +280,9 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			return
 		}
 		if len(f.targets) > 1 && f.switchOnError.Load() {
+			if a.target == a.home {
+				a.left = time.Now()
+			}
 			a.target = (a.target + 1) % len(f.targets)
 		}
 		// Like Fluent Bit's scheduler: a growing wait with jitter.
