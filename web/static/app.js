@@ -991,8 +991,13 @@ function quoteValue(v) {
 // events without the field.
 function drillTerm(f, v) {
   if (v == null || v === '') return `NOT ${f}=*`;
+  return f + '=' + filterValue(v);
+}
+// filterValue is a value as a search term reads it: a backslash, as in a
+// Windows path or CORP\user, is only kept inside quotes.
+function filterValue(v) {
   const s = String(v);
-  return f + '=' + (s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s));
+  return s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s);
 }
 // drillQuery adds [field, value] filters to a drill: in the search, or in a
 // where after the commands that make the fields.
@@ -1883,8 +1888,8 @@ function eventDetail(r, opts) {
       el('th', { scope: 'row', class: 'ev-kv__k', title: k }, k),
       el('td', {}, value),
       el('td', { class: 'ev-kv__acts' }, ...(filterable ? [
-        act('filter', `Add ${k}=${text} to the search`, k + '=' + quoteValue(v)),
-        act('filter-x', `Exclude ${k}=${text} from the search`, k + '!=' + quoteValue(v)),
+        act('filter', `Add ${k}=${text} to the search`, k + '=' + filterValue(v)),
+        act('filter-x', `Exclude ${k}=${text} from the search`, k + '!=' + filterValue(v)),
       ] : [])));
   };
   const group = (title, ks) => (ks.length ? [el('tr', { class: 'ev-kv__group' }, el('th', { colspan: '3', scope: 'colgroup' }, title)), ...ks.map(row)] : []);
@@ -2231,8 +2236,8 @@ function showCellMenu(ev, col, value, kind, row, canSort, drill) {
   const items = show ? [show] : [];
   if (field && kind !== 'timechart') {
     items.push(...pivotItems(item, field, value));
-    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));
-    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + quoteValue(value))));
+    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + filterValue(value))));
+    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + filterValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {
       setQuery(splitPipes(queryBox.value)[0].trim() + '\n| stats count by ' + field + '\n| sort -count');
       runSearch();
