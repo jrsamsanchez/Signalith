@@ -50,7 +50,9 @@ func TestBootstrapDockerCommand(t *testing.T) {
 		}
 	}
 	// Again: everything is kept.
-	out, err = capture(t, func() error { return cmdBootstrapDocker([]string{"-opensearch-uid", strconv.Itoa(uid), "-signalith-uid", strconv.Itoa(uid)}) })
+	out, err = capture(t, func() error {
+		return cmdBootstrapDocker([]string{"-opensearch-uid", strconv.Itoa(uid), "-signalith-uid", strconv.Itoa(uid)})
+	})
 	if err != nil || !strings.Contains(out, "kept") {
 		t.Errorf("second run: %v\n%s", err, out)
 	}
