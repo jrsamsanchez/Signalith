@@ -44,8 +44,10 @@ spec:
       {{- end }}
     {{- if .Values.server.syslog.enabled }}
     - ports:
+        {{- if include "signalith.plainSyslog" . }}
         - { port: 5514, protocol: UDP }
         - { port: 5514, protocol: TCP }
+        {{- end }}
         - { port: 6514, protocol: TCP }
       {{- with $np.syslogFrom }}
       from:

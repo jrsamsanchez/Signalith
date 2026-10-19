@@ -40,7 +40,18 @@ batch() {
   curl -sfk -o /dev/null -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \
     "$LB/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$1 port 22 ssh2\"}]"
 }
-syslog() { printf '<13>Oct 14 12:00:00 smokefw app: smoke %s\n' "$1" | nc -q 1 localhost 514; }
+# Syslog over TLS (port 6514), which the lab turns on; plain syslog is off.
+# The servers' own CA is not checked: this only tests the way through HAProxy.
+syslog() {
+  python3 -c '
+import socket, ssl, sys
+c = ssl.create_default_context()
+c.check_hostname = False
+c.verify_mode = ssl.CERT_NONE
+s = c.wrap_socket(socket.create_connection(("localhost", 6514), 10))
+s.sendall(("<13>Oct 14 12:00:00 smokefw app: smoke %s\n" % sys.argv[1]).encode())
+s.close()' "$1"
+}
 
 # Agent batches and syslog spread over both servers, by HAProxy's leastconn.
 i=0

@@ -2881,6 +2881,11 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-data .sl-ui-steps b { font-weight: 500; }
 
 /* did it arrive: grey while waiting, green once a message came in */
+/* "Turn on plain syslog" on Add data > Syslog, above the steps. */
+#page-data .sl-plain { display: grid; gap: 10px; margin-bottom: 16px; }
+#page-data .sl-plain:empty { display: none; }
+#page-data .sl-plain:focus { outline: none; }
+#page-data .sl-plain .alert p + p, #page-data .sl-plain .alert p + .agent-cmd, #page-data .sl-plain .alert .btn-row { margin-top: 8px; }
 #page-data .sl-live { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); transition: background var(--t), box-shadow var(--t); }
 #page-data .sl-live[data-tone="success"] { background: var(--success-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--success) 22%, transparent); }
 #page-data .sl-live:empty { display: none; }

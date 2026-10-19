@@ -58,8 +58,8 @@ spec:
 {{- if .Values.server.syslog.enabled }}
 {{- $ss := .Values.server.syslog.service }}
 ---
-# Syslog: UDP and TCP 514 (the pods listen on 5514, being unprivileged),
-# and syslog over TLS on 6514.
+# Syslog over TLS on 6514, and with server.syslog.plain plain syslog on
+# UDP and TCP 514 (the pods listen on 5514, being unprivileged).
 apiVersion: v1
 kind: Service
 metadata:
@@ -84,7 +84,9 @@ spec:
   selector:
     {{- include "signalith.selector" (dict "ctx" . "component" "server") | nindent 4 }}
   ports:
+    {{- if include "signalith.plainSyslog" . }}
     - { name: syslog-udp, port: 514, targetPort: syslog-udp, protocol: UDP }
     - { name: syslog-tcp, port: 514, targetPort: syslog-tcp, protocol: TCP }
+    {{- end }}
     - { name: syslog-tls, port: 6514, targetPort: syslog-tls, protocol: TCP }
 {{- end }}

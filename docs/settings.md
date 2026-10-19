@@ -86,9 +86,11 @@ writes before each one, so Signalith sees each client's own address. Only the
 **Trusted reverse proxies** may send it. Both apply after a restart; see
 [Load balancers](load-balancers.md).
 
-Turning syslog on is two settings in the **Syslog** card (UDP and TCP address,
-such as `0.0.0.0:514`), then a restart. The **Add data** page's syslog steps send
-you there.
+A new install takes syslog over TLS only (**TLS address**, `0.0.0.0:6514`). Plain
+syslog is two settings in the **Syslog** card (UDP and TCP address, such as
+`0.0.0.0:514`), then a restart. It is unencrypted and can be forged, so it is off
+until you set them; **Turn on plain syslog** on the **Add data** page's Syslog option
+sets both in one click (see [Turning on plain syslog](sending-data.md#turning-on-plain-syslog)).
 
 **Replicas**, in the **OpenSearch** card, is how many extra copies of each day's
 events OpenSearch keeps on its other nodes, so losing one node loses no events. It
@@ -366,8 +368,8 @@ mounted read-only, and the page keeps its changes in the `signalith-data` volume
   client certificate in `signalith.yaml`.
 - A port Signalith listens on inside the container only reaches it when the
   compose file publishes it under `ports:`. The quick start publishes 9000 (web),
-  7779 (agents), 514 to the container's 5514 (syslog over UDP and TCP) and 6514 (syslog over
-  TLS). If you change the listen port, the agent address or a syslog address on the
+  7779 (agents), 514 to the container's 5514 (plain syslog over UDP and TCP, which listens
+  only once it is turned on) and 6514 (syslog over TLS). If you change the listen port, the agent address or a syslog address on the
   page, add the port to `ports:` too (and for syslog set **Port devices send to** to the port on
   the host). The page reminds you on those settings when it runs in a container.
 - To undo a change from the command line:

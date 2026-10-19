@@ -61,15 +61,22 @@ lookups:
 dashboards:
   dir: /var/lib/signalith/dashboards
   stale_after: 2h
-# Syslog from firewalls, switches and servers without an agent. The
-# container cannot open ports below 1024, so it listens on 5514 and
-# docker-compose.yml publishes it as port 514 on the host. public_port is
-# the port devices send to, which the Add data page shows; change it if
-# you change the port in docker-compose.yml. Syslog over TLS uses port 6514
-# on both.
+# Syslog from firewalls, switches and servers without an agent, over TLS
+# on port 6514 (on this machine and in the container).
+#
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. An install set up
+# before keeps it on, on 5514 (Signalith decides once, at its first start
+# with this file, and notes it in plain-syslog.json in signalith-data). For devices that cannot send
+# over TLS, turn it on with "Turn on plain syslog" on the Add data page
+# (Syslog), which saves it in the signalith-data volume, or set udp and tcp
+# below to 0.0.0.0:5514. The container cannot open ports below 1024, so it
+# listens on 5514 and docker-compose.yml publishes it as port 514 on the
+# host. public_port is the port devices send plain syslog to, which the Add
+# data page shows; change it if you change the port in docker-compose.yml.
 syslog:
-  udp: 0.0.0.0:5514
-  tcp: 0.0.0.0:5514
+  udp: ""
+  tcp: ""
   tls: 0.0.0.0:6514
   public_port: 514
   allow: []

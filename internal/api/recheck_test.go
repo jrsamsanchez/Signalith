@@ -68,6 +68,7 @@ func TestRecheckBeforeSensitiveChanges(t *testing.T) {
 		{"PUT", "/api/settings", `{"reset":["server.tls.mode"]}`},
 		{"PUT", "/api/settings", `{"reset_all":true}`},
 		{"PUT", "/api/settings", `{"values":{"opensearch.tls_skip_verify":true}}`},
+		{"PUT", "/api/settings", `{"values":{"syslog.udp":"0.0.0.0:514","syslog.tcp":"0.0.0.0:514"}}`},
 		{"PUT", "/api/settings", `{"values":5}`},
 		{"POST", "/api/me/mfa/setup", `{}`},
 		{"PUT", "/api/retention/guard", `{}`},
@@ -138,7 +139,7 @@ func TestProtectedSettings(t *testing.T) {
 		"server.trusted_proxies": true, "syslog.allow": true, "server.tls_cert": true, "server.tls_key": true, "auth.oidc.issuer": true,
 		"opensearch.url": true, "opensearch.tls_skip_verify": true, "cluster.opensearch_url": true, "syslog.tls": true,
 		"intel.allow_loopback_feeds": true, "server.listen": true, "assistant.url": true, "okta.domain": true, "m365.tenant_id": true,
-		"server.public_url": false, "search.max_events": false, "authx": false, "syslog.udp": false, "assistant.model": false,
+		"server.public_url": false, "search.max_events": false, "authx": false, "syslog.udp": true, "syslog.tcp": true, "assistant.model": false,
 	} {
 		if protectedSetting(key) != want {
 			t.Errorf("%s: %v", key, !want)

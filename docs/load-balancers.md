@@ -68,7 +68,7 @@ trusts every address (`0.0.0.0/0` or `::/0`).
 ## The samples
 
 - **`haproxy.cfg`**: HAProxy in TCP mode for the web port (8443), the agent port (7779), syslog over TLS
-  (6514) and syslog over TCP (514), with `send-proxy-v2`, `/readyz` checks and
+  (6514) and plain syslog over TCP (514, once `syslog.tcp` is turned on), with `send-proxy-v2`, `/readyz` checks and
   `balance leastconn`. Change the `server` lines to your servers' addresses.
 - **`nginx-stream.conf`**: the same with nginx's stream module and `proxy_protocol on`.
   Open source nginx only notices a stopped server when a connection to it fails; it

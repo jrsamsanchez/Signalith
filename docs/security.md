@@ -210,7 +210,8 @@ and how many devices sent over each protocol in the last day. A listener on a lo
 address, such as `127.0.0.1:5514`, takes syslog only from this computer, so only the
 others count.
 
-- Good: syslog arrives only over TLS; or plain syslog is accepted only from this
+- Good: syslog arrives only over TLS, as on a new install, where plain syslog is off
+  until it is turned on (Add data > Syslog); or plain syslog is accepted only from this
   computer, or only from the addresses in `syslog.allow`. Plain syslog isn't encrypted,
   which is normal for devices that can't use TLS.
 - Needs attention: plain syslog is accepted from any computer that can reach the port.

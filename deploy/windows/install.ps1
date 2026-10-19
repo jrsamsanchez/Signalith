@@ -28,11 +28,13 @@
 # share one OpenSearch (node.id, and cluster\lock while it runs).
 #
 # A new config serves the web UI over HTTPS with a certificate Signalith
-# makes for itself, and receives syslog on UDP and TCP 514 and over TLS on
-# 6514; pass -SyslogUdp "", -SyslogTcp "" or -SyslogTls "" to leave one
-# off, or other addresses such as 0.0.0.0:1514.
-# The firewall rules for syslog admit only the syslog.allow senders when the
-# config lists any.
+# makes for itself, and receives syslog over TLS on 6514 (-SyslogTls ""
+# leaves it off). Plain syslog over UDP and TCP is off, since it is
+# unencrypted and can be forged: pass -SyslogUdp 0.0.0.0:514 and
+# -SyslogTcp 0.0.0.0:514 (or other addresses) to turn it on, or use
+# Add data > Syslog later. An upgrade keeps the config as it is.
+# Firewall rules are added only for the syslog listeners the config turns
+# on, and admit only the syslog.allow senders when the config lists any.
 #
 # To add this computer to the servers of an existing Signalith (a cluster),
 # use the line from Servers > Add a server, which downloads this script,
@@ -52,8 +54,9 @@ param(
   [string]$OpenSearchZip = "",
   # The web page and API; agents send to 7779 (server.agent_listen).
   [string]$Listen = "0.0.0.0:9000",
-  [string]$SyslogUdp = "0.0.0.0:514",
-  [string]$SyslogTcp = "0.0.0.0:514",
+  # Plain, unencrypted syslog: off unless an address is given.
+  [string]$SyslogUdp = "",
+  [string]$SyslogTcp = "",
   [string]$SyslogTls = "0.0.0.0:6514",
   [string]$InstallDir = "$env:ProgramFiles\Signalith",
   [string]$ConfigDir = "$env:ProgramData\Signalith",

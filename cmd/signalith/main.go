@@ -233,8 +233,11 @@ func cmdInit(args []string) error {
 	osKey := fs.String("opensearch-key", "", "that certificate's key file (opensearch.key_file)")
 	osInsecure := fs.Bool("opensearch-allow-insecure-http", false, "allow the OpenSearch username and password over plain http to another machine (sets opensearch.allow_insecure_http; prefer https)")
 	password := fs.String("admin-password", "", "admin password (default: generate one)")
-	syslogUDP := fs.String("syslog-udp", "0.0.0.0:514", "address to receive syslog on over UDP (empty: off)")
-	syslogTCP := fs.String("syslog-tcp", "0.0.0.0:514", "address to receive syslog on over TCP (empty: off)")
+	// Plain syslog is unencrypted and anyone who can reach the port can
+	// send fake events, so a new install takes syslog over TLS only.
+	// Installers that want it pass an address, such as 0.0.0.0:514.
+	syslogUDP := fs.String("syslog-udp", "", "address to receive plain, unencrypted syslog on over UDP, such as 0.0.0.0:514 (default: off)")
+	syslogTCP := fs.String("syslog-tcp", "", "address to receive plain, unencrypted syslog on over TCP, such as 0.0.0.0:514 (default: off)")
 	syslogTLS := fs.String("syslog-tls", "0.0.0.0:6514", "address to receive syslog on over TLS (empty: off)")
 	force := fs.Bool("force", false, "overwrite an existing config file")
 	savePassword := fs.Bool("save-password", false, "keep a generated admin password in "+initialPasswordFile+" next to the config file, for signalith initial-password, instead of printing it (for installers)")
@@ -264,8 +267,9 @@ func cmdInit(args []string) error {
 	c.OpenSearch.Username = *osUser
 	c.OpenSearch.CAFile, c.OpenSearch.CertFile, c.OpenSearch.KeyFile = *osCA, *osCert, *osKey
 	c.OpenSearch.AllowInsecureHTTP = *osInsecure
-	// New installs receive syslog right away; existing configs without a
-	// syslog section keep it off.
+	// New installs receive syslog over TLS right away, and plain syslog
+	// only when asked for (the Add data page turns it on); existing
+	// configs without a syslog section keep it off.
 	c.Syslog.UDP = *syslogUDP
 	c.Syslog.TCP = *syslogTCP
 	c.Syslog.TLS = *syslogTLS
@@ -312,6 +316,10 @@ func cmdInit(args []string) error {
 	}
 	if s := syslogSummary(c); s != "" {
 		fmt.Printf("  Syslog:      %s\n", s)
+	}
+	if c.Syslog.UDP == "" && c.Syslog.TCP == "" {
+		fmt.Printf("               Plain syslog (UDP and TCP 514) is off: it is unencrypted and can be forged.\n")
+		fmt.Printf("               Add data > Syslog turns it on for devices that cannot send over TLS.\n")
 	}
 	// Make the master key now (sealing a value makes one when there is
 	// none), so init can say where it is and to back it up.
@@ -1065,6 +1073,13 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	c, err := loadConfig(path, log)
 	if err != nil {
+		return err
+	}
+	// The first start of the Docker quick start with this version decides
+	// whether it keeps the plain syslog its older signalith.yaml had,
+	// before anything is written in the state folder (see
+	// config.DecidePlainSyslog).
+	if c, err = decidePlainSyslog(path, c, log); err != nil {
 		return err
 	}
 	// The identity, its lock, the heartbeat and the job lease belong to

@@ -134,6 +134,9 @@ type Config struct {
 	// send the example ingest token (see OldToken), nil until decided.
 	quickStart    bool
 	dockerUpgrade *DockerUpgrade
+	// plainSyslogKept is true when an upgraded Docker quick start keeps
+	// the plain syslog its older signalith.yaml had (see keepPlainSyslog).
+	plainSyslogKept bool
 }
 
 // PublicURLDerived reports whether server.public_url was worked out from
@@ -1016,8 +1019,10 @@ func (c *Config) MaxEventAge(keepDays int) time.Duration {
 // Syslog receives syslog from systems that cannot run an agent: firewalls,
 // switches, routers, appliances and servers. Off unless an address is set.
 type Syslog struct {
-	// UDP and TCP are host:port addresses to listen on, such as
-	// 0.0.0.0:514. Empty turns that listener off.
+	// UDP and TCP are host:port addresses to listen on for plain syslog,
+	// such as 0.0.0.0:514. Empty turns that listener off, as on a new
+	// install: plain syslog is unencrypted and anyone who can reach the
+	// port can send fake events, so TLS is preferred.
 	UDP string `yaml:"udp"`
 	TCP string `yaml:"tcp"`
 	// TLS is a host:port for syslog over TLS (RFC 5425), such as
@@ -1986,6 +1991,7 @@ func readFileEnv(path string, state bool) (*Config, error) {
 	if state {
 		c.readDockerUpgrade()
 		c.readFirstPassword()
+		c.keepPlainSyslog()
 	}
 	c.layers.pageFileEnv = strings.TrimSpace(os.Getenv("SIGNALITH_SETTINGS_FILE")) != ""
 	c.layers.pageFile = c.SettingsFile()
@@ -3045,8 +3051,10 @@ func (c *Config) Save(path string) error {
 // sectionComments are written just above a section of the saved file.
 var sectionComments = map[string]string{
 	"syslog": `Syslog from systems that cannot run an agent (firewalls, switches, routers,
-appliances, servers). Point them at this server on UDP or TCP port 514, or
-TLS port 6514 (it uses the web UI's certificate). An empty address turns
+appliances, servers). Point them at this server over TLS on port 6514 (it
+uses the web UI's certificate). Plain syslog on UDP or TCP port 514 is
+unencrypted and can be forged, so it is off unless udp or tcp is set, such
+as 0.0.0.0:514 (Add data > Syslog turns it on). An empty address turns
 that listener off. allow limits who may send, as IPs or CIDRs such as
 10.0.0.0/8; empty allows any sender.`,
 }
@@ -3102,9 +3110,10 @@ const header = `# Signalith configuration.
 #                    own token on the Add data page, so most installs need none
 # ingest.max_event_age  events older than this (default 7d) are filed under the time
 #                    they arrived, with their own time in device_time
-# syslog.udp, .tcp   receive syslog from devices without an agent, e.g. 0.0.0.0:514
-#                    (empty = off; SIGNALITH_SYSLOG_UDP / _TCP override, "off" turns off)
 # syslog.tls         syslog over TLS, e.g. 0.0.0.0:6514; uses the web UI's certificate
+# syslog.udp, .tcp   plain, unencrypted syslog for devices that cannot use TLS, e.g.
+#                    0.0.0.0:514 (empty = off, the default for a new install;
+#                    SIGNALITH_SYSLOG_UDP / _TCP override, "off" turns off)
 # syslog.allow       sender IPs or CIDRs allowed to send syslog (empty = any sender)
 # syslog.public_port port devices send to, if forwarded to another (Docker: 514 -> 5514)
 # detections.dir     folder for custom detections (relative to this file)

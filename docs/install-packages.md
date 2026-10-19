@@ -71,7 +71,7 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
   install).
 - Create the `signalith` system account the service runs as.
 - On a first install, write `/etc/signalith/signalith.yaml` with HTTPS on, a new ingest
-  token and syslog on ports 514 and 6514, make the master key in
+  token and syslog over TLS on port 6514, make the master key in
   `/var/lib/signalith/keys`, and start the service. The first admin password is kept in
   `/etc/signalith/initial-admin-password`, readable only by root, and
   `sudo signalith initial-password` shows it until you change it. The first sign-in
@@ -79,7 +79,8 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
   when you change the password with `sudo signalith passwd` (the service may not remove
   it itself; it no longer works either way).
 - On an upgrade, keep the config, encrypt any passwords an older version kept as plain
-  text, and restart the service. While the admin password is still the first one
+  text, and restart the service. An install made before 0.3.1 keeps plain syslog on
+  port 514 if its config has it. While the admin password is still the first one
   Signalith made, the next sign-in with it asks for a new one, also on an install that
   has used it for a long time.
 - On removal, stop the service and keep `/etc/signalith` and `/var/lib/signalith`, so
@@ -125,8 +126,13 @@ runs the same `install.ps1` as a manual install: the config and state go to
 the service runs as its own account, `NT SERVICE\Signalith`; and firewall rules open
 the web UI, agent and syslog ports. Its output is in `C:\Windows\Temp\signalith-install.log`.
 
+A new install takes syslog over TLS on port 6514 only, and opens only that syslog port.
+Plain syslog over UDP and TCP 514 is unencrypted and can be forged, so it is off; turn it
+on later on **Add data** > **Syslog** (the page then gives the firewall rules for 514), or
+from the start with `install.ps1 -SyslogUdp 0.0.0.0:514 -SyslogTcp 0.0.0.0:514`.
+
 To upgrade, run the newer `.msi`: it stops the service, replaces the program, keeps the
-config, and starts the service again. It upgrades the OpenSearch it installed too, when
+config (with plain syslog on, if it was), and starts the service again. It upgrades the OpenSearch it installed too, when
 the new release pins a newer one, keeping its data. **Settings > Apps** uninstalls it;
 that removes the services, OpenSearch's program and the firewall rules, and keeps
 `C:\ProgramData\Signalith` and `C:\ProgramData\SignalithOpenSearch` (OpenSearch's

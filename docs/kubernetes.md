@@ -70,9 +70,16 @@ The web Service is `ClusterIP` by default. To reach it from outside the cluster:
   install notes warn about it), then narrow each port with the network policies below.
   Keep each client's own address (which sign-in limits and the audit log use) with
   `server.service.externalTrafficPolicy: Local`.
-- **Syslog**: the `signalith-syslog` Service takes UDP and TCP 514 and syslog over TLS on
-  6514, with the same settings under `server.syslog.service`. `server.syslog.allow` lists
-  the addresses that may send.
+- **Syslog**: the `signalith-syslog` Service takes syslog over TLS on 6514, with the same
+  settings under `server.syslog.service`. `server.syslog.allow` lists the addresses that
+  may send. Plain syslog over UDP and TCP 514 is unencrypted and can be forged, so a new
+  install leaves it off: `server.syslog.plain: true` adds it to the Service, the pods
+  (which listen on 5514) and the network policy, and `false` keeps it off. Left at `auto`,
+  **an upgrade keeps plain syslog as it was**: on when the release's `signalith-syslog`
+  Service already takes UDP or TCP 514, as releases before 0.3.1 did (the chart looks it
+  up in the cluster). `helm template`, Argo CD and Flux render without the cluster, so
+  they render a new install: set `server.syslog.plain: true` there if devices send to 514. The chart sets it in the
+  servers' environment, so their Settings and Add data pages show it as set there.
 - **An ingress controller**: Signalith serves HTTPS itself and agents send their own token,
   so pass connections through (TLS passthrough, such as ingress-nginx's
   `nginx.ingress.kubernetes.io/ssl-passthrough`) rather than ending TLS in the ingress.
