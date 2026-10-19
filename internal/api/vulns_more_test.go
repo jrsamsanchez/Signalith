@@ -27,7 +27,7 @@ type failDocs struct {
 	fail func(op, id string) error
 }
 
-func newFlakyDocs() *failDocs { return &failDocs{Docs: endpoint.NewMemoryDocs()} }
+func newFailDocs() *failDocs { return &failDocs{Docs: endpoint.NewMemoryDocs()} }
 
 func (f *failDocs) failing(fn func(op, id string) error) {
 	f.mu.Lock()
@@ -115,7 +115,7 @@ func (f *vulnsFixture) call(method, path, body string) (int, map[string]any) {
 
 func newVulnsFixture(t *testing.T, change func(*Server)) *vulnsFixture {
 	t.Helper()
-	docs := newFlakyDocs()
+	docs := newFailDocs()
 	st := vulnscan.NewStore(docs, "signalith")
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		s.Vulns = &Vulns{Store: st}
@@ -248,7 +248,7 @@ func TestVulnsPage(t *testing.T) {
 // The page shows at most the 30 newest scans, and the exploit feeds'
 // state when the scanner has them.
 func TestVulnsPageRecentScansAndExploits(t *testing.T) {
-	docs := newFlakyDocs()
+	docs := newFailDocs()
 	st := vulnscan.NewStore(docs, "signalith")
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		s.Vulns = &Vulns{Store: st, Scanner: &vulnscan.Scanner{Store: st, Exploits: vulnscan.NewExploitFeeds(st, "", "")}}
