@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +62,9 @@ func TestFolderContents(t *testing.T) {
 	}
 	// The folder is a file.
 	file := filepath.Join(dir, "readme.txt")
-	if _, err := newest(file); err == nil || errors.Is(err, ErrNoDatabase) || !strings.Contains(err.Error(), "reading") {
+	// Windows may report it as a missing folder: then there is no
+	// database, which is an error too.
+	if _, err := newest(file); err == nil || runtime.GOOS != "windows" && (errors.Is(err, ErrNoDatabase) || !strings.Contains(err.Error(), "reading")) {
 		t.Errorf("a file as the folder = %v", err)
 	}
 }
