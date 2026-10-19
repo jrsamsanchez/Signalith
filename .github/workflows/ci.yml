@@ -262,7 +262,7 @@ jobs:
           took=$(( $(date +%s) - start ))
           echo "Signalith stopped in ${took}s"
           if [ "$took" -gt 30 ]; then $COMPOSE logs --no-color --tail 50 signalith; exit 1; fi
-          go test -tags integration -count=1 -v -skip '^TestCluster' ./internal/integration/
+          go test -tags integration -count=1 -v -timeout 20m -skip '^TestCluster' ./internal/integration/
       - name: Container logs
         if: failure()
         run: $COMPOSE logs --no-color

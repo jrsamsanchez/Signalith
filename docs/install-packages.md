@@ -11,7 +11,9 @@ packages that install Signalith as a service in one step:
 | Docker | `ghcr.io/jrsamsanchez/signalith:<version>` |
 
 Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x or 3.x. The
-Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)).
+Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)),
+from the next release (0.3.1) on; with 0.3.0 and older, install OpenSearch first and give
+the installer its address with `OPENSEARCHURL`.
 On Linux, install it first
 ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)):
 the Linux packages expect it at `http://127.0.0.1:9200`; if yours is elsewhere, change the
