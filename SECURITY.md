@@ -45,6 +45,6 @@ known limits: [docs/threat-model.md](docs/threat-model.md).
 
 ## Independent review
 
-Signalith has not had an independent security audit yet. One is planned after
-the 1.0 release; until then, every security-sensitive change is reviewed before it
-is merged, as the threat model describes.
+Signalith has not had an independent security audit yet. One is planned; until
+then, every security-sensitive change is reviewed before it is merged, as the
+threat model describes.

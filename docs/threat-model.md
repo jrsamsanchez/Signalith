@@ -8,7 +8,7 @@ environment, and to decide what to check before putting it on a network that mat
 !!! warning "No independent audit yet"
     Signalith has not had an independent security audit. Its code is reviewed before
     each change is merged (see [How it is reviewed](#how-it-is-reviewed)), but no outside
-    firm has looked at it. An outside review is planned after 1.0. Until then, treat
+    firm has looked at it yet. An outside review is planned. Until then, treat
     Signalith as you would any young security tool: run it on a network you control, keep
     it up to date, and report anything you find (see [SECURITY.md](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md)).
 
@@ -163,7 +163,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 
 | Threat | What stands in the way |
 | --- | --- |
-| Feeds or downloads reaching internal addresses | Feed and database downloads take only https addresses and never reach loopback, link-local or cloud metadata addresses, or OpenSearch ([Threat intel](threat-intel.md)) |
+| Feeds or downloads reaching internal addresses | Threat intel feed downloads are checked after DNS and on every redirect, and never reach link-local or cloud metadata addresses, or this machine unless allowed ([Threat intel](threat-intel.md)). The CVE, KEV and EPSS addresses are admin settings and are fetched as set |
 | A tampered detection content update | Bundles must be signed by a key built into Signalith and newer than the rules in use ([Content packs](detections.md#content-packs)) |
 | A tampered release | Release files and images are signed with Sigstore and come with build provenance and an SBOM ([Check a download](install-packages.md#check-a-download)) |
 | Vulnerable dependencies | govulncheck, Dependabot, CodeQL and Trivy image scans in CI |
@@ -202,7 +202,7 @@ Each arrow is a boundary where data from the other side is not trusted:
   AI-assisted too, so they are not a substitute for an independent audit. Findings and
   their fixes are in the public pull request history.
 - The baselines are OWASP ASVS, NIST SP 800-63B for authentication, CIS and NIST SSDF.
-- CI runs CodeQL, OpenSSF Scorecard, govulncheck, Trivy image scans, 30+ fuzz targets
-  (longer every night), race tests and a three-server cluster test.
+- CI runs CodeQL, OpenSSF Scorecard, govulncheck, Trivy image scans, 70+ fuzz targets
+  (longer every night), race tests and a two-server cluster test.
 
 Report a weakness privately: see [SECURITY.md](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md).
