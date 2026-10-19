@@ -20,6 +20,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 **Search foundation**
 
+- The [Signalith Agent](signalith-agent.md): one line installs it on Linux, Windows
+  (with optional Sysmon) or macOS, it runs Fluent Bit and osquery, and what each group
+  of computers collects is chosen on the Endpoints page, so nobody edits a configuration.
 - Fluent Bit agents for Windows and Linux, set up from the **Add data** page, plus
   [syslog and CEF](sending-data.md#syslog) from network devices and
   [OpenTelemetry](opentelemetry.md) logs over OTLP, each agent with its own
@@ -73,8 +76,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   tenant picker in the top bar.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
   with one line on Linux, Windows or Docker, shared settings, users and detections,
-  [detections spread over the servers](servers.md#the-background-jobs) with each server's
-  detection health on the Servers page, one certificate authority, rolling upgrades, draining and removing a server, and
+  each server's detection health on the Servers page, an option to
+  [spread detections over the servers](servers.md#the-background-jobs) (off by default
+  until a lab load test confirms it), one certificate authority, rolling upgrades,
+  draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
   the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
@@ -132,24 +137,20 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
 
-**One agent per computer**
-:   The [Signalith Agent](signalith-agent.md): one line installs it, and Signalith tells it
-    what to collect, so nobody edits a Fluent Bit or osquery configuration. Linux,
-    Windows (with osquery and optional Sysmon) and macOS (with osquery) are in, and what
-    each group of computers collects is chosen on the Endpoints page. Signed updates with
-    automatic rollback switch on with the next release, which carries the release key.
+**In the next release**
+:   These are finished and arrive with the next release. The Windows installer sets up
+    [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
+    Windows needs no separate install step. Signalith Agents update themselves from
+    signed releases and roll back if an update fails.
 
-**OpenSearch in the Windows installer**
-:   The `.msi` sets up OpenSearch as well, so Windows needs no separate install step.
+**Lab load numbers**
+:   The [sizing](performance.md#lab-sizes) table filled in from separate lab machines and an
+    OpenSearch cluster, not only a CI runner. The lab runs are under way.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
 **A signed Windows installer**
 :   A code-signed `.msi` (see the [code signing policy](code-signing.md)).
-
-**Lab load numbers**
-:   The [sizing](performance.md#lab-sizes) table filled in from separate lab machines and an
-    OpenSearch cluster, not only a CI runner.
 
 ## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
 

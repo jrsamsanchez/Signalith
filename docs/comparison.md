@@ -31,9 +31,9 @@ program with the web UI built in.
   tests in CI, but there is no company behind it and no paid support.
 - **No outside security review yet.** One is planned before 1.0 (see the
   [roadmap](roadmap.md)).
-- **No endpoint agent of its own.** It uses Fluent Bit and [osquery](endpoints.md) on
-  hosts, so there is no EDR, no host-side active response and no agent for platforms
-  beyond Windows, Linux and (for osquery) macOS.
+- **No EDR.** The [Signalith Agent](signalith-agent.md) installs and manages Fluent Bit
+  and [osquery](endpoints.md) on Windows, Linux and macOS, but it collects no data
+  itself, has no host-side active response and runs on no other platforms.
 - **No full packet capture.** The [network sensor](network-sensor.md) runs Zeek and
   Suricata, but does not keep packets.
 - **Sizing is measured on CI runners only.** Lab numbers on separate machines are still
@@ -50,7 +50,7 @@ program with the web UI built in.
 | Runs on | Windows or Linux server, or Docker | Linux servers (agents on many systems) | Its own Linux distribution on dedicated machines | Linux, Windows, macOS, or Elastic Cloud | Linux or Windows, or Splunk Cloud |
 | Search | Pipe-style language, plain-English questions, visual builder | OpenSearch Dashboards queries | Its own Hunt and Dashboards views over Elasticsearch | KQL, Lucene, EQL, ES&#124;QL | SPL |
 | Detection content | Thousands of tested SigmaHQ and Splunk Security Content rules, Sigma import | Wazuh rules and decoders | Suricata, Zeek, Sigma and YARA rules | Elastic's prebuilt rules | Splunk's detection content |
-| Endpoint agent | Fluent Bit and osquery (no EDR) | Wazuh agent | Elastic Agent | Elastic Agent with Elastic Defend | Universal Forwarder |
+| Endpoint agent | Signalith Agent running Fluent Bit and osquery (no EDR) | Wazuh agent | Elastic Agent | Elastic Agent with Elastic Defend | Universal Forwarder |
 | Maturity | New (2026), one maintainer | Many years, large community, company-backed | Many years, company-backed | Many years, company-backed | Many years, vendor-backed |
 
 ## Wazuh
