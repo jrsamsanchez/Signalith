@@ -70,15 +70,11 @@ func readPack(t *testing.T) (*detect.Pack, map[string]*splcheck.Macro, map[strin
 // here to keep the test quick.
 var slowCases = map[string]bool{
 	"3cx_supply_chain_attack_network_indicators.yml":                       true,
-	"aws_create_policy_version_to_allow_all_resources.yml":                 true,
 	"aws_detect_users_creating_keys_with_encrypt_policy_without_mfa.yml":   true,
-	"aws_ecr_container_scanning_findings_high.yml":                         true,
 	"aws_ecr_container_scanning_findings_low_informational_unknown.yml":    true,
 	"aws_ecr_container_scanning_findings_medium.yml":                       true,
 	"azure_ad_block_user_consent_for_risky_apps_disabled.yml":              true,
 	"azure_ad_new_mfa_method_registered.yml":                               true,
-	"azure_ad_oauth_application_consent_granted_by_user.yml":               true,
-	"azure_ad_privileged_role_assigned.yml":                                true,
 	"azure_ad_privileged_role_assigned_to_service_principal.yml":           true,
 	"azure_ad_service_principal_owner_added.yml":                           true,
 	"azure_ad_tenant_wide_admin_consent_granted.yml":                       true,
@@ -114,7 +110,6 @@ var slowCases = map[string]bool{
 	"o365_new_email_forwarding_rule_created.yml":                           true,
 	"o365_new_federated_domain_added.yml":                                  true,
 	"o365_new_mfa_method_registered.yml":                                   true,
-	"o365_privileged_graph_api_permission_assigned.yml":                    true,
 	"o365_privileged_role_assigned.yml":                                    true,
 	"o365_privileged_role_assigned_to_service_principal.yml":               true,
 	"o365_security_and_compliance_alert_triggered.yml":                     true,
