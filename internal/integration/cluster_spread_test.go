@@ -107,7 +107,7 @@ func (h *clusterHarness) nodeIDOf(name string) string {
 	return id
 }
 
-// Three servers with detections.spread on share the buckets; one killed
+// Three servers share the buckets (detections.spread is on by default); one killed
 // has its buckets moved to the other two, and none falls behind.
 func TestClusterDetectionSpread(t *testing.T) {
 	t.Parallel()
@@ -118,12 +118,8 @@ func TestClusterDetectionSpread(t *testing.T) {
 	waitSettingsShared(t, a, b, c)
 	ids := []string{h.nodeIDOf("siem-a"), h.nodeIDOf("siem-b"), h.nodeIDOf("siem-c")}
 
-	if v, ok := a.spread(); !ok || len(v.running()) != 0 {
-		t.Fatalf("detections spread before the setting is on: %+v", v)
-	}
-	a.saveSettings("", map[string]any{"detections.spread": true})
-	// A server joins the spread once it has been able to for a minute
-	// (detect.DefaultJoinDelay).
+	// detections.spread is on unless turned off. A server joins the
+	// spread once it has been able to for a minute (detect.DefaultJoinDelay).
 	var v spreadView
 	waitUntil(t, 4*time.Minute, "the buckets spread over the three servers", func() bool {
 		var ok bool

@@ -435,7 +435,7 @@ var Registry = []Setting{
 		Placeholder: "6h", EmptyMeans: "6h"},
 	{Key: "detections.spread", Scope: ScopeCluster, Section: "detections", Label: "Spread detections over servers", Type: TypeBool,
 		Help: "Run detections on every server that may run background work, each rule on one of them, instead of all on one server. " +
-			"Takes effect once every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
+			"On by default; it takes effect once two or more servers can run detections and every running server is on a version that supports it. A server whose files of detections or lookups differ from the others' runs none."},
 	{Key: "detections.search_budget", Scope: ScopeCluster, Section: "detections", Label: "Detection searches at once", Type: TypeNumber, Min: intp(0), Max: intp(4096),
 		Help: "While detections are spread over servers, how many detection searches all servers together run at once; each server runs its share. " +
 			"Empty or 0 means half the searches OpenSearch can run at once. Servers run fewer for a while when OpenSearch is slow.",
@@ -820,6 +820,8 @@ func (c *Config) Value(key string) any {
 		return c.Server.CAScope()
 	case "cluster.leader_eligible":
 		return c.LeaderEligible()
+	case "detections.spread":
+		return c.Detections.SpreadOn()
 	}
 	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.String {
 		out := make([]string, v.Len())

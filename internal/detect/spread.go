@@ -141,6 +141,12 @@ const (
 	// before it is given new ones, so one that starts and stops again
 	// does not move buckets back and forth.
 	DefaultJoinDelay = time.Minute
+	// MinSpreadServers is how many servers must be able to run buckets
+	// before any are given out: with fewer, spreading gains nothing, and
+	// the server running the background jobs runs every rule itself, as
+	// with spreading off. Once spread, buckets stay spread while one
+	// server is left, so a crash moves them rather than switching modes.
+	MinSpreadServers = 2
 )
 
 func (a *Assigner) mono() time.Duration {
@@ -198,7 +204,7 @@ func (a *Assigner) owners(on bool, servers []SpreadServer, cur *Assignment, now 
 		}
 	}
 	a.liveSince = seen
-	if !on || len(ids) == 0 {
+	if !on || len(ids) == 0 || (len(ids) < MinSpreadServers && !cur.spread()) {
 		return out
 	}
 	for b := range out {

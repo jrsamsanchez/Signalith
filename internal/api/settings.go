@@ -1185,7 +1185,7 @@ func (s *Server) useLive(next *config.Config, applied []string) {
 			sched.SetCatchUp(next.DetectionsCatchUp())
 		}
 		if changed("detections.spread") {
-			sched.SetSpread(next.Detections.Spread)
+			sched.SetSpread(next.Detections.SpreadOn())
 		}
 		if changed("detections.search_budget") {
 			sched.SetSearchBudget(next.Detections.SearchBudget)

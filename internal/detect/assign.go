@@ -184,6 +184,19 @@ func (a *Assignment) RunsOn(node string) map[int]int64 {
 	return out
 }
 
+// spread reports whether any bucket has an owner under a.
+func (a *Assignment) spread() bool {
+	if a == nil {
+		return false
+	}
+	for _, o := range a.Owners {
+		if o.Node != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // Holds returns the buckets node holds under a, with their detection
 // epochs: those it runs and those it is handing over, whose runs in
 // flight may still write their run state.
