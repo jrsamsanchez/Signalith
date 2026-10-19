@@ -313,7 +313,7 @@ var ErrNoNameToCheck = errors.New("agents can't check that the certificate belon
 // fluentBitLinuxInstall says where to install Fluent Bit on Linux from:
 // its packages are signed, while piping a script from a moving branch
 // into a root shell runs whatever that branch holds at the time.
-const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/linux " +
+const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/downloads/linux " +
 	"(they add packages.fluentbit.io with its signing key, then install the fluent-bit package)"
 
 // Where the agent keeps the CA certificate it checks the server with.
