@@ -86,9 +86,8 @@ func TestClusterKeyRotationAndDrainOnARunningServer(t *testing.T) {
 		nc, ok := rs.r.shared.NodeCfg().Get()
 		return !node.Drained() && ok && nc.Drained == nil
 	})
+	// The resume is logged once the request that made it ends.
 	for _, want := range []string{"this server was drained", "this server was resumed"} {
-		if !strings.Contains(rs.logs.String(), want) {
-			t.Errorf("the log lacks %q", want)
-		}
+		eventually(t, "the log says "+want, func() bool { return strings.Contains(rs.logs.String(), want) })
 	}
 }
