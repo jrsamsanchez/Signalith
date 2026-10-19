@@ -173,6 +173,7 @@ nav:
       - Audit: audit.md
   - Security:
       - Security checks: security.md
+      - Threat model: threat-model.md
       - HTTPS: https.md
       - Encryption: encryption.md
       - Securing OpenSearch: opensearch-security.md

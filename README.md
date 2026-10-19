@@ -557,6 +557,11 @@ them. All of this, with the commands to trust the CA on Windows, macOS and Linux
 
 ### Hardening built in
 
+> Signalith has not had an independent security audit yet; one is planned.
+> Every security-sensitive change is reviewed before it is merged. What Signalith
+> protects, what it trusts and what it leaves to you is in the
+> [threat model](https://github.com/jrsamsanchez/Signalith/blob/main/docs/threat-model.md).
+
 - **Security check**: the Security page (**Settings > Security**) and `signalith security`
   check how this server is set up and what to fix first. See
   [docs/security.md](docs/security.md).
