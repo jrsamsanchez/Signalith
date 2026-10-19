@@ -991,8 +991,13 @@ function quoteValue(v) {
 // events without the field.
 function drillTerm(f, v) {
   if (v == null || v === '') return `NOT ${f}=*`;
+  return f + '=' + filterValue(v);
+}
+// filterValue is a value as a search term reads it: a backslash, as in a
+// Windows path or CORP\user, is only kept inside quotes.
+function filterValue(v) {
   const s = String(v);
-  return f + '=' + (s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s));
+  return s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s);
 }
 // drillQuery adds [field, value] filters to a drill: in the search, or in a
 // where after the commands that make the fields.
@@ -1035,6 +1040,13 @@ function addSearchTerm(term) {
   let s = search.trim();
   if (s === '*' || s === '') s = term; else s = s + ' ' + term;
   setQuery(s + (rest ? '\n' + rest.trim() : ''));
+  runSearch();
+}
+// newSearchFor starts a search for one term alone, as Splunk's "New
+// search" does, keeping the time range written in the current search.
+function newSearchFor(term) {
+  const times = splitPipes($('query').value)[0].match(/\b(?:earliest|latest)\s*=\s*("[^"]*"|\S+)/gi) || [];
+  setQuery([term, ...times].join(' '));
   runSearch();
 }
 function currentDatamodel() {
@@ -1854,6 +1866,52 @@ function pivotItems(item, field, value) {
     item('chart-bar', `List the ${p.who} with this ${p.what}`, () => run(`${term}\n| stats count, dc(${p.other}) as ${p.others} by ${p.by}\n| sort -count`)),
   ];
 }
+// An open event lists every field it has, like an event viewer: the
+// event's own fields first, then where and when it came from. Each value
+// can be added to the search or excluded from it in one click, and a click
+// on the value opens the same menu as the chips.
+const EVENT_DEFAULT_FIELDS = ['_time', 'host', 'source', 'sourcetype', 'index', 'datamodel'];
+const SAFE_FIELD_RE = /^[A-Za-z_][\w.:@-]*$/;
+function eventDetail(r, opts) {
+  const isDefault = (k) => EVENT_DEFAULT_FIELDS.includes(k) || k.startsWith('signalith_');
+  const has = (k) => k !== '_raw' && r[k] != null && r[k] !== '';
+  const keys = Object.keys(r).filter(has);
+  const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+  const own = keys.filter((k) => !isDefault(k)).sort(byName);
+  const dflt = [...EVENT_DEFAULT_FIELDS.filter((k) => keys.includes(k)), ...keys.filter((k) => k.startsWith('signalith_')).sort(byName)];
+  const show = (k, v) => (k === '_time' ? fmtTime(v) : v !== null && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : fmtValue(v));
+  const act = (iconName, label, term) => el('button', {
+    type: 'button', class: 'btn btn--ghost btn--icon btn--sm ev-kv__act', title: label, 'aria-label': label,
+    onclick: (ev) => { ev.stopPropagation(); addSearchTerm(term); },
+  }, icon(iconName));
+  const row = (k) => {
+    const v = r[k];
+    const text = show(k, v);
+    // A filter needs one plain value and a field name the query language reads.
+    const filterable = k !== '_time' && SAFE_FIELD_RE.test(k) && (typeof v !== 'object' || v === null);
+    const value = el('button', { type: 'button', class: 'ev-kv__v', title: text }, text);
+    value.addEventListener('click', (ev) => showCellMenu(ev, k, v, 'events', r, opts.sortable));
+    return el('tr', {},
+      el('th', { scope: 'row', class: 'ev-kv__k', title: k }, k),
+      el('td', {}, value),
+      el('td', { class: 'ev-kv__acts' }, ...(filterable ? [
+        act('filter', `Add ${k}=${text} to the search`, k + '=' + filterValue(v)),
+        act('filter-x', `Exclude ${k}=${text} from the search`, k + '!=' + filterValue(v)),
+      ] : [])));
+  };
+  const group = (title, ks) => (ks.length ? [el('tr', { class: 'ev-kv__group' }, el('th', { colspan: '3', scope: 'colgroup' }, title)), ...ks.map(row)] : []);
+  const pin = can('analyst') && typeof pinEventToCase === 'function'
+    ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => pinEventToCase(r) }, icon('pin'), 'Pin to a case') : null;
+  const copy = el('button', {
+    type: 'button', class: 'btn btn--ghost btn--sm',
+    onclick: () => navigator.clipboard.writeText(JSON.stringify(r, null, 2)).then(() => { if (typeof toast === 'function') toast('Copied the event as JSON.'); }, () => {}),
+  }, icon('copy'), 'Copy as JSON');
+  return el('div', { class: 'ev-detail__body' },
+    el('div', { class: 'ev-detail__head' },
+      el('span', { class: 'ev-detail__count' }, `${keys.length} field${keys.length === 1 ? '' : 's'}`),
+      el('span', { class: 'ev-detail__actions' }, copy, pin)),
+    el('table', { class: 'ev-kv' }, el('colgroup', {}, el('col', { class: 'ev-kv__kc' }), el('col'), el('col', { class: 'ev-kv__ac' })), el('tbody', {}, ...group('Event', own), ...group('Time and source', dflt))));
+}
 function renderEvents(box, res, opts) {
   const rows = res.rows || [];
   if (!rows.length) {
@@ -1873,7 +1931,9 @@ function renderEvents(box, res, opts) {
   } else {
     timeHead.append('Time');
   }
-  const body = rows.map((r) => {
+  // Which events are open, kept while the same results are shown again.
+  const open = res.openEvents || (res.openEvents = new Set());
+  const body = rows.map((r, ri) => {
     const d = new Date(r._time);
     const time = el('td', { class: 'time' });
     if (r._time != null) {
@@ -1885,8 +1945,9 @@ function renderEvents(box, res, opts) {
     }
     const event = el('td', { class: 'event' });
     if (r._raw != null && r._raw !== '') {
-      const raw = el('div', { class: 'ev-raw' }, fmtValue(r._raw));
-      raw.addEventListener('click', (ev) => showCellMenu(ev, '_raw', r._raw, 'events', r));
+      const raw = el('div', { class: 'ev-raw', title: 'Click to show every field' }, fmtValue(r._raw));
+      // A click opens the event's fields; dragging to select text does not.
+      raw.addEventListener('click', () => { if (!String(window.getSelection() || '')) toggle(); });
       event.append(raw);
     }
     const chips = keys.filter((k) => r[k] != null && r[k] !== '').map((k) => {
@@ -1896,10 +1957,25 @@ function renderEvents(box, res, opts) {
       return b;
     });
     if (chips.length) event.append(el('div', { class: 'ev-fields' }, ...chips));
-    return el('tr', {}, time, event);
+    const detailId = 'ev-detail-' + ri;
+    const btn = el('button', { type: 'button', class: 'ev-toggle', 'aria-expanded': 'false', 'aria-controls': detailId, 'aria-label': 'Show every field of this event', title: 'Show every field' }, icon('chevron-right', 'icon--sm'));
+    const detail = el('tr', { class: 'ev-detail', id: detailId, hidden: true });
+    const tr = el('tr', { class: 'ev-row' }, el('td', { class: 'ev-tog' }, btn), time, event);
+    function toggle(on = detail.hidden) {
+      if (on && !detail.firstChild) detail.append(el('td', { colspan: '3' }, eventDetail(r, opts)));
+      detail.hidden = !on;
+      tr.classList.toggle('is-open', on);
+      btn.setAttribute('aria-expanded', String(on));
+      btn.setAttribute('aria-label', on ? 'Hide the fields of this event' : 'Show every field of this event');
+      btn.title = on ? 'Hide the fields' : 'Show every field';
+      if (on) open.add(ri); else open.delete(ri);
+    }
+    btn.addEventListener('click', () => toggle());
+    if (open.has(ri)) toggle(true);
+    return [tr, detail];
   });
   const kids = [el('div', { class: 'table-wrap' }, el('table', { class: 'table table--compact res-events' },
-    el('thead', {}, el('tr', {}, timeHead, el('th', { scope: 'col' }, 'Event'))), el('tbody', {}, ...body)))];
+    el('thead', {}, el('tr', {}, el('th', { scope: 'col', class: 'ev-tog' }, el('span', { class: 'sr-only' }, 'Fields')), timeHead, el('th', { scope: 'col' }, 'Event'))), el('tbody', {}, ...body.flat())))];
   const matched = opts.matched || res.matched || 0;
   if (matched > rows.length) {
     kids.push(el('div', { class: 'table-foot' }, `Showing the first ${rows.length.toLocaleString()} of ${matched.toLocaleString()} matching events. Narrow the search, or add | head to choose how many.`));
@@ -2167,8 +2243,9 @@ function showCellMenu(ev, col, value, kind, row, canSort, drill) {
   const items = show ? [show] : [];
   if (field && kind !== 'timechart') {
     items.push(...pivotItems(item, field, value));
-    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));
-    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + quoteValue(value))));
+    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + filterValue(value))));
+    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + filterValue(value))));
+    items.push(item('search', `New search for ${field}=${fmtValue(value)}`, () => newSearchFor(field + '=' + filterValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {
       setQuery(splitPipes(queryBox.value)[0].trim() + '\n| stats count by ' + field + '\n| sort -count');
       runSearch();
