@@ -239,7 +239,42 @@ func (s *Scheduler) Forget() { s.dropStates() }
 func (s *Scheduler) dropStates() {
 	s.mu.Lock()
 	s.det = nil
+	s.taken = nil
 	s.mu.Unlock()
+}
+
+// setTaken notes that this server starts rule id's runs from at on, unless
+// it already did; a zero at says it no longer does.
+func (s *Scheduler) setTaken(id string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if at.IsZero() {
+		delete(s.taken, id)
+		return
+	}
+	if _, ok := s.taken[id]; ok {
+		return
+	}
+	if s.taken == nil {
+		s.taken = map[string]time.Time{}
+	}
+	s.taken[id] = at
+}
+
+// takenAt is when this server began starting rule id's runs (zero if it
+// does not).
+func (s *Scheduler) takenAt(id string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.taken[id]
+}
+
+// later returns the later of a and b.
+func later(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // entry returns a copy of the leader's state of a rule.

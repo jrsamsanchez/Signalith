@@ -136,11 +136,16 @@ type Scheduler struct {
 	firstStart bool
 	// noFirstStart turns that off, for tests that start from a new rule.
 	noFirstStart bool
-	cache        *statusCache
-	memRuns      RunStore
-	houseAt      time.Time
-	workers      chan struct{}
-	spare        chan struct{}
+	// taken is when, by the cluster clock, this server began starting
+	// each rule's runs (it took the schedule or the rule's bucket): a
+	// slot that ended before then waited for the server, not for a
+	// worker, so running it later is not a late run.
+	taken   map[string]time.Time
+	cache   *statusCache
+	memRuns RunStore
+	houseAt time.Time
+	workers chan struct{}
+	spare   chan struct{}
 }
 
 type runFlags struct{ running, queued bool }
@@ -474,8 +479,10 @@ func (s *Scheduler) dispatch(ctx context.Context, wg *sync.WaitGroup) {
 	var current, catchup []batch
 	for _, d := range s.Library.List() {
 		if !s.startsRule(d.ID) {
+			s.setTaken(d.ID, time.Time{})
 			continue
 		}
+		s.setTaken(d.ID, now)
 		b, ok := s.plan(ctx, d, now, limit, epoch, first)
 		if !ok {
 			continue
@@ -748,7 +755,7 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 		st.LastSlot, st.NextSlot = slot, NextSlot(d.ID, sched, slot)
 		lag := cstart.Sub(slot)
 		st.LagMS = lag.Milliseconds()
-		if lag > sched {
+		if cstart.Sub(later(slot, s.takenAt(d.ID))) > sched {
 			st.LateRuns++
 			st.LastLate = start.UTC()
 			if !catchup {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,6 +246,30 @@ func (r *slowRunner) Execute(ctx context.Context, q *query.Query) (*search.Resul
 		return nil, ctx.Err()
 	}
 	return &search.Result{Kind: "table"}, nil
+}
+
+// TestSlotsMissedBeforeTakingOverAreNotLate: slots that ended while
+// another server ran the schedule (or none did) are caught up without
+// counting as late runs, so the Servers page does not blame busy workers
+// for a handover or a restart.
+func TestSlotsMissedBeforeTakingOverAreNotLate(t *testing.T) {
+	lib := OnlyRules(t, &Detection{ID: "catch", Title: "Catching up", Query: "user=catch", Enabled: true, Schedule: "1m", Lookback: "1m"})
+	run := &recRunner{}
+	clock := &fakeClock{t: t0}
+	s := newTestScheduler(lib, run, clock)
+	var mine atomic.Bool
+	mine.Store(true)
+	s.Allowed = mine.Load
+	s.RunDue(context.Background())
+	mine.Store(false)
+	clock.Add(10 * time.Minute)
+	s.RunDue(context.Background())
+	mine.Store(true)
+	s.RunDue(context.Background())
+	st := mustState(t, s, "catch")
+	if len(run.windows("catch")) < 10 || st.LateRuns != 0 || !st.LastLate.IsZero() {
+		t.Fatalf("after taking the schedule back: %d runs, state %+v", len(run.windows("catch")), st)
+	}
 }
 
 // TestCatchUpRunsMissedSlotsInOrder: slots missed while detections did
