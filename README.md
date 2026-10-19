@@ -1,14 +1,53 @@
 # Signalith
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15694/badge)](https://www.bestpractices.dev/projects/15694)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/jrsamsanchez/Signalith)](https://github.com/jrsamsanchez/Signalith/releases/latest)
 
-A free, open-source SIEM for Windows and Linux. The goal is a SIEM anyone can stand up
-and use: easy to configure, easy to query, and ready for AI.
+**A free, open-source SIEM for Windows and Linux: easy to set up, easy to query, ready for AI.**
+
+![The findings queue: open findings ranked by urgency, with ATT&CK techniques, evidence and an Investigate with AI button](site/assets/shots/findings.webp)
+
+Signalith collects your logs, runs thousands of tested detections over them, and gives
+you one queue of findings to triage, investigate and respond to. It is built for small
+security teams and anyone who wants a real SIEM without a big budget or weeks of setup.
+
+- **Collect** Windows, Linux and macOS logs with one install line per computer, plus
+  syslog, OpenTelemetry, cloud audit logs (AWS, Azure, Microsoft 365, Google) and more.
+- **Detect** with 2,638 SigmaHQ rules and 1,330 rules from Splunk's open-source
+  security_content, each tested in CI against sample events. High and critical rules
+  turn on in one click.
+- **Triage** with risk-based alerting, a findings queue, cases, an attack storyline and
+  an optional *Investigate with AI* step that also works with a local model.
+- **Search** with a pipe-style language familiar to SPL users, a click-to-build query
+  builder, or a question in plain English.
+- **Run it your way**: Docker, `.deb`/`.rpm` packages with signed apt and dnf
+  repositories, a Windows installer, or a Helm chart. HTTPS by default, no default
+  passwords, and two-step sign-in with passkeys.
+
+| Try it | |
+| --- | --- |
+| On your own computer, with Docker | [Quick start](#docker-evaluation), two commands after `git clone` |
+| With made-up data that has attacks hidden in it | [Sample data](#try-it-with-sample-data), one click |
+| On a Linux or Windows server | [Linux](#linux), [Windows](#windows), [Kubernetes](#kubernetes-helm) |
+
+**Learn more:** [website](https://signalith.io) ·
+[documentation](https://signalith.io/docs/) ·
+[how it compares](https://signalith.io/docs/comparison/) with Wazuh, Security Onion,
+Elastic Security and others, including where it is weaker ·
+[roadmap](https://signalith.io/docs/roadmap/)
+
+> Signalith is a personal project by Samuel Sanchez Jr., written with Claude Code, and
+> it is early software: it has not had an independent security audit yet, and the
+> Windows installer is not code signed yet. Issues and feedback are welcome.
+
+## What's inside
+
 Signalith stores events in [OpenSearch](https://opensearch.org), collects them with
 the [Signalith Agent](docs/signalith-agent.md) (which installs and runs
 [Fluent Bit](https://fluentbit.io) and [osquery](https://osquery.io) on Windows, Linux and
 macOS) and syslog, and adds the security layer on top: a pipe-based
-query language that reads like SPL, plain-English questions that become queries, a
+query language, plain-English questions that become queries, a
 visual query builder, CIM-style data models, scheduled detections with a findings
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
@@ -17,14 +56,9 @@ investigation cases that collect findings, notes, searches and evidence in one p
 response actions (block an IP, disable an account, isolate a host) run from a
 finding or a case, and playbooks that run those steps for you.
 
-Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
-**https://signalith.io/docs/** (built from [`docs/`](docs/)).
-
-Choosing a SIEM? [How Signalith compares](https://signalith.io/docs/comparison/) with
-Wazuh, Security Onion, Elastic Security and others, including where it is weaker.
-
-The server is a single Go binary with the web UI embedded. It runs as a Windows
-service or a systemd unit.
+The website's source is in [`site/`](site/) and the documentation is built from
+[`docs/`](docs/). The server is a single Go binary with the web UI embedded. It runs as
+a Windows service or a systemd unit.
 
 > Status: the first four phases are complete, and work on hardening for 1.0 has started. See the [roadmap](#roadmap).
 
@@ -34,7 +68,9 @@ service or a systemd unit.
 
 It needs Docker Compose 2.20 or newer (Docker Desktop has it). Check with
 `docker compose version`; on Linux, update the `docker-compose-plugin` package if it is
-older. Then, from the folder you cloned Signalith into:
+older. Get the code with
+`git clone https://github.com/jrsamsanchez/Signalith.git` and, from the `Signalith`
+folder it makes, run:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml up -d
