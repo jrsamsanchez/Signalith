@@ -3,15 +3,17 @@
 A free, open-source SIEM for Windows and Linux. The goal is a SIEM anyone can stand up
 and use: easy to configure, easy to query, and ready for AI.
 Signalith stores events in [OpenSearch](https://opensearch.org), collects them with
-[Fluent Bit](https://fluentbit.io), and adds the security layer on top: a pipe-based
+the [Signalith Agent](docs/signalith-agent.md) (which installs and runs
+[Fluent Bit](https://fluentbit.io) and [osquery](https://osquery.io) on Windows, Linux and
+macOS) and syslog, and adds the security layer on top: a pipe-based
 query language that reads like SPL, plain-English questions that become queries, a
 visual query builder, CIM-style data models, scheduled detections with a findings
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
 events, a security posture dashboard plus dashboards you build from queries, and
 investigation cases that collect findings, notes, searches and evidence in one place,
-and response actions (block an IP, disable an account, isolate a host) run from a
-finding or a case. Playbooks come next.
+response actions (block an IP, disable an account, isolate a host) run from a
+finding or a case, and playbooks that run those steps for you.
 
 Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
 **https://signalith.io/docs/** (built from [`docs/`](docs/)).
@@ -22,7 +24,7 @@ Wazuh, Security Onion, Elastic Security and others, including where it is weaker
 The server is a single Go binary with the web UI embedded. It runs as a Windows
 service or a systemd unit.
 
-> Status: Phase 3 (context and risk) is complete; Phase 4 has started with investigation cases. See the [roadmap](#roadmap).
+> Status: the first four phases are complete, and work on hardening for 1.0 has started. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -316,7 +318,9 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 ### Windows
 
 The `.msi` installer from the [latest release](https://github.com/jrsamsanchez/Signalith/releases/latest)
-installs OpenSearch too ([docs/install-packages.md](docs/install-packages.md#windows)). To install by hand:
+is the easy way ([docs/install-packages.md](docs/install-packages.md#windows)). From the next
+release (0.3.1) on, it installs OpenSearch too; with 0.3.0 and older, install OpenSearch first and
+give its address. To install by hand:
 
 1. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
@@ -342,7 +346,13 @@ installs OpenSearch too ([docs/install-packages.md](docs/install-packages.md#win
 
 ### Send data
 
-Open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
+The simplest way is the [Signalith Agent](docs/signalith-agent.md): open **Add data**, pick
+**Signalith Agent**, choose Linux, Windows or macOS, and paste the one line it shows on each
+computer. It installs Fluent Bit and osquery (and Sysmon on Windows if you choose), and what
+each group of computers collects is chosen on the **Endpoints** page, so nobody edits a
+configuration.
+
+To set up Fluent Bit by hand instead, open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
 Fluent Bit, save Signalith's CA certificate and the generated configuration, restart it.
 The configuration already contains the server address and a token of its own for this group
 of agents (made when you copy or download it; see [docs/agent-tokens.md](docs/agent-tokens.md)), and sends over
@@ -372,7 +382,7 @@ Agents send to a port of their own, 7779 by default, not to the web page's port 
 Allow both ports through this computer's firewall. See
 [The agent port](docs/sending-data.md#the-agent-port).
 
-Supported sources in Phase 1:
+Supported sources:
 
 | Source | Data model |
 | --- | --- |
@@ -1373,8 +1383,7 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 3. **Context and risk**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
 
-What is being built now and what comes next, from detection content and osquery endpoint
-visibility to alerts, response actions and signed packages, is on the
+What is done, what is being built now and what comes next is on the
 [public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
