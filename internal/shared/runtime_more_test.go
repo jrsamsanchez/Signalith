@@ -516,6 +516,8 @@ func TestTakeApprovalRefusals(t *testing.T) {
 	if got := strings.Count(b.logs.String(), "an approval for this server cannot be used"); got < 5 {
 		t.Errorf("logged %d refusals", got)
 	}
+	// The loop above runs in map order, so log a different refusal first.
+	b.rt.takeApproval(ctx, nk, json.RawMessage(`{"kind":"approval"}`), store.Version{})
 	before := strings.Count(b.logs.String(), "cannot be used")
 	b.rt.takeApproval(ctx, nk, json.RawMessage(`[`), store.Version{})
 	b.rt.takeApproval(ctx, nk, json.RawMessage(`[`), store.Version{})
