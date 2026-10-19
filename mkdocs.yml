@@ -119,6 +119,7 @@ nav:
       - Install from packages: install-packages.md
       - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
+      - Architecture: architecture.md
   - Data intake:
       - Signalith Agent: signalith-agent.md
       - Agents and syslog: sending-data.md

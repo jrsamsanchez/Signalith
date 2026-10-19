@@ -1,5 +1,7 @@
 # Signalith
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15694/badge)](https://www.bestpractices.dev/projects/15694)
+
 A free, open-source SIEM for Windows and Linux. The goal is a SIEM anyone can stand up
 and use: easy to configure, easy to query, and ready for AI.
 Signalith stores events in [OpenSearch](https://opensearch.org), collects them with
@@ -1366,7 +1368,9 @@ detections and searches answered in under a second
 
 ## Building
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes, and
+[GOVERNANCE.md](GOVERNANCE.md) for who maintains the project. The
+[architecture](https://signalith.io/docs/architecture/) page gives the high-level design.
 
 Requires the Go version in `go.mod` (1.26.9) or newer.
 

@@ -9,7 +9,8 @@ description: What Signalith does today, what is being built now, and what comes 
 Signalith aims to be a complete, general-purpose open-source SIEM: collect events from
 the systems you run, find the attacks in them, and help you respond. This page says
 where it stands. It has no dates: Signalith is a personal project built in the open,
-and things ship when they are ready and tested.
+and things ship when they are ready and tested. **Next** and **Later** together cover
+what is planned for the coming year.
 
 Ideas and requests are welcome as
 [feature requests](https://github.com/jrsamsanchez/Signalith/issues/new/choose) on GitHub.
