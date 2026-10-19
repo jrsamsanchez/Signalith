@@ -39,6 +39,16 @@ var nodeFieldRe = regexp.MustCompile(`\b(?:Processes|Filesystem|Registry|Web|All
 // or a bare word; double-quoted strings are skipped.
 var fieldTokenRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|'([^']+)'|([A-Za-z_][\w.{}]*)`)
 
+// mapSearchRe is a later map stage (inside an appendpipe or not), with
+// the first field its search names ($TargetLogonId$); appendSearchRe a
+// later append of another search. Splunk's map runs its search over the
+// whole search window, so what it finds of a row depends on that
+// window.
+var (
+	mapSearchRe    = regexp.MustCompile(`(?is)(?:^|[|\[]\s*)map\s+(?:maxsearches\s*=\s*\d+\s+)?search\s*=\s*"[^"]*?\$(\w+)\$`)
+	appendSearchRe = regexp.MustCompile(`(?i)^append\s*\[`)
+)
+
 // postCommands checks and stores a search's later stages as the rule's
 // Post: stages are the search's stages from the first one Signalith does
 // not read as a filter, field the Signalith field of each field they may
@@ -54,6 +64,19 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	outs := map[string]*lookupOut{}
 	grouped := group != ""
 	located := false
+	var txn txnStages
+	if _, windows := NodeEvents[r.Node]; windows && slices.ContainsFunc(stages, func(s string) bool { return txnStageRe.MatchString(strings.TrimSpace(s)) }) {
+		// A transaction's startswith= and endswith= name the Windows
+		// event's code, EventCode, which Signalith stores as
+		// signature_id.
+		named := field
+		field = func(f string) (string, bool) {
+			if f == "EventCode" {
+				return "signature_id", true
+			}
+			return named(f)
+		}
+	}
 	var groupStages []string
 	if group != "" {
 		groupStages = strings.Split(nodeFieldRe.ReplaceAllString(group, "$1"), "\n| ")
@@ -63,6 +86,9 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 			// A join of a tstats subsearch's rows, whose own stages are
 			// read as the subsearch's (joinStage). Only its fields are
 			// named here.
+			if txn.active {
+				return fmt.Errorf("a later join after a transaction is not supported")
+			}
 			conv, fields, err := r.joinStage(m[1], m[2])
 			if err != nil {
 				return err
@@ -75,6 +101,12 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		if s == "" {
 			continue
 		}
+		// A transaction's rows until a stats regroups them.
+		pre, err := txn.stage(nodeFieldRe.ReplaceAllString(s, "$1"), grouped || len(r.Joins) > 0)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, pre...)
 		if integrityMatchRe.MatchString(s) {
 			return fmt.Errorf("a later stage matches the integrity level's case, which Sysmon writes as High")
 		}
@@ -82,6 +114,12 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 			s = c
 		}
 		s = endAnchors(s)
+		if m := mapSearchRe.FindStringSubmatch(s); m != nil {
+			return fmt.Errorf("a later map search reads each $%s$'s events from Splunk's whole search window", m[1])
+		}
+		if appendSearchRe.MatchString(s) {
+			return fmt.Errorf("a later append of another search is not supported")
+		}
 		if strings.Contains(s, "`") {
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", firstWords(s))
 		}
@@ -164,6 +202,11 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 	if len(parts) == 0 && !r.sub {
 		return nil
 	}
+	txnSpan, err := txn.done()
+	if err != nil {
+		return err
+	}
+	r.PostSpan = max(r.PostSpan, txnSpan)
 	text := strings.Join(parts, "\n| ")
 	if !r.sub {
 		// Counts compared with each other (an eventstats after a stats)
@@ -213,7 +256,7 @@ func (r *Rule) postCommands(stages []string, field func(string) (string, bool), 
 		switch c.(type) {
 		case *query.Join:
 			joins++
-		case *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Transaction, *query.Map, *query.AddInfo:
+		case *query.Append, *query.Union, *query.MultiSearch, *query.Set, *query.AppendPipe, *query.InputLookup, *query.EventCount, *query.OutputLookup, *query.Map, *query.AddInfo:
 			return fmt.Errorf("search has a later stage Signalith does not run: %s", c.Name())
 		}
 	}

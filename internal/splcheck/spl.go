@@ -79,7 +79,8 @@ type Rule struct {
 	// PostSpan is the span of a tstats search's own grouping by time
 	// (by _time span=1h) whose later stages run as Post, or of the time
 	// buckets a raw search's later stages compare counts within
-	// (PostCompared); 0 for none.
+	// (PostCompared), or the longest transaction a later transaction
+	// keeps (transaction.go); 0 for none.
 	PostSpan time.Duration `yaml:"-"`
 	// PostCompared is set for later stages that count events by group
 	// in time buckets of PostSpan (bucket span=10m _time, stats ... by

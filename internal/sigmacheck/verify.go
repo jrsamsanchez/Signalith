@@ -98,6 +98,12 @@ type Case struct {
 	// counts the case's own is compared with. Each repeats as a case
 	// does (Copies).
 	Baseline []Case `json:"baseline,omitempty"`
+	// Then are events that follow the case on the same host, each Later
+	// seconds after it, for a rule that joins a run of events into one
+	// transaction (an account enabled, then its password reset): the
+	// case is the run's first event.
+	Then  []Case `json:"then,omitempty"`
+	Later int    `json:"later,omitempty"`
 }
 
 // RepeatSpan is how far apart in time the first and last of a repeated
@@ -107,9 +113,9 @@ const RepeatSpan = 30 * time.Second
 // Copies are a case's events, each with the time offset it happens at:
 // the event itself, or each of its repeats, spread over RepeatSpan, the
 // Vary fields numbered (tester1, tester2..., or WS1$, WS2$...). The
-// events With it and its Baseline are not among them.
+// events With it, its Baseline and the events Then are not among them.
 func (c Case) Copies() ([]Case, []time.Duration) {
-	c.With, c.Baseline = nil, nil
+	c.With, c.Baseline, c.Then = nil, nil, nil
 	if c.Repeat <= 1 {
 		c.Repeat, c.Vary = 0, nil
 		return []Case{c}, []time.Duration{0}

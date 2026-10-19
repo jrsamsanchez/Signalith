@@ -207,12 +207,15 @@ func storedAll(c sigmacheck.Case) []map[string]any {
 }
 
 // StoredAll is StoredCopies with the case's baseline events, which
-// happen at the same time.
+// happen at the same time, and the events that follow it (Then).
 func StoredAll(c sigmacheck.Case) ([]map[string]any, string) {
 	docs, model := StoredCopies(c)
 	for _, b := range c.Baseline {
 		more, _ := StoredCopies(b)
 		docs = append(docs, more...)
+	}
+	for _, t := range c.Then {
+		docs = append(docs, storedLater(t))
 	}
 	return docs, model
 }
