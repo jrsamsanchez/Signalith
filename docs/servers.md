@@ -137,13 +137,16 @@ server's next restart. A server added as a **scanner** (its **Server role**,
 [Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
 
 **Spreading detections over the servers.** With many rules, one server can be too
-few to run them all. Turn on **Spread detections over servers**
-(`detections.spread`, on the Settings page under Detections) and every server that
-may run the jobs runs a share of each tenant's rules: the rules are split into 64
-groups, and the server running the jobs gives each group to one server, moving as
-few as it can when a server joins or leaves. It applies within seconds, and only
-once every running server is on a version that supports it and the cluster's
-features are up to date; until then, one server runs every rule as before. A server
+few to run them all. So with two or more servers that may run the jobs, each runs
+a share of each tenant's rules: the rules are split into 64 groups, and the server
+running the jobs gives each group to one server, moving as few as it can when a
+server joins or leaves. A server that stops has its groups moved to the others,
+even when only one is left. This is **Spread detections over servers**
+(`detections.spread`, on the Settings page under Detections), on unless you turn
+it off; turned off, the server running the jobs runs every rule. It applies within
+seconds, and only once every running server is on a version that supports it and
+the cluster's features are up to date; until then, one server runs every rule as
+before. A server
 does not get a share while its detection or lookup files differ from those of the
 server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
 or while it cannot write its heartbeat for 20 seconds (it then stops its share by

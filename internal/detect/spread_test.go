@@ -273,13 +273,53 @@ func TestAssignerLeavesOut(t *testing.T) {
 		ta := newTestAssigner(rs)
 		b := server("b")
 		change(&b)
-		ta.servers = []SpreadServer{server("a"), b}
+		ta.servers = []SpreadServer{server("a"), b, server("c")}
 		if err := ta.Step(ctx); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if runs := readAssignment(t, rs).RunsOn("b"); len(runs) != 0 {
 			t.Errorf("%s: b given %d buckets", name, len(runs))
 		}
+	}
+}
+
+// TestAssignerNeedsTwoServers: with one server able to run buckets the
+// leader runs every rule itself; once spread over two, a crash of one
+// moves its buckets to the other rather than ending the spread.
+func TestAssignerNeedsTwoServers(t *testing.T) {
+	ctx := context.Background()
+	rs := NewMemoryRunStore()
+	ta := newTestAssigner(rs)
+	ta.servers = []SpreadServer{server("a")}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _, found, err := rs.Get(ctx, "rt", AssignmentID("acme")); err != nil {
+		t.Fatal(err)
+	} else if found {
+		if a, err := DecodeAssignment(raw, "acme"); err != nil || a.spread() {
+			t.Fatalf("one server: %+v %v", a, err)
+		}
+	}
+	ta.servers = []SpreadServer{server("a"), server("b")}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ta.advance(DefaultJoinDelay)
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(readAssignment(t, rs).RunsOn("b")); n == 0 {
+		t.Fatal("b given no buckets with two servers")
+	}
+	dead := server("b")
+	dead.Live = false
+	ta.servers = []SpreadServer{server("a"), dead}
+	if err := ta.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(readAssignment(t, rs).RunsOn("a")); n != Buckets {
+		t.Fatalf("after b died a runs %d buckets, want %d", n, Buckets)
 	}
 }
 

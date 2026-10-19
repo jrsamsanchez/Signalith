@@ -1139,8 +1139,8 @@ type Detections struct {
 	CatchUp string `yaml:"catch_up,omitempty"`
 	// Spread runs each tenant's detections on every server that may run
 	// background work, each rule on one of them, instead of all on the
-	// server running the background jobs. Off by default.
-	Spread bool `yaml:"spread,omitempty"`
+	// server running the background jobs. Unset means on (see SpreadOn).
+	Spread *bool `yaml:"spread,omitempty"`
 	// SearchBudget is how many detection searches every server together
 	// runs at once while detections are spread; 0 means half the searches
 	// OpenSearch's data nodes run at once.
@@ -1159,6 +1159,10 @@ type Detections struct {
 	// also removes the shared detection or dashboard). Empty means inbox.
 	Sync string `yaml:"sync,omitempty"`
 }
+
+// SpreadOn reports whether detections.spread is on: unless turned off,
+// detections spread once two or more servers can run them.
+func (d Detections) SpreadOn() bool { return d.Spread == nil || *d.Spread }
 
 // Folder modes of a shared library (detections.sync).
 const (

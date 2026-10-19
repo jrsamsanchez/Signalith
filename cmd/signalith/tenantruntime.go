@@ -397,7 +397,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 			Runtime:           cl, RuntimeIndex: runtimeIndex,
 		}
 		s.SetCatchUp(c.DetectionsCatchUp())
-		s.SetSpread(c.Detections.Spread)
+		s.SetSpread(c.Detections.SpreadOn())
 		s.SetSearchBudget(c.Detections.SearchBudget)
 		return s
 	}

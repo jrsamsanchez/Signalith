@@ -1468,7 +1468,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			Runtime:           cl, RuntimeIndex: cluster.RuntimeIndex(c.OpenSearch.IndexPrefix),
 		}
 		s.SetCatchUp(c.DetectionsCatchUp())
-		s.SetSpread(c.Detections.Spread)
+		s.SetSpread(c.Detections.SpreadOn())
 		s.SetSearchBudget(c.Detections.SearchBudget)
 		return s
 	}
