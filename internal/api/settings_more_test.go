@@ -83,6 +83,25 @@ func TestAssistantModelsFallbacks(t *testing.T) {
 	}
 }
 
+// A tenant's server takes the settings the default tenant's server
+// applies at once.
+func TestFollowLive(t *testing.T) {
+	var acme *Server
+	newTestServerWith(t, func(s *Server) { acme, s.TenantID = s, "acme" })
+	front := *acme.conf()
+	front.Search.MaxEvents = acme.conf().Search.MaxEvents + 123
+	acme.FollowLive(&front)
+	if got := acme.conf().Search.MaxEvents; got != front.Search.MaxEvents {
+		t.Errorf("max events %d, want %d", got, front.Search.MaxEvents)
+	}
+	// Following the same settings again changes nothing.
+	before := acme.conf()
+	acme.FollowLive(&front)
+	if acme.conf().Search.MaxEvents != before.Search.MaxEvents {
+		t.Errorf("changed on a second follow")
+	}
+}
+
 func TestWarningsByField(t *testing.T) {
 	fields, rest := warningsByField([]string{
 		"search.max_events is very high",
