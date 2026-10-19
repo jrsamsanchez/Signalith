@@ -108,7 +108,18 @@ func (l Layout) DataDir() string { return filepath.Join(l.Data, "data") }
 func (l Layout) Logs() string    { return filepath.Join(l.Data, "logs") }
 func (l Layout) Tmp() string     { return filepath.Join(l.Data, "tmp") }
 
-// CA keeps the CA's certificate and key, which neither OpenSearch nor
+// ServiceFolders are the folders OpenSearch's service account may change.
+func (l Layout) ServiceFolders() []string {
+	return []string{l.Config(), l.DataDir(), l.Logs(), l.Tmp()}
+}
+
+// Download is where the release's .zip is downloaded, or a -zip copied, to
+// be checked and unpacked: only administrators may change it, so the file
+// unpacked is the one checked.
+func (l Layout) Download() string { return filepath.Join(l.Data, "download") }
+
+// CA keeps the CA's certificate and key, and the admin certificate the
+// security settings are loaded with, which neither OpenSearch nor
 // Signalith reads.
 func (l Layout) CA() string { return filepath.Join(l.Data, "ca") }
 
@@ -174,70 +185,71 @@ func Newer(a, b string) bool {
 	return false
 }
 
-// Fetch returns the path of a .zip of the pinned release that has the
-// pinned SHA-512: local when it is given (a file copied to a computer
-// without internet access), else downloaded from URL into dir. remove
-// says whether the caller should delete the file when done.
-func Fetch(ctx context.Context, local, dir string, out io.Writer) (file string, remove bool, err error) {
+// Fetch puts a .zip of the pinned release, with the pinned SHA-512, in dir
+// and returns its path: a copy of local when it is given (a file copied to
+// a computer without internet access), else downloaded from URL. The file
+// is checked as it is written to dir, which only administrators may
+// change, so the file a caller unpacks is the one checked, not one someone
+// changed after. The caller deletes it when done.
+func Fetch(ctx context.Context, local, dir string, out io.Writer) (string, error) {
 	if local != "" {
 		f, err := os.Open(local)
 		if err != nil {
-			return "", false, err
+			return "", err
 		}
 		defer f.Close()
-		h := sha512.New()
-		if _, err := io.Copy(h, f); err != nil {
-			return "", false, err
-		}
-		if err := checkSum(hex.EncodeToString(h.Sum(nil)), local); err != nil {
-			return "", false, err
-		}
-		return local, false, nil
+		return save(f, dir, local)
 	}
 	return download(ctx, URL(), dir, out, http.DefaultClient)
 }
 
-func download(ctx context.Context, url, dir string, out io.Writer, client *http.Client) (string, bool, error) {
+// save writes r to a new file in dir, removing it unless its SHA-512 is
+// the pinned one.
+func save(r io.Reader, dir, what string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", false, err
+		return "", err
 	}
 	f, err := os.CreateTemp(dir, "opensearch-*.zip")
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
 	name := f.Name()
-	fail := func(err error) (string, bool, error) {
-		f.Close()
-		os.Remove(name)
-		return "", false, err
+	h := sha512.New()
+	_, err = io.Copy(io.MultiWriter(f, h), r)
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
+	if err == nil {
+		err = checkSum(hex.EncodeToString(h.Sum(nil)), what)
+	}
+	if err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
+func download(ctx context.Context, url, dir string, out io.Writer, client *http.Client) (string, error) {
 	fmt.Fprintf(out, "Downloading OpenSearch %s from %s...\n", Version, url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fail(err)
+		return "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fail(fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s, "+
-			"or download that file on another computer and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url))
+		return "", fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s, "+
+			"or download that file on another computer and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fail(fmt.Errorf("could not download OpenSearch: %s answered %s", url, resp.Status))
+		return "", fmt.Errorf("could not download OpenSearch: %s answered %s", url, resp.Status)
 	}
-	h := sha512.New()
-	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
-		return fail(fmt.Errorf("the OpenSearch download stopped (%w); run the installer again", err))
-	}
-	if err := f.Close(); err != nil {
-		return fail(err)
-	}
-	if err := checkSum(hex.EncodeToString(h.Sum(nil)), url); err != nil {
-		os.Remove(name)
-		return "", false, err
+	name, err := save(resp.Body, dir, url)
+	if err != nil {
+		return "", err
 	}
 	fmt.Fprintln(out, "  - its SHA-512 is the one Signalith expects")
-	return name, true, nil
+	return name, nil
 }
 
 // checkSum refuses a file whose SHA-512 is not the pinned one.
@@ -369,10 +381,17 @@ func MakeCerts(l Layout, now time.Time) error {
 	// Each folder takes the access list of the private folder it is in:
 	// Data (with the service given its config folder) or Signalith's
 	// config folder.
+	// The admin certificate goes with the CA: only the security settings
+	// tool, run by the installer, uses it, never OpenSearch itself.
+	osFiles, caFiles := set.OpenSearchFiles(), set.CAFiles()
+	for _, name := range []string{ospki.AdminCertFile, ospki.AdminKeyFile} {
+		caFiles[name] = osFiles[name]
+		delete(osFiles, name)
+	}
 	for dir, files := range map[string]map[string][]byte{
-		l.Certs(): set.OpenSearchFiles(),
+		l.Certs(): osFiles,
 		l.Client:  set.SignalithFiles(),
-		l.CA():    set.CAFiles(),
+		l.CA():    caFiles,
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
@@ -407,6 +426,16 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 	src := filepath.Join(home, "config")
 	if err := copyFile(filepath.Join(src, "log4j2.properties"), filepath.Join(l.Config(), "log4j2.properties")); err != nil {
 		return err
+	}
+	// Only Signalith's own options: the service may write to this folder.
+	if entries, err := os.ReadDir(filepath.Join(l.Config(), "jvm.options.d")); err == nil {
+		for _, e := range entries {
+			if e.Name() != "heap.options" {
+				if err := os.RemoveAll(filepath.Join(l.Config(), "jvm.options.d", e.Name())); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	jvm, err := os.ReadFile(filepath.Join(src, "jvm.options"))
 	if err != nil {

@@ -151,8 +151,9 @@ does:
 - It listens on this computer only (`127.0.0.1`, port 9200, or the next free one), over
   HTTPS with certificates from a CA of its own that the installer makes. It accepts only
   certificates from that CA: Signalith's, and an admin certificate for OpenSearch's
-  security tools. There are no passwords and no demo users; the CA's key stays in
-  `C:\ProgramData\SignalithOpenSearch\ca`, which neither service can read.
+  security tools. There are no passwords and no demo users; the CA's key and the admin
+  certificate stay in `C:\ProgramData\SignalithOpenSearch\ca`, which neither service can
+  read. The download is checked and unpacked from a folder only administrators can change.
 - Its Java heap is a quarter of the computer's memory, from 1 to 8 GB.
 
 A computer without internet access: download

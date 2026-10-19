@@ -135,14 +135,11 @@ func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, 
 		if version != oslocal.Version {
 			return fmt.Errorf("OpenSearch %s is not in %s any more; install Signalith with OpenSearch %s or newer", version, home, version)
 		}
-		dl := filepath.Join(l.Data, "tmp")
-		file, remove, err := oslocal.Fetch(ctx, zip, dl, out)
+		file, err := oslocal.Fetch(ctx, zip, l.Download(), out)
 		if err != nil {
 			return err
 		}
-		if remove {
-			defer os.Remove(file)
-		}
+		defer os.Remove(file)
 		os.RemoveAll(home)
 		fmt.Fprintf(out, "Unpacking OpenSearch %s to %s...\n", version, home)
 		if err := oslocal.Extract(file, home); err != nil {

@@ -100,6 +100,20 @@ func TestExtractRefusesEscapes(t *testing.T) {
 	}
 }
 
+// The release is checked and unpacked in a folder OpenSearch's service
+// cannot change, so it cannot swap the file between the two.
+func TestDownloadIsNotTheServices(t *testing.T) {
+	l := DefaultLayout()
+	for _, d := range l.ServiceFolders() {
+		if rel, err := filepath.Rel(d, l.Download()); err == nil && filepath.IsLocal(rel) {
+			t.Errorf("the download folder %s is in %s, which the service may change", l.Download(), d)
+		}
+	}
+	if filepath.Dir(l.Download()) != l.Data {
+		t.Errorf("the download folder %s is not in %s", l.Download(), l.Data)
+	}
+}
+
 func setPin(t *testing.T, sum string) {
 	old := pinned
 	pinned = sum
@@ -111,13 +125,21 @@ func TestFetchLocal(t *testing.T) {
 	b, _ := os.ReadFile(z)
 	sum := sha512.Sum512(b)
 	setPin(t, hex.EncodeToString(sum[:]))
-	got, remove, err := Fetch(context.Background(), z, t.TempDir(), io.Discard)
-	if err != nil || got != z || remove {
-		t.Fatalf("Fetch = %q, %v, %v", got, remove, err)
+	dir := filepath.Join(t.TempDir(), "download")
+	got, err := Fetch(context.Background(), z, dir, io.Discard)
+	if err != nil || filepath.Dir(got) != dir {
+		t.Fatalf("Fetch = %q, %v: want a copy in %s", got, err, dir)
 	}
+	if c, _ := os.ReadFile(got); !bytes.Equal(c, b) {
+		t.Fatal("the copy differs from the file")
+	}
+	os.Remove(got)
 	setPin(t, strings.Repeat("0", 128))
-	if _, _, err := Fetch(context.Background(), z, t.TempDir(), io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
+	if _, err := Fetch(context.Background(), z, dir, io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
 		t.Fatalf("a file with another SHA-512 was taken, or the error does not name its SHA-512: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("the refused copy was left in %s", dir)
 	}
 }
 
@@ -129,8 +151,8 @@ func TestDownload(t *testing.T) {
 	dir := t.TempDir()
 
 	setPin(t, hex.EncodeToString(sum[:]))
-	got, remove, err := download(context.Background(), srv.URL, dir, io.Discard, srv.Client())
-	if err != nil || !remove {
+	got, err := download(context.Background(), srv.URL, dir, io.Discard, srv.Client())
+	if err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(got); !bytes.Equal(b, body) {
@@ -139,7 +161,7 @@ func TestDownload(t *testing.T) {
 	os.Remove(got)
 
 	setPin(t, strings.Repeat("0", 128))
-	if _, _, err := download(context.Background(), srv.URL, dir, io.Discard, srv.Client()); err == nil {
+	if _, err := download(context.Background(), srv.URL, dir, io.Discard, srv.Client()); err == nil {
 		t.Fatal("a download with another SHA-512 was taken")
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
@@ -229,10 +251,13 @@ func TestStateAndConfig(t *testing.T) {
 	if again, _ := os.ReadFile(filepath.Join(l.Certs(), ospki.NodeCertFile)); !bytes.Equal(node, again) {
 		t.Fatal("a second run made new certificates")
 	}
-	for _, f := range []string{filepath.Join(l.CA(), ospki.RootCAKeyFile), filepath.Join(l.Certs(), ospki.AdminKeyFile)} {
+	for _, f := range []string{filepath.Join(l.CA(), ospki.RootCAKeyFile), filepath.Join(l.CA(), ospki.AdminCertFile), filepath.Join(l.CA(), ospki.AdminKeyFile)} {
 		if _, err := os.Stat(f); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.AdminKeyFile)); err == nil {
+		t.Fatal("the admin key is in OpenSearch's folder")
 	}
 	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.RootCAKeyFile)); err == nil {
 		t.Fatal("the CA's key is in OpenSearch's folder")
@@ -244,6 +269,9 @@ func TestStateAndConfig(t *testing.T) {
 		}
 	}
 
+	planted := filepath.Join(l.Config(), "jvm.options.d", "planted.options")
+	os.MkdirAll(filepath.Dir(planted), 0o700)
+	os.WriteFile(planted, []byte("-javaagent:x.jar\n"), 0o600)
 	if err := WriteConfig(l, home, 9201, 2048); err != nil {
 		t.Fatal(err)
 	}
@@ -273,6 +301,9 @@ func TestStateAndConfig(t *testing.T) {
 	}
 	if strings.Contains(string(jvm), "=logs/") || strings.Contains(string(jvm), "gc.log") || strings.Contains(string(jvm), "\r") {
 		t.Errorf("jvm.options has a relative path or a CR:\n%s", jvm)
+	}
+	if _, err := os.Stat(planted); err == nil {
+		t.Error("an options file Signalith did not write was kept")
 	}
 	heap, _ := os.ReadFile(filepath.Join(l.Config(), "jvm.options.d", "heap.options"))
 	if !strings.Contains(string(heap), "-Xmx2048m") {

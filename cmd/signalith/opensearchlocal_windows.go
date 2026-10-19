@@ -164,7 +164,7 @@ func openSearchEnv(l oslocal.Layout, home string) []string {
 }
 
 func (windowsOpenSearch) install(l oslocal.Layout, home string) error {
-	for _, d := range []string{l.Config(), l.DataDir(), l.Logs(), l.Tmp()} {
+	for _, d := range l.ServiceFolders() {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func (windowsOpenSearch) install(l oslocal.Layout, home string) error {
 	sid := securefile.ServiceSID(oslocal.ServiceName)
 	// It may change its config (its keystore), data, logs and temporary
 	// files, and look into the folder that holds them; not the CA.
-	for _, d := range []string{l.Config(), l.DataDir(), l.Logs(), l.Tmp()} {
+	for _, d := range l.ServiceFolders() {
 		if err := grantAccess(d, sid, modifyAccess, true); err != nil {
 			return fmt.Errorf("could not give %s access to %s: %w", openSearchAccount, d, err)
 		}
@@ -240,12 +240,11 @@ func (windowsOpenSearch) start() error {
 }
 
 func (windowsOpenSearch) securityAdmin(l oslocal.Layout, home string, port int) error {
-	certs := l.Certs()
 	cmd := exec.Command(filepath.Join(home, "plugins", "opensearch-security", "tools", "securityadmin.bat"),
 		"-cd", l.Security(), "-icl", "-h", "127.0.0.1", "-p", strconv.Itoa(port),
-		"-cacert", filepath.Join(certs, ospki.RootCAFile),
-		"-cert", filepath.Join(certs, ospki.AdminCertFile),
-		"-key", filepath.Join(certs, ospki.AdminKeyFile))
+		"-cacert", filepath.Join(l.CA(), ospki.RootCAFile),
+		"-cert", filepath.Join(l.CA(), ospki.AdminCertFile),
+		"-key", filepath.Join(l.CA(), ospki.AdminKeyFile))
 	cmd.Env = openSearchEnv(l, home)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
