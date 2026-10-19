@@ -84,7 +84,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
   the real sender of each connection is kept, and sample HAProxy, nginx and keepalived
   setups.
-- A load test with [sizing numbers](performance.md).
+- A load test with [sizing numbers](performance.md), including a
+  [lab run](performance.md#lab-sizes) of about 21,500 events a second (about 1 TB a day)
+  on one 2-core Signalith server and two OpenSearch nodes, steady for two days with no
+  late detections.
 
 **More data**
 
@@ -143,9 +146,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     Windows needs no separate install step. Signalith Agents update themselves from
     signed releases and roll back if an update fails.
 
-**Lab load numbers**
-:   The [sizing](performance.md#lab-sizes) table filled in from separate lab machines and an
-    OpenSearch cluster, not only a CI runner. The lab runs are under way.
+**Several servers in the lab**
+:   The same lab load spread over three Signalith servers, to confirm that
+    [spreading detections](servers.md#the-background-jobs) shares the work evenly before
+    it is on by default. The lab run is under way.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

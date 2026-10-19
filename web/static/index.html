@@ -975,99 +975,130 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <header class="page-head">
       <div>
         <h2 class="page-head__title">Add data</h2>
-        <p class="page-head__desc">Collect logs from your computers with the Signalith Agent, Fluent Bit or an OpenTelemetry Collector, manage hosts with osquery, receive syslog from network devices, bring in Wazuh alerts and network sensor logs, or teach Signalith any other log from a sample.</p>
+        <p class="page-head__desc">Choose where your data comes from, then follow the steps that appear right below it. For computers, the Signalith Agent is the quickest way.</p>
       </div>
     </header>
     <div class="card sample-card" id="sample-card" hidden></div>
     <div class="agent">
-      <fieldset class="agent-os">
-        <legend class="sr-only">Source</legend>
-        <label class="card agent-os__card agent-os__card--wide">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
-          <span class="agent-os__text"><b>Signalith Agent <span class="badge badge--accent">Recommended</span></b><span>One line per computer installs everything it needs. Signalith tells it what to collect and keeps it running, so there is nothing to configure by hand. For Linux, Windows and macOS.</span></span>
-          <input type="radio" name="os" value="agent" checked>
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-square-terminal"/></svg></span>
-          <span class="agent-os__text"><b>Linux</b><span>SSH, sudo, account changes and ClamAV</span></span>
-          <input type="radio" name="os" value="linux">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
-          <span class="agent-os__text"><b>Windows</b><span>Security and System logs, Microsoft Defender and Sysmon</span></span>
-          <input type="radio" name="os" value="windows">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg></span>
-          <span class="agent-os__text"><b>Syslog</b><span>Firewalls, switches, routers and appliances</span></span>
-          <input type="radio" name="os" value="syslog">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
-          <span class="agent-os__text"><b>Antivirus</b><span>Microsoft Defender, ClamAV and antivirus consoles</span></span>
-          <input type="radio" name="os" value="antivirus">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
-          <span class="agent-os__text"><b>OpenTelemetry</b><span>Collectors and apps that send OTLP logs</span></span>
-          <input type="radio" name="os" value="otel">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg></span>
-          <span class="agent-os__text"><b>osquery</b><span>Inventory, file changes and configuration checks</span></span>
-          <input type="radio" name="os" value="osquery">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg></span>
-          <span class="agent-os__text"><b>Wazuh</b><span>Alerts from your Wazuh manager</span></span>
-          <input type="radio" name="os" value="wazuh">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
-          <span class="agent-os__text"><b>Network sensor</b><span>Zeek and Suricata: connections, DNS, web, TLS and IDS alerts</span></span>
-          <input type="radio" name="os" value="sensor">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>AWS CloudTrail</b><span>Sign-ins and API calls in your AWS accounts</span></span>
-          <input type="radio" name="os" value="aws">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>Entra ID and Azure</b><span>Microsoft sign-ins, directory changes and Azure activity</span></span>
-          <input type="radio" name="os" value="azure">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
-          <input type="radio" name="os" value="m365">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>Okta</b><span>Okta sign-ins, MFA, account and admin changes</span></span>
-          <input type="radio" name="os" value="okta">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>GitHub</b><span>Enterprise and organization audit log: repositories, members, security settings</span></span>
-          <input type="radio" name="os" value="github">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
-          <span class="agent-os__text"><b>Google Cloud</b><span>Admin activity and audit logs from your Google Cloud projects</span></span>
-          <input type="radio" name="os" value="gcp">
-        </label>
-        <label class="card agent-os__card">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
-          <span class="agent-os__text"><b>Kubernetes</b><span>A cluster's audit log: who created, changed, read or exec'd into what</span></span>
-          <input type="radio" name="os" value="kubernetes">
-        </label>
-        <label class="card agent-os__card agent-os__card--wide">
-          <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-file-search"/></svg></span>
-          <span class="agent-os__text"><b>Any other log</b><span>Paste a sample of a log Signalith doesn’t know yet. It works out the format and fields, shows which detections can use them, and saves a parser.</span></span>
-          <input type="radio" name="os" value="custom">
-        </label>
-      </fieldset>
+      <div class="agent-pick" id="agent-pick" data-state="chosen">
+        <h3 class="agent-pick__title" id="agent-pick-title">Where is the data coming from?</h3>
+        <fieldset class="agent-os" id="agent-pick-list" aria-labelledby="agent-pick-title">
+          <label class="card agent-os__card agent-os__card--wide agent-os__card--rec">
+            <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
+            <span class="agent-os__text">
+              <b>Signalith Agent <span class="badge badge--accent">Recommended for computers</span></b>
+              <span>The easiest way to collect from Linux, Windows and Mac computers.</span>
+              <span class="agent-os__why" role="list">
+                <span role="listitem"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>One line per computer installs everything: Fluent Bit for logs and osquery for endpoint details.</span>
+                <span role="listitem"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>No configuration files. Choose what each group collects on the Endpoints page and it follows.</span>
+                <span role="listitem"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>It keeps them running and shows how each computer is doing.</span>
+              </span>
+              <span class="agent-os__else">Pick another source below for things you can’t install software on, such as firewalls and cloud services, or when you already run Fluent Bit, OpenTelemetry or osquery yourself.</span>
+            </span>
+            <input type="radio" name="os" value="agent" checked>
+          </label>
+
+          <div class="agent-os__group" role="group" aria-labelledby="agent-grp-hosts">
+            <p class="agent-os__heading" id="agent-grp-hosts">Computers, set up by hand</p>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-square-terminal"/></svg></span>
+              <span class="agent-os__text"><b>Linux</b><span>A Fluent Bit configuration for SSH, sudo, account changes and ClamAV</span></span>
+              <input type="radio" name="os" value="linux">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></span>
+              <span class="agent-os__text"><b>Windows</b><span>A Fluent Bit configuration for Security and System logs, Defender and Sysmon</span></span>
+              <input type="radio" name="os" value="windows">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-network"/></svg></span>
+              <span class="agent-os__text"><b>OpenTelemetry</b><span>Collectors and apps that send OTLP logs</span></span>
+              <input type="radio" name="os" value="otel">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg></span>
+              <span class="agent-os__text"><b>osquery</b><span>Inventory, file changes and configuration checks</span></span>
+              <input type="radio" name="os" value="osquery">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
+              <span class="agent-os__text"><b>Antivirus</b><span>Microsoft Defender, ClamAV and antivirus consoles</span></span>
+              <input type="radio" name="os" value="antivirus">
+            </label>
+          </div>
+
+          <div class="agent-os__group" role="group" aria-labelledby="agent-grp-net">
+            <p class="agent-os__heading" id="agent-grp-net">Network and security tools</p>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-router"/></svg></span>
+              <span class="agent-os__text"><b>Syslog</b><span>Firewalls, switches, routers and appliances</span></span>
+              <input type="radio" name="os" value="syslog">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg></span>
+              <span class="agent-os__text"><b>Network sensor</b><span>Zeek and Suricata: connections, DNS, web, TLS and IDS alerts</span></span>
+              <input type="radio" name="os" value="sensor">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-shield-alert"/></svg></span>
+              <span class="agent-os__text"><b>Wazuh</b><span>Alerts from your Wazuh manager</span></span>
+              <input type="radio" name="os" value="wazuh">
+            </label>
+          </div>
+
+          <div class="agent-os__group" role="group" aria-labelledby="agent-grp-cloud">
+            <p class="agent-os__heading" id="agent-grp-cloud">Cloud and online services</p>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>AWS CloudTrail</b><span>Sign-ins and API calls in your AWS accounts</span></span>
+              <input type="radio" name="os" value="aws">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>Entra ID and Azure</b><span>Microsoft sign-ins, directory changes and Azure activity</span></span>
+              <input type="radio" name="os" value="azure">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>Microsoft 365</b><span>Exchange, SharePoint, OneDrive and Teams activity</span></span>
+              <input type="radio" name="os" value="m365">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>Okta</b><span>Okta sign-ins, MFA, account and admin changes</span></span>
+              <input type="radio" name="os" value="okta">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>GitHub</b><span>Enterprise and organization audit log: repositories, members, security settings</span></span>
+              <input type="radio" name="os" value="github">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-cloud"/></svg></span>
+              <span class="agent-os__text"><b>Google Cloud</b><span>Admin activity and audit logs from your Google Cloud projects</span></span>
+              <input type="radio" name="os" value="gcp">
+            </label>
+            <label class="card agent-os__card">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
+              <span class="agent-os__text"><b>Kubernetes</b><span>A cluster's audit log: who created, changed, read or exec'd into what</span></span>
+              <input type="radio" name="os" value="kubernetes">
+            </label>
+          </div>
+
+          <div class="agent-os__group" role="group" aria-labelledby="agent-grp-other">
+            <p class="agent-os__heading" id="agent-grp-other">Anything else</p>
+            <label class="card agent-os__card agent-os__card--wide">
+              <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-file-search"/></svg></span>
+              <span class="agent-os__text"><b>Any other log</b><span>Paste a sample of a log Signalith doesn’t know yet. It works out the format and fields, shows which detections can use them, and saves a parser.</span></span>
+              <input type="radio" name="os" value="custom">
+            </label>
+          </div>
+        </fieldset>
+        <button class="card agent-pick__change" type="button" id="agent-pick-change" aria-controls="agent-pick-list" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg>
+          <span><b>Choose a different source</b><span>Network devices, cloud services, Fluent Bit by hand and more</span></span>
+        </button>
+      </div>
 
       <div class="card agent-setup" id="agent-setup">
         <div class="card__head">
