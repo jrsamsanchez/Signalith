@@ -2635,7 +2635,13 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 /* choosing a source: the whole list while choosing; once chosen, only the
    chosen card stays, so its steps sit right below it */
 #page-data .agent-pick { display: grid; gap: var(--sp-3); min-width: 0; scroll-margin-top: calc(var(--topbar-h, 56px) + 16px); }
-#page-data .agent-pick__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-4); }
+#page-data .agent-pick__change { display: inline-flex; align-items: center; gap: 10px; justify-self: start; max-width: 100%; padding: 8px 14px; border: 0; font: inherit; text-align: left; color: var(--text-2); cursor: pointer; transition: box-shadow var(--t-fast), color var(--t-fast); }
+#page-data .agent-pick__change:hover { color: var(--text); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-sm); }
+#page-data .agent-pick__change:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); }
+#page-data .agent-pick__change > .icon { flex: none; width: 16px; height: 16px; color: var(--text-3); }
+#page-data .agent-pick__change > span { display: grid; min-width: 0; }
+#page-data .agent-pick__change b { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+#page-data .agent-pick__change span span { font-size: var(--fs-xs); color: var(--text-3); }
 #page-data .agent-pick__title { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
 #page-data .agent-pick[data-state="choosing"] .agent-pick__change { display: none; }
 #page-data .agent-pick[data-state="chosen"] :is(.agent-os__heading, .agent-os__else) { display: none; }

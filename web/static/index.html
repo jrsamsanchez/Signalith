@@ -979,10 +979,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="card sample-card" id="sample-card" hidden></div>
     <div class="agent">
       <div class="agent-pick" id="agent-pick" data-state="chosen">
-        <div class="agent-pick__head">
-          <h3 class="agent-pick__title" id="agent-pick-title">Where is the data coming from?</h3>
-          <button class="btn btn--secondary btn--sm agent-pick__change" type="button" id="agent-pick-change" aria-controls="agent-pick-list" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg>Choose a different source</button>
-        </div>
+        <h3 class="agent-pick__title" id="agent-pick-title">Where is the data coming from?</h3>
         <fieldset class="agent-os" id="agent-pick-list" aria-labelledby="agent-pick-title">
           <label class="card agent-os__card agent-os__card--wide agent-os__card--rec">
             <span class="agent-os__icon"><svg class="icon" aria-hidden="true"><use href="#i-zap"/></svg></span>
@@ -1095,6 +1092,10 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
             </label>
           </div>
         </fieldset>
+        <button class="card agent-pick__change" type="button" id="agent-pick-change" aria-controls="agent-pick-list" aria-expanded="false">
+          <svg class="icon" aria-hidden="true"><use href="#i-chevrons-up-down"/></svg>
+          <span><b>Choose a different source</b><span>Network devices, cloud services, Fluent Bit by hand and more</span></span>
+        </button>
       </div>
 
       <div class="card agent-setup" id="agent-setup">
