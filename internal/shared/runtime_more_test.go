@@ -382,6 +382,46 @@ func TestResign(t *testing.T) {
 	}
 }
 
+// reset-key reports each document it could not sign again, and goes on
+// with the others.
+func TestResignFaults(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	d := NewDoc[testBody](a, "users", "users", 1)
+	if _, err := d.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "jlee"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Bump(ctx, "users"); err != nil {
+		t.Fatal(err)
+	}
+	e.putSigned(e.key, KeyringDocID, "keyring", 1, 2, `[1]`, nil)
+	docs, _, err := ReadAll(ctx, e.c, testPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := NewClusterKey()
+	failing(e, func(method, path string) bool { return method == http.MethodPut && strings.Contains(path, "/_doc/users") })
+	_, err = Resign(ctx, e.c, testPrefix, docs, k, 50, "admin", "siem-a", "2026-10-12T10:00:00Z", "n_a", KeyringMember{Name: "siem-a"})
+	if err == nil || !strings.Contains(err.Error(), "users:") || !strings.Contains(err.Error(), KeyringDocID+":") {
+		t.Errorf("Resign = %v", err)
+	}
+	// No keyring, and its create and the watch bumps refused.
+	e.os.Delete(testIndex, KeyringDocID)
+	failing(e, writes)
+	_, err = Resign(ctx, e.c, testPrefix, nil, k, 51, "admin", "siem-a", "2026-10-12T10:00:00Z", "n_a", KeyringMember{Name: "siem-a"})
+	if err == nil || !strings.Contains(err.Error(), KeyringDocID) {
+		t.Errorf("Resign without a keyring = %v", err)
+	}
+	failing(e, func(_, path string) bool { return strings.Contains(path, "_search") })
+	if _, err := Resign(ctx, e.c, testPrefix, nil, k, 52, "admin", "siem-a", "2026-10-12T10:00:00Z", "n_a", KeyringMember{Name: "siem-a"}); err == nil {
+		t.Error("Resign with the watch search refused")
+	}
+	if _, _, err := ReadAll(ctx, e.c, testPrefix); err == nil {
+		t.Error("ReadAll with the search refused")
+	}
+}
+
 // The limiter's and the audit's keys are their own, and the same for the
 // same cluster key.
 func TestLockAndAuditKeys(t *testing.T) {
