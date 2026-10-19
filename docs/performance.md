@@ -88,14 +88,20 @@ The latest numbers are in each night's `sizing-reports` artifact, as `sizing.md`
 
 ### Lab sizes
 
-Lab measurements on separate machines (3 Linux servers with 4 vCPU and 8 GB each, and a
-3-node OpenSearch cluster) will fill this table, using S1 at full size as the
-[lab runbook](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/README.md)
-describes.
+Measured in a cloud lab on separate machines with
+[loadtest/tb-day.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/tb-day.yaml):
+200 agents sending 25,000 events a second of about 500 bytes for 4 hours, 5 analysts
+searching, and the built-in detections on. It ran on two days in a row (October 2026),
+each day into a new daily index, with OpenSearch 3.9.0 and automatic shards.
 
-| Events/s | Servers | OpenSearch nodes | CPU per server | Memory per server |
+| Events/s stored | Per day | Signalith servers | OpenSearch nodes | Result |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| about 21,500 (median), 24,000 (p95) | about 1.86 billion events, about 1 TB | 1, with 2 vCPU and 4 GB | 2, with 8 vCPU and 16 GB each, on network volumes | Steady on both days; 99% of batches answered within 1.8 s; searches under 0.8 s (p95); no detection ran late |
+
+The one Signalith server's 2 cores were the limit (about 70% busy on average), so it
+stored about 21,500 of the 25,000 events a second offered. To reach 25,000, give the server more cores or add a
+[second server](multi-server.md). OpenSearch was about 27% busy and refused no writes.
+A lab run with three Signalith servers sharing the load is under way.
 
 ## Known limits
 

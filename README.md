@@ -1354,6 +1354,11 @@ syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 | `web/static` | Browser UI (plain JavaScript, no build step) |
 | `deploy/` | Docker Compose, systemd unit, Windows installer script |
 
+In a lab, one Signalith server with 2 CPU cores and two 8-core OpenSearch nodes stored
+about 21,500 events a second (about 1 TB a day) for two days running, with no late
+detections and searches answered in under a second
+([sizing](https://signalith.io/docs/performance/#lab-sizes)).
+
 ## Building
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
