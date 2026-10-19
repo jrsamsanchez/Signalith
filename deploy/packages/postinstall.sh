@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # After the files are in place. A first install writes a starter config
 # (HTTPS on, a generated admin password kept for "signalith
-# initial-password", syslog on 514 and 6514) and starts the service.
+# initial-password", syslog over TLS on 6514; plain syslog on 514 stays off
+# until Add data > Syslog turns it on) and starts the service.
 # With a config already there (an upgrade, or installing again after a
 # removal), passwords an older version kept as plain text are encrypted
 # and the service is restarted if it was running, or started again if the

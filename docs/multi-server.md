@@ -19,8 +19,8 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
 - **Ports.** The new server reaches OpenSearch (TCP 9200 by default). The other servers
   reach the new one on its web port (TCP 9000 by default), to check it is ready and to hand
   it work. Agents send to it on its agent port (TCP 7779 by default, see
-  [The agent port](sending-data.md#the-agent-port)), and devices on its syslog ports (514,
-  and 6514 for syslog over TLS).
+  [The agent port](sending-data.md#the-agent-port)), and devices on its syslog ports (6514 for syslog over TLS,
+  and 514 when plain syslog is turned on).
 - **The same version.** Every server runs the same version of Signalith. The line installs
   that version, or checks the one already installed.
 - **Linux** with systemd (Debian, Ubuntu, RHEL, Rocky, Alma, Fedora, SUSE), **Windows**

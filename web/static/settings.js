@@ -32,7 +32,7 @@
   // admin's yes, when saving, to a web address only the server reaches.
   const S = {
     view: null, seq: 0, drafts: {}, replacing: {}, fields: {}, sections: {}, controls: {},
-    saveErr: null, tests: {}, restart: null, restartErr: '', pinned: '', pinnedY: 0, focusKey: '', localOK: false,
+    saveErr: null, tests: {}, restart: null, restartErr: '', pinned: '', pinnedY: 0, focusKey: '', focusRestart: false, localOK: false,
     // With shared settings: server is the node id of the server shown ('' for
     // the one answering), cards the section cards of each group, and cluster
     // the restart of servers asked for here, as GET api/requests/<id> has it.
@@ -378,6 +378,16 @@
     S.focusKey = key;
     showPage('settings');
   };
+  // openRestart opens the page at its Restart now banner, for the Add
+  // data page once it saved a change that waits for a restart.
+  window.openRestart = () => {
+    S.focusKey = '';
+    S.focusRestart = true;
+    // This server's own page, which has the banner for its restart.
+    if (S.server) window.openServerSettings('');
+    else if (currentPage === 'settings') load();
+    else showPage('settings');
+  };
   // openServerSettings opens the page of one server (a node id; '' for
   // this one), for the Servers page.
   window.openServerSettings = (id) => {
@@ -391,6 +401,15 @@
     if (currentPage === 'settings') load(); else showPage('settings');
   };
   function focusSetting() {
+    if (S.focusRestart) {
+      S.focusRestart = false;
+      const banner = $('st-restart');
+      if (banner) {
+        window.scrollTo({ top: 0 });
+        banner.focus({ preventScroll: true });
+      }
+      return;
+    }
     const key = S.focusKey;
     S.focusKey = '';
     const row = key && document.querySelector(`#st-main .st-field[data-key="${CSS.escape(key)}"]`);

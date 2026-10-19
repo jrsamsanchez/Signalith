@@ -3666,6 +3666,8 @@ const syslogState = {
   nameError: null,
   // since the panel opened: when, the counts then, new senders announced, and what the live box says
   opened: 0, base: null, announced: new Set(), liveKey: '',
+  // the syslog settings behind "Turn on plain syslog" (admins): { view } or { err }, read when needed
+  plain: null,
 };
 try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; } catch (_) { /* storage may be blocked */ }
 
@@ -3727,6 +3729,7 @@ async function syslogOpen() {
   st.opened = Date.now();
   st.announced.clear();
   st.liveKey = '';
+  st.plain = null;
   if (!st.ticker) st.ticker = setInterval(syslogTick, 1000);
   if (!st.h) syslogSkeleton();
   await syslogGuessHost();
@@ -3963,7 +3966,10 @@ function syslogBuild(sl) {
   addr.classList.toggle('hidden', !sl.enabled);
   if (!sl.enabled) {
     syslogHostError('');
-    return main.replaceChildren(...syslogOff(h));
+    main.replaceChildren(...syslogOff());
+    syslogPlainRender();
+    syslogPlainLoad();
+    return;
   }
   const d = syslogDest(sl);
   const ips = (h.runtime && h.runtime.addresses) || [];
@@ -4024,11 +4030,17 @@ function syslogBuild(sl) {
     e.preventDefault();
     pickTab(list[(to + list.length) % list.length].dataset.vendor, true);
   });
-  main.replaceChildren(el('ol', { class: 'agent-steps', role: 'list' },
+  // Only syslog over TLS is on: devices that can't use it need plain syslog.
+  const plain = !d.udp && !d.tcp ? el('div', { class: 'sl-plain', id: 'syslog-plain', tabindex: '-1' }) : null;
+  main.replaceChildren(...(plain ? [plain] : []), el('ol', { class: 'agent-steps', role: 'list' },
     step(1, 'Set up the device', syslogTabBar(tabs), panel),
     step(2, 'Send a test message', ...syslogTest(d)),
     step(3, 'See it arrive', el('div', { class: 'sl-live', id: 'syslog-live', 'aria-live': 'off' }))));
   pickTab(syslogState.vendor);
+  if (plain) {
+    syslogPlainRender();
+    syslogPlainLoad();
+  }
 }
 
 // syslogRevealTab scrolls the tab strip, never the page, so a tab is clear
@@ -4064,53 +4076,190 @@ function syslogTabBar(tabs) {
 const syslogSh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 const syslogPs = (s) => `'${s.replace(/'/g, '\'\'')}'`;
 
-// syslogOff says syslog is off and how to turn it on, as steps for the
-// system the server runs on (api/health "runtime"): what lets a Linux
-// service open port 514 (before the restart that needs it), the values to
-// set on the Settings page, which checks them and restarts Signalith, and
-// the Windows firewall rules. The page keeps polling and shows the setup
-// once syslog is on.
-function syslogOff(h) {
-  const rt = h.runtime || {};
+// syslogPlainPlan is how plain syslog (UDP and TCP) is turned on where the
+// server runs (api/health "runtime"): the port Signalith listens on, the
+// one devices send to, the settings to save, and whether a Linux service
+// must first be let open port 514. Ports below 1024 need root or the
+// systemd unit's capability; a service can be given it, anything else
+// gets a high port. In a container the port is 5514, which the Docker
+// quick start publishes as 514.
+function syslogPlainPlan(rt) {
+  rt = rt || {};
   const docker = !!rt.container;
   const win = rt.os === 'windows';
   const linux = !docker && !win;
-  // Ports below 1024 need root or the systemd unit's capability; a
-  // service can be given it, anything else gets a high port.
   const port = docker ? 5514 : linux && rt.low_ports === false && !rt.systemd ? 1514 : 514;
+  const addr = `0.0.0.0:${port}`;
+  return {
+    docker, win, linux, port, sendTo: docker ? 514 : port,
+    capability: linux && rt.low_ports === false && !!rt.systemd,
+    values: { 'syslog.udp': addr, 'syslog.tcp': addr },
+  };
+}
+
+// syslogSettingField finds one setting in an api/settings view.
+function syslogSettingField(v, key) {
+  for (const s of (v && v.sections) || []) for (const f of s.fields || []) if (f.key === key) return f;
+  return null;
+}
+
+// syslogPlainWarning says what plain syslog risks, next to the button
+// that turns it on.
+function syslogPlainWarning(title) {
+  return el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'), el('div', {},
+    el('b', {}, title),
+    el('p', {}, 'Plain syslog is unencrypted, and anyone who can reach the port can send fake events. Use syslog over TLS where the device supports it, ' +
+      'as rsyslog and syslog-ng do. Turn plain syslog on only for devices that can’t, and limit who may send with ', el('b', {}, 'Allowed senders'), ' (syslog.allow).')));
+}
+
+// syslogPlainSteps are what is left to do once plain syslog is saved: let
+// a Linux service open port 514 (that restarts Signalith too) or restart
+// it, then let syslog through the Windows firewall.
+function syslogPlainSteps(plan, view) {
   const code = (t) => el('code', {}, t);
-  const step = (n, title, ...body) => el('li', { class: 'agent-step' }, el('span', { class: 'agent-step__num' }, n),
-    el('div', { class: 'agent-step__body' }, el('p', { class: 'agent-step__text' }, ...[].concat(title)), ...body));
-  const steps = [];
-  if (linux && rt.low_ports === false && rt.systemd) {
-    steps.push([['Let the service open port 514, then restart it so it can:'], agentSetupCommand('sudo mkdir -p /etc/systemd/system/signalith.service.d\n' +
-      'printf \'[Service]\\nAmbientCapabilities=CAP_NET_BIND_SERVICE\\n\' | sudo tee /etc/systemd/system/signalith.service.d/syslog.conf\n' +
-      'sudo systemctl daemon-reload && sudo systemctl restart signalith', 'Copy commands')]);
+  const out = [];
+  if (plan.capability) {
+    out.push(el('p', {}, 'Let the service open port 514. This also restarts Signalith, which then starts plain syslog:'),
+      agentSetupCommand('sudo mkdir -p /etc/systemd/system/signalith.service.d\n' +
+        'printf \'[Service]\\nAmbientCapabilities=CAP_NET_BIND_SERVICE\\n\' | sudo tee /etc/systemd/system/signalith.service.d/syslog.conf\n' +
+        'sudo systemctl daemon-reload && sudo systemctl restart signalith', 'Copy commands'));
+  } else {
+    const r = (view && view.restart) || {};
+    out.push(el('p', {}, 'It starts when Signalith restarts.'));
+    if (r.available) {
+      out.push(el('div', { class: 'btn-row' }, el('button', { type: 'button', class: 'btn btn--primary btn--sm', onclick: () => window.openRestart && window.openRestart() },
+        icon('rotate-ccw'), 'Restart now…')),
+      el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Opens the Settings page, which lists every change waiting for the restart. Choose ', el('b', {}, 'Restart now'), ' there.')));
+    } else {
+      out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, r.unavailable || 'Restart Signalith on the server to apply it.')));
+    }
   }
-  const set = [['On the Settings page, under Syslog, set ', el('b', {}, 'UDP address'), ' and ', el('b', {}, 'TCP address'), ' to ', code(`0.0.0.0:${port}`),
-    ...(docker ? [', and ', el('b', {}, 'Port devices send to'), ' to ', code('514')] : []),
-    '. Save, then choose ', el('b', {}, 'Restart now'), ' at the top of that page.'],
-  el('div', {}, el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: () => openSetting('syslog.udp') },
-    icon('settings'), 'Open syslog settings'))];
-  if (port === 1514) set.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Ports below 1024 need root on Linux, so this uses 1514. Devices then send to port 1514.')));
-  if (docker) set.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'In the Docker quick start, port 514 on this machine reaches 5514 inside the container.')));
-  steps.push(set);
-  if (win) {
-    const fw = (p) => `New-NetFirewallRule -DisplayName 'Signalith syslog ${p} 514' -Direction Inbound -Protocol ${p} -LocalPort 514 -Action Allow`;
-    steps.push([['In PowerShell as administrator, let syslog through Windows Firewall:'], agentSetupCommand(`${fw('UDP')}\n${fw('TCP')}`, 'Copy commands')]);
+  if (plan.win) {
+    const fw = (p) => `New-NetFirewallRule -DisplayName 'Signalith syslog ${p} ${plan.port}' -Direction Inbound -Protocol ${p} -LocalPort ${plan.port} -Action Allow`;
+    out.push(el('p', {}, 'In PowerShell as administrator, let syslog through Windows Firewall:'), agentSetupCommand(`${fw('UDP')}\n${fw('TCP')}`, 'Copy commands'));
   }
+  if (plan.port === 1514) out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Ports below 1024 need root on Linux, so this uses 1514. Devices then send to port 1514.')));
+  if (plan.docker) out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'In the Docker quick start, port ', code('514'), ' on this machine reaches ', code('5514'), ' inside the container.')));
+  return out;
+}
+
+// syslogPlainLoad reads the syslog settings for the admin's "Turn on
+// plain syslog" button: whether they can be changed here and whether a
+// change waits for a restart. It reads them again when the panel opens.
+async function syslogPlainLoad() {
+  const st = syslogState;
+  if (!can('admin') || st.plain) return;
+  st.plain = { loading: true };
+  try {
+    st.plain = { view: await api('api/settings') };
+  } catch (e) {
+    st.plain = { err: e };
+  }
+  syslogPlainRender();
+}
+
+// syslogPlainOn saves syslog.udp and syslog.tcp the way the Settings page
+// does (PUT api/settings, which asks for the password again when a save
+// needs it), then shows what is left: the restart, and the port and
+// firewall steps the system needs.
+async function syslogPlainOn(btn) {
+  const st = syslogState;
+  const plan = syslogPlainPlan(st.h && st.h.runtime);
+  const values = { ...plan.values };
+  // The Docker quick start's devices send to 514 on the host.
+  const pub = syslogSettingField(st.plain && st.plain.view, 'syslog.public_port');
+  if (plan.docker && pub && !pub.locked && !pub.value) values['syslog.public_port'] = 514;
+  const restore = busy(btn, 'Turning on…');
+  try {
+    const v = await api('api/settings', { values }, 'PUT');
+    st.plain = { view: v, saved: true };
+    toast('Plain syslog is saved. It starts when Signalith restarts.', null, { title: 'Saved' });
+  } catch (e) {
+    restore();
+    if (e.code === 'forbidden') return;
+    const why = e.fields ? Object.values(e.fields).join(' ') : '';
+    st.plain = { ...(st.plain || {}), saveErr: why || e.message };
+  }
+  syslogPlainRender();
+  const box = $('syslog-plain');
+  if (box) box.focus({ preventScroll: true });
+}
+
+// syslogPlainRender fills the box that turns on plain syslog, in place,
+// so the device setups around it keep their state.
+function syslogPlainRender() {
+  const box = $('syslog-plain');
+  if (!box) return;
+  const st = syslogState;
+  const h = st.h || {};
+  const plan = syslogPlainPlan(h.runtime);
+  const code = (t) => el('code', {}, t);
+  const openSettings = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: () => openSetting('syslog.udp') }, icon('settings'), 'Open syslog settings');
+  if (!can('admin')) {
+    return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {},
+      'Plain syslog over UDP and TCP is off. An admin can turn it on here for devices that can’t send over TLS.')));
+  }
+  const p = st.plain;
+  if (!p || p.loading) return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Checking the syslog settings…')));
+  // Without the settings, the steps to make the change by hand.
+  if (p.err) {
+    return box.replaceChildren(syslogPlainWarning('Plain syslog (UDP and TCP) is off.'),
+      el('p', {}, 'On the Settings page, under Syslog, set ', el('b', {}, 'UDP address'), ' and ', el('b', {}, 'TCP address'), ' to ', code(plan.values['syslog.udp']),
+        ', save, then choose ', el('b', {}, 'Restart now'), ' at the top of that page.'),
+      el('div', { class: 'btn-row' }, openSettings));
+  }
+  const v = p.view;
+  const udp = syslogSettingField(v, 'syslog.udp');
+  const tcp = syslogSettingField(v, 'syslog.tcp');
+  const locked = [udp, tcp].find((f) => f && f.locked);
+  if (locked) {
+    return box.replaceChildren(el('div', { class: 'alert', 'data-tone': 'info', role: 'status' }, icon('lock'), el('div', {},
+      el('b', {}, 'Plain syslog (UDP and TCP) is set outside Signalith.'),
+      el('p', {}, sentence(locked.locked_reason || `It is set by ${locked.env} in this server’s environment`) + ' ',
+        'In Kubernetes, set ', code('server.syslog.plain: true'), ' and run ', code('helm upgrade'), '; elsewhere, change ', code(locked.env || 'SIGNALITH_SYSLOG_UDP'),
+        ' and ', code('SIGNALITH_SYSLOG_TCP'), ' where the service is started.'))));
+  }
+  if (v && v.editable === false) {
+    return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {},
+      'Plain syslog is off, and this server was started without a configuration file, so it can’t be turned on here. Set syslog.udp and syslog.tcp where it is started.')));
+  }
+  const saved = [udp, tcp].filter((f) => f && f.pending && f.value);
+  if (saved.length) {
+    const addr = saved.map((f) => f.value).filter((a, i, all) => all.indexOf(a) === i).join(' and ');
+    return box.replaceChildren(el('div', { class: 'alert', 'data-tone': 'success', role: 'status' }, icon('circle-check'), el('div', {},
+      el('b', {}, `Plain syslog is saved: ${saved.map((f) => (f.key === 'syslog.udp' ? 'UDP' : 'TCP')).join(' and ')} on ${addr}.`),
+      ...syslogPlainSteps(plan, v))));
+  }
+  const btn = el('button', { type: 'button', class: 'btn btn--primary btn--sm', id: 'syslog-plain-on' }, icon('power'), 'Turn on plain syslog (UDP and TCP)');
+  btn.addEventListener('click', () => syslogPlainOn(btn));
+  return box.replaceChildren(syslogPlainWarning('Plain syslog (UDP and TCP) is off.'),
+    el('p', {}, 'For devices that can only send plain syslog, such as many firewalls, switches and routers: Signalith then listens on UDP and TCP ',
+      code(plan.values['syslog.udp']), ...(plan.sendTo !== plan.port ? ['; devices send to port ', code(String(plan.sendTo))] : []), '.'),
+    ...(p.saveErr ? [el('p', { class: 'hint', 'data-tone': 'warning' }, icon('circle-alert'), el('span', {}, 'Nothing was saved. ' + sentence(p.saveErr)))] : []),
+    el('div', { class: 'btn-row' }, btn, openSettings));
+}
+
+// syslogOff says syslog is off and how to turn it on. Admins turn plain
+// syslog on with one click (syslogPlainRender); syslog over TLS is the
+// safer choice, set on the Settings page. The page keeps polling and
+// shows the setup once syslog is on.
+function syslogOff() {
   return [
     el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'), el('div', {},
-      el('b', {}, 'Syslog is off.'), el('p', {}, 'Turn it on with these steps. This page shows the device setup once it is on.'))),
-    el('ol', { class: 'agent-steps', role: 'list' }, ...steps.map(([title, ...body], i) => step(i + 1, title, ...body))),
+      el('b', {}, 'Syslog is off.'), el('p', {}, 'Syslog over TLS keeps logs private and can’t be forged on the way: set ', el('b', {}, 'TLS address'),
+        ' to ', el('code', {}, '0.0.0.0:6514'), ' on the Settings page, under Syslog. This page shows the device setup once syslog is on.'))),
+    el('div', { class: 'sl-plain', id: 'syslog-plain', tabindex: '-1' }),
   ];
 }
 
 // syslogTest is a test message from Linux (logger) and from Windows
-// (PowerShell has no syslog command, so it sends one RFC 5424 line).
+// (PowerShell has no syslog command, so it sends one RFC 5424 line). With
+// only syslog over TLS on, the message goes over TLS: openssl on Linux, an
+// SslStream in PowerShell.
 function syslogTest(d) {
   const p = d.udp ? 'udp' : d.tcp ? 'tcp' : '';
-  if (!p) return [el('p', { class: 'hint' }, icon('info'), 'Turn on syslog.udp or syslog.tcp to send a test from here.')];
+  if (!p && d.tls) return syslogTestTLS(d);
+  if (!p) return [el('p', { class: 'hint' }, icon('info'), 'Turn on syslog to send a test from here.')];
   const host = d.host;
   const port = d[p];
   const msg = '"<14>1 - $env:COMPUTERNAME signalith-test - - - Test message from $env:COMPUTERNAME' + (p === 'tcp' ? '`n' : '') + '"';
@@ -4122,6 +4271,25 @@ function syslogTest(d) {
     agentSetupCommand(`logger -n ${host} -P ${port} ${p === 'udp' ? '-d' : '-T'} -t signalith-test "Test message from $(hostname)"`),
     el('p', { class: 'sl-label' }, 'From Windows PowerShell'),
     agentSetupCommand(ps),
+  ];
+}
+
+// syslogTestTLS is the test message over TLS. It only tests the way to
+// Signalith, so it does not check the certificate; the device setups do.
+function syslogTestTLS(d) {
+  const host = d.host;
+  const port = d.tls;
+  const msg = '"<14>1 - $env:COMPUTERNAME signalith-test - - - Test message from $env:COMPUTERNAME`n"';
+  const ps = `$t = New-Object Net.Sockets.TcpClient('${host}', ${port}); $s = New-Object Net.Security.SslStream($t.GetStream(), $false, { $true }); ` +
+    `$s.AuthenticateAsClient('${host}', $null, [Security.Authentication.SslProtocols]::Tls12, $false); ` +
+    `$b = [Text.Encoding]::UTF8.GetBytes(${msg}); $s.Write($b, 0, $b.Length); $s.Close(); $t.Close()`;
+  return [
+    el('p', { class: 'sl-label' }, 'From Linux'),
+    agentSetupCommand(`printf '<14>1 - %s signalith-test - - - Test message from %s\\n' "$(hostname)" "$(hostname)" | ` +
+      `openssl s_client -connect ${syslogHostPort(host, port)} -servername ${host} -quiet -no_ign_eof >/dev/null`),
+    el('p', { class: 'sl-label' }, 'From Windows PowerShell'),
+    agentSetupCommand(ps),
+    slNote('This sends over TLS without checking Signalith’s certificate, to test the way here only. The device setups above check it.'),
   ];
 }
 
@@ -4257,8 +4425,10 @@ function syslogVendors(d, ips) {
   const pick = (...order) => order.find((p) => d[p]) || '';
   const hp = (p) => syslogHostPort(d.host, d[p]);
   const v6 = d.host.includes(':');
-  const none = () => [slNote('Only syslog over TLS is on, and this setup needs UDP or TCP. Set syslog.udp or syslog.tcp to turn one on.')];
-  const udpOnly = (name) => [slNote(name + ' sends over UDP only, and UDP is off here. Set syslog.udp to turn it on.')];
+  const none = () => [slNote('This device can’t send over TLS, and plain syslog (UDP and TCP) is off here. ' +
+    (can('admin') ? 'Turn it on above to set it up.' : 'An admin can turn it on above.'))];
+  const udpOnly = (name) => [slNote(name + ' sends over UDP only, and UDP is off here. ' +
+    (can('admin') ? 'Turn on plain syslog above to set it up.' : 'An admin can turn on plain syslog above.'))];
   // Servers send over TLS when it is on and Signalith has a CA to give
   // them: they check the server with it, and nobody on the network can
   // read the logs.

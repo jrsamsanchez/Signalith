@@ -39,5 +39,21 @@ Agents outside the cluster need Signalith's address: set server.publicURL
 to the address they reach it at, then helm upgrade. Agents send to the
 same host on port {{ include "signalith.agentPort" . }}.
 {{- end }}
+{{- if .Values.server.syslog.enabled }}
+
+Syslog: devices send over TLS to the {{ $full }}-syslog Service on port 6514.
+{{- if include "signalith.plainSyslog" . }}
+Plain syslog (UDP and TCP 514) is on: it is unencrypted and anyone who can
+reach it can send fake events. Limit it with server.syslog.allow, or turn
+it off with server.syslog.plain=false.
+{{- else }}
+Plain syslog (UDP and TCP 514) is off. For devices that cannot send over
+TLS, set server.syslog.plain=true and run helm upgrade.
+{{- if .Release.IsUpgrade }}
+Releases installed before 0.3.1 took it by default: if devices send to port
+514, set server.syslog.plain=true to keep receiving from them.
+{{- end }}
+{{- end }}
+{{- end }}
 
 Guide: https://signalith.io/docs/kubernetes/

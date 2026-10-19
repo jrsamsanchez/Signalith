@@ -133,6 +133,17 @@ spec:
               value: /run/signalith/secrets/ingest-token
             - name: SIGNALITH_CLUSTER_KEY_FILE
               value: /run/signalith/secrets/cluster-key
+            {{- $own := default dict (get (default dict $v.server.config) "syslog") }}
+            {{- if and (eq $role "server") (not (or (hasKey $own "udp") (hasKey $own "tcp"))) }}
+            # Plain syslog follows server.syslog.plain, so it matches the
+            # syslog Service; the Settings page shows it locked. Addresses
+            # of your own in server.config.syslog are used instead.
+            {{- $plain := ternary "0.0.0.0:5514" "off" (include "signalith.plainSyslog" $ctx | eq "true") }}
+            - name: SIGNALITH_SYSLOG_UDP
+              value: {{ $plain | quote }}
+            - name: SIGNALITH_SYSLOG_TCP
+              value: {{ $plain | quote }}
+            {{- end }}
             {{- if and (not $v.opensearch.enabled) (eq $v.opensearch.external.auth "password") }}
             - name: SIGNALITH_OPENSEARCH_USERNAME
               valueFrom: { secretKeyRef: { name: {{ $v.opensearch.external.existingSecret }}, key: username } }
@@ -146,8 +157,10 @@ spec:
             - { name: https, containerPort: {{ $port }}, protocol: TCP }
             - { name: agents, containerPort: {{ include "signalith.agentPort" $ctx }}, protocol: TCP }
             {{- if and $v.server.syslog.enabled (eq $role "server") }}
+            {{- if include "signalith.plainSyslog" $ctx }}
             - { name: syslog-udp, containerPort: 5514, protocol: UDP }
             - { name: syslog-tcp, containerPort: 5514, protocol: TCP }
+            {{- end }}
             - { name: syslog-tls, containerPort: 6514, protocol: TCP }
             {{- end }}
           # /readyz and /livez answer on plain HTTP too (docs/servers.md,

@@ -82,6 +82,17 @@ capabilities:
   drop: [ALL]
 {{- end }}
 
+{{/*
+"true" when the servers take plain syslog over UDP and TCP (5514 in the
+pods, 514 on the Service), else "". server.syslog.plain turns it on; an
+upgrade whose reused values are from before the setting (it is missing,
+not false) keeps it on, as those releases had it.
+*/}}
+{{- define "signalith.plainSyslog" -}}
+{{- $s := .Values.server.syslog -}}
+{{- if and $s.enabled (or $s.plain (kindIs "invalid" $s.plain)) }}true{{ end -}}
+{{- end }}
+
 {{/* The config file, signalith.yaml, for a server (role "") or a scanner. */}}
 {{- define "signalith.config" -}}
 {{- $ctx := .ctx -}}
@@ -130,7 +141,8 @@ capabilities:
   "dashboards" (dict "dir" "/var/lib/signalith/data/dashboards" "stale_after" "2h")
 -}}
 {{- if and $v.server.syslog.enabled (ne .role "scanner") -}}
-{{- $_ := set $cfg "syslog" (dict "udp" "0.0.0.0:5514" "tcp" "0.0.0.0:5514" "tls" "0.0.0.0:6514" "public_port" 514 "allow" $v.server.syslog.allow) -}}
+{{- $plain := ternary "0.0.0.0:5514" "" (include "signalith.plainSyslog" $ctx | eq "true") -}}
+{{- $_ := set $cfg "syslog" (dict "udp" $plain "tcp" $plain "tls" "0.0.0.0:6514" "public_port" 514 "allow" $v.server.syslog.allow) -}}
 {{- end -}}
 {{- mustMergeOverwrite $cfg (deepCopy $v.server.config) | toYaml }}
 {{- end }}

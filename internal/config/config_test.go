@@ -355,7 +355,7 @@ func TestSavedFileExplainsSyslog(t *testing.T) {
 	}
 	data, _ := os.ReadFile(path)
 	text := string(data)
-	for _, want := range []string{"# syslog.udp, .tcp", "# appliances, servers). Point them at this server on UDP or TCP port 514, or\n# TLS port 6514", "sender.\nsyslog:\n", "udp: 0.0.0.0:514"} {
+	for _, want := range []string{"# syslog.udp, .tcp", "# appliances, servers). Point them at this server over TLS on port 6514 (it\n", "# unencrypted and can be forged, so it is off unless udp or tcp is set", "sender.\nsyslog:\n", "udp: 0.0.0.0:514"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("saved file lacks %q:\n%s", want, text)
 		}

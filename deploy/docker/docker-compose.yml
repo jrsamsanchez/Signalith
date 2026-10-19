@@ -232,13 +232,15 @@ services:
       # Agents (Fluent Bit, OpenTelemetry, osquery, network sensors), over
       # HTTPS with the same certificate.
       - "7779:7779"
-      # Syslog: devices send to this machine on port 514, which reaches the
-      # container's 5514 (it cannot open ports below 1024). If another syslog
-      # server already uses 514 here, change the left side, e.g. "1514:5514/udp",
-      # and syslog.public_port in signalith.yaml to match.
+      # Plain syslog (off until you turn it on on the Add data page, so
+      # nothing answers here until then): devices send to this machine on
+      # port 514, which reaches the container's 5514 (it cannot open ports
+      # below 1024). If another syslog server already uses 514 here, change
+      # the left side, e.g. "1514:5514/udp", and syslog.public_port in
+      # signalith.yaml to match.
       - "514:5514/udp"
       - "514:5514/tcp"
-      # Syslog over TLS, with Signalith's own certificate.
+      # Syslog over TLS, with Signalith's own certificate: on by default.
       - "6514:6514"
     environment:
       # Secrets come from files the setup service made, never from this file.

@@ -72,7 +72,9 @@ Coming from an older version? See
 [Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
 
 Ports 9000 (the web page) and 7779 (agents) are open on every network this computer is
-on. To take agents and browsers from one network only, put this computer's address on that
+on, and so is 6514 for syslog over TLS. Plain syslog on port 514 is unencrypted and can be
+forged, so nothing answers there until you turn it on (**Add data** > **Syslog**, **Turn on
+plain syslog**). To take agents and browsers from one network only, put this computer's address on that
 network in front of each in `docker-compose.yml`, for example `- "192.168.1.20:9000:9000"`
 and `- "192.168.1.20:7779:7779"`, then run the first command again.
 
@@ -195,7 +197,8 @@ same):
    sending over plain `http://` (behind Docker Desktop they share one address, so it names
    them by the computer names in their events). On each of them, install the configuration
    from the **Add data** page again; it gives the agent a token of its own and moves it to
-   HTTPS. Syslog devices need no change. If you had set a token of your own in
+   HTTPS. Syslog devices that send plain syslog to port 514 need it turned on again (see
+   [Upgrading to 0.3.1: syslog over TLS only](#upgrading-to-031-syslog-over-tls-only)). If you had set a token of your own in
    `SIGNALITH_INGEST_TOKEN`, add that line back under `environment:` of the `signalith`
    service in `docker-compose.yml` and run step 2 again; new agents still get their own
    token.
@@ -207,6 +210,26 @@ same):
    if you accept agents on plain HTTP again later. An agent you missed is turned away until
    it gets a new configuration; it keeps its events and sends them then, and Health names
    it. Until then the **Security** page shows the old token as a risk.
+
+#### Upgrading to 0.3.1: syslog over TLS only
+
+A new install takes syslog over TLS (port 6514) only: plain syslog over UDP and TCP 514 is
+unencrypted and can be forged, so it is off until you turn it on. An existing install keeps
+what it has: package, Windows and hand-made installs keep their `signalith.yaml`, which is
+never changed on an upgrade, and a setting saved on the **Settings** or **Add data** page
+stays saved.
+
+The Docker quick start and the Helm chart take their settings from the files you update,
+so after the upgrade they take syslog over TLS only too:
+
+- **Docker quick start**: `git pull` brings a `signalith.yaml` with plain syslog off. If
+  devices send to port 514, choose **Turn on plain syslog (UDP and TCP)** on **Add data** >
+  **Syslog**, then **Restart now**. That saves it in the `signalith-data` volume, so later
+  updates keep it. (If `git stash` kept your own edits to `signalith.yaml`, `git stash show
+  -p` shows them.)
+- **Helm**: set `server.syslog.plain=true` to keep UDP and TCP 514 on the syslog Service.
+  An upgrade with `--reuse-values` from an older release keeps plain syslog on by itself,
+  since its values have no `server.syslog.plain`.
 
 #### Upgrading to 0.3: the agent port
 
@@ -466,19 +489,52 @@ a record has both, its `@timestamp` is not used.
 #### Syslog
 
 Firewalls, switches, routers, appliances and servers without an agent can send syslog.
-Point them at this server's address on **UDP or TCP port 514**, or over **TLS on port
-6514**. `signalith init` turns all three on; the Docker quick start publishes port 514.
-Syslog over TLS uses the web UI's certificate (see [docs/https.md](docs/https.md#agents-and-syslog)).
+Point them at this server's address over **TLS on port 6514**, or, once it is turned on,
+as plain syslog on **UDP or TCP port 514**. Syslog over TLS uses the web UI's certificate
+(see [docs/https.md](docs/https.md#agents-and-syslog)).
+
+A new install takes **syslog over TLS only**. Plain syslog over UDP and TCP is
+unencrypted, and anyone who can reach the port can send fake events, so it is off by
+default: `signalith init`, the packages, the Windows installer, the Docker quick start
+and the Helm chart all leave it off. Many network devices can only send plain syslog;
+for them, turn it on as below, and limit who may send with
+**Allowed senders** (below).
 
 Open **Add data** and pick **Syslog** for copy-ready setup for rsyslog, syslog-ng, Cisco IOS
 and ASA, Palo Alto, FortiGate, pfSense and OPNsense, UniFi and Windows, with this server's
-address filled in; rsyslog and syslog-ng send over TLS when it is on, with the CA certificate
-to save. Send the test message it shows and watch it arrive on the same page.
-When syslog is off, the page gives the steps to turn it on for this system: the
-UDP and TCP address on the **Settings** page, then **Restart now**, plus the port
-permission for a Linux service or the Windows Firewall rules.
-By hand, forwarding a Linux server's logs with rsyslog is one line in
-`/etc/rsyslog.d/90-signalith.conf`, then a restart of rsyslog:
+address filled in; rsyslog and syslog-ng send over TLS, with the CA certificate
+to save. Send the test message it shows (over TLS while plain syslog is off) and watch it
+arrive on the same page.
+
+##### Turning on plain syslog
+
+On **Add data** > **Syslog**, an admin chooses **Turn on plain syslog (UDP and TCP)**.
+The page warns first that plain syslog is unencrypted and can be forged. The button saves
+**UDP address** and **TCP address** (`syslog.udp` and `syslog.tcp`) the way the
+**Settings** page does: `0.0.0.0:514`, or `0.0.0.0:5514` in a container, which the Docker
+quick start publishes as port 514. Plain syslog starts with the next restart: **Restart
+now** opens the Settings page at its restart banner. Where the system needs more, the page
+says so after the click: on Linux, the command that lets a service open port 514 (it
+restarts Signalith too), and on Windows the firewall rules for UDP and TCP 514.
+
+When the server's environment sets these settings (`SIGNALITH_SYSLOG_UDP` and
+`SIGNALITH_SYSLOG_TCP`), the page says so instead of offering the button. The Helm chart
+sets them from `server.syslog.plain` (see [docs/kubernetes.md](docs/kubernetes.md)). To turn plain
+syslog on in signalith.yaml instead:
+
+```yaml
+syslog:
+  udp: 0.0.0.0:514
+  tcp: 0.0.0.0:514
+  tls: 0.0.0.0:6514
+```
+
+or give `signalith init` `-syslog-udp 0.0.0.0:514 -syslog-tcp 0.0.0.0:514` on a new
+install (`install.ps1 -SyslogUdp 0.0.0.0:514 -SyslogTcp 0.0.0.0:514` on Windows).
+
+By hand, forwarding a Linux server's logs with rsyslog over plain TCP is one line in
+`/etc/rsyslog.d/90-signalith.conf`, then a restart of rsyslog (Add data gives the TLS
+setup, which needs a few more):
 
 ```
 *.* @@siem.example.com:514
@@ -513,8 +569,8 @@ rules to the `syslog.allow` senders.
 Ports below 1024 need extra permission on Linux. The systemd unit grants it; when
 running Signalith another way, use a port such as `0.0.0.0:1514`. When devices send to a
 different port than Signalith listens on, because Docker or a firewall forwards it, set
-`syslog.public_port` so Add data shows the right one (the Docker quick start listens on
-5514 and sets it to 514). The **Health** page (and `/api/health`, under `syslog`) shows the
+`syslog.public_port` so Add data shows the right one (the Docker quick start's plain syslog
+listens on 5514 and sets it to 514). The **Health** page (and `/api/health`, under `syslog`) shows the
 listeners, how many messages were received, dropped, not written and rejected, and the
 most recent senders.
 
@@ -700,7 +756,7 @@ are counted for each person's own address, not the proxy's. See
 | `auth.oidc` | off | Single sign-on with an OpenID Connect provider, usually set up under **Settings > Single sign-on**; see [docs/sso.md](docs/sso.md#setting-it-in-signalithyaml) |
 | `ingest.tokens` | none | Shared tokens (legacy) agents send as `Authorization: Bearer`; still accepted. New agents get their own token on **Add data** (see [docs/agent-tokens.md](docs/agent-tokens.md)) |
 | `ingest.max_event_age` | `7d` (or the shortest retention period if shorter) | Events older than this, or more than an hour ahead, are filed under the time they arrived, with their own time in `device_time`. See [Ingest limits](#ingest-limits) |
-| `syslog.udp`, `syslog.tcp` | off (`init` sets `0.0.0.0:514`) | Addresses to receive syslog on; empty turns a listener off. See [Syslog](#syslog) |
+| `syslog.udp`, `syslog.tcp` | off, also on a new install (plain syslog is unencrypted; **Add data** > **Syslog** turns them on) | Addresses to receive plain syslog on; empty turns a listener off. See [Syslog](#syslog) |
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Address for syslog over TLS, such as `0.0.0.0:6514`; uses the web UI's certificate |
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |

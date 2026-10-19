@@ -77,9 +77,16 @@ server:
     # audit log use.
     externalTrafficPolicy: ""
   # Syslog from firewalls, switches and servers without an agent, on its
-  # own Service: UDP and TCP 514, and syslog over TLS on 6514.
+  # own Service: syslog over TLS on 6514.
   syslog:
     enabled: true
+    # Plain syslog over UDP and TCP 514, for devices that cannot send over
+    # TLS. It is unencrypted and anyone who can reach the port can send
+    # fake events, so it is off: true adds UDP and TCP 514 to the Service
+    # (the pods listen on 5514). Releases installed before 0.3.1 had it on;
+    # set this to keep it on after an upgrade. The servers' Settings page
+    # shows it locked, since the chart sets it.
+    plain: false
     service:
       type: ClusterIP
       annotations: {}

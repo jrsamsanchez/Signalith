@@ -268,7 +268,7 @@ TimeoutStopSec=100
 # LoadCredential=master.key:/etc/credstore/signalith-master.key
 
 # Lets the signalith user open the syslog port 514 (ports below 1024 are
-# privileged on Linux) and nothing else.
+# privileged on Linux) and nothing else, for when plain syslog is turned on.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
