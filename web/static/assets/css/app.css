@@ -819,7 +819,10 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .timeline__time { color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; padding-top: 2px; }
 
 /* 12. Pattern: findings (queue + inspector) ------------------------------ */
-.split { display: grid; grid-template-columns: minmax(0, 1fr) var(--inspector-w); gap: var(--sp-4); align-items: start; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) min(var(--panel-w, var(--inspector-w)), max(var(--inspector-w), calc(100% - 576px))); gap: var(--sp-4); align-items: start; }
+/* an expanded panel takes the whole row; the list comes back when it is restored */
+.split[data-panel-wide]:has(> .inspector:not([hidden], .hidden)) { grid-template-columns: minmax(0, 1fr); }
+.split[data-panel-wide]:has(> .inspector:not([hidden], .hidden)) > :not(.inspector) { display: none; }
 .queue { display: grid; gap: var(--sp-3); min-width: 0; }
 .queue .table td { height: var(--row-h); }
 .queue .table .col-check { width: 36px; }
@@ -836,6 +839,16 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
   height: calc(100vh - var(--topbar-h) - 44px);
   display: flex; flex-direction: column; overflow: hidden;
 }
+/* side panel size: the left edge drags, the bar's expand button fills the page */
+.panel-grip { position: absolute; top: 0; bottom: 0; left: 0; width: 8px; z-index: 2; cursor: col-resize; touch-action: none; }
+.panel-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); opacity: 0; transition: opacity var(--t) var(--ease); }
+.panel-grip:hover::after, .panel-grip:focus-visible::after, .panel-resizing .panel-grip::after { opacity: 1; }
+.panel-grip:focus-visible { outline: none; }
+.panel-grip[hidden] { display: none; }
+.modal > .panel-grip { top: 16px; bottom: 16px; }
+.panel-resizing, .panel-resizing * { cursor: col-resize !important; user-select: none; }
+.panel-size[aria-pressed="true"] { color: var(--text); }
+@media (max-width: 640px) { .panel-grip, .panel-size { display: none; } }
 .inspector__bar { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 16px; box-shadow: inset 0 -1px 0 var(--line-subtle); color: var(--text-3); font-size: var(--fs-sm); }
 .inspector__bar .mono { color: var(--text-2); }
 .inspector__head { padding: 16px 16px 0; display: grid; gap: 10px; }
@@ -1050,8 +1063,9 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 /* below 1360 the inspector becomes a slide-over with a scrim, so the queue keeps every column */
 @media (max-width: 1359px) {
   .split { grid-template-columns: minmax(0, 1fr); }
-  .inspector { position: fixed; top: 8px; right: 8px; bottom: 8px; z-index: 85; width: min(420px, calc(100vw - 16px)); height: auto; max-height: none; box-shadow: var(--elev-pop); transform: translateX(calc(100% + 16px)); transition: transform var(--t) var(--ease); }
+  .inspector { position: fixed; top: 8px; right: 8px; bottom: 8px; z-index: 85; width: min(var(--panel-w, 420px), calc(100vw - 16px)); height: auto; max-height: none; box-shadow: var(--elev-pop); transform: translateX(calc(100% + 16px)); transition: transform var(--t) var(--ease); }
   .app[data-inspect] .inspector { transform: none; }
+  .inspector[data-panel-wide] { width: calc(100vw - 16px); }
   .app[data-inspect] .scrim { display: block; position: fixed; inset: 0; z-index: 80; background: var(--scrim); }
   .split .owner__name { display: inline; }
   /* the page behind an open slide-over does not scroll */
@@ -3256,9 +3270,12 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
   #page-servers .sv-table td:is([data-col="status"], [data-col="jobs"], [data-col="config"]) { grid-column: 1 / -1; padding-left: 44px; }
 }
 /* the side panel of one server's settings: a dialog at the right edge */
-.modal.sv-panel { margin: 8px 8px 8px auto; width: min(440px, calc(100vw - 16px)); max-width: none; height: calc(100dvh - 16px); max-height: none; display: flex; flex-direction: column; }
+.modal.sv-panel { margin: 8px 8px 8px auto; width: min(var(--panel-w, 440px), calc(100vw - 16px)); max-width: none; height: calc(100dvh - 16px); max-height: none; display: flex; flex-direction: column; }
 .modal.sv-panel:not([open]) { display: none; }
 .sv-panel .modal__close { margin: -4px -8px 0 auto; flex: none; }
+.modal.sv-panel[data-panel-wide] { width: calc(100vw - 16px); }
+.sv-panel .panel-size { margin: -4px 0 0 auto; flex: none; }
+.sv-panel .panel-size + .modal__close { margin-left: 0; }
 .sv-panel .modal__desc { font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .sv-panel__body { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 18px; }
 .sv-panel__part { display: grid; gap: 8px; min-width: 0; }
