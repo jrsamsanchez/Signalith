@@ -105,7 +105,9 @@ fails, it says what is missing:
 - Prefer the standard library; a new dependency needs a good reason and a license that
   fits Apache 2.0.
 - Keep messages people read plain and specific: say what happened and what to change.
-- Write tests next to the code (`foo_test.go`), including the error paths.
+- Write tests next to the code (`foo_test.go`), including the error paths. New
+  features and bug fixes come with automated tests that would fail without the change;
+  a pull request without them is not merged unless it says why none are possible.
 - Update the docs in the same change when behaviour, settings or the API change.
 
 ## Detections
