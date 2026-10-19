@@ -204,3 +204,47 @@ func TestPaceIsOpenLoop(t *testing.T) {
 		t.Error("the stall was not recorded as generator lag")
 	}
 }
+
+func TestFleetAgentGoesBackToItsTarget(t *testing.T) {
+	old := homeAfter
+	homeAfter = 1500 * time.Millisecond
+	defer func() { homeAfter = old }()
+	var mu sync.Mutex
+	refusals, home, other := 0, 0, 0
+	answer := func(w http.ResponseWriter, n *int, ok bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !ok {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		*n++
+		_ = json.NewEncoder(w).Encode(map[string]int{"indexed": 1})
+	}
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		ok := refusals > 0
+		refusals++
+		mu.Unlock()
+		answer(w, &home, ok)
+	}))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		answer(w, &other, true)
+	}))
+	defer b.Close()
+	f := newFleet("run1", "tok", []string{a.URL, b.URL}, a.Client(), newMetrics())
+	// One agent, whose own target is a, which refuses its first batch:
+	// the agent switches to b, and returns to a once homeAfter is over.
+	ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+	defer cancel()
+	f.Run(ctx, AgentLoad{N: 1, Rate: 20, Batch: 1, SwitchOnError: true})
+	f.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	if other == 0 || home == 0 {
+		t.Errorf("batches stored by its own target %d, by the other %d", home, other)
+	}
+}

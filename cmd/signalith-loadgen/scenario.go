@@ -155,8 +155,9 @@ type AgentLoad struct {
 	// EventBytes pads each event's message to about this size.
 	EventBytes int `yaml:"event_bytes"`
 	// SwitchOnError sends a batch that failed to the next target, as an
-	// agent behind DNS round robin may; by default an agent keeps its
-	// target, as Fluent Bit with one Host does.
+	// agent behind DNS round robin may, and goes back to its own target a
+	// minute later; by default an agent keeps its target, as Fluent Bit
+	// with one Host does.
 	SwitchOnError bool `yaml:"switch_on_error"`
 	// BufferMB caps the memory all agents' unsent batches hold together;
 	// past it new batches are dropped and counted, as Fluent Bit's
