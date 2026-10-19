@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 repo = os.path.abspath(sys.argv[1]); external = '--external' in sys.argv
 mkdocs = os.environ.get('MKDOCS', 'mkdocs')
+APP_HOSTS = {'osquery.io'}
 out = tempfile.mkdtemp(prefix='sigsite-')
 shutil.copytree(os.path.join(repo, 'site'), out, dirs_exist_ok=True)
 r = subprocess.run([mkdocs, 'build', '--strict', '-q', '-f', os.path.join(repo, 'mkdocs.yml'), '-d', os.path.join(out, 'docs')], capture_output=True, text=True)
@@ -57,6 +58,8 @@ for page, links in pages.items():
                 u = urllib.parse.urlsplit(u.path + ('#' + u.fragment if u.fragment else ''))
             elif u.hostname in ('localhost', '127.0.0.1') or (u.hostname or '').endswith(('example.com', 'example.org', '.local', '.internal')):
                 continue
+            elif u.hostname == 'github.com' and '/jrsamsanchez/signalith/edit/' in u.path.lower():
+                continue  # the docs' edit buttons: one per page, and GitHub rate-limits them
             else:
                 ext.setdefault(l.split('#')[0], rel); continue
         if not u.path and u.fragment:
@@ -85,7 +88,9 @@ if external:
     with ThreadPoolExecutor(12) as ex:
         for url, st in ex.map(get, sorted(ext)):
             if isinstance(st, int) and st < 400: continue
-            if st in (404, 410, 'URLError'):
+            # osquery.io is a JavaScript app: scripts get 404 on paths other than
+            # its home page, which browsers then draw. Those are only warned about.
+            if st in (404, 410, 'URLError') and urllib.parse.urlsplit(url).hostname not in APP_HOSTS:
                 gone.append(url); print('GONE    %s  %s  (on %s)' % (st, url, ext[url]))
             else:
                 print('WARNING %s  %s  (on %s)' % (st, url, ext[url]))

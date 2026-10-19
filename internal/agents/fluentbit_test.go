@@ -444,7 +444,7 @@ func TestFluentBitLinuxInstallStep(t *testing.T) {
 			t.Fatal(err)
 		}
 		steps := strings.Join(a.Steps, "\n")
-		if strings.Contains(steps, "| sh") || !strings.Contains(steps, "docs.fluentbit.io/manual/installation/linux") {
+		if strings.Contains(steps, "| sh") || !strings.Contains(steps, "docs.fluentbit.io/manual/installation/downloads/linux") {
 			t.Errorf("%s: install step %q", source, a.Steps[0])
 		}
 	}
