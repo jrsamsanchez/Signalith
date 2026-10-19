@@ -159,9 +159,9 @@
     const parts = [];
     for (const w of d.warnings || []) parts.push(warning(w));
     if (d.suggest_auto) parts.push(replicasOffer());
-    box.replaceChildren(el('p', { class: 'sv-os__sum' }, summary(d)),
+    box.replaceChildren(...[el('p', { class: 'sv-os__sum' }, summary(d)),
       parts.length ? el('div', { class: 'sv-alerts sv-os__alerts' }, ...parts) : null,
-      diskTable(d), endpoints(d), noReplicas(d));
+      diskTable(d), endpoints(d), noReplicas(d)].filter(Boolean));
   }
 
   // The part shows in this server's own side panel: the addresses are

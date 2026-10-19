@@ -592,6 +592,115 @@ function syncInspectInert() {
 new MutationObserver(syncInspectInert).observe(appEl, { attributes: true, attributeFilter: ['data-inspect'] });
 slideOver.addEventListener('change', syncInspectInert);
 
+// ---------- app shell: side panel size ----------
+// Every panel that opens at the side (the inspectors, a server's panel) can
+// be made wider: drag its left edge (or focus the edge and use the arrow
+// keys; a double click goes back to the normal width), or use the expand
+// button in its bar to fill the page and back. Each panel keeps its own
+// size in this browser. On a phone the panel already fills the screen, so
+// neither control shows.
+const PANEL_MIN = 320;
+const PANEL_LIST_MIN = 560;   // a docked panel leaves the list beside it this much (app.css .split)
+const panelPhone = matchMedia('(max-width: 640px)');
+function sidePanel(panel, key) {
+  if (panel.dataset.panelKey) return;
+  panel.dataset.panelKey = key;
+  const store = 'signalith.panel.' + key;
+  let pref = {};
+  try { pref = JSON.parse(localStorage.getItem(store)) || {}; } catch (_) { /* storage may be blocked */ }
+  const save = () => { try { localStorage.setItem(store, JSON.stringify(pref)); } catch (_) { /* storage may be blocked */ } };
+  const split = () => (panel.parentElement && panel.parentElement.classList.contains('split') ? panel.parentElement : null);
+  const docked = () => !!split() && !slideOver.matches;
+  const maxW = () => {
+    const s = split();
+    const w = docked() ? s.getBoundingClientRect().width - PANEL_LIST_MIN - 16 : window.innerWidth - 16;
+    return Math.max(PANEL_MIN, Math.round(w));
+  };
+  const btn = el('button', { class: 'btn btn--ghost btn--icon btn--sm panel-size', type: 'button', onclick: () => {
+    pref.wide = !pref.wide;
+    save();
+    apply();
+  } });
+  const grip = el('div', { class: 'panel-grip', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical',
+    'aria-label': 'Panel width', title: 'Drag to resize; double-click for the normal width' });
+  function apply() {
+    const wide = !!pref.wide;
+    for (const n of [panel, split()]) {
+      if (!n) continue;
+      n.toggleAttribute('data-panel-wide', wide);
+      if (pref.w) n.style.setProperty('--panel-w', pref.w + 'px'); else n.style.removeProperty('--panel-w');
+    }
+    const label = wide ? 'Restore panel width' : 'Expand panel';
+    btn.replaceChildren(icon(wide ? 'minimize-2' : 'maximize-2'));
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.setAttribute('aria-pressed', String(wide));
+    grip.hidden = wide;
+    grip.setAttribute('aria-valuemin', String(PANEL_MIN));
+    grip.setAttribute('aria-valuemax', String(maxW()));
+    grip.setAttribute('aria-valuenow', String(Math.round(panel.getBoundingClientRect().width) || pref.w || PANEL_MIN));
+  }
+  // crowded: the list beside a docked panel no longer fits and would spill under it
+  const crowded = () => {
+    const s = docked() && split();
+    const list = s && [...s.children].find((c) => c !== panel);
+    return !!list && list.scrollWidth > list.clientWidth + 1;
+  };
+  const setW = (w) => {
+    const floor = Math.min(Math.round(w), pref.w || PANEL_MIN);
+    pref.w = Math.min(maxW(), Math.max(PANEL_MIN, Math.round(w)));
+    pref.wide = false;
+    apply();
+    while (crowded() && pref.w - 8 >= floor) { pref.w -= 8; apply(); }
+  };
+  grip.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    grip.setPointerCapture(ev.pointerId);
+    const right = panel.getBoundingClientRect().right;
+    document.documentElement.classList.add('panel-resizing');
+    const move = (e) => setW(right - e.clientX);
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      document.documentElement.classList.remove('panel-resizing');
+      save();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up, { once: true });
+    grip.addEventListener('pointercancel', up, { once: true });
+  });
+  grip.addEventListener('dblclick', () => {
+    delete pref.w;
+    pref.wide = false;
+    save();
+    apply();
+  });
+  grip.addEventListener('keydown', (ev) => {
+    const now = panel.getBoundingClientRect().width;
+    const to = { ArrowLeft: now + 32, ArrowRight: now - 32, Home: PANEL_MIN, End: maxW() }[ev.key];
+    if (to === undefined) return;
+    ev.preventDefault();
+    setW(to);
+    save();
+  });
+  // Pages redraw their panels, so the controls go back in whenever they are missing.
+  const place = () => {
+    if (!grip.isConnected) panel.append(grip);
+    if (btn.isConnected && panel.contains(btn)) return;
+    const bar = panel.querySelector(':scope > .inspector__bar, :scope > .modal__head');
+    if (!bar) return;
+    const close = bar.querySelector(':scope > .modal__close') || bar.lastElementChild;
+    bar.insertBefore(btn, close);
+    apply();
+  };
+  new MutationObserver(place).observe(panel, { childList: true });
+  place();
+  apply();
+}
+[['f-detail', 'finding'], ['d-detail', 'detection'], ['r-detail', 'risk'], ['ti-detail', 'indicator']].forEach(([id, key]) => {
+  if ($(id)) sidePanel($(id), key);
+});
+
 // ---------- app shell: page jumper ----------
 // Typing in the sidebar box filters the nav; Enter opens the first match.
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.

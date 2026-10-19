@@ -521,6 +521,7 @@ const serverPanels = [];
     P.view = null;
     const d = modalDialog('sv-panel');
     d.classList.add('sv-panel');
+    sidePanel(d, 'server');
     d.onclose = () => {
       const from = P.id && document.querySelector(`#servers tr[data-server="${CSS.escape(P.id)}"] .sv-open`);
       P.id = '';
