@@ -1042,6 +1042,13 @@ function addSearchTerm(term) {
   setQuery(s + (rest ? '\n' + rest.trim() : ''));
   runSearch();
 }
+// newSearchFor starts a search for one term alone, as Splunk's "New
+// search" does, keeping the time range written in the current search.
+function newSearchFor(term) {
+  const times = splitPipes($('query').value)[0].match(/\b(?:earliest|latest)\s*=\s*("[^"]*"|\S+)/gi) || [];
+  setQuery([term, ...times].join(' '));
+  runSearch();
+}
 function currentDatamodel() {
   const m = splitPipes($('query').value)[0].match(/datamodel\s*=\s*"?([\w-]+)"?/i);
   return m ? m[1] : '';
@@ -2238,6 +2245,7 @@ function showCellMenu(ev, col, value, kind, row, canSort, drill) {
     items.push(...pivotItems(item, field, value));
     items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + filterValue(value))));
     items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + filterValue(value))));
+    items.push(item('search', `New search for ${field}=${fmtValue(value)}`, () => newSearchFor(field + '=' + filterValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {
       setQuery(splitPipes(queryBox.value)[0].trim() + '\n| stats count by ' + field + '\n| sort -count');
       runSearch();
