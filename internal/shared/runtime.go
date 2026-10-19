@@ -1172,6 +1172,19 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		rt.setMode(ModeGone, "")
 		return
 	}
+	// A copy of the shared settings (cache.enc) written before this
+	// server kept a new cluster key gives the hub only the key it was
+	// signed with: with the cluster document signed with a key this
+	// server keeps, it looks again as a start without that copy does.
+	if p := h.problemOf(ClusterDocID); p != nil && p.unknownKID != "" && h.Keys().Get(p.unknownKID) == nil {
+		if keys, err := rt.readKeys(); err == nil && keys.get(p.unknownKID) != nil {
+			rt.mu.Lock()
+			rt.joined = false
+			rt.mu.Unlock()
+			rt.evaluate(ctx, false)
+			return
+		}
+	}
 	body, ok := cdoc.Get()
 	if !ok {
 		p := h.problemOf(ClusterDocID)
