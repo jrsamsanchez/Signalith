@@ -9,9 +9,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // "signalith cluster found" founds without the job lease, and the server
@@ -401,7 +403,9 @@ func TestResignFaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	k, _ := NewClusterKey()
-	failing(e, func(method, path string) bool { return method == http.MethodPut && strings.Contains(path, "/_doc/users") })
+	failing(e, func(method, path string) bool {
+		return method == http.MethodPut && strings.Contains(path, "/_doc/users")
+	})
 	_, err = Resign(ctx, e.c, testPrefix, docs, k, 50, "admin", "siem-a", "2026-10-12T10:00:00Z", "n_a", KeyringMember{Name: "siem-a"})
 	if err == nil || !strings.Contains(err.Error(), "users:") || !strings.Contains(err.Error(), KeyringDocID+":") {
 		t.Errorf("Resign = %v", err)
@@ -462,5 +466,87 @@ func TestResealKeyFile(t *testing.T) {
 	}
 	if _, _, err := ResealNodeKeyFile([]byte("not json"), func(secrets.Stored) (string, error) { return "", nil }); err == nil {
 		t.Error("a file that is not JSON was resealed")
+	}
+}
+
+// An approval that does not hold a usable key is not taken, and logged
+// once.
+func TestTakeApprovalRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	b := e.server("siem-b", nil)
+	b.wantMode(ModeLegacyB)
+	nk, err := (KeyStore{Dir: b.dir, Master: b.master}).LoadNodeKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := a.key()
+	sealed := func(kid string, plain string) json.RawMessage {
+		t.Helper()
+		s, err := SealToNode(nk.Public(), "n_siem-b", kid, []byte(plain))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(ApprovalDoc{Kind: ApprovalKind, NodeID: "n_siem-b", KID: kid, Sealed: s})
+		return raw
+	}
+	other, _ := NewClusterKey()
+	for name, src := range map[string]json.RawMessage{
+		"not json":    json.RawMessage(`[`),
+		"no kid":      json.RawMessage(`{"kind":"approval"}`),
+		"not sealed":  json.RawMessage(`{"kind":"approval","kid":"` + k.ID() + `","sealed":"x"}`),
+		"damaged":     sealed(k.ID(), "!!"),
+		"short":       sealed(k.ID(), "AAAA"),
+		"another kid": sealed(k.ID(), other.Text()),
+		"another key": sealed(other.ID(), other.Text()),
+	} {
+		if b.rt.takeApproval(ctx, nk, src, store.Version{}) {
+			t.Errorf("%s: taken", name)
+		}
+	}
+	if n := len(ClusterKeyFiles(b.dir)); n != 0 {
+		t.Errorf("%d keys kept", n)
+	}
+	if got := strings.Count(b.logs.String(), "an approval for this server cannot be used"); got < 5 {
+		t.Errorf("logged %d refusals", got)
+	}
+	before := strings.Count(b.logs.String(), "cannot be used")
+	b.rt.takeApproval(ctx, nk, json.RawMessage(`[`), store.Version{})
+	b.rt.takeApproval(ctx, nk, json.RawMessage(`[`), store.Version{})
+	if after := strings.Count(b.logs.String(), "cannot be used"); after != before+1 {
+		t.Errorf("the same refusal logged %d times", after-before)
+	}
+
+	// The pending list skips documents that are not what they say.
+	e.os.Put(testRuntime, PendingID("n_x"), map[string]any{"kind": PendingKind, "node_id": "n_y"})
+	e.os.Put(testRuntime, PendingID("n_bad"), map[string]any{"kind": PendingKind, "node_id": "n_bad", "node_pub": "not a key"})
+	list, err := a.rt.Pending(ctx)
+	if err != nil || len(list) != 1 || list[0].NodeID != "n_siem-b" {
+		t.Errorf("pending = %+v, %v", list, err)
+	}
+	idle := NewRuntime(RuntimeOptions{StateDir: t.TempDir(), Self: Self{NodeID: "n_z", Name: "siem-z"}, Clock: e.clock})
+	if _, err := idle.Pending(ctx); err == nil {
+		t.Error("pending listed without OpenSearch")
+	}
+	if err := b.rt.WriteApproval(ctx, ApprovalDoc{NodeID: "n_x"}); err == nil {
+		t.Error("a server not in the cluster wrote an approval")
+	}
+	// Deletes refused while dropping stale documents.
+	failing(e, func(method, _ string) bool { return method == http.MethodDelete })
+	if _, err := a.rt.DropStalePending(ctx, e.clock.Now().Add(PendingStale+time.Hour)); err == nil {
+		t.Error("DropStalePending with deletes refused")
+	}
+	failing(e, func(_, path string) bool { return strings.Contains(path, "_search") })
+	if _, err := a.rt.DropStalePending(ctx, e.clock.Now()); err == nil {
+		t.Error("DropStalePending with the search refused")
+	}
+	if _, err := a.rt.Pending(ctx); err == nil {
+		t.Error("Pending with the search refused")
+	}
+	if _, err := a.rt.Approved(ctx); err == nil {
+		t.Error("Approved with the search refused")
 	}
 }

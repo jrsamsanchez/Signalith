@@ -3,6 +3,7 @@ package shared
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -274,4 +275,103 @@ func TestRequestsAndChunksRefusals(t *testing.T) {
 	if err := nokey.AcceptRestore(ctx, "sam", 0); err == nil {
 		t.Error("AcceptRestore without a key")
 	}
+}
+
+// accept-restore leaves a document that fails its MAC as it is, and
+// reports a write OpenSearch refuses.
+func TestAcceptRestoreRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, logs := e.hub("siem-a")
+	d := NewDoc[testBody](a, "users", "users", 1)
+	c := NewCollection[testBody](a, "rule", "rules", 1)
+	if _, err := d.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "jlee"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Create(ctx, "sam", "r1", &testBody{Name: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	stranger, _ := NewClusterKey()
+	e.putSigned(stranger, "forged", "settings", 1, 1, `{}`, nil)
+	failing(e, func(method, path string) bool {
+		return method == http.MethodPut && strings.Contains(path, "/_doc/users")
+	})
+	err := a.AcceptRestore(ctx, "sam", 10)
+	if err == nil || !strings.Contains(err.Error(), "users") {
+		t.Errorf("AcceptRestore = %v", err)
+	}
+	mustContain(t, "log", logs.String(), "accept-restore left documents that fail their checks")
+	if src := e.os.Source(testIndex, "forged"); fmt.Sprint(src["rev"]) != "1" {
+		t.Errorf("the forged document was written again: %v", src)
+	}
+	if _, _, rev := d.Updated(); rev > 10 {
+		t.Errorf("users at rev %d although its write was refused", rev)
+	}
+	if _, etag, _ := c.Get("r1"); etag == "" {
+		t.Error("r1 is gone")
+	}
+}
+
+// A Remote reports what it cannot read or write.
+func TestRemoteRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	r := NewRemote[testBody](a, "nodecfg:n_b", "nodecfg", 1)
+	set := func(v *testBody) error { v.Name = "x"; return nil }
+	failing(e, everything)
+	if _, _, _, err := r.Read(ctx); err == nil {
+		t.Error("Read with OpenSearch down")
+	}
+	if err := r.Mutate(ctx, "sam", set); err == nil {
+		t.Error("Mutate with OpenSearch down")
+	}
+	e.os.SetFault(nil)
+	boom := errors.New("no")
+	if err := r.Mutate(ctx, "sam", func(*testBody) error { return boom }); !errors.Is(err, boom) {
+		t.Errorf("Mutate whose fn refuses = %v", err)
+	}
+	r.Validate = func(v *testBody) error { return errors.New("never") }
+	if err := r.Mutate(ctx, "sam", set); err == nil {
+		t.Error("Mutate that Validate refuses")
+	}
+	r.Validate = nil
+	if err := r.Mutate(ctx, "sam", set); err != nil {
+		t.Fatal(err)
+	}
+	// A body this version cannot decode is invalid.
+	r.Validate = func(v *testBody) error { return errors.New("never") }
+	if _, _, _, err := r.Read(ctx); err == nil {
+		t.Error("Read of a body Validate refuses")
+	}
+	unused := NewRemote[testBody](NewHub(Options{NodeName: "x"}), "nodecfg:n_c", "nodecfg", 1)
+	if _, _, _, err := unused.Read(ctx); err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Errorf("Read without OpenSearch = %v", err)
+	}
+}
+
+// A forged request for listed servers is refused for this server's part,
+// recorded in its status, and logged by the hub's log when the runner has
+// none.
+func TestRequestsRefuseForgedListed(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, logs := e.hub("siem-a")
+	r := NewRequests(a, "n_a")
+	ran := 0
+	rn := &Runner{Requests: r, Lease: (&lease{epoch: 1, holding: true}).get,
+		Handlers: map[string]Handler{"restart": func(context.Context, *Request) error { ran++; return nil }}}
+	forged := &Request{Kind: "request", ID: "rq_forged", Type: "restart", Targets: []string{"n_a", "n_b"}, State: RequestQueued,
+		RequestedBy: "admin", RequestedOn: "siem-a", Created: e.clock.Now().UTC()}
+	if _, err := e.c.Create(ctx, r.index(), requestDocID(forged.ID), forged, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rn.RunOnce(ctx); err != nil || ran != 0 {
+		t.Fatalf("ran %d: %v", ran, err)
+	}
+	got, _, err := r.Get(ctx, forged.ID)
+	if err != nil || got.State != RequestFailed || got.Status["n_a"] != RequestFailed || !strings.HasPrefix(got.Error, "refused: ") {
+		t.Errorf("forged = %+v, %v", got, err)
+	}
+	mustContain(t, "log", logs.String(), "refused to run a request")
 }

@@ -192,3 +192,55 @@ func TestForgetRemoved(t *testing.T) {
 		t.Errorf("ForgetRemoved without a cluster = %v", err)
 	}
 }
+
+// A batch whose watch bump is refused is saved all the same, with no
+// sequence number and a warning; an item the checks refuse, or one
+// changed outside Signalith, stops it.
+func TestMutateManyRefusals(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, logs := e.hub("siem-a")
+	b, _ := e.hub("siem-b")
+	ca := NewCollection[testBody](a, "rule", "rules", 1)
+	cb := NewCollection[testBody](b, "rule", "rules", 1)
+	write := func(name string, _ *testBody) (*testBody, bool, error) { return &testBody{Name: name}, true, nil }
+	failing(e, func(method, path string) bool {
+		return strings.HasSuffix(path, "/_refresh") || method == "PUT" && strings.Contains(path, "watch:rules")
+	})
+	n, seq, err := ca.MutateMany(ctx, "sam", []string{"r1", "r2"}, write)
+	if err != nil || n != 2 || seq != 0 {
+		t.Errorf("MutateMany = %d, %d, %v", n, seq, err)
+	}
+	mustContain(t, "log", logs.String(), "saved, but the other servers may not see it")
+	e.os.SetFault(nil)
+
+	ca.Validate = func(v *testBody) error {
+		if v.Name == "bad" {
+			return errors.New("not that name")
+		}
+		return nil
+	}
+	if n, _, err := ca.MutateMany(ctx, "sam", []string{"bad"}, write); err == nil || n != 0 {
+		t.Errorf("MutateMany that Validate refuses = %d, %v", n, err)
+	}
+	ca.Validate = nil
+
+	// r1 changed outside Signalith: b refuses to write over it.
+	cycle(t, b)
+	src := e.os.Source(testIndex, ca.ItemID("r1"))
+	src["body"] = `{"name":"forged"}`
+	e.os.Put(testIndex, ca.ItemID("r1"), src)
+	cycle(t, b)
+	var pe *ProblemError
+	if _, _, err := cb.MutateMany(ctx, "bob", []string{"r1"}, write); !errors.As(err, &pe) {
+		t.Errorf("MutateMany over a tampered item = %v", err)
+	}
+	// Reads refused while an item is read again after a conflict.
+	if _, err := cb.Mutate(ctx, "bob", "r2", func(v *testBody) error { v.Items = []string{"b"}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	failing(e, func(method, path string) bool { return method == "GET" && strings.Contains(path, "rule:r2") })
+	if _, _, err := ca.MutateMany(ctx, "sam", []string{"r2"}, write); err == nil {
+		t.Error("MutateMany with the item unreadable after a conflict")
+	}
+}

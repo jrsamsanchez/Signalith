@@ -228,6 +228,42 @@ func TestCatchUpNeedsAnOffer(t *testing.T) {
 	}
 }
 
+// A server whose keyring copy is behind does not start a second rotation
+// over one in progress.
+func TestKeyRotationStartedElsewhere(t *testing.T) {
+	rc := newRotationCluster(t)
+	done := make(chan error, 1)
+	go func() {
+		_, err := rc.a.rt.RotateKey(context.Background(), RotateOptions{By: "admin", Poll: time.Second, MemberWait: 2 * time.Second})
+		done <- err
+	}()
+	for stopped := false; !stopped; {
+		rc.heartbeats()
+		select {
+		case <-done:
+			stopped = true
+		case <-time.After(5 * time.Millisecond):
+			if rc.e.clock.Waiting() > 0 {
+				rc.e.clock.Advance(time.Second)
+			}
+		}
+	}
+	kr, _ := rc.a.rt.Keyring().Get()
+	n, _ := kr.Rotation()
+	if n == nil {
+		t.Fatal("no rotation in progress")
+	}
+	rc.a.holds.Store(false)
+	rc.b.holds.Store(true)
+	if _, err := rc.b.rt.RotateKey(context.Background(), RotateOptions{By: "admin"}); err == nil || !strings.Contains(err.Error(), "another rotation of the cluster key started meanwhile") {
+		t.Errorf("RotateKey over a rotation in progress = %v", err)
+	}
+	kr, _ = rc.e.server("siem-q", func(o *RuntimeOptions) { o.KeyFile = writeKeyFile(t, rc.a.key()) }).rt.Keyring().Get()
+	if cur, _ := kr.Rotation(); cur == nil || cur.KID != n.KID {
+		t.Errorf("the rotation in progress is now %+v, want %s", cur, n.KID)
+	}
+}
+
 func TestJoinNames(t *testing.T) {
 	for _, c := range []struct {
 		in   []string
