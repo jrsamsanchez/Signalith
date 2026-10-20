@@ -1,0 +1,93 @@
+# Signalith as a public, read-only demo with the made-up sample data, such
+# as demo.signalith.io (docs/demo.md). It goes on top of the Docker quick
+# start, which keeps OpenSearch private and makes every secret itself, and
+# adds Caddy in front: Caddy gets a Let's Encrypt certificate for the
+# demo's name and is the only thing that answers from the internet, on
+# port 443. Signalith answers Caddy only, over the private network between
+# them, and its demo mode turns off event intake, password sign-in from
+# outside demo.admin_networks, the AI assistant and everything else that
+# reaches other systems.
+#
+# It needs Docker Compose 2.24.4 or newer (for !reset), a public DNS name
+# for this computer, and port 443 open to it. From the folder you cloned
+# Signalith into:
+#
+#   1. Name the demo in a file called .env next to deploy/docker/docker-compose.yml:
+#        SIGNALITH_DEMO_HOST=demo.example.com
+#   2. Start it:
+#        docker compose -f deploy/docker/docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d
+#   3. Open https://demo.example.com and choose Explore the demo. The sample
+#      data loads within a few minutes of the first start, and again every day.
+#
+# Every path below is relative to deploy/docker, the folder of the first
+# file, as Compose reads them.
+services:
+  signalith:
+    # Nothing of Signalith's is published: Caddy reaches it over the
+    # private network, and it takes no events in, so it needs no agent or
+    # syslog port.
+    ports: !reset []
+    # No AI model is used, so it needs no way to the computer running Docker.
+    extra_hosts: !reset []
+    environment:
+      - SIGNALITH_DEMO=true
+      - SIGNALITH_PUBLIC_URL=https://${SIGNALITH_DEMO_HOST:?set SIGNALITH_DEMO_HOST in .env, such as demo.example.com}
+      # Where password sign-in still works, such as your own address or a
+      # VPN; none by default, so the demo is managed from this computer's
+      # shell (docker compose ... exec signalith signalith ...).
+      # - SIGNALITH_DEMO_ADMIN_NETWORKS=198.51.100.7/32
+    volumes:
+      # Demo mode, HTTPS from Caddy and Caddy's address as the one reverse
+      # proxy whose X-Forwarded-For is believed.
+      - ../demo/signalith.yaml:/etc/signalith/signalith.yaml:ro
+    networks:
+      default: {}
+      front:
+        ipv4_address: 172.31.250.10
+
+  caddy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    depends_on:
+      signalith: { condition: service_started }
+    ports:
+      # HTTPS only. Caddy proves the name with the TLS-ALPN challenge on this
+      # same port, so port 80 stays closed.
+      - "443:443"
+    environment:
+      - SIGNALITH_DEMO_HOST=${SIGNALITH_DEMO_HOST:?set SIGNALITH_DEMO_HOST in .env, such as demo.example.com}
+    volumes:
+      - ../demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificate and its key, kept across restarts so Let's Encrypt
+      # is not asked again.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      front:
+        ipv4_address: 172.31.250.2
+    # Hardening, as for Signalith: only the volumes above can be written,
+    # and no privileges but opening port 443.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+networks:
+  # Between Caddy and Signalith only, with fixed addresses so signalith.yaml
+  # can name Caddy as its trusted reverse proxy.
+  front:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:

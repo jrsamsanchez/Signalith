@@ -858,7 +858,7 @@ document.addEventListener('keydown', (ev) => {
 // ---------- app shell: user menu ----------
 // showUser fills the top bar and the account menu from api/me: the
 // display name (or username), and the username and role under it.
-const SOURCE_NOTE = { builtin: 'built-in account', directory: 'directory account' };
+const SOURCE_NOTE = { builtin: 'built-in account', directory: 'directory account', demo: 'public demo, read-only' };
 function showUser(m) {
   const name = m.name || m.username || m.user || '';
   const initial = (name.replace(/^[^a-z0-9]+/i, '').charAt(0) || '?').toUpperCase();
