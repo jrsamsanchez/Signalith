@@ -400,4 +400,8 @@
     }
     return part('Certificate authority', ...kids);
   });
+
+  // The rotation as the card last saw it, for the remove dialog
+  // (servers-lifecycle.js): null before the card has loaded.
+  window.caRotation = () => (S.rep && S.rep.rotation) || null;
 })();

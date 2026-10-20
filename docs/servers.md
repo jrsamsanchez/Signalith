@@ -605,7 +605,9 @@ no revocation list, and agents trust the CA itself. So whoever holds that key ca
 certificates that agents, browsers and syslog devices trust, for any name the CA may
 vouch for, until the cluster's CA is replaced. `signalith cluster remove` and `leave`
 print this. After you remove a server you no longer trust, replace the CA
-([Replacing the cluster's CA](#replacing-the-clusters-ca)).
+([Replacing the cluster's CA](#replacing-the-clusters-ca)). If a replacement is
+prepared, the server may hold the new CA's key too: abort it, then prepare again. If one
+was switched but not retired, retire it, then replace the CA again.
 
 A server that leaves keeps its HTTPS certificate and can't renew it. `leave` prints
 the date it expires. To use the server on its own after that, delete its `tls` folder

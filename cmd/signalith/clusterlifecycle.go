@@ -571,7 +571,20 @@ func (x *clusterCLI) caKeptNote(name string) {
 	}
 	fmt.Fprintf(x.out, "%s may still hold the cluster's HTTPS certificate authority key (%s), in a backup of its state folder or a copy of its shared settings, "+
 		"and with it could make certificates that agents, browsers and syslog devices trust. "+
-		"That stays true until the cluster's certificate authority is replaced: run signalith cluster tls rotate-ca prepare, then switch and retire (docs/servers.md, When a server leaves).\n", name, b.CASHA256)
+		"That stays true until the cluster's certificate authority is replaced: %s (docs/servers.md, When a server leaves).\n", name, b.CASHA256, caReplaceAdvice(b))
+}
+
+// caReplaceAdvice says how to replace b, the cluster's certificate
+// authority, from where its rotation stands: a removed server may hold a
+// prepared next key too, and a switched rotation must be retired first.
+func caReplaceAdvice(b *clustertls.Body) string {
+	switch {
+	case b.Next != nil:
+		return "a rotation is in progress, and the removed server may hold its new key too, so abort it (signalith cluster tls rotate-ca abort), then run rotate-ca prepare, switch and retire again"
+	case b.Previous != nil:
+		return "a rotation was switched but not retired, so retire it (signalith cluster tls rotate-ca retire), then run a new rotation: rotate-ca prepare, switch and retire"
+	}
+	return "run signalith cluster tls rotate-ca prepare, then switch and retire"
 }
 
 // forgetCluster deletes, in the state folder dir, the cluster key's

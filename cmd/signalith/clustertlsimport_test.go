@@ -163,3 +163,20 @@ func TestReadPlainFile(t *testing.T) {
 		t.Errorf("plain file: %q %v", b, err)
 	}
 }
+
+// What remove and leave advise depends on where a rotation stands.
+func TestCAReplaceAdvice(t *testing.T) {
+	cases := []struct {
+		b    clustertls.Body
+		want string
+	}{
+		{clustertls.Body{}, "rotate-ca prepare, then switch and retire"},
+		{clustertls.Body{Next: &clustertls.OtherCA{}}, "rotate-ca abort), then run rotate-ca prepare"},
+		{clustertls.Body{Previous: &clustertls.OtherCA{}}, "rotate-ca retire), then run a new rotation"},
+	}
+	for _, c := range cases {
+		if got := caReplaceAdvice(&c.b); !strings.Contains(got, c.want) {
+			t.Errorf("%+v: %s", c.b, got)
+		}
+	}
+}
