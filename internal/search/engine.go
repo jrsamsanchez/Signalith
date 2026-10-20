@@ -207,6 +207,10 @@ type Result struct {
 	// so it kept those that rank first (the most events, or the order
 	// of the sort that follows) rather than the first by name.
 	Ranked bool `json:"ranked,omitempty"`
+	// Sampled is set when more events matched than the commands after
+	// the search could take: it is how many, the newest, they ran over.
+	// Their rows (counts, groups, filters) cover only those.
+	Sampled int `json:"sampled,omitempty"`
 	// Summaries lists the data models whose summary indexes answered
 	// whole 5-minute slots of the search.
 	Summaries []string `json:"summaries,omitempty"`
@@ -226,6 +230,10 @@ type Plan struct {
 	// Summaries lists the data models whose summary indexes the search
 	// reads for whole 5-minute slots.
 	Summaries []string `json:"summaries,omitempty"`
+
+	// SampleLimit is set when the commands after the search need every
+	// event it matches but run over at most this many, the newest.
+	SampleLimit int `json:"sample_limit,omitempty"`
 
 	transform query.Command
 	post      []query.Command
@@ -583,6 +591,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	size := o.DefaultEvents
 	if needsAllEvents(cmds) {
 		size = o.MaxEvents
+		p.SampleLimit = size
 	} else if n, ok := leadingHead(cmds); ok {
 		size = min(n, o.MaxEvents)
 	}
@@ -802,6 +811,9 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	}
 	if len(p.post) == 0 {
 		return res, nil
+	}
+	if p.SampleLimit > 0 && p.Mode == "events" && res.Matched > int64(len(res.Rows)) {
+		res.Sampled = len(res.Rows)
 	}
 	before := resultBytes(res)
 	if err := e.post(ctx, res, p.post, q); err != nil {

@@ -236,6 +236,12 @@ func TestBuildParseExplain(t *testing.T) {
 	if ix, _ := body["index"].(string); !strings.HasPrefix(ix, "signalith-authentication-") || !strings.Contains(ix, time.Now().UTC().Format("2006.01.02")) {
 		t.Errorf("index = %v", body["index"])
 	}
+	// Commands that need every event say they may see only some (SL-01).
+	_, body = do(t, ts, "POST", "/api/explain", `{"query":"* | eval u=lower(user) | stats count by u"}`, true)
+	steps = body["steps"].([]any)
+	if last := steps[len(steps)-1].(string); !strings.Contains(last, "Sampled") {
+		t.Errorf("steps = %v", steps)
+	}
 }
 
 func TestIngestNeedsToken(t *testing.T) {

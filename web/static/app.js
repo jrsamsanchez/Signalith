@@ -1828,6 +1828,7 @@ function renderResult() {
   if ((res.summaries || []).length) {
     stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
   }
+  if (res.sampled) stats.push(el('span', { class: 'badge badge--warning', title: `${(res.matched || 0).toLocaleString()} events matched, but the commands after the search ran over only the newest ${res.sampled.toLocaleString()}, so these results cover only those. Narrow the search, or put stats right after it to count every event.` }, 'Sampled'));
   if (res.truncated) {
     const why = res.ranked
       ? 'There were more groups than the server keeps, so it kept those with the most events (or that rank first in the sort that follows). Narrow the search to see the rest.'

@@ -955,9 +955,13 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	steps := Explain(q)
+	if plan.SampleLimit > 0 {
+		steps = append(steps, fmt.Sprintf("The commands after the search run over at most the newest %d matching events (search.max_events). If more match, the results cover only those and are marked Sampled; to count them all, put stats right after the search.", plan.SampleLimit))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"canonical": q.String(),
-		"steps":     Explain(q),
+		"steps":     steps,
 		"index":     plan.Index,
 		"body":      plan.Body,
 	})

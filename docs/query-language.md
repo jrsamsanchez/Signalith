@@ -311,8 +311,9 @@ The AI assistant can also be set on the **Settings** page (see
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,
-  de-duplicate or aggregate them all. To work on more events, filter in the search or
-  aggregate with `stats` first.
+  de-duplicate or aggregate them all. When more events match than that, those commands
+  see only the newest ones and the result is marked *Sampled* (Explain says so too). To
+  work on more events, filter in the search or aggregate with `stats` first.
 - Wildcard values (`*`, `?`) can be up to 1,000 characters long, and the wildcard values
   in `where` commands up to 4,096 characters together (`where` runs over every row in the
   server, so put long filters in the search before the first `|`). An `IN` list holds at
