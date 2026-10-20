@@ -2,7 +2,7 @@
 
 Signalith logs every change an admin or the server makes as an **audit line**: sign-ins
 and failed sign-ins, users and roles, settings, agent tokens, response actions and playbooks, retention policies and
-what retention deleted, archived or restored. On a server of its own these lines are in
+what retention deleted, archived or restored. It also logs every [search](#searches) someone runs. On a server of its own these lines are in
 the server's log, marked `audit=true`.
 
 When servers share one OpenSearch as a cluster (see
@@ -18,6 +18,30 @@ shows when it happened, on which server, who did it, what it did and to what, an
 which address. The **Audit** buttons on the Users and Settings pages open the page searching
 for their kind of change. **Check integrity** checks that no line in the time range (of the
 server picked, if one is) was changed or removed; see [Tamper evidence](#tamper-evidence).
+
+## Searches
+
+Events hold personal data such as user names and addresses, so reading them is audited
+like changing a setting. Each search run from the Search page, the API, an API token or
+the MCP server, each dashboard run, each panel preview, each notebook search, each search
+added to an investigation and each look at a field's top values writes a line with:
+
+- who ran it (`by`), their tenant, how they signed in (`method`: session, basic or token,
+  and `token_id`) and from which address (`client`);
+- the query text (up to 2,000 characters), its time range (`earliest`, `latest`) and the
+  indices it read (`index`);
+- how it ended (`outcome` ok or failed, with the error), how many events matched and how
+  long it took.
+
+A dashboard run is one line naming the dashboard, since its queries are saved with it.
+Searches Signalith runs on its own (scheduled detections, summaries, the Compliance page)
+are not logged as a person's search. Pick **Searches** under actions on the Audit page to
+see only these lines.
+
+The query text can itself hold personal data or a secret someone typed, such as a user
+name or a password they searched for, so these lines are kept like every other audit line:
+only the provider's admins see them (tenant admins do not), they are chained and signed,
+and the **Audit records** retention policy decides how long they are kept.
 
 ## How the lines are kept
 

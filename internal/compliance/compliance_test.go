@@ -21,10 +21,10 @@ var now = time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 
 func TestFrameworksLoad(t *testing.T) {
 	fs := Frameworks()
-	if len(fs) < 6 {
+	if len(fs) < 8 {
 		t.Fatalf("only %d frameworks", len(fs))
 	}
-	for _, id := range []string{"nist-800-53", "cis-v8", "pci-dss", "iso-27001", "hipaa", "soc2"} {
+	for _, id := range []string{"nist-800-53", "cis-v8", "pci-dss", "iso-27001", "hipaa", "soc2", "nis2", "gdpr"} {
 		if _, ok := FrameworkByID(id); !ok {
 			t.Errorf("no framework %s", id)
 		}
@@ -126,6 +126,7 @@ func full() *Snapshot {
 		Users:       &Users{Named: 3},
 		Assets:      10,
 		HTTPS:       true,
+		MFA:         "everyone",
 	}
 	for _, c := range checks.All() {
 		s.Checks = append(s.Checks, CheckStat{ID: c.ID, Title: c.Title, Platform: c.Platform, Refs: c.References, Pass: 2})

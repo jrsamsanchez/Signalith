@@ -544,8 +544,10 @@ func (s *Server) handleAddCaseEntry(w http.ResponseWriter, r *http.Request) {
 			q.Latest = req.Latest
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		start := time.Now()
 		res, err := s.Engine.Execute(ctx, q)
 		cancel()
+		s.auditSearch(r, "search.case: ran a search for an investigation", append([]any{"case", r.PathValue("id")}, s.searchAuditAttrs(qs, q, res, err, time.Since(start))...)...)
 		if err != nil {
 			writeSearchError(w, err)
 			return

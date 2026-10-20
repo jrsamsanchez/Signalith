@@ -9,19 +9,23 @@ real events.
 ## What visitors get
 
 The sign-in page offers **Explore the demo**. One click signs the visitor in as
-a built-in, read-only **Viewer**, with no password. Every page shows a banner:
+a built-in, read-only **Analyst**, with no password, so every page an analyst
+has shows, Vulnerabilities, Endpoints and the Ask box included. Every page shows a banner:
 *Public demo with made-up sample data. Read-only.*, with a link to
 [signalith.io](https://signalith.io).
 
-The visitor can search, open the dashboards, findings, cases, risk, the attack
-storyline, detections, threat intel, notebooks and compliance, and run
-searches, dashboards and notebooks. The visitor cannot change anything:
+The visitor can search, ask a question in plain English (answered offline),
+open the dashboards, findings, cases, risk, the attack storyline,
+vulnerabilities, endpoints, detections, threat intel, notebooks and compliance,
+and run searches, dashboards and notebooks. The visitor cannot change anything:
 
-- every route for analysts and admins is refused;
-- of the routes for viewers, only those that read are allowed, plus running a
-  search, a dashboard panel or a notebook (a viewer's run is not saved). Saving
-  setup guide answers, linking chat accounts and anything else that writes
-  answers `403` with the code `demo_read_only`;
+- every route for admins is refused, so the admins' pages (Settings, Users,
+  Data and the others) stay hidden;
+- of the routes for viewers and analysts, only those that read are allowed,
+  plus running a search, a dashboard panel or a notebook (a visitor's run is
+  not saved) and Ask. Saving a case, a dashboard, a notebook or setup guide
+  answers, changing a finding, linking chat accounts and anything else that
+  writes answers `403` with the code `demo_read_only`;
 - the visitor has no password to change, cannot set up two-step sign-in or
   passkeys, and cannot make API tokens.
 
@@ -44,13 +48,13 @@ Whatever the other settings say, a demo:
 
 | Off | How |
 | --- | --- |
-| Agents, HEC, OTLP, osquery and network sensors | The agent port is not opened, and these routes answer `403` (`demo_off`) on the web port too. |
+| Agents and their tokens, HEC, OTLP, osquery and network sensors | The agent port is not opened, and these routes answer `403` (`demo_off`) on the web port too. |
 | Syslog | No syslog port is opened. |
 | Microsoft 365 and Okta | Their logs are not read. |
 | The AI assistant | No AI model is ever used: Ask answers offline, and Investigate with AI is off. |
 | Notifications, ticketing and chat buttons | Nothing is sent to webhooks, mail servers, Jira, ServiceNow, Slack or Teams. |
 | Response actions and playbooks | They do not run, by hand or by themselves. |
-| Vulnerability scans | No network is scanned. |
+| Vulnerability scans | No network is scanned, and scan settings cannot change. The Vulnerabilities page shows the sample's scan results. |
 | Threat intel feeds | No feed is downloaded; adding or testing one is refused. |
 | Behavior baselines' IP database | It is not downloaded from an address; a file in the `ipdb` folder still works. |
 | Single sign-on (OpenID Connect and SAML), SCIM and passkey sign-in | Their routes answer `403`. |

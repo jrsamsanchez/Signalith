@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
 // Vulnerability scan results, as Signalith's own Nmap scans write them
@@ -61,10 +62,16 @@ const (
 	cpeSSH82     = "cpe:2.3:a:openbsd:openssh:8.2p1:*:*:*:*:*:*:*"
 )
 
-// vulnScanEvents writes one scan's results for hosts at t.
+// VulnTarget is the network the sample's scan results are kept under on
+// the Vulnerabilities page (Data.VulnHosts).
+const VulnTarget = vulnscan.SampleTarget
+
+// vulnScanEvents writes one scan's results for hosts at t, and keeps them
+// for the Vulnerabilities page too (vulnHost).
 func (g *gen) vulnScanEvents(scanID, network string, hosts map[string][]sampleService, order []string, t time.Time) {
 	for _, name := range order {
 		h := g.org.host(name)
+		g.vulnHosts = append(g.vulnHosts, vulnHost(scanID, network, h.Name, h.IP, hosts[name], t))
 		for _, svc := range hosts[name] {
 			const transport = "tcp"
 			base := map[string]any{
@@ -110,6 +117,48 @@ func (g *gen) vulnScanEvents(scanID, network string, hosts map[string][]sampleSe
 			}
 		}
 	}
+}
+
+// vulnHost is a host the sample's scan found, as a real scan keeps it for
+// the Vulnerabilities page.
+func vulnHost(scanID, network, name, ip string, svcs []sampleService, t time.Time) *vulnscan.Host {
+	h := &vulnscan.Host{ID: vulnscan.HostID(VulnTarget, ip), TargetID: VulnTarget, TargetName: network,
+		Address: ip, Hostname: name, ScanID: scanID, FirstSeen: t, LastSeen: t, Services: []vulnscan.HostService{}}
+	for _, svc := range svcs {
+		hs := vulnscan.HostService{Service: vulnscan.Service{Port: svc.port, Transport: "tcp", Name: svc.app,
+			Product: svc.product, Version: svc.version}}
+		if svc.cpe != "" {
+			hs.CPEs = []string{svc.cpe}
+		}
+		for _, v := range svc.vulns {
+			vu := vulnscan.Vuln{CVE: v.cve, Description: v.summary, CVSS: v.cvss, CVSSVersion: "3.1", Severity: v.severity,
+				KEV: v.kev, EPSS: v.epss, EPSSPercentile: v.epssPct, CPE: svc.cpe}
+			if v.kev {
+				vu.KEVDue, vu.Ransomware = v.kevDue, true
+			}
+			hs.Vulns = append(hs.Vulns, vu)
+			switch vu.Severity {
+			case "critical":
+				h.Counts.Critical++
+			case "high":
+				h.Counts.High++
+			case "medium":
+				h.Counts.Medium++
+			default:
+				h.Counts.Low++
+			}
+			if vu.KEV {
+				h.Counts.KEV++
+			}
+			if !vu.KEV && vu.EPSS >= vulnscan.LikelyEPSS {
+				h.Counts.Likely++
+			}
+			h.MaxCVSS, h.MaxEPSS = max(h.MaxCVSS, vu.CVSS), max(h.MaxEPSS, vu.EPSS)
+		}
+		h.Services = append(h.Services, hs)
+	}
+	h.Counts.Hosts, h.Counts.Services = 1, len(h.Services)
+	return h
 }
 
 func copyMap(m map[string]any) map[string]any {

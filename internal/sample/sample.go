@@ -26,6 +26,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
 // Size is how much background activity the sample holds. The attack
@@ -86,6 +87,9 @@ type Data struct {
 	// CaseFocus are the entity values (host, address, user) of the story
 	// the sample investigation follows, to pick its findings.
 	CaseFocus []string
+	// VulnHosts are the sample scan's results for the Vulnerabilities
+	// page, under the network VulnTarget.
+	VulnHosts []*vulnscan.Host
 }
 
 // SampleIntelSource is the threat-intel source name sample indicators use,
@@ -162,7 +166,9 @@ func Generate(opt Options) *Data {
 		Stories:    g.stories,
 		RunTimes:   g.runTimes(),
 		CaseFocus:  g.caseFocus,
+		VulnHosts:  g.vulnHosts,
 	}
+	vulnscan.SortHosts(d.VulnHosts)
 	d.Assets, d.Identities = sampleLists(g.org)
 	return d
 }
@@ -178,6 +184,7 @@ type gen struct {
 	stories    []Story
 	runTimeSet []time.Time
 	caseFocus  []string
+	vulnHosts  []*vulnscan.Host
 }
 
 func (g *gen) addRunTime(t time.Time) {
