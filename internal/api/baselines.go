@@ -41,6 +41,8 @@ type baselineCheck struct {
 	On       bool  `json:"on"`
 	Score    int   `json:"score"`
 	Profiles int64 `json:"profiles"`
+	// MaxValues is the most values it keeps per user or host.
+	MaxValues int `json:"max_values"`
 	baselines.CheckState
 	// LearningUntil is when the users or hosts seen since the check
 	// started have all learned for the learning period.
@@ -122,15 +124,16 @@ func (s *Server) baselinesView(ctx context.Context) (*baselinesView, error) {
 		v.Behind = int64(max(time.Since(state.Through), 0) / time.Second)
 	}
 	for _, c := range baselines.Checks {
-		bc := baselineCheck{Check: c, On: set.On(c.ID), Score: set.Score(c.ID)}
+		bc := baselineCheck{Check: c, On: set.On(c.ID), Score: set.Score(c.ID), MaxValues: baselines.ValueLimit(c.ID)}
 		if cs := state.Checks[c.ID]; cs != nil {
 			bc.CheckState = *cs
 		}
 		if bc.On && !bc.Started.IsZero() {
 			bc.LearningUntil = bc.Started.Add(set.Learning())
-			if !state.LiveFrom.IsZero() && bc.Started.Equal(state.LiveFrom) {
-				// The first run learned from the history already stored,
-				// so users and hosts with a history are judged at once.
+			if !state.LiveFrom.IsZero() && bc.Started.Equal(state.LiveFrom) || bc.Started.Equal(bc.CheckState.LiveFrom) {
+				// The first run, or a check turned on or reset since,
+				// learned from the history already stored, so users and
+				// hosts with a history are judged at once.
 				bc.LearningUntil = time.Time{}
 			}
 		}

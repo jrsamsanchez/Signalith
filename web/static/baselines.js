@@ -142,7 +142,11 @@
       el('div', { class: 'bl-status__text' }, el('b', {}, title), el('p', {}, text)),
       el('a', { class: 'btn btn--ghost btn--sm bl-status__docs', href: DOCS, target: '_blank', rel: 'noopener noreferrer' },
         icon('book-open'), 'How it works', el('span', { class: 'sr-only' }, ' (opens in a new tab)')))];
-    if (v.last_error && !off) {
+    const waiting = (v.checks || []).filter((c) => c.on && c.behind && c.error);
+    if (waiting.length && !off) {
+      kids.push(dxAlert('warning', waiting.length === 1 ? waiting[0].title + ' is waiting' : waiting.length + ' checks are waiting',
+        'Their searches failed, so they wait while the other checks go on. See the check below.'));
+    } else if (v.last_error && !off) {
       kids.push(dxAlert('danger', 'The last round failed' + (v.last_run ? ' (' + ago(v.last_run) + ')' : ''), sentence(v.last_error)));
     }
     return el('div', { class: 'card bl-status' }, ...kids);
@@ -172,9 +176,20 @@
     meta.push('From ' + c.data.replace('_', ' ') + ' data');
     const notes = [];
     if (c.waiting) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, c.waiting)));
-    if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only the first ${B.view.defaults.max_raised_per_hour} added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
+    if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only ${B.view.defaults.max_raised_per_hour} of them added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
     if (c.full) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `It has learned the most ${many} it keeps (${riNumText(B.view.defaults.max_profiles)}); new ones are learned once old ones are forgotten.`)));
-    if (c.truncated) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'An hour had more combinations than one search returns, so some of it was not learned.')));
+    if (c.truncated) {
+      const after = c.truncated_after ? ` Those after ${c.truncated_after} in name order were not learned that hour.` : ' Some of it was not learned.';
+      notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `The hour of ${hourOf(c.truncated)} had more combinations than one search reads.` + after)));
+    }
+    if (on && c.behind && c.error) {
+      notes.push(dxAlert('danger', 'Waiting since ' + hourOf(c.behind), sentence(c.error) + ' The other checks go on; this one catches up once its search works.'));
+    } else if (on && c.behind) {
+      notes.push(el('p', { class: 'st-warn is-info' }, icon('hourglass'), el('span', {}, 'Learning the stored history, up to ' + hourOf(c.behind) + ' so far. It adds no risk for those hours.')));
+    }
+    if (c.skipped && new Date(c.skipped) > new Date(Date.now() - 30 * 86400e3)) {
+      notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'It could not learn for over a week, so the hours before ' + hourOf(c.skipped) + ' were skipped.')));
+    }
 
     const box = el('input', { type: 'checkbox', id: id + '-on', role: 'switch', 'aria-label': c.title });
     box.checked = !cur.off;
@@ -208,7 +223,7 @@
   async function reset(c) {
     const [, many] = ENTITY[c.entity] || ['', ''];
     const ok = await caseConfirm({ title: 'Forget what “' + c.title + '” learned?',
-      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned and starts learning again from the next hour, so for the learning period it adds no risk. Risk it already added stays.`,
+      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned, then learns again from the last 30 days of stored events without adding risk for them, so ${many} with a history are judged at once. Risk it already added stays.`,
       confirm: 'Forget and relearn' });
     if (!ok) return;
     try {
@@ -361,7 +376,7 @@
     return el('section', { class: 'card st-card', 'aria-labelledby': 'bl-set-title' },
       el('div', { class: 'st-card__head' }, el('div', { class: 'st-card__heading' },
         el('h3', { class: 'st-card__title', id: 'bl-set-title' }, 'Learning'),
-        el('p', { class: 'st-card__desc' }, 'Every server shares these. Each check keeps at most ' + d.max_values + ' values per user or host, and at most ' + riNumText(d.max_profiles) + ' users or hosts.'))),
+        el('p', { class: 'st-card__desc' }, 'Every server shares these. Each check keeps at most ' + riNumText(d.max_profiles) + ' users or hosts, and a bounded number of values for each.'))),
       el('div', { class: 'st-card__body' }, ...rows));
   }
 

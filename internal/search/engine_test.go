@@ -173,6 +173,45 @@ func TestStatsByRunsCompositeAndPages(t *testing.T) {
 	}
 }
 
+// A caller may read more stats rows than an analyst's search, up to
+// MaxRowsLimit.
+func TestStatsMaxRows(t *testing.T) {
+	pages := func() *fakeStore {
+		return &fakeStore{responses: []string{
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"after_key":{"k0":"b"},"buckets":[
+				{"key":{"k0":"a"},"doc_count":1},{"key":{"k0":"b"},"doc_count":1}]}}}`,
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"after_key":{"k0":"c"},"buckets":[
+				{"key":{"k0":"c"},"doc_count":1}]}}}`,
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[]}}}`,
+		}}
+	}
+	run := func(maxRows int) *Result {
+		t.Helper()
+		e := &Engine{Store: pages(), Opt: Options{MaxBuckets: 2}}
+		q, err := query.Parse(`* | stats count by src`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q.MaxRows = maxRows
+		res, err := e.Execute(context.Background(), q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := run(0); len(res.Rows) != 2 || !res.Truncated {
+		t.Errorf("default: %d rows, truncated %v", len(res.Rows), res.Truncated)
+	}
+	if res := run(10); len(res.Rows) != 3 || res.Truncated {
+		t.Errorf("MaxRows 10: %d rows, truncated %v", len(res.Rows), res.Truncated)
+	}
+	q, _ := query.Parse(`* | stats count by src`)
+	q.MaxRows = 10 * MaxRowsLimit
+	if p, err := (&Engine{Store: pages()}).Compile(q); err != nil || p.maxRows != MaxRowsLimit {
+		t.Errorf("over the limit: %v %v", p, err)
+	}
+}
+
 func TestStatsWithoutBy(t *testing.T) {
 	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":12}},"aggregations":{"m1":{"value":2048.5}}}`}}
 	e := &Engine{Store: fs}
