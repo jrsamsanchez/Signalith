@@ -140,10 +140,14 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
-  ISO/IEC 27001, HIPAA and SOC 2, with evidence reports for auditors.
+  ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
+
+**A public demo**
+:   [demo.signalith.io](https://demo.signalith.io) runs Signalith read-only with the
+    sample data, so anyone can try it in a browser. You can [run one too](demo.md).
 
 **In the next release**
 :   These are finished and arrive with the next release. The Windows installer sets up
@@ -162,4 +166,4 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 ## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
 
 **Hardening and 1.0**
-:   An outside security review, a public demo, and then version 1.0.
+:   An outside security review, and then version 1.0.

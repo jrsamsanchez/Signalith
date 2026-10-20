@@ -154,7 +154,8 @@ func (g *gen) background() {
 }
 
 // otTraffic adds a little industrial-protocol flavour: the HMIs poll the
-// PLCs over Modbus (TCP 502) and write to the historian. It is all normal;
+// PLCs over Modbus (TCP 502) and write to the historian, and the network
+// sensor's Zeek logs each Modbus request (Industrial). It is all normal;
 // no detection targets OT, it just shows the plant floor in the data.
 func (g *gen) otTraffic(day window) {
 	hmis := []string{"hmi-01", "hmi-02"}
@@ -170,6 +171,12 @@ func (g *gen) otTraffic(day window) {
 		plc := g.org.host(plcs[g.rng.intn(len(plcs))])
 		g.sysmonNet(hmi, NetBIOS+`\operator`, hmi.IP, 50000+g.rng.intn(10000), plc.IP, plc.FQDN(), 502, "tcp",
 			`C:\Program Files\HMI\runtime.exe`, t)
+		fn := "READ_HOLDING_REGISTERS"
+		if g.rng.chance(1, 6) {
+			fn = "WRITE_SINGLE_REGISTER" // an operator changing a set point
+		}
+		fl := g.newFlow(hmi.IP, plc.IP, 502)
+		g.b.zeek("modbus", t, fl.ids(map[string]any{"tid": 1 + g.rng.intn(65000), "unit": 1, "func": fn, "pdu_type": "REQ"}))
 		if g.rng.chance(1, 3) {
 			g.sysmonNet(hmi, NetBIOS+`\operator`, hmi.IP, 50000+g.rng.intn(10000), hist.IP, hist.FQDN(), 1433, "tcp",
 				`C:\Program Files\HMI\runtime.exe`, t.Add(time.Second*5))

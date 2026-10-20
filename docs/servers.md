@@ -429,6 +429,13 @@ working, and **Finish the rotation** (or `signalith cluster rotate-key`) goes on
 there. The key file of an old key stays in each server's state folder, so archives
 sealed with it still open. Rotating needs every server on a version that supports it.
 
+Once a server sees a rotation finish, it marks each key the keyring no longer lists as
+retired, in `cluster/retired-<key id>` in its state folder, and never joins a cluster
+whose cluster document is signed with a retired key. So a copy of the old key can't
+take a server back to it, even after a restart. The same goes for the keys of any
+other cluster the server once belonged to. To move a server back to such a cluster,
+delete its `retired-<key id>` file first.
+
 The same from the command line: `signalith cluster rotate-key`, `signalith cluster
 remove <server>` and `signalith cluster leave` (see
 [docs/cluster-cli.md](cluster-cli.md#rotate-key)). Admins can use the API too: see the
@@ -848,7 +855,7 @@ use the shared settings, saving a note there answers `503`.
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and Signalith lets one index hold at
-most 2,400 fields. Signalith's own fields always fit; the names senders choose (JSON
+most 2,500 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 

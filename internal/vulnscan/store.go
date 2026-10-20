@@ -571,7 +571,13 @@ func (s *Store) SaveHosts(ctx context.Context, targetID string, hosts []*Host) e
 	return nil
 }
 
-// DropHosts deletes the hosts of networks no longer listed.
+// SampleTarget is the network the sample data's scan results are kept
+// under (internal/sample). It is never one of the scan settings' networks,
+// and DropHosts leaves it to the sample data.
+const SampleTarget = "sample-data"
+
+// DropHosts deletes the hosts of networks no longer listed, but for the
+// sample data's (SampleTarget).
 func (s *Store) DropHosts(ctx context.Context, targets map[string]bool) error {
 	docs, err := s.hostDocs(ctx, "")
 	if err != nil {
@@ -579,7 +585,7 @@ func (s *Store) DropHosts(ctx context.Context, targets map[string]bool) error {
 	}
 	for _, d := range docs {
 		var h Host
-		if json.Unmarshal(d.Source, &h) == nil && !targets[h.TargetID] {
+		if json.Unmarshal(d.Source, &h) == nil && !targets[h.TargetID] && h.TargetID != SampleTarget {
 			if err := s.Docs.DeleteIf(ctx, s.Index, d.ID, d.Version, false); err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict) {
 				return err
 			}

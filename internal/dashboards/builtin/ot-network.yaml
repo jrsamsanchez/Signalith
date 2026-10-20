@@ -1,0 +1,67 @@
+id: ot-network
+title: Industrial network
+description: Industrial protocol traffic the network sensor saw (Modbus, DNP3, S7comm, EtherNet/IP and CIP, BACnet, OPC UA and more) - who commands which device, controller stops, starts and program changes, device errors and traffic from outside. Empty unless a sensor watches an industrial network.
+time_range: 24h
+panels:
+  - title: Industrial messages
+    query: datamodel=Industrial | stats count
+    viz: single
+    width: half
+    compare: true
+  - title: Write, control and program commands
+    query: datamodel=Industrial category IN (write, control, program) NOT type=response | stats count
+    viz: single
+    width: half
+    compare: true
+  - title: Devices
+    query: datamodel=Industrial | stats dc(dest) as devices
+    viz: single
+    width: half
+    compare: true
+  - title: Errors from devices
+    query: datamodel=Industrial reason=* | stats count
+    viz: single
+    width: half
+    compare: true
+  - title: Messages over time by protocol
+    query: datamodel=Industrial | timechart count by app
+    viz: line
+    width: full
+  # Reads and replies are most of the traffic; what changes a process is
+  # the rest.
+  - title: Commands over time by kind
+    query: datamodel=Industrial category IN (write, control, program, diagnostic, discovery) NOT type=response | timechart count by category
+    viz: line
+    width: full
+  - title: Who commands which device
+    query: datamodel=Industrial category IN (write, control, program) NOT type=response | stats count, values(ot_function) as functions by src, dest, app | sort -count | head 20
+    viz: table
+    width: full
+  - title: Controller stops, starts and program changes
+    query: datamodel=Industrial category IN (control, program) NOT type=response | stats count, min(_time) as first_seen by src, dest, ot_function | sort -count | head 20 | eval first_seen=strftime(first_seen, "%F %H:%M")
+    viz: table
+    width: half
+  - title: Top functions
+    query: datamodel=Industrial | stats count by ot_function | sort -count | head 10
+    viz: bar
+    width: half
+  - title: Protocols
+    query: datamodel=Industrial | stats count by app | sort -count
+    viz: bar
+    width: third
+  - title: Busiest devices
+    query: datamodel=Industrial | stats count, dc(src) as clients by dest | sort -count | head 10
+    viz: table
+    width: third
+  - title: Device errors
+    query: datamodel=Industrial reason=* | stats count by dest, reason | sort -count | head 10
+    viz: table
+    width: third
+  - title: Industrial traffic from outside
+    query: datamodel=Industrial direction=inbound | stats count by src, dest, app | sort -count | head 10
+    viz: table
+    width: half
+  - title: Devices that named their product
+    query: datamodel=Industrial product=* | stats count by dest, product | sort -count | head 10
+    viz: table
+    width: half

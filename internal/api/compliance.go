@@ -182,6 +182,7 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	snap := &compliance.Snapshot{Now: now, Data: map[string]compliance.DataSeen{}, Assets: -1}
 	conf := s.conf()
 	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
+	snap.MFA = conf.MFARequiredMode()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -271,7 +272,20 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 		if set, err := s.Retention.Settings(); err == nil {
 			rt := &compliance.Retention{KeepDays: set.Default.KeepDays, Archive: set.Default.Archive, MaxSizeGB: set.Default.MaxSizeGB, Guard: set.Guard.IsEnabled()}
 			for _, c := range retention.Categories() {
+				if c.Kind == retention.KindRecords {
+					if p, _ := set.For(c.ID); p.KeepDays == 0 {
+						rt.Longer = append(rt.Longer, c.Name+" (kept forever)")
+					}
+					continue
+				}
 				p, ok := set.Policies[c.ID]
+				if ok && c.Kind == retention.KindEvents && rt.KeepDays > 0 && (p.KeepDays == 0 || p.KeepDays > rt.KeepDays) {
+					if p.KeepDays == 0 {
+						rt.Longer = append(rt.Longer, c.Name+" (kept forever)")
+					} else {
+						rt.Longer = append(rt.Longer, c.Name+" ("+strconv.Itoa(p.KeepDays)+" days)")
+					}
+				}
 				if !ok || c.Kind != retention.KindEvents || c.ID == strings.ToLower(datamodel.RiskModel) {
 					continue
 				}
@@ -348,7 +362,6 @@ func cellNumber(v any) float64 {
 // complianceDetections reads each detection's data models and ATT&CK
 // tactics.
 func complianceDetections(list []*detect.Detection) []compliance.Detection {
-	cat := detect.ATTACK()
 	out := make([]compliance.Detection, 0, len(list))
 	for _, d := range list {
 		cd := compliance.Detection{ID: d.ID, Name: d.BaseTitle(), Enabled: d.Enabled, Tags: d.Tags}
@@ -358,9 +371,9 @@ func complianceDetections(list []*detect.Detection) []compliance.Detection {
 			}
 		}
 		for _, t := range d.MITRE {
-			tech, ok := cat.Technique(t)
+			tech, ok := detect.AnyTechnique(t)
 			if !ok && strings.Contains(t, ".") {
-				tech, ok = cat.Technique(t[:strings.Index(t, ".")])
+				tech, ok = detect.AnyTechnique(t[:strings.Index(t, ".")])
 			}
 			if !ok {
 				continue

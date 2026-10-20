@@ -1,0 +1,25 @@
+id: ot-new-command-source
+title: $src$ sent commands to $dest$ for the first time ($app$)
+name: New source of industrial commands
+description: A host sent write, control or program commands to an industrial device it has not commanded in the last 30 days. Only HMIs, SCADA servers and engineering workstations should command controllers; a new one may be a rogue master.
+query: |
+  datamodel=Industrial category IN (write, control, program) NOT type=response
+  | stats count, min(_time) as first_seen, values(ot_function) as functions by src, dest, app
+schedule: 1h
+lookback: 1h
+severity: medium
+mitre: [T0848, T1692.001]
+throttle:
+  fields: [src, dest]
+  window: 30d
+risk:
+  score: 30
+  objects:
+    - {field: src, type: system}
+enabled: false
+tags: [network, ot, lateral-movement, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Off by default. "Not seen before" is the 30-day throttle: each source and device pair
+  raises one finding, then stays quiet for 30 days. So the first runs after turning it on
+  list every host that commands each device today (treat them as an inventory of who
+  writes to what), and later runs raise only new pairs.

@@ -343,6 +343,7 @@ func (s *Server) handleRunDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
+	s.auditSearch(r, "search.dashboard: ran a dashboard", "dashboard", d.ID, "title", d.Title, "panels", len(d.Panels), "range", rng)
 	writeJSON(w, http.StatusOK, map[string]any{"range": rng, "panels": s.runner().Run(ctx, d.Panels, rng)})
 }
 
@@ -366,6 +367,7 @@ func (s *Server) handleRunPanel(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	s.auditSearch(r, "search.panel: ran a panel's search", "query", auditQuery(req.Panel.Query), "range", rng)
 	res := s.runner().RunPanel(ctx, d.Panels[0], rng)
 	writeJSON(w, http.StatusOK, map[string]any{"range": rng, "panel": d.Panels[0], "result": res})
 }

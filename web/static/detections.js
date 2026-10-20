@@ -268,10 +268,12 @@ let attackIndex = null;
 let attackLoading = null;
 function indexAttack(c) {
   const m = new Map();
-  for (const t of c.tactics) {
-    for (const x of t.techniques) {
-      if (!m.has(x.id)) m.set(x.id, { name: x.name, tactics: [] });
-      m.get(x.id).tactics.push(t.name);
+  for (const tactics of [c.tactics, c.ics ? c.ics.tactics : []]) {
+    for (const t of tactics) {
+      for (const x of t.techniques) {
+        if (!m.has(x.id)) m.set(x.id, { name: x.name, tactics: [] });
+        m.get(x.id).tactics.push(t.name);
+      }
     }
   }
   attackIndex = m;
@@ -1178,7 +1180,7 @@ function lastRunCell(st, d) {
 
 // errorKindLabel names what went wrong in the last scheduled run, short.
 function errorKindLabel(st) {
-  return st.timed_out || st.error_kind === 'timeout' ? 'Timed out' : st.error_kind === 'transient' ? 'Retrying' : st.error_kind === 'query' ? 'Query error' : 'Failed';
+  return st.timed_out || st.error_kind === 'timeout' ? 'Timed out' : st.error_kind === 'transient' ? 'Retrying' : st.error_kind === 'query' ? 'Query error' : st.error_kind === 'setup' ? 'Needs setup' : 'Failed';
 }
 
 // errorKindText says, in a sentence, what a failed run means and what
@@ -1186,6 +1188,7 @@ function errorKindLabel(st) {
 function errorKindText(st) {
   switch (st.error_kind) {
     case 'query': return 'The query has an error; fix it and the next run uses it.';
+    case 'setup': return 'The rule is fine, but this server is missing something it needs. The guidance below says what to add.';
     case 'transient': return 'OpenSearch did not answer; this run is retried.';
     case 'timeout': return 'The run took longer than its time limit. It is tried up to three times, then the next run goes on.';
   }
@@ -1638,7 +1641,7 @@ function renderDetectionInspector() {
     el('div', { class: 'inspector__body dx-detbody' },
       msg,
       det.stateError ? dxAlert('warning', 'The run state could not be read just now.', 'What is shown may be out of date. It is read again when the page reloads.') : null,
-      st.last_error ? dxAlert(st.error_kind === 'transient' ? 'warning' : 'danger', st.timed_out || st.error_kind === 'timeout' ? 'The last run timed out.' : st.error_kind === 'transient' ? 'The last run could not finish.' : 'The last run failed.',
+      st.last_error ? dxAlert(st.error_kind === 'transient' || st.error_kind === 'setup' ? 'warning' : 'danger', st.timed_out || st.error_kind === 'timeout' ? 'The last run timed out.' : st.error_kind === 'transient' ? 'The last run could not finish.' : st.error_kind === 'setup' ? 'This rule needs setup.' : 'The last run failed.',
         [errorKindText(st), st.last_error].filter(Boolean).join(' ')) : null,
       d.description ? el('p', { class: 'dx-lede' }, d.description) : null,
       d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
@@ -2267,7 +2270,9 @@ $('save-detection').addEventListener('click', () => {
 
 // ---------- coverage ----------
 let coverage = null;
-const cov = { seq: 0, shown: false };
+// matrix is '' for Enterprise or 'ics' for ATT&CK for ICS, which the API
+// only sends when a detection uses an ICS technique.
+const cov = { seq: 0, shown: false, matrix: '' };
 
 async function loadCoverage() {
   const seq = ++cov.seq;
@@ -2328,7 +2333,13 @@ function covCell(x) {
 }
 
 function renderCoverage() {
-  const c = coverage;
+  if (!coverage.ics) cov.matrix = '';
+  const pick = $('c-matrix-pick');
+  pick.classList.toggle('hidden', !coverage.ics);
+  pick.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.matrix === cov.matrix)));
+  const c = cov.matrix === 'ics' ? coverage.ics : coverage;
+  const name = cov.matrix === 'ics' ? 'ATT&CK for ICS' : 'ATT&CK';
+  $('c-matrix').setAttribute('aria-label', `${name} matrix: one column per tactic`);
   const s = c.summary;
   const pct = s.techniques ? Math.round(100 * s.enabled / s.techniques) : 0;
   const covered = c.tactics.filter((t) => t.covered > 0).length;
@@ -2336,7 +2347,7 @@ function renderCoverage() {
   const review = s.available ? el('button', { class: 'link-btn', type: 'button' }, 'Review turned-off detections', icon('arrow-right', 'icon--sm')) : null;
   if (review) review.addEventListener('click', () => { $('d-filter').value = ''; det.show = 'disabled'; det.open = null; det.closed = false; showPage('detections'); });
   fill($('c-summary'),
-    covKpi('Covered techniques', s.enabled, ` of ${s.techniques}`, `${pct}% of ATT&CK v${c.version}`),
+    covKpi('Covered techniques', s.enabled, ` of ${s.techniques}`, `${pct}% of ${name} v${c.version}`),
     covKpi('Tactics with coverage', covered, ` of ${c.tactics.length}`, none ? `${none} with no detection yet` : 'Every tactic has a detection'),
     covKpi('Ready to turn on', s.available, null, review || 'No turned-off detection would add coverage'));
   const unknown = Object.entries(c.unknown || {});
@@ -2366,6 +2377,12 @@ function renderCoverage() {
   }
   $('c-matrix').replaceChildren(...cols);
 }
+$('c-matrix-pick').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b || !coverage || !cov.shown) return;
+  cov.matrix = b.dataset.matrix;
+  renderCoverage();
+});
 $('c-only').addEventListener('change', () => coverage && cov.shown && renderCoverage());
 $('cov-filter').addEventListener('input', () => coverage && cov.shown && renderCoverage());
 

@@ -344,28 +344,107 @@ async function showRiskObject(object, type) {
     stat('Detections', el('span', { class: 'r-stat__value num' }, String(dets.size))),
     stat('Events', el('span', { class: 'r-stat__value num' }, evs.length >= 500 ? '500+' : String(evs.length))))];
   sections.push(riskContextSection(res.context, type));
+  // The tactic chips filter the list of what added risk.
+  const evList = el('ol', { class: 'timeline r-timeline' });
+  const evCount = el('span', { class: 'count' }, String(evs.length));
+  let tacticOn = '';
+  const links = riskEventLinks(evs, since, seq);
+  const drawEvents = () => {
+    const shownEvs = tacticOn ? evs.filter((e) => [].concat(e.mitre_tactic || []).includes(tacticOn)) : evs;
+    evCount.textContent = tacticOn ? `${shownEvs.length} of ${evs.length}` : String(evs.length);
+    fill(evList, ...shownEvs.map((e) => riskEventItem(e, links)));
+  };
   if (tactics.size) {
-    const chips = el('div', { class: 'chips r-tactics' });
-    const drawTactics = () => fill(chips, ...[...tactics].map((t) => el('span', { class: 'tech tech--plain' }, tacticName(t))));
+    const chips = el('div', { class: 'chips r-tactics', role: 'group', 'aria-label': 'Show what added risk for a tactic' });
+    const drawTactics = () => fill(chips, ...[...tactics].map((t) => el('button', {
+      type: 'button', class: 'tech tech--plain r-tactic', 'aria-pressed': String(tacticOn === t),
+      title: tacticOn === t ? 'Show all of what added risk' : 'Show only what added risk for this tactic',
+      onclick: () => { tacticOn = tacticOn === t ? '' : t; drawTactics(); drawEvents(); },
+    }, tacticName(t))));
     drawTactics();
     if (!coverage && typeof loadAttackIndex === 'function') loadAttackIndex().then(() => { if (chips.isConnected) drawTactics(); });
     sections.push(el('section', { class: 'section', 'aria-label': 'ATT&CK tactics' },
       el('h3', { class: 'section-title' }, 'ATT&CK tactics', el('span', { class: 'count' }, String(tactics.size))), chips));
   }
+  if (evs.length) drawEvents();
   sections.push(el('section', { class: 'section', 'aria-label': 'What added risk' },
-    el('h3', { class: 'section-title' }, 'What added risk', el('span', { class: 'count' }, String(evs.length))),
-    evs.length ? el('ol', { class: 'timeline r-timeline' }, ...evs.map((e) => el('li', {},
-      el('span', { class: 'timeline__dot' }, icon('crosshair')),
-      el('span', { class: 'timeline__text' }, el('b', { class: 'num' }, '+' + riNum(e.risk_score)), ' ', e.risk_message || '',
-        el('span', { class: 'r-ev__meta' }, el('span', { class: 'mono' }, e.detection_id || ''),
-          e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null,
-          // A behavior baseline's event: admins can mark it as normal.
-          /^baseline-/.test(e.detection_id || '') && can('admin') && window.blMarkNormal
-            ? el('button', { type: 'button', class: 'link-btn r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null)),
-      el('span', { class: 'timeline__time', title: fmtTime(e._time) }, ago(e._time)))))
-      : el('p', { class: 'muted' }, 'No risk events in this period.')));
+    el('h3', { class: 'section-title' }, 'What added risk', evCount),
+    evs.length ? evList : el('p', { class: 'muted' }, 'No risk events in this period.')));
   body.removeAttribute('aria-busy');
   body.replaceChildren(...sections.filter(Boolean));
+}
+
+// riskEventItem draws one risk event: its message opens the detection that
+// added the risk, and a link under it opens the finding raised with it, or
+// for a risk-only detection the risk event in Search.
+function riskEventItem(e, links) {
+  const id = e.detection_id || '';
+  const msg = e.risk_message || id || 'Risk event';
+  let title = el('span', { class: 'r-ev__title' }, msg);
+  const actions = el('span', { class: 'r-ev__links' });
+  const t = new Date(e._time).getTime();
+  const searchLink = () => el('button', {
+    type: 'button', class: 'link-btn r-ev__link', title: 'Show this risk event in Search',
+    onclick: () => openSearch(`datamodel=Risk detection_id=${quoteValue(id || '*')} risk_object=${quoteValue(e.risk_object || '*')}`,
+      new Date(t - 60e3).toISOString(), new Date(t + 60e3).toISOString()),
+  }, icon('search', 'icon--xs'), 'Show in Search');
+  const draw = (l) => {
+    if (l.detections.has(id)) {
+      // A link, not a button, so a long message wraps after the score.
+      const b = el('a', { href: '#detections', class: 'r-ev__title', title: 'Open this detection', onclick: (ev) => { ev.preventDefault(); focusDetection(id); } }, msg);
+      title.replaceWith(b);
+      title = b;
+    }
+    const fid = l.findings.get(e);
+    fill(actions,
+      fid ? el('button', { type: 'button', class: 'link-btn r-ev__link r-ev__finding', title: 'Open the finding raised with this risk', onclick: () => openFindingFromCase(fid) },
+        icon('shield-alert', 'icon--xs'), 'Open finding') : null,
+      searchLink(),
+      // A behavior baseline's event: admins can mark it as normal.
+      /^baseline-/.test(id) && can('admin') && window.blMarkNormal
+        ? el('button', { type: 'button', class: 'link-btn r-ev__link r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null);
+  };
+  draw({ detections: new Set(), findings: new Map() });
+  links.then((l) => { if (l) draw(l); });
+  return el('li', {},
+    el('span', { class: 'timeline__dot' }, icon('crosshair')),
+    el('span', { class: 'timeline__text' }, el('b', { class: 'num' }, '+' + riNum(e.risk_score)), ' ', title,
+      el('span', { class: 'r-ev__meta' }, el('span', { class: 'mono' }, id),
+        e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null),
+      actions),
+    el('span', { class: 'timeline__time', title: fmtTime(e._time) }, ago(e._time)));
+}
+
+// riskEventLinks looks up, for the risk events on screen, which of their
+// detections still exist and which finding each event was raised with: a
+// detection that is not risk-only raises its finding in the same run, with
+// the same group key. It resolves to null when another object was opened.
+async function riskEventLinks(evs, since, seq) {
+  const ids = [...new Set(evs.map((e) => e.detection_id).filter(Boolean))].slice(0, 25);
+  const detections = new Set();
+  const findings = new Map();
+  await Promise.all(ids.map(async (id) => {
+    let d;
+    try { d = await api('api/detections/' + encodeURIComponent(id)); } catch (_) { return; }
+    detections.add(id);
+    if (d.risk && d.risk.only) return;
+    let res;
+    try { res = await api('api/findings?' + new URLSearchParams({ detection: id, since, limit: '1000' })); } catch (_) { return; }
+    const fs = (res.findings || []).filter((f) => f.group_key);
+    evs.forEach((e) => {
+      if (e.detection_id !== id || !e.group_key) return;
+      const t = new Date(e._time).getTime();
+      let best = null;
+      let gap = 5 * 60e3; // a finding is raised with its risk, in the same run
+      fs.forEach((f) => {
+        if (f.group_key !== e.group_key) return;
+        const g = Math.abs(new Date(f.slot || f.created).getTime() - t);
+        if (g <= gap) { gap = g; best = f; }
+      });
+      if (best) findings.set(e, best.id);
+    });
+  }));
+  return seq === riskState.detailSeq ? { detections, findings } : null;
 }
 
 function riskContextSection(c, type) {

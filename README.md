@@ -27,6 +27,7 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
 
 | Try it | |
 | --- | --- |
+| In your browser, nothing to install | [demo.signalith.io](https://demo.signalith.io), a read-only demo with the sample data |
 | On your own computer, with Docker | [Quick start](#docker-evaluation), two commands after `git clone` |
 | With made-up data that has attacks hidden in it | [Sample data](#try-it-with-sample-data), one click |
 | On a Linux or Windows server | [Linux](#linux), [Windows](#windows), [Kubernetes](#kubernetes-helm) |
@@ -462,7 +463,7 @@ Supported sources:
 | Kubernetes audit logs (who created, changed, deleted, read or exec'd into which object, refused requests), posted by the API server's audit webhook or tailed from its audit log ([docs/kubernetes-audit.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes-audit.md)) | Change, Authentication or Other |
 | GitHub Enterprise Cloud and Server audit log (repositories, members, branch protection, secret scanning, Dependabot, runners and audit log streams), streamed through an Azure event hub and the OpenTelemetry Collector, or sent by a script that reads GitHub's audit log API ([docs/github-audit-log.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/github-audit-log.md)) | Change, Authentication or Other |
 | Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
-| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Industrial, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).
@@ -810,7 +811,7 @@ are counted for each person's own address, not the proxy's. See
 | `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
-| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a viewer, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
+| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a read-only analyst, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
@@ -1157,7 +1158,7 @@ Windows and Linux installs, install Nmap from your package manager or nmap.org. 
 
 The **Compliance** page maps Signalith's data, detections, configuration checks and
 settings to NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, the HIPAA
-Security Rule and SOC 2. Each control shows evidence, partial or gap, what Signalith
+Security Rule, SOC 2, the EU NIS2 Directive and the GDPR. Each control shows evidence, partial or gap, what Signalith
 found, and what to fix; a coverage score per framework sums it up. Admins can note a
 control as handled outside Signalith or not applicable. Each framework exports as CSV
 or as a report to print or save as PDF for an auditor. The mapping is Signalith's own,
@@ -1427,7 +1428,7 @@ syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
 | `internal/ingest` | Fluent Bit and OTLP record parsing for Windows, Linux, Wazuh, Zeek and Suricata, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Industrial, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

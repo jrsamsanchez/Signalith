@@ -8,8 +8,8 @@
 # starts, once Caddy has its certificate.
 #
 # It installs Docker from Docker's own packages, clones Signalith into
-# /opt/Signalith, starts the demo and updates it every Sunday. Ubuntu's
-# unattended upgrades keep the system patched.
+# /opt/Signalith, starts the demo and updates it every day to the newest
+# build of main. Ubuntu's unattended upgrades keep the system patched.
 ssh_pwauth: false
 package_update: true
 package_upgrade: true
@@ -33,9 +33,9 @@ write_files:
   - path: /etc/systemd/system/signalith-demo-update.timer
     content: |
       [Unit]
-      Description=Update the Signalith demo every week
+      Description=Update the Signalith demo every day
       [Timer]
-      OnCalendar=Sun 08:00 UTC
+      OnCalendar=*-*-* 08:00 UTC
       Persistent=true
       [Install]
       WantedBy=timers.target

@@ -1543,6 +1543,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		OS:       cl,
 		Docs:     cl,
 		Intel:    indicators,
+		Vulns:    vstore,
 		Assets:   lists,
 		Library:  lib,
 		Engine:   eng,

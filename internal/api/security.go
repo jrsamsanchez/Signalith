@@ -147,9 +147,6 @@ func (c *SecurityChecker) once(ctx context.Context, gather func(context.Context)
 		if p := recover(); p != nil {
 			c.log.Error("security check failed", "panic", fmt.Sprint(p))
 		}
-		if r != nil {
-			c.logChange(r)
-		}
 		c.mu.Lock()
 		if r != nil {
 			c.report = r
@@ -157,9 +154,13 @@ func (c *SecurityChecker) once(ctx context.Context, gather func(context.Context)
 		c.ended = run
 		c.running = nil
 		c.mu.Unlock()
-		// Told once the report is kept, so Report already returns it.
-		if r != nil && c.OnReport != nil {
-			c.OnReport(r)
+		// Keep the report before telling anyone, so a listener that
+		// asks for it gets this one.
+		if r != nil {
+			c.logChange(r)
+			if c.OnReport != nil {
+				c.OnReport(r)
+			}
 		}
 		close(done)
 	}()

@@ -115,7 +115,7 @@
   <div class="wrap nav__in">
     <a class="nav__brand" href="./" aria-label="Signalith home"><svg viewBox="0 0 156.53 28" width="123" height="22" aria-hidden="true"><use href="#logo-lockup"/></svg></a>
     <nav class="nav__links" aria-label="Main">
-      <a href="#demo">Demo</a>
+      <a href="https://demo.signalith.io">Demo</a>
       <a href="#features">Features</a>
       <a class="nav__opt" href="#query">Queries</a>
       <a class="nav__opt" href="#security">Security</a>
@@ -131,7 +131,7 @@
     </div>
   </div>
   <nav class="nav__mobile" id="mobile-nav" aria-label="Main" hidden>
-    <a href="#demo">Demo</a>
+    <a href="https://demo.signalith.io">Demo</a>
     <a href="#features">Features</a>
     <a href="#query">Queries</a>
     <a href="#security">Security</a>
@@ -154,6 +154,7 @@
       <p class="hero__lede">Signalith is a free, open-source SIEM for Windows and Linux, built so anyone can set one up, query it and get help from AI. Search every event, ask questions in plain English, detect threats with ATT&amp;CK-mapped rules and triage findings together, on one server of your own or several.</p>
       <div class="hero__cta">
         <a class="btn btn--primary btn--lg" href="#start">Get started<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
+        <a class="btn btn--glass btn--lg" href="https://demo.signalith.io"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Try the live demo</a>
         <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
       </div>
       <ul class="hero__facts">
@@ -229,7 +230,7 @@
     <div class="section__head">
       <p class="kicker">See it in action</p>
       <h2>From a new install to a response.</h2>
-      <p class="section__lede">A short tour with sample data: the setup guide, the Signalith Agent install line, the posture dashboard, the findings queue, an attack storyline, a search, an investigation case and a response action.</p>
+      <p class="section__lede">A short tour with sample data: the setup guide, the Signalith Agent install line, the posture dashboard, the findings queue, an attack storyline, a search, an investigation case and a response action. Or click around yourself in the <a href="https://demo.signalith.io">live demo</a>, no sign-up needed.</p>
     </div>
     <figure class="frame demo" data-demo>
       <video class="demo__video" controls preload="none" playsinline poster="assets/video/demo-poster.webp" width="1280" height="720" aria-label="Signalith demo tour">
@@ -346,7 +347,7 @@
       <article class="card" data-clip="compliance">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
         <h3>Compliance and evidence</h3>
-        <p>See how your detections and data cover NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA and SOC 2, and hand an auditor an evidence report.</p>
+        <p>See how your detections and data cover NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, and hand an auditor an evidence report.</p>
       </article>
       <article class="card" data-clip="signin">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
@@ -505,7 +506,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 
       <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <code>signalith-&lt;version&gt;-x64.msi</code> from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>.</p></li>
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-x64.msi">signalith-0.3.0-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>).</p></li>
           <li><p>Double-click it and follow the steps. It installs and starts the <b>Signalith</b> service under its own account.</p></li>
           <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
@@ -539,7 +540,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
-        <div><h3>Version 1.0</h3><p>An outside security review, a public demo, and then 1.0.</p></div>
+        <div><h3>Version 1.0</h3><p>An outside security review, and then 1.0.</p></div>
       </article>
     </div>
   </div>

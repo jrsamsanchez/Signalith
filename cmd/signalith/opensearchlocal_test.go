@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/oslocal"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
 )
@@ -207,5 +208,92 @@ func TestInstallOpenSearchRefusesFolderNotItsOwn(t *testing.T) {
 	err := installOpenSearch(context.Background(), io.Discard, &fakeOpenSearch{t: t, l: l}, l, "")
 	if err == nil || !strings.Contains(err.Error(), "already has files") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// An upgrade from an install made before the installer set up OpenSearch:
+// the config's OpenSearch is set up only when it is the old default,
+// untouched, and nothing answers there.
+func TestAdoptOpenSearch(t *testing.T) {
+	shortWaits(t)
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	path := filepath.Join(d, "signalith", "signalith.yaml")
+	os.MkdirAll(filepath.Dir(path), 0o700)
+	captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-opensearch", "http://127.0.0.1:9200", "-admin-password", "first-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	load := func() *config.Config {
+		c, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
+	fakeRelease(t, l, oslocal.Version)
+	sys := &fakeOpenSearch{t: t, l: l}
+	nothing := func(string) bool { return false }
+
+	// Kept: something answers there, or the config has more than the
+	// old default address.
+	for name, c := range map[string]struct {
+		url     string
+		answers bool
+	}{
+		"answers":   {"http://127.0.0.1:9200", true},
+		"https":     {"https://127.0.0.1:9200", false},
+		"elsewhere": {"http://search.example.com:9200", false},
+	} {
+		cfg := load()
+		cfg.OpenSearch.URL = c.url
+		var out strings.Builder
+		if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, cfg, func(string) bool { return c.answers }); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(out.String(), "Keeping the OpenSearch") || sys.installed != "" {
+			t.Fatalf("%s: %s", name, out.String())
+		}
+	}
+	cfg := load()
+	cfg.OpenSearch.Username = "admin"
+	if why := openSearchInUse(cfg, nothing); why == "" {
+		t.Fatal("a config with a username was taken for the old default")
+	}
+
+	// Set up: the old default, with nothing there.
+	var out strings.Builder
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, load(), nothing); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	st, err := oslocal.LoadState(l)
+	if err != nil || st == nil {
+		t.Fatalf("not installed: %v\n%s", err, out.String())
+	}
+	got := load().OpenSearch
+	ca, cert, key := l.ClientFiles()
+	if got.URL != st.URL() || got.CAFile != ca || got.CertFile != cert || got.KeyFile != key {
+		t.Fatalf("config after adopting: %+v", got)
+	}
+	if !load().CheckPassword("signalithadmin", "first-password") {
+		t.Fatal("the rest of the config changed")
+	}
+	// A stopped OpenSearch of the user's can still start on 9200, and the
+	// config as it was is kept to go back to.
+	if st.Port == oslocal.FirstPort {
+		t.Fatalf("took port %d", st.Port)
+	}
+	if before, err := config.Load(path + ".before-opensearch"); err != nil || before.OpenSearch.URL != "http://127.0.0.1:9200" {
+		t.Fatalf("the config before: %v", err)
+	}
+
+	// Again (a repair): nothing more to do.
+	out.Reset()
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, load(), nothing); err != nil || out.Len() != 0 {
+		t.Fatalf("%v\n%s", err, out.String())
 	}
 }
