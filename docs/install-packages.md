@@ -133,7 +133,10 @@ from the start with `install.ps1 -SyslogUdp 0.0.0.0:514 -SyslogTcp 0.0.0.0:514`.
 
 To upgrade, run the newer `.msi`: it stops the service, replaces the program, keeps the
 config (with plain syslog on, if it was), and starts the service again. It upgrades the OpenSearch it installed too, when
-the new release pins a newer one, keeping its data. **Settings > Apps** uninstalls it;
+the new release pins a newer one, keeping its data. An install from 0.3.0 or older that never reached an
+OpenSearch (it still has the address `http://127.0.0.1:9200` the older installer wrote, and
+nothing answers there) gets one too, set up as on a new install; an OpenSearch you set up
+yourself is left as it is. **Settings > Apps** uninstalls it;
 that removes the services, OpenSearch's program and the firewall rules, and keeps
 `C:\ProgramData\Signalith` and `C:\ProgramData\SignalithOpenSearch` (OpenSearch's
 settings, certificates and events), so installing again carries on with them. Delete

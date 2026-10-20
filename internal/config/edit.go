@@ -39,6 +39,22 @@ func SetAdminPasswordHash(path, hash string) error {
 	return securefile.WriteFile(path, out)
 }
 
+// SetOpenSearch writes url and the certificate files Signalith signs in
+// to OpenSearch with as opensearch.url, ca_file, cert_file and key_file in
+// the config file at path, changing nothing else in it.
+func SetOpenSearch(path, url, caFile, certFile, keyFile string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, kv := range [][2]string{{"url", url}, {"ca_file", caFile}, {"cert_file", certFile}, {"key_file", keyFile}} {
+		if data, err = setScalar(data, []string{"opensearch", kv[0]}, kv[1]); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	return securefile.WriteFile(path, data)
+}
+
 // setScalar returns the YAML document data with the value at keys set to
 // value. An existing single-line value is replaced in the text itself, so
 // nothing else in the file moves; otherwise the key is added and the

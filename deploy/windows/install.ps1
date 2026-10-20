@@ -13,7 +13,9 @@
 # access). To use an OpenSearch you run yourself instead, give its address:
 #   .\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200
 # An upgrade upgrades the OpenSearch Signalith installed, keeping its data;
-# an OpenSearch of your own is left as it is.
+# an OpenSearch of your own is left as it is. An upgrade of an install whose
+# OpenSearch was never set up (the old default address, with nothing there)
+# installs one as a new install does.
 # To upgrade, put the new signalith.exe next to this script and run it
 # again: it stops the service, replaces the program, keeps the config and
 # data, encrypts passwords and keys still stored as plain text, and starts
@@ -295,6 +297,17 @@ if ($managed) {
   $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
   Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
+} elseif (-not $Join -and -not $OpenSearchUrl -and -not (Get-Service | Where-Object { $_.Name -like "*opensearch*" })) {
+  # An upgrade of an install made before the installer set up OpenSearch:
+  # when signalith.yaml still has the address it wrote by default and
+  # nothing answers there, Signalith never reached an OpenSearch, so it
+  # gets one as a new install does. Any other config is kept as it is.
+  Write-Host ""
+  Write-Host "OpenSearch"
+  $osArgs = @("opensearch", "adopt", "-c", $config, "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
+  if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
+  Invoke-Checked "Setting up OpenSearch" { & $exe @osArgs }
+  $managed = Test-Path -LiteralPath $osState
 }
 if (-not $OpenSearchUrl) { $OpenSearchUrl = "http://127.0.0.1:9200" }
 
