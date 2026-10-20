@@ -1,0 +1,53 @@
+#cloud-config
+# Sets up a Signalith public demo (docs/demo.md) on a new Ubuntu 24.04
+# server. Paste this file into the cloud provider's "Cloud config" or "user
+# data" box when creating the server, after changing demo.example.com
+# below to the demo's name. Give the server an SSH key, open port 443 to
+# everyone and port 22 to your own address only, and point the name's DNS
+# A record at the server. The demo answers a few minutes after the server
+# starts, once Caddy has its certificate.
+#
+# It installs Docker from Docker's own packages, clones Signalith into
+# /opt/Signalith, starts the demo and updates it every Sunday. Ubuntu's
+# unattended upgrades keep the system patched.
+ssh_pwauth: false
+package_update: true
+package_upgrade: true
+packages: [git, ca-certificates, curl, unattended-upgrades]
+write_files:
+  - path: /etc/sysctl.d/99-opensearch.conf
+    content: |
+      vm.max_map_count=262144
+  - path: /etc/systemd/system/signalith-demo-update.service
+    content: |
+      [Unit]
+      Description=Update the Signalith demo to the newest image
+      After=docker.service
+      Requires=docker.service
+      [Service]
+      Type=oneshot
+      WorkingDirectory=/opt/Signalith
+      ExecStart=/usr/bin/git pull --ff-only
+      ExecStart=/usr/bin/docker compose -f deploy/docker/docker-compose.yml -f deploy/demo/docker-compose.demo.yml pull
+      ExecStart=/usr/bin/docker compose -f deploy/docker/docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d
+  - path: /etc/systemd/system/signalith-demo-update.timer
+    content: |
+      [Unit]
+      Description=Update the Signalith demo every week
+      [Timer]
+      OnCalendar=Sun 08:00 UTC
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+runcmd:
+  - sysctl --system
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - git clone https://github.com/jrsamsanchez/Signalith.git /opt/Signalith
+  - echo 'SIGNALITH_DEMO_HOST=demo.example.com' > /opt/Signalith/deploy/docker/.env
+  - cd /opt/Signalith && docker compose -f deploy/docker/docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d
+  - systemctl daemon-reload
+  - systemctl enable --now signalith-demo-update.timer
