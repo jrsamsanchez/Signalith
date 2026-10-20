@@ -6,19 +6,26 @@ package api
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -288,6 +295,88 @@ func TestIngestErrorsDoNotRevealOpenSearch(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 503 || strings.Contains(string(b), "10.20.30.40") || !strings.Contains(string(b), "try again") {
 		t.Errorf("%d %s", resp.StatusCode, b)
+	}
+}
+
+// failingSearch is OpenSearch failing every search the way the store
+// says so, naming where it runs.
+type failingSearch struct{ *fakeOS }
+
+func (failingSearch) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	return nil, fmt.Errorf("opensearch unreachable at http://10.20.30.40:9200: %w",
+		&url.Error{Op: "Post", URL: "http://10.20.30.40:9200/x/_search", Err: errors.New("dial tcp 10.20.30.40:9200: connect: connection refused")})
+}
+
+// failingFindings fails to read a finding with an error naming a file.
+type failingFindings struct{ findings.Store }
+
+func (failingFindings) Get(context.Context, string) (*findings.Finding, error) {
+	return nil, &fs.PathError{Op: "open", Path: "/var/lib/signalith/secret/findings.json", Err: fs.ErrPermission}
+}
+
+// A failed search, or any failure on the server, says only that it
+// failed, with a reference; where OpenSearch runs and file paths are in
+// the server's log under that reference.
+func TestServerErrorsDoNotRevealDetails(t *testing.T) {
+	var logs logBuffer
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+		s.Engine.Store = failingSearch{s.Engine.Store.(*fakeOS)}
+		s.Findings = failingFindings{s.Findings}
+	})
+	for _, c := range []struct{ method, path, body, detail string }{
+		{"POST", "/api/search", `{"query":"* | head 5"}`, "10.20.30.40"},
+		{"GET", "/api/findings/f-1", "", "/var/lib/signalith/secret"},
+	} {
+		code, out := do(t, ts, c.method, c.path, c.body, true)
+		msg, _ := out["error"].(string)
+		ref, _ := out["ref"].(string)
+		if code != http.StatusBadGateway || ref == "" || !strings.Contains(msg, "(ref "+ref+")") || strings.Contains(msg, c.detail) {
+			t.Errorf("%s %s = %d %v", c.method, c.path, code, out)
+			continue
+		}
+		if line := auditLine(t, logs.String(), "ref="+ref); !strings.Contains(line, c.detail) || !strings.Contains(line, "status=502") {
+			t.Errorf("%s %s: the log line lacks the details: %s", c.method, c.path, line)
+		}
+	}
+}
+
+// writeError hides a 5xx error from below, but shows messages written for
+// the person who sees them.
+func TestWriteErrorFiveHundreds(t *testing.T) {
+	pathErr := &fs.PathError{Op: "open", Path: "/srv/signalith/state/keys/master.key", Err: fs.ErrPermission}
+	netErr := fmt.Errorf("opensearch unreachable at https://os.internal:9200: %w", &net.OpError{Op: "dial", Err: errors.New("refused")})
+	for _, c := range []struct {
+		name   string
+		status int
+		err    error
+		want   string // in the message
+		hidden string // not in it
+	}{
+		{"raw 500", 500, pathErr, "Something went wrong on the server (ref ", "master.key"},
+		{"raw 502", 502, netErr, "could not reach a service it uses", "os.internal"},
+		{"503 from below", 503, netErr, "(ref ", "os.internal"},
+		{"503 of our own", 503, errDetectionsOff, errDetectionsOff.Error(), "ref"},
+		{"500 of our own", 500, errUser("this server cannot read its own program"), "this server cannot read its own program", "ref"},
+		{"context kept", 500, errHidden("could not save the settings file", pathErr), "could not save the settings file (ref ", "master.key"},
+		{"busy", 503, fmt.Errorf("search: %w", search.ErrBusy), search.ErrBusy.Error(), "ref"},
+		{"the AI model's answer", 502, &assistant.APIError{Status: 401, StatusText: "401 Unauthorized", Message: "bad key"}, "the AI model returned 401 Unauthorized: bad key", "ref"},
+		{"a 4xx is shown", 400, errors.New("title is required"), "title is required", "ref"},
+	} {
+		var logs logBuffer
+		s := &Server{Log: slog.New(slog.NewTextHandler(&logs, nil))}
+		rec := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/api/x", nil)
+		writeError(s.withErrorLog(rec, r), c.status, c.err)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		msg, _ := out["error"].(string)
+		if rec.Code != c.status || !strings.Contains(msg, c.want) || strings.Contains(msg, c.hidden) {
+			t.Errorf("%s: %d %q", c.name, rec.Code, msg)
+		}
+		if ref, _ := out["ref"].(string); ref != "" && !strings.Contains(logs.String(), "ref="+ref) {
+			t.Errorf("%s: not logged with its reference: %s", c.name, logs.String())
+		}
 	}
 }
 

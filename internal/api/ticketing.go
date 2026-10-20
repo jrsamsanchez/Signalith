@@ -458,7 +458,7 @@ func (s *Server) handleCaseTicketCreate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusConflict, err)
 		return
 	case errors.As(err, &te):
-		writeError(w, http.StatusBadGateway, errors.New("Could not open the ticket. "+te.Msg))
+		writeError(w, http.StatusBadGateway, errUser("Could not open the ticket. "+te.Msg))
 		return
 	default:
 		writeError(w, http.StatusBadGateway, err)

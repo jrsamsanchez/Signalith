@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -803,7 +802,7 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 	case err != nil && sharedError(w, err):
 		return
 	case err != nil:
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not save the directory settings: %w", err))
+		writeError(w, http.StatusInternalServerError, errHidden("could not save the directory settings", err))
 		return
 	}
 	after := d.Settings()
