@@ -12,10 +12,12 @@ on:
 permissions:
   contents: read
 
-# A newer push replaces a build still running; :main is always the newest.
+# A build that has started runs to the end, and only the newest push waits
+# behind it (GitHub drops older waiting ones), so on a busy merge day :main
+# still gets built instead of every build being cancelled by the next.
 concurrency:
   group: image-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   image:
