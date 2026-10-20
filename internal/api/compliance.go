@@ -158,7 +158,20 @@ func (s *Server) handleComplianceNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// "Handled outside Signalith" is for controls Signalith has no
+	// evidence for; on one it has, a note would only hide what it found.
+	if in.Status == compliance.External {
+		if f, ok := s.complianceReport(r).Find(in.Framework); ok {
+			for _, c := range f.Controls {
+				if c.ID == in.Control && c.Computed == compliance.Met {
+					writeError(w, http.StatusBadRequest, errors.New("Signalith already has evidence for this control, so it cannot be noted as handled outside Signalith."))
+					return
+				}
+			}
+		}
+	}
 	by := userOf(r)
+	prev, hadPrev := s.complianceNotes().All()[compliance.Key(in.Framework, in.Control)]
 	a, err := s.complianceNotes().Set(r.Context(), in.Framework, in.Control, in.Status, in.Note, by, time.Now())
 	var ie *compliance.InputError
 	switch {
@@ -171,7 +184,11 @@ func (s *Server) handleComplianceNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.Log.Info("compliance note changed", "framework", in.Framework, "control", in.Control, "status", string(in.Status), "by", by)
+	attrs := []any{"audit", true, "by", by, "framework", in.Framework, "control", in.Control, "status", string(in.Status), "note", strings.TrimSpace(in.Note)}
+	if hadPrev {
+		attrs = append(attrs, "previous_status", string(prev.Status), "previous_note", prev.Note, "previous_by", prev.By)
+	}
+	s.Log.Info("compliance.note: compliance note changed", slices.Concat(attrs, s.client(r).logAttrs())...)
 	writeJSON(w, http.StatusOK, map[string]any{"attestation": a})
 }
 
@@ -183,6 +200,12 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	conf := s.conf()
 	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
 	snap.MFA = conf.MFARequiredMode()
+	if conf.Syslog.UDP != "" {
+		snap.PlainSyslog = append(snap.PlainSyslog, "UDP "+conf.Syslog.UDP)
+	}
+	if conf.Syslog.TCP != "" {
+		snap.PlainSyslog = append(snap.PlainSyslog, "TCP "+conf.Syslog.TCP)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -215,6 +238,10 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	if s.Findings != nil {
 		if sum, err := s.Findings.Summary(ctx); err == nil {
 			f := &compliance.Findings{Open: sum.Open, New: sum.ByStatus[findings.StatusNew]}
+			for _, n := range sum.ByStatus {
+				f.Total += n
+			}
+			f.Reviewed = f.Total - f.New
 			if _, recent, err := s.Findings.Search(ctx, findings.Filter{Status: []string{findings.StatusNew}, Since: now.Add(-compliance.TriageWindow), Limit: 1}); err == nil {
 				f.Stale = max(0, f.New-recent)
 			}
@@ -291,6 +318,17 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 				}
 				if p.KeepDays > 0 && (rt.KeepDays == 0 || p.KeepDays < rt.KeepDays) && !p.Archive {
 					rt.Shorter = append(rt.Shorter, c.Name+" ("+strconv.Itoa(p.KeepDays)+" days)")
+				}
+			}
+			if ov := s.retentionOverview(ctx); ov != nil && ov.Error == "" {
+				rt.OldestRead = true
+				for _, c := range ov.Categories {
+					if c.Kind != retention.KindEvents || c.ID == strings.ToLower(datamodel.RiskModel) || c.OldestDay == "" {
+						continue
+					}
+					if d, err := time.Parse(time.DateOnly, c.OldestDay); err == nil && (rt.Oldest.IsZero() || d.Before(rt.Oldest)) {
+						rt.Oldest = d
+					}
 				}
 			}
 			snap.Retention = rt
@@ -433,4 +471,13 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 		}
 		snap.Checks = append(snap.Checks, st)
 	}
+}
+
+// retentionOverview is the retention page's view of the stored data, for
+// how far back events go; nil when retention cannot reach OpenSearch.
+func (s *Server) retentionOverview(ctx context.Context) *retention.Overview {
+	if s.Retention == nil || s.Retention.Cluster == nil {
+		return nil
+	}
+	return s.Retention.Overview(ctx)
 }
