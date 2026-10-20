@@ -11,24 +11,32 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/oslocal"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
 const opensearchUsage = `usage:
   signalith opensearch install [-zip FILE]   install or upgrade the OpenSearch Signalith runs on this computer
   signalith opensearch remove                remove it, keeping its data
   signalith opensearch status                show what is installed
+  signalith opensearch adopt -c CONFIG       on an upgrade: install it when CONFIG's OpenSearch was never set up
 
 The Windows installer runs these (docs/install-packages.md). install
 downloads OpenSearch ` + oslocal.Version + ` for Windows and checks its SHA-512;
 -zip uses a copy of that file instead, for a computer without internet
-access.
+access. adopt installs it the same way, and points CONFIG at it, only when
+CONFIG still has the address older installers wrote (plain http on this
+computer, port 9200, no sign-in) and nothing answers there.
 `
 
 // localOpenSearch is what installing OpenSearch needs from the system.
@@ -60,6 +68,7 @@ func cmdOpenSearch(args []string) error {
 	fs.StringVar(&l.Data, "data", def.Data, "folder for OpenSearch's config, data and logs")
 	fs.StringVar(&l.Client, "client", def.Client, "folder for Signalith's certificate for OpenSearch")
 	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" .zip for Windows to install, instead of downloading it")
+	path := configFlag(fs)
 	fs.Parse(args)
 	sys, err := newLocalOpenSearch()
 	if err != nil {
@@ -68,6 +77,13 @@ func cmdOpenSearch(args []string) error {
 	switch cmd {
 	case "install":
 		return installOpenSearch(context.Background(), os.Stdout, sys, l, *zip)
+	case "adopt":
+		applyServiceEnv(*path)
+		c, err := loadConfig(*path, newLogger(os.Stderr))
+		if err != nil {
+			return err
+		}
+		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, *path, c, answers)
 	case "remove":
 		return removeOpenSearch(os.Stdout, sys, l)
 	case "status":
@@ -91,6 +107,12 @@ func cmdOpenSearch(args []string) error {
 // before to the pinned version, and waits until it answers with its
 // security settings loaded. Its config, data and certificates are kept.
 func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string) error {
+	return installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort)
+}
+
+// installOpenSearchFrom is installOpenSearch with a new install taking
+// the first free port from firstPort.
+func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, firstPort int) error {
 	st, err := oslocal.LoadState(l)
 	if err != nil {
 		return err
@@ -105,7 +127,7 @@ func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, 
 		if err := sys.prepare(l, ""); err != nil {
 			return err
 		}
-		port, err := oslocal.FreePort()
+		port, err := oslocal.FreePort(firstPort)
 		if err != nil {
 			return err
 		}
@@ -190,6 +212,83 @@ func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, 
 		}
 	}
 	return nil
+}
+
+// oldDefaultOpenSearch is the address installers before 0.3.1 wrote when
+// they were given none: an OpenSearch the user was to install themselves.
+const oldDefaultOpenSearch = "127.0.0.1:9200"
+
+// adoptOpenSearch is for an upgrade of an install made before the
+// installer set up OpenSearch. When the config still has the old default
+// address with no sign-in and nothing answers there, Signalith has never
+// reached an OpenSearch, so this installs one as a new install does and
+// points the config file at it. Any other config is left as it is.
+func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip, path string, c *config.Config, answers func(addr string) bool) error {
+	if st, err := oslocal.LoadState(l); err != nil || st != nil {
+		return err
+	}
+	if why := openSearchInUse(c, answers); why != "" {
+		fmt.Fprintf(out, "Keeping the OpenSearch in %s: %s.\n", path, why)
+		return nil
+	}
+	fmt.Fprintf(out, "Nothing answers at http://%s, the OpenSearch address in %s, so Signalith installs OpenSearch on this computer.\n", oldDefaultOpenSearch, path)
+	// From the next port, so an OpenSearch of the user's that is only
+	// stopped now can still start on 9200 later.
+	if err := installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort+1); err != nil {
+		return err
+	}
+	st, err := oslocal.LoadState(l)
+	if err != nil {
+		return err
+	}
+	// The config as it was, to go back to.
+	before := path + ".before-opensearch"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := securefile.WriteFile(before, data); err != nil {
+		return err
+	}
+	ca, cert, key := l.ClientFiles()
+	if err := config.SetOpenSearch(path, st.URL(), ca, cert, key); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Signalith now uses OpenSearch at %s. The config as it was, with http://%s, is in %s: "+
+		"if you run an OpenSearch of your own there, copy that file back over %s and restart the Signalith service.\n", st.URL(), oldDefaultOpenSearch, before, path)
+	return nil
+}
+
+// openSearchInUse says why c's OpenSearch may be one the user runs, or ""
+// when it is the old default, untouched, and nothing answers there.
+func openSearchInUse(c *config.Config, answers func(addr string) bool) string {
+	o := c.OpenSearch
+	u, err := url.Parse(o.URL)
+	if err != nil || u.Scheme != "http" || u.Port() != "9200" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost") {
+		return "it is not the address older installers wrote"
+	}
+	if len(o.URLs) > 0 || o.Username != "" || o.Password != "" || o.CAFile != "" || o.CertFile != "" || o.KeyFile != "" {
+		return "it has more settings than the address"
+	}
+	for _, k := range c.PageKeys() {
+		if strings.HasPrefix(k, "opensearch.") {
+			return "it was changed on the Settings page"
+		}
+	}
+	if answers(oldDefaultOpenSearch) {
+		return "something answers at http://" + oldDefaultOpenSearch
+	}
+	return ""
+}
+
+// answers is whether something accepts connections at addr.
+func answers(addr string) bool {
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 // Waits, as variables so the tests take less time.
