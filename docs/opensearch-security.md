@@ -425,7 +425,7 @@ docker run --rm -v docker_opensearch-data:/data -v "${PWD}:/backup" alpine tar c
 ```
 
 Then update and start as in
-[Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith#upgrading-the-docker-quick-start).
+[Upgrading the Docker quick start](docker.md#upgrading-the-docker-quick-start).
 The step that loads the security settings loads them once more after the move (3.x has no
 `whitelist.yml`), which is expected. To stay on 2.17 for now, put the 2.17 image on the
 `opensearch` and `opensearch-security` services in an override file and add

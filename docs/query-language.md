@@ -12,6 +12,29 @@ datamodel=Authentication action=failure earliest=-24h
 | head 10
 ```
 
+## Building a query in the UI
+
+You do not need to memorize the syntax:
+
+- **Ask in plain English.** Type a question above the query box, such as
+  *top 10 users with failed logins today*. Signalith writes the query, runs it, and
+  lists how it read each phrase (see [Asking in plain English](#asking-in-plain-english)).
+- **Query builder.** Pick the data, add conditions, and choose events, a table or a
+  chart. The query text is written as you click, and typing in the text updates the
+  builder when it can represent the query.
+- **Fields sidebar.** Click a field for its top values; click a value to filter on it.
+- **Click any result cell** to filter to it, exclude it, count by that field, or chart
+  it over time.
+- **Autocomplete** for fields, commands and functions as you type.
+- **Explain** turns any query into plain-English steps and shows the OpenSearch request
+  it runs (see [How queries run](#how-queries-run)).
+- **Starter hunts** on the empty search page cover brute force, new accounts, encoded
+  PowerShell and more.
+
+From the shell, `signalith query "datamodel=Authentication | top user"` runs a query;
+add `-explain` to see the compiled request. `signalith ask "failed logins from
+203.0.113.9 today"` prints the query for a question.
+
 ## Search
 
 | Syntax | Meaning |
@@ -222,7 +245,11 @@ with room to spare).
 ## Asking in plain English
 
 The box above the query editor (and `signalith ask "..."`) turns a question into a
-query. It understands:
+query, such as *top 10 users with failed logins today*, *users who logged in to more
+than 3 hosts* or *powershell spawned by winword on dc01*. It lists how it read each
+phrase, so you can see why the query looks the way it does and edit it. The built-in
+translator works offline. Words it does not understand are listed rather than guessed
+at. It understands:
 
 | You write | It adds |
 | --- | --- |
@@ -241,9 +268,26 @@ query. It understands:
 | per hour, over time, daily | `timechart` |
 | show user, src and dest | `table _time, user, src, dest` |
 
-Names from the asset and identity lists are recognized as users or hosts. When an AI
-model is configured, questions with unknown words go to it; see
-[Writing queries](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#writing-queries) in the README.
+Names from the asset and identity lists are recognized as users or hosts.
+
+### Using an AI model
+
+An AI model is optional. When `assistant.provider` is set, questions the translator
+only partly understands go to the model instead, and every question does when you
+tick **Use AI**. Only the question and the field list are sent, never your events. The
+parser checks the model's query before you see it. Point `assistant.url` at a local
+Ollama or LM Studio server to keep everything on site:
+
+```yaml
+assistant:
+  provider: openai
+  url: http://localhost:11434/v1
+  model: llama3.1
+```
+
+The AI assistant can also be set on the **Settings** page (see
+[Server settings](settings.md)), and its settings are in the
+[configuration table](configuration.md#all-settings).
 
 ## How queries run
 
