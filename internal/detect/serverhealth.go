@@ -26,8 +26,8 @@ type ServerHealth struct {
 	// rule's last scheduled run started.
 	LagP50 int64 `json:"lag_p50_ms"`
 	LagP95 int64 `json:"lag_p95_ms"`
-	// LateHour is how many of its rules started a run more than one
-	// schedule interval late in the last hour.
+	// LateHour is how many of its rules it started a run of more than
+	// one schedule interval late in the last hour.
 	LateHour int `json:"late_hour,omitempty"`
 	// Skipped is how many slots of its rules were skipped in the last
 	// 24 hours, as older than detections.catch_up, and SkippedHour how
@@ -72,7 +72,11 @@ func HealthByServer(states map[string]RunState, now time.Time) map[string]Server
 		a.h.Rules++
 		a.dur = append(a.dur, max(st.LastDuration, 0))
 		a.lag = append(a.lag, max(st.Lag, 0))
-		if !st.LastLate.IsZero() && now.Sub(st.LastLate) < time.Hour {
+		// A late run counts for the server that ran it late: a rule late
+		// on one server and moved to another since (a spread, a new
+		// leader) says nothing of how the other keeps up. A late run an
+		// older version recorded, without its server, counts for none.
+		if !st.LastLate.IsZero() && now.Sub(st.LastLate) < time.Hour && st.LateNode == st.Node {
 			a.h.LateHour++
 		}
 		if sk := st.Skipped; sk != nil && sk.Count > 0 && now.Sub(sk.At) < healthWindow {

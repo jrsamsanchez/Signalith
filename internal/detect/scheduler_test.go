@@ -287,6 +287,7 @@ func TestCatchUpRunsMissedSlotsInOrder(t *testing.T) {
 	clock := &fakeClock{t: t0}
 	s := newTestScheduler(lib, run, clock)
 	s.Workers = 1
+	s.NodeID = "n_here"
 	s.RunDue(context.Background())
 	last := mustState(t, s, "catch").LastSlot
 	clock.Add(time.Hour)
@@ -304,7 +305,7 @@ func TestCatchUpRunsMissedSlotsInOrder(t *testing.T) {
 			t.Errorf("run %d searched %v..%v, want up to %v", i, c.from, c.to, want)
 		}
 	}
-	if st := mustState(t, s, "catch"); !st.LastSlot.Equal(w[47].to) || st.Skipped.Count != 0 || st.LateRuns == 0 {
+	if st := mustState(t, s, "catch"); !st.LastSlot.Equal(w[47].to) || st.Skipped.Count != 0 || st.LateRuns == 0 || st.LateNode != "n_here" {
 		t.Errorf("state %+v", st)
 	}
 	s.RunDue(context.Background())

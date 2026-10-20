@@ -918,6 +918,13 @@ full:
 
 - Sessions it has already checked keep working for 5 minutes after it last confirmed
   them with OpenSearch, even one signed out on another server meanwhile.
+- A session it cannot check (it just restarted and has no copy of it, or its copy is
+  older than 5 minutes) is not signed out: requests answer `503` with the code
+  `session_unchecked` and a `Retry-After`, and the page says to try again in a few
+  seconds. The same happens for a moment when one read of a session fails, after the
+  server tried it again briefly. A session OpenSearch says was signed out, changed
+  outside Signalith or belongs to a user who was deleted, disabled or given a new
+  password is refused as always.
 - Only admins can sign in, with a session or with HTTP Basic credentials: the
   built-in admin (with the password this server last read, or the one
   `signalith passwd -local` set), and local admins when this server's copy of the users
