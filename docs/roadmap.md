@@ -77,9 +77,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   tenant picker in the top bar.
 - [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
   with one line on Linux, Windows or Docker, shared settings, users and detections,
-  each server's detection health on the Servers page, an option to
-  [spread detections over the servers](servers.md#the-background-jobs) (off by default
-  until a lab load test confirms it), one certificate authority, rolling upgrades,
+  each server's detection health on the Servers page,
+  [detections spread over the servers](servers.md#the-background-jobs) (on by default
+  from the next release), one certificate authority, rolling upgrades,
   draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
@@ -87,8 +87,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
   setups.
 - A load test with [sizing numbers](performance.md), including a
   [lab run](performance.md#lab-sizes) of about 21,500 events a second (about 1 TB a day)
-  on one 2-core Signalith server and two OpenSearch nodes, steady for two days with no
-  late detections.
+  on one 2-core Signalith server and two OpenSearch nodes, in two 4-hour runs on
+  consecutive days with no late detections, and a three-server lab run in which
+  detections stayed evenly shared through a restart and a crash.
 
 **More data**
 
@@ -145,12 +146,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 :   These are finished and arrive with the next release. The Windows installer sets up
     [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
     Windows needs no separate install step. Signalith Agents update themselves from
-    signed releases and roll back if an update fails.
-
-**Several servers in the lab**
-:   The same lab load spread over three Signalith servers, to confirm that
-    [spreading detections](servers.md#the-background-jobs) shares the work evenly before
-    it is on by default. The lab run is under way.
+    signed releases and roll back if an update fails. With several servers,
+    [detections are spread over them](servers.md#the-background-jobs) by default.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
