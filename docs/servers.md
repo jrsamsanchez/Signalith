@@ -633,9 +633,9 @@ step the cluster is at, with its date, and what each step waits for.
    only when it still vouches for the server it talks to. That check doesn't tell a real
    server from one that holds a leaked CA key: such a one could give the agent a file
    with a CA of its own. So each managed agent reports the fingerprints in its file, and
-   the Endpoints page marks one that holds a CA that isn't the cluster's current, next
-   or previous one (**Needs a new configuration**, for an unknown certificate
-   authority). The card and `signalith cluster tls` count the managed agents that have
+   the Endpoints page marks one that holds a CA no server knows: not the cluster's
+   (in use, next, previous or retired), nor one a server uses or hands out
+   (**Needs a new configuration**, for an unknown certificate authority). The card and `signalith cluster tls` count the managed agents that have
    the new CA. Give other agents, browsers and syslog devices the file with both CAs.
 2. **Switch** (**Switch to it**). Refused until every running server hands out the new
    CA. Then each server issues itself a certificate from the new CA within seconds. The

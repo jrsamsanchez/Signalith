@@ -390,3 +390,36 @@ func TestAgentOfUnknownCA(t *testing.T) {
 		t.Errorf("no TLS: %v", got)
 	}
 }
+
+// The certificate authorities agents may trust are the whole cluster's,
+// not only the viewing server's: another server's own, the cluster's
+// next and previous, and the ones retired are not unknown.
+func TestKnownCAsAcrossTheCluster(t *testing.T) {
+	a, b, retired, stranger := newCertManager(t), newCertManager(t), newCertManager(t), newCertManager(t)
+	cur, next := strings.Repeat("A1", 32), strings.Repeat("B2", 32)
+	ct := &fakeClusterTLS{body: &clustertls.Body{CASHA256: cur, Next: &clustertls.OtherCA{CASHA256: next},
+		Retired: []clustertls.RetiredCA{{CACertPEM: caPEM(retired), RetiredAt: time.Now()}}}}
+	// siem-b (this server) keeps a CA of its own; siem-a's certificate
+	// comes from its own too, which only its heartbeat says.
+	cl := &tlsCluster{a: clustertls.StatusOf(a, "", ""), b: clustertls.StatusOf(b, "", "")}
+	s := &Server{TLS: b, Cluster: cl, ClusterTLS: ct}
+	hexOf := func(fp string) string { return strings.ToLower(strings.ReplaceAll(fp, ":", "")) }
+	agent := agentinv.Agent{Key: "k", LastSeen: time.Now(), Managed: &agentinv.ManagedStatus{Status: agentproto.Status{
+		CAs: []string{hexOf(a.Fingerprint()), hexOf(b.Fingerprint()), hexOf(cur), hexOf(next), hexOf(retired.Fingerprint())}}}}
+	flags := func() []string { return s.agentFlags(agent, "", "", s.knownCAs(), time.Now()).NeedsConfig }
+	if got := flags(); len(got) != 0 {
+		t.Errorf("known CAs flagged: %v", got)
+	}
+	// After a switch the previous one is still known.
+	ct.mu.Lock()
+	ct.body = &clustertls.Body{CASHA256: next, Previous: &clustertls.OtherCA{CASHA256: cur}}
+	ct.mu.Unlock()
+	agent.Managed.CAs = []string{hexOf(cur), hexOf(next)}
+	if got := flags(); len(got) != 0 {
+		t.Errorf("previous CA flagged: %v", got)
+	}
+	agent.Managed.CAs = append(agent.Managed.CAs, hexOf(stranger.Fingerprint()))
+	if got := flags(); !slices.Equal(got, []string{"unknown_ca"}) {
+		t.Errorf("a stranger: %v", got)
+	}
+}

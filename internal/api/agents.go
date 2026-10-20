@@ -152,28 +152,64 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
-// knownCAs are the certificate authorities agents may trust, by
-// caKey of their fingerprints: the ones this server hands out to agents
-// (the one in use, and the next or the previous one while the cluster's
-// is replaced), and the one its certificate comes from. Nil when it has
-// none.
+// knownCAs are the certificate authorities agents may trust, by caKey
+// of their fingerprints, across the cluster and not only as this server
+// sees them:
+//   - the ones this server hands out to agents, and the one its
+//     certificate comes from;
+//   - the cluster's (the tls document): the one in use, the next and the
+//     previous one, and the ones retired, which an agent offline since
+//     still holds (an agent trusting only one of those is flagged
+//     needsRetiredCA already);
+//   - each server's, from its heartbeat: the one its certificate comes
+//     from (a server with its own certificate files, or not on the
+//     cluster's yet), the one it hands out and the next one.
+//
+// Nil when none is known.
 func (s *Server) knownCAs() map[string]bool {
-	if s.TLS == nil {
-		return nil
-	}
 	known := map[string]bool{}
-	if fp := s.TLS.Fingerprint(); fp != "" {
-		known[caKey(fp)] = true
-	}
-	rest := s.TLS.AgentCAPEM()
-	for {
-		var blk *pem.Block
-		blk, rest = pem.Decode(rest)
-		if blk == nil {
-			break
+	add := func(fp string) {
+		if fp != "" {
+			known[caKey(fp)] = true
 		}
-		if blk.Type == "CERTIFICATE" {
-			known[caKey(tlsauto.Fingerprint(blk.Bytes))] = true
+	}
+	if s.TLS != nil {
+		add(s.TLS.Fingerprint())
+		rest := s.TLS.AgentCAPEM()
+		for {
+			var blk *pem.Block
+			blk, rest = pem.Decode(rest)
+			if blk == nil {
+				break
+			}
+			if blk.Type == "CERTIFICATE" {
+				add(tlsauto.Fingerprint(blk.Bytes))
+			}
+		}
+	}
+	if s.ClusterTLS != nil {
+		if b, ok := s.ClusterTLS.CA(); ok && b != nil {
+			add(b.CASHA256)
+			if b.Next != nil {
+				add(b.Next.CASHA256)
+			}
+			if b.Previous != nil {
+				add(b.Previous.CASHA256)
+			}
+			for _, fp := range b.RetiredFingerprints() {
+				add(fp)
+			}
+		}
+	}
+	if s.Cluster != nil {
+		for _, sv := range s.Cluster.Status().Servers {
+			if sv.Detail == nil || sv.Detail.TLS == nil {
+				continue
+			}
+			t := sv.Detail.TLS
+			add(t.LeafCASHA256)
+			add(t.CASHA256)
+			add(t.NextCASHA256)
 		}
 	}
 	if len(known) == 0 {

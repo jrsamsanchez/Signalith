@@ -54,7 +54,7 @@ window.sensorText = (function () {
   const AGENT_REASON = {
     ca: 'It trusts a different certificate authority than this server uses, so its connections fail.',
     retired_ca: 'It trusts only a certificate authority a server retired when it took the cluster’s, so its connections fail. Give it a new configuration from Add data.',
-    unknown_ca: 'Its ca.pem holds a certificate authority that no server handed out (not the one in use, the next or the previous one). Someone may have put it there: check the computer, then give it a new configuration from Add data.',
+    unknown_ca: 'Its ca.pem holds a certificate authority the servers don’t know (not the cluster’s, in use, next, previous or retired, nor one a server uses), or more than 8. Someone may have put it there: check the computer, then give it a new configuration from Add data.',
     plain: 'It sends without encryption.',
     revoked: 'Its agent token was revoked.',
     old: 'It was set up before Signalith could tell agents apart; give it a new configuration to see its computer name.',

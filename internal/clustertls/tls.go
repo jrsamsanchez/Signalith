@@ -171,7 +171,7 @@ func validate(b *Body) error {
 		// always made with no intermediate below it; an old one may come
 		// from a version that didn't say so.
 		if !oc.IsCA || (o == b.Next && !oc.MaxPathLenZero) {
-			return errors.New("the tls document's other certificate is not a certificate authority that signs only server certificates")
+			return errors.New("the tls document's other certificate is not a certificate authority, or a next one allows intermediates below it")
 		}
 		if !sameConstraints(oc, c) {
 			return errors.New("the tls document's other certificate authority may vouch for other names than the one in use")
