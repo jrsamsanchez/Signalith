@@ -25,6 +25,12 @@ type Query struct {
 	// detections must see events that arrived late at once, not when
 	// the summaries are next checked. Set by callers, not parsed.
 	EventsOnly bool
+
+	// TimeZone is the IANA time zone (America/New_York) that snaps such
+	// as @d, dates without a zone, timechart days and strftime use; empty
+	// is UTC. Set by callers, such as the Search page from the browser's
+	// zone, not parsed.
+	TimeZone string
 }
 
 // Expr is a boolean filter expression.

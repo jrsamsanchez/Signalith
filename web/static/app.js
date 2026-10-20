@@ -201,6 +201,12 @@ function apiVersion(resp) {
 // apiRaw makes a request with the headers every page sends and returns
 // the response as it is: for uploads, streams and text that api() does
 // not handle. Paths are relative to the page.
+// viewerZone is the browser's IANA time zone, which searches use for @d,
+// timechart days, bin and strftime; empty (UTC) when the browser has none.
+function viewerZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; }
+}
+
 async function apiRaw(path, opts) {
   opts = opts || {};
   const method = (opts.method || 'GET').toUpperCase();
@@ -1696,7 +1702,7 @@ async function runSearch(opts) {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, time_zone: viewerZone(), write_lookups: true } : { query, earliest, time_zone: viewerZone() });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1828,6 +1834,7 @@ function renderResult() {
   if ((res.summaries || []).length) {
     stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
   }
+  if (res.time_zone) stats.push(el('span', { class: 'badge hide-sm', title: `Days, weeks, @d and strftime use your browser's time zone, ${res.time_zone}.` }, res.time_zone));
   if (res.sampled) stats.push(el('span', { class: 'badge badge--warning', title: `${(res.matched || 0).toLocaleString()} events matched, but the commands after the search ran over only the newest ${res.sampled.toLocaleString()}, so these results cover only those. Narrow the search, or put stats right after it to count every event.` }, 'Sampled'));
   if (res.truncated) {
     const why = res.ranked
@@ -1913,7 +1920,7 @@ async function showTab(id) {
   }
   box.replaceChildren(skeletonTable());
   try {
-    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest });
+    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest, time_zone: viewerZone() });
   } catch (e) {
     if (lastSearch !== run || run.tab !== 'events') return;
     box.replaceChildren(stateBox({ tone: 'danger', iconName: 'circle-alert', title: 'Could not load the events', text: e.message, action: retryButton(() => showTab('events')) }));
@@ -2227,7 +2234,7 @@ async function loadHistogram(seq, query, earliest) {
   if (['where', 'threatmatch', 'head', 'dedup'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
   const search = segs[0].trim() || '*';
   const ownTime = /\b(earliest|latest)\s*=/i.test(search);
-  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest });
+  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest, time_zone: viewerZone() });
   let res;
   try {
     res = await fetchHist(ownTime ? '' : HIST_SPAN[$('time').value] || '1d');
@@ -2581,7 +2588,7 @@ $('explain').addEventListener('click', async () => {
   if (!box.classList.contains('hidden')) { hideExplanation(); return; }
   $('explain').disabled = true;
   try {
-    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest() });
+    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest(), time_zone: viewerZone() });
     box.replaceChildren(
       el('div', { class: 'explain__head' }, el('b', {}, 'What this query does'),
         el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Close', 'aria-label': 'Close the explanation', onclick: hideExplanation }, icon('x'))),

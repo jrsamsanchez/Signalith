@@ -62,9 +62,14 @@ Relative times: `-30s`, `-15m`, `-4h`, `-7d`, `-2w`, `-1mon`, `-1q`, `-1y`, opti
 snapped with `@d`, `@h`, `@w`, `@mon`, `@q` or `@y`, and chained as in Splunk (`@d-1h`,
 `-1d@d+8h`). Weeks start on Sunday (`@w` or `@w0`); `@w1` to `@w6` snap to Monday through
 Saturday. The same week start holds for `bin` and `timechart span=1w`. Absolute times are
-ISO 8601 (`2026-10-01T00:00:00Z`, UTC when no zone is given), epoch seconds (`1767225600`;
+ISO 8601 (`2026-10-01T00:00:00Z`; with no zone, in the search's time zone), epoch seconds (`1767225600`;
 13 digits read as milliseconds) or `10/01/2026:08:00:00`. A time Signalith cannot read is
 an error rather than an empty result.
+
+**Time zone.** The Search page runs searches in your browser's time zone, shown next to the
+results: `@d`, `@w` and the other snaps, dates without a zone, `timechart` and `bin` days
+and weeks, `strftime`, `strptime` and `relative_time` all use it. Detections, dashboards
+and searches through the API without a `time_zone` run in UTC.
 A search reads only the daily indices of the days in its time range (UTC, an hour
 either side), including the extra parts of busy days, so a short range stays fast
 however many days are kept. All time, or a range that names too many days to list,
@@ -99,7 +104,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `append` | `append [search datamodel=Change \| stats count by user]` | Adds a subsearch's rows after the results. The subsearch works as in `join` and counts toward the same limits |
 | `union` | `union [search datamodel=Authentication] [search datamodel=Change]` | Adds the rows of each subsearch, in order, after the results. Each subsearch works as in `append` and counts toward the same limits |
 | `appendpipe` | `appendpipe [stats sum(count) as count \| eval user="TOTAL"]` | Runs the commands in `[ ]` over a copy of the results so far and adds the rows they give after them, for totals and summary rows. `inputlookup`, `makeresults`, `timechart` and `threatmatch` cannot run inside |
-| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Sunday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
+| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Sunday, and days and weeks follow the search's time zone) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
 | `fromjson` | `fromjson body prefix=b_` | Extracts each top-level key of the JSON object in a field as a field of the same name, or `prefix=` and the name. Arrays of plain values come out as multivalue fields; objects and other arrays as JSON text. Up to 500 keys per event |
@@ -239,7 +244,7 @@ function, arithmetic or a single-quoted field name it is read as an expression.
 | Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
 | Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value). `mvfilter` and `mvmap` go through at most 10 million values in one search, counting the values of nested calls, `mvrange(start, end[, step])` (end not included) |
 | JSON | `spath(j, "a.b{}")` and `json_extract(j, "a.b")` (the value at a path, as the `spath` command reads it), `json_keys(j)` (the top-level keys as a JSON array), `json_valid(j)`, `json_array_to_mv(j)`, `json_object("k", v, ...)`, `json_array(v, ...)` |
-| Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time`, `relative_time(t, "-1d@d")` (a Splunk time modifier applied to `t`, in UTC; `@w` is Sunday) |
+| Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are in the search's time zone (UTC unless the Search page sends yours); `strftime` takes epoch seconds or an event's `_time`, `relative_time(t, "-1d@d")` (a Splunk time modifier applied to `t`; `@w` is Sunday) |
 
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
 To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB

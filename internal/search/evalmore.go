@@ -139,7 +139,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if !ok || !ok2 {
 			return nil, true
 		}
-		rt, ok := relativeTime(t, spec)
+		rt, ok := query.RelativeTimeIn(t, spec, ev.loc)
 		if !ok || rt.Year() < 1 || rt.Year() > 9999 {
 			return nil, true
 		}

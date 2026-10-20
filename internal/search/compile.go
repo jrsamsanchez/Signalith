@@ -343,7 +343,11 @@ func ValidEarliest(v string) error {
 
 // toDateMath converts SPL-style relative times ("-24h", "-7d@d", "@w",
 // "now") to OpenSearch date math. Absolute times pass through unchanged.
-func toDateMath(v string) string {
+func toDateMath(v string) string { return toDateMathIn(v, time.UTC) }
+
+// toDateMathIn is toDateMath for a search in the time zone loc; the range
+// it goes in names that zone too, for OpenSearch's rounding.
+func toDateMathIn(v string, loc *time.Location) string {
 	v = strings.TrimSpace(v)
 	if v == "" || strings.EqualFold(v, "now") {
 		return "now"
@@ -359,7 +363,7 @@ func toDateMath(v string) string {
 		if isoDateMath(v) {
 			return v
 		}
-		if t, ok := query.ResolveTime(v, time.Now()); ok {
+		if t, ok := query.ResolveTimeIn(v, time.Now(), loc); ok {
 			return strconv.FormatInt(t.UnixMilli(), 10)
 		}
 		return v

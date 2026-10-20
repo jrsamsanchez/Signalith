@@ -211,6 +211,8 @@ type Result struct {
 	// the search could take: it is how many, the newest, they ran over.
 	// Their rows (counts, groups, filters) cover only those.
 	Sampled int `json:"sampled,omitempty"`
+	// TimeZone is the time zone the search ran in, when not UTC.
+	TimeZone string `json:"time_zone,omitempty"`
 	// Summaries lists the data models whose summary indexes answered
 	// whole 5-minute slots of the search.
 	Summaries []string `json:"summaries,omitempty"`
@@ -457,12 +459,16 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		sum = e.summaryPlan(q, filters, first, earliest, time.Now().UTC())
 	}
+	loc := zoneOf(q.TimeZone)
 	timeRange := map[string]any{}
 	if earliest != "" && earliest != "0" {
-		timeRange["gte"] = toDateMath(earliest)
+		timeRange["gte"] = toDateMathIn(earliest, loc)
 	}
 	if q.Latest != "" {
-		timeRange["lte"] = toDateMath(q.Latest)
+		timeRange["lte"] = toDateMathIn(q.Latest, loc)
+	}
+	if len(timeRange) > 0 && loc != time.UTC {
+		timeRange["time_zone"] = loc.String()
 	}
 	switch {
 	case sum != nil:
@@ -481,7 +487,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	if from, to, ok := searchSpan(earliest, q.Latest, time.Now()); ok {
+	if from, to, ok := searchSpan(earliest, q.Latest, time.Now(), zoneOf(q.TimeZone)); ok {
 		index = narrowToDays(index, o.IndexPrefix, from, to)
 	}
 	if err := checkPatterns(q); err != nil {
@@ -550,6 +556,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 				return nil, err
 			}
 			hist := map[string]any{"field": TimeField, "min_doc_count": 0}
+			if loc != time.UTC {
+				hist["time_zone"] = loc.String()
+			}
 			for k, v := range interval {
 				hist[k] = v
 			}
@@ -758,6 +767,13 @@ var ErrInternal = errors.New("the search stopped on an internal error; the detai
 
 func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	start := time.Now()
+	// A search a search runs (a subsearch, map) keeps its time zone.
+	if z := zoneFrom(ctx); q.TimeZone == "" && z != time.UTC {
+		withZoneName := *q
+		withZoneName.TimeZone = z.String()
+		q = &withZoneName
+	}
+	ctx = withZone(ctx, zoneOf(q.TimeZone))
 	p, err := e.Compile(q)
 	if err != nil {
 		return nil, err
@@ -781,6 +797,9 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	res.TookMS = time.Since(start).Milliseconds()
+	if loc := zoneOf(q.TimeZone); loc != time.UTC {
+		res.TimeZone = loc.String()
+	}
 	return res, nil
 }
 

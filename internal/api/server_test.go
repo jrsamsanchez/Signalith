@@ -236,6 +236,9 @@ func TestBuildParseExplain(t *testing.T) {
 	if ix, _ := body["index"].(string); !strings.HasPrefix(ix, "signalith-authentication-") || !strings.Contains(ix, time.Now().UTC().Format("2006.01.02")) {
 		t.Errorf("index = %v", body["index"])
 	}
+	if code, _ := do(t, ts, "POST", "/api/explain", `{"query":"*","time_zone":"Mars/Olympus"}`, true); code != 400 {
+		t.Errorf("unknown time zone = %d", code)
+	}
 	// Commands that need every event say they may see only some (SL-01).
 	_, body = do(t, ts, "POST", "/api/explain", `{"query":"* | eval u=lower(user) | stats count by u"}`, true)
 	steps = body["steps"].([]any)

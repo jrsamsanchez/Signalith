@@ -46,6 +46,13 @@ var isoLayouts = []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "20
 //     2026-10-01T08:00:00Z (UTC when it names no zone)
 //   - Splunk's %m/%d/%Y:%H:%M:%S, such as 10/01/2026:08:00:00
 func ResolveTime(v string, now time.Time) (time.Time, bool) {
+	return ResolveTimeIn(v, now, time.UTC)
+}
+
+// ResolveTimeIn is ResolveTime in the time zone loc: snaps such as @d
+// round to its midnight, and a date and time naming no zone is its time.
+// The result is in UTC.
+func ResolveTimeIn(v string, now time.Time, loc *time.Location) (time.Time, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" || strings.EqualFold(v, "now") {
 		return now.UTC(), true
@@ -55,16 +62,16 @@ func ResolveTime(v string, now time.Time) (time.Time, bool) {
 	}
 	if isoDate.MatchString(v) {
 		for _, l := range isoLayouts {
-			if t, err := time.Parse(l, v); err == nil {
+			if t, err := time.ParseInLocation(l, v, loc); err == nil {
 				return t.UTC(), true
 			}
 		}
 		return time.Time{}, false
 	}
-	if t, err := time.Parse("01/02/2006:15:04:05", v); err == nil {
+	if t, err := time.ParseInLocation("01/02/2006:15:04:05", v, loc); err == nil {
 		return t.UTC(), true
 	}
-	return RelativeTime(now, v)
+	return RelativeTimeIn(now, v, loc)
 }
 
 // isEpoch reports whether v is a number of seconds (or milliseconds).
@@ -103,6 +110,12 @@ func epochTime(v string) (time.Time, bool) {
 // RelativeTime applies a chain of offsets and snaps (-1d@d+8h, @w1, now)
 // to t, in UTC; see ResolveTime.
 func RelativeTime(t time.Time, spec string) (time.Time, bool) {
+	return RelativeTimeIn(t, spec, time.UTC)
+}
+
+// RelativeTimeIn is RelativeTime with days, weeks and the rest in the
+// time zone loc. The result is in UTC.
+func RelativeTimeIn(t time.Time, spec string, loc *time.Location) (time.Time, bool) {
 	spec = strings.TrimSpace(spec)
 	if strings.EqualFold(spec, "now") {
 		return t.UTC(), true
@@ -110,7 +123,7 @@ func RelativeTime(t time.Time, spec string) (time.Time, bool) {
 	if spec == "" {
 		return time.Time{}, false
 	}
-	t = t.UTC()
+	t = t.In(loc)
 	for spec != "" {
 		var ok bool
 		switch spec[0] {
@@ -123,7 +136,7 @@ func RelativeTime(t time.Time, spec string) (time.Time, bool) {
 			return time.Time{}, false
 		}
 	}
-	return t, true
+	return t.UTC(), true
 }
 
 // leadingDigits splits s after its leading digits.
@@ -190,28 +203,29 @@ func applySnap(t time.Time, spec string) (time.Time, string, bool) {
 		return t, "", false
 	}
 	y, mo, d := t.Date()
+	loc := t.Location()
 	switch unit {
 	case "s":
 		t = t.Truncate(time.Second)
 	case "m":
 		t = t.Truncate(time.Minute)
 	case "h":
-		t = t.Truncate(time.Hour)
+		t = time.Date(y, mo, d, t.Hour(), 0, 0, 0, loc)
 	case "d":
-		t = time.Date(y, mo, d, 0, 0, 0, 0, time.UTC)
+		t = time.Date(y, mo, d, 0, 0, 0, 0, loc)
 	case "w":
 		day := 0 // Sunday
 		if rest != "" && rest[0] >= '0' && rest[0] <= '7' {
 			day, rest = int(rest[0]-'0')%7, rest[1:]
 		}
 		back := (int(t.Weekday()) - day + 7) % 7
-		t = time.Date(y, mo, d-back, 0, 0, 0, 0, time.UTC)
+		t = time.Date(y, mo, d-back, 0, 0, 0, 0, loc)
 	case "M":
-		t = time.Date(y, mo, 1, 0, 0, 0, 0, time.UTC)
+		t = time.Date(y, mo, 1, 0, 0, 0, 0, loc)
 	case "q":
-		t = time.Date(y, mo-(mo-1)%3, 1, 0, 0, 0, 0, time.UTC)
+		t = time.Date(y, mo-(mo-1)%3, 1, 0, 0, 0, 0, loc)
 	case "y":
-		t = time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)
+		t = time.Date(y, 1, 1, 0, 0, 0, 0, loc)
 	}
 	return t, rest, true
 }

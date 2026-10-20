@@ -46,6 +46,7 @@ const maxCachedRegexes = 256
 type evaluator struct {
 	ctx      context.Context
 	now      time.Time
+	loc      *time.Location // the search's time zone, for strftime and the like
 	regexes  map[string]*regexp.Regexp
 	produced int
 	steps    int
@@ -59,7 +60,7 @@ type evaluator struct {
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
-	return &evaluator{ctx: ctx, now: time.Now()}
+	return &evaluator{ctx: ctx, now: time.Now(), loc: zoneFrom(ctx)}
 }
 
 type evaluatorKey struct{}
@@ -1095,14 +1096,14 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		if !ok || !ok2 {
 			return nil
 		}
-		return ev.str(strftime(t, format))
+		return ev.str(strftime(t.In(ev.loc), format))
 	case "strptime":
 		s, ok := text(0)
 		format, ok2 := text(1)
 		if !ok || !ok2 {
 			return nil
 		}
-		t, ok := strptime(s, format)
+		t, ok := strptimeIn(s, format, ev.loc)
 		if !ok {
 			return nil
 		}
@@ -1248,7 +1249,7 @@ func timeNumber(v any) any {
 	return numOut(float64(t.Unix()) + float64(t.Nanosecond())/1e9)
 }
 
-// strftime formats t (in UTC) with the usual % conversions.
+// strftime formats t, in its time zone, with the usual % conversions.
 func strftime(t time.Time, format string) string {
 	var b strings.Builder
 	for i := 0; i < len(format); i++ {
@@ -1302,9 +1303,9 @@ func strftime(t time.Time, format string) string {
 		case 'j':
 			b.WriteString(fmt.Sprintf("%03d", t.YearDay()))
 		case 'Z':
-			b.WriteString("UTC")
+			b.WriteString(t.Format("MST"))
 		case 'z':
-			b.WriteString("+0000")
+			b.WriteString(t.Format("-0700"))
 		case 's':
 			b.WriteString(strconv.FormatInt(t.Unix(), 10))
 		case 'T':
@@ -1332,7 +1333,10 @@ func strftime(t time.Time, format string) string {
 }
 
 // strptime parses s with a % format, in UTC unless the format reads a zone.
-func strptime(s, format string) (time.Time, bool) {
+func strptime(s, format string) (time.Time, bool) { return strptimeIn(s, format, time.UTC) }
+
+// strptimeIn is strptime in the time zone loc unless the format reads one.
+func strptimeIn(s, format string, loc *time.Location) (time.Time, bool) {
 	if strings.TrimSpace(format) == "%s" {
 		f, ok := asFloat(s)
 		if !ok {
@@ -1365,7 +1369,7 @@ func strptime(s, format string) (time.Time, bool) {
 		}
 		layout.WriteString(p)
 	}
-	t, err := time.Parse(layout.String(), strings.TrimSpace(s))
+	t, err := time.ParseInLocation(layout.String(), strings.TrimSpace(s), loc)
 	if err != nil {
 		return time.Time{}, false
 	}

@@ -76,11 +76,11 @@ func (e *Engine) summaryPlan(q *query.Query, filters []query.Expr, cmd query.Com
 		fields = append(fields, fs...)
 	}
 	fields = append(fields, by...)
-	from, ok := resolveTime(earliest, now)
+	from, ok := resolveTimeIn(earliest, now, zoneOf(q.TimeZone))
 	if !ok {
 		return nil
 	}
-	to, ok := resolveTime(q.Latest, now)
+	to, ok := resolveTimeIn(q.Latest, now, zoneOf(q.TimeZone))
 	if !ok || to.IsZero() {
 		return nil
 	}
@@ -245,10 +245,15 @@ func wholeSlots(span string) bool {
 // all time (zero), -24h and -7d@d are relative, and ISO 8601 or epoch
 // milliseconds are absolute. ok is false for anything else.
 func resolveTime(v string, now time.Time) (time.Time, bool) {
+	return resolveTimeIn(v, now, time.UTC)
+}
+
+// resolveTimeIn is resolveTime in the time zone loc.
+func resolveTimeIn(v string, now time.Time, loc *time.Location) (time.Time, bool) {
 	if strings.TrimSpace(v) == "0" {
 		return time.Time{}, true
 	}
-	return query.ResolveTime(v, now)
+	return query.ResolveTimeIn(v, now, loc)
 }
 
 // clause is the filter that reads, for each model, summary rows of its

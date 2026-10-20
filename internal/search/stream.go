@@ -261,12 +261,13 @@ func applyBin(ctx context.Context, res *Result, c *query.Bin) error {
 			if !ok {
 				continue
 			}
-			u := t.Unix() - offset
+			u := wallSeconds(t, secs, ev.loc) - offset
 			u = (u - ((u%secs)+secs)%secs) + offset // floor, for times before 1970 too
+			start := fromWallSeconds(u, secs, ev.loc)
 			if _, isNum := evNum(v); isNum {
-				b = u
+				b = start.Unix()
 			} else {
-				b = time.Unix(u, 0).UTC().Format(time.RFC3339)
+				b = start.Format(time.RFC3339)
 			}
 		} else {
 			f, ok := asFloat(v)
