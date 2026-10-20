@@ -107,11 +107,17 @@ func TestEveryMainWorkflowRaisesAnAlert(t *testing.T) {
 // only) or "signing" (main only), see docs/releasing.md.
 var signingSecrets = regexp.MustCompile(`secrets\.(SIGNALITH_GPG_PRIVATE_KEY|SIGNALITH_GPG_PASSPHRASE|SIGNALITH_AGENT_KEY|SIGNALITH_CONTENT_KEY|SIGNPATH_API_TOKEN)\b`)
 
+// protectedEnvironment is the environment of a job that may read a
+// signing key: release or signing by name, or chosen by a condition that
+// falls back to no environment (and so to no key), as dry runs do.
+var protectedEnvironment = regexp.MustCompile(`^(release|signing|\$\{\{ [^}]+ && '(release|signing)' \|\| '' \}\})$`)
+
 // TestSigningSecretsOnlyInProtectedEnvironments: a job that reads a
 // signing key names the release or signing environment, so the key can
 // be a secret of that environment instead of the whole repository, out of
 // reach of branches and pull requests. A call of a reusable workflow that
-// passes the secrets on is checked in the workflow it calls.
+// passes the secrets on by name is checked in the workflow it calls;
+// "secrets: inherit" would hand it every secret, so no job uses it.
 func TestSigningSecretsOnlyInProtectedEnvironments(t *testing.T) {
 	dir := filepath.Join("..", "..", ".github", "workflows")
 	files, _ := filepath.Glob(filepath.Join(dir, "*.yml"))
@@ -129,10 +135,14 @@ func TestSigningSecretsOnlyInProtectedEnvironments(t *testing.T) {
 		for name, job := range doc.Jobs {
 			var j struct {
 				Uses        string    `yaml:"uses"`
+				Secrets     yaml.Node `yaml:"secrets"`
 				Environment yaml.Node `yaml:"environment"`
 			}
 			if err := job.Decode(&j); err != nil {
 				t.Fatalf("%s: job %s: %v", f, name, err)
+			}
+			if j.Secrets.Kind == yaml.ScalarNode && j.Secrets.Value == "inherit" {
+				t.Errorf("%s: job %s passes on every secret with secrets: inherit; name the ones it needs", filepath.Base(f), name)
 			}
 			text, err := yaml.Marshal(&job)
 			if err != nil {
@@ -150,7 +160,7 @@ func TestSigningSecretsOnlyInProtectedEnvironments(t *testing.T) {
 				_ = j.Environment.Decode(&m)
 				env = m.Name
 			}
-			if !strings.Contains(env, "release") && !strings.Contains(env, "signing") {
+			if !protectedEnvironment.MatchString(env) {
 				t.Errorf("%s: job %s reads %s without the release or signing environment", filepath.Base(f), name, strings.Join(slices.Compact(used), ", "))
 			}
 		}
