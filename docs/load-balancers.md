@@ -24,7 +24,8 @@ The balancer passes each TCP connection through unchanged, so HTTPS and syslog o
 TLS end at Signalith and agents keep checking Signalith's certificate. It checks each
 server's `/readyz` (see [Load balancers: /readyz and /livez](servers.md#load-balancers-readyz-and-livez))
 and sends nothing to a server that is starting, restarting, stopping or cut off from
-OpenSearch.
+OpenSearch: no browsers, no agents and no syslog. The syslog ports are checked on the
+web port, since they have no `/readyz` of their own.
 
 Passing connections through hides who made them: every client would seem to be the
 balancer. So the balancer starts each connection with a PROXY protocol header (version
@@ -69,13 +70,20 @@ trusts every address (`0.0.0.0/0` or `::/0`).
 
 - **`haproxy.cfg`**: HAProxy in TCP mode for the web port (8443), the agent port (7779), syslog over TLS
   (6514) and plain syslog over TCP (514, once `syslog.tcp` is turned on), with `send-proxy-v2`, `/readyz` checks and
-  `balance leastconn`. Change the `server` lines to your servers' addresses.
+  `balance leastconn`. Every backend, the syslog ones too, checks `GET /readyz` on the
+  server's web port (`check port 9000` on the syslog backends) and expects 200, with a
+  PROXY header like the traffic it sends (`check-send-proxy`). Change the `server` lines
+  to your servers' addresses.
 - **`nginx-stream.conf`**: the same with nginx's stream module and `proxy_protocol on`.
   Open source nginx only notices a stopped server when a connection to it fails; it
   cannot read `/readyz`.
 - **`keepalived.conf`**: one virtual IP shared by two balancer machines, so the
   balancer is not a single point of failure, and syslog over UDP balanced to the
-  servers (UDP has no PROXY protocol).
+  servers (UDP has no PROXY protocol). Each server is checked with a `MISC_CHECK` that
+  runs `curl -f http://<server>:9000/readyz`: plain HTTP, which the web port answers
+  `/readyz` on, and no PROXY header, which a trusted proxy may leave out. A server that
+  answers 503 gets no UDP syslog until it answers 200 again. The balancers need `curl`.
+  Change the addresses in `misc_path` with the `real_server` ones.
 
 The [folder's README](https://github.com/jrsamsanchez/Signalith/blob/main/deploy/loadbalancer/README.md)
 has notes for Windows Network Load Balancing, AWS and Azure load balancers, F5 and

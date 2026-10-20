@@ -24,7 +24,7 @@
 #
 # To update: git pull, then step 1 again; it downloads the new Signalith
 # image. Coming from a version without these steps? See "Upgrading the Docker
-# quick start" in README.md.
+# quick start" in docs/docker.md.
 #
 # Signalith's image comes ready-made from GitHub (ghcr.io): the one built from
 # main, or a release's with SIGNALITH_VERSION, for example in PowerShell
