@@ -1022,8 +1022,15 @@
   // none of them found anything: what data it needs and where to set it up.
   function renderNoData(slot, d, results) {
     const none = results.length && results.every((pr, i) => d.panels[i] && panelEmpty(d.panels[i], pr));
-    if (!none || (d.id !== 'malware' && d.id !== 'network' && d.id !== 'vulnerabilities')) { put(slot); return; }
+    if (!none || !['malware', 'network', 'ot-network', 'vulnerabilities'].includes(d.id)) { put(slot); return; }
     const admin = typeof can === 'function' && can('admin');
+    if (d.id === 'ot-network') {
+      put(slot, el('div', { class: 'card db-nodata' }, emptyState('gauge', 'No industrial protocol traffic yet',
+        'A network sensor on an industrial network fills this dashboard: Modbus, DNP3, S7comm, EtherNet/IP, BACnet and more. Zeek logs Modbus and DNP3 on its own; the guide shows how to add the others.',
+        el('a', { class: 'btn btn--sm', href: 'https://signalith.io/docs/network-sensor/#industrial-protocols', target: '_blank', rel: 'noopener' }, icon('book-open'), 'Industrial protocols guide'),
+        null, null)));
+      return;
+    }
     if (d.id === 'network') {
       put(slot, el('div', { class: 'card db-nodata' }, emptyState('activity', 'No network sensor events yet',
         'A network sensor running Zeek or Suricata fills this dashboard: IDS alerts, connections, DNS lookups, web requests, files and certificates seen on your network.',

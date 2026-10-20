@@ -72,7 +72,7 @@ func TestZeekICSNPPMore(t *testing.T) {
 	}
 	md := zeekDocs(t, "modbus_detailed")[0]
 	expect(t, md, map[string]any{"ot_function": "DIAGNOSTICS", "category": "diagnostic", "type": "request", "ot_unit": "1",
-		"object": "0", "reason": nil, "zeek_request_subfunction_code": "FORCE_LISTEN_ONLY_MODE"})
+		"object": "FORCE_LISTEN_ONLY_MODE", "reason": nil, "zeek_request_subfunction_code": "FORCE_LISTEN_ONLY_MODE"})
 }
 
 func TestSuricataIndustrial(t *testing.T) {

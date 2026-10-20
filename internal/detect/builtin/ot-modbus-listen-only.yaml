@@ -1,0 +1,25 @@
+id: ot-modbus-listen-only
+title: $src$ forced the Modbus device $dest$ into listen-only mode
+name: Modbus device forced to listen only
+description: A host sent the Modbus diagnostic command that puts a device into listen-only mode, in which it stops answering until restarted. The process it controls can then no longer be watched or commanded. Needs CISA's ICSNPP Modbus analyzer for Zeek.
+query: |
+  datamodel=Industrial app=modbus ot_function=DIAGNOSTICS object=FORCE_LISTEN_ONLY_MODE
+  | stats count, min(_time) as first_seen by src, dest
+schedule: 10m
+lookback: 15m
+severity: high
+mitre: [T0814, T1691.002]
+throttle:
+  fields: [src, dest]
+  window: 4h
+risk:
+  score: 60
+  objects:
+    - {field: dest, type: system}
+    - {field: src, type: system}
+enabled: true
+tags: [network, ot, inhibit-response-function, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Check with the site that the device answers its HMI again; it needs a restart (or a
+  Restart Communications diagnostic) to leave listen-only mode. Legitimate tools rarely
+  send this command, so treat src as compromised until shown otherwise.

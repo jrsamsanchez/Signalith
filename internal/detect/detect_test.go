@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/findings"
@@ -27,8 +28,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 52 {
-		t.Fatalf("%d built-in detections, want 52", len(ds))
+	if len(ds) != 59 {
+		t.Fatalf("%d built-in detections, want 59", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -306,6 +307,10 @@ func TestRenderTitle(t *testing.T) {
 	got := RenderTitle("$user$ on $dest$ ($count$, $missing$)", map[string]any{"user": "bob", "dest": "WS1", "count": int64(4)})
 	if got != "bob on WS1 (4, unknown)" {
 		t.Errorf("title = %q", got)
+	}
+	long := RenderTitle("$src$ sent $functions$", map[string]any{"src": "h1", "functions": strings.Repeat("WRITE_SINGLE_REGISTER ", 20)})
+	if n := utf8.RuneCountInString(long); n != len("h1 sent ")+titleValueMax || !strings.HasSuffix(long, "…") {
+		t.Errorf("long title = %d runes, %q", n, long)
 	}
 }
 

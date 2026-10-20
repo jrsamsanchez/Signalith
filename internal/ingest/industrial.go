@@ -46,9 +46,10 @@ const maxOTValue = 256
 type otLog struct {
 	proto string
 	// fn names the function, code its number, unit the device or
-	// station addressed, object the register, point, class or tag, exc
-	// an error or exception, msg whether the message is a request or a
-	// response, device the product a device says it is.
+	// station addressed, object the register, point, class or tag (or a
+	// diagnostic's subfunction), exc an error or exception, msg whether
+	// the message is a request or a response, device the product a device
+	// says it is.
 	fn, code, unit, object, exc, msg, device []string
 	// name names the function when the log has no field for it, and
 	// category, when set, is the category of every message of the log.
@@ -62,7 +63,7 @@ var zeekOTLogs = map[string]otLog{
 	"dnp3":   {proto: "dnp3", fn: []string{"fc_request", "fc_reply"}},
 	// ICSNPP Modbus (some of its logs spell unit "uint").
 	"modbus_detailed": {proto: "modbus", fn: []string{"func"}, unit: []string{"unit", "uint"},
-		object: []string{"address"}, exc: []string{"exception_code"}, msg: []string{"request_response"}},
+		object: []string{"request_subfunction_code", "address"}, exc: []string{"exception_code"}, msg: []string{"request_response"}},
 	"modbus_mask_write_register": {proto: "modbus", fn: []string{"func"}, unit: []string{"uint", "unit"},
 		object: []string{"address"}, msg: []string{"request_response"}},
 	"modbus_read_write_multiple_registers": {proto: "modbus", fn: []string{"func"}, unit: []string{"uint", "unit"},

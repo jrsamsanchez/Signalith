@@ -318,6 +318,30 @@ a connection, which only host data (Sysmon) has, so they leave sensor data alone
 `network-sensor-shell-port` covers the sensor's side. If one IDS rule is noisy on your
 network, add an exception on its `signature_id`.
 
+## Industrial detections
+
+Industrial protocol traffic seen by a [network sensor](network-sensor.md#industrial-protocols)
+(the **Industrial** data model) lights up these built-in detections. They are mapped to
+[MITRE ATT&CK for ICS](https://attack.mitre.org/matrices/ics/), so their techniques
+(T0xxx) appear on **Detections > Coverage** under **ICS**, a second matrix shown once any
+detection uses one. They stay quiet on a network with no industrial devices.
+
+| ID | Severity | Fires when | Default |
+| --- | --- | --- | --- |
+| `ot-controller-stop-start` | high | A host told a controller to stop, start, restart, reset or stop talking (S7 PLC stop, DNP3 cold or warm restart, CIP stop or reset, BACnet device control, ...) | on |
+| `ot-program-transfer` | medium | A program or logic was downloaded to, or uploaded from, a controller | on |
+| `ot-command-from-outside` | high | An address outside your network sent a write, control or program command to an industrial device | on |
+| `ot-modbus-listen-only` | high | A Modbus device was forced into listen-only mode (needs CISA's ICSNPP Modbus analyzer) | on |
+| `ot-device-discovery` | medium | One host sent identification or discovery requests to 10 or more industrial devices in 15 minutes | on |
+| `ot-exception-burst` | low | Industrial devices answered 25 or more requests from one host with an error in 15 minutes | on |
+| `ot-new-command-source` | medium | A host sent write, control or program commands to a device it had not commanded in 30 days | off |
+
+Engineering workstations stop controllers and transfer programs during maintenance, and
+asset inventory tools ask devices who they are: add an exception on `src` for the hosts
+that do this routinely. Like `network-new-inbound-service`, `ot-new-command-source` uses
+its 30-day throttle as its memory, so its first runs list every host that commands each
+device today; turn it on when you want that inventory.
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,
@@ -1559,7 +1583,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
-| `GET /api/coverage` | ATT&CK matrix with coverage |
+| `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
 | `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |
