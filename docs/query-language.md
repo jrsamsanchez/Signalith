@@ -229,11 +229,14 @@ A comparison with a missing field is null, which `where` treats as false. Use `i
 
 `where` keeps its plain filter reading for conditions such as `count > 20`,
 `user=adm*` or `src IN (a, b)`: there the right side is a value, matching ignores case and
-`*` is a wildcard. A bare name on the right names a field, as in Splunk:
+`*` is a wildcard, as in a search; a multivalue field matches when one of its values does
+(`!=` when none does). A bare name on the right names a field, as in Splunk:
 `where bytes_out > bytes_in` compares the two fields on every row that has `bytes_in`, and
 compares with the text `bytes_in` only on rows without it. Right after the search, where OpenSearch runs the `where`, only a field a data model names is read as a field there; any other bare name is compared as text, so write `where bytes_out > 'my_field'` or move the `where` after a command such as `eval` when comparing with a field of your own. Put a value in double quotes
 (`where user="admin"`) to always compare with the text. As soon as the condition uses a
-function, arithmetic or a single-quoted field name it is read as an expression.
+function, arithmetic or a single-quoted field name it is read as an expression, which
+compares text case-sensitively as Splunk's `where` does: `where action="Failure"` matches
+`failure`, but `where action="Failure" AND len(action) > 0` does not.
 
 | Functions | |
 | --- | --- |

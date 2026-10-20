@@ -559,9 +559,11 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		}
 		return ok
 	case *query.In:
-		for _, v := range e.Values {
-			if m.equals(r[e.Field], v) {
-				return true
+		for _, x := range valueList(r[e.Field]) {
+			for _, v := range e.Values {
+				if m.equals(x, v) {
+					return true
+				}
 			}
 		}
 		return false
@@ -570,25 +572,18 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		if !ok || v == nil {
 			return false
 		}
-		if e.Ref {
-			if w, ok := r[e.Value]; ok && w != nil {
-				return compareOp(e.Op, compareValues(v, w))
+		if list, multi := v.([]any); multi {
+			// A multivalue field matches when one of its values does,
+			// and != when none equals the value, as search reads them
+			// (SL-07).
+			if e.Op == "!=" {
+				eq := *e
+				eq.Op = "="
+				return !slices.ContainsFunc(list, func(x any) bool { return m.compare(&eq, x, r) })
 			}
+			return slices.ContainsFunc(list, func(x any) bool { return m.compare(e, x, r) })
 		}
-		switch e.Op {
-		case "=":
-			return m.equals(v, e.Value)
-		case "!=":
-			return !m.equals(v, e.Value)
-		case "=~":
-			return m.regex(e.Value, fmt.Sprint(v))
-		}
-		if e.Field == "_time" {
-			if _, isNum := asFloat(e.Value); isNum {
-				v = timeNumber(v)
-			}
-		}
-		return compareOp(e.Op, compareValues(v, e.Value))
+		return m.compare(e, v, r)
 	case *query.Text:
 		want := m.lowered(e.Value)
 		for _, v := range r {
@@ -598,6 +593,32 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		}
 	}
 	return false
+}
+
+// compare evaluates a comparison for v, one value of row r's field.
+func (m *matcher) compare(e *query.Compare, v any, r Row) bool {
+	if v == nil {
+		return false
+	}
+	if e.Ref {
+		if w, ok := r[e.Value]; ok && w != nil {
+			return compareOp(e.Op, compareValues(v, w))
+		}
+	}
+	switch e.Op {
+	case "=":
+		return m.equals(v, e.Value)
+	case "!=":
+		return !m.equals(v, e.Value)
+	case "=~":
+		return m.regex(e.Value, fmt.Sprint(v))
+	}
+	if e.Field == "_time" {
+		if _, isNum := asFloat(e.Value); isNum {
+			v = timeNumber(v)
+		}
+	}
+	return compareOp(e.Op, compareValues(v, e.Value))
 }
 
 // compareOp reports whether cmp, as compareValues returns it, satisfies op.
@@ -617,6 +638,14 @@ func compareOp(op string, cmp int) bool {
 		return cmp >= 0
 	}
 	return false
+}
+
+// valueList is v's values: each of a multivalue field's, or v itself.
+func valueList(v any) []any {
+	if list, ok := v.([]any); ok {
+		return list
+	}
+	return []any{v}
 }
 
 func (m *matcher) lowered(s string) string {
