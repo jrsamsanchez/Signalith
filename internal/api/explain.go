@@ -515,6 +515,9 @@ func describeCommand(c query.Command) string {
 		s := strings.Join(parts, " and ")
 		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
+		if c.Limit > 0 {
+			return fmt.Sprintf("Sort by %s and keep the first %d rows.", describeSortKeys(c.Keys), c.Limit)
+		}
 		return "Sort by " + describeSortKeys(c.Keys) + "."
 	case *query.Head:
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
@@ -790,6 +793,14 @@ func describeSortKeys(keys []query.SortKey) string {
 		dir := "lowest first"
 		if k.Desc {
 			dir = "highest first"
+		}
+		switch k.As {
+		case "num":
+			dir += ", as numbers"
+		case "str":
+			dir += ", as text"
+		case "ip":
+			dir += ", as addresses"
 		}
 		parts[i] = k.Field + " (" + dir + ")"
 	}

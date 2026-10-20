@@ -4,9 +4,11 @@
 package search
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
+	"net/netip"
 	"slices"
 	"sort"
 	"strconv"
@@ -48,6 +50,9 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		res.Rows = out
 	case *query.Sort:
 		sortRows(res.Rows, c.Keys)
+		if c.Limit > 0 && len(res.Rows) > c.Limit {
+			res.Rows = res.Rows[:c.Limit]
+		}
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -452,6 +457,41 @@ func compareValues(a, b any) int {
 		return 0
 	}
 	return strings.Compare(strings.ToLower(fmt.Sprint(a)), strings.ToLower(fmt.Sprint(b)))
+}
+
+// compareAs orders a and b as a sort key's function says: "num" puts
+// numbers first, in order, then the rest as text; "str" orders them as
+// text; "ip" orders addresses by their value, before anything else;
+// otherwise as compareValues. Missing values go last.
+func compareAs(as string, a, b any) int {
+	if as == "" || a == nil || b == nil {
+		return compareValues(a, b)
+	}
+	switch as {
+	case "num":
+		fa, oka := asFloat(a)
+		fb, okb := asFloat(b)
+		switch {
+		case oka && okb:
+			return cmp.Compare(fa, fb)
+		case oka:
+			return -1
+		case okb:
+			return 1
+		}
+	case "ip":
+		ia, erra := netip.ParseAddr(strings.TrimSpace(fmt.Sprint(a)))
+		ib, errb := netip.ParseAddr(strings.TrimSpace(fmt.Sprint(b)))
+		switch {
+		case erra == nil && errb == nil:
+			return ia.Unmap().Compare(ib.Unmap())
+		case erra == nil:
+			return -1
+		case errb == nil:
+			return 1
+		}
+	}
+	return strings.Compare(fmt.Sprint(a), fmt.Sprint(b))
 }
 
 // regex reports whether a where clause's regular expression is found in
@@ -859,7 +899,7 @@ func sortRows(rows []Row, keys []query.SortKey) {
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		for _, k := range keys {
-			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			cmp := compareAs(k.As, rows[i][k.Field], rows[j][k.Field])
 			if cmp == 0 {
 				continue
 			}

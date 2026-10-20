@@ -160,12 +160,16 @@ func quote(v string) string {
 func sortKeysString(ks []SortKey) string {
 	keys := make([]string, len(ks))
 	for i, k := range ks {
+		name := k.Field
+		if k.As != "" {
+			name = k.As + "(" + k.Field + ")"
+		}
 		if k.Desc {
-			keys[i] = "-" + k.Field
-		} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
-			keys[i] = "+" + k.Field // the sign is part of the name
+			keys[i] = "-" + name
+		} else if k.As == "" && (strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+")) {
+			keys[i] = "+" + name // the sign is part of the name
 		} else {
-			keys[i] = k.Field
+			keys[i] = name
 		}
 	}
 	return strings.Join(keys, ", ")
@@ -282,14 +286,24 @@ type Where struct {
 	Search bool
 }
 
-// SortKey is one sort field.
+// SortKey is one sort field. As is how its values compare: "num" as
+// numbers, "str" as text, "ip" as addresses, or "" (auto) numbers as
+// numbers and the rest as text.
 type SortKey struct {
 	Field string
 	Desc  bool
+	As    string
 }
 
-// Sort orders rows: sort -count, src.
-type Sort struct{ Keys []SortKey }
+// SortFuncs are the functions a sort key may be written in: sort num(x).
+var SortFuncs = []string{"auto", "ip", "num", "str"}
+
+// Sort orders rows: sort -count, src. Limit, when above 0, keeps only
+// that many rows: sort 10 -count, or sort limit=10 -count.
+type Sort struct {
+	Keys  []SortKey
+	Limit int
+}
 
 // Head keeps the first N rows.
 type Head struct{ N int }
@@ -416,6 +430,9 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
+		if c.Limit > 0 {
+			return "sort " + strconv.Itoa(c.Limit) + " " + sortKeysString(c.Keys)
+		}
 		return "sort " + sortKeysString(c.Keys)
 	case *Head:
 		return "head " + strconv.Itoa(c.N)

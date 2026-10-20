@@ -5,6 +5,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -37,5 +38,23 @@ func TestSampledWhenEventsAreCapped(t *testing.T) {
 	fs := &fakeStore{responses: []string{strings.Replace(three, "100000", "3", 1)}}
 	if res, _ := (&Engine{Store: fs, Opt: Options{MaxEvents: 3}}).Run(context.Background(), `* | dedup user`); res.Sampled != 0 {
 		t.Errorf("every event was read, yet sampled %d", res.Sampled)
+	}
+}
+
+func TestSortLimitAndFunctions(t *testing.T) {
+	src := `| makeresults count=4 | streamstats count as n | eval v=case(n=1, "10", n=2, "9", n=3, "x", n=4, "100"), ip=case(n=1, "10.0.0.10", n=2, "10.0.0.9", n=3, "::1", n=4, "9.1.1.1")`
+	for q, want := range map[string]string{
+		src + ` | sort 2 -num(v) | table v`: "[map[v:x] map[v:100]]", // reversed, text before numbers
+		src + ` | sort str(v) | table v`:    "[map[v:10] map[v:100] map[v:9] map[v:x]]",
+		src + ` | sort num(v) | table v`:    "[map[v:9] map[v:10] map[v:100] map[v:x]]",
+		src + ` | sort ip(ip) | table ip`:   "[map[ip:9.1.1.1] map[ip:10.0.0.9] map[ip:10.0.0.10] map[ip:::1]]",
+	} {
+		res, err := (&Engine{}).Run(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if got := fmt.Sprint(res.Rows); got != want {
+			t.Errorf("%s = %s, want %s", q, got, want)
+		}
 	}
 }

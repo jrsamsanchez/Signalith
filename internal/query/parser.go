@@ -5,6 +5,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -523,8 +524,24 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseFillnull()
 	case "sort":
 		s := &Sort{}
+		if nt := p.peek(); nt.kind == tokWord && isDigits(nt.text) {
+			// sort 10 -count keeps 10 rows; sort 0 keeps them all.
+			n, err := p.int()
+			if err != nil {
+				return nil, err
+			}
+			s.Limit = n
+		} else if nt.kind == tokWord && strings.EqualFold(nt.text, "limit") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			p.next()
+			p.next()
+			n, err := p.int()
+			if err != nil {
+				return nil, err
+			}
+			s.Limit = n
+		}
 		var err error
-		if s.Keys, err = p.sortKeys(true); err != nil {
+		if s.Keys, err = p.sortKeys(false); err != nil {
 			return nil, err
 		}
 		if len(s.Keys) == 0 {
@@ -922,6 +939,16 @@ func (p *parser) sortKeys(limit bool) ([]SortKey, error) {
 			continue
 		}
 		p.next()
+		if k, ok, err := p.sortFunc(nt); ok || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, k)
+			if p.peek().kind == tokComma {
+				p.next()
+			}
+			continue
+		}
 		k := SortKey{Field: p.fieldSuffix(nt.text)}
 		if strings.HasPrefix(nt.text, "-") || strings.HasPrefix(nt.text, "+") {
 			k.Field = nt.text[:1] + p.fieldSuffix(nt.text[1:])
@@ -945,6 +972,30 @@ func (p *parser) sortKeys(limit bool) ([]SortKey, error) {
 		}
 	}
 	return keys, nil
+}
+
+// sortFunc reads a sort key written in a function, such as -num(count),
+// whose name nt has just been read. ok is false when nt is no such name.
+func (p *parser) sortFunc(nt token) (SortKey, bool, error) {
+	name := nt.text
+	k := SortKey{}
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, "+") {
+		k.Desc, name = name[0] == '-', name[1:]
+	}
+	fn := strings.ToLower(name)
+	if p.peek().kind != tokLParen || !slices.Contains(SortFuncs, fn) {
+		return k, false, nil
+	}
+	if p.peekAt(1).kind != tokWord || p.peekAt(2).kind != tokRParen {
+		return k, false, errorf(nt.pos, "%s() takes one field name, for example: sort -%s(count)", fn, fn)
+	}
+	p.next()
+	k.Field = p.next().text
+	p.next()
+	if fn != "auto" {
+		k.As = fn
+	}
+	return k, true, nil
 }
 
 // fieldList reads "a, b c" style field lists, stopping at "by", pipes and EOF.

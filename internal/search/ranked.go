@@ -62,7 +62,9 @@ func statsRanking(st *query.Stats, post []query.Command, maxBuckets int) (r rank
 					dir = "desc"
 				}
 				r.order = map[string]any{name: dir}
-				if len(post) > 1 {
+				if s.Limit > 0 && s.Limit <= r.size {
+					r.size, r.complete = s.Limit, true
+				} else if len(post) > 1 {
 					if h, isHead := post[1].(*query.Head); isHead && h.N > 0 && h.N <= r.size {
 						r.size, r.complete = h.N, true
 					}
