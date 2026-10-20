@@ -160,18 +160,22 @@ func TestMarkOwn(t *testing.T) {
 // page goes to the shared user document and never to this server's
 // files; the check reads the password in use there.
 func TestAdminFactsSharedPassword(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "admin-password")
+	c0 := loadConfig(t, "")
+	file := filepath.Join(t.TempDir(), "admin-password")
 	if err := os.WriteFile(file, []byte("first-docker-pass\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", file)
 	env := func(k string) string {
 		if k == "SIGNALITH_ADMIN_PASSWORD_FILE" {
 			return file
 		}
 		return ""
 	}
-	c := loadConfig(t, "")
+	c, err := config.Load(c0.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
 	first, err := config.HashPassword("first-docker-pass")
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +201,18 @@ func TestAdminFactsSharedPassword(t *testing.T) {
 	f := &Facts{Config: c, Admin: a, Users: UserFacts{BuiltinName: "signalithadmin"}}
 	if ch := checkBuiltinPassword(f); ch.State != Good {
 		t.Errorf("check after the change: %+v", ch)
+	}
+	// The file changed on disk since the start: the password this process
+	// loaded still counts, so the first password still shows.
+	if err := os.WriteFile(file, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if a := adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env, Builtin: live(first)}); !a.DockerFirst {
+		t.Errorf("file rotated: %+v", a)
+	}
+	// A signalith.yaml hash that differs from the cluster's cannot tell.
+	if a := adminFacts(Host{Config: c0, Builtin: live(changed)}); a.SetAt != nil || !a.Shared {
+		t.Errorf("yaml: %+v", a)
 	}
 	// Not read yet (the shared settings cannot be used): as before.
 	none := func() (string, time.Time, bool) { return "", time.Time{}, false }

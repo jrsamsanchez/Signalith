@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jrsamsanchez/signalith/internal/config"
+
 	"github.com/jrsamsanchez/signalith/internal/security"
 )
 
@@ -23,7 +25,18 @@ func TestSecurityBuiltinPasswordChangedOnPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", file)
-	c := newMemberCluster(t, nil)
+	dir := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "signalith.yaml")
+	if err := os.WriteFile(path, []byte("ingest:\n  tokens: [tok-0123456789abcdef]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The server's config as the quick start's: the password from the file.
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newMemberCluster(t, func(s *Server) { s.Config = cfg })
 	check := func() *security.Check {
 		t.Helper()
 		ch := c.a.srv.gatherSecurity(context.Background()).Find("accounts.builtin_password")

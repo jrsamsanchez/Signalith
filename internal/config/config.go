@@ -2468,6 +2468,28 @@ func envPasswordVersion(pw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ConfiguredAdminPassword reports whether hash, a built-in admin password
+// hash, is that of the password this config gives: signalith.yaml's hash,
+// or the SIGNALITH_ADMIN_PASSWORD(_FILE) this process loaded, which each
+// start hashes again with a new salt and so is compared as a password.
+// known is false when that cannot be told, as for a signalith.yaml hash
+// that differs, or a config this process did not hash.
+func (c *Config) ConfiguredAdminPassword(hash string) (match, known bool) {
+	if hash != "" && hash == c.Auth.AdminPasswordHash {
+		return true, true
+	}
+	if c.envAdminHash == "" || c.Auth.AdminPasswordHash != c.envAdminHash {
+		return false, false
+	}
+	envHash.Lock()
+	pw, h := envHash.password, envHash.hash
+	envHash.Unlock()
+	if h != c.envAdminHash || pw == "" {
+		return false, false
+	}
+	return users.ComparePassword(hash, pw), true
+}
+
 // envHash remembers the hash of SIGNALITH_ADMIN_PASSWORD, which every
 // load of the config needs and which is slow to compute on purpose.
 var envHash struct {

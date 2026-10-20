@@ -443,27 +443,12 @@ func adminFacts(h Host) AdminFacts {
 }
 
 // configuredInUse reports whether hash, the built-in admin's password in
-// use, is still the password this server's configuration gives:
-// signalith.yaml's hash, or SIGNALITH_ADMIN_PASSWORD(_FILE), which each
-// start hashes again with a new salt and so is compared as a password.
-// A password that cannot be read counts as still in use, so the check
-// never calls a password changed that may not be.
+// use, is still the password this server's configuration gives, as this
+// process loaded it. When that cannot be told it counts as still in use,
+// so the check never calls a password changed that may not be.
 func configuredInUse(h Host, hash string) bool {
-	if hash == h.Config.Auth.AdminPasswordHash {
-		return true
-	}
-	pw := h.getenv("SIGNALITH_ADMIN_PASSWORD")
-	if file := h.getenv("SIGNALITH_ADMIN_PASSWORD_FILE"); pw == "" && file != "" {
-		b, err := os.ReadFile(file)
-		if err != nil {
-			return true
-		}
-		pw = strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r")
-	}
-	if pw == "" {
-		return false
-	}
-	return users.ComparePassword(hash, pw)
+	match, known := h.Config.ConfiguredAdminPassword(hash)
+	return match || !known
 }
 
 // UserFactsFrom reads who signs in from the users store.
