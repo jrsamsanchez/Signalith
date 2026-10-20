@@ -1023,3 +1023,74 @@ func TestNameBudgetIsSharedByServers(t *testing.T) {
 		t.Errorf("from Config: %d", pi)
 	}
 }
+
+// A TLS 1.3 sender that writes and hangs up at once, without reading the
+// session tickets a server sends after the handshake, closes with a reset,
+// and the kernel throws away what it had not yet sent. The receiver sends
+// no tickets, so every line arrives.
+func TestTLSSendAndCloseAtOnce(t *testing.T) {
+	certFile, keyFile := writeCert(t)
+	bulk := &capture{block: make(chan struct{})}
+	r, p, _ := start(t, Config{TLS: "127.0.0.1:0", CertFile: certFile, KeyFile: keyFile, QueueSize: 2, BatchSize: 1, FlushInterval: 5 * time.Millisecond}, bulk)
+	sent := time.Now().UTC().Add(-time.Hour).Truncate(time.Second).Format(time.RFC3339)
+	dial := func() (net.Conn, *tls.Conn) {
+		raw, err := net.Dial("tcp", addr(t, r, "tls"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Read a byte at a time, as many TLS libraries read just the
+		// records they need, and ask for tickets as they do.
+		c := tls.Client(byteConn{raw}, &tls.Config{
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS13,
+			ClientSessionCache: tls.NewLRUClientSessionCache(1),
+		})
+		if err := c.Handshake(); err != nil {
+			t.Fatal(err)
+		}
+		return raw, c
+	}
+	lines := func(n int) string {
+		var b strings.Builder
+		for i := range n {
+			fmt.Fprintf(&b, "<13>1 %s h app - - - line %d\n", sent, i)
+		}
+		return b.String()
+	}
+
+	// The receiver is busy, so the lines wait in the sender's kernel.
+	const many = 10000
+	raw, c := dial()
+	c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(c, lines(many)); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close() // the socket alone, without close_notify
+	close(bulk.block)
+	waitFor(t, "every line", func() bool { return p.Stats().Indexed == many })
+
+	// A few lines, the last without a newline, from senders that close at
+	// once with and without close_notify.
+	for i := range 10 {
+		raw, c := dial()
+		if _, err := io.WriteString(c, strings.TrimSuffix(lines(3), "\n")); err != nil {
+			t.Fatal(err)
+		}
+		if i%2 == 0 {
+			c.Close()
+		} else {
+			raw.Close()
+		}
+	}
+	waitFor(t, "the short connections", func() bool { return p.Stats().Indexed == many+30 })
+}
+
+// byteConn reads one byte per call.
+type byteConn struct{ net.Conn }
+
+func (c byteConn) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	return c.Conn.Read(p)
+}
