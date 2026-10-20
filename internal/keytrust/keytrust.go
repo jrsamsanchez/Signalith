@@ -288,9 +288,9 @@ func (s *Store) Offer(data, sig []byte) (bool, error) {
 	if err == nil && cur != nil && !l.Issued.After(cur.list.Issued) {
 		return false, nil
 	}
-	// Whoever owns the folder above could put a link here; the list is
-	// only written to a real folder.
-	if fi, err := os.Lstat(s.Dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+	// Whoever owns the folder above could put a link (or, on Windows, a
+	// junction) here; the list is only written to a real folder.
+	if fi, err := os.Lstat(s.Dir); err == nil && !fi.IsDir() {
 		return false, fmt.Errorf("%s is a link, not a folder; the revocation list is not kept through it", s.Dir)
 	}
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
