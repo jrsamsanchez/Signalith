@@ -4,7 +4,7 @@ The **Compliance** page (under **Detect & respond**) shows where Signalith gives
 evidence for the controls of common security frameworks, what is still missing and how
 to fix it, and exports a report you can hand an auditor.
 
-It covers six frameworks:
+It covers eight frameworks:
 
 | Framework | Version | Controls mapped |
 | --- | --- | --- |
@@ -14,6 +14,8 @@ It covers six frameworks:
 | ISO/IEC 27001 | 2022 (Annex A) | 13 |
 | HIPAA Security Rule | 45 CFR 164 Subpart C | 8 |
 | SOC 2 | Trust Services Criteria 2017 (revised 2022) | 6 |
+| NIS2 Directive | (EU) 2022/2555 | 14 |
+| GDPR | (EU) 2016/679 | 11 |
 
 Only controls a SIEM can give evidence for are listed: logging, monitoring and
 detection, incident handling, configuration and vulnerability checks, and protecting the
@@ -43,8 +45,10 @@ on its own, right now. For example:
 - **Settings**: [data retention](retention.md) (90 days searchable, a year kept, the
   disk guard), [notifications](notifications.md), [response actions](response-actions.md),
   [threat intel feeds](threat-intel.md), named [user accounts](users.md) and HTTPS.
+- **Settings**: also [two-step sign-in](users.md) required for everyone, and event data
+  deleted after a set time instead of kept forever.
 - **Built in**: things Signalith always does, such as storing event times in UTC with
-  the original text.
+  the original text, and its own [audit trail](audit.md).
 
 A control shows:
 
@@ -74,8 +78,53 @@ tags:
   - nist-800-53:AC-7
 ```
 
-Framework IDs are `nist-800-53`, `cis-v8`, `pci-dss`, `iso-27001`, `hipaa` and `soc2`.
+Framework IDs are `nist-800-53`, `cis-v8`, `pci-dss`, `iso-27001`, `hipaa`, `soc2`, `nis2`
+and `gdpr`, for example `nis2:23(4)(a)` or `gdpr:33(1)`.
 Tagged detections are listed on the control, and count as its detection evidence.
+
+## NIS2 and the GDPR
+
+Both are EU law, and most of what they ask is about governance: management
+responsibility, policies, training, contracts, and the reports and notices themselves.
+Signalith cannot do those for you, and a good score here does not mean you comply. What
+it gives is evidence for the technical parts, and the records you need to act on time.
+
+**NIS2** (Directive (EU) 2022/2555) covers:
+
+- the **Article 21** risk-management measures a SIEM can show: incident handling,
+  vulnerability handling, assessing whether measures work, basic cyber hygiene,
+  encryption, access control and asset management, and multi-factor authentication;
+- the **Article 23** reporting deadlines: an early warning within 24 hours of becoming
+  aware of a significant incident, an incident notification within 72 hours, and a final
+  report within one month. Detections and notifications make you aware quickly, and an
+  [investigation](investigate.md) keeps the timeline, findings, notes and evidence to write the
+  reports from;
+- for digital providers covered by Commission Implementing Regulation (EU) 2024/2690,
+  **monitoring and logging** (section 3.2 of its Annex) and **incident response**
+  (section 3.5).
+
+Business continuity, supply chain security and training (Article 21(2)(c), (d) and (g)
+in part) are left out. National laws that transpose NIS2 can add to it; check yours.
+
+**The GDPR** (Regulation (EU) 2016/679) is in two parts:
+
+- **Personal data in your logs.** Logs hold personal data: user names, IP addresses, host
+  names, sometimes email addresses. These controls check how Signalith itself treats
+  them: access limited to named accounts with roles (Article 5(1)(f)), two-step sign-in
+  and limited access by default (Article 25), encryption in transit and of the secrets
+  it keeps, its own audit trail of who did what (Article 5(2)), and event data deleted
+  after a set time rather than kept forever (Article 5(1)(e)). Set the retention to what
+  your purposes and legal duties need: NIS2, PCI DSS and your own incident handling may
+  call for a year, while data protection asks for no longer than needed.
+- **Security of processing and breaches** for your other systems: Article 32 (encryption,
+  monitoring, regular testing) and Articles 33 and 34 (noticing a personal data breach in
+  time to tell the supervisory authority within 72 hours, describing it, documenting every
+  breach, and finding the people affected).
+
+Lawful basis, records of processing activities (Article 30), data subject requests and the
+notifications themselves are outside what Signalith can see, so they are not listed. Your
+data protection officer decides what is enough. Signalith does not pseudonymize events,
+and its audit trail records changes and sign-ins, not every search.
 
 ## Controls handled elsewhere
 
@@ -134,7 +183,8 @@ it lines up with.
 - NIST SP 800-53 and the HIPAA Security Rule are US government works; their official
   control titles are used.
 - For CIS Controls, PCI DSS, ISO/IEC 27001 and SOC 2, only the control and requirement
-  numbers are used. The titles are Signalith's own short summaries; read the standard
+  numbers are used. For NIS2 and the GDPR, article numbers are used, with Signalith's
+  own short titles; the official texts are on [EUR-Lex](https://eur-lex.europa.eu/). The titles are Signalith's own short summaries; read the standard
   for its text.
 - The configuration checks follow the [SCAP Security Guide](https://github.com/ComplianceAsCode/content)
   (BSD-3-Clause) and carry the NIST SP 800-53 references of the rules they are based
@@ -148,5 +198,5 @@ compliant, and your assessor decides what evidence is enough.
 - Compliance reads this server's settings. With [several servers](servers.md), give
   every server the same settings (most of them are [shared](settings.md#settings-on-several-servers)).
 - Event counts cover the last 7 days. A source that sends rarely can show as missing.
-- The HIPAA and SOC 2 lists are short on purpose: most of their requirements are about
+- The HIPAA, SOC 2, NIS2 and GDPR lists are short on purpose: most of their requirements are about
   policies and people, which no SIEM can show.

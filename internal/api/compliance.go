@@ -182,6 +182,7 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	snap := &compliance.Snapshot{Now: now, Data: map[string]compliance.DataSeen{}, Assets: -1}
 	conf := s.conf()
 	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
+	snap.MFA = conf.MFARequiredMode()
 
 	var wg sync.WaitGroup
 	wg.Add(1)

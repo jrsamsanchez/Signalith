@@ -227,6 +227,23 @@ var capabilities = []Capability{
 		Description: "Event data is kept at least 12 months, searchable or archived.",
 		Fix:         "Keep event data 365 days, or turn on archiving, on Settings > Data retention.",
 		eval:        func(s *Snapshot, _ *controlCtx) (Status, string) { return evalRetention(s, 365, true) }},
+	{ID: "retention-limit", Name: "Logs are deleted when no longer needed", Page: "retention",
+		Description: "Event data, which holds personal data such as user names and addresses, is deleted after a set time instead of kept forever.",
+		Fix:         "Set how many days event data is kept on Settings > Data retention, as long as your purposes and legal duties need and no longer.",
+		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
+			r := s.Retention
+			switch {
+			case r == nil:
+				return Missing, "Data retention could not be read."
+			case r.KeepDays == 0:
+				return Missing, "Event data is kept until it is deleted by hand."
+			}
+			d := fmt.Sprintf("Event data is deleted after %d days.", r.KeepDays)
+			if r.Archive {
+				d += " It is archived first: delete archive files on the same schedule your retention policy sets."
+			}
+			return Met, d
+		}},
 	{ID: "storage-guard", Name: "Log storage capacity", Page: "retention",
 		Description: "The disk guard deletes the oldest data before the disk fills, so new events keep arriving.",
 		Fix:         "Turn the disk guard on, on Settings > Data retention.",
@@ -273,6 +290,22 @@ var capabilities = []Capability{
 			}
 			return Missing, "Signalith is served over plain HTTP."
 		}},
+	{ID: "siem-mfa", Name: "Two-step sign-in", Page: "settings",
+		Description: "People who sign in to Signalith with a password must also enter a code from an authenticator app or use a passkey.",
+		Fix:         "Set Require two-step sign-in to Everyone on Settings > General. Single sign-on users get it from their identity provider.",
+		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
+			switch s.MFA {
+			case "everyone":
+				return Met, "Everyone who signs in with a password must use two-step sign-in."
+			case "admins":
+				return Partial, "Only admins must use two-step sign-in; analysts and viewers, who can also read the logs, need not."
+			case "off":
+				return Missing, "Two-step sign-in is not required."
+			}
+			return Partial, "The two-step sign-in setting could not be read."
+		}},
+	builtin("siem-audit", "Audit trail of Signalith itself", "health",
+		"Signalith writes an audit line for every sign-in, failed sign-in and change to users, roles, settings, agent tokens, response actions and retention, with who did it, when and from where. With several servers the lines are kept in OpenSearch, chained and signed so changes show."),
 	builtin("siem-secrets", "Secrets are encrypted at rest", "security",
 		"Passwords, API keys and tokens Signalith keeps are encrypted on disk. Encrypt the data disk itself (BitLocker or LUKS) to protect stored events too."),
 }

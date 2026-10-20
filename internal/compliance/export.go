@@ -233,6 +233,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 </table>
 {{end}}
 <footer>
+  {{with .F.Scope}}<p>{{.}}</p>{{end}}
   <p>{{.F.Notice}}</p>
   <p>Signalith maps its own data, detections and checks to these controls. The mapping shows where Signalith gives evidence; it does not by itself make a system compliant, and an assessor decides what evidence is enough.</p>
 </footer>

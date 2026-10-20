@@ -3,7 +3,8 @@
 
 // Package compliance maps what Signalith collects, detects and checks to
 // the controls of common security frameworks (NIST SP 800-53, CIS Controls,
-// PCI DSS, ISO/IEC 27001, the HIPAA Security Rule and SOC 2), and reports
+// PCI DSS, ISO/IEC 27001, the HIPAA Security Rule, SOC 2, NIS2 and the
+// GDPR), and reports
 // which controls it has evidence for.
 //
 // The mapping has two layers. Capabilities are things Signalith can show
@@ -17,6 +18,7 @@
 package compliance
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"regexp"
@@ -46,13 +48,16 @@ const (
 
 // Framework is a compliance framework and the controls Signalith maps.
 type Framework struct {
-	ID        string    `yaml:"id" json:"id"`
-	Name      string    `yaml:"name" json:"name"`
-	Version   string    `yaml:"version" json:"version"`
-	Publisher string    `yaml:"publisher" json:"publisher"`
-	URL       string    `yaml:"url" json:"url"`
-	Notice    string    `yaml:"notice" json:"notice"`
-	Controls  []Control `yaml:"controls" json:"-"`
+	ID        string `yaml:"id" json:"id"`
+	Name      string `yaml:"name" json:"name"`
+	Version   string `yaml:"version" json:"version"`
+	Publisher string `yaml:"publisher" json:"publisher"`
+	URL       string `yaml:"url" json:"url"`
+	Notice    string `yaml:"notice" json:"notice"`
+	// Scope says what of the framework a SIEM can and cannot show, for
+	// frameworks that are mostly about governance.
+	Scope    string    `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Controls []Control `yaml:"controls" json:"-"`
 }
 
 // Control is one control or requirement of a framework.
@@ -104,8 +109,12 @@ var (
 )
 
 func parseFrameworks(b []byte) ([]Framework, error) {
+	// Known fields only: an unquoted title with a comma would otherwise
+	// lose its end to a stray key.
 	var c catalog
-	if err := yaml.Unmarshal(b, &c); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
+	if err := dec.Decode(&c); err != nil {
 		return nil, err
 	}
 	var p []string
@@ -187,6 +196,9 @@ type Snapshot struct {
 	Assets int
 	// HTTPS is whether the web UI and API are served over HTTPS.
 	HTTPS bool
+	// MFA is who must use two-step sign-in: off, admins or everyone;
+	// empty when unknown.
+	MFA string
 }
 
 // DataWindow is how far back event data counts as arriving.

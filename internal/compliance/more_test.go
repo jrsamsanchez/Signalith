@@ -58,6 +58,13 @@ func TestCapabilityWording(t *testing.T) {
 		{"retention-90", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 120, Shorter: []string{"DNS"}} }), Partial, "shorter policy: DNS."},
 		{"retention-90", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 120, MaxSizeGB: 1.5} }), Partial, "size cap of 1.5 GB"},
 		{"config-checks", base(func(s *Snapshot) { s.Checks = []CheckStat{} }), Missing, "No host runs osquery"},
+		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{} }), Missing, "kept until it is deleted by hand"},
+		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 180, Archive: true} }), Met, "deleted after 180 days. It is archived first"},
+		{"retention-limit", base(func(*Snapshot) {}), Missing, "could not be read"},
+		{"siem-mfa", base(func(s *Snapshot) { s.MFA = "everyone" }), Met, "Everyone who signs in"},
+		{"siem-mfa", base(func(s *Snapshot) { s.MFA = "admins" }), Partial, "Only admins"},
+		{"siem-mfa", base(func(s *Snapshot) { s.MFA = "off" }), Missing, "not required"},
+		{"siem-mfa", base(func(*Snapshot) {}), Partial, "could not be read"},
 		{"config-checks", base(func(s *Snapshot) { s.Checks = []CheckStat{}; s.Hosts = 2 }), Missing, "No configuration check covers"},
 	} {
 		st, text := capByID(t, c.cap).eval(c.snap, nil)
@@ -159,5 +166,13 @@ func TestNotesProblems(t *testing.T) {
 	n = NewNotes("")
 	if a, err := n.Set(ctx, fw.ID, ctl, NotApplicable, " no card data ", "admin", time.Now()); err != nil || a.Note != "no card data" || len(n.All()) != 1 {
 		t.Errorf("memory = %+v %v", a, err)
+	}
+}
+
+func TestFrameworksRejectStrayKeys(t *testing.T) {
+	// An unquoted title with a comma ends at the comma in a flow mapping.
+	in := "frameworks:\n  - id: x1\n    name: X\n    notice: n\n    url: https://x.example\n    controls:\n      - {id: A, group: G, title: One, two, caps: [search]}\n"
+	if _, err := parseFrameworks([]byte(in)); err == nil {
+		t.Fatal("a title cut at a comma was accepted")
 	}
 }
