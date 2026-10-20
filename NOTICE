@@ -81,3 +81,20 @@ The list of common passwords that new passwords are checked against
 Passwords/Common-Credentials/10k-most-common.txt, Copyright (c) 2018 Daniel
 Miessler, licensed under the MIT License. Signalith keeps only the entries of
 8 or more characters, in lower case.
+
+The Docker image (deploy/docker/Dockerfile) installs Nmap from Debian's
+package repository, for the network scans of the Vulnerabilities page. Nmap is
+Copyright (c) Nmap Software LLC and licensed under the Nmap Public Source
+License (https://nmap.org/npsl/); Signalith runs it as a separate program and
+reads its XML output. The Debian package of Signalith only recommends Nmap.
+
+The Vulnerabilities page uses the NVD API but is not endorsed or certified by
+the NVD (https://nvd.nist.gov). It also downloads CISA's Known Exploited
+Vulnerabilities catalog (https://www.cisa.gov/known-exploited-vulnerabilities-catalog,
+public domain, CC0 1.0) and FIRST's Exploit Prediction Scoring System scores
+(EPSS, https://www.first.org/epss/, used under FIRST's terms of use, with
+credit to FIRST).
+
+The sign-in country and network checks download the IP-to-ASN database of
+iptoasn.com (https://iptoasn.com), which is made available under the Open Data
+Commons Public Domain Dedication and License (PDDL).
