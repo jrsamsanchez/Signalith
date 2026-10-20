@@ -76,7 +76,7 @@ func TestStatsThresholdKeepsTheLargest(t *testing.T) {
 // with the field, other values included.
 func TestTopRanksInOpenSearch(t *testing.T) {
 	res, fs := runRanked(t, `* | top limit=2 user`, firstByName, byCount)
-	if got := fmt.Sprint(res.Rows); got != "[map[count:600 percent:60.18 user:z] map[count:300 percent:30.09 user:y]]" {
+	if got := fmt.Sprint(res.Rows); got != "[map[count:600 percent:60.180542 user:z] map[count:300 percent:30.090271 user:y]]" {
 		t.Errorf("rows = %s", got)
 	}
 	if res.Truncated || !res.Ranked {

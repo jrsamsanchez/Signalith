@@ -318,7 +318,7 @@ func topRowsBeyond(rows []Row, top *query.Top, beyond int64) ([]Row, []string) {
 				r[countCol] = n
 			}
 			if t := groupTotals[k]; t > 0 && !top.NoPercent {
-				r[percentCol] = math.Round(float64(n)*10000/float64(t)) / 100
+				r[percentCol] = math.Round(float64(n)*1e8/float64(t)) / 1e6 // six places, as Splunk gives
 			}
 			out = append(out, r)
 		}
@@ -541,12 +541,25 @@ func compareValues(a, b any) int {
 // compareAs orders a and b as a sort key's function says: "num" puts
 // numbers first, in order, then the rest as text; "str" orders them as
 // text; "ip" orders addresses by their value, before anything else;
-// otherwise as compareValues. Missing values go last.
+// otherwise numbers before text, both in order. Missing values go last.
 func compareAs(as string, a, b any) int {
-	if as == "" || a == nil || b == nil {
+	if a == nil || b == nil {
 		return compareValues(a, b)
 	}
 	switch as {
+	case "":
+		// As Splunk's sort does: numbers in order before text, and text
+		// in byte order, so upper case comes before lower case (SL-16).
+		fa, oka := asFloat(a)
+		fb, okb := asFloat(b)
+		switch {
+		case oka && okb:
+			return cmp.Compare(fa, fb)
+		case oka:
+			return -1
+		case okb:
+			return 1
+		}
 	case "num":
 		fa, oka := asFloat(a)
 		fb, okb := asFloat(b)

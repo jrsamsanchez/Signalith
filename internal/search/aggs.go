@@ -293,7 +293,10 @@ func (s *aggState) result(a query.Agg) any {
 	case "dc":
 		return int64(len(s.distinct))
 	case "sum":
-		return toNumber(s.sum)
+		// No numbers to add up gives nothing, as in Splunk, not 0.
+		if s.numeric > 0 {
+			return toNumber(s.sum)
+		}
 	case "avg":
 		if s.numeric > 0 {
 			return s.sum / float64(s.numeric)
