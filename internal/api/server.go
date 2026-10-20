@@ -473,6 +473,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeFindingViews(api)
 	s.routeExceptionRequests(api)
 	s.routeCaseTasks(api)
+	s.routeCaseReport(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)

@@ -2397,6 +2397,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-cases .c-task-tmpl .menu__panel { min-width: 260px; }
 #page-cases .c-task-tmpl .menu__item { justify-content: space-between; }
 #page-cases .c-task-tmpl .menu__hint { font-size: var(--fs-sm); color: var(--text-3); }
+#page-cases .c-export .menu__panel { left: 0; right: auto; min-width: 200px; }
+#page-cases .c-export .menu__item { justify-content: space-between; }
+#page-cases .c-export .menu__hint { font-size: var(--fs-sm); color: var(--text-3); }
 #case-templates.ctm-dialog { width: min(640px, calc(100vw - 32px)); }
 #case-templates .ctm-list { display: grid; gap: 12px; }
 #case-templates .ctm-item { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-md); background: var(--sunken, var(--hover)); }

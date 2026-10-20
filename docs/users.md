@@ -1116,7 +1116,7 @@ clicks still need the Analyst role), and the web UI.
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `GET /api/cases/{id}/report` (exporting a case's [report](cases.md#exporting-a-report)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
 `PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
 `POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes

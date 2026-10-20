@@ -64,6 +64,34 @@ open findings with one disposition.
 A case can have a ticket in Jira or ServiceNow that stays in step with it; see
 [Ticketing](ticketing.md).
 
+## Exporting a report
+
+**Export** on a case (analysts and admins) downloads its report, to attach to a
+ticket, hand to an auditor or keep with legal records:
+
+- **Report page** (`.html`) is one file that opens in any browser and prints
+  cleanly. It holds the case's details, entities, tasks, linked findings, timeline,
+  changes, and a table of every piece of evidence with its SHA-256 and whether it still
+  matches. The page loads nothing from anywhere and runs no scripts.
+- **Report data** (`.json`) is the same report for tools.
+
+Linked findings are listed without their raw event; pin an event to the timeline to
+include it. Findings that retention has already removed are listed by ID.
+
+Each report carries its own **SHA-256**, taken over its data. To check a report you
+were sent, on any computer with Signalith installed (no server needed):
+
+```
+signalith report verify signalith-case-20261020-3fa9c1d27b40e865.html
+```
+
+It prints `Unchanged` and exits 0, or says what changed (the report's data, a piece
+of evidence, or the page itself) and exits 2. Every export is in the
+[audit log](audit.md) with the report's SHA-256, so you can also match a report to
+the export that made it.
+
+The API is `GET /api/cases/{id}/report?format=html` or `format=json`.
+
 ## Where cases are kept
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is

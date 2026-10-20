@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Case report: {{.Case.Title}}</title>
+<style>
+:root { --fg: #1b1f24; --muted: #5b6470; --line: #d8dde3; --bg: #fff; --soft: #f4f6f8; --bad: #b42318; --ok: #146c2e; }
+@media (prefers-color-scheme: dark) { :root { --fg: #e6e9ed; --muted: #9aa4ae; --line: #343b44; --bg: #14181d; --soft: #1d2329; --bad: #ff8a80; --ok: #7ee2a0; } }
+@media print { :root { --fg: #000; --muted: #444; --line: #bbb; --bg: #fff; --soft: #f2f2f2; } .raw { display: none; } }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px 16px; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+main { max-width: 880px; margin: 0 auto; }
+h1 { font-size: 24px; margin: 0 0 4px; overflow-wrap: anywhere; }
+h2 { font-size: 17px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.meta { color: var(--muted); font-size: 13px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+th { color: var(--muted); font-weight: 600; }
+.wrap { overflow-x: auto; }
+.entry { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
+.entry .meta { margin-bottom: 4px; }
+pre, code { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre { background: var(--soft); padding: 8px 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.hash { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.bad { color: var(--bad); font-weight: 600; }
+.ok { color: var(--ok); }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+<div class="meta">Signalith case report{{if .Server}} from {{.Server}}{{end}}</div>
+<h1>{{.Case.Title}}</h1>
+<div class="meta">Case {{.Case.ID}} · made {{when .Generated}} by {{.GeneratedBy}}</div>
+</header>
+
+<dl>
+<dt>Status</dt><dd>{{title .Case.Status}}</dd>
+<dt>Severity</dt><dd>{{title .Case.Severity}}</dd>
+<dt>Owner</dt><dd>{{if .Case.Owner}}{{.Case.Owner}}{{else}}Nobody{{end}}</dd>
+<dt>Opened</dt><dd>{{when .Case.Created}}{{if .Case.CreatedBy}} by {{.Case.CreatedBy}}{{end}}</dd>
+<dt>Last change</dt><dd>{{when .Case.Updated}}</dd>
+{{if .Case.Template}}<dt>Template</dt><dd>{{.Case.Template}}</dd>{{end}}
+<dt>Report SHA-256</dt><dd class="hash">{{.SHA256}}</dd>
+</dl>
+
+{{if .Case.Description}}<h2>Description</h2><div class="text">{{.Case.Description}}</div>{{end}}
+{{if .Case.Resolution}}<h2>Resolution</h2><div class="text">{{.Case.Resolution}}</div>{{end}}
+
+{{if .Case.Entities}}<h2>Entities</h2>
+<div class="wrap"><table><tr><th>Field</th><th>Value</th></tr>
+{{range .Case.Entities}}<tr><td>{{.Field}}</td><td>{{.Value}}</td></tr>{{end}}
+</table></div>{{end}}
+
+{{if .Case.Tasks}}<h2>Tasks</h2>
+<div class="wrap"><table><tr><th></th><th>Task</th><th>Done</th></tr>
+{{range .Case.Tasks}}<tr><td>{{if .Done}}✓{{else}}○{{end}}</td><td>{{.Title}}{{if .Owner}}<div class="meta">Owner: {{.Owner}}</div>{{end}}</td><td>{{if .Done}}{{whenp .DoneAt}} by {{.DoneBy}}{{end}}</td></tr>{{end}}
+</table></div>{{end}}
+
+<h2>Findings</h2>
+{{if .Findings}}<div class="wrap"><table><tr><th>Finding</th><th>Urgency</th><th>Status</th><th>Owner</th><th>Created</th></tr>
+{{range .Findings}}<tr><td>{{.Title}}<div class="meta">{{.ID}} · {{.DetectionID}}{{range .MITRE}} · {{.}}{{end}}</div></td><td>{{title .Urgency}}</td><td>{{title .Status}}{{if .Disposition}} ({{title .Disposition}}){{end}}</td><td>{{.Owner}}</td><td>{{when .Created}}</td></tr>{{end}}
+</table></div>{{else}}<p class="meta">No findings are linked.</p>{{end}}
+{{if .Missing}}<p class="meta">Linked findings no longer kept (retention): {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}</p>{{end}}
+
+<h2>Timeline</h2>
+{{range .Case.Entries}}<div class="entry">
+<div class="meta">{{when .Time}} · {{.Author}} · {{title .Kind}}{{if .SHA256}} · SHA-256 <span class="hash">{{short .SHA256}}</span>{{end}}</div>
+{{if .Text}}<div class="text">{{.Text}}</div>{{end}}
+{{if .Query}}<pre>{{.Query}}</pre><div class="meta">{{if .Earliest}}{{.Earliest}} to {{if .Latest}}{{.Latest}}{{else}}now{{end}} · {{end}}{{.Matched}} matched{{if .Truncated}}, rows cut{{end}}</div>{{end}}
+{{if .Event}}<pre>{{json .Event}}</pre>{{end}}
+{{if .Rows}}<pre>{{json .Rows}}</pre>{{end}}
+{{if .FindingID}}<div class="meta">Finding {{.FindingID}}</div>{{end}}
+{{if .RunID}}<div class="meta">Playbook run {{.RunID}}{{if .Status}} ({{.Status}}){{end}}</div>{{end}}
+</div>{{else}}<p class="meta">The timeline is empty.</p>{{end}}
+
+<h2>Evidence</h2>
+{{if .Evidence}}{{range .Evidence}}<div class="entry">
+<div class="meta">{{title .Kind}} {{.EntryID}} · added {{when .Added}} by {{.AddedBy}}</div>
+<div class="hash">{{.SHA256}}</div>
+<div>{{if .Intact}}<span class="ok">Matches the evidence</span>{{else}}<span class="bad">The evidence was changed after it was added</span>{{end}}</div>
+</div>{{end}}{{else}}<p class="meta">No pinned events or search snapshots.</p>{{end}}
+
+{{if .Case.History}}<h2>Changes</h2>
+<div class="wrap"><table>
+{{range .Case.History}}<tr><td>{{title .Field}}{{if .From}}: {{.From}}{{end}}{{if .To}} → {{.To}}{{end}}<div class="meta">{{when .Time}} · {{.Author}}</div></td></tr>{{end}}
+</table></div>{{end}}
+
+<section class="raw">
+<h2>Report data</h2>
+<p class="meta">The report as JSON. Its SHA-256 is taken over this JSON without the sha256 field; <code>signalith report verify</code> checks it.</p>
+<pre id="report-data">{{json .}}</pre>
+</section>
+
+<footer>Made by Signalith. This page loads nothing and runs no scripts.</footer>
+</main>
+</body>
+</html>

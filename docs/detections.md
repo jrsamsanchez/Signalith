@@ -1737,6 +1737,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/cases/{id}/entities` | `{"field", "value"}` |
 | `POST /api/cases/{id}/tasks` | Add tasks: `{"titles": ["…"]}` or `{"template": "phishing"}` |
 | `PATCH`, `DELETE /api/cases/{id}/tasks/{task}` | Tick off, rename or assign a task (`{"done", "title", "owner"}`), or remove it |
+| `GET /api/cases/{id}/report` | Export the case's [report](cases.md#exporting-a-report): `?format=html` (default) or `json` |
 | `GET`, `PUT /api/case-templates` | The case templates: built-in ones and the admins' own (`PUT` replaces the admins', admin) |
 | `GET /api/cases/summary` | Open cases, and open cases you own |
 | `GET /api/risk?since=24h&type=` | Risk objects by total score, with context |

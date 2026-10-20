@@ -544,8 +544,24 @@ function caseHead(c, linked) {
         el('span', { title: fullTime(c.updated) }, `Updated ${ago(c.updated)}`))),
     el('div', { class: 'c-head__actions' },
       storylineButton({ case: c.id }, { label: 'Storyline', title: 'See this case’s findings with every other finding and risk event about its entities, in ATT&CK order' }),
+      editable ? caseExportMenu(c) : null,
       editable ? el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond') : null,
       editable ? action : null));
+}
+
+// caseExportMenu downloads the case's report: a page to read, print or
+// attach, or its JSON, both with the SHA-256 of the report and of each
+// piece of evidence (docs/cases.md#exporting-a-report).
+function caseExportMenu(c) {
+  const url = (format) => `api/cases/${encodeURIComponent(c.id)}/report?format=${format}`;
+  const m = el('details', { class: 'menu c-export' },
+    el('summary', { class: 'btn btn--secondary', title: 'Download the case as a report with SHA-256 fingerprints' }, icon('download'), el('span', { class: 'hide-sm' }, 'Export')));
+  const item = (format, label, hint) => el('a', { class: 'menu__item', role: 'menuitem', href: url(format), download: '', onclick: () => { m.open = false; } },
+    label, el('span', { class: 'menu__hint' }, hint));
+  m.append(el('div', { class: 'menu__panel', role: 'menu' },
+    item('html', 'Report page', 'HTML'),
+    item('json', 'Report data', 'JSON')));
+  return m;
 }
 
 // caseRespond opens the Respond dialog (respond.js) with the case's
