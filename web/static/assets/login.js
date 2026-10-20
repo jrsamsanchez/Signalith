@@ -271,6 +271,20 @@
     if (resp.status === 429) { locked(data.error, resp.headers.get('Retry-After')); return; }
     showError('The demo could not be opened.', sentence(data.error) || 'Try again.');
   });
+  // Visitors need only the button: the admin's password form waits behind
+  // a link, and passkeys don't sign in on a demo.
+  if (!demoBox.hidden) {
+    const adminParts = [...form.querySelectorAll('.field, .check, #login-submit')];
+    adminParts.forEach((el) => el.classList.add('hidden'));
+    // "Welcome back" is for the demo's admin; the box below says what the demo is.
+    form.querySelector('.sub')?.classList.add('hidden');
+    $('demo-admin').addEventListener('click', (ev) => {
+      adminParts.forEach((el) => el.classList.remove('hidden'));
+      ev.currentTarget.setAttribute('aria-expanded', 'true');
+      ev.currentTarget.hidden = true;
+      user.focus();
+    });
+  }
 
   // ---- Passkeys -----------------------------------------------------------
   // A passkey signs local users in on its own (the server says who may),
@@ -286,7 +300,7 @@
     disabled: REFUSED_DISABLED,
   };
   const pkBtn = $('passkey-btn');
-  $('passkey-signin').hidden = !pkOK;
+  $('passkey-signin').hidden = !pkOK || !demoBox.hidden;
   pkBtn.addEventListener('click', async () => {
     if (pkBtn.disabled) return;
     pkBtn.disabled = true;
