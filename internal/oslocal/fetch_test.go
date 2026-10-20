@@ -22,7 +22,8 @@ func TestParseProxy(t *testing.T) {
 			t.Errorf("parseProxy(%q) = %v, %v; want %s", in, u, err, want)
 		}
 	}
-	for _, in := range []string{"", "http://", "socks5://proxy:1080", "http://user:secret@proxy:3128", "proxy:3128/path", "http://proxy:3128/?x=1"} {
+	for _, in := range []string{"", "http://", "socks5://proxy:1080", "http://user:secret@proxy:3128", "proxy:3128/path", "http://proxy:3128/?x=1",
+		"bob:secret%et@proxy:3128", "http://bob:pa secret@proxy:3128", "http://bad host secret:1"} {
 		u, err := parseProxy(in)
 		if err == nil {
 			t.Errorf("parseProxy(%q) = %v; want an error", in, u)

@@ -101,7 +101,8 @@ sudo dnf install ./signalith-0.3.0-1.x86_64.rpm
       (OpenSearch takes a quarter of it, from 1 to 8 GB).
     - About 3.5 GB free on the system drive for the install, plus room for your data.
     - The installer downloads OpenSearch from `https://artifacts.opensearch.org` (port 443).
-      It uses the computer's proxy setting (`netsh winhttp show proxy`); to name one, add
+      It uses the computer's proxy setting (`netsh winhttp show proxy`; its bypass list is not
+      used, since the download host is always the same); to name one, add
       `OPENSEARCHPROXY=proxy.example.com:3128`. A proxy that needs a password is not supported:
       use `OPENSEARCHZIP` instead (below).
     - No internet access at all: download the OpenSearch `.zip` on another computer and

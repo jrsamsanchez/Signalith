@@ -100,13 +100,15 @@ func parseProxy(s string) (*url.URL, error) {
 	if !strings.Contains(s, "://") {
 		s = "http://" + s
 	}
+	// Checked before parsing, and the address never shown: it may hold a
+	// password, which the installer's log would keep.
 	u, err := url.Parse(s)
-	if err != nil || u.Host == "" || u.Hostname() == "" {
-		return nil, fmt.Errorf("%q is not a proxy address: give it as host:port or http://host:port", s)
-	}
-	if u.User != nil {
+	if strings.Contains(s, "@") || err == nil && u.User != nil {
 		return nil, errors.New("a proxy address with a user name or password in it is not supported, " +
 			"since the installer's log would keep it: download the OpenSearch .zip on another computer and install with OPENSEARCHZIP instead")
+	}
+	if err != nil || u.Host == "" || u.Hostname() == "" {
+		return nil, errors.New("the proxy address given is not one: give it as host:port or http://host:port")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("the proxy %s must be an http:// or https:// proxy", u.Redacted())
