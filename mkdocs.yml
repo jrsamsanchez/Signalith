@@ -116,6 +116,7 @@ nav:
   - Home: index.md
   - Getting started:
       - Overview: getting-started.md
+      - Docker quick start: docker.md
       - Install from packages: install-packages.md
       - Supported platforms: platforms.md
       - Kubernetes (Helm): kubernetes.md
@@ -144,6 +145,7 @@ nav:
       - Query language: query-language.md
       - Lookup tables: lookups.md
       - Detections: detections.md
+      - Investigations (cases): cases.md
       - Behavior baselines: baselines.md
       - Hunting notebooks: hunting-notebooks.md
       - Investigate with AI: investigate.md
@@ -157,6 +159,7 @@ nav:
       - Playbooks: playbooks.md
       - Compliance: compliance.md
   - Administration:
+      - Configuration file: configuration.md
       - Server settings: settings.md
       - Users and sign-in: users.md
       - Single sign-on: sso.md

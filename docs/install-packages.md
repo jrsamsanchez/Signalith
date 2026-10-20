@@ -239,8 +239,7 @@ If you are more than one release behind:
 
 - Read the **Before you upgrade** notes of every release you skip, on the
   [releases page](https://github.com/jrsamsanchez/Signalith/releases), and the
-  [Upgrading](https://github.com/jrsamsanchez/Signalith#upgrading-the-docker-quick-start)
-  sections of the README. Some changes apply to every install that comes from an older
+  upgrade notes in [Docker quick start](docker.md#upgrading-the-docker-quick-start). Some changes apply to every install that comes from an older
   version, such as the agent port from 0.3 ([Upgrading to 0.3](sending-data.md#upgrading-to-03)).
 - To stay on the tested path, upgrade to each release in turn.
 

@@ -31,7 +31,7 @@ go build -o signalith ./cmd/signalith                                  # this sy
 GOOS=windows GOARCH=amd64 go build -o signalith.exe ./cmd/signalith    # Windows
 ```
 
-To try a change end to end, run the [Docker quick start](README.md#docker-evaluation)
+To try a change end to end, run the [Docker quick start](https://signalith.io/docs/docker/)
 with the build override, which builds Signalith from your working copy:
 `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d`.
 Without the override, the quick start runs the image GitHub builds from `main`.
