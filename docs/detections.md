@@ -371,9 +371,8 @@ The filters are kept in the address, such as `#findings?owner=__none&urgency=cri
 for unassigned critical findings, so a bookmark or a link to a colleague opens the same
 queue.
 
-**Views** next to the pills switches between saved filters: **Open findings**, **Assigned
-to me**, **Unassigned critical and high** and **New in the last 24 hours** are there for
-everyone. **Save these filters as a view** keeps the filters on screen under a name of
+**Views** next to the pills switches between saved filters. Common queues, such as
+**Assigned to me** and **Unassigned critical and high**, are there for everyone. **Save these filters as a view** keeps the filters on screen under a name of
 your own (up to 30). Your views are yours alone and follow you from browser to browser;
 they keep filters only, never findings.
 
@@ -384,6 +383,22 @@ its highest urgency. Pick one to see its findings.
 Keys: **J** and **K** move through the list, **X** selects the open finding, **A**
 assigns it to you (and moves a new one to In progress), **R** picks Resolved in its form
 and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search box.
+
+### Due times
+
+Each urgency has two targets: how soon someone should pick a finding up (change its
+status or owner) and how soon it should be resolved, both timed from when it was raised.
+They start at 15 minutes and 4 hours for critical, 1 hour and 24 hours for high, 4 hours
+and 3 days for medium, and 24 hours and 7 days for low; informational findings have none.
+Change them under **Settings > Detections** (`detections.sla.critical_respond`,
+`detections.sla.critical_resolve` and so on; `0` means no target).
+
+The queue shows when each open finding is next due (**Due 12m**, amber within the hour)
+or how late it is (**Late 2h**, red), and the finding shows both times. **Due** filters to
+findings late now or due within 1, 4 or 24 hours. With **Unassigned** and **Critical** it
+shows unowned critical findings about to breach; **Views** has **Unassigned, due within the
+hour** and **Late now** built in. Changes a playbook makes do not count as picking a finding
+up, so a playbook that assigns findings does not stop the clock.
 
 ## Content packs
 
@@ -1613,7 +1628,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
-| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&entity=&q=&since=7d&limit=&sort=&after=&counts=urgency&group=` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter. `group=detection` or `group=entity` adds `groups`: up to 100 of `{key, count, urgency}`, largest first |
+| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&entity=&q=&since=7d&limit=&sort=&after=&counts=urgency&group=` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter. `group=detection` or `group=entity` adds `groups`: up to 100 of `{key, count, urgency}`, largest first. `due=overdue` or `due=1h` keeps open findings late now or due within that time; the answer's `due` gives each finding's `respond_by`, `resolve_by`, `respond_late` and `resolve_late` |
 | `GET`, `PUT /api/me/finding-views` | Your saved views: `{"views": [{"id", "name", "query"}]}`; a PUT replaces the list |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |

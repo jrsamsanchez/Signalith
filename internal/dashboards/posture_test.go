@@ -246,6 +246,17 @@ func TestTriageAndResolveTimes(t *testing.T) {
 	if at, ok := TriagedAt(f); !ok || !at.Equal(c.Add(10*time.Minute)) {
 		t.Errorf("triaged %v %v", at, ok)
 	}
+	// A playbook assigning it is not triage; a recorded first response is.
+	auto := mkFinding("y", "d", "low", "in_progress", c, nil, change("owner", "", "bob", c.Add(time.Second)), change("status", "new", "in_progress", c.Add(5*time.Minute)))
+	auto.History[0].Author = "playbook Assign"
+	if at, ok := TriagedAt(auto); !ok || !at.Equal(c.Add(5*time.Minute)) {
+		t.Errorf("triaged after a playbook %v %v", at, ok)
+	}
+	resp := c.Add(3 * time.Minute)
+	auto.RespondedAt = &resp
+	if at, ok := TriagedAt(auto); !ok || !at.Equal(resp) {
+		t.Errorf("triaged with a first response %v %v", at, ok)
+	}
 	if at, ok := ResolvedAt(f); !ok || !at.Equal(c.Add(30*time.Minute)) {
 		t.Errorf("resolved %v %v", at, ok)
 	}

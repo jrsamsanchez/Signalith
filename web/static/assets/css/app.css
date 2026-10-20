@@ -2002,18 +2002,27 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-findings .fnd-filter code { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: var(--fs-xs); }
 #page-findings .fnd-filter .btn { --h: 26px; }
 #page-findings #f-bulk-dialog .modal__body { gap: var(--sp-4); }
-/* the urgency pills, then the grouping and saved views on the same row */
-#page-findings .fnd-top { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-#page-findings .fnd-top > .pills { flex: 1 1 auto; min-width: 0; }
-#page-findings .fnd-top > .select { flex: 0 1 auto; width: auto; min-width: 0; }
+/* the urgency pills, then the due filter, grouping and saved views, on the next line when they do not fit */
+#page-findings .fnd-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+#page-findings .fnd-top > .pills { flex: 0 1 auto; min-width: 0; }
+#page-findings .fnd-opts { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+#page-findings .fnd-opts > .select { flex: none; width: auto; }
 #page-findings .fnd-views > summary { list-style: none; }
 #page-findings .fnd-views .menu__panel { min-width: 260px; max-width: min(340px, calc(100vw - 32px)); max-height: min(420px, 70vh); overflow-y: auto; }
-#page-findings .fnd-views__name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#page-findings .fnd-views__name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #page-findings .fnd-groups td[data-col="title"] { word-break: break-word; }
+#page-findings .fnd-due { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+#page-findings .fnd-due .icon { width: 12px; height: 12px; }
+#page-findings .fnd-due-line[data-tone="danger"] { color: var(--danger); }
+#page-findings .fnd-due[data-tone="warning"] { color: var(--warning); }
+#page-findings .fnd-due[data-tone="danger"] { color: var(--danger); font-weight: 600; }
 @media (max-width: 720px) {
-  #page-findings .fnd-top { flex-wrap: wrap; }
   #page-findings .fnd-top > .pills { flex-basis: 100%; }
-  #page-findings .fnd-top > .select { flex: 1 1 0; }
+  #page-findings .fnd-opts { flex: 1 1 100%; flex-wrap: wrap; margin-left: 0; }
+  #page-findings .fnd-opts > .select { flex: 1 1 0; min-width: 0; }
+  #page-findings .fnd-opts > #f-views { flex-basis: 100%; }
+  #page-findings .fnd-opts > #f-views summary { width: 100%; justify-content: flex-start; }
+  #page-findings .fnd-views__name { max-width: none; }
   #page-findings #f-list .table--stack.fnd-groups tr { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "sev title age"; align-items: center; }
 }
 /* one toolbar row from tablets up: the search field and selects shrink before anything wraps,

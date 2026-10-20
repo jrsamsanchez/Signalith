@@ -132,6 +132,9 @@ func Matches(f *Finding, flt Filter) bool {
 	if flt.Unowned && f.Owner != "" {
 		return false
 	}
+	if flt.Due != nil && !flt.Due.SLA.dueBy(f, flt.Due.Now.Add(flt.Due.Within)) {
+		return false
+	}
 	if flt.DetectionID != "" && f.DetectionID != flt.DetectionID {
 		return false
 	}

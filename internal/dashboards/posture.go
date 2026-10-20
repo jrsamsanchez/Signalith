@@ -546,10 +546,18 @@ type findingStats struct {
 	overTime                *search.Result
 }
 
-// TriagedAt is when an analyst first acted on a finding: the first status
-// change or owner assignment.
+// TriagedAt is when an analyst first acted on a finding: its recorded
+// first response, or for a finding from before that was recorded, the
+// first status change or owner assignment a person made.
 func TriagedAt(f *findings.Finding) (time.Time, bool) {
+	if f.RespondedAt != nil {
+		return *f.RespondedAt, true
+	}
 	for _, c := range f.History {
+		if findings.IsAutomation(c.Author) {
+			// A playbook assigning a finding is not a person looking at it.
+			continue
+		}
 		if c.Field == "status" || (c.Field == "owner" && c.To != "") {
 			return c.Time, true
 		}

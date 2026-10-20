@@ -492,12 +492,15 @@
       <section class="queue" aria-label="Findings queue">
         <div class="fnd-top">
           <div class="pills" id="f-summary" role="group" aria-label="Filter by urgency"></div>
-          <select class="select select--sm" id="f-group" aria-label="Group by">
-            <option value="" selected>No grouping</option>
-            <option value="detection">Group by detection</option>
-            <option value="entity">Group by entity</option>
-          </select>
-          <span id="f-views"></span>
+          <div class="fnd-opts">
+            <select class="select select--sm" id="f-due" aria-label="Due"></select>
+            <select class="select select--sm" id="f-group" aria-label="Group by">
+              <option value="" selected>No grouping</option>
+              <option value="detection">Group by detection</option>
+              <option value="entity">Group by entity</option>
+            </select>
+            <span id="f-views"></span>
+          </div>
         </div>
         <div class="toolbar" id="f-toolbar" role="search">
           <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input class="input" id="f-text" type="search" placeholder="Search title, host, user, IP" aria-label="Search findings" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>

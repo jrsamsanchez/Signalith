@@ -38,7 +38,7 @@ const (
 
 // Keys are the filters a view may hold: the ones the queue writes in its
 // address.
-var Keys = []string{"status", "owner", "q", "since", "detection", "urgency", "sort", "group", "entity"}
+var Keys = []string{"status", "owner", "q", "since", "detection", "urgency", "sort", "group", "entity", "due"}
 
 // View is one saved view.
 type View struct {

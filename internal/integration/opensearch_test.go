@@ -553,6 +553,29 @@ tags: [attack.t1059.001]
 			}
 		}
 	}
+	// Due times: a critical finding nobody picked up is late after 15
+	// minutes; one picked up is due only to be resolved.
+	now := time.Now().UTC()
+	picked := now.Add(-10 * time.Minute)
+	for _, f := range []*findings.Finding{
+		{ID: "due-late", DetectionID: "x", Title: "late", Severity: "critical", Urgency: "critical", Status: findings.StatusNew, Created: now.Add(-20 * time.Minute), Updated: now},
+		{ID: "due-soon", DetectionID: "x", Title: "soon", Severity: "critical", Urgency: "critical", Status: findings.StatusNew, Created: now.Add(-10 * time.Minute), Updated: now},
+		{ID: "due-picked", DetectionID: "x", Title: "picked", Severity: "critical", Urgency: "critical", Status: findings.StatusInProgress, Created: now.Add(-20 * time.Minute), Updated: now, RespondedAt: &picked},
+	} {
+		if err := fs.Create(ctx, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for within, want := range map[time.Duration]string{0: "[due-late]", 10 * time.Minute: "[due-late due-soon]"} {
+		l, _, err := fs.Search(ctx, findings.Filter{Due: &findings.DueWithin{SLA: findings.DefaultSLA(), Within: within, Now: now}, Order: findings.OrderOldest})
+		var got []string
+		for _, f := range l {
+			got = append(got, f.ID)
+		}
+		if err != nil || fmt.Sprint(got) != want {
+			t.Errorf("due within %v: %v %v, want %s", within, got, err, want)
+		}
+	}
 	every, total, _ := fs.Search(ctx, findings.Filter{})
 	if gs, err := fs.Groups(ctx, findings.Filter{}, findings.GroupDetection); err != nil || len(gs) == 0 {
 		t.Errorf("groups by detection: %v %v", gs, err)

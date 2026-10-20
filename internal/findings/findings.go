@@ -71,10 +71,13 @@ type Finding struct {
 	// findings raised by "Run now" or before slots existed.
 	Slot     *time.Time `json:"slot,omitempty"`
 	RaisedAt time.Time  `json:"raised_at,omitzero"`
-	Created  time.Time  `json:"created"`
-	Updated  time.Time  `json:"updated"`
-	Comments []Comment  `json:"comments,omitempty"`
-	History  []Change   `json:"history,omitempty"`
+	// RespondedAt is when a person first picked the finding up: changed
+	// its status or owner. Changes playbooks make do not count.
+	RespondedAt *time.Time `json:"responded_at,omitempty"`
+	Created     time.Time  `json:"created"`
+	Updated     time.Time  `json:"updated"`
+	Comments    []Comment  `json:"comments,omitempty"`
+	History     []Change   `json:"history,omitempty"`
 }
 
 // Comment is an analyst note.
@@ -119,6 +122,8 @@ type Filter struct {
 	Order string
 	// After continues the order after this finding's place in it.
 	After *Cursor
+	// Due keeps findings due by a time (see DueWithin).
+	Due *DueWithin
 }
 
 // Update is a triage change. Nil fields stay as they are.
@@ -161,6 +166,10 @@ func (f *Finding) Apply(u Update, author string, now time.Time) bool {
 	}
 	set("status", &f.Status, u.Status)
 	set("owner", &f.Owner, u.Owner)
+	if changed && f.RespondedAt == nil && !IsAutomation(author) {
+		at := now.UTC()
+		f.RespondedAt = &at
+	}
 	if u.Severity != nil && *u.Severity != f.Severity && f.Urgency != "" {
 		// An analyst's severity call replaces the computed urgency.
 		urg := *u.Severity

@@ -453,6 +453,21 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	if e := v.Get("entity"); e != "" {
 		flt.EntityValues = []string{e}
 	}
+	sla := s.findingSLA()
+	if due := v.Get("due"); due != "" {
+		// due=overdue keeps findings late now; due=1h also those due
+		// within the hour.
+		var within time.Duration
+		if due != "overdue" {
+			d, err := detect.ParseDuration(due)
+			if err != nil || d < 0 || d > 7*24*time.Hour {
+				writeError(w, http.StatusBadRequest, errors.New("due must be overdue or a time up to 7d, such as 1h"))
+				return
+			}
+			within = d
+		}
+		flt.Due = &findings.DueWithin{SLA: sla, Within: within, Now: time.Now()}
+	}
 	group := v.Get("group")
 	if group != "" && group != findings.GroupDetection && group != findings.GroupEntity {
 		writeError(w, http.StatusBadRequest, errors.New("group must be detection or entity"))
@@ -499,6 +514,16 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 		f.History = nil
 	}
 	resp := map[string]any{"findings": list, "total": total}
+	if !sla.Off() {
+		now := time.Now()
+		due := map[string]*findings.Due{}
+		for _, f := range list {
+			if d := sla.DueOf(f, now); d != nil {
+				due[f.ID] = d
+			}
+		}
+		resp["due"] = due
+	}
 	if uc, ok := s.Findings.(findings.UrgencyCounter); ok && v.Get("counts") == "urgency" {
 		// The pills count every urgency the other filters let through.
 		cf := flt
@@ -545,6 +570,9 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{"finding": f}
+	if d := s.findingSLA().DueOf(f, time.Now()); d != nil {
+		resp["due"] = d
+	}
 	if d, err := s.Detections.Get(f.DetectionID); err == nil {
 		resp["detection"] = d
 	}
@@ -696,4 +724,12 @@ func (s *Server) handleFindingsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
+}
+
+// findingSLA is the due times of findings in use.
+func (s *Server) findingSLA() findings.SLA {
+	if c := s.conf(); c != nil {
+		return c.FindingSLA()
+	}
+	return findings.DefaultSLA()
 }

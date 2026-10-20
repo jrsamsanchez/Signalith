@@ -44,6 +44,15 @@ func TestFindingsQueuePagesGroupsAndCounts(t *testing.T) {
 	if fmt.Sprint(seen) != "[critical critical high medium low]" {
 		t.Errorf("by urgency: %v", seen)
 	}
+	if code, out := do(t, ts, "GET", "/api/findings?due=overdue", "", true); code != http.StatusOK || out["total"] != float64(0) || len(out["due"].(map[string]any)) != 0 {
+		t.Errorf("overdue: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "GET", "/api/findings?due=15m", "", true); code != http.StatusOK || out["total"] != float64(2) || len(out["due"].(map[string]any)) != 2 {
+		t.Errorf("due within 15m: %d %v", code, out)
+	}
+	if code, _ := do(t, ts, "GET", "/api/findings?due=soon", "", true); code != http.StatusBadRequest {
+		t.Errorf("due=soon: %d", code)
+	}
 	if code, out := do(t, ts, "GET", "/api/findings?entity=u1&unowned=true", "", true); code != http.StatusOK || out["total"] != float64(2) {
 		t.Errorf("entity u1: %d %v", code, out)
 	}

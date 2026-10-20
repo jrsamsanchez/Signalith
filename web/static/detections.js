@@ -326,7 +326,7 @@ const URG_RANK = { critical: 4, high: 3, medium: 2, low: 1, informational: 0 };
 const urgencyOf = (f) => f.urgency || f.severity;
 const fnd = {
   urgency: new Set(), since: '7d', detection: '', sort: { key: 'urgency', dir: 'desc' },
-  counts: {}, all: 0, total: 0, next: '', groups: null, entity: '', view: '', loaded: false, loadedAt: 0, stale: null, sig: '',
+  counts: {}, all: 0, total: 0, next: '', groups: null, entity: '', due: '', dueOf: {}, loaded: false, loadedAt: 0, stale: null, sig: '',
   closed: false, tab: 'overview', owners: new Set(), seq: 0, detailSeq: 0,
 };
 const FND_DEFAULT_STATUS = 'new,in_progress,pending';
@@ -374,6 +374,7 @@ async function loadFindings(opts = {}) {
     rows.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
     const sig = JSON.stringify([counts, res.total, res.groups || null, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
     fnd.groups = res.groups || null;
+    fnd.dueOf = res.due || {};
     fnd.loadedAt = Date.now();
     fnd.stale = null;
     fnd.counts = counts;
@@ -420,6 +421,7 @@ async function loadMoreFindings(btn) {
     const have = new Set(findingsList.map((f) => f.id));
     res.findings.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
     findingsList = findingsList.concat(res.findings.filter((f) => !have.has(f.id)));
+    Object.assign(fnd.dueOf, res.due || {});
     fnd.total = res.total;
     fnd.next = res.next || '';
     fnd.sig = '';
@@ -446,6 +448,7 @@ function findingsQuery() {
   if (fnd.since) p.set('since', fnd.since);
   if (fnd.detection) p.set('detection', fnd.detection);
   if (fnd.entity) p.set('entity', fnd.entity);
+  if (fnd.due) p.set('due', fnd.due);
   if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
   p.set('sort', FND_ORDER[fnd.sort.key + ':' + fnd.sort.dir] || 'urgency');
   return p;
@@ -476,6 +479,7 @@ function findingsState() {
   if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
   if (fnd.sort.key !== 'urgency' || fnd.sort.dir !== 'desc') p.set('sort', fnd.sort.key + ':' + fnd.sort.dir);
   if (fnd.entity) p.set('entity', fnd.entity);
+  if (fnd.due) p.set('due', fnd.due);
   if ($('f-group').value) p.set('group', $('f-group').value);
   p.sort();
   return p;
@@ -501,6 +505,7 @@ function readFindingsHash(query) {
   const [key, dir] = (p.get('sort') || '').split(':');
   fnd.sort = FND_ORDER[key + ':' + dir] ? { key, dir } : { key: 'urgency', dir: 'desc' };
   fnd.entity = (p.get('entity') || '').slice(0, 500);
+  fnd.due = FND_DUE.some(([v]) => v && v === p.get('due')) ? p.get('due') : '';
   const g = p.get('group');
   $('f-group').value = g === 'detection' || g === 'entity' ? g : '';
 }
@@ -520,7 +525,7 @@ function syncOwnerOptions() {
 
 function findingFiltersActive() {
   return $('f-status').value !== FND_DEFAULT_STATUS || $('f-owner').value !== '' || $('f-text').value.trim() !== ''
-    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '' || fnd.entity !== '' || $('f-group').value !== '';
+    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '' || fnd.entity !== '' || fnd.due !== '' || $('f-group').value !== '';
 }
 function syncFindingFilters() {
   $('f-since').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.since === fnd.since)));
@@ -531,6 +536,7 @@ function syncFindingFilters() {
     fill(chip, el('span', { class: 'fnd-filter__label' }, 'Detection'), el('code', {}, fnd.detection),
       dxBtn('ghost', '', () => { fnd.detection = ''; loadFindings(); }, { sm: true, icon: 'x', title: 'Show every detection' }));
   }
+  $('f-due').value = fnd.due;
   const ent = $('f-entity');
   ent.classList.toggle('hidden', !fnd.entity);
   if (fnd.entity) {
@@ -547,6 +553,7 @@ function clearFindingFilters() {
   fnd.urgency.clear();
   fnd.detection = '';
   fnd.entity = '';
+  fnd.due = '';
   $('f-group').value = '';
   loadFindings();
 }
@@ -653,11 +660,52 @@ function findingRow(f) {
     check,
     el('td', { 'data-col': 'sev' }, sev),
     el('td', { 'data-col': 'title' }, el('div', { class: 'cell-title', title: f.title }, open), el('div', { class: 'cell-sub' }, ...findingChips(f))),
-    el('td', { 'data-col': 'status' }, statusBadge(f.status), el('span', { class: 'cell-det', title: 'Detection: ' + f.detection_id }, f.detection_id)),
+    el('td', { 'data-col': 'status' }, statusBadge(f.status), dueChip(f), el('span', { class: 'cell-det', title: 'Detection: ' + f.detection_id }, f.detection_id)),
     el('td', { 'data-col': 'owner' }, dxOwner(f.owner)),
     el('td', { 'data-col': 'age', class: 'num age', title: fmtTime(f.created) }, dxAge(f.created)));
   tr.addEventListener('click', () => showFinding(f.id));
   return tr;
+}
+
+// FND_DUE are the choices of the due filter.
+const FND_DUE = [['', 'Any due time'], ['overdue', 'Late now'], ['1h', 'Due within 1 hour'], ['4h', 'Due within 4 hours'], ['24h', 'Due within 24 hours']];
+
+// dueChip says when an open finding is next due: its first response if
+// nobody has picked it up, else resolving it. Late is red, within the
+// hour amber.
+function dueChip(f) {
+  const d = fnd.dueOf[f.id];
+  if (!d || !['new', 'in_progress', 'pending'].includes(f.status)) return null;
+  const pickup = !f.responded_at && d.respond_by;
+  const by = pickup ? d.respond_by : d.resolve_by;
+  if (!by) return null;
+  const left = new Date(by).getTime() - Date.now();
+  const what = pickup ? 'First response' : 'Resolving';
+  const late = left <= 0;
+  const chip = el('span', {
+    class: 'fnd-due', 'data-tone': late ? 'danger' : left <= 3600e3 ? 'warning' : '',
+    title: `${what} ${late ? 'was' : 'is'} due ${fmtTime(by)}`,
+  }, icon(late ? 'timer' : 'clock'), late ? 'Late ' + dxAge(by) : 'Due ' + dxUntil(by).replace(/^in /, ''));
+  return chip;
+}
+
+// dueText is the inspector's line on a finding's due times.
+function dueText(f, d) {
+  if (!d) return null;
+  const open = ['new', 'in_progress', 'pending'].includes(f.status);
+  const bits = [];
+  if (d.respond_by) {
+    if (f.responded_at) bits.push(d.respond_late ? 'picked up late' : 'picked up in time');
+    else if (open) bits.push((d.respond_late ? 'pick-up was due ' : 'pick up by ') + dxClock(d.respond_by));
+  }
+  if (d.resolve_by) {
+    if (open) bits.push((d.resolve_late ? 'resolving was due ' : 'resolve by ') + dxClock(d.resolve_by));
+    else bits.push(d.resolve_late ? 'resolved late' : 'resolved in time');
+  }
+  if (!bits.length) return null;
+  const late = (open && (d.resolve_late || (!f.responded_at && d.respond_late))) || false;
+  const t = bits.join(', ');
+  return el('span', { class: 'fnd-due-line', 'data-tone': late ? 'danger' : '' }, t.charAt(0).toUpperCase() + t.slice(1));
 }
 
 function renderFindings() {
@@ -722,6 +770,8 @@ const FND_BUILTIN_VIEWS = [
   { name: 'Assigned to me', query: 'owner=__me' },
   { name: 'Unassigned critical and high', query: 'owner=__none&urgency=critical,high' },
   { name: 'New in the last 24 hours', query: 'since=24h&status=new' },
+  { name: 'Unassigned, due within the hour', query: 'due=1h&owner=__none&since=30d' },
+  { name: 'Late now', query: 'due=overdue&since=30d' },
 ];
 let findingViews = null; // the user's saved views once read
 
@@ -960,6 +1010,8 @@ $('f-bulk-form').addEventListener('submit', async (ev) => {
 $('f-status').addEventListener('change', () => loadFindings());
 $('f-owner').addEventListener('change', () => loadFindings());
 $('f-group').addEventListener('change', () => loadFindings());
+$('f-due').replaceChildren(...FND_DUE.map(([v, label]) => el('option', { value: v }, label)));
+$('f-due').addEventListener('change', () => { fnd.due = $('f-due').value; loadFindings(); });
 $('f-since').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-since]');
   if (!b) return;
@@ -1212,7 +1264,7 @@ function renderFindingDetail(box, data, opts = {}) {
       el('div', { class: 'row dx-tags' }, sev, statusBadge(f.status), detBadge),
       el('div', { class: 'inspector__meta' }, ...dxDots(
         el('span', { title: fmtTime(f.created) }, 'Detected ' + ago(f.created)),
-        el('span', { class: 'tabular' }, dxClock(f.created)), raisedLater(f), caseLink))),
+        el('span', { class: 'tabular' }, dxClock(f.created)), raisedLater(f), caseLink, dueText(f, data.due)))),
     dxTabs(prefix, tabs, fnd.tab, setTab),
     el('div', { class: 'inspector__body' },
       dxPanel(prefix, 'overview', fnd.tab,

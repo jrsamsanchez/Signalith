@@ -46,13 +46,14 @@ func properties() map[string]any {
 	return map[string]any{
 		"id": kw, "detection_id": kw, "severity": kw, "urgency": kw, "status": kw, "owner": kw,
 		"disposition": kw, "mitre": kw, "group_key": kw, "entity_values": kw, "case_id": kw, "sample": kw,
-		"title":       map[string]any{"type": "text", "fields": map[string]any{"raw": kw}},
-		"description": map[string]any{"type": "text"},
-		"created":     map[string]any{"type": "date"},
-		"updated":     map[string]any{"type": "date"},
-		"slot":        map[string]any{"type": "date"},
-		"raised_at":   map[string]any{"type": "date"},
-		"result":      notIndexed, "entities": notIndexed, "comments": notIndexed, "history": notIndexed,
+		"title":        map[string]any{"type": "text", "fields": map[string]any{"raw": kw}},
+		"description":  map[string]any{"type": "text"},
+		"created":      map[string]any{"type": "date"},
+		"updated":      map[string]any{"type": "date"},
+		"slot":         map[string]any{"type": "date"},
+		"raised_at":    map[string]any{"type": "date"},
+		"responded_at": map[string]any{"type": "date"},
+		"result":       notIndexed, "entities": notIndexed, "comments": notIndexed, "history": notIndexed,
 		"context": notIndexed,
 		"query":   map[string]any{"type": "keyword", "index": false},
 	}
@@ -89,10 +90,58 @@ func (s *OpenSearch) Upgrade(ctx context.Context) error {
 	if err := s.Client.Do(ctx, http.MethodPut, idx+"/_mapping", map[string]any{"properties": properties()}, nil); err != nil {
 		return err
 	}
-	return s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
+	if err := s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
 		"query":  map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "urgency"}}}}},
 		"script": map[string]any{"lang": "painless", "source": "ctx._source.urgency = ctx._source.severity"},
+	}, nil); err != nil {
+		return err
+	}
+	// Findings picked up before the first response was recorded count as
+	// picked up at their last change, so they are not shown as owing one.
+	return s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
+		"query": map[string]any{"bool": map[string]any{
+			"must_not": []any{map[string]any{"exists": map[string]any{"field": "responded_at"}}},
+			"should": []any{
+				map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"term": map[string]any{"status": StatusNew}}}}},
+				map[string]any{"exists": map[string]any{"field": "owner"}},
+			},
+			"minimum_should_match": 1,
+		}},
+		"script": map[string]any{"lang": "painless", "source": "ctx._source.responded_at = ctx._source.updated"},
 	}, nil)
+}
+
+// dueQuery keeps open findings with a due time they have not met by
+// d.Now plus d.Within, one clause per urgency with a target.
+func dueQuery(d DueWithin) map[string]any {
+	at := d.Now.Add(d.Within)
+	var should []any
+	for _, u := range Severities {
+		var by []any
+		if rt := d.SLA.Respond[u]; rt > 0 {
+			by = append(by, map[string]any{"bool": map[string]any{
+				"must_not": []any{map[string]any{"exists": map[string]any{"field": "responded_at"}}},
+				"filter":   []any{map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-rt).UTC().Format(time.RFC3339Nano)}}}},
+			}})
+		}
+		if st := d.SLA.Resolve[u]; st > 0 {
+			by = append(by, map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-st).UTC().Format(time.RFC3339Nano)}}})
+		}
+		if len(by) == 0 {
+			continue
+		}
+		should = append(should, map[string]any{"bool": map[string]any{
+			"filter": []any{map[string]any{"term": map[string]any{"urgency": u}}},
+			"should": by, "minimum_should_match": 1,
+		}})
+	}
+	if len(should) == 0 {
+		return map[string]any{"match_none": map[string]any{}}
+	}
+	return map[string]any{"bool": map[string]any{
+		"filter": []any{map[string]any{"terms": map[string]any{"status": []string{StatusNew, StatusInProgress, StatusPending}}}},
+		"should": should, "minimum_should_match": 1,
+	}}
 }
 
 // EnsureSampleField maps the sample-data marker (the "sample" field) on an
@@ -261,6 +310,9 @@ func filterQuery(flt Filter) map[string]any {
 	}
 	if flt.Owner != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"owner": flt.Owner}})
+	}
+	if flt.Due != nil {
+		fs = append(fs, dueQuery(*flt.Due))
 	}
 	if flt.Unowned {
 		fs = append(fs, map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
