@@ -9,10 +9,13 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
 // rotationCluster is three members on the fake: siem-a runs the
@@ -565,5 +568,27 @@ func TestRestartRefusesARetiredKey(t *testing.T) {
 	}
 	if k := rt.Hub().Keys().Active(); k != nil && k.ID() == old.ID() {
 		t.Error("the restarted server signs with the retired key")
+	}
+}
+
+// A keyring the server verified that lists a marked key unmarks it: a
+// keyring forged with a key before its rotation cannot keep the new key
+// marked for good.
+func TestKeyringUnmarksAListedKey(t *testing.T) {
+	rc := newRotationCluster(t)
+	k := rc.a.key()
+	p := retiredPath(rc.a.dir, k.ID())
+	if err := securefile.MkdirPrivate(filepath.Dir(p)); err != nil {
+		t.Fatal(err)
+	}
+	if err := securefile.WriteFile(p, nil); err != nil {
+		t.Fatal(err)
+	}
+	rc.a.rt.mu.Lock()
+	rc.a.rt.retiredSig = ""
+	rc.a.rt.mu.Unlock()
+	rc.a.step()
+	if rc.a.rt.isRetired(k.ID()) {
+		t.Fatal("the key the keyring lists is still marked retired")
 	}
 }

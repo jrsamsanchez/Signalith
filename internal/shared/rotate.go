@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -810,7 +811,9 @@ func (rt *Runtime) isRetired(kid string) bool {
 // rotation in progress: a finished rotation retired them. The keys stay
 // on disk for the archives sealed with them, but a cluster document
 // signed with one is never joined (look), so whoever kept a copy of a
-// retired key cannot take a restarted server back to it.
+// retired key cannot take a restarted server back to it. A key such a
+// keyring lists is unmarked: a keyring forged with a key before it was
+// retired cannot keep the new one marked.
 func (rt *Runtime) retireUnlisted(kr *KeyringBody) {
 	if rt.opts.ReadOnly || kr.Active == "" {
 		return
@@ -834,22 +837,35 @@ func (rt *Runtime) retireUnlisted(kr *KeyringBody) {
 	if err != nil {
 		return
 	}
-	rt.mu.Lock()
-	rt.retiredSig = sig
-	rt.mu.Unlock()
+	ok := true
 	for _, k := range keys.stored {
-		if slices.Contains(listed, k.ID()) || rt.isRetired(k.ID()) {
-			continue
-		}
 		p := retiredPath(rt.opts.StateDir, k.ID())
-		if err := securefile.MkdirPrivate(filepath.Dir(p)); err != nil {
-			rt.log.Warn("could not mark a retired cluster key", "kid", k.ID(), "err", err)
-			continue
+		marked := rt.isRetired(k.ID())
+		switch {
+		case slices.Contains(listed, k.ID()) && marked:
+			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				rt.log.Warn("could not unmark a cluster key the keyring lists", "kid", k.ID(), "err", err)
+				ok = false
+				continue
+			}
+			rt.log.Info("unmarked a cluster key the keyring lists again", "audit", true, "kid", k.ID())
+		case !slices.Contains(listed, k.ID()) && !marked:
+			if err := securefile.MkdirPrivate(filepath.Dir(p)); err != nil {
+				rt.log.Warn("could not mark a retired cluster key", "kid", k.ID(), "err", err)
+				ok = false
+				continue
+			}
+			if err := securefile.WriteFile(p, nil); err != nil {
+				rt.log.Warn("could not mark a retired cluster key", "kid", k.ID(), "err", err)
+				ok = false
+				continue
+			}
+			rt.log.Info("marked a cluster key a rotation retired", "audit", true, "kid", k.ID())
 		}
-		if err := securefile.WriteFile(p, nil); err != nil {
-			rt.log.Warn("could not mark a retired cluster key", "kid", k.ID(), "err", err)
-			continue
-		}
-		rt.log.Info("marked a cluster key a rotation retired", "audit", true, "kid", k.ID())
+	}
+	if ok {
+		rt.mu.Lock()
+		rt.retiredSig = sig
+		rt.mu.Unlock()
 	}
 }
