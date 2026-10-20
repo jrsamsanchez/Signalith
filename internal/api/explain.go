@@ -182,6 +182,12 @@ func describeAggs(aggs []query.Agg) string {
 			s = "the standard deviation of " + a.Field
 		case "var":
 			s = "the variance of " + a.Field
+		case "stdevp":
+			s = "the population standard deviation of " + a.Field
+		case "varp":
+			s = "the population variance of " + a.Field
+		case "sumsq":
+			s = "the sum of the squares of " + a.Field
 		case "range":
 			s = "the range (largest minus smallest) of " + a.Field
 		case "mode":

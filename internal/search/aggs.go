@@ -62,7 +62,7 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 		return map[string]any{a.Func: map[string]any{"field": field}}, nil
 	case "median":
 		return map[string]any{"percentiles": map[string]any{"field": field, "percents": []any{50}, "keyed": false}}, nil
-	case "stdev", "var":
+	case "stdev", "var", "stdevp", "varp", "sumsq":
 		return map[string]any{"extended_stats": map[string]any{"field": field}}, nil
 	case "range":
 		return map[string]any{"stats": map[string]any{"field": field}}, nil
@@ -115,10 +115,10 @@ func timeSeconds(a query.Agg, v any) any {
 		return v
 	}
 	switch {
-	case a.Func == "var":
+	case a.Func == "var", a.Func == "varp", a.Func == "sumsq":
 		return numOut(f / 1e6)
 	case a.Func == "min", a.Func == "max", a.Func == "avg", a.Func == "sum", a.Func == "range",
-		a.Func == "median", a.Func == "stdev", query.Percentile(a.Func) > 0:
+		a.Func == "median", a.Func == "stdev", a.Func == "stdevp", query.Percentile(a.Func) > 0:
 		return numOut(f / 1e3)
 	}
 	return v
@@ -162,6 +162,23 @@ func rawAggValue(a query.Agg, container map[string]any, name string) any {
 			return numOut(math.Sqrt(sample))
 		}
 		return numOut(sample)
+	case "stdevp", "varp":
+		n, ok1 := num(m["count"])
+		v, ok2 := num(m["variance"])
+		if !ok1 || !ok2 || n < 1 {
+			return nil
+		}
+		if a.Func == "stdevp" {
+			return numOut(math.Sqrt(math.Max(v, 0)))
+		}
+		return numOut(math.Max(v, 0))
+	case "sumsq":
+		n, ok1 := num(m["count"])
+		v, ok2 := num(m["sum_of_squares"])
+		if !ok1 || !ok2 || n < 1 {
+			return nil
+		}
+		return numOut(v)
 	case "range":
 		lo, ok1 := num(m["min"])
 		hi, ok2 := num(m["max"])
@@ -209,8 +226,9 @@ type aggState struct {
 	min, max float64
 	distinct map[string]any // each value's text, and the first value with it
 	clipped  bool           // values() or list() left values out
-	nums     []float64      // for median, percentiles, stdev and var
-	vals     []any          // values in row order, for list, first, last and mode
+	sumsq    float64
+	nums     []float64 // for median, percentiles, stdev and var
+	vals     []any     // values in row order, for list, first, last and mode
 	times    []time.Time
 }
 
@@ -243,10 +261,11 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 	if ok {
 		s.numeric++
 		s.sum += f
+		s.sumsq += f * f
 		s.min = math.Min(s.min, f)
 		s.max = math.Max(s.max, f)
 		switch a.Func {
-		case "median", "stdev", "var":
+		case "median", "stdev", "var", "stdevp", "varp":
 			s.nums = append(s.nums, f)
 		default:
 			if query.Percentile(a.Func) > 0 {
@@ -293,12 +312,17 @@ func (s *aggState) result(a query.Agg) any {
 		}
 	case "median":
 		return percentile(s.nums, 50)
-	case "stdev", "var":
+	case "sumsq":
+		if s.numeric > 0 {
+			return toNumber(s.sumsq)
+		}
+	case "stdev", "var", "stdevp", "varp":
 		n := float64(len(s.nums))
 		if n < 1 {
 			return nil
 		}
-		if n == 1 {
+		population := a.Func == "stdevp" || a.Func == "varp"
+		if n == 1 && !population {
 			// One value varies by nothing; Splunk gives 0.
 			return int64(0)
 		}
@@ -312,7 +336,10 @@ func (s *aggState) result(a query.Agg) any {
 			ss += (f - mean) * (f - mean)
 		}
 		v := ss / (n - 1)
-		if a.Func == "stdev" {
+		if population {
+			v = ss / n
+		}
+		if a.Func == "stdev" || a.Func == "stdevp" {
 			return numOut(math.Sqrt(v))
 		}
 		return numOut(v)

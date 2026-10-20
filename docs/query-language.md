@@ -156,7 +156,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `addtotals` | `addtotals fieldname=total bytes_*` | Adds each row's numeric fields (or the listed ones, `*` matching any text) into `Total` (or `fieldname=`). Fields starting with `_` are left out. `col=t` also adds a last row with each column's total, labelled with `label=` (default `Total`) in `labelfield=`; `row=f` leaves out the row totals. `addcoltotals [labelfield=f] [label=x]` adds only the column totals |
 | `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
 | `sort` | `sort -count, src` | `-` for descending. `sort 10 -count` (or `limit=10`) keeps the first 10 rows; `sort 0` keeps them all. `num(f)` compares as numbers (other values after them), `str(f)` as text, `ip(f)` as addresses, `auto(f)` as usual |
-| `head` | `head 20` | Also `limit` |
+| `head` | `head 20` | Also `head limit=20`, and `limit` as the command's name |
 | `table` | `table _time, user, src` | Also `fields`; wildcards allowed. `fields - _raw, tmp_*` removes fields instead |
 | `rename` | `rename src as source_ip, dest as target` | Pairs may be separated by commas or spaces. A `*` in the old name matches any text, which the new name's `*` takes: `rename *_ip as *` renames `src_ip` to `src`, `rename Processes.* as *` drops a `tstats` prefix. A renamed field replaces one that already had its new name |
 | `lookup` | `lookup owners host OUTPUT owner, team` | Adds columns from a lookup table (Settings > Lookups) to rows whose field matches a key column; `host AS dest` matches another field, `OUTPUTNEW` fills only missing fields, no `OUTPUT` adds every column. A table can hold `*` patterns or ignore case; `local=true` is accepted and changes nothing. See [Lookup tables](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md) |
@@ -193,12 +193,15 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest. Over `_time` they are in seconds since 1970, as in Splunk, so `min(_time) as firstTime` works with `convert ctime(firstTime)` |
 | `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
 | `stdev(f)`, `var(f)` | Sample standard deviation and variance; 0 for a single value, as in Splunk |
+| `stdevp(f)`, `varp(f)`, `sumsq(f)` | Population standard deviation and variance, and the sum of the squares |
 | `mode(f)` | The most common value |
 | `values(f)` | The distinct values, sorted as text: up to 10,000, or 100 when `stats` runs in OpenSearch. A result that leaves values out is marked truncated |
 | `list(f)` | The values, newest first, up to 100 |
 | `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
 
 Any function can take an expression instead of a field, as in Splunk: `stats count(eval(action="failure")) as failures, values(eval(if(bytes>1000, dest, null()))) as big_dests by user`. Each needs `as name`. `count(eval(x))` counts the events where `x` is true. A search that uses one runs `stats` in the Signalith server over at most `search.max_events` events instead of in OpenSearch. `stats`, `eventstats`, `streamstats` and `chart` take these.
+
+In `stats` and `eventstats` a field name with `*` covers every matching field, as in Splunk: `stats sum(bytes*) by user` gives `sum(bytes_in)`, `sum(bytes_out)` and so on, and `stats values(*) as * by user` names each column after its field. The `by` fields, and fields starting with `_` unless the pattern does, are left out. Which fields match is known only from the events, so such a `stats` runs in the Signalith server over at most `search.max_events` events. `timechart`, `chart`, `streamstats`, `tstats` and `by` clauses refuse `*` field names rather than give an empty result.
 
 ## Expressions (eval and where)
 
@@ -241,10 +244,10 @@ compares text case-sensitively as Splunk's `where` does: `where action="Failure"
 | Functions | |
 | --- | --- |
 | Conditions | `if(cond, then, else)`, `case(cond1, value1, cond2, value2, ...)` (null when none is true), `coalesce(a, b, ...)` (first non-null), `nullif(a, b)`, `null()`, `true()`, `false()` |
-| Tests | `isnull(x)`, `isnotnull(x)`, `isnum(x)`, `isstr(x)`, `typeof(x)`, `in(x, v1, v2, ...)`, `like(x, "a%")`, `match(x, "regex")`, `cidrmatch("10.0.0.0/8", ip)`, `isint(x)`, `validate(cond1, "message1", ...)` (the message of the first false condition) |
-| Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)`, `printf("%-10s %05.1f", s, x)` (`%s %d %i %f %e %g %x %X %o %c %%`, widths up to 1,000) |
-| Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)`, `bit_and(a, b, ...)`, `bit_or`, `bit_xor`, `bit_not(x[, mask])`, `bit_shift_left(x, n)`, `bit_shift_right(x, n)` (on whole numbers from 0 to 2^53) |
-| Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
+| Tests | `isnull(x)`, `isnotnull(x)`, `isnum(x)`, `isstr(x)`, `typeof(x)`, `in(x, v1, v2, ...)`, `like(x, "a%")`, `match(x, "regex")`, `cidrmatch("10.0.0.0/8", ip)`, `isbool(x)`, `isint(x)`, `validate(cond1, "message1", ...)` (the message of the first false condition) |
+| Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)`, `sha512(s)`, `printf("%-10s %05.1f", s, x)` (`%s %d %i %f %e %g %x %X %o %c %%`, widths up to 1,000) |
+| Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)`, `pi()`, `random()` (a whole number from 0 to 2^31-1), `exact(x)`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` (radians), `atan2(y, x)`, `hypot(x, y)`, `bit_and(a, b, ...)`, `bit_or`, `bit_xor`, `bit_not(x[, mask])`, `bit_shift_left(x, n)`, `bit_shift_right(x, n)` (on whole numbers from 0 to 2^53) |
+| Conversion | `ipmask("255.255.255.0", ip)` (an IPv4 address with the mask applied), `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
 | Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value). `mvfilter` and `mvmap` go through at most 10 million values in one search, counting the values of nested calls, `mvrange(start, end[, step])` (end not included) |
 | JSON | `spath(j, "a.b{}")` and `json_extract(j, "a.b")` (the value at a path, as the `spath` command reads it), `json_keys(j)` (the top-level keys as a JSON array), `json_valid(j)`, `json_array_to_mv(j)`, `json_object("k", v, ...)`, `json_array(v, ...)` |
 | Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are in the search's time zone (UTC unless the Search page sends yours); `strftime` takes epoch seconds or an event's `_time`, `relative_time(t, "-1d@d")` (a Splunk time modifier applied to `t`; `@w` is Sunday) |

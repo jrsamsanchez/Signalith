@@ -517,6 +517,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
+			if hasWildcardAgg(c.Aggs) {
+				// Which fields values(*) covers is known only from the
+				// events, so stats runs on them in memory.
+				if fill != nil {
+					cmds = append([]query.Command{fill}, cmds...)
+				}
+				break
+			}
 			p.Mode, p.transform, p.post, p.fill = "stats", c, cmds[1:], fill
 			body["size"] = 0
 			if len(c.By) == 0 {

@@ -8,9 +8,11 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -647,6 +649,48 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		return math1(math.Sqrt)
 	case "exp":
 		return math1(math.Exp)
+	case "exact":
+		// Numbers keep full precision already.
+		return arg(0)
+	case "pi":
+		return math.Pi
+	case "random":
+		// Splunk's random() is a whole number from 0 to 2^31-1.
+		return rand.Int64N(1 << 31)
+	case "sin":
+		return math1(math.Sin)
+	case "cos":
+		return math1(math.Cos)
+	case "tan":
+		return math1(math.Tan)
+	case "asin":
+		return math1(math.Asin)
+	case "acos":
+		return math1(math.Acos)
+	case "atan":
+		return math1(math.Atan)
+	case "sinh":
+		return math1(math.Sinh)
+	case "cosh":
+		return math1(math.Cosh)
+	case "tanh":
+		return math1(math.Tanh)
+	case "asinh":
+		return math1(math.Asinh)
+	case "acosh":
+		return math1(math.Acosh)
+	case "atanh":
+		return math1(math.Atanh)
+	case "atan2", "hypot":
+		y, ok1 := num(0)
+		x, ok2 := num(1)
+		if !ok1 || !ok2 {
+			return nil
+		}
+		if c.Func == "hypot" {
+			return numOut(math.Hypot(y, x))
+		}
+		return numOut(math.Atan2(y, x))
 	case "ln":
 		return math1(math.Log)
 	case "log":
@@ -985,6 +1029,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return true
 		}
 		return false
+	case "isbool":
+		_, ok := args[0].(bool)
+		return ok
 	case "isstr":
 		_, ok := args[0].(string)
 		return ok
@@ -1071,7 +1118,24 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return d
 		}
 		return s
-	case "md5", "sha1", "sha256":
+	case "ipmask":
+		// ipmask("255.255.255.0", ip) keeps the address's masked part.
+		mask, ok1 := text(0)
+		ip, ok2 := text(1)
+		if !ok1 || !ok2 {
+			return nil
+		}
+		m, err1 := netip.ParseAddr(strings.TrimSpace(mask))
+		a, err2 := netip.ParseAddr(strings.TrimSpace(ip))
+		if err1 != nil || err2 != nil || !m.Is4() || !a.Unmap().Is4() {
+			return nil
+		}
+		mb, ab := m.As4(), a.Unmap().As4()
+		for i := range ab {
+			ab[i] &= mb[i]
+		}
+		return netip.AddrFrom4(ab).String()
+	case "md5", "sha1", "sha256", "sha512":
 		s, ok := text(0)
 		if !ok {
 			return nil
@@ -1082,6 +1146,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return hex.EncodeToString(h[:])
 		case "sha1":
 			h := sha1.Sum([]byte(s))
+			return hex.EncodeToString(h[:])
+		case "sha512":
+			h := sha512.Sum512([]byte(s))
 			return hex.EncodeToString(h[:])
 		}
 		h := sha256.Sum256([]byte(s))

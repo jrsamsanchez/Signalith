@@ -15,7 +15,7 @@ var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "ra
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
-var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "var", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
+var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "stdevp", "var", "varp", "sumsq", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
 
 // aggAliases are other names for aggregation functions.
 var aggAliases = map[string]string{"distinct_count": "dc", "mean": "avg"}
@@ -462,6 +462,9 @@ func (p *parser) parseCommand() (Command, error) {
 			if err != nil {
 				return nil, err
 			}
+			if err := noWildcardAggs("timechart", t.pos, aggs); err != nil {
+				return nil, err
+			}
 			tc.Aggs = aggs
 		}
 		if p.isKeywordFold("by") {
@@ -540,6 +543,11 @@ func (p *parser) parseCommand() (Command, error) {
 		return s, p.endCommand()
 	case "head", "limit":
 		h := &Head{N: 10}
+		if nt := p.peek(); nt.kind == tokWord && strings.EqualFold(nt.text, "limit") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			// head limit=5 is head 5.
+			p.next()
+			p.next()
+		}
 		if p.peek().kind == tokWord {
 			n, err := p.int()
 			if err != nil {
@@ -888,6 +896,18 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 	return aggs, nil
 }
 
+// noWildcardAggs refuses sum(bytes*) in a command that cannot expand it:
+// read as one field's name it would quietly give nothing. stats and
+// eventstats expand it to every matching field.
+func noWildcardAggs(cmd string, pos int, aggs []Agg) error {
+	for _, a := range aggs {
+		if strings.Contains(a.Field, "*") {
+			return errorf(pos, "%s %s: wildcard field names work in stats and eventstats only; name each field here", cmd, a)
+		}
+	}
+	return nil
+}
+
 func (p *parser) parseBy() ([]string, error) {
 	if !p.isKeywordFold("by") {
 		return nil, nil
@@ -910,6 +930,11 @@ func (p *parser) parseBy() ([]string, error) {
 	}
 	if len(fields) == 0 {
 		return nil, errorf(byTok.pos, `expected a field after "by"`)
+	}
+	for _, f := range fields {
+		if strings.Contains(f, "*") {
+			return nil, errorf(byTok.pos, "by %s: wildcard field names are not supported in by; name each field", f)
+		}
 	}
 	return fields, nil
 }

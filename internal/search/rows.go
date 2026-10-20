@@ -410,6 +410,9 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 // its whole list, as eventstats looks its groups up. clipped, when not
 // nil, is set when values() or list() left values out.
 func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, clipped *bool) ([]Row, []string, error) {
+	if hasWildcardAgg(st.Aggs) {
+		st = &query.Stats{Aggs: expandWildcardAggs(st.Aggs, st.By, rows, clipped), By: st.By}
+	}
 	type group struct {
 		keys   Row
 		states []*aggState
