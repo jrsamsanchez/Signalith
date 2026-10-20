@@ -63,7 +63,7 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: none
-    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-ca-dir", "/opensearch-ca", "-state-dir", "/signalith-data", "-loaded-dir", "/opensearch-security-loaded", "-snapshots-dir", "/opensearch-snapshots"]
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-ca-dir", "/opensearch-ca", "-state-dir", "/signalith-data", "-loaded-dir", "/opensearch-security-loaded"]
     # The same folders for runs by hand, which replace the command above.
     environment:
       - SIGNALITH_SETUP_OPENSEARCH_DIR=/opensearch-certs
@@ -72,6 +72,8 @@ services:
       - SIGNALITH_SETUP_STATE_DIR=/signalith-data
       - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
       - SIGNALITH_SETUP_CRL_DIR=/opensearch-crl
+      # Read from the environment only, so an older image, which has no
+      # such flag, still starts with this file.
       - SIGNALITH_SETUP_SNAPSHOTS_DIR=/opensearch-snapshots
     volumes:
       - opensearch-certs:/opensearch-certs

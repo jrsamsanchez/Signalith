@@ -121,8 +121,7 @@ func TestDockerCompose(t *testing.T) {
 	// Runs by hand replace the command, so the same folders come from
 	// the environment too.
 	for flag, env := range map[string]string{"-opensearch-dir": "SIGNALITH_SETUP_OPENSEARCH_DIR", "-signalith-dir": "SIGNALITH_SETUP_SIGNALITH_DIR",
-		"-ca-dir": "SIGNALITH_SETUP_CA_DIR", "-state-dir": "SIGNALITH_SETUP_STATE_DIR", "-loaded-dir": "SIGNALITH_SETUP_LOADED_DIR",
-		"-snapshots-dir": "SIGNALITH_SETUP_SNAPSHOTS_DIR"} {
+		"-ca-dir": "SIGNALITH_SETUP_CA_DIR", "-state-dir": "SIGNALITH_SETUP_STATE_DIR", "-loaded-dir": "SIGNALITH_SETUP_LOADED_DIR"} {
 		if !slices.Contains(setup.Environment, env+"="+flagValue(setup.Command, flag)) {
 			t.Errorf("setup environment %v lacks %s for %s", setup.Environment, env, flag)
 		}
@@ -136,7 +135,17 @@ func TestDockerCompose(t *testing.T) {
 	}
 	// setup gives OpenSearch the snapshots volume, which OpenSearch's
 	// path.repo names (docs/backup.md).
-	snapDir := flagValue(setup.Command, "-snapshots-dir")
+	// It comes from the environment, not the command: an older image has
+	// no -snapshots-dir flag and would not start.
+	snapDir := ""
+	for _, e := range setup.Environment {
+		if v, ok := strings.CutPrefix(e, "SIGNALITH_SETUP_SNAPSHOTS_DIR="); ok {
+			snapDir = v
+		}
+	}
+	if flagValue(setup.Command, "-snapshots-dir") != "" {
+		t.Errorf("setup command names -snapshots-dir, which older images refuse: %v", setup.Command)
+	}
 	if snapDir == "" || !slices.Contains(setup.Volumes, "opensearch-snapshots:"+snapDir) {
 		t.Errorf("setup does not prepare the snapshots volume: %v %v", setup.Command, setup.Volumes)
 	}
