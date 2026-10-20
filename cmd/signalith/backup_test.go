@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestBackupAndRestore(t *testing.T) {
 	})
 	c := loadForBackup(t, src)
 	zipFile := filepath.Join(t.TempDir(), "b.zip")
-	m, err := writeBackup(zipFile, c, false, false)
+	m, err := writeBackup(zipFile, c, false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestBackupAndRestore(t *testing.T) {
 		t.Errorf("manifest counts %d files, the zip has %d", m.Files, len(got)-1)
 	}
 	// It never overwrites a file.
-	if _, err := writeBackup(zipFile, c, false, false); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := writeBackup(zipFile, c, false, false, ""); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("second backup to the same file: %v", err)
 	}
 
@@ -119,7 +120,7 @@ func TestBackupAndRestore(t *testing.T) {
 		"data/archive/new-day.gz":    "kept",
 	})
 	dc := loadForBackup(t, dst)
-	if err := restoreBackup(zipFile, dc, true, os.Stdin, io.Discard); err != nil {
+	if err := restoreBackup(zipFile, "", dc, true, os.Stdin, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	top := filepath.Dir(filepath.Dir(dst))
@@ -156,7 +157,7 @@ func TestBackupAndRestore(t *testing.T) {
 	}
 	// A backup of the restored install leaves what was set aside out.
 	again := filepath.Join(t.TempDir(), "again.zip")
-	if _, err := writeBackup(again, dc, false, false); err != nil {
+	if _, err := writeBackup(again, dc, false, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	for name := range zipEntries(t, again) {
@@ -174,7 +175,7 @@ func TestBackupOptions(t *testing.T) {
 	})
 	c := loadForBackup(t, src)
 	zipFile := filepath.Join(t.TempDir(), "b.zip")
-	m, err := writeBackup(zipFile, c, true, true)
+	m, err := writeBackup(zipFile, c, true, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +193,7 @@ func TestBackupOptions(t *testing.T) {
 	}
 	// Restoring it keeps the master key in place.
 	dst := backupInstall(t, map[string]string{"state/keys/master.key": "this install's key"})
-	if err := restoreBackup(zipFile, loadForBackup(t, dst), true, os.Stdin, io.Discard); err != nil {
+	if err := restoreBackup(zipFile, "", loadForBackup(t, dst), true, os.Stdin, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(dst)), "state", "keys", "master.key"))
@@ -201,10 +202,102 @@ func TestBackupOptions(t *testing.T) {
 	}
 }
 
+// The default: the master key goes in a file of its own next to the zip,
+// and restore -master-key puts it back.
+func TestBackupMasterKeyFile(t *testing.T) {
+	src := backupInstall(t, map[string]string{
+		"state/keys/master.key":     "the key",
+		"state/keys/master.key.old": "the old key",
+		"state/node.id":             `{"node_id":"n_1"}`,
+	})
+	c := loadForBackup(t, src)
+	zipFile := filepath.Join(t.TempDir(), "signalith-backup-x.zip")
+	keyFile := masterKeyFileName(zipFile)
+	if !strings.HasSuffix(keyFile, "signalith-backup-x.master-key.zip") || !isBackupFile(filepath.Base(keyFile)) {
+		t.Fatalf("key file name %s", keyFile)
+	}
+	if n, err := writeMasterKey(keyFile, c); err != nil || n != 2 {
+		t.Fatalf("writeMasterKey: %d, %v", n, err)
+	}
+	if _, err := writeMasterKey(keyFile, c); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("writing over the key file: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if st, err := os.Stat(keyFile); err != nil || st.Mode().Perm() != 0o600 {
+			t.Errorf("key file mode: %v, %v", st.Mode(), err)
+		}
+	}
+	m, err := writeBackup(zipFile, c, false, true, filepath.Base(keyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.NoMasterKey || m.MasterKeyFile != filepath.Base(keyFile) {
+		t.Errorf("manifest: %+v", m)
+	}
+	for name := range zipEntries(t, zipFile) {
+		if strings.Contains(name, "master.key") {
+			t.Errorf("backup has %s", name)
+		}
+	}
+	got := zipEntries(t, keyFile)
+	if got["state/keys/master.key"] != "the key" || got["state/keys/master.key.old"] != "the old key" || len(got) != 2 {
+		t.Errorf("key file holds %v", got)
+	}
+
+	keyPath := func(dst string) string {
+		return filepath.Join(filepath.Dir(filepath.Dir(dst)), "state", "keys", "master.key")
+	}
+	// Without -master-key the install keeps its own key.
+	dst := backupInstall(t, map[string]string{"state/keys/master.key": "this install's key"})
+	var out strings.Builder
+	if err := restoreBackup(zipFile, "", loadForBackup(t, dst), true, os.Stdin, &out); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(keyPath(dst)); string(b) != "this install's key" {
+		t.Errorf("master key after restore: %q", b)
+	}
+	if !strings.Contains(out.String(), filepath.Base(keyFile)) {
+		t.Errorf("restore does not name the key file:\n%s", out.String())
+	}
+	// With it the key comes back, and this install's other key files are
+	// set aside.
+	dst = backupInstall(t, map[string]string{
+		"state/keys/master.key":       "this install's key",
+		"state/keys/master.key.dpapi": "this install's dpapi key",
+	})
+	if err := restoreBackup(zipFile, keyFile, loadForBackup(t, dst), true, os.Stdin, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(keyPath(dst)); string(b) != "the key" {
+		t.Errorf("master key after restore -master-key: %q", b)
+	}
+	if b, _ := os.ReadFile(keyPath(dst) + ".old"); string(b) != "the old key" {
+		t.Errorf("old master key after restore -master-key: %q", b)
+	}
+	if _, err := os.Stat(keyPath(dst) + ".dpapi"); err == nil {
+		t.Error("this install's dpapi key was left beside the restored key")
+	}
+
+	// A key file must hold only master key files.
+	bad := filepath.Join(t.TempDir(), "bad.master-key.zip")
+	f, err := os.Create(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("state/keys/../tls/server.key")
+	w.Write([]byte("x"))
+	zw.Close()
+	f.Close()
+	if err := restoreBackup(zipFile, bad, loadForBackup(t, dst), true, os.Stdin, io.Discard); err == nil || !strings.Contains(err.Error(), "not a master key file") {
+		t.Errorf("restore with a bad key file: %v", err)
+	}
+}
+
 func TestRestoreRefuses(t *testing.T) {
 	src := backupInstall(t, map[string]string{"state/node.id": `{"node_id":"n_1"}`})
 	zipFile := filepath.Join(t.TempDir(), "b.zip")
-	if _, err := writeBackup(zipFile, loadForBackup(t, src), false, false); err != nil {
+	if _, err := writeBackup(zipFile, loadForBackup(t, src), false, false, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,12 +308,12 @@ func TestRestoreRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = restoreBackup(zipFile, dc, true, os.Stdin, io.Discard)
+	err = restoreBackup(zipFile, "", dc, true, os.Stdin, io.Discard)
 	l.Close()
 	if err == nil || !strings.Contains(err.Error(), "Stop it first") {
 		t.Errorf("restore while running: %v", err)
 	}
-	if err := restoreBackup(zipFile, dc, true, os.Stdin, io.Discard); err != nil {
+	if err := restoreBackup(zipFile, "", dc, true, os.Stdin, io.Discard); err != nil {
 		t.Errorf("restore once stopped: %v", err)
 	}
 
@@ -242,7 +335,7 @@ func TestRestoreRefuses(t *testing.T) {
 		}
 		zw.Close()
 		f.Close()
-		if err := restoreBackup(bad, dc, true, os.Stdin, io.Discard); err == nil {
+		if err := restoreBackup(bad, "", dc, true, os.Stdin, io.Discard); err == nil {
 			t.Errorf("%s: restored", name)
 		}
 	}

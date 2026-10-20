@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -21,12 +22,13 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"golang.org/x/term"
 )
 
 const backupUsage = `Usage:
-  signalith backup  [-c file] [-o file.zip] [-archive] [-no-master-key]
-  signalith restore [-c file] [-yes] file.zip
+  signalith backup  [-c file] [-o file.zip] [-archive] [-include-master-key | -no-master-key]
+  signalith restore [-c file] [-yes] [-master-key file] file.zip
 
 backup copies this server's own files into one zip file: signalith.yaml,
 the state folder (master key, cluster key, HTTPS certificate and
@@ -40,15 +42,25 @@ them up with an OpenSearch snapshot (see docs/backup.md).
                   in the current folder)
   -archive        also copy the archived days (retention's archive folder),
                   which can be large
-  -no-master-key  leave the master key out, to keep it apart from the backup;
-                  restore then needs that key put back by hand
+  -include-master-key
+                  put the master key in the zip too, for one file to keep
+  -no-master-key  write no copy of the master key at all
 
-The zip holds the master key with the passwords and keys it decrypts,
-unless -no-master-key: keep it as private as the key itself.
+The master key is not in the zip: it is written next to it, as
+<zip name>.master-key.zip, since it decrypts the passwords and keys the
+zip holds. Store that file somewhere other than the backups. The zip
+still holds the HTTPS and OpenSearch keys: keep it private too.
 
 restore puts the files of such a zip back where this install keeps them,
 replacing files with the same name. Stop the server first. It shows what
-it will write and asks first (-yes skips the question).`
+it will write and asks first (-yes skips the question).
+
+  -master-key     the .master-key.zip file written with the backup, to put
+                  the master key back too
+  -yes            do not ask first
+
+Only restore backups you made and kept private: a backup brings back
+settings and response scripts the server runs.`
 
 // backupFormat is the version of the zip's layout.
 const backupFormat = 1
@@ -77,7 +89,10 @@ type backupManifest struct {
 	Skipped []string     `json:"skipped,omitempty"`
 	// NoMasterKey is set when the master key was left out.
 	NoMasterKey bool `json:"no_master_key,omitempty"`
-	Archive     bool `json:"archive,omitempty"`
+	// MasterKeyFile is the name of the file the master key was written
+	// to instead, if any.
+	MasterKeyFile string `json:"master_key_file,omitempty"`
+	Archive       bool   `json:"archive,omitempty"`
 }
 
 // backupConfig loads the config at path the way the server sees it: with
@@ -159,7 +174,7 @@ func skipInBackup(role, rel string, noKey bool) bool {
 	if rel == "cluster/lock" {
 		return true
 	}
-	return noKey && strings.HasPrefix(rel, "keys/master.key")
+	return noKey && masterKeyEntry(rel)
 }
 
 func cmdBackup(args []string) error {
@@ -168,10 +183,14 @@ func cmdBackup(args []string) error {
 	cfg := configFlag(fs)
 	outFile := fs.String("o", "", "zip file to write")
 	archive := fs.Bool("archive", false, "also copy the archived days")
-	noKey := fs.Bool("no-master-key", false, "leave the master key out")
+	withKey := fs.Bool("include-master-key", false, "put the master key in the zip")
+	noKey := fs.Bool("no-master-key", false, "write no copy of the master key")
 	fs.Parse(args)
 	if fs.NArg() > 0 {
 		return errors.New(backupUsage)
+	}
+	if *withKey && *noKey {
+		return errors.New("give -include-master-key or -no-master-key, not both")
 	}
 	c, err := backupConfig(*cfg, os.Stderr)
 	if err != nil {
@@ -185,8 +204,23 @@ func cmdBackup(args []string) error {
 		}
 		name = fmt.Sprintf("signalith-backup-%s-%s.zip", safeName(host), time.Now().Format("20060102-150405"))
 	}
-	m, err := writeBackup(name, c, *archive, *noKey)
+	keyName := ""
+	if !*withKey && !*noKey {
+		keyName = masterKeyFileName(name)
+		n, err := writeMasterKey(keyName, c)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			os.Remove(keyName)
+			keyName = ""
+		}
+	}
+	m, err := writeBackup(name, c, *archive, !*withKey, filepath.Base(keyName))
 	if err != nil {
+		if keyName != "" {
+			os.Remove(keyName)
+		}
 		return err
 	}
 	fmt.Printf("Wrote %s: %d files from:\n", name, m.Files)
@@ -196,10 +230,15 @@ func cmdBackup(args []string) error {
 	for _, s := range m.Skipped {
 		fmt.Println("Not copied:", s)
 	}
-	if *noKey {
-		fmt.Println("\nThe master key was left out. Keep a copy of it apart: without it the passwords and keys in this backup cannot be read.")
-	} else {
+	switch {
+	case keyName != "":
+		fmt.Printf("\nThe master key is in %s. Store it somewhere other than the backup: without it the passwords and keys in the backup cannot be read, and with it anyone holding the backup can read them. Restore it with -master-key.\n", keyName)
+		fmt.Println("The backup still holds the HTTPS and OpenSearch keys: keep it private too.")
+	case *withKey:
 		fmt.Println("\nThis file holds the master key and the passwords and keys it decrypts, and the HTTPS keys: keep it as private as the key.")
+	default:
+		fmt.Println("\nThe master key was left out. Keep a copy of it apart: without it the passwords and keys in this backup cannot be read.")
+		fmt.Println("The backup still holds the HTTPS and OpenSearch keys: keep it private.")
 	}
 	fmt.Println("Events, findings and cases are in OpenSearch: back them up with an OpenSearch snapshot (see https://signalith.io/docs/backup/).")
 	return nil
@@ -210,6 +249,86 @@ func cmdBackup(args []string) error {
 func isBackupFile(name string) bool {
 	name = strings.ToLower(name)
 	return strings.HasPrefix(name, "signalith-backup") && strings.HasSuffix(name, ".zip")
+}
+
+// masterKeyFileName is the file the master key of the backup name is
+// written to.
+func masterKeyFileName(name string) string {
+	return strings.TrimSuffix(name, filepath.Ext(name)) + ".master-key.zip"
+}
+
+// createPrivate creates the new file name, private to this account
+// (see securefile.MakePrivateFile) before anything is written to it.
+func createPrivate(name string) (*os.File, error) {
+	// O_EXCL: never write through a file or link someone put there.
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, fmt.Errorf("%s already exists; give another name with -o", name)
+		}
+		return nil, err
+	}
+	if err := securefile.MakePrivateFile(f); err != nil {
+		f.Close()
+		os.Remove(name)
+		return nil, fmt.Errorf("could not make %s private: %w", name, err)
+	}
+	return f, nil
+}
+
+// masterKeyEntry reports whether rel, a path in the state folder, is the
+// master key or one of its copies (master.key.old while it is changed,
+// master.key.dpapi on Windows).
+func masterKeyEntry(rel string) bool {
+	return strings.HasPrefix(filepath.ToSlash(rel), "keys/master.key")
+}
+
+// writeMasterKey writes the master key files of c to the new zip file
+// name, under the same names a backup gives them, and returns how many
+// there were.
+func writeMasterKey(name string, c *config.Config) (int, error) {
+	f, err := createPrivate(name)
+	if err != nil {
+		return 0, err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			f.Close()
+			os.Remove(name)
+		}
+	}()
+	zw := zip.NewWriter(f)
+	dir := filepath.Join(c.StateDir(), "keys")
+	ents, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return 0, err
+	}
+	n := 0
+	for _, e := range ents {
+		if !e.Type().IsRegular() || !masterKeyEntry("keys/"+e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return 0, err
+		}
+		if err := addFile(zw, "state/keys/"+e.Name(), filepath.Join(dir, e.Name()), info); err != nil {
+			return 0, err
+		}
+		n++
+	}
+	if err := zw.Close(); err != nil {
+		return 0, err
+	}
+	if err := f.Sync(); err != nil {
+		return 0, err
+	}
+	if err := f.Close(); err != nil {
+		return 0, err
+	}
+	ok = true
+	return n, nil
 }
 
 func safeName(s string) string {
@@ -226,17 +345,15 @@ func safeName(s string) string {
 }
 
 // writeBackup writes the zip file name with the files of c.
-func writeBackup(name string, c *config.Config, archive, noKey bool) (*backupManifest, error) {
+// With noKey the master key is left out; keyFile names the file it was
+// written to instead, if any.
+func writeBackup(name string, c *config.Config, archive, noKey bool, keyFile string) (*backupManifest, error) {
 	outAbs, err := filepath.Abs(name)
 	if err != nil {
 		return nil, err
 	}
-	// O_EXCL: never write through a file or link someone put there.
-	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := createPrivate(name)
 	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("%s already exists; give another name with -o", name)
-		}
 		return nil, err
 	}
 	ok := false
@@ -246,7 +363,7 @@ func writeBackup(name string, c *config.Config, archive, noKey bool) (*backupMan
 			os.Remove(name)
 		}
 	}()
-	m := &backupManifest{Format: backupFormat, Made: time.Now().UTC(), Version: version, Config: c.Path(), NoMasterKey: noKey, Archive: archive}
+	m := &backupManifest{Format: backupFormat, Made: time.Now().UTC(), Version: version, Config: c.Path(), NoMasterKey: noKey, MasterKeyFile: keyFile, Archive: archive}
 	m.Host, _ = os.Hostname()
 	all := backupRoots(c, archive)
 	// Roots the archived days are in are left out of their parents too,
@@ -412,6 +529,7 @@ func cmdRestore(args []string) error {
 	fs.Usage = func() { fmt.Fprintln(os.Stderr, backupUsage) }
 	cfg := configFlag(fs)
 	yes := fs.Bool("yes", false, "do not ask before writing")
+	keyFile := fs.String("master-key", "", "the .master-key.zip file written with the backup")
 	rest, err := parseInterspersed(fs, args)
 	if err != nil {
 		return err
@@ -423,10 +541,12 @@ func cmdRestore(args []string) error {
 	if err != nil {
 		return err
 	}
-	return restoreBackup(rest[0], c, *yes, os.Stdin, os.Stdout)
+	return restoreBackup(rest[0], *keyFile, c, *yes, os.Stdin, os.Stdout)
 }
 
-func restoreBackup(name string, c *config.Config, yes bool, in *os.File, out io.Writer) error {
+// restoreBackup restores the backup zip name and, when keyFile is set, the
+// master key written next to it.
+func restoreBackup(name, keyFile string, c *config.Config, yes bool, in *os.File, out io.Writer) error {
 	zr, err := zip.OpenReader(name)
 	if err != nil {
 		return fmt.Errorf("could not open %s: %w", name, err)
@@ -472,8 +592,31 @@ func restoreBackup(name string, c *config.Config, yes bool, in *os.File, out io.
 		files = append(files, restoreFile{entry: e, dest: dest})
 		perRole[role]++
 	}
+	keepKey := m.NoMasterKey
+	if keyFile != "" {
+		kr, err := zip.OpenReader(keyFile)
+		if err != nil {
+			return fmt.Errorf("could not open %s: %w", keyFile, err)
+		}
+		defer kr.Close()
+		n := 0
+		for _, e := range kr.File {
+			role, rel, _ := strings.Cut(e.Name, "/")
+			if role != "state" || path.Dir(rel) != "keys" || !masterKeyEntry(rel) || !filepath.IsLocal(filepath.FromSlash(rel)) || strings.Contains(rel, "\\") {
+				return fmt.Errorf("%s: %q is not a master key file", keyFile, e.Name)
+			}
+			files = append(files, restoreFile{entry: e, dest: filepath.Join(c.StateDir(), filepath.FromSlash(rel))})
+			perRole["master key"]++
+			n++
+		}
+		if n == 0 {
+			return fmt.Errorf("%s holds no master key", keyFile)
+		}
+		here["master key"] = backupRoot{Role: "master key", Path: filepath.Join(c.StateDir(), "keys")}
+		keepKey = false
+	}
 	sort.SliceStable(files, func(i, j int) bool { return files[i].dest < files[j].dest })
-	extra, err := extraFiles(c, m, files)
+	extra, err := extraFiles(c, m, files, keepKey)
 	if err != nil {
 		return err
 	}
@@ -494,8 +637,12 @@ func restoreBackup(name string, c *config.Config, yes bool, in *os.File, out io.
 	if len(extra) > 0 {
 		fmt.Fprintf(out, "%d files here that the backup does not have (such as keys and certificates made since) are moved to %s.\n", len(extra), aside)
 	}
-	if m.NoMasterKey {
-		fmt.Fprintln(out, "The backup has no master key: put the key it was made with back in place too (see docs/encryption.md), or the stored passwords and keys must be entered again.")
+	if keepKey {
+		if m.MasterKeyFile != "" {
+			fmt.Fprintf(out, "The backup has no master key: its key was written to %s. Give that file with -master-key, or put the key back in place by hand (see docs/encryption.md); otherwise the stored passwords and keys must be entered again.\n", m.MasterKeyFile)
+		} else {
+			fmt.Fprintln(out, "The backup has no master key: put the key it was made with back in place too (see docs/encryption.md), or the stored passwords and keys must be entered again.")
+		}
 	}
 	if !yes {
 		if !term.IsTerminal(int(in.Fd())) {
@@ -556,9 +703,9 @@ type extraFile struct{ role, rel, path string }
 // extraFiles lists the files in the folders a restore writes that the
 // backup does not have: a server would otherwise find a mix of both, such
 // as a cluster key made here, encrypted with a master key the backup
-// replaces. Archived days are never set aside, nor the master key when
-// the backup has none.
-func extraFiles(c *config.Config, m *backupManifest, files []restoreFile) ([]extraFile, error) {
+// replaces. Archived days are never set aside, nor, with keepKey, the
+// master key.
+func extraFiles(c *config.Config, m *backupManifest, files []restoreFile, keepKey bool) ([]extraFile, error) {
 	writes := map[string]bool{}
 	for _, f := range files {
 		writes[filepath.Clean(f.dest)] = true
@@ -576,7 +723,7 @@ func extraFiles(c *config.Config, m *backupManifest, files []restoreFile) ([]ext
 		if st, err := os.Stat(r.Path); err != nil || !st.IsDir() {
 			continue
 		}
-		err := ownFiles(r, all, []string{c.ArchiveDir()}, m.NoMasterKey, func(p, rel string, d fs.DirEntry) error {
+		err := ownFiles(r, all, []string{c.ArchiveDir()}, keepKey, func(p, rel string, d fs.DirEntry) error {
 			if !writes[filepath.Clean(p)] {
 				out = append(out, extraFile{role: r.Role, rel: rel, path: p})
 			}

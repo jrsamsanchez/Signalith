@@ -23,10 +23,13 @@ it no longer has.
 | OpenSearch data | the `opensearch-data` volume | your OpenSearch | your OpenSearch |
 
 !!! warning "A backup holds your keys"
-    A backup of Signalith's files holds the master key together with the passwords and
-    API keys it decrypts, and the private key of Signalith's certificate authority. Keep
-    backups as private as the key itself, on encrypted storage. To keep the master key
-    apart, see [Keeping the master key out](#keeping-the-master-key-out).
+    A backup of Signalith's files holds the passwords and API keys Signalith keeps,
+    encrypted with the master key, and the private keys of Signalith's HTTPS certificate,
+    its certificate authority and its OpenSearch account. The master key is written to a
+    file of its own next to the zip; store that file somewhere other than the backups (see
+    [The master key](#the-master-key)). Keep backups private, on encrypted storage, and
+    only restore backups you made and kept private: a backup brings back settings and
+    response scripts the server runs.
 
 This page covers one server. Backing up several servers that share one OpenSearch is
 coming in a later version; until then, back up OpenSearch once and the files of each
@@ -105,8 +108,12 @@ Two commands, with nothing stopped:
     ```sh
     docker compose -f deploy/docker/docker-compose.yml exec signalith signalith backup -o /var/lib/signalith/signalith-backup.zip
     docker compose -f deploy/docker/docker-compose.yml cp signalith:/var/lib/signalith/signalith-backup.zip .
-    docker compose -f deploy/docker/docker-compose.yml exec signalith rm /var/lib/signalith/signalith-backup.zip
+    docker compose -f deploy/docker/docker-compose.yml cp signalith:/var/lib/signalith/signalith-backup.master-key.zip .
+    docker compose -f deploy/docker/docker-compose.yml exec signalith rm /var/lib/signalith/signalith-backup.zip /var/lib/signalith/signalith-backup.master-key.zip
     ```
+
+    Store `signalith-backup.master-key.zip` somewhere other than the backup, such as a
+    password manager (see [The master key](#the-master-key)).
 
 Then copy the snapshots out of Docker, next to the zip:
 
@@ -115,11 +122,11 @@ docker compose -f deploy/docker/docker-compose.yml cp opensearch:/usr/share/open
 ```
 
 Keep `signalith-backup.zip` and the `opensearch-snapshots` folder together, somewhere
-other than this computer.
+other than this computer, and the master key file apart from them.
 
 **To restore**, on a Signalith started with `docker compose up -d` at the same version,
-from the folder that holds the zip and the snapshots folder (all of these work in
-PowerShell too):
+from the folder that holds the zip, the master key file and the snapshots folder (all
+of these work in PowerShell too):
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml stop signalith
@@ -127,7 +134,7 @@ docker compose -f deploy/docker/docker-compose.yml cp ./opensearch-snapshots/. o
 docker compose -f deploy/docker/docker-compose.yml exec -u 0 opensearch chown -R 1000:1000 /usr/share/opensearch/snapshots
 docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh list
 docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh restore <name>
-docker compose -f deploy/docker/docker-compose.yml run --rm --no-deps --user 0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER -v "${PWD}:/backup" signalith restore -yes /backup/signalith-backup.zip
+docker compose -f deploy/docker/docker-compose.yml run --rm --no-deps --user 0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER -v "${PWD}:/backup" signalith restore -yes -master-key /backup/signalith-backup.master-key.zip /backup/signalith-backup.zip
 docker compose -f deploy/docker/docker-compose.yml up -d
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith cluster accept-restore -yes
 ```
@@ -178,13 +185,16 @@ signalith backup -o C:\Backups\signalith-backup.zip
 
 Without `-o`, it writes `signalith-backup-<server>-<date>-<time>.zip` in the current
 folder, so a scheduled backup never overwrites the last one. It never overwrites a file.
-It prints each folder it copied. Options:
+It prints each folder it copied, and writes the master key next to the zip as
+`<zip name>.master-key.zip` (see [The master key](#the-master-key)). Both files are
+readable only by the account that made them, on Windows too. Options:
 
 | Option | What it does |
 | --- | --- |
 | `-o file.zip` | Where to write the backup |
 | `-archive` | Also copies the [archived days](retention.md#archives), which can be large. Without it, back up the archive folder on its own |
-| `-no-master-key` | Leaves the master key out (see [Keeping the master key out](#keeping-the-master-key-out)) |
+| `-include-master-key` | Puts the master key in the zip instead, for one file to keep |
+| `-no-master-key` | Writes no copy of the master key at all |
 
 ### OpenSearch snapshots
 
@@ -235,12 +245,15 @@ too; run these from any computer that can reach OpenSearch.
 2. Put its files back. `signalith restore` shows what it will write and asks first:
 
     ```sh
-    sudo signalith restore /root/signalith-backup.zip
+    sudo signalith restore -master-key /root/signalith-backup.master-key.zip /root/signalith-backup.zip
     ```
 
     ```powershell
-    signalith restore C:\Backups\signalith-backup.zip
+    signalith restore -master-key C:\Backups\signalith-backup.master-key.zip C:\Backups\signalith-backup.zip
     ```
+
+    Without `-master-key` the install keeps its own master key (see
+    [The master key](#the-master-key)).
 
     It refuses while the server runs. It writes each file where this install keeps the
     same thing, which may be another folder than on the old server, and gives it to the
@@ -276,7 +289,7 @@ it. Before you need it, keep the cluster key with `signalith cluster export-key`
 [signalith cluster](cluster-cli.md)) and your passwords in a vault, or keep the master
 key in a file you can move (see
 [Keeping the key elsewhere](encryption.md#keeping-the-key-elsewhere)). On the new
-computer, restore a backup made with `-no-master-key`, then
+computer, restore the backup without `-master-key`, then
 `signalith cluster import-key`, and enter the passwords again on the **Settings**,
 **Threat intel** and **Notifications** pages.
 
@@ -303,13 +316,24 @@ schtasks /Create /TN "Signalith backup" /RU SYSTEM /SC DAILY /ST 02:15 /TR "cmd 
 For the Docker quick start, schedule the two commands under
 [While Signalith runs](#while-signalith-runs) the same way.
 
-## Keeping the master key out
+## The master key
 
-`signalith backup -no-master-key` leaves the master key out of the zip, so whoever gets
-the backup cannot read the passwords and API keys in it. Keep the key apart, in a
-password manager or a vault (see [Backing up the key](encryption.md#backing-up-the-key)).
-When you restore such a backup, the install keeps its own master key; put the old one
+The master key decrypts every password and API key Signalith keeps: scan logins, which
+are often domain accounts, Microsoft 365 and Okta tokens, the directory's bind password,
+AI keys and the mail and webhook secrets. So `signalith backup` leaves it out of the zip
+and writes it to a file of its own next to it, `<zip name>.master-key.zip`: whoever gets a
+backup alone cannot read the passwords and keys in it. Store the key file somewhere other
+than the backups, such as a password manager or a vault (see
+[Backing up the key](encryption.md#backing-up-the-key)), and give it to `signalith
+restore -master-key` to put the key back. You only need a new copy after the key is
+changed.
+
+Restored without `-master-key`, the install keeps its own master key; put the old one
 back in its place before you start the server, or enter the passwords and keys again.
+
+`-include-master-key` puts the key in the zip instead, if you would rather keep one file
+and store it as carefully as the key. `-no-master-key` writes no copy at all, for when
+the key is already kept elsewhere.
 
 Disk encryption protects backups too; see [Disk encryption](encryption.md#disk-encryption).
 
