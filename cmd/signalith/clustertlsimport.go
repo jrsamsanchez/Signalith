@@ -21,8 +21,10 @@ import (
 const maxKeyFile = 64 << 10
 
 // readPlainFile reads path, which must be a regular file and not a link,
-// of at most maxKeyFile bytes. The file opened is checked to be the one
-// looked at, so a link put in its place meanwhile is refused too.
+// of at most maxKeyFile bytes. It is opened without following a link and
+// without blocking (openPlain), and the file opened is checked to be a
+// regular file and the one looked at, so a link, FIFO or device put in
+// its place meanwhile is refused too.
 func readPlainFile(path string) ([]byte, error) {
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -34,9 +36,9 @@ func readPlainFile(path string) ([]byte, error) {
 	if fi.Size() > maxKeyFile {
 		return nil, fmt.Errorf("%s is %d bytes, too large for a key or certificate", path, fi.Size())
 	}
-	f, err := os.Open(path)
+	f, err := openPlain(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s could not be opened as a plain file: %w", path, err)
 	}
 	defer f.Close()
 	open, err := f.Stat()
