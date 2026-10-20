@@ -447,6 +447,7 @@ change off the page.
 | `auth.users_file`, `intel.feeds_file`, `notify.file`, `ticketing.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |
+| `demo.enabled`, `demo.admin_networks` | `signalith.yaml`, or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS`, only: demo mode turns off password sign-in, event intake and everything that reaches other systems, so no page may turn it off. See [demo.md](demo.md). |
 
 ## Settings on several servers
 

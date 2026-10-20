@@ -65,6 +65,7 @@ type Config struct {
 	Playbooks  Playbooks  `yaml:"playbooks,omitempty"`
 	Ticketing  Ticketing  `yaml:"ticketing,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
+	Demo       Demo       `yaml:"demo,omitempty"`
 
 	// path is where the file was loaded from.
 	path string
@@ -1340,8 +1341,13 @@ func (c *Config) AssistantInvestigateTimeout() time.Duration {
 }
 
 // AssistantClient returns the AI model client the settings describe, with
-// its time limit for one answer, or nil when no provider is set.
+// its time limit for one answer, or nil when no provider is set or the
+// server is a public demo.
 func (c *Config) AssistantClient() *assistant.Client {
+	if c.DemoOn() {
+		// A public demo never sends anything to an AI model.
+		return nil
+	}
 	a := c.Assistant
 	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
 	if cl != nil {
@@ -2421,10 +2427,15 @@ func (c *Config) applyEnv() error {
 		c.Syslog.TCP = offToEmpty(v)
 		c.fromEnv("syslog.tcp", "SIGNALITH_SYSLOG_TCP")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_DEMO_ADMIN_NETWORKS")); v != "" {
+		c.Demo.AdminNetworks = envList(v)
+		c.fromEnv("demo.admin_networks", "SIGNALITH_DEMO_ADMIN_NETWORKS")
+	}
 	for _, e := range []struct {
 		env, key string
 		to       *bool
-	}{{"SIGNALITH_PROXY_PROTOCOL", "server.proxy_protocol", &c.Server.ProxyProtocol}, {"SIGNALITH_SYSLOG_PROXY_PROTOCOL", "syslog.proxy_protocol", &c.Syslog.ProxyProtocol}} {
+	}{{"SIGNALITH_PROXY_PROTOCOL", "server.proxy_protocol", &c.Server.ProxyProtocol}, {"SIGNALITH_SYSLOG_PROXY_PROTOCOL", "syslog.proxy_protocol", &c.Syslog.ProxyProtocol},
+		{"SIGNALITH_DEMO", "demo.enabled", &c.Demo.Enabled}} {
 		if v := strings.TrimSpace(os.Getenv(e.env)); v != "" {
 			b, err := strconv.ParseBool(v)
 			if err != nil {
@@ -2509,6 +2520,7 @@ func (c *Config) Validate() error {
 		p = append(p, fmt.Sprintf("server.listen port %q must be 1-65535", port))
 	}
 	p = append(p, c.agentListenProblems()...)
+	p = append(p, c.Demo.problems()...)
 	if c.Server.MaxConnections < 0 {
 		p = append(p, "server.max_connections cannot be negative (0 uses the default, 10000)")
 	}
@@ -3162,5 +3174,9 @@ const header = `# Signalith configuration.
 #                    name; SIGNALITH_NODE_NAME overrides it)
 # server.node_url    the address other Signalith servers reach this one at (default:
 #                    worked out from server.listen; SIGNALITH_NODE_URL overrides it)
+# demo.enabled       a public, read-only demo with the sample data (default false;
+#                    SIGNALITH_DEMO); see docs/demo.md before turning it on
+# demo.admin_networks  IPs or CIDRs password sign-in still works from in demo mode
+#                    (default none; SIGNALITH_DEMO_ADMIN_NETWORKS)
 
 `

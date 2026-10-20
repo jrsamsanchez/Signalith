@@ -26,9 +26,10 @@ type SCIM struct {
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// SCIMOn reports whether provisioning is on with a token.
+// SCIMOn reports whether provisioning is on with a token: never in demo
+// mode.
 func (c *Config) SCIMOn() bool {
-	return c.Auth.SCIM.Enabled && sha256Pattern.MatchString(c.Auth.SCIM.TokenSHA256)
+	return c.Auth.SCIM.Enabled && !c.DemoOn() && sha256Pattern.MatchString(c.Auth.SCIM.TokenSHA256)
 }
 
 // SCIMToken reports whether token is the provisioning token, in constant

@@ -135,6 +135,55 @@ func TestCollectionVanishedItems(t *testing.T) {
 	}
 }
 
+// An item written without a refresh is missing from a search until
+// OpenSearch refreshes: a listing then does not report it removed. One
+// removed for real is reported, and cleared once it is back.
+func TestCollectionUnrefreshedItemIsNotRemoved(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	ca := NewCollection[testBody](a, "user", "users", 1)
+	if _, err := ca.Create(ctx, "sam", "jlee", &testBody{Name: "analyst"}); err != nil {
+		t.Fatal(err)
+	}
+	e.os.SetUnrefreshed("user:jlee")
+	if _, err := ca.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Tamper(); len(got) != 0 {
+		t.Errorf("unrefreshed item taken for removed: %v", got)
+	}
+	if v, _, _ := ca.Get("jlee"); v.Name != "analyst" {
+		t.Errorf("item %+v", v)
+	}
+	// Reported by an older listing, but listed now: cleared.
+	e.os.SetUnrefreshed()
+	a.report("user:jlee", &Problem{Kind: ProblemTamper, Reason: reasonRemoved}, store.Version{})
+	if _, err := ca.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Tamper(); len(got) != 0 {
+		t.Errorf("listed item still reported: %v", got)
+	}
+	// Removed for real: reported. Back: cleared.
+	src := e.os.Source(testIndex, "user:jlee")
+	e.os.Delete(testIndex, "user:jlee")
+	if _, err := ca.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Tamper(); !slices.Equal(got, []string{"user:jlee"}) {
+		t.Fatalf("tamper %v", got)
+	}
+	e.os.SetUnrefreshed()
+	e.os.Put(testIndex, "user:jlee", src)
+	if _, err := ca.reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Tamper(); len(got) != 0 {
+		t.Errorf("tamper after it came back %v", got)
+	}
+}
+
 func TestCollectionRefusesTamperedItems(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
