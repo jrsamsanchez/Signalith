@@ -817,16 +817,21 @@ are an **inbox**:
   **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
   have a file removed from its folders remove that detection or dashboard from every
   server.
-- **Mirror never empties the library by accident.** A folder that is missing is not taken
-  for an empty one. And when one look at the folders would remove many shared files at
-  once (all of them, once there are 3 or more, or more than 20 that are over half of
-  them), as an empty volume or an `rsync --delete` from an empty folder would, the
-  server removes nothing, writes the files back, and says so in its log (an audit
-  record) and on the Servers page for a day. Removing a few files at a time works as
-  usual. To remove many on purpose, put an empty file named `allow-mass-delete` in the
-  server's detections (or dashboards) folder and remove the files: the next look
-  removes them from every server and deletes `allow-mass-delete`, so it allows one
-  removal only.
+- **Mirror guards against emptying the library by accident.** A folder that is missing is
+  not taken for an empty one. And when one look at the folders would remove many shared
+  files of one kind at once (detections, their `state` files or dashboards: all of
+  them, once there are 3 or more, or more than 20 that are over half of them), or of all
+  kinds together, as an empty volume or an `rsync --delete` from an empty folder would,
+  the server removes nothing of that kind, writes the files back, and says so in its log
+  (an audit record) and on the Servers page for a day. Removing a few files at a time
+  works as usual, so this catches accidents, not someone who removes the files over
+  several smaller steps. To remove many on purpose, put an empty file named
+  `allow-mass-delete` in the server's detections folder (it covers its `state` folder
+  too) or dashboards folder, and remove the files within the hour. The next look removes
+  them from every server and deletes `allow-mass-delete`, so it allows one removal, of
+  that folder only. While it waits, the Servers page says "Mass delete allowed". An
+  `allow-mass-delete` older than an hour, or that is a link, is ignored without a
+  warning: delete it.
 
 Each server records what it last saw of its files in `library-seen.json` in its state
 folder. Content pack updates stay per server (`detections.content_updates`), so give
