@@ -262,7 +262,7 @@
       <article class="card" data-clip="detections">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,638 SigmaHQ and 1,330 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 51 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
+        <p>2,638 SigmaHQ and 1,330 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 59 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
       </article>
       <article class="card" data-clip="findings">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
@@ -491,7 +491,7 @@ cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><s
 
       <div class="start__panel" role="tabpanel" id="sp-linux" aria-labelledby="s-linux" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch 2.x</a>, then add Signalith&rsquo;s package repository so updates arrive with the rest of the system. On Debian or Ubuntu:</p>
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch</a> (2.17 or newer, 3.x included), then add Signalith&rsquo;s package repository so updates arrive with the rest of the system. On Debian or Ubuntu:</p>
 <div class="code"><pre><code>sudo install -d -m 0755 /etc/apt/keyrings
 sudo curl -fsSL -o /etc/apt/keyrings/signalith.asc https://signalith.io/apt/signalith.asc
 echo "deb [signed-by=/etc/apt/keyrings/signalith.asc] https://signalith.io/apt stable main" | sudo tee /etc/apt/sources.list.d/signalith.list
@@ -506,7 +506,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 
       <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-x64.msi">signalith-0.3.0-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>).</p></li>
+          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch for Windows</a> (2.17 or newer; the installer does this for you from 0.3.1), then download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-x64.msi">signalith-0.3.0-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>).</p></li>
           <li><p>Double-click it and follow the steps. It installs and starts the <b>Signalith</b> service under its own account.</p></li>
           <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
