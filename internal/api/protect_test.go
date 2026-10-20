@@ -383,7 +383,7 @@ func TestWriteErrorFiveHundreds(t *testing.T) {
 	// What is logged has its secrets hidden.
 	var logs logBuffer
 	s := &Server{Log: slog.New(slog.NewTextHandler(&logs, nil))}
-	err := fmt.Errorf("saving password=Hunter22 for https://svc:Pa55@db.internal/x: %w", pathErr)
+	err := fmt.Errorf("saving to https://svc:Pa55@db.internal/x: %w; password=Hunter22", pathErr)
 	writeError(s.withErrorLog(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/x", nil)), 500, err)
 	if l := logs.String(); strings.Contains(l, "Hunter22") || strings.Contains(l, "Pa55") || !strings.Contains(l, "db.internal") || !strings.Contains(l, "master.key") {
 		t.Errorf("logged %s", l)
