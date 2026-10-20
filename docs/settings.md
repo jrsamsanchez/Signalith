@@ -118,6 +118,38 @@ minutes); days already stored keep the shards they have, and a day restored from
 archive gets the current setting. Findings, investigations and threat intel always
 have one shard; they are small.
 
+**How many shards a day uses.** Each UTC day adds one index per data model that
+receives events, and each index holds its primary shards times one plus its
+replicas. A day's index stays until retention deletes it, so a data model kept 90
+days holds 91 days of indices (today and the 90 before it). For example, one
+OpenSearch node receiving Windows and Sysmon events writes about 12 data models a
+day: 12 x 91 = 1,092 shards, more than the 1,000 one node allows, so about 12 weeks
+after install OpenSearch would refuse the day's new indices. Two nodes with automatic
+shards and replicas (2 primaries and 1 replica = 4 copies per index) reach their
+2,000 within the same 90 days. The limit counts every open index, Signalith's own
+and OpenSearch's system indices too.
+
+Signalith warns before that happens: the OpenSearch card on the Servers page shows
+the shards in use against the limit, and warns when OpenSearch holds 80% of the
+shards it allows, or will hold that many once each data model written today has
+been kept for as many days as its retention policy says. Each server's log warns
+too when 80% is in use. If OpenSearch still refuses a new index for this reason,
+the server logs a warning naming `cluster.max_shards_per_node`, and answers
+senders that the events could not be stored for now, so agents, Fluent Bit and HEC
+senders send them again once there is room (syslog cannot be asked to send again).
+
+To make room, keep fewer days on the [Data retention](retention.md) page (the
+categories you need least first), send fewer data models, add an OpenSearch data
+node (the limit is per data node), or raise the limit. `cluster.max_shards_per_node`
+is a soft limit meant to stop runaway index creation, and the indices of quiet data
+models are small; raise it on nodes with enough memory, as each shard costs some heap.
+Raise it in OpenSearch's Dev Tools or with curl:
+
+```
+PUT _cluster/settings
+{ "persistent": { "cluster.max_shards_per_node": 3000 } }
+```
+
 **Rollover size**, in the same card, keeps shards from growing without bound on a busy
 day. Once a day's index of one data model holds 40 GB per primary shard (or the size
 you enter, from 10 to 200 GB), that day's events continue in a new index with `-2`

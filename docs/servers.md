@@ -82,7 +82,7 @@ it from the Signalith folder with
 With one OpenSearch node, losing it stops every server. Run three nodes, give each
 server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
 keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
-that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks, the shards in use against the limit,
 indices without a copy on another node, and which of this server's addresses are being
 skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
 per-node certificates and snapshots.
