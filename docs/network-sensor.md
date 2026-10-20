@@ -483,6 +483,7 @@ Sysmon too).
 | `notice` | `alert` | Intrusion_Detection | `signature`, `signature_id`, `category`, `severity`, `severity_id`, `action`, `mitre`, `dest_host`, `url`, `reason`, `local_host` |
 | `ssh`, `rdp`, `kerberos`, `ntlm` | | Authentication | `app` (`ssh`, `rdp`, `kerberos`, `ntlm`), `action` (`success`, `failure` or `unknown`), `user`, `user_domain`, `src`, `src_host`, `dest`, `dest_port`, `dest_host`, `authentication_method`, `reason`, `kerberos_service`, `ticket_encryption_type` |
 | `smb_files` | | Filesystem | `action` (`read`, `modified`, `opened`, `closed`, `deleted`, `renamed`), `app` (`smb`), `file_path`, `file_name`, `file_size`, `share_name`, `share_target`, `pipe_name`, `src` (client), `dest` (file server) |
+| `modbus`, `dnp3`, and the [ICSNPP](#industrial-protocols) logs (`s7comm`, `cip`, `enip`, `bacnet`, `opcua_binary` and more) | `modbus`, `dnp3`, `enip` | Industrial | `app` (the protocol), `ot_function` (`READ_HOLDING_REGISTERS`, `DIRECT_OPERATE`, `PLC_STOP`), `category` (`program`, `control`, `write`, `diagnostic`, `discovery`, `read`, `other`), `type` (`request`, `response`), `signature_id` (the function code), `ot_unit`, `object`, `reason` (the device's exception), `product` |
 
 Every sensor event also has:
 
@@ -546,6 +547,12 @@ Some details worth knowing:
   the host as `dest` (for a DHCP lease, the address the server assigned as `src`, the
   client's MAC as `src_mac` and the name it gave as `src_host`); they fill the asset list (see
   [Hosts in the asset list](#hosts-in-the-asset-list)).
+- **Industrial protocols** (Industrial): one message per event, with the function in
+  Zeek's spelling whichever tool saw it, so `datamodel=Industrial category=write` finds
+  every write on every protocol, and `category IN (control, program)` every start, stop,
+  restart or program change. `src` is the side that opened the connection (usually the
+  HMI, SCADA server or engineering station) and `dest` the device. See
+  [Industrial protocols](#industrial-protocols).
 - **Zeek's own field names** stay too, for every log above but conn, dns, http, ssl, x509,
   files and notice: each value is also kept as `zeek_<name>` (`zeek_cipher`,
   `zeek_auth_attempts`), as Sigma's Zeek rules name them.
@@ -560,6 +567,45 @@ Some details worth knowing:
   these are kept, and `_raw` is a one-line summary.
 - **Sent twice**: each event's ID comes from its log line, so if Fluent Bit sends a batch
   again (after a network error or a busy server), lines already stored are not stored twice.
+
+### Industrial protocols
+
+Industrial networks (factories, utilities, building automation) speak their own protocols.
+Signalith maps them onto the **Industrial** data model when a sensor logs them. None of this
+is needed on an ordinary office network, and nothing changes for sensors that do not see
+these protocols.
+
+- **Zeek** logs **Modbus** and **DNP3** out of the box (`modbus.log`, `dnp3.log`), so a
+  sensor on such a network sends them already.
+- **CISA's ICSNPP** analyzers for Zeek (free, BSD 3-Clause) add S7comm, EtherNet/IP and CIP,
+  BACnet, OPC UA, PROFINET and more, and more detail for Modbus and DNP3. Install the ones
+  your network uses with Zeek's package manager on the sensor, then deploy:
+
+    ```sh
+    sudo /opt/zeek/bin/zkg install icsnpp-s7comm icsnpp-enip icsnpp-bacnet
+    echo '@load packages' | sudo tee -a /opt/zeek/share/zeek/site/local.zeek
+    sudo /opt/zeek/bin/zeekctl deploy
+    ```
+
+    Some of them build when installed, which needs `cmake`, a C++ compiler and Zeek's
+    development files (`zeek-devel` or `zeek-dev` alongside Zeek's package). Their logs
+    land in the same folder as Zeek's others, so the sensor's Fluent Bit sends them with
+    no change.
+- **Suricata** parses Modbus, DNP3 and EtherNet/IP, but they are off in its default
+  `suricata.yaml`. To turn them on, set `enabled: yes` under `app-layer.protocols` for
+  `modbus`, `dnp3` and `enip`, add `- modbus`, `- dnp3` and `- enip` to the `eve-log`
+  output's `types`, and restart Suricata.
+
+The sensor only listens, here as everywhere: it never sends anything to a controller or
+any other device on the mirrored network.
+
+Search examples:
+
+```
+datamodel=Industrial category IN (control, program) | stats count by src, dest, app, ot_function
+datamodel=Industrial category=write | stats dc(dest) as devices, count by src
+datamodel=Industrial reason=* | stats count by app, reason, dest
+```
 
 ### The Network dashboard
 
@@ -932,6 +978,7 @@ Signalith does not include, link or ship any of them, and does not copy or pass 
 | Zeek | BSD 3-Clause | Installed on the sensor from Zeek's packages. Signalith reads its JSON logs. |
 | Suricata, suricata-update | GPL version 2 | Installed on the sensor from the Open Information Security Foundation's packages. Signalith reads its EVE JSON. |
 | Emerging Threats Open rules | Proofpoint's ET Open licence (BSD-style; some older rules GPL version 2); the licence text comes with each download | Downloaded by `suricata-update` on the sensor, straight from Proofpoint. The sample data uses made-up rules with SIDs from 9100000 up, not Emerging Threats text. |
+| CISA ICSNPP Zeek analyzers (optional) | BSD 3-Clause | Installed on the sensor with Zeek's package manager if you choose to. Signalith reads their JSON logs. |
 | Fluent Bit | Apache 2.0 | The Signalith agent, as on every other machine. |
 | Docker images (`zeek/zeek`, `jasonish/suricata`, `fluent/fluent-bit`) | as the programs above | With `--docker`, pulled by your Docker from their publishers, not rebuilt or passed on by Signalith. |
 

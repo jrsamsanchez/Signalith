@@ -1,0 +1,2 @@
+{"ts":1791720300.1,"uid":"Cdnp3Read1aBcDeF","id.orig_h":"192.168.60.5","id.orig_p":40001,"id.resp_h":"192.168.60.20","id.resp_p":20000,"fc_request":"READ","fc_reply":"RESPONSE","iin":0}
+{"ts":1791720301.1,"uid":"Cdnp3Cold2bCdEfG","id.orig_h":"203.0.113.77","id.orig_p":40002,"id.resp_h":"192.168.60.20","id.resp_p":20000,"fc_request":"COLD_RESTART","fc_reply":"RESPONSE","iin":32768}

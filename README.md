@@ -462,7 +462,7 @@ Supported sources:
 | Kubernetes audit logs (who created, changed, deleted, read or exec'd into which object, refused requests), posted by the API server's audit webhook or tailed from its audit log ([docs/kubernetes-audit.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes-audit.md)) | Change, Authentication or Other |
 | GitHub Enterprise Cloud and Server audit log (repositories, members, branch protection, secret scanning, Dependabot, runners and audit log streams), streamed through an Azure event hub and the OpenTelemetry Collector, or sent by a script that reads GitHub's audit log API ([docs/github-audit-log.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/github-audit-log.md)) | Change, Authentication or Other |
 | Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
-| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
+| Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Industrial, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
 Antivirus: see [docs/antivirus.md](docs/antivirus.md).
@@ -1419,7 +1419,7 @@ syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 | `internal/search` | Compiles queries to OpenSearch DSL and runs remaining commands in memory |
 | `internal/ingest` | Fluent Bit and OTLP record parsing for Windows, Linux, Wazuh, Zeek and Suricata, index template |
 | `internal/syslog` | Syslog receiver (UDP, TCP, TLS), RFC 5424, RFC 3164 and CEF parsing |
-| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
+| `internal/datamodel` | Authentication, Endpoint, Network_Traffic, Change, Malware, Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers, Industrial, Image_Load, Script, Inventory, Configuration_Check, Alerts, Risk, Other |
 | `internal/agents` | Fluent Bit and OpenTelemetry Collector configuration generator |
 | `internal/detect` | Detection format, built-in content, scheduler, Sigma converter, ATT&CK catalog |
 | `internal/findings` | Findings model and its OpenSearch store |

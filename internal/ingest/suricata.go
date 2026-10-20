@@ -218,6 +218,10 @@ func ParseSuricataEVE(r map[string]any, raw string) Event {
 		eveStats(r, f)
 	default:
 		eveGeneric(t, r, f)
+		if suricataOT[t] != "" {
+			model = IndustrialModel
+			eveIndustrial(t, r, f)
+		}
 	}
 	if model == "Intrusion_Detection" {
 		setLocalHost(f)
