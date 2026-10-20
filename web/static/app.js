@@ -1828,7 +1828,14 @@ function renderResult() {
   if ((res.summaries || []).length) {
     stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
   }
-  if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
+  if (res.truncated) {
+    const why = res.ranked
+      ? 'There were more groups than the server keeps, so it kept those with the most events (or that rank first in the sort that follows). Narrow the search to see the rest.'
+      : 'The server stopped at its row limit, so some rows are missing, and a sort or top over these rows may rank the wrong ones. Narrow the search to see them all.';
+    stats.push(el('span', { class: 'badge badge--warning', title: why }, 'Truncated'));
+  } else if (res.ranked) {
+    stats.push(el('span', { class: 'badge hide-sm', title: 'There were more groups than the server keeps, so OpenSearch ranked them and returned the top ones. With several shards, counts of groups near the cut can be slightly low.' }, 'Ranked'));
+  }
   if ((res.rows || []).length) {
     stats.push(el('button', {
       type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Download as CSV', 'aria-label': 'Download results as CSV', onclick: exportResults,

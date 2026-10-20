@@ -203,6 +203,10 @@ type Result struct {
 	Rows      []Row    `json:"rows"`
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
+	// Ranked is set when there were more groups than the server keeps,
+	// so it kept those that rank first (the most events, or the order
+	// of the sort that follows) rather than the first by name.
+	Ranked bool `json:"ranked,omitempty"`
 	// Summaries lists the data models whose summary indexes answered
 	// whole 5-minute slots of the search.
 	Summaries []string `json:"summaries,omitempty"`
@@ -921,6 +925,14 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			return nil, err
 		}
 		res.Truncated = truncated
+		if truncated && p.fill == nil && !summed {
+			if r, ok := statsRanking(st, p.post, o.MaxBuckets); ok {
+				if buckets, _, err = e.rankedBuckets(ctx, p, st.By, r); err != nil {
+					return nil, err
+				}
+				res.Ranked, res.Truncated = true, !r.complete
+			}
+		}
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
 			if p.fill != nil {
@@ -947,6 +959,14 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		}
 		res.Truncated = truncated
 		keys := append(append([]string{}, top.By...), top.Fields...)
+		var beyond int64
+		if truncated {
+			r := topRanking(top, o.MaxBuckets)
+			if buckets, beyond, err = e.rankedBuckets(ctx, p, keys, r); err != nil {
+				return nil, err
+			}
+			res.Ranked, res.Truncated = true, !r.complete
+		}
 		var rows []Row
 		for _, b := range buckets {
 			row := bucketKeys(b, keys)
@@ -954,7 +974,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			rows = append(rows, row)
 		}
 		res.Kind = "table"
-		res.Rows, res.Columns = topRows(rows, top)
+		res.Rows, res.Columns = topRowsBeyond(rows, top, beyond)
 		return res, nil
 	case "timechart":
 		res.Kind = "timechart"

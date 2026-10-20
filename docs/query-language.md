@@ -295,8 +295,14 @@ The AI assistant can also be set on the **Settings** page (see
 
 - The search and any `where` commands that come before the first `stats`, `timechart`
   or `top` run inside OpenSearch, so they scale with the cluster.
-- `stats` and `top` use composite aggregations and page through every group (up to
-  50,000 groups, then results are marked truncated).
+- `stats` and `top` use composite aggregations and page through every group, up to
+  50,000 groups. With more groups than that, OpenSearch ranks them instead and keeps the
+  top ones: for `top` and `rare` by count, for `stats ... | sort -<column> | head N` by
+  that column (count, `dc`, `sum`, `avg`, `min` or `max`), and for other `stats` with a
+  `count` by event count.
+  When the rows kept are all the search shows (`top limit=10`, `head 10`) the result is
+  marked *Ranked*; otherwise it is marked truncated. With several shards, counts of groups
+  near the cut can be slightly low.
 - `threatmatch` becomes `terms` filters of indicator values (10,000 per clause) and
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,

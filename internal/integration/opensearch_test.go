@@ -220,6 +220,22 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("top = %v", top.Rows)
 		}
 	})
+	t.Run("more groups than the server keeps", func(t *testing.T) {
+		// Two groups fit, and by name the first two sources are the
+		// smallest; OpenSearch must rank the groups instead.
+		small := &search.Engine{Store: cl, Opt: search.Options{IndexPrefix: prefix, DefaultEarliest: "-24h", MaxBuckets: 2}}
+		for _, q := range []string{
+			`datamodel=Authentication | stats count, dc(user) as users by src | sort -count | head 1`,
+			`datamodel=Authentication | stats count, dc(user) as users by src | sort -users | head 1`,
+			`datamodel=Authentication | top limit=1 src`,
+			`datamodel=Authentication | top limit=1 src, action`,
+		} {
+			res := run(t, small, q)
+			if len(res.Rows) != 1 || res.Rows[0]["src"] != "203.0.113.9" || !res.Ranked || res.Truncated {
+				t.Errorf("%s: rows %v, ranked %v, truncated %v", q, res.Rows, res.Ranked, res.Truncated)
+			}
+		}
+	})
 	t.Run("numeric stats and post-processing", func(t *testing.T) {
 		res := run(t, eng, `datamodel=Authentication src=203.0.113.9 | stats min(src_port) as lo, max(src_port) as hi, avg(src_port) as mean`)
 		r := res.Rows[0]

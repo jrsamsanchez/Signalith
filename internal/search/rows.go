@@ -249,6 +249,15 @@ const topCount = "\x00count"
 // topRows turns per-value counts into a top table with percentages,
 // limited per by-group, with an other row for the rest when asked.
 func topRows(rows []Row, top *query.Top) ([]Row, []string) {
+	return topRowsBeyond(rows, top, 0)
+}
+
+// topRowsBeyond is topRows when, with no by fields, beyond the rows
+// there are more events in values not among them.
+func topRowsBeyond(rows []Row, top *query.Top, beyond int64) ([]Row, []string) {
+	if len(top.By) > 0 {
+		beyond = 0
+	}
 	groupTotals := map[string]int64{}
 	byGroup := map[string][]Row{}
 	var order []string
@@ -260,6 +269,9 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 		byGroup[k] = append(byGroup[k], r)
 		groupTotals[k] += topN(r)
 	}
+	for k := range groupTotals {
+		groupTotals[k] += beyond // one group, with no by fields
+	}
 	countCol, percentCol := top.CountColumn(), top.PercentColumn()
 	var out []Row
 	for _, k := range order {
@@ -270,7 +282,7 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 			}
 			return topN(g[i]) > topN(g[j])
 		})
-		var rest int64
+		rest := beyond
 		if top.Limit > 0 && len(g) > top.Limit {
 			for _, r := range g[top.Limit:] {
 				rest += topN(r)
