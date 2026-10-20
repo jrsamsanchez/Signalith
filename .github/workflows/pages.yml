@@ -6,6 +6,9 @@ name: Website
 # Pages must be set to deploy from GitHub Actions (Settings > Pages > Build and
 # deployment > Source), with signalith.io as its custom domain there; with
 # Actions deployments the custom domain is that setting, not a CNAME file.
+# The repositories are signed in a job of their own, in the "signing"
+# environment, which holds the GPG key and lets only main use it
+# (docs/releasing.md); the job that publishes never sees the key.
 on:
   push:
     branches: [main]
@@ -17,17 +20,61 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # apt and dnf need the repositories signed, so they are left out until
+  # the GPG key is set up (docs/releasing.md).
+  repos:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    environment: signing
+    outputs:
+      built: ${{ steps.build.outputs.built }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the apt and dnf repositories
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
+          SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/repos"
+          if [ -z "$GPG_KEY" ]; then
+            echo "::warning::No SIGNALITH_GPG_PRIVATE_KEY secret, so the website has no apt and dnf repositories. docs/releasing.md says how to add the key."
+            exit 0
+          fi
+          .github/scripts/repo-packages.sh "$RUNNER_TEMP/repo-packages"
+          if ! ls "$RUNNER_TEMP"/repo-packages/*.deb >/dev/null 2>&1; then
+            echo "::warning::No release has Linux packages yet, so the website has no apt and dnf repositories."
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-utils createrepo-c rpm
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
+          deploy/repos/build.sh "$RUNNER_TEMP/repo-packages" "$RUNNER_TEMP/repos" https://signalith.io
+          rm -rf "$GNUPGHOME"
+          echo built=true >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.build.outputs.built == 'true'
+        with:
+          name: repos
+          path: ${{ runner.temp }}/repos
+          if-no-files-found: error
+
+  deploy:
+    needs: repos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -45,30 +92,13 @@ jobs:
       # tools; llms-full.txt adds every docs page to it as one Markdown file.
       - name: Build llms-full.txt
         run: .github/scripts/llms-full.sh "$RUNNER_TEMP/pages/llms-full.txt"
-      # apt and dnf need the repositories signed, so they are left out until
-      # the GPG key is set up (docs/releasing.md).
-      - name: Build the apt and dnf repositories into the website
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
-          SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
-        run: |
-          if [ -z "$GPG_KEY" ]; then
-            echo "::warning::No SIGNALITH_GPG_PRIVATE_KEY secret, so the website has no apt and dnf repositories. docs/releasing.md says how to add the key."
-            exit 0
-          fi
-          .github/scripts/repo-packages.sh "$RUNNER_TEMP/repo-packages"
-          if ! ls "$RUNNER_TEMP"/repo-packages/*.deb >/dev/null 2>&1; then
-            echo "::warning::No release has Linux packages yet, so the website has no apt and dnf repositories."
-            exit 0
-          fi
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-utils createrepo-c rpm
-          export GNUPGHOME="$RUNNER_TEMP/gnupg"
-          mkdir -m 700 "$GNUPGHOME"
-          printf '%s\n' "$GPG_KEY" | gpg --batch --import
-          deploy/repos/build.sh "$RUNNER_TEMP/repo-packages" "$RUNNER_TEMP/pages" https://signalith.io
-          rm -rf "$GNUPGHOME"
+      # The signed apt/ and rpm/ folders, when the repos job made them.
+      - name: Add the apt and dnf repositories to the website
+        if: needs.repos.outputs.built == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: repos
+          path: ${{ runner.temp }}/pages
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/pages
