@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Findings queue, detection management and ATT&CK coverage.
 'use strict';
 
@@ -206,7 +208,7 @@ const dxDots = (...items) => {
   return out;
 };
 const dxKv = (pairs) => el('dl', { class: 'kv dx-kv' }, ...pairs.filter(Boolean).flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
-const dxPlural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const dxPlural = (n, word) => `${typeof n === 'number' ? n.toLocaleString() : n} ${word}${n === 1 ? '' : 's'}`;
 const dxClock = (t) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 // dxAge is a short age for table columns: now, 4m, 3h, 2d.
 function dxAge(t) {
@@ -912,6 +914,7 @@ function renderFindingDetail(box, data, opts = {}) {
     : dxBtn('ghost', 'Add to case', () => addFindingsToCase([f.id], f.title), { title: 'Group this finding into an investigation' });
   const more = dxMenu('More actions', [
     { icon: 'search', label: 'Open events in Search', run: () => openSearch(f.query, f.earliest, f.latest) },
+    Object.keys(f.entities || {}).length ? { icon: 'waypoints', label: 'Attack storyline', run: () => openStoryline({ finding: f.id }) } : null,
     d ? { icon: 'crosshair', label: 'Open the detection', run: () => focusDetection(f.detection_id) } : null,
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
@@ -973,7 +976,8 @@ function renderFindingDetail(box, data, opts = {}) {
           : dxSection('Triage', dxKv([['Status', STATUS_LABEL[f.status] || f.status], ['Owner', f.owner || 'Unassigned'],
             ['Severity', SEVERITY_FULL[f.severity] || f.severity], ['Disposition', DISPOSITION_LABEL[f.disposition || ''] || f.disposition]])),
         ents.length ? el('section', { class: 'section' },
-          el('h3', { class: 'section-title' }, 'Entities', el('span', { class: 'count' }, String(ents.length))),
+          el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Entities', el('span', { class: 'count' }, String(ents.length))),
+            storylineButton({ finding: f.id }, { kind: 'ghost', sm: true, title: 'See this finding with every other finding and risk event about these entities, in ATT&CK order' })),
           ...ents.map(([k, v]) => findingEntity(k, v, f))) : null,
         can('analyst') ? findingRespond(f) : null),
       dxPanel(prefix, 'evidence', fnd.tab,
@@ -983,12 +987,26 @@ function renderFindingDetail(box, data, opts = {}) {
           el('pre', { class: 'dx-code' }, f.query || '*'),
           win ? el('p', { class: 'dx-hint' }, win) : null),
         dxSection('What the detection found',
-          result.length ? dxKv(result.map(([k, v]) => [k, el('span', { class: 'mono' }, k === '_time' ? fmtTime(v) : fmtValue(v))]))
+          result.length ? dxKv(result.map(([k, v]) => [k, findingValue(f, k, v)]))
             : el('p', { class: 'muted' }, 'No fields were recorded.')),
         f.result && f.result._raw ? dxSection('Raw event', el('pre', { class: 'dx-code dx-raw' }, f.result._raw)) : null),
       dxPanel(prefix, 'activity', fnd.tab,
         activity.length ? el('ol', { class: 'timeline' }, ...activity) : el('p', { class: 'muted' }, 'No activity yet. Notes and changes appear here.'))),
     el('div', { class: 'inspector__foot' }, ...(can('analyst') ? [save, mine, caseBtn] : [f.case_id ? caseBtn : null]), el('span', { class: 'spacer' }), more));
+}
+
+// findingValue shows one field the detection found. A value of an event
+// field opens Search on every event with it around the finding's time.
+// Numbers are left alone: most are counts from the detection's stats, with
+// no single value to search for.
+function findingValue(f, k, v) {
+  const text = k === '_time' ? fmtTime(v) : fmtValue(v);
+  if (k === '_time' || k.includes('(') || v == null || v === '' || typeof v !== 'string') return el('span', { class: 'mono' }, text);
+  // Risk events are left out of searches unless asked for, as findingEntity does.
+  const term = (k.startsWith('risk_') ? 'datamodel=Risk ' : '') + drillTerm(k, v);
+  const a = el('a', { class: 'mono dx-value-link', href: '#search', title: `Search every event with ${k}=${text} from this finding's time` }, text);
+  a.addEventListener('click', (ev) => { ev.preventDefault(); openSearch(term, f.earliest || '-7d', f.latest); });
+  return a;
 }
 
 // findingRespond is the Response section: Respond runs an action (block
@@ -1062,10 +1080,10 @@ const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || n
 // (Splunk's TTP rules raise findings; its anomalies only add risk).
 const PACK_INFO = {
   sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
-    desc: 'Windows rules for Sysmon, Security and PowerShell events, and Linux rules for Sysmon for Linux, each tested before it ships. Off until you turn them on.',
+    desc: 'Windows rules for Sysmon and the Security, PowerShell, System, Application, Defender, Code Integrity, Windows Firewall, BITS, app package, WMI, Remote Desktop, exploit protection, DNS client, Task Scheduler, NTLM, OpenSSH, DNS Server and IIS logs, among others, Linux rules for Sysmon for Linux and the audit log, and rules for Apache and Nginx access logs, each tested before it ships. Off until you turn them on.',
     strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
   splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
-    desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
+    desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, and its web server detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
     strong: (d) => (d.tags || []).includes('ttp'), strongName: 'TTP rule' },
 };
 const packInfo = (p) => PACK_INFO[p.name] || { icon: 'layers', by: 'Under the ', license: p.license, home: 'Source', desc: p.description, strong: () => false, strongName: 'rule' };
@@ -1408,7 +1426,7 @@ function renderDetections() {
   const pills = DET_SHOW.map(([v, label]) => {
     const n = scoped.filter((d) => detShows(d, v)).length;
     if (v && !n && det.show !== v) return null;
-    const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, String(n)));
+    const b = el('button', { class: 'pill', type: 'button', 'aria-pressed': String(det.show === v) }, v ? null : icon('crosshair'), label, el('span', { class: 'num' }, n.toLocaleString()));
     b.addEventListener('click', () => { det.show = det.show === v ? '' : v; renderDetections(); });
     return b;
   });
@@ -1676,7 +1694,17 @@ async function deleteDetection(d) {
   });
   if (!ok) return;
   try {
-    const res = await api('api/detections/' + encodeURIComponent(d.id), undefined, 'DELETE');
+    const path = 'api/detections/' + encodeURIComponent(d.id);
+    let res;
+    try {
+      res = await api(path, undefined, 'DELETE', libraryIfMatch(d.etag));
+    } catch (e) {
+      if (e.status !== 412) throw e;
+      const choice = await libraryStale(e, 'detection');
+      if (choice === 'reload') { loadDetections(); return; }
+      if (choice !== 'overwrite') return;
+      res = await api(path, undefined, 'DELETE', libraryIfMatch(await latestETag(path)));
+    }
     if (res.deleted) { det.open = null; det.closed = false; }
     det.msg = null;
     dxNotify(revert ? 'Reverted to the built-in version.' : 'Detection deleted.');
@@ -1894,6 +1922,42 @@ function addException(d) {
 }
 
 // ---- detection editor ----
+// libraryIfMatch makes a change apply only to the version of a detection
+// or dashboard the page shows; someone else's change since is a 412.
+const libraryIfMatch = (etag) => (etag ? { 'If-Match': etag } : undefined);
+
+// libraryStale says who changed a detection or dashboard since the page
+// read it, on which server and when (a 412), and asks whether to reload
+// to see their change or overwrite it with this one. It resolves to
+// 'reload', 'overwrite' or '' (cancelled).
+function libraryStale(e, what) {
+  const data = e.data || {};
+  const who = data.changed_by || 'Someone else';
+  const where = data.changed_on ? ' on ' + data.changed_on : '';
+  const when = data.changed_at ? ' ' + ago(data.changed_at) : ' a moment ago';
+  const d = modalDialog('lib-stale');
+  return new Promise((resolve) => {
+    let result = '';
+    const done = (r) => { result = r; d.close(); };
+    const reload = el('button', { type: 'button', class: 'btn btn--primary', onclick: () => done('reload') }, icon('refresh-cw'), 'Reload');
+    const overwrite = el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => done('overwrite') }, 'Overwrite');
+    fill(d, modalHead('lib-stale', 'Changed meanwhile', null, () => d.close()),
+      el('div', { class: 'modal__body' },
+        el('p', {}, `${who} changed this ${what}${where}${when}. Nothing was saved.`),
+        el('p', { class: 'hint' }, 'Reload to see their change, or overwrite it with yours.')),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), overwrite, reload));
+    d.onclose = () => resolve(result);
+    d.showModal();
+    reload.focus();
+  });
+}
+
+// latestETag reads the version a detection or dashboard has now, for an
+// overwrite.
+async function latestETag(path) {
+  try { return (await api(path)).etag || ''; } catch { return ''; }
+}
+
 const blankDetection = () => ({
   id: '', title: '', description: '', query: '', schedule: '5m', lookback: '15m', severity: 'medium',
   mitre: [], throttle: { fields: [], window: '1h' }, enabled: true, guidance: '', tags: [], source: 'new',
@@ -1963,6 +2027,28 @@ function editDetection(d, opts = {}) {
     testBtn.disabled = false;
     out.scrollIntoView({ block: 'nearest' });
   });
+  const btOut = el('div', { class: 'dx-test-out', 'aria-live': 'polite' });
+  const btWindow = select('de-bt-window', [['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days']], '30d');
+  btWindow.className = 'select select--sm';
+  btWindow.setAttribute('aria-label', 'Backtest window');
+  btWindow.title = 'How far back to backtest';
+  const btBtn = dxBtn('ghost', 'Backtest', null, { icon: 'history', title: 'Show what it would have raised over a past window, without raising anything' });
+  const backtest = async () => {
+    ok();
+    btBtn.disabled = true;
+    const win = btWindow.value;
+    fill(btOut, el('div', { class: 'callout dx-test' }, icon('history'), el('div', {}, `Backtesting the last ${backtestWindowName(win)}. This runs up to 60 searches and can take a minute…`)));
+    try {
+      const res = await api('api/detections/backtest', { detection: read(), window: win });
+      fill(btOut, backtestResult(res.backtest, win, lookback.value.trim()));
+    } catch (e) {
+      btOut.replaceChildren();
+      if (e.problems) fail(e);
+      else fill(btOut, dxAlert('danger', 'The backtest failed.', e.message));
+    }
+    btBtn.disabled = false;
+  };
+  btBtn.addEventListener('click', backtest);
   const searchBtn = dxBtn('ghost', 'Open in Search', () => { dlg.close(); openSearch(query.value, '-' + (lookback.value || '24h')); }, { icon: 'search' });
   const saveBtn = el('button', { class: 'btn btn--primary', type: 'submit' }, isNew ? 'Create detection' : 'Save');
   const form = el('form', { method: 'dialog', class: 'dx-form', novalidate: '' });
@@ -1972,7 +2058,17 @@ function editDetection(d, opts = {}) {
     saveBtn.disabled = true;
     try {
       const b = read();
-      const saved = isNew ? await api('api/detections', b) : await api('api/detections/' + encodeURIComponent(b.id), b, 'PUT');
+      const path = 'api/detections/' + encodeURIComponent(b.id);
+      let saved;
+      try {
+        saved = isNew ? await api('api/detections', b) : await api(path, b, 'PUT', libraryIfMatch(d.etag));
+      } catch (e) {
+        if (isNew || e.status !== 412) throw e;
+        const choice = await libraryStale(e, 'detection');
+        if (choice === 'reload') { dlg.close(); await loadDetections(); openDetection(b.id, { focus: false }); return; }
+        if (choice !== 'overwrite') return;
+        saved = await api(path, b, 'PUT', libraryIfMatch(await latestETag(path)));
+      }
       dlg.close();
       det.open = saved.id;
       det.closed = false;
@@ -1989,7 +2085,8 @@ function editDetection(d, opts = {}) {
   const close = dxBtn('ghost', '', () => dlg.close(), { sm: true, icon: 'x', title: 'Close', cls: 'dx-close' });
   const note = opts.warnings && opts.warnings.length
     ? dxAlert('warning', 'Review before turning it on.', null, el('ul', { class: 'dx-problems' }, ...opts.warnings.map((w) => el('li', {}, w)))) : null;
-  fill(body, note, errBox,
+  fill(body, opts.draft ? draftSummary(opts.draft, dlg) : null, note, errBox,
+    btOut,
     dxField('Title', title, 'Use $field$ to insert a value from the result, like $src$.'),
     el('div', { class: 'form-grid' }, dxField('ID', id, isNew ? 'Lowercase letters, digits and dashes.' : 'IDs cannot change.'), dxField('Severity', severity)),
     dxField('Query', query, 'Each result row becomes a finding. Leave out earliest= and latest=; Search back sets the window.'),
@@ -2009,13 +2106,123 @@ function editDetection(d, opts = {}) {
           : isNew ? 'A search that runs on a schedule and raises a finding for each result.' : plainTitle(d.title))),
       close),
     body,
-    el('div', { class: 'modal__foot' }, testBtn, searchBtn, el('span', { class: 'spacer' }), dxBtn('ghost', 'Cancel', () => dlg.close()), saveBtn));
+    el('div', { class: 'modal__foot' }, testBtn, el('span', { class: 'dx-bt' }, btBtn, btWindow), searchBtn, el('span', { class: 'spacer' }), dxBtn('ghost', 'Cancel', () => dlg.close()), saveBtn));
   dlg.replaceChildren(form);
   dlg.showModal();
   (isNew && !title.value ? title : isNew && !query.value ? query : title).focus();
+  // A draft is backtested right away: what it would have found is the
+  // first thing to check.
+  if (opts.draft) backtest();
+}
+
+const backtestWindowName = (w) => ({ '7d': '7 days', '30d': '30 days', '90d': '90 days' }[w] || w);
+
+// draftSummary explains a draft from a plain-English description: how each
+// part was chosen, and detections already in the library that look alike.
+function draftSummary(dr, dlg) {
+  const how = dr.source === 'ai' ? `Written by the AI model${dr.ai_model ? ' (' + dr.ai_model + ')' : ''}.`
+    : dr.source === 'library' ? 'Copied from a detection already in the library that matches best.'
+      : 'Drafted offline from the words below.';
+  const steps = (dr.steps || []).map((st) => el('li', {}, st.phrase ? el('q', {}, st.phrase) : null, st.phrase ? ' → ' : null, st.meaning));
+  const sim = (dr.similar || []).map((x) => {
+    const b = el('button', { class: 'link-btn', type: 'button', title: 'Open this detection' }, x.title);
+    b.addEventListener('click', () => { dlg.close(); det.show = ''; openDetection(x.id); });
+    return el('li', {}, sevBadge(x.severity), el('span', { class: 'dx-sim__t' }, b, ' ', el('span', { class: 'muted' }, x.enabled ? 'on' : 'off')));
+  });
+  return el('div', { class: 'callout dx-draft' }, icon('wand-sparkles'),
+    el('div', {},
+      el('b', {}, 'Review the draft. '), how, ' It is off until you turn it on.',
+      dr.unknown && dr.unknown.length ? el('p', { class: 'dx-hint' }, 'Not understood: ' + dr.unknown.join(', ') + '.') : null,
+      steps.length ? el('details', { class: 'dx-draft__how' }, el('summary', {}, 'How it was drafted'), el('ul', { class: 'dx-test__list' }, ...steps)) : null,
+      sim.length ? el('details', { class: 'dx-draft__how', open: dr.source !== 'library' && dr.similar[0].score >= 0.7 ? '' : null },
+        el('summary', {}, `Similar detections in the library (${sim.length})`), el('ul', { class: 'dx-sim' }, ...sim)) : null));
+}
+
+// backtestResult shows what a detection would have raised over a past
+// window: totals, a bar per run, the noisiest values and the newest titles.
+function backtestResult(bt, win, lookback) {
+  const n = bt.findings;
+  const head = n ? `It would have raised ${dxPlural(n, 'finding')} over the last ${backtestWindowName(win)}.`
+    : `It would have raised nothing over the last ${backtestWindowName(win)}.`;
+  const parts = [`${dxPlural(bt.results, 'result')}`];
+  if (bt.throttled) parts.push(`${bt.throttled.toLocaleString()} held back as repeats`);
+  if (bt.suppressed) parts.push(`${bt.suppressed.toLocaleString()} matched an exception`);
+  const notes = [];
+  if (bt.approximate) notes.push(`Each search covered ${bt.step} instead of the ${lookback || 'lookback'} lookback, so counts from stats can be higher than live runs would see.`);
+  if (bt.capped) notes.push('Some searches matched more events than they return, so there may be more.');
+  if (bt.partial) notes.push(`Time ran out, so this covers only up to ${fmtTime(bt.partial_at)}.`);
+  if (!n && !bt.results) notes.push('Check that the data it searches is coming in, or try a longer window.');
+  const most = Math.max(1, ...bt.buckets.map((b) => b.findings));
+  const bars = el('div', { class: 'dx-bt-chart', role: 'img', 'aria-label': `Findings per ${bt.step}, oldest to newest` },
+    ...bt.buckets.map((b) => el('span', {
+      class: 'dx-bt-bar' + (b.findings ? '' : ' dx-bt-bar--zero'), style: `--h:${Math.round(100 * b.findings / most)}%`,
+      title: `${fmtTime(b.start)} to ${fmtTime(b.end)}: ${dxPlural(b.findings, 'finding')}, ${dxPlural(b.results, 'result')}`,
+    })));
+  const top = Object.entries(bt.top || {}).filter(([, vs]) => vs.length).slice(0, 3).map(([f, vs]) =>
+    el('div', { class: 'dx-bt-top' }, el('span', { class: 'dx-bt-top__f' }, f),
+      ...vs.map((v) => el('span', { class: 'badge badge--outline badge--mono', title: `${f}=${v.value}: ${dxPlural(v.count, 'finding')}` }, `${v.value} · ${v.count.toLocaleString()}`))));
+  const samples = (bt.samples || []).slice(0, 5).map((x) => el('li', {}, el('span', { class: 'muted' }, fmtTime(x.time) + ' '), x.title));
+  return el('div', { class: 'callout dx-test dx-bt-out' }, icon('history'),
+    el('div', {},
+      el('b', {}, head), ` ${parts.join(', ')}. ${bt.searches} searches in ${(bt.took_ms / 1000).toFixed(1)} s, nothing raised.`,
+      bt.buckets.length > 1 ? bars : null,
+      top.length ? el('div', { class: 'dx-bt-tops' }, ...top) : null,
+      samples.length ? el('ul', { class: 'dx-test__list' }, ...samples) : null,
+      ...notes.map((t) => el('p', { class: 'dx-hint' }, t))));
 }
 
 $('d-new').addEventListener('click', () => editDetection(blankDetection()));
+
+// "Describe a detection": a plain-English description becomes a draft in
+// the editor, turned off and backtested.
+const DRAFT_EXAMPLES = [
+  'more than 10 failed logins from the same source in 5 minutes',
+  'a user logging on to more than 5 hosts in an hour',
+  'encoded powershell on any host',
+  'someone added to the domain admins group',
+  'vssadmin deleting shadow copies, critical severity',
+];
+const describeError = (msg) => {
+  $('d-describe-error-text').textContent = msg;
+  $('d-describe-error').classList.toggle('hidden', !msg);
+};
+$('d-describe').addEventListener('click', async () => {
+  describeError('');
+  $('d-describe-examples').replaceChildren(...DRAFT_EXAMPLES.map((x) => {
+    const b = el('button', { class: 'chip', type: 'button' }, x);
+    b.addEventListener('click', () => { $('d-describe-text').value = x; $('d-describe-text').focus(); });
+    return b;
+  }));
+  $('d-describe-box').showModal();
+  $('d-describe-text').focus();
+  try {
+    const info = await api('api/ask');
+    $('d-describe-ai-row').classList.toggle('hidden', !info.ai_available);
+    $('d-describe-ai-label').textContent = info.ai_model ? `Use the AI model (${info.ai_model}); without it, Signalith drafts offline` : 'Use the AI model';
+  } catch { $('d-describe-ai-row').classList.add('hidden'); }
+});
+for (const id of ['d-describe-cancel', 'd-describe-x']) $(id).addEventListener('click', () => $('d-describe-box').close());
+$('d-describe-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  describeError('');
+  const text = $('d-describe-text').value.trim();
+  if (!text) { describeError('Describe what to detect first.'); return; }
+  const btn = $('d-describe-go');
+  btn.disabled = true;
+  const useAI = !$('d-describe-ai-row').classList.contains('hidden') && $('d-describe-ai').checked;
+  try {
+    const res = await api('api/detections/draft', { description: text, mode: useAI ? 'auto' : 'rules' });
+    const dr = res.draft;
+    dr.ai_model = res.ai_model;
+    const warnings = [...(dr.warnings || [])];
+    if (res.ai_error) warnings.unshift('The AI model could not draft it (' + res.ai_error + '), so this is the offline draft.');
+    $('d-describe-box').close();
+    $('d-describe-text').value = '';
+    editDetection({ ...dr.detection, enabled: false, source: 'new' }, { warnings, draft: dr });
+  } catch (e) {
+    describeError(e.problems ? e.problems.join('\n') : e.message);
+  } finally { btn.disabled = false; }
+});
 $('d-sigma').addEventListener('click', () => {
   $('d-sigma-error').classList.add('hidden');
   $('d-sigma-box').showModal();

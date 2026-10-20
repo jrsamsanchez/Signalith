@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -6,8 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -35,6 +36,12 @@ type SharedUsers struct {
 	// MayDegrade says whether a user signing in by method may sign in
 	// while the shared settings cannot be used (clusterauth.Sessions).
 	MayDegrade func(user, method string) error
+	// APITokens says why API tokens cannot be made now (the cluster is
+	// below their level), "" when they can; nil is always.
+	APITokens func() string
+	// Spent records the sign-in proofs used once, such as SAML
+	// assertions, for every server; nil keeps only this server's record.
+	Spent *clusterauth.Spent
 }
 
 var _ SessionStore = (*clusterauth.Sessions)(nil)
@@ -91,11 +98,11 @@ func (s *Server) checkBuiltinPassword(pw string, allowLocal bool) (ok, local boo
 	if s.SharedUsers == nil {
 		return s.conf().CheckPassword(s.conf().Auth.AdminUser, pw), false
 	}
-	if h := s.builtinHash(); h != "" && bcrypt.CompareHashAndPassword([]byte(h), []byte(pw)) == nil {
+	if h := s.builtinHash(); users.ComparePassword(h, pw) {
 		return true, false
 	}
 	if allowLocal && s.SharedUsers.LocalHash != nil && s.sharedDegraded() {
-		if h := s.SharedUsers.LocalHash(); h != "" && bcrypt.CompareHashAndPassword([]byte(h), []byte(pw)) == nil {
+		if h := s.SharedUsers.LocalHash(); users.ComparePassword(h, pw) {
 			return true, true
 		}
 	}

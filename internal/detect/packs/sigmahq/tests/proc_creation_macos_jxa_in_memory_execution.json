@@ -1,0 +1,4 @@
+{"rule": "f1408a58-0e94-4165-b80a-da9f96cf6fc3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"NSData.dataWithContentsOfURL.js -e osascripteval","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","path":"/usr/local/bin/helper"}}
+]}

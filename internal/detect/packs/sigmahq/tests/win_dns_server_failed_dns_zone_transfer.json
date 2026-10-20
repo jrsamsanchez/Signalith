@@ -1,0 +1,3 @@
+{"rule": "6d444368-6da1-43fe-b2fc-44202430480e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"DNS Server","event_id":"6004","data":{}}
+]}

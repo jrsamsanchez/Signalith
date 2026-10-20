@@ -1,0 +1,4 @@
+{"rule": "f0767f15-0fb3-44b9-851e-e8d9a6d0005d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"129","data":{"Path":"\\cscript.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-TaskScheduler/Operational","event_id":"129","data":{}}
+]}

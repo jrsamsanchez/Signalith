@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cases
 
 import (
@@ -122,6 +125,12 @@ func matches(c *Case, flt Filter) bool {
 		return false
 	}
 	if flt.Sample != nil && (*flt.Sample == "" || c.Sample != *flt.Sample) {
+		return false
+	}
+	if !flt.UpdatedSince.IsZero() && c.Updated.Before(flt.UpdatedSince) {
+		return false
+	}
+	if flt.Ticketed && len(c.Tickets) == 0 {
 		return false
 	}
 	if t := strings.ToLower(strings.TrimSpace(flt.Text)); t != "" {

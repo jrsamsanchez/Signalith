@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package dashboards
 
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,7 +18,7 @@ import (
 
 func TestBuiltinMalware(t *testing.T) {
 	bs := Builtin()
-	if len(bs) != 2 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != VulnerabilitiesID {
+	if len(bs) != 3 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != NetworkID || bs[2].ID != VulnerabilitiesID {
 		t.Fatalf("built-ins = %+v", bs)
 	}
 	d, ok := GetBuiltin(MalwareID)
@@ -45,6 +49,64 @@ func TestBuiltinVulnerabilities(t *testing.T) {
 		t.Errorf("check: %v", err)
 	}
 	checkPanels(t, d, "Vulnerabilities")
+}
+
+func TestBuiltinNetwork(t *testing.T) {
+	d, ok := GetBuiltin(NetworkID)
+	if !ok || d.Title != "Network" || d.TimeRange != "24h" || d.Description == "" || len(d.Panels) != 20 {
+		t.Fatalf("network = %+v", d)
+	}
+	if err := d.check(); err != nil {
+		t.Errorf("check: %v", err)
+	}
+	// The panels read several network data models (and the sensor health
+	// events, which have none), so each panel is checked against the model
+	// it names.
+	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
+	models := map[string]bool{}
+	titles := map[string]bool{}
+	for _, p := range d.Panels {
+		if titles[p.Title] {
+			t.Errorf("title %q twice", p.Title)
+		}
+		titles[p.Title] = true
+		q, err := query.Parse(p.Query)
+		if err != nil {
+			t.Errorf("%s: %v", p.Title, err)
+			continue
+		}
+		if _, err := eng.Compile(q); err != nil {
+			t.Errorf("%s: compile: %v", p.Title, err)
+		}
+		if q.Datamodel == "" {
+			// Sensor health: fields the ingest registry knows.
+			for _, f := range panelFields(q) {
+				if f != "sourcetype" && f != "capture_loss_percent" && f != "drop_percent" {
+					t.Errorf("%s: field %s", p.Title, f)
+				}
+			}
+			continue
+		}
+		models[q.Datamodel] = true
+		known := map[string]bool{}
+		for _, f := range datamodel.FieldsFor(q.Datamodel) {
+			known[f.Name] = true
+		}
+		for _, f := range panelFields(q) {
+			if !known[f] {
+				t.Errorf("%s: field %s is not in the %s data model", p.Title, f, q.Datamodel)
+			}
+		}
+	}
+	for _, m := range []string{"Intrusion_Detection", "Network_Traffic", "Network_Resolution", "Web", "File_Transfers", "Certificates", "Authentication", "Filesystem"} {
+		if !models[m] {
+			t.Errorf("no panel reads %s", m)
+		}
+	}
+	last := d.Panels[len(d.Panels)-1]
+	if q, _ := query.Parse(last.Query); q == nil || len(q.Commands) != 1 || len(q.Commands[0].(*query.Timechart).Aggs) != 2 {
+		t.Errorf("packet loss panel = %q", last.Query)
+	}
 }
 
 // checkPanels checks that every panel of d compiles, reads data model
@@ -178,5 +240,53 @@ func TestStoreBuiltinIDs(t *testing.T) {
 	}
 	if _, err := s.Get("malware"); err == nil {
 		t.Error("Get(malware) loaded the custom file")
+	}
+}
+
+// TestBuiltinDrilldowns: every number on the built-in dashboards and the
+// posture report opens a search that parses, filtered by every column it
+// can name.
+func TestBuiltinDrilldowns(t *testing.T) {
+	check := func(name, src string) {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		d := q.Drilldown()
+		var terms []string
+		for _, f := range d.Fields {
+			terms = append(terms, f+`="a b"`, "NOT "+f+"=*")
+		}
+		if d.Series != "" {
+			terms = append(terms, d.Series+"=Malware") // a data model name, for datamodel=
+		}
+		search := d.Search
+		if len(terms) > 0 && !d.Where {
+			search = strings.TrimSpace(search + " " + strings.Join(terms, " "))
+		}
+		if search == "" {
+			search = "*"
+		}
+		ev := search + d.Pipe
+		if len(terms) > 0 && d.Where {
+			ev += "\n| where " + strings.Join(terms, " AND ")
+		}
+		if _, err := query.Parse(ev); err != nil {
+			t.Errorf("%s: events query %q: %v", name, ev, err)
+		}
+		if strings.Contains(src, " by ") && len(d.Fields) == 0 && d.Series == "" {
+			t.Errorf("%s: %q groups by a field but drills by none", name, src)
+		}
+	}
+	for _, b := range Builtin() {
+		for _, p := range b.Panels {
+			check(b.ID+"/"+p.Title, p.Query)
+		}
+	}
+	for i, src := range []string{qEvents, qByDatamodel, qBySourcetype, qRiskObjects, qRiskByDetection, qRiskByTactic, qSources} {
+		check("posture/"+strconv.Itoa(i), src)
+	}
+	if len(drills(map[string]string{"x": qByDatamodel})["x"].Series) == 0 {
+		t.Error("posture drill has no series")
 	}
 }

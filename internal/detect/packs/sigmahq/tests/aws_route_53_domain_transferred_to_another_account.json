@@ -1,0 +1,5 @@
+{"rule": "b056de1a-6e6e-4e40-a67e-97c9808cf41b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"TransferDomainToAnotherAwsAccount","eventSource":"route53.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"route53.amazonaws.com"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"TransferDomainToAnotherAwsAccount"}}
+]}

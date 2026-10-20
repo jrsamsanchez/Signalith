@@ -1,11 +1,14 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ostest is an in-memory OpenSearch for tests. It keeps documents
 // with real _seq_no, _primary_term and _version behaviour, so writes that
 // name a version (if_seq_no and if_primary_term) succeed or conflict as
 // they would in OpenSearch, and it can refuse writes with a cluster block,
 // as OpenSearch does when its disk is full. It answers:
 //
-//   - GET /, /_cluster/health and /_nodes/_local/stats/os (with the time of
-//     its own clock);
+//   - GET /, /_cluster/health, /_cluster/settings (the default shard
+//     limit) and /_nodes/_local/stats/os (with the time of its own clock);
 //   - PUT, HEAD and DELETE of an index, and PUT /<index>/_mapping;
 //   - PUT and GET /_index_template/<name> (GET answers the template as it
 //     was put, which real OpenSearch words its own way);
@@ -22,6 +25,8 @@
 //     only deletes change anything);
 //   - POST /_bulk with create, index and delete actions;
 //   - GET /<pattern>/_count (every document, whatever the query);
+//   - GET /_cat/indices/<pattern> (the names, as format=json lists them;
+//     an exact name that is not there is not found, as in OpenSearch);
 //   - GET /_nodes/_local/settings (path.home and path.data, see Paths);
 //   - GET /_plugins/_security/authinfo, once Secure turns sign-in on
 //     (before that, as without the security plugin, it is not found).
@@ -35,6 +40,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -75,12 +81,18 @@ type Server struct {
 	Offset time.Duration
 
 	mu          sync.Mutex
+	dataNodes   int
+	shardsUsed  int
 	indices     map[string]*index
 	templates   map[string]json.RawMessage
 	settings    map[string][]json.RawMessage
 	primaryTerm int64
 	blocked     bool
 	fault       func(method, path string) *Fault
+	refreshWait time.Duration
+	// unrefreshed are document ids searches do not see yet (see
+	// SetUnrefreshed).
+	unrefreshed map[string]bool
 	requests    []string
 	autoID      int
 	// uuids counts the indices made, for their uuids.
@@ -190,6 +202,44 @@ func (s *Server) Block(on bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.blocked = on
+}
+
+// SetDataNodes sets the number of data nodes /_cluster/health reports;
+// 0, the default, reports one.
+func (s *Server) SetDataNodes(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dataNodes = n
+}
+
+// SetShardsUsed sets the active_shards /_cluster/health reports. The
+// shard limit /_cluster/settings reports is OpenSearch's default, 1,000
+// per data node.
+func (s *Server) SetShardsUsed(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shardsUsed = n
+}
+
+// SetRefreshWait makes every request with refresh=wait_for answer only d
+// after it is done, as OpenSearch answers one at its next refresh (up to a
+// second later, by default); 0, the default, answers at once.
+func (s *Server) SetRefreshWait(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshWait = d
+}
+
+// SetUnrefreshed makes searches leave out the documents with these ids,
+// as OpenSearch does until its next refresh after a write without one; a
+// get still finds them. No ids makes every document searchable again.
+func (s *Server) SetUnrefreshed(ids ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unrefreshed = map[string]bool{}
+	for _, id := range ids {
+		s.unrefreshed[id] = true
+	}
 }
 
 // SetFault sets a function that may answer a request with a Fault; nil
@@ -429,7 +479,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.RequestURI())
-	fault, sec := s.fault, s.security
+	fault, sec, wait := s.fault, s.security, s.refreshWait
 	s.mu.Unlock()
 	if sec != nil {
 		if u, pw, ok := r.BasicAuth(); !ok || u != sec.User || pw != sec.Password {
@@ -457,6 +507,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			writeError(w, f.Status, f.Type, "injected by the test")
 			return
 		}
+	}
+	if wait > 0 && r.URL.Query().Get("refresh") == "wait_for" {
+		rec := httptest.NewRecorder()
+		s.handle(rec, r, p, body)
+		time.Sleep(wait)
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
 	}
 	s.handle(w, r, p, body)
 }
@@ -504,7 +563,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		writeJSON(w, 200, map[string]any{"name": "ostest-1", "cluster_name": "ostest",
 			"version": map[string]any{"number": "2.17.1", "distribution": "opensearch"}})
 	case p == "/_cluster/health":
-		writeJSON(w, 200, map[string]any{"cluster_name": "ostest", "status": "green", "number_of_nodes": 1, "number_of_data_nodes": 1})
+		s.mu.Lock()
+		n, used := max(s.dataNodes, 1), s.shardsUsed
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"cluster_name": "ostest", "status": "green", "number_of_nodes": n, "number_of_data_nodes": n, "active_shards": used})
+	case p == "/_cluster/settings" && r.Method == http.MethodGet:
+		writeJSON(w, 200, map[string]any{"defaults": map[string]any{"cluster.max_shards_per_node": "1000"}})
 	case strings.HasPrefix(p, "/_nodes/") && strings.Contains(p, "/stats"):
 		writeJSON(w, 200, map[string]any{"nodes": map[string]any{"ostest-node": map[string]any{
 			"name": "ostest-1", "roles": []string{"data", "cluster_manager"},
@@ -555,6 +619,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 			return
 		}
 		writeJSON(w, 200, map[string]any{parts[0]: map[string]any{"settings": map[string]any{"index": flat}}})
+	case strings.HasPrefix(p, "/_cat/indices/"):
+		// The index names that match, as format=json lists them.
+		pattern := strings.TrimPrefix(p, "/_cat/indices/")
+		s.mu.Lock()
+		out := []any{}
+		for _, ix := range s.match(pattern) {
+			out = append(out, map[string]any{"index": ix.name})
+		}
+		s.mu.Unlock()
+		if len(out) == 0 && !strings.ContainsAny(pattern, "*,") {
+			writeError(w, 404, "index_not_found_exception", "no such index ["+pattern+"]")
+			return
+		}
+		writeJSON(w, 200, out)
 	case strings.HasPrefix(p, "/_cat/"):
 		writeJSON(w, 200, []any{})
 	case p == "/_plugins/_security/authinfo":
@@ -854,7 +932,7 @@ func (s *Server) search(w http.ResponseWriter, pattern string, body []byte) {
 	var hits []hit
 	for _, ix := range s.match(pattern) {
 		for id, d := range ix.docs {
-			if matches(req.Query, id, d.source) {
+			if !s.unrefreshed[id] && matches(req.Query, id, d.source) {
 				hits = append(hits, hit{ix, id, d})
 			}
 		}

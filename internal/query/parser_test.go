@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package query
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -165,5 +169,121 @@ func TestBackslashesInQuotedStrings(t *testing.T) {
 	q2, err := Parse(q.String())
 	if err != nil || q2.String() != q.String() {
 		t.Errorf("round trip: %v %s", err, q2)
+	}
+}
+
+// Queries FuzzParse found printing as text that parses to something else,
+// or not at all.
+func TestRoundTripFuzzFindings(t *testing.T) {
+	for _, src := range []string{
+		`* | fields _time, "a b"`, // a column name with a space
+		`* | stats count as "a b" | rename "a b" as "c d", dc(x) as e`,
+		`"*"`,                         // a quoted * is a search term
+		`* | top 0 0`,                 // limit 0 is no limit, not the default
+		`* | top limit=0 x`,           // the same
+		`0="~"`,                       // not =~
+		`* | sort ++, +-x, --y`,       // a second sign is part of the name
+		`(* a) OR b`,                  // * inside parentheses
+		`* | table dc(user), "max(x"`, // a stats column stays bare
+	} {
+		q := mustParse(t, src)
+		text := q.String()
+		q2, err := Parse(text)
+		if err != nil {
+			t.Errorf("%s printed %q, which does not parse: %v", src, text, err)
+			continue
+		}
+		if !reflect.DeepEqual(q, q2) {
+			t.Errorf("%s printed %q, which parses to\n%#v\nnot\n%#v", src, text, q2, q)
+		}
+	}
+	if got := mustParse(t, `* | table dc(user)`).String(); got != "*\n| table dc(user)" {
+		t.Errorf("table dc(user) printed %q", got)
+	}
+}
+
+func TestParseStarTerms(t *testing.T) {
+	if q := mustParse(t, `a OR *`); q.Search != nil {
+		t.Errorf("a OR * = %s, want every event", q.Search)
+	}
+	if q := mustParse(t, `(*) a`); q.Search.String() != "a" {
+		t.Errorf("(*) a = %s", q.Search)
+	}
+	for _, src := range []string{`NOT *`, `OR>0 x`, `a OR=1`, `OR IN (1)`, `IN>0 x`} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse(%q): want an error", src)
+		}
+	}
+}
+
+// A form feed or vertical tab once made the lexer loop forever.
+func TestLexAllASCIISpaces(t *testing.T) {
+	q := mustParse(t, "a\fb\vc")
+	if and, ok := q.Search.(*And); !ok || len(and.Children) != 3 {
+		t.Errorf("search = %s", q.Search)
+	}
+}
+
+func TestSearchStarKeepsEveryRow(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | search * | stats count`:                         "*\n| stats count",
+		`* | stats count by user | search *`:                 "*\n| stats count by user",
+		`* | search * user=x`:                                "*\n| search user=x",
+		`* | stats count | appendpipe [search * | eval a=1]`: "*\n| stats count\n| appendpipe [eval a=1]",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", src, err)
+		}
+		if got := q.String(); got != want {
+			t.Errorf("Parse(%q) = %q, want %q", src, got, want)
+		}
+	}
+}
+
+func TestSplunkSyntaxForms(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | rename "All_Traffic".* as *`:                             "*\n| rename All_Traffic.* as *",
+		`"requestParameters.masterUserPassword"=* x=1`:                "requestParameters.masterUserPassword=* x=1",
+		`"query_type{}" IN (SIG,KEY)`:                                 "query_type{} IN (SIG, KEY)",
+		`process IN ("a", "b",)`:                                      "process IN (a, b)",
+		`* | sort - count, + user`:                                    "*\n| sort -count, user",
+		`* | eval s=if(type IN ("A", "B") AND res="ok", 1, 0)`:        "*\n| eval s=if(in(type, \"A\", \"B\") AND res = \"ok\", 1, 0)",
+		`* | where NOT x IN (1, 2)`:                                   "*\n| where NOT x IN (1, 2)",
+		`* | inputlookup append=t max=5 owners`:                       "*\n| inputlookup append=true max=5 owners",
+		`| makeresults | inputlookup b append=t`:                      "*\n| makeresults\n| inputlookup append=true b",
+		`user=x NOT [inputlookup t | fields a]`:                       "user=x NOT [search *\n| inputlookup t\n| table a]",
+		`| inputlookup owners where team=Web NOT user=bob | eval x=1`: "*\n| inputlookup owners where (team=Web AND NOT user=bob)\n| eval x=1",
+		`* | timechart limit=0 span=1h count by host`:                 "*\n| timechart span=1h limit=0 count by host",
+		`* | timechart span=1h limit=5 count by host`:                 "*\n| timechart span=1h limit=5 count by host",
+		`* | eval s=case(!match(a, "x"), 1, true(), 0)`:               "*\n| eval s=case(NOT match(a, \"x\"), 1, true(), 0)",
+		`"a.b" ="x y" OR "c" = 1`:                                     "a.b=\"x y\" OR c=1",
+		`* | eval -time = _time, b=1`:                                 "*\n| eval '-time'=_time, b=1",
+		`* | iplocation "'a'"`:                                        "*\n| iplocation \"'a'\"",
+		`* | iplocation 'a{}'`:                                        "*\n| iplocation a{}",
+		`a IN (,"x y",b,)`:                                            "a IN (\"x y\", b)",
+		`* | dedup a, b sortby +c, -d`:                                "*\n| dedup a, b sortby c, -d",
+		`* | stats count BY "dest"`:                                   "*\n| stats count by dest",
+		`* | where a >= 10 AND .25 > (s/f)`:                           "*\n| where a >= 10 AND 0.25 > s / f",
+		`* | eval x=a . .5`:                                           "*\n| eval x=a . 0.5",
+		`* | transaction dest connected=false maxpause=5m`:            "*\n| transaction dest maxpause=300s",
+		`| inputlookup a | inputlookup append=true b`:                 "*\n| inputlookup a\n| inputlookup append=true b",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", src, err)
+			continue
+		}
+		if got := q.String(); got != want {
+			t.Errorf("Parse(%q) = %q, want %q", src, got, want)
+		}
+		if _, err := Parse(q.String()); err != nil {
+			t.Errorf("Parse(%q) does not read back: %v", q.String(), err)
+		}
+	}
+	for _, bad := range []string{`user=x | inputlookup owners`, `user=x | inputlookup append=false owners`, "| makeresults" + strings.Repeat(" | inputlookup append=t t", 11), `* | transaction user startswith=( [ | makeresults | eval a=1 ] )`, `* | transaction user endswith=(NOT [inputlookup t])`, `| inputlookup t where index=x`, `| inputlookup t where [inputlookup u]`, `* | timechart limit=-1 count`, `* | transaction dest connected=maybe`, `* | dedup a sortby`, `* | stats count by " "`, `* | stats count by "a b"`, `a IN (,)`, `a IN (,,b)`, `* | dedup sortby x`, `* | eval - time=1`, `* | sort -`, `* | stats count | appendpipe [inputlookup append=t x]`} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("%s parsed", bad)
+		}
 	}
 }

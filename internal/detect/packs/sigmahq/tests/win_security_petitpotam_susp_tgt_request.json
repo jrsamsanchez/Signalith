@@ -1,0 +1,7 @@
+{"rule": "6a53d871-682d-40b6-83e0-b7c1a6c4e3a5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4768","data":{"CertThumbprint":"x","TargetUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4768","data":{"CertThumbprint":"x","IpAddress":"::1","TargetUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4768","data":{"CertThumbprint":"","TargetUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4768","data":{"TargetUserName":"$"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4768","data":{"CertThumbprint":"x"}}
+]}

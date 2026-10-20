@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterauth keeps the users, the directory sign-in settings and
 // the sign-in sessions of the servers of a cluster in OpenSearch, so a
 // person signs in once and is known on every server: the users as signed
@@ -16,6 +19,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -46,8 +50,19 @@ type Docs struct {
 	hub       *shared.Hub
 	users     *shared.Collection[UserBody]
 	directory *shared.Doc[DirectoryBody]
+	tokens    *shared.Collection[APITokenBody]
+	tenantDoc *shared.Doc[TenantsBody]
 	subs      map[string][]func()
 	sessions  []func(ctx context.Context, raw json.RawMessage, v store.Version)
+
+	// tokenUse is when this server last tried to write each API token's
+	// LastUsed (NoteAPITokenUse).
+	tokenUse map[string]time.Time
+
+	// Tenants reports whether the cluster keeps tenants
+	// (shared.Runtime.Tenants), the one place that decides it; nil is
+	// never.
+	Tenants func() bool
 }
 
 // Kinds of change subscribers hear of.
@@ -65,6 +80,8 @@ func (d *Docs) Track(h *shared.Hub) {
 	users := shared.NewCollection[UserBody](h, UserKind, UsersWatch, 1)
 	users.ValidateItem = d.validateUser
 	dir := shared.NewDoc[DirectoryBody](h, DirectoryID, DirectoryID, 1)
+	tokens := shared.NewCollection[APITokenBody](h, APITokenKind, APITokenWatch, 1)
+	tokens.ValidateItem = d.validateAPIToken
 	users.OnChange(func() { d.fire(changeUsers) })
 	dir.OnChange(func(_, _ *DirectoryBody) { d.fire(changeDirectory) })
 	// A sign-out bumps watch:sessions with the id of the session ended,
@@ -83,8 +100,9 @@ func (d *Docs) Track(h *shared.Hub) {
 		d.fire(changeLocks)
 		return nil
 	})
+	tl := trackTenants(h)
 	d.mu.Lock()
-	d.hub, d.users, d.directory = h, users, dir
+	d.hub, d.users, d.directory, d.tokens, d.tenantDoc = h, users, dir, tokens, tl
 	d.mu.Unlock()
 }
 

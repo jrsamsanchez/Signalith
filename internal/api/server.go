@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package api serves the REST API and the embedded web UI.
 package api
 
@@ -25,8 +28,12 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
+	"github.com/jrsamsanchez/signalith/internal/compliance"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -36,14 +43,25 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/m365"
+	"github.com/jrsamsanchez/signalith/internal/notebooks"
+	"github.com/jrsamsanchez/signalith/internal/oidc"
+	"github.com/jrsamsanchez/signalith/internal/okta"
+	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
+	"github.com/jrsamsanchez/signalith/internal/saml"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/sensortune"
+	"github.com/jrsamsanchez/signalith/internal/setupguide"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
+	"github.com/jrsamsanchez/signalith/internal/upgradecheck"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -63,7 +81,13 @@ type Server struct {
 	// findings queue; when nil those endpoints return 503.
 	Detections *detect.Library
 	Scheduler  *detect.Scheduler
-	Findings   findings.Store
+	// SpreadScheduler runs the detection buckets assigned to this server
+	// when detections are spread over servers; nil when they cannot be.
+	SpreadScheduler *detect.Scheduler
+	// DetectionSpread returns how each tenant's detections are spread over
+	// the servers, for GET /api/cluster; nil when they cannot be.
+	DetectionSpread func(ctx context.Context) []detect.SpreadView
+	Findings        findings.Store
 	// Assets holds the asset and identity lists; nil disables them.
 	Assets *assets.Store
 	// Intel holds threat intel indicators and Feeds downloads them; nil
@@ -77,25 +101,45 @@ type Server struct {
 	Dashboards *dashboards.Store
 	// Cases holds investigations; nil disables them.
 	Cases cases.Store
+	// Notebooks holds hunting notebooks; nil leaves only the starter
+	// hunts, which can be run but not saved.
+	Notebooks notebooks.Store
 	// Respond runs response actions; nil disables them.
 	Respond *respond.Runner
 	// Playbooks backs the Playbooks and Approvals pages; nil disables
 	// them.
 	Playbooks *Playbooks
+	// Chat answers the buttons in Slack and Teams messages; nil disables
+	// them.
+	Chat *Chat
+	// Ticketing backs the Ticketing page and the case page's Tickets
+	// panel; nil disables them.
+	Ticketing *Ticketing
 	// Retention enforces data retention policies; nil disables the Data
 	// retention page.
 	Retention *retention.Manager
+	// Audit backs the Audit page; nil leaves it empty.
+	Audit *Audit
 	// Endpoints manages the hosts that run osquery (the Endpoints page and
 	// osquery's remote API); nil disables them.
 	Endpoints *endpoint.Store
+	// SensorTuning keeps the Suricata rule tuning network sensors fetch
+	// (Settings > Network sensors); nil without OpenSearch.
+	SensorTuning *sensortune.Store
 	// Vulns backs the Vulnerabilities page (network scans with Nmap); nil
 	// disables it.
 	Vulns *Vulns
+	// Baselines keeps the behavior baselines' settings and what they
+	// learned (Settings > Behavior baselines); nil disables the page.
+	Baselines *baselines.Store
 	// Content installs content pack updates; nil disables them.
 	Content *content.Updater
 	// Sample loads and removes the one-click sample data; nil disables the
 	// sample-data card and its endpoints.
 	Sample *sample.Loader
+	// SetupGuide keeps each user's answers to the setup guide; nil keeps
+	// them in this server's memory.
+	SetupGuide setupguide.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -103,9 +147,18 @@ type Server struct {
 	Background context.Context
 	// Assistant is an optional AI model for plain-English questions.
 	Assistant *assistant.Client
-	UI        fs.FS // web UI files; nil disables the UI
-	Log       *slog.Logger
-	Version   string
+	// M365Cursors reads how far the Microsoft 365 audit log was read, for
+	// the health page; M365Check is the Settings page's test (nil signs
+	// in to Microsoft).
+	M365Cursors func(ctx context.Context, tenant string) ([]m365.Cursor, error)
+	M365Check   func(ctx context.Context, s m365.Settings) (map[string]bool, error)
+	// OktaCursor reads how far Okta's System Log was read, for the health
+	// page; OktaCheck is the Settings page's test (nil signs in to Okta).
+	OktaCursor func(ctx context.Context, domain string) (okta.Cursor, bool, error)
+	OktaCheck  func(ctx context.Context, s okta.Settings) (*okta.CheckResult, error)
+	UI         fs.FS // web UI files; nil disables the UI
+	Log        *slog.Logger
+	Version    string
 
 	// Syslog is the syslog receiver, for its stats; nil when it is off.
 	Syslog *syslog.Receiver
@@ -131,10 +184,21 @@ type Server struct {
 	// them in memory only.
 	Users     *users.Store
 	Directory *users.Directory
+	// OIDC talks to the single sign-on identity provider; nil makes one
+	// on first use.
+	OIDC *oidc.Client
+	// SAMLMeta reads the SAML identity provider's metadata; nil makes one
+	// on first use.
+	SAMLMeta *saml.Metadata
 	// SharedUsers is set when Users, Directory and SessionStore keep the
 	// users, the directory settings and the sessions in the shared
 	// settings of a cluster; nil keeps them on this server.
 	SharedUsers *SharedUsers
+	// BuiltinSetHere, when set, hears that the built-in admin's password
+	// was changed in this server's own files (SharedUsers nil), so a
+	// change that lands while the users move into the shared settings is
+	// carried there too.
+	BuiltinSetHere func(ctx context.Context)
 
 	// DirectoryRecheck is how often signed-in directory users are looked
 	// up again; 0 means every 5 minutes.
@@ -148,6 +212,13 @@ type Server struct {
 	// Pages keeps the settings saved on the Settings page; nil keeps them
 	// in the settings file next to Config (config.PageFile).
 	Pages config.PageStore
+	// Settings keeps them in the shared settings once the servers of a
+	// cluster share their settings; nil, or while it is not Shared, they
+	// stay in Pages.
+	Settings SettingsStore
+	// NodeURLChanged hears of a new server.node_url applied at once, which
+	// the heartbeat then carries; nil when there is no heartbeat.
+	NodeURLChanged func(*config.Config)
 	// Cluster is this server among those that share its OpenSearch: it
 	// says which one runs the background jobs. nil means this server runs
 	// them when detections.scheduler is on, and lists no servers.
@@ -168,34 +239,130 @@ type Server struct {
 	// Agents counts the agents that send events, for the Endpoints page;
 	// nil keeps no list.
 	Agents *agentinv.Inventory
+	// EventAge follows ingest.max_event_age when a change applies at once:
+	// how old an event's own time may be in the pipeline and syslog. nil
+	// leaves the age the server started with.
+	EventAge EventAge
+	// ClusterTLS is the cluster's one certificate authority; nil on a
+	// server that is not a member of a cluster.
+	ClusterTLS ClusterTLS
+	// Parsers keeps and runs the custom parsers admins save on the Add
+	// data page; nil keeps them in the state folder, for this API only.
+	Parsers *onboard.Registry
+	// ComplianceNotes keeps the notes on compliance controls in the
+	// shared settings, used while this server takes its content from them;
+	// nil, or until then, they stay in the state folder.
+	ComplianceNotes compliance.NoteStore
+	// Join adds servers to the cluster: join tokens, the public join and
+	// approvals (clusterjoin.go); nil on a server without shared settings.
+	Join ClusterJoin
+	// ClusterServers drains and removes servers and rotates the cluster
+	// key; nil on a server that is not a member of a cluster.
+	ClusterServers ClusterServers
+	// ClusterOSIdentity is OpenSearch's certificate authority the cluster
+	// keeps; nil on a server that is not a member of a cluster.
+	ClusterOSIdentity ClusterOSIdentity
+	// Features says which features that come with a cluster level are on
+	// (GET /api/cluster/features), and ClusterLevel the cluster's level;
+	// nil on a server without shared settings.
+	Features     func() []shared.FeatureState
+	ClusterLevel func() int
+	// Upgrade judges whether the next server may be upgraded, for the
+	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
+	// server without a cluster.
+	Upgrade func(ctx context.Context) (upgradecheck.Verdict, error)
+	// Install hands new servers the install scripts and this server's
+	// program; nil turns that off.
+	Install *ClusterInstall
+	// AgentPrograms are the Signalith Agent programs this server hands to
+	// the computers it is installed on; nil looks in the usual folder
+	// (clusterinstall.DefaultProgramsDir).
+	AgentPrograms     *clusterinstall.Programs
+	agentProgramsOnce sync.Once
+	// Tenants lists the tenants of a multi-tenant install (see
+	// docs/multi-tenant.md); nil has only the default tenant.
+	Tenants *tenants.Registry
+	// TenantID is the tenant whose data this server holds: "" for the
+	// default tenant's server, which also answers the provider's pages
+	// and sends each request in another tenant to that tenant's server
+	// (TenantRuntime). A tenant's server answers that tenant's requests
+	// only.
+	TenantID string
+	// TenantRuntime runs the servers of the other tenants; nil runs none.
+	TenantRuntime TenantRuntime
 
-	authOnce     sync.Once
-	creds        credCache  // recently checked Basic credentials
-	routes       []route    // every API route and its role, from Handler
-	caseMu       sync.Mutex // serializes case changes
-	checksMu     sync.Mutex
-	dirChecks    map[string]dirCheck // when each directory user was last checked
-	dirSlotsOnce sync.Once
-	dirSlots     chan struct{}  // limits directory connections at once
-	background   sync.WaitGroup // directory checks still running
-	settingsMu   sync.Mutex     // serializes saves on the Settings page
-	testMu       sync.Mutex     // one connection test at a time
-	sampleJob    sampleJob      // the one running sample-data load or remove
-	pageCache    pages          // index.html and login.html, rendered
+	authOnce          sync.Once
+	ssoOnce           sync.Once
+	samlOnce          sync.Once
+	samlReplays       saml.Replays // SAML assertions used, until they expire
+	samlEntity        atomic.Value // the SAML provider's entity ID, from its metadata
+	samlLoading       atomic.Bool  // whether its metadata is being read for samlIssuerOK
+	scimRefused       scimRefusals // when a refused SCIM token was last logged, by address
+	creds             credCache    // recently checked Basic credentials
+	passkeyChallenges challengeSet // passkey challenges answered on this server
+	routes            []route      // every API route and its role, from Handler
+	apiMux            http.Handler // the routes of routes, each behind allow
+	caseLocks         caseLocks    // one lock per case being changed
+	checksMu          sync.Mutex
+	dirChecks         map[string]dirCheck // when each directory user was last checked
+	dirSlotsOnce      sync.Once
+	dirSlots          chan struct{}  // limits directory connections at once
+	background        sync.WaitGroup // directory checks and API token use records still running
+	settingsMu        sync.Mutex     // serializes saves on the Settings page
+	testMu            sync.Mutex     // one connection test at a time
+	aiModels          modelCache     // model lists read from the AI model's service
+	sampleJob         sampleJob      // the one running sample-data load or remove
+	setupGuideMem     setupguide.Memory
+	pageCache         pages // index.html and login.html, rendered
+
+	// refused is when this server last logged the use of each revoked or
+	// expired API token (tokenRefused).
+	refusedMu sync.Mutex
+	refused   map[string]time.Time
 	// live holds Config with the settings saved on the Settings page that
 	// apply at once, and liveAI the assistant they give.
 	live   atomic.Pointer[config.Config]
 	liveAI atomic.Pointer[liveModel]
+	// followMu keeps a tenant's server following one change at a time.
+	followMu sync.Mutex
+
+	// backtests limits detection backtests running at once.
+	backtests backtestSlots
 
 	// legacyProxies are reverse proxies believed only because the config
 	// predates HTTPS by default (see viaTrustedProxy).
 	legacyProxies addrSeen
 	secOnce       sync.Once
 	sec           *SecurityChecker
+	comp          complianceState
 	caMu          sync.Mutex // one change of certificate authority at a time
-	blockedLog    logOnce    // blocked osquery hosts that tried to enroll
-	tokensOnce    sync.Once
-	tokenRate     tokenRate // agent token creation
+	// localParsers is the parsers' registry of a server started without
+	// one (Parsers), made at first use.
+	localParsers localParsers
+	// badTuning is the hash of the stored rule tuning last refused to
+	// sensors (refusedTuning), so it is logged once.
+	badTuningMu sync.Mutex
+	badTuning   string
+	blockedLog  logOnce // blocked osquery hosts that tried to enroll
+	firstPW     firstPasswordCheck
+	webAgentLog logOnce // agents that send to the web port
+	tokensOnce  sync.Once
+	tokenRate   tokenRate         // agent token creation
+	sensorCache sensorHealthCache // the Health page's network sensor counts
+	chatOnce    sync.Once
+	chatSvc     *chatops.Service
+	// demoSess keeps the public demo's visitor sessions, and demoLimits
+	// how often they start (demo.go).
+	demoOnce   sync.Once
+	demoSess   *auth.Sessions
+	demoLimits tokenRate
+}
+
+// EventAge is what keeps the age of events the server accepts in step
+// with the configuration in use.
+type EventAge interface {
+	// Use works the age out again from c.
+	Use(c *config.Config)
 }
 
 // liveModel is the assistant after a change on the Settings page; nil
@@ -217,6 +384,10 @@ func (s *Server) Running() *config.Config { return s.conf() }
 
 // model returns the AI assistant in use, or nil when it is off.
 func (s *Server) model() *assistant.Client {
+	if s.demo() {
+		// A public demo never sends anything to an AI model.
+		return nil
+	}
 	if m := s.liveAI.Load(); m != nil {
 		return m.c
 	}
@@ -230,9 +401,11 @@ func (s *Server) Handler() http.Handler {
 	s.sessions()
 	s.tokens()
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/ingest", s.handleIngest)
-	mux.HandleFunc(otlpLogsRoute, s.handleOTLPLogs)
-	s.routeOsquery(mux)
+	intake := http.NewServeMux()
+	s.routeAgentIntake(intake)
+	for _, p := range agentRoutes {
+		mux.Handle(p, s.webPortAgents(intake))
+	}
 
 	api := &router{s: s, mux: http.NewServeMux()}
 	api.viewer("GET /api/health", s.handleHealth)
@@ -248,33 +421,60 @@ func (s *Server) Handler() http.Handler {
 	// Agent configs hold a placeholder the page fills with a new agent
 	// token (POST /api/agent-tokens).
 	api.admin("GET /api/agents/config", s.handleAgentConfig)
+	api.admin("GET /api/agents/destinations", s.handleAgentDestinations)
 	// Adds the address agents or syslog devices send to to the HTTPS
 	// certificate.
 	api.admin("POST /api/tls/names", s.handleTLSName)
 	// The security checks name files, accounts and addresses on the
 	// server, and the certificate authority is the server's to change.
 	api.admin("GET /api/security", s.handleSecurity)
-	api.admin("POST /api/security/ca", s.handleSecurityCA)
+	api.sensitive("POST /api/security/ca", s.handleSecurityCA)
 	s.routeDetections(api)
 	s.routeRisk(api)
+	s.routeBaselines(api)
+	s.routeSummaries(api)
+	s.routeLookupTables(api)
+	s.routeParsers(api)
 	s.routeAsk(api)
 	s.routeInvestigate(api)
 	s.routeIntel(api)
 	s.routeNotify(api)
 	s.routeDashboards(api)
 	s.routeCases(api)
+	s.routeStoryline(api)
+	s.routeNotebooks(api)
 	s.routeRespond(api)
 	s.routePlaybooks(api)
+	s.routeChat(mux, api)
+	s.routeTicketing(api)
 	s.routeUsers(api)
+	s.routeSSO(api)
+	s.routeSAML(api)
 	s.routeRetention(api)
+	s.routeAudit(api)
 	s.routeRequests(api)
 	s.routeSample(api)
+	s.routeSetupGuide(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
+	s.routeVulnLogins(api)
+	s.routeCompliance(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
+	s.routeClusterTLS(api)
+	s.routeClusterServers(api)
+	s.routeClusterFeatures(api)
+	s.routeClusterUpgrade(api)
+	s.routeClusterOSIdentity(api)
+	s.routeClusterInstall(mux, api)
+	s.routeSensor(mux, api)
+	s.routeAgentManaged(mux, api)
+	s.routeSCIM(mux, api)
+	s.routeSensors(api)
 	s.routeTokens(api)
+	s.routeAPITokens(api)
 	s.routeAgents(api)
+	s.routeTenants(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
 		if v := versionSegment(s.Version); v != "" {
@@ -284,6 +484,7 @@ func (s *Server) Handler() http.Handler {
 		}
 	}
 	s.routes = api.routes
+	s.apiMux = api.mux
 	s.routeLogin(mux)
 	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(api.mux))))
 	return limitBodies(s.securityHeaders(s.configHeaders(s.guardAPI(mux))))
@@ -291,10 +492,19 @@ func (s *Server) Handler() http.Handler {
 
 // guardAPI makes sure no /api/ route escapes sign-in: a route registered
 // straight on the outer mux, rather than with a role on the router, is
-// admin-only unless it is one of publicRoutes.
+// admin-only unless it is one of publicRoutes. In demo mode most of
+// publicRoutes are off too.
 func (s *Server) guardAPI(mux *http.ServeMux) http.Handler {
 	guarded := s.requireUser(s.configToken(false, s.allow(route{Pattern: "(outer mux)", Role: users.Admin, Unclassified: true}, mux)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.demo() {
+			// A public demo keeps only signing in and out of the routes
+			// that work without signing in (demo.go).
+			if _, pattern := mux.Handler(r); demoPublicOff(pattern) {
+				writeDemoOff(w)
+				return
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if _, pattern := mux.Handler(r); pattern != "" && pattern != "/" && !slices.Contains(publicRoutes, pattern) {
 				guarded.ServeHTTP(w, r)
@@ -361,6 +571,14 @@ func decodeJSON(b []byte, v any) error {
 // ---- ingest ----
 
 func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
+	if t, wait := s.agentTenant(r); wait {
+		w.Header().Set("Retry-After", tenantAgentRetry)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": tenantAgentWait, "code": "tenant_unavailable"})
+		return
+	} else if t != nil {
+		t.handleIngest(w, r)
+		return
+	}
 	from := clientaddr.Parse(r.RemoteAddr)
 	who, ok := s.agentIdentity(w, r)
 	if !ok {
@@ -390,7 +608,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "token:"+who.ID)
 	if err != nil {
 		// 503 makes Fluent Bit retry later instead of dropping data.
 		w.Header().Set("Retry-After", "5")
@@ -405,7 +623,14 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
-		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil)
+		// Only a token made for a sensor speaks for a sensor's health:
+		// any other agent token could otherwise keep a stopped sensor
+		// looking healthy, or add sensors that are not there.
+		sensor := res.Sensor
+		if who.Legacy || who.Purpose != agenttokens.PurposeSensor {
+			sensor = nil
+		}
+		s.noteAgent(r, ingest.IntakeAgent, tag, who, res.Indexed+res.Duplicates, nil, sensor)
 	}
 	if err != nil {
 		var bad *ingest.BodyError
@@ -665,13 +890,22 @@ type searchRequest struct {
 	Query    string `json:"query"`
 	Earliest string `json:"earliest,omitempty"` // time picker; overridden by earliest= in the query
 	Latest   string `json:"latest,omitempty"`
+	// WriteLookups lets the query's outputlookup write, for an admin who
+	// ran it on purpose (the Search page's Run); re-runs leave it out.
+	WriteLookups bool `json:"write_lookups,omitempty"`
 }
 
 func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Query, bool) {
+	q, _, ok := s.parseSearchRequest(w, r)
+	return q, ok
+}
+
+// parseSearchRequest is parseRequest that also returns the request.
+func (s *Server) parseSearchRequest(w http.ResponseWriter, r *http.Request) (*query.Query, searchRequest, bool) {
 	var req searchRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		req.Query = "*"
@@ -679,7 +913,7 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	q, err := query.Parse(req.Query)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return nil, false
+		return nil, req, false
 	}
 	if q.Earliest == "" {
 		q.Earliest = req.Earliest
@@ -687,21 +921,25 @@ func (s *Server) parseRequest(w http.ResponseWriter, r *http.Request) (*query.Qu
 	if q.Latest == "" {
 		q.Latest = req.Latest
 	}
-	return q, true
+	return q, req, true
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q, ok := s.parseRequest(w, r)
+	q, req, ok := s.parseSearchRequest(w, r)
 	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	if req.WriteLookups && mayWriteLookups(principalOf(r)) {
+		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
+	}
 	res, err := s.Engine.Execute(ctx, q)
 	if err != nil {
 		writeSearchError(w, err)
 		return
 	}
+	res.Drill = q.Drilldown()
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -839,6 +1077,14 @@ func (s *Server) handleLanguage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"commands":  query.Commands,
 		"functions": query.AggFuncs,
+		"eval_functions": func() []string {
+			names := make([]string, 0, len(query.EvalFuncs))
+			for n := range query.EvalFuncs {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			return names
+		}(),
 		"operators": []string{"=", "!=", "<", "<=", ">", ">=", "IN", "AND", "OR", "NOT"},
 	})
 }
@@ -869,6 +1115,19 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		server = o
 	}
+	otherServer := false
+	if to := v.Get("to"); to != "" && v.Get("server") == "" {
+		dest, other, err := s.agentDestination(to)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "field": "to"})
+			return
+		}
+		server, otherServer = dest, other
+	} else {
+		// This server's address, typed or public: agents send to its
+		// agent port.
+		server = s.agentURL(server)
+	}
 	u, err := agents.ParseServerURL(server)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("server.public_url: %w", err))
@@ -884,7 +1143,7 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 	// the certificate (POST api/tls/names) once it is entered, not while
 	// it is being typed. Here it only checks that it can.
 	addName := ""
-	if u.Scheme == "https" && certs != nil {
+	if u.Scheme == "https" && certs != nil && !otherServer {
 		if err := certs.CanCover(u.Hostname()); err != nil {
 			fieldError(err)
 			return
@@ -905,29 +1164,29 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		CollectorOS: v.Get("collector"),
 		Platform:    v.Get("platform"),
 		Version:     s.Version,
+		Recycle:     s.agentRecycleFor(),
+		// A network sensor: both tools unless the page says otherwise.
+		Zeek:              v.Get("zeek") != "false",
+		Suricata:          v.Get("suricata") != "false",
+		ZeekDir:           strings.TrimSpace(v.Get("zeek_dir")),
+		EVEPath:           strings.TrimSpace(v.Get("eve_path")),
+		SuricataProtocols: v.Get("suricata_protocols") == "true",
+		// AWS CloudTrail: the bucket and queue the Collector reads.
+		AWSBucket:   v.Get("aws_bucket"),
+		AWSQueueURL: v.Get("aws_queue"),
+		// Google Cloud: the subscription the Collector pulls.
+		GCPProject:      v.Get("gcp_project"),
+		GCPSubscription: v.Get("gcp_subscription"),
 	}
-	if certs != nil {
-		// While a new certificate authority is prepared, agents get both,
-		// so they keep sending after the switch.
-		opts.CA = string(certs.AgentCAPEM())
-		opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
-		opts.OwnCA = certs.LocalCA()
-		if leaf := certs.Leaf(); leaf != nil {
-			opts.CertNames = leaf.DNSNames
-		}
-		// The pins name the CAs the agent gets: the current one, and the
-		// next one too while a switch is prepared, so the Endpoints page
-		// still counts the agent as fine after the switch.
-		if opts.CA != "" {
-			opts.CAPin = agentinv.Pin(certs.Fingerprint())
-			if next := certs.Next(); next != nil && certs.LocalCA() {
-				opts.NextCAPin = agentinv.Pin(next.Fingerprint)
-			}
-		}
-	}
+	agentTLS(&opts, certs)
 	a, err := agents.Generate(opts)
 	if errors.Is(err, agents.ErrNoNameToCheck) {
 		fieldError(err)
+		return
+	}
+	var fe *agents.FieldError
+	if errors.As(err, &fe) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": fe.Error(), "field": fe.Field})
 		return
 	}
 	if err != nil {
@@ -942,6 +1201,31 @@ func (s *Server) handleAgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentTLS fills in how an agent checks the server's certificate, made
+// by certs (nil when Signalith does not serve HTTPS itself).
+func agentTLS(opts *agents.Options, certs *tlsauto.Manager) {
+	if certs == nil {
+		return
+	}
+	// While a new certificate authority is prepared, agents get both,
+	// so they keep sending after the switch.
+	opts.CA = string(certs.AgentCAPEM())
+	opts.CAUnknown = opts.CA == "" && !certs.PublicCA()
+	opts.OwnCA = certs.LocalCA()
+	if leaf := certs.Leaf(); leaf != nil {
+		opts.CertNames = leaf.DNSNames
+	}
+	// The pins name the CAs the agent gets: the current one, and the
+	// next one too while a switch is prepared, so the Endpoints page
+	// still counts the agent as fine after the switch.
+	if opts.CA != "" {
+		opts.CAPin = agentinv.Pin(certs.Fingerprint())
+		if next := certs.Next(); next != nil && certs.LocalCA() {
+			opts.NextCAPin = agentinv.Pin(next.Fingerprint)
+		}
+	}
 }
 
 // agentConfig is the answer to GET api/agents/config. AddName is the
@@ -995,10 +1279,26 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			out["cluster_banners"] = b
 		}
 	}
+	s.addClusterHealth(r, out)
+	if sensors := s.sensorHealth(ctx); sensors != nil {
+		out["sensors"] = sensors
+	}
+	if m := s.m365Status(ctx); m != nil {
+		out["m365"] = m
+	}
+	if m := s.oktaStatus(ctx); m != nil {
+		out["okta"] = m
+	}
 	// Everyone signed in sees whether things work. Where they run (file
 	// paths, addresses, the OpenSearch URL and its errors) and the setup
 	// advice is for admins, who are the ones able to change it.
-	if p := principalOf(r); p == nil || !p.Role.AtLeast(users.Admin) {
+	if p := principalOf(r); !p.runsServer() {
+		if p != nil && p.Tenant != "" {
+			// The server's other parts are the provider's business.
+			for _, k := range []string{"cluster_banners", "cluster", "sensors", "m365", "syslog"} {
+				delete(out, k)
+			}
+		}
 		brief := map[string]any{"status": status}
 		if problem != "" {
 			brief["problem"] = problem
@@ -1053,6 +1353,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings = append(warnings, s.behindWarnings(time.Now())...)
 	warnings = append(warnings, s.notifyWarnings(ctx)...)
+	if s.Cluster != nil {
+		warnings = append(warnings, agentTrafficWarnings(s.Cluster.Status())...)
+	}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
 	}
@@ -1118,6 +1421,10 @@ func (s *Server) tlsInfo() map[string]any {
 	if s.TLS.CAPEM() != nil {
 		t["ca_sha256"] = s.TLS.Fingerprint()
 		t["own_ca"] = s.TLS.LocalCA()
+		if s.clusterCAOwner() != "" {
+			// The cluster's: every server's certificate comes from it.
+			t["cluster_ca"] = true
+		}
 	}
 	if ca := s.TLS.CAInfo(); ca != nil {
 		t["ca_scope"] = ca.Scope

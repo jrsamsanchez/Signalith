@@ -1,0 +1,17 @@
+id: network-sensor-unhealthy
+title: Network sensor $host$ needs attention ($sensor_warnings$)
+name: Network sensor unhealthy
+description: A network sensor reported that Zeek or Suricata stopped, its capture port is down or sees no traffic, its rules or rule tuning failed to update or are old, or its disk is nearly full; or Signalith found it silent. Parts of the network go unwatched until it is fixed.
+query: |
+  ((sourcetype="sensor:health" signalith_intake="signalith") OR (sourcetype="sensor:status" signalith_intake="agent" signalith_token_purpose="sensor")) sensor_warnings IN (silent, zeek_stopped, suricata_stopped, capture_link, no_traffic, rules_failed, rules_old, tuning_failed, disk_low)
+  | stats count, max(_time) as last_seen by host, sensor_warnings
+  | where sensor_warnings IN (silent, zeek_stopped, suricata_stopped, capture_link, no_traffic, rules_failed, rules_old, tuning_failed, disk_low)
+schedule: 15m
+lookback: 30m
+severity: medium
+throttle:
+  fields: [host, sensor_warnings]
+  window: 24h
+enabled: true
+tags: [network, health, pci-dss:10.7.2, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.6]
+guidance: Open Settings > Network sensors; the sensor's checklist says what is wrong and what to run on it. Packet loss is the separate detection network-sensor-packet-loss, and a capture port with an address or a clock out of sync shows on the checklist only.

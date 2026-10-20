@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -18,16 +21,17 @@ import (
 // data, so every route is for admins only.
 func (s *Server) routeRetention(api *router) {
 	api.admin("GET /api/retention", s.handleRetention)
-	api.admin("PUT /api/retention/policies/{category}", s.handleRetentionSetPolicy)
-	api.admin("DELETE /api/retention/policies/{category}", s.handleRetentionResetPolicy)
-	api.admin("PUT /api/retention/default", s.handleRetentionSetDefault)
-	api.admin("PUT /api/retention/guard", s.handleRetentionSetGuard)
-	api.admin("POST /api/retention/policies/confirm", s.handleRetentionConfirm)
+	api.sensitive("PUT /api/retention/policies/{category}", s.handleRetentionSetPolicy)
+	api.sensitive("DELETE /api/retention/policies/{category}", s.handleRetentionResetPolicy)
+	api.sensitive("PUT /api/retention/default", s.handleRetentionSetDefault)
+	api.sensitive("PUT /api/retention/guard", s.handleRetentionSetGuard)
+	api.sensitive("POST /api/retention/policies/confirm", s.handleRetentionConfirm)
 	api.admin("POST /api/retention/preview", s.handleRetentionPreview)
-	api.admin("POST /api/retention/run", s.handleRetentionRun)
+	api.sensitive("POST /api/retention/run", s.handleRetentionRun)
 	api.admin("GET /api/retention/archive", s.handleRetentionArchive)
 	api.admin("POST /api/retention/archive/preview", s.handleRetentionRestorePreview)
 	api.admin("POST /api/retention/archive/restore", s.handleRetentionRestore)
+	api.admin("GET /api/retention/job", s.handleRetentionJob)
 }
 
 var errRetentionOff = errors.New("data retention is not available on this server")
@@ -42,7 +46,7 @@ func (s *Server) retentionOK(w http.ResponseWriter) bool {
 
 // policyFields are the settings a problem message can start with, so the
 // page can mark the right input.
-var policyFields = []string{"keep_days", "max_size_gb", "compact_after_days", "archive", "max_disk_percent", "min_days"}
+var policyFields = []string{"keep_days", "max_size_gb", "compact_after_days", "cold_after_days", "archive", "max_disk_percent", "min_days"}
 
 func writeRetentionError(w http.ResponseWriter, err error) {
 	var pe *retention.PolicyError
@@ -105,6 +109,7 @@ func (s *Server) handleRetention(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	ov := s.Retention.Overview(ctx)
+	ov.RestoreQueued = s.Audit.on()
 	if ov.ETag != "" {
 		w.Header().Set("ETag", ov.ETag)
 	}
@@ -331,6 +336,9 @@ func (s *Server) handleRetentionRestore(w http.ResponseWriter, r *http.Request) 
 	var req restoreRequest
 	if err := readStrict(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.restoreQueued(w, r, req) {
 		return
 	}
 	user := userOf(r)

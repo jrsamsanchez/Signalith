@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
@@ -10,14 +13,17 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -57,6 +63,9 @@ type Scheduler struct {
 	// OpenSearch's clock as this server measures it, so every server
 	// agrees on them. Nil uses Now.
 	ClusterNow func() time.Time
+	// Pool, when set, is the server's detection workers shared by every
+	// tenant's spread scheduler, used instead of Workers.
+	Pool *Pool
 	// Workers is how many detections run at once (default 4), so one slow
 	// detection cannot hold up the others.
 	Workers int
@@ -83,13 +92,29 @@ type Scheduler struct {
 	CatchUp time.Duration
 	// Runtime keeps the run state and throttle documents, in the index
 	// RuntimeIndex; nil keeps them in memory, for tests and throwaway
-	// schedulers. Epoch is the job lease's epoch, written into them, so a
-	// server that lost the lease cannot write over a newer leader's state;
-	// NodeID names this server in them.
+	// schedulers. Epoch is the job lease's epoch: the detection epoch
+	// written into them comes from it (see epoch.go), so a server that
+	// lost the lease cannot write over a newer leader's state; NodeID
+	// names this server in them.
 	Runtime      RunStore
 	RuntimeIndex string
 	Epoch        func() int64
 	NodeID       string
+	// Counter, when set, says whether the epoch written into those
+	// documents comes from the detepoch document rather than the lease
+	// (cluster level 11, see epoch.go).
+	Counter func() bool
+	// Owned, when set, spreads the schedule over several servers (see
+	// assign.go): it returns the buckets this server runs now, each with
+	// its detection epoch, and ok false when it may run none. Only the
+	// rules of those buckets run here, each fenced with its bucket's
+	// epoch. Tenant is the tenant the rules hash with.
+	Owned  func() (buckets map[int]int64, ok bool)
+	Tenant string
+	// Moving, when set, reports whether this server is handing bucket b
+	// over: it starts no new slot of it, while the runs in flight finish
+	// and may still write under its epoch.
+	Moving func(bucket int) bool
 
 	mu sync.Mutex
 	// flags are this server's running and waiting runs.
@@ -99,17 +124,31 @@ type Scheduler struct {
 	// the schedule.
 	det         map[string]*detEntry
 	loadedEpoch int64
+	// detEpoch is the detection epoch taken for that copy, and
+	// loadedCounter whether it came from the detepoch document.
+	detEpoch      int64
+	loadedCounter bool
+	// spread is detections.spread.
+	spread atomic.Bool
+	// budget is detections.search_budget.
+	budget atomic.Int64
+	own    owned
 	// firstStart says the run state, when last read, had no detstate
 	// documents at all: the dispatch after that read starts each enabled
 	// rule at its current slot rather than its next one.
 	firstStart bool
 	// noFirstStart turns that off, for tests that start from a new rule.
 	noFirstStart bool
-	cache        *statusCache
-	memRuns      RunStore
-	houseAt      time.Time
-	workers      chan struct{}
-	spare        chan struct{}
+	// taken is when, by the cluster clock, this server began starting
+	// each rule's runs (it took the schedule or the rule's bucket): a
+	// slot that ended before then waited for the server, not for a
+	// worker, so running it later is not a late run.
+	taken   map[string]time.Time
+	cache   *statusCache
+	memRuns RunStore
+	houseAt time.Time
+	workers chan struct{}
+	spare   chan struct{}
 }
 
 type runFlags struct{ running, queued bool }
@@ -173,10 +212,11 @@ func (e *searchError) Unwrap() error { return e.Err }
 // ErrorKind classifies a run's error: ErrorQuery when the rule itself is
 // wrong (its query does not parse, or OpenSearch refuses its search as a
 // bad request), ErrorTransient otherwise (connection problems, 429, 5xx,
-// timeouts of one request, a cancelled run, and any failed write of a
-// finding, risk event or throttle, so the slot is run again). A run that
-// ran out of its own time is ErrorTimeout, which only the scheduler can
-// tell.
+// timeouts of one request, a cancelled run, an iplocation while the
+// server's first GeoIP database is still loading, and any failed write
+// of a finding, risk event or throttle, so the slot is run again). A run
+// that ran out of its own time is ErrorTimeout, which only the scheduler
+// can tell.
 func ErrorKind(err error) string {
 	if err == nil {
 		return ""
@@ -187,6 +227,9 @@ func ErrorKind(err error) string {
 	var se *store.Error
 	var sr *searchError
 	switch {
+	case errors.Is(err, geoip.ErrLoading):
+		// A QueryError, but the same search runs once the database is in.
+		return ErrorTransient
 	case errors.As(err, &re), errors.As(err, &qe), errors.As(err, &pe):
 		return ErrorQuery
 	case errors.As(err, &sr) && errors.As(sr.Err, &se) && se.Status == http.StatusBadRequest:
@@ -309,6 +352,20 @@ func (s *Scheduler) SetMaxFindingsPerRun(n int) {
 	s.MaxFindingsPerRun = n
 }
 
+// SetSpread sets detections.spread, which the leader's Assigner reads
+// (SpreadOn).
+func (s *Scheduler) SetSpread(on bool) { s.spread.Store(on) }
+
+// SetSearchBudget sets detections.search_budget (0: automatic), which
+// the leader's Assigner reads.
+func (s *Scheduler) SetSearchBudget(n int) { s.budget.Store(int64(n)) }
+
+// SearchBudgetSetting reports detections.search_budget as last set.
+func (s *Scheduler) SearchBudgetSetting() int { return int(s.budget.Load()) }
+
+// SpreadOn reports detections.spread as last set.
+func (s *Scheduler) SpreadOn() bool { return s.spread.Load() }
+
 // SetCatchUp changes how far back missed slots are run, from the next
 // tick on, as detections.catch_up says: zero turns catching up off.
 func (s *Scheduler) SetCatchUp(d time.Duration) {
@@ -424,6 +481,11 @@ func (s *Scheduler) dispatch(ctx context.Context, wg *sync.WaitGroup) {
 	limit := s.CatchUpLimit()
 	var current, catchup []batch
 	for _, d := range s.Library.List() {
+		if !s.startsRule(d.ID) {
+			s.setTaken(d.ID, time.Time{})
+			continue
+		}
+		s.setTaken(d.ID, now)
 		b, ok := s.plan(ctx, d, now, limit, epoch, first)
 		if !ok {
 			continue
@@ -484,38 +546,60 @@ func (s *Scheduler) runBatch(ctx context.Context, b batch, epoch int64, workers,
 			case <-ctx.Done():
 				return
 			}
-			select {
-			case spare <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
 		}
-		select {
-		case workers <- struct{}{}:
-		case <-ctx.Done():
-			if !b.current {
-				<-spare
-			}
+		done, ok := s.worker(ctx, b.current, workers, spare)
+		if !ok {
 			return
 		}
 		if b.current {
 			got()
 		}
-		ok := ctx.Err() == nil && s.allowed(ctx) && s.epoch() == epoch
+		ok = ctx.Err() == nil && s.allowed(ctx) && s.gen() == epoch && s.startsRule(b.d.ID)
 		var err error
+		var took time.Duration
 		if ok {
 			s.setFlags(b.d.ID, runFlags{running: true})
+			start := time.Now()
 			err = s.runSlot(ctx, b.d, b.sched, slot, !b.current, epoch)
+			took = time.Since(start)
 			s.setFlags(b.d.ID, runFlags{queued: true})
 		}
-		<-workers
-		if !b.current {
-			<-spare
-		}
+		done(took, err)
 		if !ok || err != nil {
 			return
 		}
 	}
+}
+
+// worker waits for a worker for a run: from the server's shared Pool when
+// set, else from the scheduler's own, where catch-up first takes one of
+// the spare places. done gives it back.
+func (s *Scheduler) worker(ctx context.Context, current bool, workers, spare chan struct{}) (done func(time.Duration, error), ok bool) {
+	if s.Pool != nil {
+		done, err := s.Pool.Acquire(ctx, s.Tenant, current)
+		return done, err == nil
+	}
+	if !current {
+		select {
+		case spare <- struct{}{}:
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
+	select {
+	case workers <- struct{}{}:
+	case <-ctx.Done():
+		if !current {
+			<-spare
+		}
+		return nil, false
+	}
+	return func(time.Duration, error) {
+		<-workers
+		if !current {
+			<-spare
+		}
+	}, true
 }
 
 // plan works out the slots of d that are due at now (cluster time). It
@@ -674,7 +758,7 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 		st.LastSlot, st.NextSlot = slot, NextSlot(d.ID, sched, slot)
 		lag := cstart.Sub(slot)
 		st.LagMS = lag.Milliseconds()
-		if lag > sched {
+		if cstart.Sub(later(slot, s.takenAt(d.ID))) > sched {
 			st.LateRuns++
 			st.LastLate = start.UTC()
 			if !catchup {
@@ -717,6 +801,8 @@ func (s *Scheduler) housekeep(ctx context.Context, epoch int64) {
 		ids = append(ids, id)
 	}
 	s.mu.Unlock()
+	// In spread mode, only the rules of this server's buckets.
+	ids = slices.DeleteFunc(ids, func(id string) bool { _, mine := s.ownsRule(id); return !mine })
 	have := map[string]bool{}
 	for _, d := range s.Library.List() {
 		have[d.ID] = true
@@ -736,6 +822,9 @@ func (s *Scheduler) housekeep(ctx context.Context, epoch int64) {
 	for _, doc := range manual {
 		var m manualDoc
 		if json.Unmarshal(doc.Source, &m) != nil || m.DetectionID == "" || have[m.DetectionID] || known[m.DetectionID] {
+			continue
+		}
+		if _, mine := s.ownsRule(m.DetectionID); !mine {
 			continue
 		}
 		known[m.DetectionID] = true
@@ -857,6 +946,9 @@ func (s *Scheduler) prepare(d *Detection, end time.Time) (*query.Query, time.Tim
 	}
 	q.Earliest = earliest.UTC().Format(time.RFC3339)
 	q.Latest = latest.UTC().Format(time.RFC3339)
+	// Summaries count an event that arrives late only once they are next
+	// checked; a detection must count it on its next run.
+	q.EventsOnly = true
 	return q, earliest, latest, nil
 }
 

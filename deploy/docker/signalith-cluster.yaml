@@ -1,0 +1,85 @@
+# Settings for both servers of the load balancer lab
+# (docker-compose.cluster.yml). The same as signalith.yaml, with HAProxy as
+# the trusted proxy that sends PROXY protocol headers, and its address as
+# the public one.
+server:
+  listen: 0.0.0.0:9000
+  agent_listen: 0.0.0.0:7779
+  # HAProxy's address: browsers reach either server through it on 8443,
+  # and agents on 7779. Agents on other machines need this computer's
+  # address instead.
+  public_url: https://localhost:8443
+  # HAProxy, the only address that may send PROXY protocol headers.
+  trusted_proxies: [172.30.11.10]
+  # Read the header on the web and agent ports, so sign-in limits, the audit log and
+  # agent limits see each client's own address.
+  proxy_protocol: true
+  tls:
+    # HTTPS with a certificate Signalith makes for itself and keeps in the
+    # signalith-data volume. See docs/https.md to stop browser warnings.
+    mode: auto
+    # Agents on plain http:// (plaintext_ingest) are refused on a new
+    # install. An install upgraded from an older quick start, whose agents
+    # send over plain http:// with the example token change-this-ingest-token,
+    # accepts them until you refuse them: Signalith works out which on its
+    # first start and keeps the answer. The Health page lists those agents.
+    # Once each has its configuration from the Add data page, set Agents on
+    # plain HTTP to Refuse them on the Settings page (HTTPS); that also ends
+    # the old token for good.
+opensearch:
+  # HTTPS, checked with OpenSearch's CA; Signalith signs in with its own
+  # client certificate (no password).
+  url: https://opensearch:9200
+  ca_file: /run/signalith-secrets/opensearch-ca.pem
+  cert_file: /run/signalith-secrets/opensearch-client.pem
+  key_file: /run/signalith-secrets/opensearch-client-key.pem
+  index_prefix: signalith
+  # auto: a copy of each day's events on a second OpenSearch node once
+  # there is one, none on this single node.
+  replicas: auto
+search:
+  default_earliest: -24h
+  max_events: 10000
+retention:
+  days: 90
+auth:
+  # The built-in admin's name on a new install. An install made before
+  # 0.3.1 keeps the name it has (admin): the name its servers share is
+  # used, so it signs in as before.
+  admin_user: signalithadmin
+cluster:
+  # May run the background jobs (detections, threat intel downloads,
+  # retention). Servers that share one OpenSearch take turns; turn it off
+  # only on a server that should never run them. The older name,
+  # detections.scheduler, still works.
+  leader_eligible: true
+detections:
+  dir: /var/lib/signalith/detections
+  max_findings_per_run: 100
+  catch_up: 6h
+lookups:
+  dir: /var/lib/signalith/lookups
+dashboards:
+  dir: /var/lib/signalith/dashboards
+  stale_after: 2h
+# Syslog from firewalls, switches and servers without an agent, over TLS
+# on port 6514, which the load balancer passes to both servers.
+#
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. A lab set up
+# before keeps it on, on 5514 (decided once by each server, see
+# signalith.yaml). For devices that cannot send
+# over TLS, set udp and tcp below to 0.0.0.0:5514 (the container cannot
+# open ports below 1024; the load balancer takes TCP on port 514 and
+# passes it to 5514), or turn it on with "Turn on plain syslog" on each
+# server's Add data page (Syslog). public_port is the port devices send
+# plain syslog to, which the Add data page shows.
+syslog:
+  # The same for syslog over TCP and TLS, so syslog.allow and each event's
+  # host see the device.
+  proxy_protocol: true
+  udp: ""
+  tcp: ""
+  tls: 0.0.0.0:6514
+  public_port: 514
+  allow: []

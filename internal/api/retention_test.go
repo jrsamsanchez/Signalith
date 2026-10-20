@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -44,8 +47,8 @@ func newRetentionServer(t *testing.T, cfg retention.Config) (*retention.Manager,
 func idle(t *testing.T, call func(method, path, body string) (int, map[string]any)) map[string]any {
 	t.Helper()
 	// A run archives and deletes about a hundred days; slow CI runners
-	// (Windows especially) can take well over five seconds.
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+	// (Windows especially) can take over thirty seconds.
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); {
 		_, out := call("GET", "/api/retention", "")
 		if sch := out["schedule"].(map[string]any); sch["running"] == false {
 			return out
@@ -210,9 +213,10 @@ func TestRetentionAPI(t *testing.T) {
 	if code != 202 || len(out["restores"].([]any)) != 1 {
 		t.Fatalf("restore = %d %v", code, out)
 	}
-	for range 500 {
+	// The restore runs in the background; like a run, it can be slow on CI.
+	for deadline := time.Now().Add(2 * time.Minute); time.Now().Before(deadline); {
 		_, out = call("GET", "/api/retention/archive", "")
-		if r, _ := out["archives"].([]any)[0].(map[string]any)["restore"].(map[string]any); r != nil && r["state"] == "done" {
+		if r, _ := out["archives"].([]any)[0].(map[string]any)["restore"].(map[string]any); r != nil && (r["state"] == "done" || r["state"] == "failed") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

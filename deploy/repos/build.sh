@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds Signalith's signed apt and dnf package repositories from .deb and
 # .rpm packages.
 #

@@ -1,8 +1,6 @@
 {"rule": "f4bb7321-7e64-4d1e-b1aa-21f8b019a91f", "cases": [
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"crontab","success":"yes","syscall":"rename"}},
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /crontab","success":"yes","syscall":"execve"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"crontab","success":"yes","syscall":"rename"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"exe":"x /crontab","success":"yes","syscall":"execve"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"crontab","success":"yes","syscall":"rename"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"crontab","success":"yes","syscall":"renamf"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"crontab","success":"yes"}},

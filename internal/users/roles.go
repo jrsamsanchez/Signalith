@@ -1,7 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package users keeps the people who can sign in to Signalith: local
 // users with passwords stored here, and users of an LDAP or Active
 // Directory server whose role comes from their groups. Every user has one
-// of three roles, like Splunk ES: viewer, analyst or admin.
+// of three roles: viewer, analyst or admin.
 package users
 
 import "fmt"

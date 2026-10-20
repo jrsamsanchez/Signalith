@@ -1,0 +1,5 @@
+{"rule": "6f583da0-3a90-4566-a4ed-83c09fe18bbf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Success","properties.message":"Delete user"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Delete user"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Success"}}
+]}

@@ -1,0 +1,4 @@
+{"rule": "a6355fbe-f36f-45d8-8efc-ab42465cbc52", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Add delegated permission grant"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

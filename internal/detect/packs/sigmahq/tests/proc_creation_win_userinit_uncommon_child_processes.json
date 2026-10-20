@@ -1,0 +1,18 @@
+{"rule": "0a98a10c-685d-4ab0-bddc-b6bdd1d48458", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x","ParentImage":"\\userinit.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"x","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\WINDOWS\\explorer.exe","ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\WINDOWS\\explorer.exe","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Program Files (x86)\\Citrix\\System32\\icast.exe","ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Program Files (x86)\\Citrix\\System32\\icast.exe","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"UsrLogon.cmd","Image":"x","ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"UsrLogon.cmd","NewProcessName":"x","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\SysWOW64\\proquota.exe","ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":":\\Windows\\SysWOW64\\proquota.exe","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"PowerShell.exe","Image":"x","ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"CommandLine":"PowerShell.exe","NewProcessName":"x","ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\userinit.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\userinit.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"x","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

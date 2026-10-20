@@ -1,0 +1,12 @@
+{"rule": "dc615235-1241-411a-b170-b34a4c8924aa", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"SHA256=0000000000000000000000000000000000000000000000000000000000000000","Image":"x \\MsMpEng.exe","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x \\MsMpEng.exe","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"SHA256=0000000000000000000000000000000000000000000000000000000000000000","Image":"x \\MsMpEng.exe","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ y"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x \\MsMpEng.exe","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ y"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"SHA256=0000000000000000000000000000000000000000000000000000000000000000","Image":"x \\MsMpEng.exf","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"SHA256=0000000000000000000000000000000000000000000000000000000000000000","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"15","data":{"Hash":"SHA256=0000000000000000000000000000000000000000000000000000000000000000","Image":"x \\MsMpEng.exe","ProcessId":"4242","TargetFilename":"C:\\Users\\Public\\Downloads\\download.zip:Zone.Identifier"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x \\MsMpEng.exf","ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"ProcessId":"4242","TargetFilename":"x :\\Windows\\System32\\ x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"11","data":{"Image":"x \\MsMpEng.exe","ProcessId":"4242"}}
+]}

@@ -1,0 +1,6 @@
+{"rule": "11c767ae-500b-423b-bae3-b234450736ed", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"RoleManagement","OperationName":"member to role Add","TargetResources":"62e90394-69f5-4237-9190-012177145e10"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"member to role Add","TargetResources":"62e90394-69f5-4237-9190-012177145e10"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"RoleManagement","TargetResources":"62e90394-69f5-4237-9190-012177145e10"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"RoleManagement","OperationName":"member to role Add"}}
+]}

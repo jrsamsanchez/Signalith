@@ -1,0 +1,4 @@
+{"rule": "58f88172-a73d-442b-94c9-95eaed3cbb36", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"Operation":"newdomain"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{}}
+]}

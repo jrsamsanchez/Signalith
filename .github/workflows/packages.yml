@@ -10,6 +10,10 @@ on:
         description: Version to build (empty in CI, which builds one above the latest release)
         type: string
         default: ""
+      sign:
+        description: Sign the agent programs (a release tag only; see docs/releasing.md)
+        type: boolean
+        default: false
     secrets:
       SIGNALITH_GPG_PRIVATE_KEY:
         required: false
@@ -81,6 +85,10 @@ jobs:
   linux:
     needs: [versions, binaries]
     runs-on: ubuntu-latest
+    # The agent release key is a secret of the release environment, which
+    # GitHub hands only to runs of a v* tag (docs/releasing.md); CI and dry
+    # runs build unsigned agent programs.
+    environment: ${{ inputs.sign && 'release' || '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -96,6 +104,7 @@ jobs:
           VERSION: ${{ needs.versions.outputs.version }}
           GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
           NFPM_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
+          SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
         run: |
           if [ -n "$GPG_KEY" ]; then
             export SIGNALITH_GPG_KEY_FILE="$RUNNER_TEMP/signing-key.asc"

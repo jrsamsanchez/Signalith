@@ -1,0 +1,6 @@
+{"rule": "ac490de2-ee39-421c-b61b-1c4005dde427", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /_layouts/15/spinstall0.aspx x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /_layouts/15/spinstall0.aspx y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","url":"x /_layouts/15/spinstall0.aspx x"}}
+]}

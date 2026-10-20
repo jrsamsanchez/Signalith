@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Investigations: cases that group findings with the analyst's notes, the
 // searches they ran and the events they pinned.
 'use strict';
@@ -183,6 +185,9 @@ function caseConfirm({ title, text, confirm }) {
 // ---------- case list ----------
 pageHooks.push((name) => {
   if (name !== 'cases') return;
+  // A link to a case (#cases?id=…, which tickets in Jira and ServiceNow
+  // carry) opens it.
+  if (hashCase) { caseState.open = hashCase; caseState.data = null; hashCase = ''; }
   if (caseState.open) showCase(caseState.open);
   else loadCases();
 });
@@ -429,7 +434,7 @@ function renderCase() {
   fill($('c-view'), backButton(), caseHead(c, linked),
     el('div', { class: 'c-layout' },
       el('div', { class: 'c-main' }, timelineCard(c, linked)),
-      el('div', { class: 'c-side' }, detailsCard(c, linked, edits), findingsCard(c, linked, missing || []), entitiesCard(c, ectx || []))));
+      el('div', { class: 'c-side' }, detailsCard(c, linked, edits), ticketsCard(c), findingsCard(c, linked, missing || []), entitiesCard(c, ectx || []))));
 }
 
 // ----- header: editable title, status line, resolve or reopen -----
@@ -473,9 +478,10 @@ function caseHead(c, linked) {
         el('span', { title: fullTime(c.created) }, `Opened ${ago(c.created)}` + (c.created_by ? ` by ${c.created_by}` : '')),
         dotsep(),
         el('span', { title: fullTime(c.updated) }, `Updated ${ago(c.updated)}`))),
-    editable ? el('div', { class: 'c-head__actions' },
-      el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond'),
-      action) : null);
+    el('div', { class: 'c-head__actions' },
+      storylineButton({ case: c.id }, { label: 'Storyline', title: 'See this case’s findings with every other finding and risk event about its entities, in ATT&CK order' }),
+      editable ? el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond') : null,
+      editable ? action : null));
 }
 
 // caseRespond opens the Respond dialog (respond.js) with the case's
@@ -777,9 +783,18 @@ function removeEntryButton(c, e, what) {
 function entryNode(c, e, linked) {
   const who = el('b', {}, e.author || 'Someone');
   switch (e.kind) {
-    case 'note':
+    case 'note': {
+      // A comment taken from a ticket: by jira:<name> or servicenow:<user>.
+      const from = /^(jira|servicenow):(.+)$/.exec(e.author || '');
+      if (from) {
+        const sys = from[1] === 'jira' ? 'Jira' : 'ServiceNow';
+        return tlItem({ kind: 'note', icon: 'message-square-text', time: e.time,
+          text: [el('b', {}, from[2]), el('span', { class: 'badge badge--outline c-from', title: 'A comment on the case’s ticket in ' + sys }, sys), ' commented on the ticket'],
+          body: el('p', { class: 'c-note' }, e.text), remove: removeEntryButton(c, e, 'note') });
+      }
       return tlItem({ kind: 'note', icon: 'message-square-text', time: e.time, text: [who, ' added a note'],
         body: el('p', { class: 'c-note' }, e.text), remove: removeEntryButton(c, e, 'note') });
+    }
     case 'finding': {
       const f = linked.find((x) => x.id === e.finding_id);
       return tlItem({ kind: 'finding', icon: 'shield-alert', time: e.time, text: [who, ' added a finding'],
@@ -799,6 +814,14 @@ function entryNode(c, e, linked) {
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
           snapshotTable(e)],
         remove: removeEntryButton(c, e, 'search') });
+    case 'notebook':
+      // A hunting notebook linked to this case; unlinking happens from the
+      // notebook, so the entry has no remove button here.
+      return tlItem({ kind: 'notebook', icon: 'notebook-pen', time: e.time, text: [who, ' linked a hunting notebook'],
+        body: el('div', { class: 'c-finding-ref' },
+          typeof openNotebook === 'function'
+            ? el('button', { type: 'button', class: 'link-btn c-link', title: 'Open this notebook', onclick: () => openNotebook(e.notebook_id) }, e.text || e.notebook_id)
+            : el('span', {}, e.text || e.notebook_id)) });
     case 'action':
       // A response action run from this case: the record of what was
       // done, so it cannot be removed. Details come from the audit log.
@@ -811,7 +834,7 @@ function entryNode(c, e, linked) {
   }
 }
 
-const CASE_HISTORY_ICON = { status: 'circle-dot', owner: 'user', severity: 'gauge', title: 'pencil', description: 'pencil', resolution: 'pencil', finding: 'unlink', entity: 'tag', timeline: 'trash-2' };
+const CASE_HISTORY_ICON = { status: 'circle-dot', owner: 'user', severity: 'gauge', title: 'pencil', description: 'pencil', resolution: 'pencil', finding: 'unlink', entity: 'tag', timeline: 'trash-2', ticket: 'ticket' };
 function historyNode(h) {
   const who = el('b', {}, h.author || 'Someone');
   const label = (field, v) => {
@@ -830,6 +853,7 @@ function historyNode(h) {
     case 'timeline': text = [who, ` removed a ${h.from} from the timeline`]; break;
     case 'description': case 'resolution': text = [who, ` edited the ${h.field}`]; break;
     case 'title': text = [who, ' renamed the case to ', el('b', {}, h.to)]; break;
+    case 'ticket': text = h.from ? [who, ' replaced the deleted ticket ', el('b', {}, h.from), ' with ', el('b', {}, h.to)] : [who, ' opened ticket ', el('b', {}, h.to)]; break;
     default: text = [who, ` changed ${h.field} from `, el('b', {}, label(h.field, h.from)), ' to ', el('b', {}, label(h.field, h.to))];
   }
   return tlItem({ kind: 'change', icon: CASE_HISTORY_ICON[h.field] || 'history', time: h.time, text, change: true });
@@ -912,6 +936,104 @@ function findingsCard(c, linked, missing) {
         el('div', { class: 'empty__title' }, 'No findings yet'),
         el('p', { class: 'empty__text' }, can('analyst') ? 'On the Findings page, select findings and choose Add to case.' : 'Findings added to this case appear here.'),
         el('div', { class: 'empty__actions' }, el('a', { class: 'btn btn--secondary btn--sm', href: '#findings', 'data-page': 'findings' }, 'Open Findings'))));
+}
+
+// ----- tickets in Jira or ServiceNow -----
+// The card draws at once from what was last loaded for the case, then
+// loads how each ticket is kept in step. It stays hidden on a server
+// without ticketing, unless the case already has a ticket.
+const TICKET_SYSTEM = { jira: 'Jira', servicenow: 'ServiceNow' };
+const ticketCache = new Map(); // case ID -> api/cases/{id}/tickets
+function ticketsCard(c) {
+  const body = el('div', {});
+  const count = el('span', { class: 'count' });
+  const card = el('section', { class: 'card c-tickets', 'aria-labelledby': 'ct-head' },
+    el('div', { class: 'card__head' }, el('h3', { class: 'card__title', id: 'ct-head' }, 'Tickets ', count)), body);
+  const draw = (d) => {
+    const list = d ? d.tickets : (c.tickets || []).map((t) => ({ ...t, state: 'linked' }));
+    card.hidden = !list.length && !(d && d.available && d.connections.length);
+    count.textContent = String(list.length);
+    const rows = list.map((t) => ticketRow(c, t, d));
+    const taken = new Set(list.filter((t) => t.state !== 'failed' && t.state !== 'gone').map((t) => t.connection));
+    const free = d && d.available && can('analyst') ? d.connections.filter((x) => !taken.has(x.id)) : [];
+    let open = null;
+    if (free.length) {
+      const pick = free.length > 1 ? caseSelect('ct-conn', free.map((x) => [x.id, x.label]), free[0].id, 'Connection') : null;
+      const btn = el('button', { type: 'button', class: 'btn btn--secondary btn--sm' }, icon('ticket'), free.length > 1 ? 'Open ticket' : `Open ticket in ${free[0].label}`);
+      btn.addEventListener('click', () => openTicket(c, pick ? pick.value : free[0].id, btn));
+      open = el('div', { class: 'c-tickets__open' }, pick, btn);
+    }
+    fill(body,
+      rows.length ? el('ul', { class: 'c-list-plain', role: 'list' }, ...rows)
+        : el('div', { class: 'empty empty--compact' }, el('div', { class: 'empty__title' }, 'No ticket yet'),
+          el('p', { class: 'empty__text' }, can('analyst') ? 'Open one in Jira or ServiceNow; it stays in step with this case.' : 'Tickets opened for this case appear here.')),
+      open,
+      d && d.links_error ? el('p', { class: 'c-tickets__note' }, d.links_error) : null,
+      d && d.available && d.connections.length && !d.public_url_set && can('admin') && free.length
+        ? el('p', { class: 'c-tickets__note' }, 'New tickets won’t link back here until server.public_url is set on the Settings page.') : null);
+  };
+  draw(ticketCache.get(c.id));
+  api('api/cases/' + encodeURIComponent(c.id) + '/tickets').then((d) => {
+    ticketCache.set(c.id, d);
+    if (card.isConnected) draw(d);
+  }).catch(() => { /* the case still lists its tickets */ });
+  return card;
+}
+
+function ticketRow(c, t, d) {
+  const sys = TICKET_SYSTEM[t.system] || t.system;
+  const key = t.key && /^https?:\/\//i.test(t.url || '')
+    ? el('a', { class: 'c-ticket__key', href: t.url, target: '_blank', rel: 'noopener noreferrer', title: `Open ${t.key} in ${sys}` }, t.key, el('span', { class: 'sr-only' }, ' (opens in a new tab)'), icon('arrow-up-right'))
+    : el('span', { class: 'c-ticket__key' }, t.key || 'New ticket');
+  const meta = [];
+  let err = t.error || '';
+  let retry = null;
+  switch (t.state) {
+    case 'pending': case 'creating':
+      meta.push(t.state === 'pending' && d && d.runs_on ? `Being opened by ${d.runs_on}` : 'Being opened…');
+      break;
+    case 'failed':
+      meta.push('Couldn’t be opened');
+      if (can('analyst')) retry = 'Try again';
+      break;
+    case 'gone':
+      meta.push(`Deleted in ${sys}`);
+      err = '';
+      if (can('analyst')) retry = 'Open a new one';
+      break;
+    default:
+      if (t.remote_status) meta.push(t.remote_status);
+      if (t.synced_at) meta.push(`synced ${ago(t.synced_at)}`);
+  }
+  if (t.auto) meta.push('opened by itself');
+  else if (t.created_by && t.state === 'linked') meta.push(`by ${t.created_by}`);
+  const btn = retry ? el('button', { type: 'button', class: 'link-btn' }, retry) : null;
+  if (btn) btn.addEventListener('click', () => openTicket(c, t.connection, btn));
+  return el('li', { class: 'c-ticket', 'data-state': t.state },
+    el('div', { class: 'c-ticket__head' }, key, el('span', { class: 'c-ticket__sys' }, t.connection_name ? `${sys} · ${t.connection_name}` : sys)),
+    meta.length ? el('div', { class: 'c-ticket__meta' }, meta.join(' · ')) : null,
+    err ? el('p', { class: 'c-ticket__err' }, icon(t.state === 'failed' ? 'circle-alert' : 'triangle-alert'), el('span', {}, err)) : null,
+    btn);
+}
+
+async function openTicket(c, connection, btn) {
+  const restore = busy(btn, 'Opening…');
+  let res;
+  try {
+    res = await api('api/cases/' + encodeURIComponent(c.id) + '/tickets', { connection });
+  } catch (e) {
+    restore();
+    toastError('Couldn’t open the ticket', e);
+    ticketCache.delete(c.id);
+    if (caseState.open === c.id) showCase(c.id);
+    return;
+  }
+  restore();
+  const t = res.ticket || {};
+  const sys = TICKET_SYSTEM[t.system] || t.system;
+  toast(res.queued ? `Asked for a ticket in ${sys}. The server that talks to ${sys} opens it within a minute.` : `Opened ${t.key} in ${sys}. It stays in step with this case.`);
+  ticketCache.delete(c.id);
+  if (caseState.open === c.id && $('page-cases').classList.contains('active')) await showCase(c.id);
 }
 
 // ----- entities: users, hosts and IPs the case is about -----

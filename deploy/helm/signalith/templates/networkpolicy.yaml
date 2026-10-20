@@ -1,0 +1,115 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy -}}
+{{- $port := int .Values.server.port -}}
+{{- $release := dict "app.kubernetes.io/name" (include "signalith.name" .) "app.kubernetes.io/instance" .Release.Name -}}
+# Signalith's servers and scanners: the web port from anyone (or
+# networkPolicy.webFrom), the agent port from anyone (or
+# networkPolicy.agentsFrom), and syslog to the servers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "signalith.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [{{ include "signalith.name" . }}] }
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [server, scanner] }
+  policyTypes: [Ingress{{ if $np.serverEgress }}, Egress{{ end }}]
+  ingress:
+    - ports:
+        - { port: {{ $port }}, protocol: TCP }
+      {{- with $np.webFrom }}
+      from:
+        # The servers reach each other on the web port too.
+        - podSelector:
+            matchLabels:
+              {{- toYaml $release | nindent 14 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - { port: {{ include "signalith.agentPort" . }}, protocol: TCP }
+      {{- /* Not set (null): the same peers as the web port, so an install
+      that limited webFrom is not opened up by the agent port. */}}
+      {{- $agentsFrom := $np.agentsFrom }}
+      {{- if kindIs "invalid" $agentsFrom }}
+      {{- $agentsFrom = $np.webFrom }}
+      {{- end }}
+      {{- with $agentsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .Values.server.syslog.enabled }}
+    - ports:
+        {{- if include "signalith.plainSyslog" . }}
+        - { port: 5514, protocol: UDP }
+        - { port: 5514, protocol: TCP }
+        {{- end }}
+        - { port: 6514, protocol: TCP }
+      {{- with $np.syslogFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+  {{- if $np.serverEgress }}
+  egress:
+    # DNS.
+    - ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # The other servers, and OpenSearch.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $release | nindent 14 }}
+    {{- toYaml $np.serverEgress | nindent 4 }}
+  {{- end }}
+{{- if .Values.opensearch.enabled }}
+---
+# OpenSearch: its REST port only from this release's Signalith pods, and
+# its transport port only from its own nodes. It connects only to its
+# own nodes and DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "signalith.opensearchName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [{{ include "signalith.name" . }}] }
+              - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name }}] }
+              - { key: app.kubernetes.io/component, operator: In, values: [server, scanner, opensearch] }
+      ports:
+        - { port: 9200, protocol: TCP }
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 14 }}
+      ports:
+        - { port: 9300, protocol: TCP }
+  egress:
+    - ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "signalith.selector" (dict "ctx" . "component" "opensearch") | nindent 14 }}
+      ports:
+        - { port: 9200, protocol: TCP }
+        - { port: 9300, protocol: TCP }
+{{- end }}
+{{- end }}

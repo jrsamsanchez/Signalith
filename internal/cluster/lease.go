@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
@@ -99,6 +102,10 @@ type Lease struct {
 	// Fingerprints returns this server's files fingerprints; fresh asks
 	// for them worked out again now.
 	Fingerprints func(fresh bool) Fingerprints
+	// Holder, when set, returns a lease document with its holder's
+	// fingerprints as this server compares them with its own (see
+	// Settings.HolderFingerprints).
+	Holder func(LeaseDoc) LeaseDoc
 	// Defer, when set, says whether this server should leave the lease to
 	// another live server for now, and why: its clock is far off.
 	Defer func() (bool, string)
@@ -518,10 +525,13 @@ func (l *Lease) watch(ctx context.Context, c *store.Client, index string) time.D
 	}
 	l.mu.Lock()
 	obs := l.obs
-	// A server that leaves the jobs to another could still take them
-	// over, so that is not a reason it cannot: only logged.
-	l.cannot = ""
-	if !ok {
+	// Why this server cannot take the jobs over is replaced only by this
+	// pass's answer, never cleared first: a holder about to hand the jobs
+	// to a newer version reads it from the heartbeat, and a moment's ""
+	// would make this server look like one that would take them. A server
+	// that leaves the jobs to another could still take them over, so
+	// that is not a reason it cannot: only logged.
+	if !ok || deferTo {
 		l.cannot = why
 	}
 	logDefer := deferTo && deferWhy != l.deferred
@@ -539,6 +549,7 @@ func (l *Lease) watch(ctx context.Context, c *store.Client, index string) time.D
 
 	switch {
 	case !found:
+		l.setCannot("")
 		// Missing although someone may still hold it (it was deleted, or
 		// its index was): the holder stops its jobs by itself first, as
 		// for any takeover.
@@ -551,13 +562,17 @@ func (l *Lease) watch(ctx context.Context, c *store.Client, index string) time.D
 		if doc.Prefer != "" && doc.Prefer != l.Self.NodeID && now-obs.since < l.Timing.PreferWait {
 			return min(l.Timing.Watch, l.Timing.PreferWait-(now-obs.since))
 		}
-		if doc.ReleasedBy != l.Self.NodeID && !l.guard(doc, true) {
+		if doc.ReleasedBy == l.Self.NodeID {
+			l.setCannot("")
+		} else if !l.guard(doc, true) {
 			return l.Timing.Watch
 		}
 	case doc.Holder == l.Self.NodeID && doc.HolderBoot != "" && doc.HolderBoot == l.Self.BootID:
 		// This process's own lease, from before it stopped its jobs:
 		// nobody else took it, so it takes it back at once.
+		l.setCannot("")
 	case doc.Holder == l.Self.NodeID && doc.HolderBoot != "" && doc.HolderBoot == l.Self.LastBoot:
+		l.setCannot("")
 		// The lease of the process that used this state folder before,
 		// which crashed. It is taken back once unchanged for the fence
 		// time rather than the whole takeover time: by then that process
@@ -600,24 +615,35 @@ func leaderElsewhere(ctx context.Context, c *store.Client, index, self string) (
 	return false, nil
 }
 
+// setCannot records why this server cannot take the jobs over; "" when
+// it could.
+func (l *Lease) setCannot(why string) {
+	l.mu.Lock()
+	l.cannot = why
+	l.mu.Unlock()
+}
+
 // guard is the fingerprint guard: this server takes the lease over only
-// when its files are the holder's. It records why not. fresh works the
-// fingerprints out again rather than using the last ones.
+// when its files are the holder's. It records why not, or that it could.
+// fresh works the fingerprints out again rather than using the last ones.
 func (l *Lease) guard(doc LeaseDoc, fresh bool) bool {
 	if doc.Fingerprint == "" {
+		l.setCannot("")
 		return true
+	}
+	if l.Holder != nil {
+		doc = l.Holder(doc)
 	}
 	mine := l.fingerprints(fresh)
 	if !mine.Unknown && mine.Combined() == doc.Fingerprint {
+		l.setCannot("")
 		return true
 	}
 	why := cannotTakeOver(mine.Differ(doc.Fingerprints), holderName(doc))
 	if mine.Unknown {
 		why = "its files could not be read in time (does the archive folder's share answer?)"
 	}
-	l.mu.Lock()
-	l.cannot = why
-	l.mu.Unlock()
+	l.setCannot(why)
 	return false
 }
 
@@ -805,7 +831,11 @@ func (l *Lease) waitDraining() {
 // meanwhile as long as Step keeps being called), then the lease is
 // written with no holder, so another server takes over within seconds. A
 // Release while another one is in progress waits for that one.
-func (l *Lease) Release(reason string) {
+func (l *Lease) Release(reason string) { l.ReleaseTo(reason, "") }
+
+// ReleaseTo is Release naming the server prefer (a node id) to take the
+// lease: the others wait PreferWait for it first. "" names none.
+func (l *Lease) ReleaseTo(reason, prefer string) {
 	l.mu.Lock()
 	switch l.state {
 	case standby:
@@ -853,6 +883,7 @@ func (l *Lease) Release(reason string) {
 	doc, ver := l.doc, l.ver
 	l.mu.Unlock()
 	doc.Holder, doc.HolderBoot, doc.ReleasedBy, doc.ReleaseReason, doc.RenewedAt = "", "", l.Self.NodeID, reason, l.Clock.Now().UTC()
+	doc.Prefer = prefer
 	if !fp.Unknown {
 		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
 	}

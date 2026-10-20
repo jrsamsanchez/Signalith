@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,7 +12,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"sort"
@@ -37,9 +40,14 @@ type Settings struct {
 	// Eligible is detections.scheduler: this server may run the
 	// background jobs.
 	Eligible bool
-	NodeURL  string
-	Listen   string
-	Syslog   Syslog
+	// Role is cluster.role: "" for a cluster server, or "scanner".
+	Role    string
+	NodeURL string
+	Listen  string
+	// AgentListen is server.agent_listen, "" when agents send to the web
+	// port.
+	AgentListen string
+	Syslog      Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
 	// Indexed returns the last time this server stored an event (zero
@@ -51,10 +59,49 @@ type Settings struct {
 	// heartbeat, and why it may not run the background jobs because of
 	// it; nil has none. It must not call the node.
 	Shared func() SharedStatus
+	// HolderFingerprints, when set, returns the fingerprints fp of the
+	// files of the job holder (or the server that released the jobs) as
+	// this server compares them with its own for the fingerprint guard:
+	// it may put the shared sentinel in place of the parts the holder
+	// moved into the shared settings itself but still reads from its own
+	// files until it switches to them. It must not call the node.
+	HolderFingerprints func(holder string, fp Fingerprints) Fingerprints
 	// Housekeep runs with the node's housekeeping, every 10 minutes on
 	// the server that runs the background jobs (old tombstones and
 	// finished requests); nil for none.
 	Housekeep func(ctx context.Context)
+	// Restart says how this server's restarts run by request go, for its
+	// heartbeat; nil has none. It must not call the node.
+	Restart func() RestartStatus
+	// Pending lists the settings that wait for a restart of this server,
+	// and the shared settings it could not use, for its heartbeat; nil has
+	// none. It must not call the node.
+	Pending func() (restart, refused []string)
+	// Traffic counts what this server received from agents and syslog,
+	// for its heartbeat, so the Health page can total the servers and
+	// tell when one gets no agent traffic; nil has none. It must not call
+	// the node.
+	Traffic func() Traffic
+	// TLS says which certificate authority this server's HTTPS
+	// certificate comes from, for its heartbeat; nil has none. It must not
+	// call the node.
+	TLS func() *TLSStatus
+	// OSIdentity says who this server signs in to OpenSearch as, for its
+	// heartbeat; nil has none. It must not call the node.
+	OSIdentity func() *OSIdentityStatus
+	// DetTenants returns, per tenant this server runs, the fingerprint of
+	// the files its detections use, for its heartbeat; nil has none. It
+	// must not call the node.
+	DetTenants func() map[string]string
+	// DetReleased returns, per tenant, the detection buckets this server
+	// released (see Heartbeat.DetReleased); nil has none. It must not
+	// call the node.
+	DetReleased func() map[string]map[int]int64
+	// Busy names a step of the background jobs that must not be cut
+	// short, such as "retention run", while one runs, for the hand-over
+	// of the jobs to a newer version and for upgrade-check; nil is never
+	// busy. It must not call the node.
+	Busy func() string
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -73,6 +120,11 @@ type SharedStatus struct {
 	// NotEligible says why the shared configuration keeps this server
 	// from running the background jobs, "" when it does not.
 	NotEligible string
+	// SettingsRev is how far this server has applied the shared settings
+	// and its nodecfg; nil before settings are shared.
+	SettingsRev *SettingsRev
+	// KeyIDs are the ids of the cluster keys this server accepts.
+	KeyIDs []string
 }
 
 // Node is this server in the cluster. It lives as long as the process:
@@ -152,8 +204,22 @@ type Node struct {
 	// paused says why this server's components are not running, so it
 	// must not hold the jobs; Use clears it.
 	paused string
+	// drained says why an admin drained this server, "" when it is not:
+	// it wants no traffic and takes no jobs until Resume.
+	drained string
 	// security is this server's last security check, for its heartbeat.
 	security SecuritySummary
+	// heldEpoch is the epoch of the lease this server holds, seen first
+	// at heldSince (heldSet once seen); yielded and lastYield say when it
+	// last handed the jobs to a newer version, yieldedTo and yieldedAt
+	// to whom and when, for its heartbeat (see maybeYield).
+	heldSet   bool
+	heldEpoch int64
+	heldSince time.Duration
+	yielded   bool
+	lastYield time.Duration
+	yieldedTo string
+	yieldedAt *time.Time
 
 	wake      chan struct{}
 	leaseWake chan struct{}
@@ -171,14 +237,20 @@ type heartbeatState struct {
 	checked bool
 	ver     store.Version
 	next    time.Duration
+	// good is when the last heartbeat that was written was sent, on the
+	// monotonic clock, and goodState the state it said.
+	good      time.Duration
+	goodState string
 }
 
 // member is another server's heartbeat as this one last saw it.
 type member struct {
 	hb  Heartbeat
 	ver store.Version
-	// since is when this version was first seen, on the monotonic clock.
-	since time.Duration
+	// since is when this version was first seen, on the monotonic clock,
+	// and readySince when its state turned ready (see maybeYield).
+	since      time.Duration
+	readySince time.Duration
 }
 
 // New returns the node for an open state folder. Start starts it.
@@ -191,6 +263,12 @@ func New(o Options) *Node {
 	}
 	if o.Timing.FilesWait == 0 {
 		o.Timing.FilesWait = DefaultTiming.FilesWait
+	}
+	if o.Timing.YieldEvery == 0 {
+		o.Timing.YieldEvery = DefaultTiming.YieldEvery
+	}
+	if o.Timing.YieldSettle == 0 {
+		o.Timing.YieldSettle = DefaultTiming.YieldSettle
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -205,6 +283,7 @@ func New(o Options) *Node {
 		Target:        n.leaseTarget,
 		Eligible:      n.mayTake,
 		Fingerprints:  n.fingerprints,
+		Holder:        n.holderPrints,
 		Defer:         n.leaveJobs,
 		WritesRefused: n.refusingWrites,
 		OnChange:      n.poke,
@@ -345,12 +424,76 @@ func (n *Node) releaseAsync(reason string) {
 	}()
 }
 
+// Drain drains this server, for why: /readyz answers 503 at once, so
+// load balancers stop sending it traffic, the background jobs are given
+// up (gracefully, as for any release) and it takes none until Resume. It
+// goes on answering whoever still reaches it. Draining a drained server
+// changes nothing.
+func (n *Node) Drain(why string) {
+	if why == "" {
+		why = "an admin drained it"
+	}
+	n.mu.Lock()
+	n.drained = why
+	n.mu.Unlock()
+	n.releaseAsync("this server was drained")
+	n.poke()
+}
+
+// Resume undoes Drain: the server wants traffic again and may take the
+// background jobs.
+func (n *Node) Resume() {
+	n.mu.Lock()
+	was := n.drained != ""
+	n.drained = ""
+	n.mu.Unlock()
+	if was {
+		n.poke()
+	}
+}
+
+// Drained reports whether this server is drained.
+func (n *Node) Drained() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.drained != ""
+}
+
+// MoveJobs gives the background jobs up, gracefully, for the server
+// prefer (a node id) to take them: the other servers wait for it a few
+// seconds first. It returns at once; a server that does not run them
+// does nothing.
+func (n *Node) MoveJobs(prefer string) {
+	n.mu.Lock()
+	if n.releasing || !n.lease.Holding() {
+		n.mu.Unlock()
+		return
+	}
+	n.releasing = true
+	n.mu.Unlock()
+	go func() {
+		n.lease.ReleaseTo("an admin moved the background jobs", prefer)
+		n.mu.Lock()
+		n.releasing = false
+		n.mu.Unlock()
+	}()
+}
+
 // SetSecurity keeps the summary of this server's last security check,
 // which its next heartbeat carries.
 func (n *Node) SetSecurity(s SecuritySummary) {
 	n.mu.Lock()
 	n.security = s
 	n.mu.Unlock()
+}
+
+// SetNodeURL changes the address the other servers reach this one at,
+// from the next heartbeat on: server.node_url applies without a restart.
+func (n *Node) SetNodeURL(url string) {
+	n.mu.Lock()
+	n.settings.NodeURL = url
+	n.mu.Unlock()
+	n.poke()
 }
 
 // SetJobs replaces the background jobs this server runs while it holds
@@ -478,6 +621,8 @@ func (n *Node) tick(ctx context.Context) time.Duration {
 			state = StateStopping
 		case n.paused != "":
 			state = StateDown
+		case n.drained != "":
+			state = StateDraining
 		}
 		n.mu.Unlock()
 		if conflict == "" {
@@ -490,6 +635,7 @@ func (n *Node) tick(ctx context.Context) time.Duration {
 			n.mu.Unlock()
 		}
 		n.observe(ctx, c, prefix)
+		n.maybeYield()
 	}
 	// Give the lease up when this server may no longer hold it, or should
 	// leave it to a server whose clock is right.
@@ -623,7 +769,7 @@ func (n *Node) firstHeartbeat(ctx context.Context, c *store.Client, prefix strin
 		n.mu.Lock()
 		// The next heartbeat, at once, says it is ready, and the other
 		// servers are read with it.
-		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono()}
+		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono(), good: sent, goodState: StateStarting}
 		n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
 		n.lastRead = n.clock.Mono()
 		if probation {
@@ -703,11 +849,10 @@ func (n *Node) identityConflict(other *Heartbeat) error {
 // newIdentityHowTo says how to give this server a new identity.
 func (n *Node) newIdentityHowTo() string {
 	if n.opts.Deployment == "docker" {
-		return "To give this server a new identity, stop it (docker compose stop signalith), delete node.id from its data volume " +
-			"(docker run --rm -v <volume>:/d busybox rm /d/node.id, where docker volume ls shows the volume, such as docker_signalith-data), " +
-			"then start it again (docker compose up -d)."
+		return "To give this server a new identity, stop it (docker compose stop signalith), run " +
+			"docker compose run --rm signalith signalith cluster new-identity, then start it again (docker compose up -d)."
 	}
-	return fmt.Sprintf("To give this server a new identity, stop it, delete %s and start it again.", filepath.Join(n.local.Dir, nodeFile))
+	return "To give this server a new identity, stop it, run signalith cluster new-identity and start it again."
 }
 
 // heartbeatDoc is this server's heartbeat as it is now.
@@ -715,22 +860,47 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	eligible, why := n.eligible()
 	view := n.lease.View()
 	n.mu.Lock()
-	sharedFn := n.settings.Shared
+	sharedFn, restartFn, pendingFn, busyFn := n.settings.Shared, n.settings.Restart, n.settings.Pending, n.settings.Busy
 	n.mu.Unlock()
+	busy := ""
+	if busyFn != nil {
+		busy = busyFn()
+	}
 	var sh *SharedStatus
 	if sharedFn != nil {
 		s := sharedFn()
 		sh = &s
+	}
+	var restart *RestartStatus
+	if restartFn != nil {
+		if r := restartFn(); r.Busy || r.Last != nil {
+			restart = &r
+		}
+	}
+	n.mu.Lock()
+	trafficFn, detFn, relFn := n.settings.Traffic, n.settings.DetTenants, n.settings.DetReleased
+	n.mu.Unlock()
+	var detTenants map[string]string
+	if detFn != nil {
+		detTenants = detFn()
+	}
+	var detReleased map[string]map[int]int64
+	if relFn != nil {
+		detReleased = relFn()
+	}
+	var restartNeeded, refused []string
+	if pendingFn != nil {
+		restartNeeded, refused = pendingFn()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	hb := Heartbeat{Kind: "node", NodeID: n.ID(), Name: n.Name(), BootID: n.local.BootID, PrevBoot: n.local.LastBoot, State: state,
 		Version: n.opts.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Deployment: n.opts.Deployment,
 		StartedAt: n.started, HeartbeatAt: n.clock.Now().UTC(), NodeURL: n.settings.NodeURL, Listen: n.settings.Listen,
-		Syslog: n.settings.Syslog, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
+		AgentListen: n.settings.AgentListen, Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
-		Features:   features}
+		Features:   features, DetTenants: detTenants, DetReleased: detReleased}
 	if n.lastErr != "" {
 		hb.OpenSearch.Problem = store.Problem(n.lastErrRaw)
 	}
@@ -760,6 +930,20 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.Mode, hb.ClusterKID, hb.ConfigSeq, hb.MaxRev = sh.Mode, sh.ClusterKID, sh.ConfigSeq, sh.MaxRev
 		hb.NeedsUpgrade, hb.Tamper, hb.SettingsDrift = sh.NeedsUpgrade, sh.Tamper, sh.SettingsDrift
 		hb.LevelMin, hb.LevelMax = sh.LevelMin, sh.LevelMax
+		hb.SettingsRev = sh.SettingsRev
+		hb.KeyIDs = sh.KeyIDs
+	}
+	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	if trafficFn != nil {
+		t := trafficFn()
+		hb.Traffic = &t
+	}
+	hb.Upgrade = n.upgradeStatusLocked(busy)
+	if f := n.settings.TLS; f != nil {
+		hb.TLS = f()
+	}
+	if f := n.settings.OSIdentity; f != nil {
+		hb.OSIdentity = f()
 	}
 	return hb
 }
@@ -794,6 +978,7 @@ func (n *Node) writeHeartbeat(ctx context.Context, state string) {
 	switch {
 	case err == nil:
 		n.hb.ver, n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = nv, true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
+		n.hb.good, n.hb.goodState = sent, state
 		n.errLogged = ""
 	case store.IsClusterBlock(err):
 		// OpenSearch answers, but its disk is full.
@@ -992,6 +1177,10 @@ func (n *Node) eligibleLocked() (bool, string) {
 		return false, "another process uses its identity"
 	case n.paused != "":
 		return false, n.paused
+	case n.drained != "":
+		return false, "it is drained"
+	case n.settings.Role == RoleScanner:
+		return false, "it is a scanner"
 	case !n.settings.Eligible:
 		return false, "detections.scheduler is off on this server"
 	case shared != "":
@@ -1111,6 +1300,28 @@ func refusal(oe *store.Error, index string) string {
 	return out + " on " + index
 }
 
+// holderPrints returns the lease document doc with the fingerprints of
+// its holder as this server compares them with its own
+// (Settings.HolderFingerprints).
+func (n *Node) holderPrints(doc LeaseDoc) LeaseDoc {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.holderPrintsLocked(doc)
+}
+
+// holderPrintsLocked is holderPrints; the caller holds n.mu.
+func (n *Node) holderPrintsLocked(doc LeaseDoc) LeaseDoc {
+	f := n.settings.HolderFingerprints
+	if f == nil || doc.Fingerprint == "" || doc.Fingerprints == (Fingerprints{}) {
+		return doc
+	}
+	fp := f(cmp.Or(doc.Holder, doc.ReleasedBy), doc.Fingerprints)
+	if fp != doc.Fingerprints {
+		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
+	}
+	return doc
+}
+
 // mayTake is eligible, for the lease: a process on probation also waits.
 func (n *Node) mayTake() (bool, string) {
 	n.mu.Lock()
@@ -1216,8 +1427,14 @@ func (n *Node) observe(ctx context.Context, c *store.Client, prefix string) {
 				age += *n.offset - time.Duration(*hb.ClockOffsetMS)*time.Millisecond
 			}
 			age = min(max(age, 0), 8*24*time.Hour)
-			n.members[hb.NodeID] = &member{hb: hb, ver: d.Version, since: now - age}
+			n.members[hb.NodeID] = &member{hb: hb, ver: d.Version, since: now - age, readySince: now}
 		case !m.ver.Same(d.Version):
+			// A server ready again, or started again or on another version
+			// between two looks (a quick restart in place), is ready only
+			// from now: the hand-over waits its settle time from here.
+			if hb.State == StateReady && (m.hb.State != StateReady || hb.BootID != m.hb.BootID || hb.Version != m.hb.Version) {
+				m.readySince = now
+			}
 			m.hb, m.ver, m.since = hb, d.Version, now
 		case gap && hb.State != StateStopped:
 			m.since = now
@@ -1399,6 +1616,8 @@ const (
 	NotReadyStopping   = "stopping"
 	// NotReadyDown is a server whose parts could not start (see Pause).
 	NotReadyDown = "down"
+	// NotReadyDraining is a server an admin drained (see Drain).
+	NotReadyDraining = "draining"
 )
 
 // Ready reports whether this server should get traffic from a load
@@ -1417,6 +1636,8 @@ func (n *Node) readyLocked() (bool, string) {
 		return false, NotReadyIdentity
 	case n.paused != "":
 		return false, NotReadyDown
+	case n.drained != "":
+		return false, NotReadyDraining
 	case !n.hb.checked && n.lastErr != "":
 		return false, NotReadyOpenSearch
 	case !n.hb.checked:
@@ -1511,7 +1732,7 @@ func (n *Node) Status() Status {
 	self.State = StateReady
 	if !ready {
 		self.State = map[string]string{NotReadyStopping: StateStopping, NotReadyIdentity: StateConflict, NotReadyOpenSearch: StateUnreachable,
-			NotReadyDown: StateDown}[reason]
+			NotReadyDown: StateDown, NotReadyDraining: StateDraining}[reason]
 		if self.State == "" {
 			self.State = StateStarting
 		}
@@ -1568,7 +1789,7 @@ func (n *Node) Status() Status {
 		// guard, its files differing from those of the server that ran
 		// them last. Every server's page shows it: the others' are read
 		// from their heartbeats.
-		d := view.Doc
+		d := n.holderPrintsLocked(view.Doc)
 		guarded := view.Found && d.Fingerprint != "" && s.NodeID != d.Holder && !(d.Holder == "" && s.NodeID == d.ReleasedBy)
 		switch {
 		case s.Self && view.CannotTake != "":
@@ -1619,7 +1840,7 @@ func (n *Node) warningsLocked(st Status, view LeaseView, notWhy string) []Warnin
 			where += " at " + n.copySeen.NodeURL
 		}
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("A copy of this server's state folder was started (%s) while this server runs. "+
-			"This server goes on and the copy stops by itself. Before you start the copy again, give it its own identity: delete node.id in its state folder.", where)})
+			"This server goes on and the copy stops by itself. Before you start the copy again, give it its own identity: run signalith cluster new-identity on it while it is stopped.", where)})
 	}
 	if n.writesRefused {
 		text, banner := fullDiskWarning(st.Jobs)
@@ -1692,6 +1913,10 @@ func (n *Node) localWarningsLocked(st Status) []Warning {
 			continue
 		}
 		names[s.Name]++
+		if s.Detail != nil && s.Detail.OSIdentity != nil && s.Detail.OSIdentity.CRL != nil && s.Detail.OSIdentity.CRL.Problem != "" {
+			w = append(w, Warning{Level: "red", Text: s.Name + ": " + s.Detail.OSIdentity.CRL.Problem,
+				Banner: "OpenSearch's revocation list needs attention: while it is missing or expired, OpenSearch refuses every certificate sign-in. The Servers page says what to do."})
+		}
 		if s.Detail != nil && s.Detail.ClockOffsetMS != nil {
 			off := time.Duration(*s.Detail.ClockOffsetMS) * time.Millisecond
 			if off.Abs() > 2*time.Second {

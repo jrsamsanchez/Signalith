@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -18,6 +21,12 @@ const (
 	// ActionSkip marks an index that is not a Signalith daily index; it is
 	// never touched.
 	ActionSkip = "skip"
+	// ActionCold moves a day to cold storage: snapshot, delete from the
+	// nodes' disks, mount back from the snapshot.
+	ActionCold = "cold"
+	// ActionMount mounts a day whose move to cold storage stopped after
+	// its snapshot was made and its index deleted.
+	ActionMount = "mount"
 )
 
 // Rules that lead to an action.
@@ -27,6 +36,10 @@ const (
 	RuleGuard    = "guard"
 	RuleCompact  = "compact_after_days"
 	RuleRecords  = "closed_records"
+	RuleCold     = "cold_after_days"
+	// RuleColdRecover finishes a move to cold storage that stopped
+	// between deleting the index and mounting its snapshot.
+	RuleColdRecover = "cold_recover"
 )
 
 // Decision is what the planner chose for one index, and why.
@@ -42,13 +55,26 @@ type Decision struct {
 	Source string `json:"source,omitempty"`
 	Bytes  int64  `json:"bytes"`
 	Docs   int64  `json:"docs"`
+	// Snapshot is the cold storage snapshot the step mounts or deletes
+	// (after the index, when the index is mounted from it).
+	Snapshot string `json:"snapshot,omitempty"`
 
-	age       int
+	age int
+	// cold means the index is mounted from cold storage; snapshotOnly
+	// that only its snapshot is left (a delete removes just that).
+	cold, snapshotOnly bool
+	// stale is a snapshot of this very index left by a move to cold
+	// storage that stopped before the index was deleted; the next move
+	// deletes it and snapshots again.
+	stale     string
 	restored  bool
 	compacted bool
 	// writesBlocked means writes to the index are already blocked, by an
 	// earlier compaction or by OpenSearch's flood-stage block.
 	writesBlocked bool
+	// writeBlock means index.blocks.write itself is set, which, unlike
+	// the flood-stage block, OpenSearch never lifts on its own.
+	writeBlock bool
 	// diskBlocked means OpenSearch's flood-stage block is on the index:
 	// it can still be read and deleted, but not changed or merged.
 	diskBlocked bool
@@ -67,7 +93,11 @@ type Decision struct {
 
 // Changes reports whether the decision does something to the index.
 func (d Decision) Changes() bool {
-	return d.Action == ActionCompact || d.Action == ActionArchive || d.Action == ActionDelete
+	switch d.Action {
+	case ActionCompact, ActionArchive, ActionDelete, ActionCold, ActionMount:
+		return true
+	}
+	return false
 }
 
 // Removes reports whether the decision deletes the index.
@@ -130,27 +160,36 @@ type Plan struct {
 }
 
 // Steps returns the decisions that change something: deletions first,
-// oldest day first, then compactions.
+// oldest day first, then mounts, moves to cold storage and compactions.
 func (p *Plan) Steps() []Decision {
-	var del, comp []Decision
+	var del, mount, cold, comp []Decision
 	for _, d := range p.Decisions {
 		switch {
 		case d.Removes():
 			del = append(del, d)
+		case d.Action == ActionMount:
+			mount = append(mount, d)
+		case d.Action == ActionCold:
+			cold = append(cold, d)
 		case d.Action == ActionCompact:
 			comp = append(comp, d)
 		}
 	}
-	return append(del, comp...)
+	return slices.Concat(del, mount, cold, comp)
 }
 
 // Summary counts what a plan, or part of it, does.
 type Summary struct {
-	DeleteDays    int      `json:"delete_days"` // archived days included
-	DeleteBytes   int64    `json:"delete_bytes"`
-	ArchiveDays   int      `json:"archive_days"`
-	CompactDays   int      `json:"compact_days"`
-	CompactBytes  int64    `json:"compact_bytes"`
+	DeleteDays   int   `json:"delete_days"` // archived days included
+	DeleteBytes  int64 `json:"delete_bytes"`
+	ArchiveDays  int   `json:"archive_days"`
+	CompactDays  int   `json:"compact_days"`
+	CompactBytes int64 `json:"compact_bytes"`
+	// ColdDays move to cold storage, freeing ColdBytes of disk; MountDays
+	// finish a move that stopped.
+	ColdDays      int      `json:"cold_days"`
+	ColdBytes     int64    `json:"cold_bytes"`
+	MountDays     int      `json:"mount_days"`
 	DeleteRecords int64    `json:"delete_records"`
 	Categories    []string `json:"categories"`
 }
@@ -177,6 +216,11 @@ func Summarize(steps []Decision, records []RecordStep) Summary {
 		case d.Action == ActionCompact:
 			s.CompactDays++
 			s.CompactBytes += d.Bytes
+		case d.Action == ActionCold:
+			s.ColdDays++
+			s.ColdBytes += d.Bytes
+		case d.Action == ActionMount:
+			s.MountDays++
 		default:
 			continue
 		}
@@ -208,6 +252,9 @@ type Snapshot struct {
 	// Skip lists indices to leave alone, with the reason, such as days
 	// whose archive failed earlier in the same run.
 	Skip map[string]string
+	// Cold is what OpenSearch says about cold storage; nil when it could
+	// not be read, and then nothing moves to or from cold storage.
+	Cold *ColdState
 }
 
 // archivedCopy returns how many documents of this very index the archive
@@ -237,6 +284,12 @@ func archivedCopy(ix IndexInfo, mans []Manifest) int64 {
 		return -1 // events were added after the restore
 	}
 	return n
+}
+
+// isMonthly reports whether a category keeps monthly indices.
+func isMonthly(id string) bool {
+	c, ok := CategoryByID(id)
+	return ok && c.Kind == KindMonthly
 }
 
 func startOfDay(t time.Time) time.Time {
@@ -288,9 +341,24 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		e.Category, e.Day, e.Source = cat, day.Format(time.DateOnly), src
 		e.age = int(today.Sub(day).Hours() / 24)
 		e.compacted = ix.Compacted()
-		e.writesBlocked, e.diskBlocked = ix.WriteBlocked || ix.DiskBlocked, ix.DiskBlocked
+		e.writesBlocked, e.diskBlocked, e.writeBlock = ix.WriteBlocked || ix.DiskBlocked, ix.DiskBlocked, ix.WriteBlocked
+		if ix.Cold != nil {
+			// Its data is in the snapshot repository: deleting it frees no
+			// disk, so size caps and the disk guard leave it alone.
+			e.cold, e.hold, e.Snapshot = true, true, ix.Cold.Snapshot
+		}
 		e.Action = ActionKeep
+		monthly := isMonthly(cat)
+		if monthly {
+			// A month counts from its last day, and only keep_days removes
+			// it: size caps and the disk guard never touch it.
+			e.age = int(today.Sub(monthEnd(day)).Hours() / 24)
+			e.hold = true
+		}
 		switch {
+		case monthly && !ix.Unavailable && e.age <= 0 && !(ix.RestoredUntil != "" && ix.RestoredUntil >= todayKey):
+			e.age = 0
+			e.Reason = "This month's records"
 		case ix.Unavailable:
 			// Its size and events are unknown, and deleting it now would
 			// lose what is on the missing shard.
@@ -315,7 +383,74 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		default:
 			e.Reason = "Kept forever"
 		}
+		if e.cold && e.Action == ActionKeep {
+			e.Reason = "In cold storage; " + strings.ToLower(e.Reason[:1]) + e.Reason[1:]
+		}
 		ents = append(ents, e)
+	}
+	// Snapshots in cold storage that no index is mounted from: a move
+	// that stopped after the index was deleted gets mounted, and one whose
+	// day is past keep_days gets deleted.
+	if snap.Cold != nil {
+		mounted, names := map[string]bool{}, map[string]bool{}
+		for _, e := range ents {
+			names[e.Index] = true
+			if e.cold {
+				mounted[e.Snapshot] = true
+			}
+		}
+		var waiting []string
+		for _, sn := range snap.Cold.Snapshots {
+			if mounted[sn.Name] {
+				continue
+			}
+			cat, day, ok := ParseIndex(snap.Prefix, sn.Index)
+			if !ok || isMonthly(cat) {
+				continue
+			}
+			if i := slices.IndexFunc(ents, func(e *entry) bool { return e.Index == sn.Index && !e.cold }); i >= 0 &&
+				ColdSnapshotName(ents[i].Index, ents[i].uuid) == sn.Name {
+				// Left by a move that stopped before the index was deleted.
+				ents[i].stale = sn.Name
+				continue
+			}
+			pol, src := s.For(cat)
+			e := &entry{Decision: Decision{Index: sn.Index, Category: cat, Day: day.Format(time.DateOnly), Source: src,
+				Snapshot: sn.Name, snapshotOnly: true, cold: true, hold: true}, dayT: day}
+			e.age = int(today.Sub(day).Hours() / 24)
+			past := pol.KeepDays > 0 && e.age > pol.KeepDays
+			switch {
+			case past && !pol.Archive:
+				e.Action, e.Rule = ActionDelete, RuleKeepDays
+				e.Reason = fmt.Sprintf("Older than %s; only its cold storage snapshot is left", days(pol.KeepDays))
+			case past && snap.Cold.Mountable && !names[sn.Index]:
+				// The policy archives, and only a mounted day can be
+				// archived: mount it, and the next run archives and
+				// deletes it.
+				e.Action, e.Rule = ActionMount, RuleColdRecover
+				e.Reason = fmt.Sprintf("Older than %s; mounted from cold storage first so it can be archived", days(pol.KeepDays))
+			case names[sn.Index]:
+				// Another index of that name holds events that arrived
+				// later; mounting would need its name, so both are kept.
+				e.Action = ActionKeep
+				e.Reason = "In cold storage, not mounted: an index of the same name holds events that arrived later"
+				waiting = append(waiting, sn.Index)
+			case snap.Cold.Mountable:
+				e.Action, e.Rule = ActionMount, RuleColdRecover
+				e.Reason = "Moved to cold storage, but not mounted yet"
+			default:
+				e.Action = ActionKeep
+				e.Reason = "In cold storage, not mounted: no OpenSearch node can mount searchable snapshots"
+				waiting = append(waiting, sn.Index)
+			}
+			ents = append(ents, e)
+		}
+		if len(waiting) > 0 {
+			slices.Sort(waiting)
+			plan.Notes = append(plan.Notes, fmt.Sprintf("Cold storage holds %s that can't be mounted now, so %s searchable only once %s mounted: %s.",
+				plural(len(waiting), "day", "days"), map[bool]string{true: "it isn't", false: "they aren't"}[len(waiting) == 1],
+				map[bool]string{true: "it is", false: "they are"}[len(waiting) == 1], strings.Join(waiting, ", ")))
+		}
 	}
 	sort.SliceStable(ents, func(i, j int) bool {
 		a, b := ents[i], ents[j]
@@ -352,7 +487,7 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		}
 		var size int64
 		for _, e := range ents {
-			if e.Category == c.ID && !e.Removes() && !e.restored {
+			if e.Category == c.ID && !e.Removes() && !e.restored && !e.cold {
 				size += e.Bytes
 			}
 		}
@@ -397,6 +532,9 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		// What deleting an index frees on the full disk: on a cluster of
 		// several nodes, only its shards on that node count.
 		freed := func(e *entry) int64 {
+			if e.cold {
+				return 0
+			}
 			if snap.NodeBytes != nil {
 				return snap.NodeBytes[e.Index]
 			}
@@ -481,13 +619,23 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 		}
 	}
 
-	// Archive before deleting, and compaction of what is kept.
+	// Archive before deleting, and moves to cold storage and compaction
+	// of what is kept.
+	var coldWaits []string
 	for _, e := range ents {
 		if e.Category == "" {
 			continue
 		}
 		pol, _ := s.For(e.Category)
+		wantsCold := e.Action == ActionKeep && !e.restored && !e.hold && !e.cold && pol.ColdAfterDays > 0 &&
+			e.age > pol.ColdAfterDays && !e.dayT.After(today)
+		if wantsCold && !snap.Cold.Ready() && !slices.Contains(coldWaits, e.Category) {
+			coldWaits = append(coldWaits, e.Category)
+		}
 		switch {
+		case e.snapshotOnly:
+			// Nothing to archive from; a day due to be archived is
+			// mounted first (above) only while it is within keep_days.
 		case e.Removes() && pol.Archive:
 			switch n := archivedCopy(e.info, snap.Archives[e.Index]); {
 			case n >= 0:
@@ -500,11 +648,23 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 			default:
 				e.Action = ActionArchive
 			}
+		case wantsCold && snap.Cold.Ready():
+			e.Action, e.Rule = ActionCold, RuleCold
+			e.Reason = fmt.Sprintf("Older than %s", days(pol.ColdAfterDays))
 		case e.Action == ActionKeep && !e.restored && !e.hold && !e.compacted && !e.diskBlocked && pol.CompactAfterDays > 0 &&
 			e.age > pol.CompactAfterDays && !e.dayT.After(today):
 			e.Action, e.Rule = ActionCompact, RuleCompact
 			e.Reason = fmt.Sprintf("Older than %s", days(pol.CompactAfterDays))
 		}
+	}
+	if len(coldWaits) > 0 {
+		names := make([]string, len(coldWaits))
+		for i, id := range coldWaits {
+			c, _ := CategoryByID(id)
+			names[i] = c.Name
+		}
+		plan.Notes = append(plan.Notes, fmt.Sprintf("Days of %s are due to move to cold storage, but %s, so they stay on the nodes' disks.",
+			strings.Join(names, ", "), snap.Cold.Missing(snap.Prefix)))
 	}
 	plan.Decisions = make([]Decision, len(ents))
 	for i, e := range ents {

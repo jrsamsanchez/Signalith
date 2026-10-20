@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package notify
 
 import (
@@ -55,6 +58,10 @@ type Message struct {
 	// "Playbook Brute force response waits for approval to: Send POST to
 	// fw.example.com for 203.0.113.7."
 	Ask string `json:"ask,omitempty"`
+	// RunID and Step name the playbook run and the step that waits, in a
+	// KindApproval message, for the buttons of interactive channels.
+	RunID string `json:"run_id,omitempty"`
+	Step  int    `json:"step,omitempty"`
 }
 
 // Limits on the text of a message, which comes from the events that
@@ -122,10 +129,11 @@ func ApprovalsLink(publicURL string) string {
 }
 
 // ApprovalMessage asks a channel to approve a playbook step about a
-// finding: ask says what waits, and link opens the Approvals page.
-func ApprovalMessage(f *findings.Finding, ask, link string) Message {
+// finding: ask says what waits, link opens the Approvals page, and runID
+// and step name the run and the step that waits.
+func ApprovalMessage(f *findings.Finding, ask, link, runID string, step int) Message {
 	m := NewMessage(f, link)
-	m.Kind, m.Ask = KindApproval, clean(ask, 1000)
+	m.Kind, m.Ask, m.RunID, m.Step = KindApproval, clean(ask, 1000), runID, step
 	return m
 }
 
@@ -358,22 +366,29 @@ func slackEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
-// slackBody returns a Slack incoming webhook message in Block Kit. Text
-// from the finding goes in plain_text elements, which Slack shows as
-// they are, so it cannot add links, mentions or formatting; only the
-// fallback text Slack shows in notifications is mrkdwn, escaped.
-func (m Message) slackBody(channel string) map[string]any {
+// slackBody returns a Slack incoming webhook message in Block Kit for
+// channel c. Text from the finding goes in plain_text elements, which
+// Slack shows as they are, so it cannot add links, mentions or
+// formatting; only the fallback text Slack shows in notifications is
+// mrkdwn, escaped. On an interactive channel the message carries buttons
+// (see Message.buttons), whose clicks Slack sends to Signalith.
+func (m Message) slackBody(c Channel) map[string]any {
 	plain := func(s string, max int) map[string]any {
 		return map[string]any{"type": "plain_text", "text": cut(s, max), "emoji": false}
 	}
+	buttons := m.buttons(c)
 	blocks := []any{map[string]any{"type": "header", "text": plain(m.headline(), 150)}}
 	switch m.Kind {
 	case KindTest:
-		blocks = append(blocks, map[string]any{"type": "section", "text": plain("If you can read this, Signalith can send notifications to "+channel+".", 2000)})
+		text := "If you can read this, Signalith can send notifications to " + c.Label() + "."
+		if c.Interactive() {
+			text += " Messages here carry buttons to acknowledge findings and approve or reject playbook steps."
+		}
+		blocks = append(blocks, map[string]any{"type": "section", "text": plain(text, 2000)})
 	case KindSummary:
 		blocks = append(blocks, map[string]any{"type": "section", "text": plain("There were too many to send one message each. Open the Findings page to see them all.", 2000)})
 	case KindApproval:
-		blocks = append(blocks, map[string]any{"type": "section", "text": plain(m.Ask+" Approve or reject it on the Approvals page within 24 hours.", 2000)})
+		blocks = append(blocks, map[string]any{"type": "section", "text": plain(m.Ask+" "+m.approvalHint(c), 2000)})
 	}
 	if m.Kind != KindSummary {
 		var fields []any
@@ -387,12 +402,39 @@ func (m Message) slackBody(channel string) map[string]any {
 			blocks = append(blocks, map[string]any{"type": "section", "fields": fields})
 		}
 	}
+	var elements []any
+	for _, b := range buttons {
+		e := map[string]any{"type": "button", "text": plain(ButtonLabel(b.Action), 75), "action_id": "signalith_" + b.Action,
+			"value": SignButton(c, b)}
+		switch b.Action {
+		case ButtonApprove:
+			e["style"] = "primary"
+			// Approving runs the action, so Slack asks once more.
+			e["confirm"] = map[string]any{"title": plain("Approve this step?", 100), "text": plain(cut(m.Ask, 300), 300),
+				"confirm": plain("Approve", 30), "deny": plain("Cancel", 30)}
+		case ButtonReject:
+			e["style"] = "danger"
+		}
+		elements = append(elements, e)
+	}
 	if m.Link != "" {
-		blocks = append(blocks, map[string]any{"type": "actions", "elements": []any{map[string]any{
-			"type": "button", "text": plain(m.linkLabel(), 75), "url": m.Link,
-		}}})
+		elements = append(elements, map[string]any{"type": "button", "text": plain(m.linkLabel(), 75), "url": m.Link, "action_id": "signalith_open"})
+	}
+	if len(elements) > 0 {
+		blocks = append(blocks, map[string]any{"type": "actions", "block_id": "signalith_actions", "elements": elements})
 	}
 	return map[string]any{"text": slackEscape(m.headline()), "blocks": blocks, "unfurl_links": false, "unfurl_media": false}
+}
+
+// approvalHint says how to approve or reject a step on channel c.
+func (m Message) approvalHint(c Channel) string {
+	switch {
+	case c.Interactive() && c.ApproveInChat:
+		return "Approve or reject it here or on the Approvals page within 24 hours."
+	case c.Interactive():
+		return "Reject it here, or approve or reject it on the Approvals page, within 24 hours."
+	}
+	return "Approve or reject it on the Approvals page within 24 hours."
 }
 
 // teamsEscape keeps text from a finding from being read as markdown in an
@@ -404,15 +446,33 @@ func teamsEscape(s string) string {
 // teamsBody returns a Teams Workflows webhook message: an Adaptive Card in
 // the "message" envelope that the "Post to a channel when a webhook
 // request is received" workflow expects.
-func (m Message) teamsBody(channel string) map[string]any {
+func (m Message) teamsBody(c Channel) map[string]any {
+	return map[string]any{
+		"type": "message",
+		"attachments": []any{map[string]any{
+			"contentType": "application/vnd.microsoft.card.adaptive",
+			"contentUrl":  nil,
+			"content":     m.teamsCard(c),
+		}},
+	}
+}
+
+// teamsCard returns the message as an Adaptive Card for channel c. On a
+// Teams app channel it carries buttons (Action.Execute), whose clicks
+// Teams sends to Signalith.
+func (m Message) teamsCard(c Channel) map[string]any {
 	body := []any{map[string]any{"type": "TextBlock", "text": teamsEscape(m.headline()), "weight": "Bolder", "size": "Medium", "wrap": true}}
 	switch m.Kind {
 	case KindTest:
-		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape("If you can read this, Signalith can send notifications to " + channel + "."), "wrap": true})
+		text := "If you can read this, Signalith can send notifications to " + c.Label() + "."
+		if c.Interactive() {
+			text += " Messages here carry buttons to acknowledge findings and approve or reject playbook steps."
+		}
+		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(text), "wrap": true})
 	case KindSummary:
 		body = append(body, map[string]any{"type": "TextBlock", "text": "There were too many to send one message each. Open the Findings page to see them all.", "wrap": true})
 	case KindApproval:
-		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(m.Ask + " Approve or reject it on the Approvals page within 24 hours."), "wrap": true})
+		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(m.Ask + " " + m.approvalHint(c)), "wrap": true})
 	}
 	if m.Kind != KindSummary {
 		var facts []any
@@ -429,15 +489,32 @@ func (m Message) teamsBody(channel string) map[string]any {
 		"version": "1.4",
 		"body":    body,
 	}
+	var actions []any
+	if c.Type == TypeTeamsApp {
+		for _, b := range m.buttons(c) {
+			a := map[string]any{"type": "Action.Execute", "title": ButtonLabel(b.Action), "verb": TeamsVerb(b.Action),
+				"data": map[string]any{TeamsButtonField: SignButton(c, b)}}
+			switch b.Action {
+			case ButtonApprove:
+				a["style"] = "positive"
+			case ButtonReject:
+				a["style"] = "destructive"
+			}
+			actions = append(actions, a)
+		}
+	}
 	if m.Link != "" {
-		card["actions"] = []any{map[string]any{"type": "Action.OpenUrl", "title": m.linkLabel(), "url": m.Link}}
+		actions = append(actions, map[string]any{"type": "Action.OpenUrl", "title": m.linkLabel(), "url": m.Link})
 	}
-	return map[string]any{
-		"type": "message",
-		"attachments": []any{map[string]any{
-			"contentType": "application/vnd.microsoft.card.adaptive",
-			"contentUrl":  nil,
-			"content":     card,
-		}},
+	if len(actions) > 0 {
+		card["actions"] = actions
 	}
+	return card
 }
+
+// TeamsButtonField holds a button's signed value in the data of its
+// Action.Execute.
+const TeamsButtonField = "signalith"
+
+// TeamsVerb is the Action.Execute verb of a button action.
+func TeamsVerb(action string) string { return "signalith." + action }

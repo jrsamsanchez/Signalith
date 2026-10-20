@@ -1,7 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
+	"bufio"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,8 +17,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"golang.org/x/crypto/bcrypt"
@@ -115,11 +123,68 @@ func HostCollectors(h Host, archiving bool) []Collector {
 				p, m, cvm := probeProcess(h.PID, h.PID == "self", h.Systemd)
 				return func(f *Facts) { f.Process, f.Memory, f.ConfidentialVM = p, m, cvm }
 			}},
+		{Name: "revocation list", Checks: []string{"accounts.opensearch_crl"}, Timeout: OSTimeout, Run: func(context.Context) func(*Facts) {
+			crl, denied := crlFacts(h)
+			return func(f *Facts) {
+				f.CRL = crl
+				if denied {
+					f.deny("accounts.opensearch_crl")
+				}
+			}
+		}},
 		{Name: "built-in admin", Checks: []string{"accounts.builtin_password"}, Timeout: OSTimeout, Run: func(context.Context) func(*Facts) {
 			a := adminFacts(h)
 			return func(f *Facts) { f.Admin = a }
 		}},
 	}
+}
+
+// crlFacts reads the revocation list OpenSearch checks client
+// certificates against, and checks it with OpenSearch's CA.
+func crlFacts(h Host) (*CRLFacts, bool) {
+	path := h.Config.OpenSearchCRLFile()
+	if path == "" {
+		return nil, false
+	}
+	out := &CRLFacts{File: path}
+	b, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		out.Missing = true
+		return out, false
+	case isDenied(err):
+		return out, true
+	case err != nil:
+		out.Err = err.Error()
+		return out, false
+	}
+	caFile, _, _ := h.Config.OpenSearchTLSFiles()
+	cas, _ := os.ReadFile(caFile)
+	var first error
+	for rest := cas; ; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		ca, err := x509.ParseCertificate(block.Bytes)
+		if block.Type != "CERTIFICATE" || err != nil {
+			continue
+		}
+		l, err := ospki.ParseCRL(b, ca, time.Now())
+		if err == nil {
+			out.Revoked, out.NextUpdate = len(l.RevokedCertificateEntries), l.NextUpdate
+			return out, false
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	if first == nil {
+		first = errors.New("opensearch.ca_file holds no certificate authority to check it against")
+	}
+	out.Err = first.Error()
+	return out, false
 }
 
 // keyFacts reads where the master key comes from, and who may read it.
@@ -175,7 +240,7 @@ const archiveMaxFiles = 100000
 // archiveFacts counts the archived days and reads who may read them.
 func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 	dir := h.Config.ArchiveDir()
-	a := &ArchiveFacts{Dir: dir, Policies: archiving}
+	a := &ArchiveFacts{Dir: dir, Policies: archiving, Encrypting: h.Config.ArchiveEncryption()}
 	if inVolume(dir) != "" && h.Docker {
 		a.Volume = dockerVolume
 	}
@@ -197,6 +262,9 @@ func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 		if info, err := d.Info(); err == nil {
 			a.Bytes += info.Size()
 		}
+		if !archiveEncrypted(p) {
+			a.Plain++
+		}
 		return nil
 	})
 	if err != nil {
@@ -217,6 +285,17 @@ func archiveFacts(h Host, archiving bool) (*ArchiveFacts, bool) {
 		a.Disk = disks[0]
 	}
 	return a, false
+}
+
+// archiveEncrypted reports whether the archive file p is encrypted: it
+// starts as archivecrypt writes it.
+func archiveEncrypted(p string) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	return archivecrypt.Encrypted(bufio.NewReaderSize(f, 16))
 }
 
 // secretFileVars name files of secrets the server reads.
@@ -247,7 +326,7 @@ func fileFacts(h Host) (FileFacts, bool) {
 			items = append(items, item{p, "key"})
 		}
 	}
-	for _, p := range []string{c.AdminHashFile(), config.AdminLocalHashFileIn(state), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.PlaybooksFile(), SavedDisksFile(state)} {
+	for _, p := range []string{c.AdminHashFile(), config.AdminLocalHashFileIn(state), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.PlaybooksFile(), c.TicketingFile(), SavedDisksFile(state)} {
 		items = append(items, item{p, "private"})
 	}
 	// Whoever can put a program in the scripts folder decides what

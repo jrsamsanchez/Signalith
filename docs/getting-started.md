@@ -6,16 +6,16 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 # Getting started
 
-Signalith needs two things: **OpenSearch 2.x**, where events are stored, and the
+Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you; on Linux and Windows you install OpenSearch first and then Signalith
-next to it.
+runs both for you, and so does Windows: its installer sets up OpenSearch too. On Linux
+you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
 | [Linux](#linux) | A systemd service on a server | OpenSearch, then a few commands |
-| [Windows](#windows) | A Windows service | OpenSearch, then one script |
+| [Windows](#windows) | A Windows service | One installer (OpenSearch included) |
 
 ## Docker quick start
 
@@ -33,7 +33,9 @@ the admin password, the agents' ingest token and the certificates OpenSearch and
 Signalith use with each other, and keeps them in Docker volumes; no password is written
 in the compose files. The last command shows the admin password.
 
-Open **https://localhost:8080** and sign in as `admin` with that password.
+Open **https://localhost:9000** and sign in as `signalithadmin` with that password. Since
+Signalith made it, you are then asked to choose your own before anything else; from then
+on `signalith initial-password` no longer shows the first one, which no longer works.
 
 !!! tip "The browser warns about the certificate"
     Signalith serves HTTPS with a certificate it makes for itself, so the browser warns
@@ -45,7 +47,7 @@ OpenSearch runs with its security plugin on: it answers only over HTTPS, publish
 port, and lets in only Signalith's certificate, which may use only Signalith's own
 indices. See [Securing OpenSearch](opensearch-security.md).
 
-To change the admin password (the first one then stops working):
+To change the admin password again later:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd
@@ -59,6 +61,15 @@ build the image from your own checkout, see
 [Running a release, or building the image yourself](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#running-a-release-or-building-the-image-yourself). After a reboot everything starts again by itself
 once Docker is running (in Docker Desktop, turn on *Start Docker Desktop when you sign
 in*).
+
+If an update stays at `Container docker-signalith-1 Stopping` for more than about two
+minutes, Docker itself is stuck, not Signalith, which stops in seconds. On Windows, quit
+Docker Desktop, run `wsl --shutdown` in PowerShell, start Docker Desktop again and run the
+`up` command again. Your data is kept. If `wsl --shutdown` hangs too, restart the
+computer, or run `taskkill /F /IM wslservice.exe` in PowerShell as administrator. It
+happens most when the computer is short of memory; the README's
+[Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#docker-evaluation)
+shows how to give WSL a fixed share of memory in `.wslconfig`.
 
 !!! note "Coming from an older quick start?"
     Earlier versions served plain HTTP and took the admin password from
@@ -80,9 +91,45 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
 
 [Sample data](sample-data.md) has a guided tour of the attacks it contains.
 
+## The setup guide
+
+The first time you sign in, Signalith offers a short **setup guide**: a few steps that
+take a new install from "running" to "watching". Each step says why it matters, opens the
+page that does it, and is checked off by itself once Signalith sees it done, so the guide
+also shows what an install still lacks. For an admin the steps are:
+
+1. **Turn on two-step sign-in** for your own account, with an authenticator app or a
+   passkey (skipped for single sign-on users, whose identity provider handles it).
+2. **Bring in your logs**: the guide opens **Add data** at the one-line install of the
+   Signalith Agent for Windows, Linux and macOS, or load the [sample data](sample-data.md)
+   to try things first. Done once events arrive.
+3. **Get told when something fires**: an e-mail, Slack, Teams or webhook channel on
+   **Settings > Notifications** ([Notifications](notifications.md)).
+4. **Add your team**: their own accounts on **Settings > Users**, directory sign-in or
+   single sign-on, so nobody shares the admin account ([Users and roles](users.md)).
+5. **Fix what the security check finds** on **Settings > Security**: HTTPS, encryption,
+   OpenSearch and the other checks ([Security](security.md)). Done when nothing is at risk.
+6. **Connect an AI model** (optional) for plain-English questions on **Settings > Server**
+   ([Investigate with AI](investigate.md) covers what is sent).
+7. **Run your first search** with the **Query guide** and the Ask box.
+
+Analysts and viewers get a shorter guide: two-step sign-in, the findings queue and a
+first search.
+
+Nothing in the guide changes a setting by itself, and every step can be left for later:
+
+- **Skip this step** moves on and remembers it as skipped.
+- **Ask me later** puts the guide away for a day.
+- **Don't ask again** stops it from opening by itself.
+
+While you work through it, a **Setup** button at the top of the page shows how many steps
+are left and opens the guide again. **Setup guide** in the account menu opens it at any
+time, even after **Don't ask again**. Your answers are your own and follow you to any
+browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have their own.
+
 ## Linux
 
-1. Install OpenSearch 2.x
+1. Install OpenSearch 2.x or 3.x
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
 
@@ -100,7 +147,7 @@ docker compose -f deploy/docker/docker-compose.yml exec signalith signalith samp
     (`/var/lib/signalith/keys/master.key`). Back that file up, apart from the config;
     see [Encryption](encryption.md#the-master-key).
 
-3. Open `https://<server>:8080` and sign in as `admin`.
+3. Open `https://<server>:9000` and sign in as `signalithadmin`.
 4. Replace OpenSearch's demo security setup, whose passwords and certificates are
    public, and have Signalith sign in with a certificate of its own:
    [Securing OpenSearch](opensearch-security.md).
@@ -124,24 +171,29 @@ Older versions cannot read encrypted values: before going back to one, run
 
 ## Windows
 
-1. Install OpenSearch 2.x for Windows
-   ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
-2. In an elevated PowerShell, from the folder holding `signalith.exe` and
+The easiest way is the `.msi` installer: see [Install from packages](install-packages.md#windows).
+It installs OpenSearch as well, so there is nothing to set up first. To install by hand
+instead:
+
+1. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:
 
     ```powershell
-    .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+    .\install.ps1
     ```
 
-    This writes `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith**
-    service and starts it. The service runs as its own account,
-    `NT SERVICE\Signalith`, and only SYSTEM, Administrators and that account can read
-    `C:\ProgramData\Signalith`.
+    This installs OpenSearch on this computer (see
+    [OpenSearch on Windows](install-packages.md#opensearch-on-windows)), writes
+    `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and
+    starts it. The service runs as its own account, `NT SERVICE\Signalith`, and only
+    SYSTEM, Administrators and that account can read `C:\ProgramData\Signalith`. To use an
+    OpenSearch you run yourself instead, give its address:
+    `.\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200`, then
+    [secure it](opensearch-security.md).
 
-3. Open https://localhost:8080 and sign in as `admin`
-   ([trust the certificate](https.md#trust-the-certificate) to stop the warning).
-4. Secure OpenSearch and have Signalith sign in with a certificate:
-   [Securing OpenSearch](opensearch-security.md).
+2. Open https://localhost:9000 and sign in as `signalithadmin`
+   ([trust the certificate](https.md#trust-the-certificate) to stop the warning). To see
+   the first password, run `signalith initial-password` in PowerShell as Administrator.
 
 To upgrade, put the new `signalith.exe` next to the script and run it again: it stops
 the service, replaces the program, encrypts passwords an older version kept as plain
@@ -168,9 +220,10 @@ over HTTPS, checking the server's certificate with that CA.
 
 !!! warning "Use an address the agents can reach"
     Agents on other machines must send to an address they can reach, such as
-    `https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on
-    the Add data page (or set `server.public_url`), and allow the port, 8080 by default,
-    through this computer's firewall.
+    `https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on
+    the Add data page (or set `server.public_url`). Agents send to a port of their own,
+    7779 by default, not the web page's 9000; allow both through this computer's
+    firewall. See [The agent port](sending-data.md#the-agent-port).
 
 ## Next steps
 

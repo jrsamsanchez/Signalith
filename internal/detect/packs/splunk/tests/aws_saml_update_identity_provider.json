@@ -1,0 +1,5 @@
+{"rule": "2f0604c6-6030-11eb-ae93-0242ac130002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"awsRegion":"us-east-1","eventName":"UpdateSAMLProvider","eventSource":"ec2.amazonaws.com","recipientAccountId":"111122223333","sourceIPAddress":"203.0.113.7","userAgent":"aws-cli/2.15.0","userIdentity.type":"IAMUser","userIdentity.userName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"awsRegion":"us-east-1","eventName":"UpdateSAMLProvides","eventSource":"ec2.amazonaws.com","recipientAccountId":"111122223333","sourceIPAddress":"203.0.113.7","userAgent":"aws-cli/2.15.0","userIdentity.type":"IAMUser","userIdentity.userName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"awsRegion":"us-east-1","eventName":"DescribeInstances","eventSource":"ec2.amazonaws.com","recipientAccountId":"111122223333","sourceIPAddress":"203.0.113.7","userAgent":"aws-cli/2.15.0","userIdentity.type":"IAMUser","userIdentity.userName":"tester"}}
+]}

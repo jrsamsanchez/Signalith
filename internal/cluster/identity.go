@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
@@ -159,6 +162,10 @@ func checkFolder(dir string) (warnings []string, shared string, err error) {
 	}
 	return nil, "", nil
 }
+
+// IdentityPath is the file in the state folder dir that holds this
+// server's identity (node.id).
+func IdentityPath(dir string) string { return filepath.Join(dir, nodeFile) }
 
 // InUse reports whether a Signalith process uses the state folder dir
 // now: whether another open file holds its cluster/lock. It changes

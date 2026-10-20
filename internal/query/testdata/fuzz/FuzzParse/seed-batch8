@@ -1,0 +1,2 @@
+go test fuzz v1
+string("* | where .25 > (s/f) AND x IN (,a,) | stats count BY \"dest\" | dedup dest sortby -count, +x")

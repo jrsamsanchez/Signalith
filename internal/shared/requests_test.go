@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -265,5 +268,126 @@ func TestRequestsInSequence(t *testing.T) {
 	runAll("n_b", "n_b")
 	if got, _, _ = ra.Get(ctx, req.ID); got.State != RequestDone || !slices.Equal(order, []string{"n_c", "n_b"}) {
 		t.Errorf("order %v, %+v", order, got)
+	}
+}
+
+// A request someone wrote to OpenSearch without the cluster key, or one
+// whose signed fields were changed, is refused and logged, not run; one
+// signed with another key the server still accepts runs.
+func TestRequestsRefuseForged(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, logs := e.hub("siem-a")
+	r := NewRequests(a, "n_a")
+	ran := 0
+	l := &lease{epoch: 1, holding: true}
+	rn := &Runner{Requests: r, Lease: l.get, Handlers: map[string]Handler{"rotate_key": func(context.Context, *Request) error { ran++; return nil }}}
+
+	// Written straight to the runtime index, without a MAC.
+	forged := &Request{Kind: "request", ID: "rq_forged", Type: "rotate_key", Target: TargetLeader, State: RequestQueued,
+		RequestedBy: "admin", RequestedOn: "siem-a", Created: e.clock.Now().UTC()}
+	if _, err := e.c.Create(ctx, r.index(), requestDocID(forged.ID), forged, true); err != nil {
+		t.Fatal(err)
+	}
+	// Signed, then its arguments changed.
+	changed, err := r.Submit(ctx, "rotate_key", TargetLeader, map[string]any{"reason": "routine"}, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, _, _ = r.Get(ctx, changed.ID)
+	changed.Args, changed.RequestedBy = json.RawMessage(`{"reason":"evil"}`), "admin"
+	if err := r.put(ctx, changed); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := rn.RunOnce(ctx); n != 0 || err != nil || ran != 0 {
+		t.Fatalf("ran %d %d %v", n, ran, err)
+	}
+	for _, id := range []string{forged.ID, changed.ID} {
+		got, _, _ := r.Get(ctx, id)
+		if got.State != RequestFailed || !strings.HasPrefix(got.Error, "refused: ") {
+			t.Errorf("%s: %+v", id, got)
+		}
+	}
+	if !strings.Contains(logs.String(), "refused to run a request") || !strings.Contains(logs.String(), `"audit":true`) {
+		t.Errorf("not logged: %s", logs)
+	}
+
+	// Signed with the old key during a rotation: still accepted.
+	other, err := NewClusterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _ := e.hub("siem-b")
+	old.SetKeys(NewKeySet(other))
+	// Its arguments come back from OpenSearch with their keys in another
+	// order.
+	args := struct {
+		Removed []string `json:"removed"`
+		Reason  string   `json:"reason"`
+	}{[]string{"n_c"}, "removed siem-c"}
+	req, err := NewRequests(old, "n_b").Submit(ctx, "rotate_key", TargetLeader, args, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetKeys(NewKeySet(e.key, other))
+	if n, _ := rn.RunOnce(ctx); n != 1 || ran != 1 {
+		t.Fatalf("ran %d %d", n, ran)
+	}
+	if got, _, _ := r.Get(ctx, req.ID); got.State != RequestDone {
+		t.Errorf("old key: %+v", got)
+	}
+	// Once the old key is no longer accepted, a request it signed is not run.
+	req, _ = NewRequests(old, "n_b").Submit(ctx, "rotate_key", TargetLeader, nil, "sam")
+	a.SetKeys(NewKeySet(e.key))
+	if n, _ := rn.RunOnce(ctx); n != 0 || ran != 1 {
+		t.Fatalf("ran %d %d", n, ran)
+	}
+	if got, _, _ := r.Get(ctx, req.ID); got.State != RequestFailed {
+		t.Errorf("dropped key: %+v", got)
+	}
+}
+
+// A request that ran, put back in the queue as it was, does not run
+// again: not on the server that ran it, nor on another once it is older
+// than RequestMaxAge.
+func TestRequestsRefuseReplayed(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	ra, rb := NewRequests(a, "n_a"), NewRequests(a, "n_b")
+	ran := 0
+	h := map[string]Handler{"archive_restore": func(context.Context, *Request) error { ran++; return nil }}
+	la, lb := &lease{epoch: 1, holding: true}, &lease{}
+	runA := &Runner{Requests: ra, Lease: la.get, Handlers: h}
+	runB := &Runner{Requests: rb, Lease: lb.get, Handlers: h}
+	req, err := ra.Submit(ctx, "archive_restore", TargetLeader, map[string]any{"confirm": true}, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := runA.RunOnce(ctx); n != 1 || ran != 1 {
+		t.Fatalf("ran %d %d", n, ran)
+	}
+	requeue := func() {
+		t.Helper()
+		got, _, _ := ra.Get(ctx, req.ID)
+		got.State, got.ClaimedBy, got.Started, got.Finished, got.Error = RequestQueued, "", nil, nil, ""
+		if err := ra.put(ctx, got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	requeue()
+	runA.RunOnce(ctx)
+	if got, _, _ := ra.Get(ctx, req.ID); ran != 1 || got.State != RequestFailed {
+		t.Fatalf("replayed on the same server: ran %d, %+v", ran, got)
+	}
+
+	// Another server, after the lease moved, an hour later.
+	requeue()
+	la.set(1, false)
+	lb.set(2, true)
+	e.clock.SetWall(e.clock.Now().Add(RequestMaxAge + time.Minute))
+	runB.RunOnce(ctx)
+	if got, _, _ := ra.Get(ctx, req.ID); ran != 1 || got.State != RequestFailed {
+		t.Fatalf("replayed on another server: ran %d, %+v", ran, got)
 	}
 }

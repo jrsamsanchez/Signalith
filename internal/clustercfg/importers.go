@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clustercfg
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,6 +27,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -100,6 +105,13 @@ func hashOf(files []string, values ...any) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// The names of the importers of the feed list and of the retention
+// policies (Importers).
+const (
+	ImportFeeds     = "feeds"
+	ImportRetention = "retention"
+)
+
 // Importers returns the importers of the shared settings: the feed list
 // (the feeds added on the page and intel.feeds in signalith.yaml), the
 // feeds' status (so downloads stay on their schedules) and the retention
@@ -107,10 +119,12 @@ func hashOf(files []string, values ...any) (string, error) {
 // differed), which are always written, even empty, so every member finds
 // them; then, once the cluster's level keeps users in the shared settings
 // and when d has the users' documents (UseAuth), the users and the
-// directory sign-in settings.
+// directory sign-in settings, and once it keeps tenants, the list of
+// tenants; and once its level keeps the settings of the Settings page
+// there, those every server shares.
 func Importers(d *Docs, f Files) []shared.Importer {
 	out := []shared.Importer{
-		{Name: "feeds", Source: func() (string, error) {
+		{Name: ImportFeeds, Source: func() (string, error) {
 			c := f.Config()
 			return hashOf([]string{c.IntelFeedsFile()}, c.Intel.Feeds)
 		}, Run: func(ctx context.Context, by string) error { return importFeeds(ctx, d, f, by) }},
@@ -121,7 +135,7 @@ func Importers(d *Docs, f Files) []shared.Importer {
 			}
 			return hashOf([]string{p})
 		}, Run: func(ctx context.Context, _ string) error { return importFeedStatus(ctx, f) }},
-		{Name: "retention", Source: func() (string, error) {
+		{Name: ImportRetention, Source: func() (string, error) {
 			c := f.Config()
 			return hashOf([]string{RetentionFile(c)}, c.RetentionPolicies())
 		}, Run: func(ctx context.Context, by string) error { return importRetention(ctx, d, f, by) }},
@@ -133,9 +147,18 @@ func Importers(d *Docs, f Files) []shared.Importer {
 		}, Run: func(ctx context.Context, by string) error { return importUsers(ctx, a, f, by) }},
 			shared.Importer{Name: shared.ImportDirectory, MinLevel: shared.LevelSharedUsers, Source: func() (string, error) {
 				return directorySource(f.Config())
-			}, Run: func(ctx context.Context, by string) error { return importDirectory(ctx, a, f, by) }})
+			}, Run: func(ctx context.Context, by string) error { return importDirectory(ctx, a, f, by) }},
+			shared.Importer{Name: shared.ImportTenants, MinLevel: shared.LevelTenants, Source: func() (string, error) {
+				p := f.Config().TenantsFile()
+				if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+					return "", nil
+				}
+				return hashOf([]string{p})
+			}, Run: func(ctx context.Context, by string) error { return importTenants(ctx, a, f, by) }})
 	}
-	return out
+	return append(out, shared.Importer{Name: shared.ImportSettings, MinLevel: shared.LevelSharedSettings, Source: func() (string, error) {
+		return settingsSource(d, f.Config())
+	}, Run: func(ctx context.Context, by string) error { return importSettings(ctx, d, f, by) }})
 }
 
 // yamlFeeds returns the feeds in signalith.yaml, with ${ENV} references
@@ -293,8 +316,9 @@ func importRetention(ctx context.Context, d *Docs, f Files, by string) error {
 // step safe to run again (what is there counts as done): the built-in
 // admin with the password in use here (the one signalith passwd wrote to
 // the state folder included); every user of users.json with their
-// password hash, flags and session epoch 1 (one with the built-in admin's
-// name is left out: it could never sign in); and their last sign-ins.
+// password hash, flags, two-step sign-in and session epoch 1 (one with
+// the built-in admin's name is left out: it could never sign in); their
+// last sign-ins; and the built-in admin's two-step sign-in.
 // It records what this server's files say of auth.*.
 func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
 	c := f.Config()
@@ -303,7 +327,7 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(builtin, c.Auth.AdminUser) {
+	if !strings.EqualFold(builtin, c.Auth.AdminUser) && !config.KeptLegacyAdmin(builtin, c.Auth.AdminUser) {
 		f.log().Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
 			"builtin", builtin, "admin_user", c.Auth.AdminUser)
 	}
@@ -335,6 +359,20 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 			return err
 		}
 	}
+	// The built-in admin's two-step sign-in, unless the cluster's has one
+	// already.
+	if m, err := users.ReadFileBuiltinMFA(c.UsersFile()); err != nil {
+		return err
+	} else if m.On() {
+		if err := ub.ChangeBuiltinMFA(ctx, by, func(cur *users.MFA) (*users.MFA, bool, error) {
+			if cur != nil {
+				return nil, false, users.ErrNoChange
+			}
+			return m, false, nil
+		}); err != nil {
+			return fmt.Errorf("the built-in admin's two-step sign-in: %w", err)
+		}
+	}
 	return recordAuth(ctx, f, a)
 }
 
@@ -360,6 +398,20 @@ func directorySource(c *config.Config) (string, error) {
 // page, the service account password sealed again with the cluster key.
 // A password that cannot be opened here is left out, and the Users page
 // asks for it.
+// importTenants adds the tenants of this server's list (tenants.json) to
+// the shared one.
+func importTenants(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
+	reg, err := tenants.Open(f.Config().TenantsFile())
+	if err != nil {
+		return err
+	}
+	list, err := reg.List()
+	if err != nil {
+		return err
+	}
+	return a.ImportTenants(ctx, by, list)
+}
+
 func importDirectory(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
 	c := f.Config()
 	var s users.LDAPSettings
@@ -386,4 +438,151 @@ func importDirectory(ctx context.Context, a *clusterauth.Docs, f Files, by strin
 		return err
 	}
 	return recordAuth(ctx, f, a)
+}
+
+// secretSetting reports whether a shared setting holds passwords, keys
+// or tokens.
+func secretSetting(key string) bool {
+	s, ok := config.Lookup(key)
+	return key == "ingest.tokens" || ok && s.Type == config.TypeSecret
+}
+
+// settingsSource hashes what the settings importer reads: settings.yaml,
+// the values signalith.yaml and the environment give the shared settings
+// (passwords and keys as keyed hashes) and the built-in admin's name.
+func settingsSource(d *Docs, c *config.Config) (string, error) {
+	var k *shared.ClusterKey
+	if keys := d.Hub().Keys(); keys != nil {
+		k = keys.Active()
+	}
+	var values []any
+	for _, fv := range settingValues(c) {
+		v := fv.value
+		if secretSetting(fv.key) {
+			v = "set"
+			if k != nil {
+				v, _ = shared.SeenHash(k, fv.key, fv.value)
+			}
+		}
+		values = append(values, fv.key, fv.source, v)
+	}
+	return hashOf([]string{c.SettingsFile()}, values, c.Auth.AdminUser)
+}
+
+// importSettings moves the founder's shared settings of the Settings page
+// into the settings document: each one whose value comes from its
+// Settings page (with who changed it, and when), signalith.yaml or the
+// environment; one at its default is not written, so a later version's
+// new default still applies. Passwords and keys are sealed again with the
+// cluster key, for the address they are sent to, and the shared agent
+// tokens of signalith.yaml and the environment are added as this
+// server's. A change the Settings page set aside is not imported. What is
+// there already is kept as it is, so running it again changes nothing.
+// It records what this server's files say of them, so only later changes
+// apply.
+func importSettings(ctx context.Context, d *Docs, f Files, by string) error {
+	c := f.Config()
+	keys := d.Hub().Keys()
+	if keys == nil || keys.Active() == nil {
+		return errors.New("this server has no cluster key")
+	}
+	now := f.now()
+	page, err := config.ReadPageSettings(c.SettingsFile())
+	if err != nil {
+		f.log().Warn("the settings file cannot be read, so only signalith.yaml and the environment are imported into the shared settings", "err", err)
+		page = &config.PageSettings{}
+	}
+	var aside []string
+	for _, key := range page.Keys() {
+		if page.Settings[key].Refused != "" && config.ScopeOf(key) == config.ScopeCluster {
+			aside = append(aside, key)
+		}
+	}
+	if len(aside) > 0 {
+		f.log().Warn("changes the Settings page set aside are not imported into the shared settings", "settings", strings.Join(aside, ","))
+	}
+	values := map[string]SettingValue{}
+	for _, key := range config.SharedKeys() {
+		src := c.Source(key)
+		if key == "ingest.tokens" || src.Kind != config.FromPage && src.Kind != config.FromFile && src.Kind != config.FromEnv {
+			continue
+		}
+		if config.AddressHasSecret(key, c.Value(key)) {
+			f.log().Warn("an address with a password or key in it is not imported into the shared settings, which every server shows; "+
+				"take it out of the address and set it on the Settings page", "setting", key)
+			continue
+		}
+		sentTo := ""
+		if s, ok := config.Lookup(key); ok && s.Type == config.TypeSecret {
+			sentTo = s.SentTo(c)
+			if e := page.Settings[key]; src.Kind == config.FromPage && e != nil {
+				sentTo = e.SentTo
+			}
+		}
+		at := src.At
+		if at.IsZero() {
+			at = now
+		}
+		sv, err := settingValue(keys, key, c.Value(key), sentTo, shared.From{Source: FromImport, Node: f.Node, By: src.By, At: at.UTC()})
+		if err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		if sv.Secret == "" && sv.Value == nil {
+			continue
+		}
+		values[key] = sv
+	}
+	tokens := c.SourceValues("ingest.tokens")
+	if _, err := d.Settings().Mutate(ctx, by, func(b *SettingsBody) error {
+		if b.Values == nil {
+			b.Values = map[string]SettingValue{}
+		}
+		for _, key := range slices.Sorted(maps.Keys(values)) {
+			sv := values[key]
+			if cur, ok := b.Values[key]; ok && sameSetting(keys, key, cur, sv) {
+				continue
+			}
+			b.set(key, sv)
+		}
+		for _, tv := range tokens {
+			plain, _ := tv.Value.([]string)
+			list, _, err := setTokens(keys, b.IngestTokens, f.NodeID, f.Node, tv.Source, plain, now)
+			if err != nil {
+				return err
+			}
+			b.IngestTokens = list
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return recordSettings(ctx, f, keys.Active())
+}
+
+// recordSettings records what this server's files say of the settings of
+// the settings document, as the import does: only later changes apply.
+func recordSettings(ctx context.Context, f Files, k *shared.ClusterKey) error {
+	if f.NodeCfg == nil || f.NodeCfg() == nil {
+		return nil
+	}
+	var list []fileValue
+	for _, fv := range settingValues(f.Config()) {
+		if fv.setting {
+			list = append(list, fv)
+		}
+	}
+	_, err := f.NodeCfg().Mutate(ctx, "signalith", func(n *shared.NodeCfg) error {
+		for _, fv := range list {
+			h, err := shared.SeenHash(k, fv.key, fv.value)
+			if err != nil {
+				return err
+			}
+			n.Record(fv.key, cmp.Or(fv.source, shared.SourceYAML), h)
+		}
+		if n.SettingsApplied == "" {
+			n.SettingsApplied = f.now().UTC().Format(time.RFC3339Nano)
+		}
+		return nil
+	})
+	return err
 }

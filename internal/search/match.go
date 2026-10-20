@@ -1,7 +1,11 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -132,7 +136,41 @@ func indexedValue(doc map[string]any, field string) (any, bool) {
 	return v, true
 }
 
+// listElements returns the elements of a list field's value (a DNS
+// lookup's answers), which OpenSearch indexes each on its own.
+func listElements(v any) ([]any, bool) {
+	switch l := v.(type) {
+	case []string:
+		out := make([]any, len(l))
+		for i, s := range l {
+			out[i] = s
+		}
+		return out, true
+	case []any:
+		return l, true
+	}
+	return nil, false
+}
+
+// anyElement evaluates a leaf on each element of a list field: it matches
+// when one element does, as in OpenSearch.
+func anyElement(field string, doc map[string]any, eval func(map[string]any) (bool, error)) (bool, error) {
+	elems, _ := listElements(doc[field])
+	one := maps.Clone(doc)
+	for _, e := range elems {
+		one[field] = e
+		m, err := eval(one)
+		if err != nil || m {
+			return m, err
+		}
+	}
+	return false, nil
+}
+
 func evalLeaf(kind, field string, spec map[string]any, doc map[string]any) (bool, error) {
+	if _, isList := listElements(doc[field]); isList {
+		return anyElement(field, doc, func(d map[string]any) (bool, error) { return evalLeaf(kind, field, spec, d) })
+	}
 	v, ok := indexedValue(doc, field)
 	if !ok {
 		return false, nil
@@ -176,6 +214,9 @@ func evalLeaf(kind, field string, spec map[string]any, doc map[string]any) (bool
 // lowercases (ingest.IndexTemplate). OpenSearch refuses it on a numeric
 // or boolean field.
 func evalRegexp(field, pattern string, doc map[string]any) (bool, error) {
+	if _, isList := listElements(doc[field]); isList {
+		return anyElement(field, doc, func(d map[string]any) (bool, error) { return evalRegexp(field, pattern, d) })
+	}
 	v, ok := indexedValue(doc, field)
 	if !ok {
 		return false, nil
@@ -195,6 +236,10 @@ func evalRegexp(field, pattern string, doc map[string]any) (bool, error) {
 }
 
 func evalRange(field string, spec map[string]any, doc map[string]any) bool {
+	if _, isList := listElements(doc[field]); isList {
+		m, _ := anyElement(field, doc, func(d map[string]any) (bool, error) { return evalRange(field, spec, d), nil })
+		return m
+	}
 	v, ok := indexedValue(doc, field)
 	if !ok {
 		return false

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -53,6 +56,11 @@ func TestParseIndex(t *testing.T) {
 		if !ok || cat != strings.ToLower(m.Name) || !d.Equal(day) {
 			t.Errorf("ParseIndex(%s) = %q %v %v", name, cat, d, ok)
 		}
+		// The parts rollover splits a busy day into are that day too.
+		part := datamodel.PartName(name, 2)
+		if cat, d, ok := ParseIndex("signalith", part); !ok || cat != strings.ToLower(m.Name) || !d.Equal(day) {
+			t.Errorf("ParseIndex(%s) = %q %v %v", part, cat, d, ok)
+		}
 	}
 	for _, name := range []string{
 		"signalith_findings",
@@ -62,6 +70,10 @@ func TestParseIndex(t *testing.T) {
 		"signalith-authentication-2026.13.01",     // not a date
 		"signalith-authentication-2026.7.12",
 		"signalith-authentication-2026.07.12-old",
+		"signalith-authentication-2026.07.12-1",    // part 1 is the day's index itself
+		"signalith-authentication-2026.07.12-02",   // not how parts are named
+		"signalith-authentication-2026.07.12-1000", // past datamodel.MaxPart
+		"signalith-authentication-2026.07.12-2-2",
 		"signalith-authentication",
 		"other-authentication-2026.07.12",
 		"signalithx-authentication-2026.07.12",
@@ -497,10 +509,10 @@ func TestCategories(t *testing.T) {
 		ids = append(ids, c.ID)
 		names = append(names, c.Name)
 	}
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "other", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "intrusion_detection", "web", "certificates", "file_transfers", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "other", "risk", Findings, Cases, Audit, Intel}) {
 		t.Errorf("ids = %v", ids)
 	}
-	if n := len(names); names[2] != "Network traffic" || names[4] != "Malware" || names[n-5] != "Other events" || names[n-4] != "Risk events" || names[n-2] != "Investigations" {
+	if n := len(names); names[2] != "Network traffic" || names[4] != "Malware" || names[n-6] != "Other events" || names[n-5] != "Risk events" || names[n-3] != "Investigations" || names[n-2] != "Audit records" {
 		t.Errorf("names = %v", names)
 	}
 }

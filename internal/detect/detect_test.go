@@ -1,7 +1,11 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,8 +27,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 35 {
-		t.Fatalf("%d built-in detections, want 35", len(ds))
+	if len(ds) != 52 {
+		t.Fatalf("%d built-in detections, want 52", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {
@@ -36,9 +40,13 @@ func TestBuiltinsCompile(t *testing.T) {
 		if _, err := eng.Compile(q); err != nil {
 			t.Errorf("%s: compile: %v", d.ID, err)
 		}
-		// Risk incidents, intel matches and exposures a vulnerability scan
-		// found (such as an open Telnet port) need not name a technique.
-		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") {
+		// Risk incidents, intel matches, exposures a vulnerability scan
+		// found (such as an open Telnet port), IDS alerts (each rule
+		// names its own technique, in the event's mitre field) and the
+		// health of a data source (a sensor dropping packets) need not
+		// name a technique.
+		if len(d.MITRE) == 0 && !slices.Contains(d.Tags, "risk-incident") && !slices.Contains(d.Tags, "threat-intel") && !slices.Contains(d.Tags, "vulnerability") &&
+			!slices.Contains(d.Tags, "intrusion-detection") && !slices.Contains(d.Tags, "health") {
 			t.Errorf("%s has no ATT&CK mapping", d.ID)
 		}
 		// A transforming query only returns the columns it names, so
@@ -72,6 +80,11 @@ func TestValidate(t *testing.T) {
 	d.Defaults()
 	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "earliest") {
 		t.Errorf("earliest in query allowed: %v", err)
+	}
+	d = &Detection{ID: "ok-rule", Title: "t", Query: "user=x | append [search y | outputlookup seen]"}
+	d.Defaults()
+	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "outputlookup") {
+		t.Errorf("outputlookup in a detection allowed: %v", err)
 	}
 }
 
@@ -415,23 +428,45 @@ func TestConvertSigmaUnsupported(t *testing.T) {
 	}
 }
 
+// A Sigma field searched as-is must be one word of the query language:
+// FuzzConvertSigma found "a b" stored as the term a and the field b.
+func TestConvertSigmaFieldNameNotAWord(t *testing.T) {
+	for _, field := range []string{"a b", `a"b`, "a=b", "AND", "a(b)"} {
+		rule := "title: x\ndetection:\n  sel:\n    '" + field + "': 1\n  condition: sel\n"
+		if res, err := ConvertSigma([]byte(rule)); err == nil {
+			t.Errorf("field %q converted to %s", field, res.Detection.Query)
+		}
+	}
+	if _, err := ConvertSigma([]byte("title: x\ndetection:\n  sel:\n    My_Field-1.x: 1\n  condition: sel\n")); err != nil {
+		t.Errorf("a one-word field: %v", err)
+	}
+}
+
 func TestCoverage(t *testing.T) {
 	ds := []*Detection{
 		{ID: "a", MITRE: []string{"T1110.003"}, Enabled: true},
 		{ID: "b", MITRE: []string{"T1110"}, Enabled: false},
 		{ID: "c", MITRE: []string{"T1490"}, Enabled: false},
 		{ID: "d", MITRE: []string{"T9999"}, Enabled: true},
+		{ID: "e", MITRE: []string{"T9998"}, Enabled: false},
+		// Retired in ATT&CK 19: T1574.002 DLL Side-Loading is T1574.001
+		// DLL.
+		{ID: "f", MITRE: []string{"T1574.002"}, Enabled: true},
 	}
 	cov := ComputeCoverage(ds)
-	if cov.Summary.Enabled != 1 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
+	if cov.Summary.Enabled != 2 || cov.Summary.Available != 1 || cov.Summary.Techniques < 150 {
 		t.Errorf("summary = %+v", cov.Summary)
 	}
-	if cov.Unknown["T9999"] != "d" {
+	// A detection that is off is not worth a warning.
+	if cov.Unknown["T9999"] != "d" || len(cov.Unknown) != 1 {
 		t.Errorf("unknown = %v", cov.Unknown)
 	}
 	var found bool
 	for _, tac := range cov.Tactics {
 		for _, te := range tac.Techniques {
+			if te.ID == "T1574" && (len(te.Enabled) != 1 || te.Subs[0] != "T1574.001") {
+				t.Errorf("T1574 = %+v", te)
+			}
 			if te.ID == "T1110" {
 				found = true
 				if tac.Short != "credential-access" || len(te.Enabled) != 1 || len(te.Disabled) != 1 || te.Subs[0] != "T1110.003" {
@@ -627,10 +662,105 @@ func TestConvertSigmaServiceInstall(t *testing.T) {
 			t.Errorf("query missing %s: %s", want, q)
 		}
 	}
-	// Other System log events are not read.
+	// Other System log events have their own data, not a service
+	// install's.
 	other := strings.ReplaceAll(rule, "7045", "7036")
 	if _, err := ConvertSigmaWith([]byte(other), SigmaOptions{Strict: true}); err == nil {
-		t.Error("a 7036 rule converted strictly")
+		t.Error("a 7036 rule about a service install's data converted strictly")
+	}
+	stopped := "title: Defender stopped\nlogsource:\n  product: windows\n  service: system\ndetection:\n  sel:\n    Provider_Name: 'Service Control Manager'\n    EventID: 7036\n    param1: 'Windows Defender Antivirus Service'\n    param2: stopped\n  condition: sel\nlevel: medium\n"
+	res, err = ConvertSigmaWith([]byte(stopped), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = res.Detection.Query
+	for _, want := range []string{"datamodel=Other", "sourcetype=WinEventLog:System", "signature_id=7036", `system_param1="Windows Defender Antivirus Service"`, "system_param2=stopped"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("query missing %s: %s", want, q)
+		}
+	}
+}
+
+// Google Workspace's rules read the Reports API's names for an event
+// (eventName) and its parameters (new_value), and its sign-in rules the
+// event's name in the log entry's metadata.
+func TestConvertSigmaWorkspace(t *testing.T) {
+	admin := "title: MFA disabled\nlogsource:\n  product: gcp\n  service: google_workspace.admin\ndetection:\n  sel:\n    eventService: admin.googleapis.com\n    eventName: ENFORCE_STRONG_AUTHENTICATION\n    new_value: 'false'\n  condition: sel\nlevel: medium\n"
+	login := "title: Suspicious login\nlogsource:\n  product: gcp\n  service: google_workspace.login\ndetection:\n  sel:\n    protoPayload.serviceName: login.googleapis.com\n    protoPayload.metadata.event.eventName: suspicious_login\n  condition: sel\nlevel: medium\n"
+	for rule, wants := range map[string][]string{
+		admin: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=admin.googleapis.com",
+			"event_name=ENFORCE_STRONG_AUTHENTICATION", "event_parameters.new_value=false"},
+		login: {"sourcetype=google:gcp:pubsub:message", "protoPayload.serviceName=login.googleapis.com", "event_name=suspicious_login"},
+	} {
+		res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(res.Detection.Query, want) {
+				t.Errorf("query missing %s: %s", want, res.Detection.Query)
+			}
+		}
+	}
+}
+
+// Okta's rules name the LogEvent's own fields, and a target's without
+// its list's {}.
+func TestConvertSigmaOkta(t *testing.T) {
+	rule := "title: Admin console\nlogsource:\n  product: okta\n  service: okta\ndetection:\n  sel:\n    eventType: policy.evaluate_sign_on\n    target.displayName: Okta Admin Console\n    securityContext.isProxy: 'true'\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sourcetype=OktaIM2:log", "eventType=policy.evaluate_sign_on", `target{}.displayName="Okta Admin Console"`,
+		"securityContext.isProxy=true"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "target.displayName", "TargetImage", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field Okta does not have converted")
+	}
+}
+
+// Kubernetes's rules name the Event's own fields, a list's without its
+// {}, and some name the generic category application.
+func TestConvertSigmaKubernetes(t *testing.T) {
+	rule := "title: Exec\nlogsource:\n  category: application\n  product: kubernetes\n  service: audit\ndetection:\n  sel:\n    verb: create\n    objectRef.subresource: exec\n    user.groups: system:masters\n    apiGroup: apps\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"(sourcetype=_json AND source=kubernetes) ", "verb=create", "objectRef.subresource=exec",
+		"kube_user.groups{}=system:masters", "objectRef.apiGroup=apps"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "objectRef.subresource", "TargetImage", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field Kubernetes does not have converted")
+	}
+}
+
+// GitHub's rules name the event's own fields: action is kept as
+// vendor_action, and actor as github_actor.
+func TestConvertSigmaGitHub(t *testing.T) {
+	rule := "title: Repo deleted\nlogsource:\n  product: github\n  service: audit\ndetection:\n  sel:\n    action: repo.destroy\n    actor: octocat\n    actor_location.country_code: FR\n  condition: sel\nlevel: high\n"
+	res, err := ConvertSigmaWith([]byte(rule), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sourcetype=github:cloud:audit", "vendor_action=repo.destroy", "github_actor=octocat",
+		"actor_location.country_code=FR"} {
+		if !strings.Contains(res.Detection.Query, want) {
+			t.Errorf("query missing %s: %s", want, res.Detection.Query)
+		}
+	}
+	bad := strings.Replace(rule, "actor:", "'@timestamp':", 1)
+	if _, err := ConvertSigmaWith([]byte(bad), SigmaOptions{Strict: true}); err == nil {
+		t.Error("a field GitHub events do not keep converted")
 	}
 }
 
@@ -831,5 +961,66 @@ detection:
 	if err != nil || !strings.Contains(r.Detection.Query, "src_user_sid=S-1-0-0") || !strings.Contains(r.Detection.Query, "key_length=0") ||
 		!strings.Contains(r.Detection.Query, "impersonation_level=") {
 		t.Errorf("4624 = %v %+v", err, r)
+	}
+}
+
+// A web server log rule searches the Web data model by the W3C field
+// names, and its keywords in what the client chose: the request's target,
+// user agent and referrer.
+func TestConvertSigmaWebserver(t *testing.T) {
+	res, err := ConvertSigmaWith([]byte(`title: Web shell
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-method: GET
+        sc-status: 200
+    keywords:
+        - '=whoami'
+    condition: selection and keywords
+level: high
+`), SigmaOptions{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `datamodel=Web (http_method=GET AND status=200) (url="*=whoami*" OR http_user_agent="*=whoami*" OR http_referrer="*=whoami*")`
+	if res.Detection.Query != want || len(res.Warnings) > 0 {
+		t.Errorf("query = %s, warnings %v", res.Detection.Query, res.Warnings)
+	}
+}
+
+// TestDataSourceStoppedTrustsOnlySignalith: data-source-stopped reads only
+// the events Signalith writes itself, so a sender with an agent token
+// cannot raise findings and risk on hosts it names by sending
+// sourcetype=source:health.
+func TestDataSourceStoppedTrustsOnlySignalith(t *testing.T) {
+	ds, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q *query.Query
+	for _, d := range ds {
+		if d.ID == "data-source-stopped" {
+			if q, err = query.Parse(d.Query); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if q == nil {
+		t.Fatal("data-source-stopped is not built in")
+	}
+	base := map[string]any{"sourcetype": "source:health", "host": "dc-01", "stopped_sourcetype": "WinEventLog:Security"}
+	for intake, want := range map[string]bool{"signalith": true, "agent": false, "syslog": false, "": false} {
+		doc := maps.Clone(base)
+		if intake != "" {
+			doc["signalith_intake"] = intake
+		}
+		got, err := search.MatchDoc(q.Search, doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("intake %q: matches = %v, want %v", intake, got, want)
+		}
 	}
 }

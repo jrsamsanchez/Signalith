@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -70,6 +73,11 @@ func TestEveryRouteHasARole(t *testing.T) {
 			return true
 		})
 	}
+	for _, p := range sensorPublicRoutes {
+		if !slices.Contains(publicRoutes, p) {
+			t.Errorf("%s is not public", p)
+		}
+	}
 	if found < 70 {
 		t.Errorf("found only %d route patterns in the source; is the scan still working?", found)
 	}
@@ -90,6 +98,12 @@ func TestEveryRouteHasARole(t *testing.T) {
 		"PUT /api/settings":          users.Admin,
 		"POST /api/settings/restart": users.Admin,
 		"GET /api/settings/export":   users.Admin,
+		"GET /api/cluster/features":  users.Viewer,
+		"GET /api/cluster/upgrade":   users.Admin,
+		"GET /api/audit/verify":      users.Admin,
+		"GET /api/sensors":           users.Admin,
+		"GET /api/sensors/tuning":    users.Admin,
+		"PUT /api/sensors/tuning":    users.Admin,
 	} {
 		if classified[pattern] != want {
 			t.Errorf("%s = %s, want %s", pattern, classified[pattern], want)
@@ -243,5 +257,50 @@ func TestHealthDetailsAreForAdmins(t *testing.T) {
 	_, body = do(t, ts, "GET", "/api/health", "", true)
 	if os, _ := body["opensearch"].(map[string]any); os["url"] == nil || body["runtime"] == nil {
 		t.Errorf("admin health = %v", body)
+	}
+}
+
+// The provider-only paragraph of docs/users.md names every platform
+// route's prefix, and the routes it names are platform routes.
+func TestUsersDocListsProviderRoutes(t *testing.T) {
+	_, s := newRoleServer(t)
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "users.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := strings.ReplaceAll(string(b), "\r\n", "\n")
+	start := strings.Index(doc, "**Provider only:**")
+	if start < 0 {
+		t.Fatal("docs/users.md has no provider-only paragraph")
+	}
+	para := doc[start:]
+	para = strings.Join(strings.Fields(para[:strings.Index(para, "\n\n")]), " ")
+	listed := regexp.MustCompile("`(/api/[a-z-]+)`").FindAllStringSubmatch(para, -1)
+	if len(listed) != len(platformResources) {
+		t.Errorf("the paragraph names %d prefixes, platformResources has %d", len(listed), len(platformResources))
+	}
+	for _, m := range listed {
+		if !slices.Contains(platformResources, strings.TrimPrefix(m[1], "/api/")) {
+			t.Errorf("%s is listed as provider only but is not in platformResources", m[1])
+		}
+	}
+	for _, m := range providerManaged {
+		if !strings.Contains(para, "`"+m+"`") {
+			t.Errorf("%s is for provider users only but the paragraph does not say so", m)
+		}
+	}
+	for _, v := range tenantVisible {
+		if !strings.Contains(para, "`"+v+"`") && !strings.Contains(para, "`"+strings.TrimPrefix(v, "GET ")+"`") {
+			t.Errorf("%s is open to tenants' users but the paragraph does not say so", v)
+		}
+	}
+	platform := 0
+	for _, r := range s.routes {
+		if r.Platform {
+			platform++
+		}
+	}
+	if platform < 40 {
+		t.Errorf("only %d platform routes; is platformRoute still working?", platform)
 	}
 }

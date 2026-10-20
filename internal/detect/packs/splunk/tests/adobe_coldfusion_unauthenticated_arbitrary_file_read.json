@@ -1,0 +1,9 @@
+{"rule": "695aceae-21db-4e7f-93ac-a52e39d02b93", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /cf_scripts/scripts/ajax/ckeditor/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /cf_scripts/scripts/ajax/ckeditor/ y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /cf_scripts/scripts/ajax/ckeditor/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x /cf_scripts/scripts/ajax/ckeditor/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /cf_scripts/scripts/ajax/ckeditor/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /cf_scripts/scripts/ajax/ckeditor/ x"}}
+]}

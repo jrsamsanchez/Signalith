@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -111,7 +114,7 @@ func TestAgentTokensEndToEnd(t *testing.T) {
 	// token alone, which could be used to test guesses.
 	sharedID := s.Tokens.LegacyID("tok-0123456789abcdef")
 	if doc := fos.bulk[len(fos.bulk)-1].Doc; sharedID == "" || sharedID == agenttokens.IDOf("tok-0123456789abcdef") ||
-		doc[ingest.TokenIDField] != sharedID || doc[ingest.TokenField] != "Shared token "+sharedID[:6] {
+		doc[ingest.TokenIDField] != sharedID || doc[ingest.TokenField] != "Shared token "+sharedID[:6] || doc[ingest.TokenPurposeField] != nil {
 		t.Fatalf("shared token event: %v (id %s)", doc, sharedID)
 	}
 
@@ -137,13 +140,14 @@ func TestAgentTokensEndToEnd(t *testing.T) {
 	// Events carry the token's name and ID and the sender, never the
 	// token; what the sender claims is dropped.
 	fos.bulk = nil
-	code, body = agentSend(t, ts.URL, "/api/ingest", secret, `[{"msg":"hello","signalith_sample":"x","signalith_token":"Admins","Signalith_Sender":"1.1.1.1"}]`, nil)
+	code, body = agentSend(t, ts.URL, "/api/ingest", secret, `[{"msg":"hello","signalith_sample":"x","signalith_token":"Admins","Signalith_Sender":"1.1.1.1","signalith_token_purpose":"sensor"}]`, nil)
 	if code != http.StatusOK {
 		t.Fatalf("ingest: %d %s", code, body)
 	}
 	doc := fos.bulk[len(fos.bulk)-1].Doc
 	if doc[ingest.TokenField] != "Linux servers" || doc[ingest.TokenIDField] != id || doc[ingest.SenderField] != "127.0.0.1" ||
-		doc[ingest.IntakeField] != "agent" || doc["signalith_sample"] != nil || doc["Signalith_Sender"] != nil || doc["dropped_fields"] != int64(3) {
+		doc[ingest.IntakeField] != "agent" || doc["signalith_sample"] != nil || doc["Signalith_Sender"] != nil || doc["dropped_fields"] != int64(4) ||
+		doc[ingest.TokenPurposeField] != "linux" {
 		t.Errorf("doc = %v", doc)
 	}
 	rawDoc, _ := json.Marshal(doc)
@@ -331,5 +335,17 @@ func TestRevokedTokenOverPlainHTTP(t *testing.T) {
 	}
 	if code, _ := agentSend(t, plain.URL, "/api/ingest", secret, `[{"msg":"x"}]`, nil); code != 401 {
 		t.Errorf("revoked over plain: %d", code)
+	}
+}
+
+// Add data's Network sensor card makes its token with purpose sensor.
+func TestAgentTokenForASensor(t *testing.T) {
+	ts, _, _, _, _ := newTokenServer(t)
+	code, out, raw := call(t, ts, "POST", "/api/agent-tokens", `{"name":"Network sensor nsm-01","purpose":"sensor"}`, "admin", adminPass, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("create: %d %s", code, raw)
+	}
+	if tok := out["token"].(map[string]any); tok["purpose"] != "sensor" || out["secret"] == nil {
+		t.Errorf("token: %v", out)
 	}
 }

@@ -1,0 +1,4 @@
+{"rule": "19aa4f58-94ca-45ff-bc34-92e533c0994a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"Fuzz Faster U Fool"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}}
+]}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterauth
 
 import (
@@ -21,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -36,14 +40,19 @@ import (
 // A session ends when its user's session epoch moves on (a new password,
 // disabled, refused by the directory), when it is signed out (its
 // document deleted, and watch:sessions bumped with its id so every server
-// drops it from its cache), after 7 days, or after the idle time without
-// a request, which each server checks against the later of its own last
-// request and the stored last_seen.
+// drops it from its cache), at the maximum age after sign-in (SetMaxAge,
+// auth.session_max_age), or after the idle time without a request, which
+// each server checks against the later of its own last request and the
+// stored last_seen.
 
 // Session timing.
 const (
-	// MaxAge ends any session this long after sign-in.
-	MaxAge = 7 * 24 * time.Hour
+	// DefaultMaxAge ends any session this long after sign-in, until
+	// SetMaxAge says otherwise.
+	DefaultMaxAge = 24 * time.Hour
+	// DefaultIdle ends a session this long after its last request, until
+	// SetIdle says otherwise.
+	DefaultIdle = time.Hour
 	// CacheFor is how long a session read from OpenSearch is used without
 	// reading it again, and how long a cookie found to have no session is
 	// refused without asking.
@@ -77,12 +86,22 @@ type sessionDoc struct {
 	// made for, as that document's server wrote it: a user made again
 	// under the same name has another.
 	Born string `json:"born,omitempty"`
-	MAC  string `json:"mac"`
+	// Tenant is the tenant a provider user switched the session to, ""
+	// for the default tenant. It is written only at shared.LevelTenants.
+	Tenant string `json:"tenant,omitempty"`
+	MAC    string `json:"mac"`
 }
 
 func sessionText(id string, d *sessionDoc) []byte {
 	var b bytes.Buffer
-	for _, f := range []string{sessionMAC, id, d.User, strconv.FormatInt(d.Epoch, 10), d.Created, strconv.FormatBool(d.Remember), d.Born} {
+	fields := []string{sessionMAC, id, d.User, strconv.FormatInt(d.Epoch, 10), d.Created, strconv.FormatBool(d.Remember), d.Born}
+	if d.Tenant != "" {
+		// Covered only when set, so a session in the default tenant
+		// verifies as before: moving a session to another tenant
+		// outside Signalith breaks its MAC.
+		fields = append(fields, "tenant", d.Tenant)
+	}
+	for _, f := range fields {
 		b.WriteString(f)
 		b.WriteByte(0)
 	}
@@ -103,7 +122,8 @@ func (d *sessionDoc) sign(k *shared.ClusterKey, id string) {
 // verify checks the MAC of the session document id against keys.
 func (d *sessionDoc) verify(keys *shared.KeySet, id string) bool {
 	rest, ok := strings.CutPrefix(d.MAC, "m1:")
-	if !ok || strings.IndexByte(d.User, 0) >= 0 || strings.IndexByte(d.Created, 0) >= 0 || strings.IndexByte(d.Born, 0) >= 0 {
+	if !ok || strings.IndexByte(d.User, 0) >= 0 || strings.IndexByte(d.Created, 0) >= 0 || strings.IndexByte(d.Born, 0) >= 0 ||
+		d.Tenant != "" && tenants.ValidID(d.Tenant) != nil {
 		return false
 	}
 	kid, sum, ok := strings.Cut(rest, ":")
@@ -123,8 +143,9 @@ type entry struct {
 	remember bool
 	method   string
 	degraded bool
-	// born is the session document's Born.
-	born string
+	// born is the session document's Born, and tenant its Tenant.
+	born   string
+	tenant string
 	// stored is the last_seen stored, local this server's last request,
 	// and confirmed when the session was last read from OpenSearch (or
 	// written).
@@ -197,6 +218,7 @@ type Sessions struct {
 
 	idleMu sync.Mutex
 	idle   time.Duration
+	maxAge time.Duration
 }
 
 // Listen follows watch:sessions, so a sign-out on another server ends
@@ -231,21 +253,112 @@ func (s *Sessions) SetIdle(d time.Duration) {
 	s.idle = d
 }
 
+// Idle is how long a session lasts without a request now.
+func (s *Sessions) Idle() time.Duration { return s.idleFor() }
+
 func (s *Sessions) idleFor() time.Duration {
 	s.idleMu.Lock()
 	defer s.idleMu.Unlock()
 	if s.idle <= 0 {
-		return 12 * time.Hour
+		return DefaultIdle
 	}
 	return s.idle
 }
 
+// SetMaxAge changes how long any session lasts after sign-in, remembered
+// or not, for every session, the current ones included.
+func (s *Sessions) SetMaxAge(d time.Duration) {
+	s.idleMu.Lock()
+	defer s.idleMu.Unlock()
+	s.maxAge = d
+}
+
 // MaxAge is how long any session lasts after sign-in.
-func (s *Sessions) MaxAge() time.Duration { return MaxAge }
+func (s *Sessions) MaxAge() time.Duration {
+	s.idleMu.Lock()
+	defer s.idleMu.Unlock()
+	if s.maxAge <= 0 {
+		return DefaultMaxAge
+	}
+	return s.maxAge
+}
 
 // SetVersion does nothing: a shared session ends through its user's
 // session epoch when the password changes, not through a password stamp.
 func (s *Sessions) SetVersion(context.Context, string, string) {}
+
+// SetTenant moves the session of a cookie to tenant ("" the default
+// tenant), signed again, once the cluster is at shared.LevelTenants:
+// below it an older server would not know the field. Every server reads
+// the session again within one poll.
+func (s *Sessions) SetTenant(ctx context.Context, cookie, tenant string) error {
+	if tenant != "" && tenants.ValidID(tenant) != nil {
+		return fmt.Errorf("%q is not a tenant", tenant)
+	}
+	if !s.Docs.TenantsOn() {
+		return ErrTenantUsers
+	}
+	if !s.known(cookie) {
+		return errSessionEnded
+	}
+	id := SessionID(cookie)
+	s.Cache.mu.Lock()
+	_, inMemory := s.Cache.degraded[id]
+	s.Cache.mu.Unlock()
+	if inMemory || s.degradedNow() {
+		return errors.New("tenants cannot be switched while this server cannot use OpenSearch")
+	}
+	k := s.Docs.key()
+	if k == nil {
+		return errors.New("this server is not a member of the cluster now")
+	}
+	cl, index := s.index()
+	for range store.ModifyTries {
+		src, v, found, err := cl.Get(ctx, index, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			s.forget(id)
+			return errSessionEnded
+		}
+		var d sessionDoc
+		if err := json.Unmarshal(src, &d); err != nil || !d.verify(s.Docs.keys(), id) {
+			return errSessionEnded
+		}
+		// Only the provider's users switch; a tenant user's session
+		// works in their own tenant whatever it says (the API refuses
+		// them first).
+		if u, _, ok := s.Docs.Users().Get(d.User); ok && u.Tenant != "" {
+			return errors.New("a tenant's users cannot switch tenants")
+		}
+		d.Tenant = tenant
+		d.sign(k, id)
+		if _, err := cl.PutIf(ctx, index, id, &d, v, false); err != nil {
+			if store.IsConflict(err) {
+				continue
+			}
+			return err
+		}
+		s.Cache.mu.Lock()
+		if e := s.Cache.pos[id]; e != nil {
+			e.tenant = tenant
+		}
+		s.Cache.mu.Unlock()
+		if h := s.Docs.Hub(); h != nil {
+			// Not "last": that is a sign-out. Every server reads its
+			// sessions again.
+			if _, err := h.BumpWith(ctx, SessionsWatch, map[string]any{"switched": true}); err != nil {
+				s.log().Warn("switched tenants, but the other servers may use the tenant before for up to 15 seconds", "err", err)
+			}
+		}
+		return nil
+	}
+	return errors.New("the session changed while switching; try again")
+}
+
+// errSessionEnded is a switch of a session that ended meanwhile.
+var errSessionEnded = errors.New("the session has ended")
 
 // unusable reports whether a write failed because OpenSearch cannot be
 // used now (unreachable, overloaded, or refusing writes), rather than
@@ -476,13 +589,13 @@ func (s *Sessions) Carry(ctx context.Context, list []Carried) (carried, dropped 
 	if k == nil || s.Docs.ClusterID() == "" || s.degradedNow() {
 		return 0, len(list)
 	}
-	now := s.now()
+	now, maxAge := s.now(), s.MaxAge()
 	cl, index := s.index()
 	for _, c := range list {
 		user := users.NormalizeUsername(c.User)
 		u, _, ok := s.Docs.Users().Get(user)
 		if !ok || u.Disabled || u.Refused != "" || u.Source != c.Method || u.Role != c.Role || u.PasswordHash != c.PasswordHash ||
-			u.Source == users.SourceDirectory && (s.DirectoryOn == nil || !s.DirectoryOn()) || now.Sub(c.Created) >= MaxAge {
+			u.Source == users.SourceDirectory && (s.DirectoryOn == nil || !s.DirectoryOn()) || now.Sub(c.Created) >= maxAge {
 			dropped++
 			continue
 		}
@@ -548,9 +661,15 @@ func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Tim
 		s.forget(id)
 		return entry{}, false
 	}
+	if d.Tenant != "" && !s.Docs.TenantsOn() {
+		// Written at a level this cluster is not at: never read as a
+		// session of the default tenant.
+		s.forget(id)
+		return entry{}, false
+	}
 	stored, _ := time.Parse(time.RFC3339Nano, d.LastSeen)
 	e := entry{user: d.User, epoch: d.Epoch, created: created, remember: d.Remember, method: d.Method, degraded: d.Degraded, born: d.Born,
-		stored: stored, local: oldCopy.local, confirmed: now}
+		tenant: d.Tenant, stored: stored, local: oldCopy.local, confirmed: now}
 	s.Cache.mu.Lock()
 	if cur := s.Cache.pos[id]; cur != nil {
 		e.local = maxTime(e.local, cur.local)
@@ -565,11 +684,11 @@ func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Tim
 // disabled or refused, a directory user only while directory sign-in is
 // on, in the user's current session epoch, made for the user as they
 // are now (born: a user deleted and made again under the same name does
-// not get the old sessions; servers' clocks are never compared), younger than MaxAge, and not idle too long unless
-// remembered. inMemory is a session made while OpenSearch could not be
+// not get the old sessions; servers' clocks are never compared), younger than the maximum age, remembered or not, and
+// not idle too long unless remembered. inMemory is a session made while OpenSearch could not be
 // written; the built-in admin may have one without a user document.
 func (s *Sessions) allows(e *entry, now time.Time, inMemory bool) bool {
-	if now.Sub(e.created) >= MaxAge {
+	if now.Sub(e.created) >= s.MaxAge() {
 		return false
 	}
 	if !e.remember && now.Sub(maxTime(e.local, e.stored)) >= s.idleFor() {
@@ -590,7 +709,7 @@ func (s *Sessions) allows(e *entry, now time.Time, inMemory bool) bool {
 
 func (e *entry) session() auth.Session {
 	return auth.Session{User: e.user, Created: e.created, LastSeen: maxTime(e.local, e.stored), Remember: e.remember,
-		Epoch: e.epoch, Method: e.method, Degraded: e.degraded}
+		Epoch: e.epoch, Method: e.method, Degraded: e.degraded, Tenant: e.tenant}
 }
 
 func maxTime(a, b time.Time) time.Time {
@@ -696,13 +815,13 @@ func (s *Sessions) EndUser(ctx context.Context, user, keep string) int {
 		return n
 	}
 	keys := s.Docs.keys()
-	now := s.now()
+	now, maxAge := s.now(), s.MaxAge()
 	for _, d := range docs {
 		var sd sessionDoc
 		if d.ID == keepID || json.Unmarshal(d.Source, &sd) != nil || !sd.verify(keys, d.ID) {
 			continue
 		}
-		if at, err := time.Parse(time.RFC3339Nano, sd.Created); err == nil && now.Sub(at) < MaxAge {
+		if at, err := time.Parse(time.RFC3339Nano, sd.Created); err == nil && now.Sub(at) < maxAge {
 			n++
 		}
 	}
@@ -782,6 +901,8 @@ func (s *Sessions) Recover(ctx context.Context) {
 			continue
 		}
 		at := e.created.UTC().Format(time.RFC3339Nano)
+		// No tenant: switching is refused while degraded (SetTenant),
+		// so a session made then is always in the default tenant.
 		doc := &sessionDoc{User: e.user, Epoch: e.epoch, Created: at, LastSeen: maxTime(e.local, e.stored).UTC().Format(time.RFC3339Nano),
 			Remember: e.remember, Node: s.Node, Method: e.method, Degraded: true, Born: bornText(u)}
 		doc.sign(k, id)
@@ -816,7 +937,7 @@ func (s *Sessions) Recover(ctx context.Context) {
 const housekeepUsers = 500
 
 // Housekeep deletes the sessions that ended for good: made more than
-// MaxAge ago, unused for that long and not remembered, or of an older
+// longer ago than the maximum age, unused for that long and not remembered, or of an older
 // session epoch of their user. It also writes through what Recover
 // writes. Nothing depends on it: Lookup refuses those sessions anyway.
 // It returns how many it deleted.
@@ -825,7 +946,7 @@ func (s *Sessions) Housekeep(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	s.Recover(ctx)
-	old := s.now().Add(-MaxAge).UTC().Format(time.RFC3339Nano)
+	old := s.now().Add(-s.MaxAge()).UTC().Format(time.RFC3339Nano)
 	queries := []map[string]any{{"bool": map[string]any{"should": []any{
 		map[string]any{"range": map[string]any{"created": map[string]any{"lt": old}}},
 		map[string]any{"bool": map[string]any{"must": []any{

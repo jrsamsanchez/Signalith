@@ -1,0 +1,4 @@
+{"rule": "076ebe48-cc05-4d8f-9d41-89245cd93a14", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"200","data":{"Data":"Executed command of length","Provider_Name":"ScreenConnect"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"200","data":{"Provider_Name":"ScreenConnect"}}
+]}

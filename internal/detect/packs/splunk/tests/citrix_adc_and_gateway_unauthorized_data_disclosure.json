@@ -1,0 +1,7 @@
+{"rule": "b593cac5-dd20-4358-972a-d945fefdaf17", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /oauth/idp/.well-known/openid-configuration x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /oauth/idp/.well-known/openid-configuration y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"201","url":"x /oauth/idp/.well-known/openid-configuration x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","url":"x /oauth/idp/.well-known/openid-configuration x"}}
+]}

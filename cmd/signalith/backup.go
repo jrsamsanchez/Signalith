@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -429,7 +432,7 @@ func restoreBackup(name string, c *config.Config, yes bool, in *os.File, out io.
 		return fmt.Errorf("could not open %s: %w", name, err)
 	}
 	defer zr.Close()
-	m, err := readManifest(&zr.Reader)
+	m, err := readBackupManifest(&zr.Reader)
 	if err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
@@ -586,7 +589,7 @@ func extraFiles(c *config.Config, m *backupManifest, files []restoreFile) ([]ext
 	return out, nil
 }
 
-func readManifest(zr *zip.Reader) (*backupManifest, error) {
+func readBackupManifest(zr *zip.Reader) (*backupManifest, error) {
 	for _, e := range zr.File {
 		if e.Name != manifestName {
 			continue

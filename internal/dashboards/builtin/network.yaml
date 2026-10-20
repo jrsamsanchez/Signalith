@@ -1,0 +1,100 @@
+id: network
+title: Network
+description: What the network sensor saw, from Zeek and Suricata - IDS alerts, connections to the internet, DNS lookups, web requests, files, certificates and TLS fingerprints, sign-ins and share activity, and whether the sensor is keeping up.
+time_range: 24h
+panels:
+  - title: IDS alerts
+    query: datamodel=Intrusion_Detection | stats count
+    viz: single
+    width: half
+    compare: true
+  - title: Hosts with high alerts
+    query: datamodel=Intrusion_Detection severity IN (high, critical) | stats dc(local_host) as hosts
+    viz: single
+    width: half
+    compare: true
+  - title: Connections
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) | stats count
+    viz: single
+    width: half
+    compare: true
+  - title: Sent to the internet
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats sum(bytes_out) as bytes
+    viz: single
+    width: half
+    compare: true
+  - title: Alerts over time by severity
+    query: datamodel=Intrusion_Detection | timechart count by severity
+    viz: line
+    width: full
+  - title: Top alert signatures
+    query: datamodel=Intrusion_Detection | stats count, dc(src) as sources by signature, severity | sort -count | head 10
+    viz: table
+    width: half
+  # local_host is your network's end of each alert: src when the
+  # traffic went out (most malware and command-and-control rules), dest
+  # when it came in.
+  - title: Hosts with the most alerts
+    query: datamodel=Intrusion_Detection | stats count by local_host | sort -count | head 10
+    viz: bar
+    width: half
+  - title: Top talkers to the internet
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats sum(bytes_out) as bytes by src | sort -bytes | head 10
+    viz: bar
+    width: half
+  - title: Top external destinations
+    query: datamodel=Network_Traffic vendor_product IN (Zeek, Suricata) direction=outbound | stats count, sum(bytes_out) as bytes by dest, dest_port | sort -count | head 10
+    viz: table
+    width: half
+  - title: Top DNS lookups
+    query: datamodel=Network_Resolution vendor_product IN (Zeek, Suricata) | stats count, dc(src) as hosts by query | sort -count | head 10
+    viz: table
+    width: half
+  - title: Hosts with the most failed lookups
+    query: datamodel=Network_Resolution vendor_product IN (Zeek, Suricata) reply_code=NXDomain | stats count by src | sort -count | head 10
+    viz: bar
+    width: half
+  - title: Web requests by status
+    query: datamodel=Web | stats count by status | sort -count | head 10
+    viz: bar
+    width: third
+  - title: Top user agents
+    query: datamodel=Web | stats count by http_user_agent | sort -count | head 10
+    viz: table
+    width: third
+  - title: Files by type
+    query: datamodel=File_Transfers | stats count by mime_type | sort -count | head 10
+    viz: bar
+    width: third
+  # Grouped by server address only: a stats by several fields leaves out
+  # events missing any of them, such as a server reached by address with
+  # no server name.
+  - title: Servers with self-signed certificates
+    query: datamodel=Certificates ssl_self_signed=true | stats count, dc(ssl_server_name) as server_names, dc(src) as clients by dest | sort -count | head 20
+    viz: table
+    width: full
+  # TLS fingerprints name the client program (JA3, JA4) whatever address
+  # it connects to; a rare one among your hosts is worth a look. Each
+  # value opens every event with it.
+  - title: TLS client fingerprints (JA4)
+    query: datamodel=Certificates ja4=* | stats count, dc(src) as clients, dc(dest) as servers by ja4 | sort -count | head 10
+    viz: table
+    width: half
+  - title: Rarest TLS client fingerprints (JA3)
+    query: datamodel=Certificates ja3=* | stats dc(src) as clients, count by ja3 | sort clients, count | head 10
+    viz: table
+    width: half
+  - title: Sign-ins seen on the network
+    query: datamodel=Authentication vendor_product=Zeek | stats count by app, action | sort -count | head 10
+    viz: table
+    width: half
+  - title: Files changed on shares
+    query: datamodel=Filesystem app=smb action IN (modified, deleted, renamed) | stats count, dc(src) as clients by share_name | sort -count | head 10
+    viz: table
+    width: half
+  - title: Sensor packet loss (percent)
+    # Zeek's capture_loss.log and Suricata's stats events. Above a few
+    # percent the sensor is missing traffic: see docs/network-sensor.md.
+    query: sourcetype IN (zeek:capture_loss, suricata:stats) | timechart max(capture_loss_percent) as zeek, max(drop_percent) as suricata
+    viz: line
+    width: full

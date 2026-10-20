@@ -1,9 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,6 +60,9 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			if p.macros, err = loadMacros(packFS, dir); err != nil {
 				t.Fatal(err)
 			}
+			if p.lookups, err = loadLookups(packFS, dir); err != nil {
+				t.Fatal(err)
+			}
 		}
 		listed := map[string]bool{}
 		for _, r := range p.Rules {
@@ -83,13 +90,13 @@ func TestPackRulesFireOnTheirTests(t *testing.T) {
 			var ruleID string
 			var verify func(tf *sigmacheck.TestFile) []error
 			if p.Format == "splunk" {
-				rule, err := splcheck.Parse(src, p.macros)
+				rule, err := splcheck.ParseWith(src, p.macros, splcheck.ParseOptions{Network: SplunkNetworkRule(r.Path), Lookups: p.lookups})
 				if err != nil {
 					t.Errorf("%s: %v", r.ID, err)
 					continue
 				}
 				ruleID = rule.ID
-				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q.Datamodel, q.Search, tf) }
+				verify = func(tf *sigmacheck.TestFile) []error { return splcheck.Verify(rule, q, tf) }
 			} else {
 				rule, err := sigmacheck.Parse(src)
 				if err != nil {
@@ -172,10 +179,48 @@ func TestPackDetections(t *testing.T) {
 		if o.Author == "" || !strings.Contains(o.Credit(), o.Author) {
 			t.Errorf("%s: credit %q", d.ID, o.Credit())
 		}
-		// Each rule reads only its own system's events.
-		if !strings.Contains(d.Query, "sourcetype=WinEventLog:*") && !strings.Contains(d.Query, "sourcetype=sysmon:linux") &&
-			!strings.Contains(d.Query, "sourcetype=linux:audit") {
-			t.Errorf("%s: not limited to Windows, Sysmon for Linux or Linux audit events: %s", d.ID, d.Query)
+		// Its ATT&CK techniques are in the matrix, or retired ones that
+		// were replaced (T1035.009 is a Splunk rule's typo).
+		for _, id := range d.MITRE {
+			if _, ok := ATTACK().Technique(id); !ok && id != "T1035.009" {
+				t.Errorf("%s: technique %s is not in ATT&CK %s", d.ID, id, ATTACK().Version)
+			}
+		}
+		// Each rule reads only its own system's events: a network rule
+		// its Zeek log's, or its data model's (a DNS lookup, a web request
+		// or a connection from any source); a web server rule the Web
+		// data model's.
+		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
+			continue
+		}
+		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
+			!strings.Contains(d.Query, "sourcetype=sysmon:linux") && !strings.Contains(d.Query, "sourcetype=linux:audit") &&
+			!strings.HasPrefix(d.Query, "datamodel=Web ") && !strings.HasPrefix(d.Query, "sourcetype=aws:cloudtrail ") &&
+			!strings.Contains(d.Query, "sourcetype=azure:monitor:") && !strings.HasPrefix(d.Query, "sourcetype=o365:management:activity ") &&
+			!strings.HasPrefix(d.Query, "sourcetype=google:gcp:pubsub:message ") && !strings.Contains(d.Query, "sourcetype=OktaIM2:log ") &&
+			!strings.Contains(d.Query, "sourcetype=_json AND source=kubernetes") && !strings.HasPrefix(d.Query, "sourcetype=_json source=kubernetes ") &&
+			!strings.Contains(d.Query, "sourcetype=github:cloud:audit ") && !strings.HasPrefix(d.Query, "datamodel=Endpoint sourcetype=osquery:process_start ") {
+			t.Errorf("%s: not limited to Windows, Sysmon for Linux, Linux audit, macOS osquery, web server, CloudTrail, Azure, Microsoft 365, Google Cloud, Okta, Kubernetes or GitHub events: %s", d.ID, d.Query)
 		}
 	}
+}
+
+// networkPackRule reports whether a pack rule is a generic network one
+// (Sigma's dns, proxy or firewall category, or a Splunk network
+// detection over a network data model), limited to its data model.
+func networkPackRule(d *Detection) bool {
+	if d.Origin != nil && d.Origin.Pack == "splunk" && slices.Contains(d.Tags, "network") {
+		for _, m := range []string{"Network_Traffic", "Network_Resolution"} {
+			if strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+				return true
+			}
+		}
+	}
+	models := map[string]string{"dns": "Network_Resolution", "proxy": "Web", "firewall": "Network_Traffic"}
+	for _, t := range d.Tags {
+		if m, ok := models[t]; ok && strings.HasPrefix(d.Query, "datamodel="+m+" ") {
+			return true
+		}
+	}
+	return false
 }

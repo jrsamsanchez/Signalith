@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package assets
 
 import (
@@ -157,6 +160,29 @@ func TestCSVDownloadIsSafeInSpreadsheets(t *testing.T) {
 	}
 	if got := SafeCell("10.0.0.1"); got != "10.0.0.1" {
 		t.Errorf("SafeCell changed a plain value: %q", got)
+	}
+}
+
+// TestDownloadKeepsQuotedValues: a value that itself starts with a quote
+// before a formula character, and one holding a lone carriage return,
+// read back the same from the download (both found by fuzzing).
+func TestDownloadKeepsQuotedValues(t *testing.T) {
+	for in, want := range map[string]string{
+		"host,owner\nweb1,\"\t'=x\"\n":    "'=x",
+		"host,owner\nweb1,\"a\r\r\nb\"\n": "a\nb",
+		"host,owner\nweb1,''=x\n":         "'=x",
+	} {
+		as, err := ParseAssets([]byte(in))
+		if err != nil || len(as) != 1 || as[0].Owner != want {
+			t.Fatalf("%q: %+v %v, want owner %q", in, as, err, want)
+		}
+		again, err := ParseAssets(MarshalAssets(as))
+		if err != nil || len(again) != 1 || again[0].Owner != want {
+			t.Errorf("%q: download read back as %+v %v", in, again, err)
+		}
+	}
+	if got := SafeCell("'=x"); got != "''=x" || unquoteCell(got) != "'=x" {
+		t.Errorf("SafeCell('=x) = %q", got)
 	}
 }
 

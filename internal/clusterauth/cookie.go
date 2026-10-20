@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterauth
 
 import (
@@ -55,7 +58,7 @@ func ParseCookie(keys *shared.KeySet, clusterID, v string) error {
 	if len(parts) != 4 || parts[0] != cookieVersion {
 		return ErrBadCookie
 	}
-	k := keys.Get(parts[1])
+	k := keys.CookieKey(parts[1])
 	if k == nil {
 		return ErrBadCookie
 	}

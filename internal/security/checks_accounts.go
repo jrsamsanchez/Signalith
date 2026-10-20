@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -122,14 +125,57 @@ func checkDirectory(f *Facts) *Check {
 	return c
 }
 
-// checkSessions: accounts.sessions.
+// checkSessions: accounts.sessions. NIST SP 800-63B rev 4 asks, at AAL2,
+// for a sign-out after at most 1 hour without use and a new sign-in at
+// least every 24 hours.
 func checkSessions(f *Facts) *Check {
-	idle := f.Config.SessionIdle()
-	if idle > 24*time.Hour {
-		return &Check{State: Attention, Line: "People stay signed in for up to " + span(idle) + " without using Signalith.",
-			Fix: &Fix{Steps: []string{"Set Sign out after to 12h or less."}, Setting: "auth.session_timeout"}}
+	idle, maxAge := f.Config.SessionIdle(), f.Config.SessionMaxAge()
+	const baseline = "NIST SP 800-63B (AAL2) asks for "
+	if idle > config.DefaultSessionIdle {
+		c := &Check{State: Attention, Line: "People stay signed in for up to " + span(idle) + " without using Signalith. " + baseline + "at most 1 hour.",
+			Fix: &Fix{Steps: []string{"Set Sign out after to 1h or less."}, Setting: "auth.session_timeout"}}
+		if maxAge > config.DefaultSessionMaxAge {
+			c.Fix.Steps = append(c.Fix.Steps, "Set Sign in again after to 24h or less.")
+		}
+		return c
 	}
-	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, which keeps them signed in for up to 7 days."}
+	if maxAge > config.DefaultSessionMaxAge {
+		return &Check{State: Attention, Line: "A sign-in lasts up to " + span(maxAge) + " before people must sign in again. " + baseline + "at most 24 hours.",
+			Fix: &Fix{Steps: []string{"Set Sign in again after to 24h or less."}, Setting: "auth.session_max_age"}}
+	}
+	return &Check{State: Good, Line: "People are signed out after " + span(idle) + " without use, unless they choose Keep me signed in, and every sign-in ends after " + span(maxAge) + "."}
+}
+
+// checkAPITokens: accounts.api_tokens. A token that never expires keeps
+// working, leaked or forgotten, until someone revokes it.
+func checkAPITokens(f *Facts) *Check {
+	t := f.APITokens
+	if t == nil || t.Active == 0 {
+		return nil
+	}
+	if n := len(t.NeverExpire); n > 0 {
+		return &Check{State: Attention, Line: itoa(n) + plural(n, " API token never expires", " API tokens never expire") + ": " + shorten(t.NeverExpire, 5) + ".",
+			Fix: &Fix{Steps: []string{
+				"On Settings > API tokens, make a new token for each of these tools, one that expires (90 days unless you pick another time).",
+				"Put the new token in the tool's settings, then revoke the old one.",
+			}, Page: &PageLink{ID: "apitokens", Label: "Open API tokens"}, Docs: doc(docAPITokens)}}
+	}
+	return &Check{State: Good, Line: "Every API token expires (" + itoa(t.Active) + " active)."}
+}
+
+// checkMFA: accounts.mfa.
+func checkMFA(f *Facts) *Check {
+	switch f.Config.MFARequiredMode() {
+	case "everyone":
+		return &Check{State: Good, Line: "Everyone who signs in with a password also enters a code from an authenticator app."}
+	case "admins":
+		return &Check{State: Good, Line: "Admins who sign in with a password also enter a code from an authenticator app.",
+			Details: []string{"Other users can turn two-step sign-in on for themselves from the user menu."}}
+	}
+	return &Check{State: Attention, Line: "Admins can sign in with a password alone.",
+		Details: []string{"Users can turn two-step sign-in on for themselves from the user menu, but nobody has to."},
+		Fix: &Fix{Steps: []string{"Set Require two-step sign-in to admins or everyone."}, Setting: "auth.mfa_required",
+			Docs: docLabeled(docUsersMFA, "Two-step sign-in")}}
 }
 
 // checkAgentTokens: accounts.agent_tokens.
@@ -249,6 +295,36 @@ func oldTokenRefused(c *config.Config) string {
 }
 
 // checkOpenSearchRole: accounts.opensearch_role.
+// checkOpenSearchCRL: accounts.opensearch_crl.
+func checkOpenSearchCRL(f *Facts) *Check {
+	l := f.CRL
+	if l == nil {
+		return nil
+	}
+	fix := &Fix{Steps: []string{
+		"On the Docker quick start, run docker compose -f deploy/docker/docker-compose.yml up -d, which makes it again.",
+		"Otherwise, when the cluster keeps OpenSearch's certificate authority, Signalith writes it again within a minute; to copy it to OpenSearch's nodes yourself, run signalith cluster opensearch-ca crl -o crl.pem on a server.",
+	}, Setting: "opensearch.crl_file", LockedBy: f.SettingEnv["opensearch.crl_file"], Docs: doc(docServersCRL)}
+	const refuses = " While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."
+	switch {
+	case l.Missing:
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " is missing." + refuses, Fix: fix}
+	case l.Err != "":
+		return &Check{State: Risk, Line: "OpenSearch's revocation list " + l.File + " cannot be used: " + l.Err + "." + refuses, Fix: fix}
+	case !l.NextUpdate.IsZero() && l.NextUpdate.Sub(f.Now) < 30*24*time.Hour:
+		return &Check{State: Attention, Line: "OpenSearch's revocation list expires on " + l.NextUpdate.Format(time.DateOnly) + ", with OpenSearch's certificate authority." + refuses,
+			Fix: &Fix{Steps: []string{"Make OpenSearch's certificates again from a new certificate authority before then: bootstrap-docker -new-ca on the Docker quick start."}, Docs: doc(docOSCerts)}}
+	case f.Runtime != nil && f.Runtime.CRLProblem != "":
+		// The file reads well, but the server knows it is behind.
+		return &Check{State: Risk, Line: f.Runtime.CRLProblem, Fix: fix}
+	}
+	line := "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."
+	if l.Revoked > 0 {
+		line += " It names " + itoa(l.Revoked) + plural(l.Revoked, " certificate.", " certificates.")
+	}
+	return &Check{State: Good, Line: line}
+}
+
 func checkOpenSearchRole(f *Facts) *Check {
 	o := f.OpenSearch
 	if o.Anonymous == "open" || o.AuthNoPlugin || !o.AuthProbed && !o.DemoAdmin {

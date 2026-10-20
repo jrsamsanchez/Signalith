@@ -7,7 +7,8 @@
 #        docker compose -f deploy/docker/docker-compose.yml up -d
 #   2. Show the admin password it made for you:
 #        docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
-#   3. Open https://localhost:8080 and sign in as admin with that password.
+#   3. Open https://localhost:9000 and sign in as signalithadmin with that password
+#      (admin on an install made before 0.3.1).
 #      The browser warns about the certificate until you trust it: use
 #      "Download the server certificate" on the sign-in page (docs/https.md).
 #
@@ -42,6 +43,11 @@ services:
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
   # It also gives the snapshots volume to OpenSearch.
+  # The CA those certificates come from keeps its key in a volume of its
+  # own, opensearch-ca, which no other service mounts. Run by hand, it also
+  # hands that CA to Signalith or reloads OpenSearch's security settings
+  # (docs/opensearch-security.md), for example:
+  #   docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
   setup:
     image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
     pull_policy: always
@@ -57,15 +63,29 @@ services:
     security_opt:
       - no-new-privileges:true
     network_mode: none
-    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-snapshots-dir", "/opensearch-snapshots"]
+    command: ["bootstrap-docker", "-opensearch-dir", "/opensearch-certs", "-signalith-dir", "/signalith-secrets", "-ca-dir", "/opensearch-ca", "-state-dir", "/signalith-data", "-loaded-dir", "/opensearch-security-loaded", "-snapshots-dir", "/opensearch-snapshots"]
+    # The same folders for runs by hand, which replace the command above.
+    environment:
+      - SIGNALITH_SETUP_OPENSEARCH_DIR=/opensearch-certs
+      - SIGNALITH_SETUP_SIGNALITH_DIR=/signalith-secrets
+      - SIGNALITH_SETUP_CA_DIR=/opensearch-ca
+      - SIGNALITH_SETUP_STATE_DIR=/signalith-data
+      - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
+      - SIGNALITH_SETUP_CRL_DIR=/opensearch-crl
+      - SIGNALITH_SETUP_SNAPSHOTS_DIR=/opensearch-snapshots
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
+      - opensearch-ca:/opensearch-ca
+      # Written only by -export-ca-key and -apply-security.
+      - signalith-data:/signalith-data
+      - opensearch-security-loaded:/opensearch-security-loaded
+      - opensearch-crl:/opensearch-crl
       - opensearch-snapshots:/opensearch-snapshots
     restart: "no"
 
   opensearch:
-    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+    image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
     restart: unless-stopped
     depends_on:
       setup: { condition: service_completed_successfully }
@@ -78,6 +98,13 @@ services:
       # it, and it would be one more program listening (port 9600).
       - DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI=true
       - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    # Checks client certificates against the revocation list Signalith
+    # keeps (docs/servers.md, Ending a server's OpenSearch access at once),
+    # once setup has made it: OpenSearch refuses every certificate while
+    # the list it checks is missing. After that (crl-required), it does not
+    # start without the list, which would leave it checking nothing.
+    entrypoint: ["sh", "-c", "if [ -s config/crl/crl.pem ]; then exec env plugins.security.ssl.http.crl.validate=true plugins.security.ssl.http.crl.file_path=/usr/share/opensearch/config/crl/crl.pem plugins.security.ssl.http.crl.disable_ocsp=true plugins.security.ssl.http.crl.disable_crldp=true plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp=true ./opensearch-docker-entrypoint.sh \"$$@\"; fi; if [ -e config/crl/crl-required ]; then echo \"OpenSearch does not start without its revocation list, config/crl/crl.pem. Signalith writes it again within a minute, and so does: docker compose -f deploy/docker/docker-compose.yml up -d\" >&2; exit 1; fi; exec ./opensearch-docker-entrypoint.sh \"$$@\"", "sh"]
+    command: ["opensearch"]
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -90,11 +117,13 @@ services:
       - opensearch-snapshots:/usr/share/opensearch/snapshots
       - ./opensearch/snapshot.sh:/usr/share/opensearch/snapshot.sh:ro
       - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - opensearch-crl:/usr/share/opensearch/config/crl:ro
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
       - ./opensearch/security/config.yml:/usr/share/opensearch/config/opensearch-security/config.yml:ro
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
     # Healthy once the cluster answers (asked with the admin certificate,
     # which works before the security settings are loaded) and its security
     # settings are loaded (_plugins/_security/health, which needs no
@@ -126,7 +155,7 @@ services:
   # Signalith starts only once this succeeds. Its log shows each step:
   #   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
   opensearch-security:
-    image: opensearchproject/opensearch:2.17.1
+    image: opensearchproject/opensearch:3.9.0
     depends_on:
       setup: { condition: service_completed_successfully }
       # Started, not healthy: OpenSearch turns healthy only once its
@@ -149,14 +178,17 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
       # Which files it loaded last. Docker gives a new volume the owner of
       # the folder it is put on, here uid 1000.
       - opensearch-security-loaded:/usr/share/opensearch/data
     # Hardening, as for Signalith: only the volume above and /tmp can be
-    # written, and no extra privileges.
+    # written, and no extra privileges. /tmp allows running files: from
+    # OpenSearch 3, securityadmin.sh unpacks a native library of its FIPS
+    # crypto provider there and loads it.
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:exec
     cap_drop:
       - ALL
     security_opt:
@@ -177,7 +209,8 @@ services:
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
     # Without it the name would be the container's random ID, new each time.
-    hostname: signalith
+    # SIGNALITH_NODE_NAME in a .env file next to this file changes it.
+    hostname: ${SIGNALITH_NODE_NAME:-signalith}
     # After a reboot this can start before OpenSearch is ready; it waits for it.
     restart: unless-stopped
     depends_on:
@@ -192,34 +225,57 @@ services:
     # A stop gives the background jobs up to a minute to finish before
     # another server takes them over.
     stop_grace_period: 90s
+    # host.docker.internal is the computer running Docker, for an AI model
+    # server there such as Ollama (Docker Desktop has it already; Linux
+    # needs this line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      # Web UI, API and agents, over HTTPS (http:// is sent to https://).
+      # Web UI and API, over HTTPS (http:// is sent to https://).
       # Open on every network this computer is on. To take them from one
       # network only, put this computer's address there in front, e.g.
-      # "192.168.1.20:8080:8080", and run docker compose up -d again.
-      - "8080:8080"
-      # Syslog: devices send to this machine on port 514, which reaches the
-      # container's 5514 (it cannot open ports below 1024). If another syslog
-      # server already uses 514 here, change the left side, e.g. "1514:5514/udp",
-      # and syslog.public_port in signalith.yaml to match.
+      # "192.168.1.20:9000:9000", and run docker compose up -d again.
+      - "9000:9000"
+      # Agents (Fluent Bit, OpenTelemetry, osquery, network sensors), over
+      # HTTPS with the same certificate.
+      - "7779:7779"
+      # Plain syslog (off on a new install until you turn it on on the Add
+      # data page, so nothing answers here until then; an install set up
+      # before keeps it on): devices send to this machine on
+      # port 514, which reaches the container's 5514 (it cannot open ports
+      # below 1024). If another syslog server already uses 514 here, change
+      # the left side, e.g. "1514:5514/udp", and syslog.public_port in
+      # signalith.yaml to match.
       - "514:5514/udp"
       - "514:5514/tcp"
-      # Syslog over TLS, with Signalith's own certificate.
+      # Syslog over TLS, with Signalith's own certificate: on by default.
       - "6514:6514"
     environment:
       # Secrets come from files the setup service made, never from this file.
       - SIGNALITH_ADMIN_PASSWORD_FILE=/run/signalith-secrets/initial-admin-password
       # A shared token for agents set up before per-agent tokens; Add data gives new agents their own.
+      # When several servers share one OpenSearch and their settings, every
+      # server accepts it; a changed file replaces it there when this server
+      # starts, and an unchanged one never brings back a token retired on Add data.
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       # This server's name on the Servers page. When several servers share
       # one OpenSearch, give each its own.
       - SIGNALITH_NODE_NAME=signalith-1
-      # Set to https://<this computer's IP>:8080 so agents on other machines can reach it.
-      # - SIGNALITH_PUBLIC_URL=https://192.168.1.20:8080
+      # The revocation list OpenSearch checks client certificates against,
+      # which this server keeps once the cluster keeps OpenSearch's CA.
+      - SIGNALITH_OPENSEARCH_CRL_FILE=/run/opensearch-crl/crl.pem
+      # Set to https://<this computer's IP>:9000 so agents on other machines can reach it
+      # (they are given the same address on the agent port, 7779).
+      # When several servers share one OpenSearch and their settings, the public
+      # address is one for all of them: a change here applies to every server
+      # when this server starts with it, and the Settings page can change it
+      # again until this value changes.
+      # - SIGNALITH_PUBLIC_URL=https://192.168.1.20:9000
     volumes:
       - ./signalith.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-data:/var/lib/signalith
       - signalith-secrets:/run/signalith-secrets:ro
+      - opensearch-crl:/run/opensearch-crl
       # Days archived before retention deletes them go to /var/lib/signalith/archive.
       # To keep them on another disk, mount a folder there (writable by uid 65532):
       # - /mnt/archive/signalith:/var/lib/signalith/archive
@@ -239,6 +295,33 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "5" }
 
+  # Opens OpenSearch's port to the other Signalith servers of a cluster
+  # (Servers > Add a server > Prepare OpenSearch). Off unless the cluster
+  # profile is on: put COMPOSE_PROFILES=cluster in a .env file next to this
+  # file, so every "up" keeps it. It passes connections on as they are:
+  # TLS and the client certificate still run between each server and
+  # OpenSearch. Only open the port to the other servers in the firewall.
+  opensearch-port:
+    profiles: ["cluster"]
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    pull_policy: always
+    command: ["tcp-forward", "-listen", "0.0.0.0:9200", "-to", "opensearch:9200"]
+    restart: unless-stopped
+    depends_on:
+      opensearch: { condition: service_started }
+    ports:
+      # To take it from one network only, put this computer's address in
+      # front, e.g. SIGNALITH_OPENSEARCH_PORT=192.168.1.20:9200 in .env.
+      - "${SIGNALITH_OPENSEARCH_PORT:-9200}:9200"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
 volumes:
   # Events, findings and investigations. Kept from earlier versions.
   opensearch-data:
@@ -246,6 +329,9 @@ volumes:
   opensearch-snapshots:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
+  # The OpenSearch CA's certificate and key, which the setup service makes
+  # new certificates with; only setup mounts it. Guard it like a password.
+  opensearch-ca:
   # A fingerprint of the security settings files opensearch-security loaded
   # last, so it loads them again only when they change.
   opensearch-security-loaded:
@@ -256,3 +342,6 @@ volumes:
   signalith-data:
   # Signalith's OpenSearch certificate, first admin password and ingest token.
   signalith-secrets:
+  # The revocation list OpenSearch checks client certificates against:
+  # made by setup, kept by Signalith, read by OpenSearch.
+  opensearch-crl:

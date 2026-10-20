@@ -1,0 +1,5 @@
+{"rule": "ee2803f0-71c8-4831-b48b-a1fc57601ee4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"REMOVE_APPLICATION_FROM_WHITELIST","eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"REMOVE_APPLICATION_FROM_WHITELIST"}}
+]}

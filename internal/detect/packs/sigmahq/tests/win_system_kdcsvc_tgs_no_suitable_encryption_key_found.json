@@ -1,0 +1,3 @@
+{"rule": "b1e0b3f5-b62e-41be-886a-daffde446ad4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"16","data":{"Provider_Name":"Kerberos-Key-Distribution-Center"}}
+]}

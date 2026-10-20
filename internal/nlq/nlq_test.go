@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package nlq
 
 import (
@@ -25,7 +28,13 @@ func TestTranslate(t *testing.T) {
 		"processes containing mimikatz":                         `datamodel=Endpoint process=*mimikatz*`,
 		"what processes ran on web1 today":                      `datamodel=Endpoint dest=web1 earliest=@d | stats count by process_name | sort -count`,
 		"most common processes":                                 `datamodel=Endpoint | top limit=10 process_name`,
-		"rare processes on dc01":                                `datamodel=Endpoint dest=dc01 | stats count by process_name | sort count | head 10`,
+		"rare processes on dc01":                                `datamodel=Endpoint dest=dc01 | rare limit=10 process_name`,
+		"latest failed login per user":                          `datamodel=Authentication action=failure | dedup user`,
+		"most recent process for each host":                     `datamodel=Endpoint | dedup dest`,
+		"newest logins":                                         `datamodel=Authentication | dedup user`,
+		"median bytes by destination":                           `datamodel=Network_Traffic | stats median(bytes) as median_bytes by dest | sort -median_bytes`,
+		"95th percentile of bytes per source":                   `datamodel=Network_Traffic | stats perc95(bytes) as p95_bytes by src | sort -p95_bytes`,
+		"standard deviation of bytes by src":                    `datamodel=Network_Traffic | stats stdev(bytes) as stdev_bytes by src | sort -stdev_bytes`,
 		"connections to port 4444":                              `datamodel=Network_Traffic dest_port=4444`,
 		"blocked connections by source ip":                      `datamodel=Network_Traffic action=blocked | stats count by src | sort -count`,
 		"outbound traffic over time":                            `datamodel=Network_Traffic | timechart count`,
@@ -50,6 +59,8 @@ func TestTranslate(t *testing.T) {
 		"traffic to or from 10.1.2.3":                           `datamodel=Network_Traffic src=10.1.2.3 OR dest=10.1.2.3`,
 		"events on web1 in the last 15 minutes":                 `host=web1 earliest=-15m`,
 		"failed sudo":                                           `datamodel=Authentication action=failure app=sudo`,
+		"more than 10 failed logins from the same source":       `datamodel=Authentication action=failure | stats count by src | where count>10 | sort -count`,
+		"a single user logging on to more than 5 hosts":         `datamodel=Authentication | stats dc(dest) as distinct_dest by user | where distinct_dest>5 | sort -distinct_dest`,
 		"risk by detection":                                     `datamodel=Risk | stats sum(risk_score) as risk_score by detection_id | sort -risk_score`,
 		// Antivirus data.
 		"malware on web1":                        `datamodel=Malware type=threat dest=web1`,
@@ -74,6 +85,7 @@ func TestTranslate(t *testing.T) {
 		"vulnerabilities on web1":                    `datamodel=Vulnerabilities category=vulnerability dest=web1`,
 		"known exploited vulnerabilities":            `datamodel=Vulnerabilities category=vulnerability known_exploited=true`,
 		"hosts with known exploited vulnerabilities": `datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats count by dest | sort -count`,
+		"likely exploited vulnerabilities":           `datamodel=Vulnerabilities category=vulnerability known_exploited=false epss>=0.1`,
 		"critical vulns on dc01 in the last 7 days":  `datamodel=Vulnerabilities category=vulnerability severity=critical dest=dc01 earliest=-7d`,
 		"which hosts have CVE-2021-41773":            `datamodel=Vulnerabilities category=vulnerability cve=CVE-2021-41773 | stats count by dest | sort -count`,
 		"top cves":                                   `datamodel=Vulnerabilities category=vulnerability | top limit=10 cve`,

@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const clamPrefix = "Tue Oct 13 13:12:40 2026 -> "
@@ -140,5 +144,13 @@ func TestClamAVLongLines(t *testing.T) {
 	ev = ParseProgram("db-01", "clamd", "", "/tmp/a: Odd.Name(not:hex) FOUND", "syslog")
 	if ev.Fields["signature"] != "Odd.Name(not:hex)" || ev.Fields["file_hash"] != nil {
 		t.Errorf("signature %v hash %v", ev.Fields["signature"], ev.Fields["file_hash"])
+	}
+}
+
+// A "Can't" line whose verb is not valid UTF-8 keeps vendor_action valid.
+func TestClamAVCantVerbInvalidUTF8(t *testing.T) {
+	ev := Normalize("linux.clamav", map[string]any{"log": ": Can't \xc6: Can't move file", "file": "/var/log/clamav/clamd.log", "hostname": "db-01"}, now)
+	if s, _ := ev.Fields["vendor_action"].(string); !utf8.ValidString(s) {
+		t.Fatalf("vendor_action %q", s)
 	}
 }

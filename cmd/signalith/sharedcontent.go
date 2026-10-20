@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -6,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,7 +33,9 @@ import (
 // sharedContent links the shared settings' documents to the components
 // of each start. Like the runtime, it belongs to the process.
 type sharedContent struct {
-	docs *clustercfg.Docs
+	// sharedDocs are the documents of the shared settings: the content's
+	// (docs) and the users' (auth, which are users.docs).
+	sharedDocs
 	// users links the users, the directory sign-in settings and the
 	// sessions kept in the shared settings (see sharedusers.go).
 	users *sharedUsers
@@ -48,6 +54,31 @@ type sharedContent struct {
 	// rt is the runtime, whose nodecfg document the importers record
 	// this server's settings in.
 	rt atomic.Pointer[shared.Runtime]
+	// settingsOn is true while the components running now take the
+	// settings of the Settings page from the shared settings, settings is
+	// what the heartbeat says of them, and settingsKick wakes the follower
+	// (see sharedsettings.go). followedNC and followedCluster are the
+	// runtime's documents subscribed to, under followMu.
+	settingsOn      atomic.Bool
+	settings        atomic.Pointer[settingsState]
+	settingsKick    chan struct{}
+	followMu        sync.Mutex
+	followedNC      *shared.Doc[shared.NodeCfg]
+	followedCluster *shared.Doc[shared.ClusterBody]
+	// applyMu keeps the changes of the files from being applied twice at
+	// once: by a start, and before the next one (runner.applyFiles).
+	applyMu sync.Mutex
+	// ownMu is held while this server's own settings move out of
+	// settings.yaml (runner.importOwn), and by a save there on the
+	// Settings page (settingsStore.HoldFile).
+	ownMu sync.Mutex
+	// holds hold this server's files of the feeds, the retention
+	// policies, the users, the directory sign-in settings and the library
+	// while they move into the shared settings (importhold.go).
+	holds importHolds
+	// library links the shared detections and dashboards (see
+	// sharedlibrary.go).
+	library *sharedLibrary
 }
 
 type osTarget struct {
@@ -57,18 +88,11 @@ type osTarget struct {
 
 // newSharedContent returns the content's link for the process.
 func newSharedContent(c *config.Config, node *cluster.Node, log *slog.Logger) *sharedContent {
-	ct := &sharedContent{docs: clustercfg.NewDocs(), users: newSharedUsers(log), node: node, log: log}
-	// The users and directory importers and the auth settings of
-	// signalith.yaml reach the users' documents.
-	ct.docs.UseAuth(ct.users.docs)
+	users := newSharedUsers(log)
+	ct := &sharedContent{sharedDocs: newSharedDocs(users.docs), users: users, node: node, log: log, settingsKick: make(chan struct{}, 1)}
 	ct.cfg.Store(c)
+	ct.library = newSharedLibrary(ct.lib, node, func() *config.Config { return ct.cfg.Load() }, log)
 	return ct
-}
-
-// track makes the shared documents of the content and of the users on h.
-func (ct *sharedContent) track(h *shared.Hub) {
-	ct.docs.Track(h)
-	ct.users.docs.Track(h)
 }
 
 // files is what the importers read: this server's files and settings.
@@ -104,8 +128,7 @@ func (ct *sharedContent) use(c *config.Config, cl *store.Client) {
 	ct.cfg.Store(c)
 	ct.target.Store(&osTarget{cl: cl, prefix: c.OpenSearch.IndexPrefix})
 	// A component of the start that ended hears of no more changes.
-	ct.docs.Reset()
-	ct.users.docs.Reset()
+	ct.reset()
 }
 
 // peerAge is how recent another server's heartbeat must be for its
@@ -198,7 +221,9 @@ func (ct *sharedContent) apply(ctx context.Context, rt *shared.Runtime, c *confi
 	ct.drift.Store(nil)
 	for {
 		if rt.Writable() == nil {
+			ct.applyMu.Lock()
 			res, err := clustercfg.Apply(ctx, rt, ct.docs, c, ct.node.Name(), ct.log)
+			ct.applyMu.Unlock()
 			if err == nil {
 				ct.drift.Store(&res.Drift)
 				return
@@ -243,18 +268,101 @@ func sharedFingerprints(fp cluster.Fingerprints, rt *shared.Runtime, on bool) cl
 		return fp
 	}
 	if id := rt.Status().ClusterID; id != "" {
-		fp.Retention, fp.Feeds = cluster.SharedFingerprint(id), cluster.SharedFingerprint(id)
-		if rt.SharedUsers() {
-			fp.Users = cluster.SharedFingerprint(id)
+		for _, put := range sharedPrints {
+			put(&fp, rt, cluster.SharedFingerprint(id))
 		}
 	}
 	return fp
 }
 
+// holderFingerprints puts the shared sentinel in place of the parts of
+// the fingerprints fp of the job holder that it moved into the shared
+// settings itself, as this server compares them with its own when it
+// takes those parts from the shared settings too. The founder runs the
+// jobs from its own files for a moment after its importers moved them,
+// until a restart in place switches it to the shared settings; were it to
+// stop in that moment, its lease would name its own files to the end, and
+// no member would take the jobs over. Its files are what it moved: saves
+// to them were refused meanwhile (importhold.go).
+func holderFingerprints(fp cluster.Fingerprints, holder string, rt *shared.Runtime, on bool) cluster.Fingerprints {
+	if !on || rt == nil || holder == "" || rt.Cluster() == nil {
+		return fp
+	}
+	b, ok := rt.Cluster().Get()
+	id := rt.Status().ClusterID
+	if !ok || id == "" || b.Import.By != holder {
+		return fp
+	}
+	s := cluster.SharedFingerprint(id)
+	mine := sharedFingerprints(cluster.Fingerprints{}, rt, on)
+	moved := func(name string) bool {
+		_, done := b.Import.Done[name]
+		return done
+	}
+	if mine.Retention == s && moved(clustercfg.ImportRetention) {
+		fp.Retention = s
+	}
+	if mine.Feeds == s && moved(clustercfg.ImportFeeds) {
+		fp.Feeds = s
+	}
+	if mine.Detections == s && moved(shared.ImportDetections) {
+		fp.Detections = s
+	}
+	return fp
+}
+
+// sharedPrints put the shared sentinel s in place of the fingerprints of
+// one feature, when rt takes it from the shared settings. A new shared
+// feature appends its entry here.
+var sharedPrints = []func(fp *cluster.Fingerprints, rt *shared.Runtime, s string){
+	// The retention policies and the feeds come with the content.
+	func(fp *cluster.Fingerprints, _ *shared.Runtime, s string) { fp.Retention, fp.Feeds = s, s },
+	// The users, once they are shared too.
+	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
+		if rt.SharedUsers() {
+			fp.Users = s
+		}
+	},
+	// The detections and dashboards, once they are shared too.
+	func(fp *cluster.Fingerprints, rt *shared.Runtime, s string) {
+		if rt.SharedLibrary() {
+			fp.Detections = s
+		}
+	},
+	// Append a new shared feature's entry here.
+}
+
 // contentHandlers runs the requests of the content on the server that
 // runs the background jobs: a feed download asked on another server, and
-// a retention run.
-func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shared.Handler {
+// a retention run. A new shared feature appends its handlers to the list,
+// each with its own request types.
+func contentHandlers(feeds *intel.Feeds, ret *retention.Manager, archives, lifecycle map[string]shared.Handler) map[string]shared.Handler {
+	out := map[string]shared.Handler{}
+	for _, hs := range []map[string]shared.Handler{
+		feedHandlers(feeds),
+		retentionHandlers(ret),
+		// Restores of shared archives (sharedaudit.go), nil until they
+		// are shared.
+		archives,
+		// Moving the background jobs and rotating the cluster key
+		// (clusterlifecycle.go).
+		lifecycle,
+		// Append a new shared feature's handlers here.
+	} {
+		for k := range hs {
+			if _, dup := out[k]; dup {
+				// Two features naming one request type would leave one
+				// of them silently unrun.
+				panic("shared request type " + k + " has two handlers")
+			}
+		}
+		maps.Copy(out, hs)
+	}
+	return out
+}
+
+// feedHandlers runs a feed download asked on another server.
+func feedHandlers(feeds *intel.Feeds) map[string]shared.Handler {
 	return map[string]shared.Handler{
 		clustercfg.RequestFeedRefresh: func(ctx context.Context, req *shared.Request) error {
 			var a clustercfg.FeedRefreshArgs
@@ -272,6 +380,12 @@ func contentHandlers(feeds *intel.Feeds, ret *retention.Manager) map[string]shar
 			}
 			return req.SetResult(st)
 		},
+	}
+}
+
+// retentionHandlers runs a retention run asked on any server.
+func retentionHandlers(ret *retention.Manager) map[string]shared.Handler {
+	return map[string]shared.Handler{
 		clustercfg.RequestRetentionRun: func(ctx context.Context, req *shared.Request) error {
 			var a clustercfg.RetentionRunArgs
 			if len(req.Args) > 0 {
@@ -304,6 +418,15 @@ type liveMaxAge struct {
 	last     time.Duration
 }
 
+// Use works the age out again with c, the configuration in use after
+// ingest.max_event_age was changed (api.EventAge).
+func (l *liveMaxAge) Use(c *config.Config) {
+	l.mu.Lock()
+	l.c = c
+	l.mu.Unlock()
+	l.update(nil)
+}
+
 // update works the age out again from s, or from the policies in use when
 // s is nil.
 func (l *liveMaxAge) update(s *retention.Settings) {
@@ -314,8 +437,8 @@ func (l *liveMaxAge) update(s *retention.Settings) {
 		}
 		s = &cur
 	}
-	d := l.c.MaxEventAge(s.ShortestKeepDays())
 	l.mu.Lock()
+	d := l.c.MaxEventAge(s.ShortestKeepDays())
 	same := d == l.last
 	l.last = d
 	l.mu.Unlock()

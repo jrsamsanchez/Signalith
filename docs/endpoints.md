@@ -11,6 +11,7 @@ Each host reports:
 | What | Data model | When |
 | --- | --- | --- |
 | Files created, changed, renamed or deleted in the watched folders, with their SHA-256 on Linux and macOS | Filesystem | within a minute |
+| Every program started on macOS, with its arguments, parent and account (see [macOS program starts](detections.md#macos-program-starts-osquery)) | Endpoint (sourcetype `osquery:process_start`) | within a minute |
 | Listening ports and the program behind each | Inventory (`inventory_type=port`) | every 10 minutes |
 | Operating system, installed software, accounts, services and startup items, as they are added or removed | Inventory (`inventory_type=os`, `software`, `user`, `service`, `startup`) | every hour (adjustable) |
 | Configuration checks, when a result changes | Configuration_Check | every hour (adjustable) |
@@ -24,6 +25,10 @@ Hosts found this way are also added to the asset list (**Risk and context**), as
 
 ## Adding hosts
 
+The easiest way is the [Signalith Agent](signalith-agent.md#osquery), on Linux, Windows
+and macOS: its one line installs osquery too and keeps its settings, with nothing else to
+do. The steps below set osquery up by hand.
+
 1. Open **Add data**, pick **osquery**, and choose the platform the hosts run.
 2. Install osquery 5 on each host from <https://osquery.io/downloads>.
 3. Download the setup script and run it on each host:
@@ -31,7 +36,9 @@ Hosts found this way are also added to the asset list (**Risk and context**), as
    - Windows, in an elevated PowerShell:
      `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Downloads\signalith-osquery-setup.ps1"`
 4. On macOS, give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk
-   Access, add `/opt/osquery/lib/osquery.app`).
+   Access, add `/opt/osquery/lib/osquery.app`). File changes and program starts
+   (EndpointSecurity) need it. A Mac set up before Signalith collected program starts
+   needs the setup script run again, since its flags turn EndpointSecurity on.
 
 The script saves three files next to osquery (`/etc/osquery` on Linux, `/var/osquery` on
 macOS, `C:\Program Files\osquery` on Windows): Signalith's CA certificate, the enroll
@@ -66,7 +73,9 @@ Analysts and admins can open **Endpoints**:
 
 Admins also have:
 
-- **What hosts collect**: turn file monitoring and checks on or off, edit the watched
+- **What hosts collect**: choose what the [Signalith Agents](signalith-agent.md#change-what-agents-collect)
+  of each install line collect (osquery, Sysmon, PowerShell, web server and audit logs,
+  and where Linux sign-ins are read from). For osquery, turn file monitoring and checks on or off, edit the watched
   paths and the paths left out per platform, and set how often inventory and checks run
   (5 minutes to 24 hours). Paths use osquery's patterns: `%` matches within one folder
   level and `%%` matches everything below. Saving warns when someone else saved since you
@@ -97,8 +106,9 @@ on a computer without osquery gets a row of its own marked **Log agent only**.
 The **Log agent** column says one of:
 
 - **Sending, 2m ago**: events arrived recently.
-- **Silent since 10:42**: nothing for more than an hour. Check that the agent runs and
-  can reach Signalith.
+- **Silent since 10:42**: nothing for more than an hour (15 minutes for a network sensor
+  the sensor install script built, which sends a status line every 5 minutes). Check that
+  the agent runs and can reach Signalith.
 - **Needs a new configuration**: open the row to see why, in plain words:
   - it trusts a different certificate authority than this server uses, so its
     connections fail (this also shows for a computer that keeps refusing this server's
@@ -123,6 +133,17 @@ the agent is still fine after the switch. Two
 computers with the same name are shown as one row with both addresses. An agent not heard
 from for 30 days is removed from the list. The computer name an agent sends is only a
 label: it never lets anyone in.
+
+### Network sensors
+
+A network sensor built with **Add data > Network sensor > Set up a new sensor** shows as
+**Network sensor**, with a second line on its row: the Zeek and Suricata versions, how old
+the rules are, the capture port and its link, and the share of packets dropped. A
+**warnings** badge counts what its last status line found wrong. Opening it shows a
+**Network sensor** section with the details and each warning with the command to fix it on
+the sensor. For such a sensor, **Get a new configuration** is not the way to repair it: run
+its line from Add data again, which also gives it a new token. See
+[Network sensor: Status](network-sensor.md#status).
 
 ## Configuration checks
 

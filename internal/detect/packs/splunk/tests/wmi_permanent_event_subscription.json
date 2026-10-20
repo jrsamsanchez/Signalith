@@ -1,0 +1,17 @@
+{"rule": "71bfdb13-f200-4c6c-b2c9-a2e07adf437d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"Perm. Consumer: instance of CommandLineEventConsumer {x};"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"Perm. Consumer: instance of ActiveScriptEventConsumer {x};"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"instance of __EventFilter {}; Perm. Consumer:"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"Name =\"A\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"Query =\"x\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"EventNamespace =\"A\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"QueryLanguage =\"A\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"Perm. Consumer: instance of A {x};"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"CommandLineTemplate =\"x\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"RunInteractively =A ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"ScriptingEngine =\"A\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"ScriptText =\"x\" ;"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"CommandLineEventConsumer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-WMI-Activity/Operational","event_id":"5861","data":{"PossibleCause":"ActiveScriptEventConsumer"}}
+]}

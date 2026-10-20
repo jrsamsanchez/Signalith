@@ -1,0 +1,37 @@
+id: starter-powershell
+title: Suspicious PowerShell
+description: Hunt for encoded and obfuscated PowerShell, download cradles and unusually long command lines.
+techniques: [T1059.001, T1027, T1105]
+time_range: 7d
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      PowerShell is the most common way attackers run code on Windows. They often **encode** the command (`-EncodedCommand`) to hide it, or download the next stage straight into memory.
+
+      ## What normal looks like
+      Management tools and backup jobs also encode commands. Note the parent process and the account: a scheduled backup under a service account is expected, a user's Word document starting PowerShell is not.
+  - kind: search
+    title: Encoded commands
+    query: |
+      datamodel=Endpoint process_name IN (powershell.exe, pwsh.exe)
+      process IN ("* -e *", "* -en *", "* -enc *", "* -enco*", "* -ec *", "*-encodedcommand*")
+      | table _time, dest, user, parent_process_name, process
+  - kind: search
+    title: Download cradles
+    query: |
+      datamodel=Endpoint process_name IN (powershell.exe, pwsh.exe)
+      process IN ("*downloadstring*", "*downloadfile*", "*invoke-webrequest*", "*iwr *", "*start-bitstransfer*", "*net.webclient*")
+      | stats count, values(process) as commands by dest, user
+  - kind: search
+    title: Longest PowerShell command lines
+    query: |
+      datamodel=Endpoint process_name IN (powershell.exe, pwsh.exe)
+      | eval length=len(process)
+      | sort -length
+      | head 25
+      | table _time, dest, user, length, process
+  - kind: markdown
+    text: |
+      ## Next steps
+      Decode a base64 command before deciding: it is UTF-16, so decode it as such. If it reaches out to the internet, look for the address in **Network_Traffic** and **Network_Resolution** around the same time.

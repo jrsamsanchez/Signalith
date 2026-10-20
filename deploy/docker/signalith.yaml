@@ -2,10 +2,14 @@
 # service in docker-compose.yml makes them, and they reach Signalith as
 # files in /run/signalith-secrets.
 server:
-  listen: 0.0.0.0:8080
+  # The web page and API.
+  listen: 0.0.0.0:9000
+  # Agents send here, apart from the web page, with the same certificate.
+  agent_listen: 0.0.0.0:7779
   # Agents on other machines need this computer's address instead; set
   # SIGNALITH_PUBLIC_URL in docker-compose.yml or use the Add data page.
-  public_url: https://localhost:8080
+  # Agents are given the same host on the agent port (7779).
+  public_url: https://localhost:9000
   tls:
     # HTTPS with a certificate Signalith makes for itself and keeps in the
     # signalith-data volume. See docs/https.md to stop browser warnings.
@@ -29,16 +33,27 @@ opensearch:
   # auto: a copy of each day's events on a second OpenSearch node once
   # there is one, none on this single node.
   replicas: auto
+  # Primary shards for each new day's events, per data model: 1 unless the
+  # busiest data model stores tens of GB a day (see the Settings page).
+  # shards: 1
 search:
   default_earliest: -24h
   max_events: 10000
 retention:
   days: 90
 auth:
-  admin_user: admin
+  # The built-in admin's name on a new install. An install made before
+  # 0.3.1 keeps the name it has (admin): the name its servers share is
+  # used, so it signs in as before.
+  admin_user: signalithadmin
+cluster:
+  # May run the background jobs (detections, threat intel downloads,
+  # retention). Servers that share one OpenSearch take turns; turn it off
+  # only on a server that should never run them. The older name,
+  # detections.scheduler, still works.
+  leader_eligible: true
 detections:
   dir: /var/lib/signalith/detections
-  scheduler: true
   max_findings_per_run: 100
   catch_up: 6h
 lookups:
@@ -46,15 +61,22 @@ lookups:
 dashboards:
   dir: /var/lib/signalith/dashboards
   stale_after: 2h
-# Syslog from firewalls, switches and servers without an agent. The
-# container cannot open ports below 1024, so it listens on 5514 and
-# docker-compose.yml publishes it as port 514 on the host. public_port is
-# the port devices send to, which the Add data page shows; change it if
-# you change the port in docker-compose.yml. Syslog over TLS uses port 6514
-# on both.
+# Syslog from firewalls, switches and servers without an agent, over TLS
+# on port 6514 (on this machine and in the container).
+#
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. An install set up
+# before keeps it on, on 5514 (Signalith decides once, at its first start
+# with this file, and notes it in plain-syslog.json in signalith-data). For devices that cannot send
+# over TLS, turn it on with "Turn on plain syslog" on the Add data page
+# (Syslog), which saves it in the signalith-data volume, or set udp and tcp
+# below to 0.0.0.0:5514. The container cannot open ports below 1024, so it
+# listens on 5514 and docker-compose.yml publishes it as port 514 on the
+# host. public_port is the port devices send plain syslog to, which the Add
+# data page shows; change it if you change the port in docker-compose.yml.
 syslog:
-  udp: 0.0.0.0:5514
-  tcp: 0.0.0.0:5514
+  udp: ""
+  tcp: ""
   tls: 0.0.0.0:6514
   public_port: 514
   allow: []

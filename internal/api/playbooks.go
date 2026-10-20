@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -31,7 +34,7 @@ type Playbooks struct {
 func (s *Server) routePlaybooks(api *router) {
 	// What a playbook does decides what Signalith changes by itself.
 	api.admin("GET /api/playbooks", s.handlePlaybooks)
-	api.admin("PUT /api/playbooks", s.handlePlaybooksSave)
+	api.sensitive("PUT /api/playbooks", s.handlePlaybooksSave)
 	// Approving is analyst work, like running an action by hand.
 	api.analyst("GET /api/playbooks/runs", s.handlePlaybookRuns)
 	api.analyst("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)
@@ -94,7 +97,7 @@ type actionRef struct {
 }
 
 // playbooksView is the Playbooks page's data.
-func (s *Server) playbooksView(list []playbooks.Playbook, fileErr error) map[string]any {
+func (s *Server) playbooksView(r *http.Request, list []playbooks.Playbook, fileErr error) map[string]any {
 	refs := s.playbookRefs()
 	views := make([]playbookView, 0, len(list))
 	for _, p := range list {
@@ -120,7 +123,7 @@ func (s *Server) playbooksView(list []playbooks.Playbook, fileErr error) map[str
 	}
 	sort.Slice(actions, func(i, j int) bool { return strings.ToLower(actions[i].Label) < strings.ToLower(actions[j].Label) })
 	out := map[string]any{
-		"playbooks": views, "revision": s.Playbooks.Manager.Revision(), "file": fullPath(s.Playbooks.Manager.File),
+		"playbooks": views, "revision": s.Playbooks.Manager.Revision(), "file": serverPath(r, s.Playbooks.Manager.File),
 		"channels": channels, "actions": actions, "notify": refs.Channels != nil, "respond": refs.Actions != nil,
 		"urgencies": notify.Urgencies, "statuses": findings.Statuses, "placeholders": playbooks.Placeholders,
 		"approval_hours": int(playbooks.ApprovalWindow / time.Hour),
@@ -144,7 +147,7 @@ func (s *Server) handlePlaybooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list, err := s.Playbooks.Manager.List()
-	writeJSON(w, http.StatusOK, s.playbooksView(list, err))
+	writeJSON(w, http.StatusOK, s.playbooksView(r, list, err))
 }
 
 func (s *Server) handlePlaybooksSave(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +185,7 @@ func (s *Server) handlePlaybooksSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.Log.Info("playbooks changed", "audit", true, "by", userOf(r), "playbooks", len(list), "on", on)
-	writeJSON(w, http.StatusOK, s.playbooksView(list, nil))
+	writeJSON(w, http.StatusOK, s.playbooksView(r, list, nil))
 }
 
 func (s *Server) handlePlaybookRuns(w http.ResponseWriter, r *http.Request) {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -9,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
@@ -64,11 +68,47 @@ func writeCaseError(w http.ResponseWriter, err error) {
 // server or another, so nobody's addition is lost; change must therefore
 // be safe to run more than once, write nothing else, and reset whatever
 // it reports out at its start. Changes on this server also wait for each
-// other, so two tabs do not spend tries on each other.
+// other, so two tabs do not spend tries on each other; changes to other
+// cases do not wait.
 func (s *Server) modifyCase(ctx context.Context, id string, change func(c *cases.Case) (bool, error)) (*cases.Case, error) {
-	s.caseMu.Lock()
-	defer s.caseMu.Unlock()
+	defer s.caseLocks.lock(id)()
 	return s.Cases.Modify(ctx, id, change)
+}
+
+// caseLocks holds a lock for each case being changed on this server, and
+// forgets it once nobody holds or waits for it.
+type caseLocks struct {
+	mu    sync.Mutex
+	locks map[string]*caseLock
+}
+
+type caseLock struct {
+	sync.Mutex
+	users int // holding it or waiting for it
+}
+
+// lock locks case id and returns the function that unlocks it.
+func (l *caseLocks) lock(id string) (unlock func()) {
+	l.mu.Lock()
+	if l.locks == nil {
+		l.locks = map[string]*caseLock{}
+	}
+	cl := l.locks[id]
+	if cl == nil {
+		cl = &caseLock{}
+		l.locks[id] = cl
+	}
+	cl.users++
+	l.mu.Unlock()
+	cl.Lock()
+	return func() {
+		cl.Unlock()
+		l.mu.Lock()
+		if cl.users--; cl.users == 0 {
+			delete(l.locks, id)
+		}
+		l.mu.Unlock()
+	}
 }
 
 // badRequest marks an error as the client's fault.
@@ -202,8 +242,6 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 
 // createCase stores a new case, with a new ID should its own be taken.
 func (s *Server) createCase(ctx context.Context, c *cases.Case, now time.Time) error {
-	s.caseMu.Lock()
-	defer s.caseMu.Unlock()
 	err := s.Cases.Create(ctx, c)
 	for try := 0; errors.Is(err, cases.ErrExists) && try < 3; try++ {
 		c.ID = cases.NewID(now) // practically never needed
@@ -566,6 +604,9 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		i := slices.IndexFunc(c.Entries, func(e cases.Entry) bool { return e.ID == id })
 		if i >= 0 && c.Entries[i].Kind == cases.KindFinding {
 			return false, badRequest{errors.New("remove the finding from the case instead")}
+		}
+		if i >= 0 && c.Entries[i].Kind == cases.KindNotebook {
+			return false, badRequest{errors.New("unlink the case from the hunting notebook instead")}
 		}
 		if i >= 0 && c.Entries[i].Kind == cases.KindAction {
 			return false, badRequest{errors.New("a response action stays on the timeline: it is the record of what was done")}

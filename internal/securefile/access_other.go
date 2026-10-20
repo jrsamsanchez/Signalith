@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build !unix && !windows
 
 package securefile
@@ -17,3 +20,5 @@ func linkAllowed(string, os.FileInfo) error { return nil }
 func otherLinks(string) int { return 0 }
 
 func isBusy(error) bool { return false }
+
+func inUse(error) bool { return false }

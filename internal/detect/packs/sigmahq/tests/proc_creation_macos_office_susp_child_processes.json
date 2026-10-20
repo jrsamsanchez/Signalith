@@ -1,0 +1,5 @@
+{"rule": "69483748-1525-4a6c-95ca-90dc8d431b68", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/curl","parent_cmdline":"Microsoft Word","parent_path":"Microsoft Word","path":"/curl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent_cmdline":"Microsoft Word","parent_path":"Microsoft Word","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/curl","path":"/curl"}}
+]}

@@ -1,0 +1,10 @@
+{"rule": "84b1ecf9-6eff-4004-bafb-bae5c0e251b2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x","ParentImage":"\\GoogleUpdate.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"x","ParentProcessName":"\\GoogleUpdate.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\Google","ParentImage":"\\GoogleUpdate.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"\\Google","ParentProcessName":"\\GoogleUpdate.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentImage":"\\GoogleUpdate.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"ParentProcessName":"\\GoogleUpdate.exe","SubjectDomainName":"CORP","SubjectUserName":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Security","event_id":"4688","data":{"NewProcessName":"x","SubjectDomainName":"CORP","SubjectUserName":"tester"}}
+]}

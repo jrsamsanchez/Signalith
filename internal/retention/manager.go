@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -14,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,8 +79,11 @@ type Manager struct {
 	Config  Config
 	Store   PolicyStore
 	Archive *Archive
-	// HistoryFile keeps the last run and recent actions.
+	// HistoryFile keeps the last run and recent actions, unless History
+	// is set: then History keeps them (the audit records of servers that
+	// share one OpenSearch).
 	HistoryFile string
+	History     HistorySink
 	// Interval is how often Start enforces policies; default 1h.
 	Interval time.Duration
 	Log      *slog.Logger
@@ -96,6 +103,23 @@ type Manager struct {
 	// OpenSearch; the step runs only when it returns nil. It confirms that
 	// this server still holds the background jobs.
 	Fence func(ctx context.Context) error
+	// Claim, when set, is asked after Fence before each step that changes
+	// an index (step names it: compact, archive, delete, thaw, restore,
+	// delete_records). It records the step with this server's lease
+	// epoch, and refuses it when a server with a later epoch claimed the
+	// index, so a server that lost the background jobs without knowing
+	// stops before it changes anything.
+	Claim func(ctx context.Context, index, step string) error
+	// CanArchive, when set, says whether this server can write archives
+	// now, and why not: runs hold back the steps that archive until it
+	// can, rather than delete days unarchived.
+	CanArchive func() (bool, string)
+	// Jobs, when set, shares the progress of restores with the servers
+	// that do not run them.
+	Jobs JobStore
+	// ArchiveOn, when set, names the servers that can archive (servers
+	// that share one OpenSearch say so in their heartbeats).
+	ArchiveOn func() []string
 	// Shared is set when the policies are the servers' shared ones: then
 	// any server may change them (ReadOnly and Leader only keep it from
 	// running retention and restoring).
@@ -110,7 +134,7 @@ type Manager struct {
 	OnSettings func(Settings)
 
 	initOnce sync.Once
-	hist     *history
+	hist     HistorySink
 	// job is held by a run or a restore, so they never overlap. It is
 	// released through release, which hands it to a queued run.
 	job sync.Mutex
@@ -129,6 +153,10 @@ type Manager struct {
 	// starting runs every few minutes.
 	guardPaused    time.Time
 	guardPausedWhy string
+	// liveInterval replaces Interval once SetInterval changed it (in
+	// nanoseconds; 0 is none), and reschedule tells Start.
+	liveInterval atomic.Int64
+	reschedule   chan struct{}
 }
 
 type queuedRun struct{ trigger, by string }
@@ -210,15 +238,43 @@ func (m *Manager) fence(ctx context.Context) error {
 	return nil
 }
 
+// step checks, before a step that changes index, that this server may
+// still take it, and claims the index for it.
+func (m *Manager) step(ctx context.Context, index, step string) error {
+	if err := m.fence(ctx); err != nil {
+		return err
+	}
+	if m.Claim == nil {
+		return nil
+	}
+	if err := m.Claim(ctx, index, step); err != nil {
+		return fmt.Errorf("refused: another server runs retention now (%w)", err)
+	}
+	return nil
+}
+
+// JobStore shares the restores' progress between servers.
+type JobStore interface {
+	// Save records the restores this server runs, newest last.
+	Save(ctx context.Context, restores []RestoreStatus) error
+	// Load returns the restores the server that runs them recorded.
+	Load(ctx context.Context) ([]RestoreStatus, error)
+}
+
 func (m *Manager) init() {
 	m.initOnce.Do(func() {
-		m.hist = loadHistory(m.HistoryFile)
+		if m.History != nil {
+			m.hist = m.History
+		} else {
+			m.hist = loadHistory(m.HistoryFile)
+		}
 		if m.Log == nil {
 			m.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 		}
 		if m.Archive == nil {
 			m.Archive = &Archive{}
 		}
+		m.reschedule = make(chan struct{}, 1)
 	})
 }
 
@@ -230,6 +286,9 @@ func (m *Manager) now() time.Time {
 }
 
 func (m *Manager) interval() time.Duration {
+	if d := time.Duration(m.liveInterval.Load()); d > 0 {
+		return d
+	}
 	if m.Interval > 0 {
 		return m.Interval
 	}
@@ -360,6 +419,7 @@ type state struct {
 	archives []Manifest
 	archErr  string
 	archProb []string
+	coldErr  string
 }
 
 func (m *Manager) snapshot(ctx context.Context) (*state, error) {
@@ -370,7 +430,7 @@ func (m *Manager) snapshot(ctx context.Context) (*state, error) {
 		return nil, fmt.Errorf("%w: could not list indices: %w", ErrOpenSearch, err)
 	}
 	for _, ix := range all {
-		if strings.HasPrefix(ix.Name, m.Prefix+"-") {
+		if cat, _, ok := ParseIndex(m.Prefix, ix.Name); strings.HasPrefix(ix.Name, m.Prefix+"-") || ok && isMonthly(cat) {
 			st.snap.Indices = append(st.snap.Indices, ix)
 		} else {
 			st.records[ix.Name] = ix
@@ -384,6 +444,11 @@ func (m *Manager) snapshot(ctx context.Context) (*state, error) {
 		st.diskErr = "could not read where shards are: " + err.Error()
 	} else {
 		st.snap.Disk, st.snap.NodeBytes = d, nb
+	}
+	if cs, err := m.Cluster.ColdState(ctx, ColdRepository(m.Prefix), m.Prefix); err != nil {
+		st.coldErr = err.Error()
+	} else {
+		st.snap.Cold = cs
 	}
 	list, problems, err := m.Archive.List()
 	if err != nil {
@@ -510,7 +575,7 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 			m.Log.Warn("retention run failed", "err", err)
 		}
 		run.Finished = m.now()
-		if err := m.hist.add(run); err != nil {
+		if err := m.hist.Record(context.WithoutCancel(ctx), run); err != nil {
 			m.Log.Warn("could not save the retention history", "file", m.HistoryFile, "err", err)
 		}
 		return run, err
@@ -597,6 +662,10 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 				run.Archived++
 			case ActionDelete:
 				run.Deleted++
+			case ActionCold:
+				run.Cold++
+			case ActionMount:
+				run.Mounted++
 			}
 		}
 		if pass == 0 && !hold {
@@ -647,7 +716,7 @@ func (m *Manager) deleteRecords(ctx context.Context, run *Run, recs []RecordStep
 			r.KeepDays = pol.KeepDays
 			r.Before = m.now().Add(-time.Duration(pol.KeepDays) * 24 * time.Hour)
 		}
-		if err := m.fence(ctx); err != nil {
+		if err := m.step(ctx, r.Index, ActionDeleteRecords); err != nil {
 			run.Errors = append(run.Errors, r.Category+": "+err.Error())
 			return
 		}
@@ -694,7 +763,7 @@ func (m *Manager) stillWanted(s Settings, snap Snapshot) func(Decision) (Decisio
 		case d.Removes() && nd.Removes():
 			// Archive if the new settings say so.
 			return nd, true, ""
-		case d.Action == ActionCompact && nd.Action == ActionCompact:
+		case d.Action == nd.Action && (d.Action == ActionCompact || d.Action == ActionCold || d.Action == ActionMount):
 			return d, true, ""
 		}
 		return d, false, "the settings saved during this run no longer call for it"
@@ -723,7 +792,7 @@ func (m *Manager) record(run *Run, act Action) {
 	if run != nil && run.Trigger != "" && act.By == "" {
 		act.By = run.By
 	}
-	if err := m.hist.add(nil, act); err != nil {
+	if err := m.hist.Record(m.ctx(), nil, act); err != nil {
 		m.Log.Warn("could not save the retention history", "file", m.HistoryFile, "err", err)
 	}
 }
@@ -736,16 +805,31 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	cat, day, ok := ParseIndex(m.Prefix, d.Index)
 	switch {
 	case !ok || cat != d.Category:
-		act.Error = "refused: not a Signalith daily index"
+		act.Error = "refused: not a Signalith daily or monthly index"
 		return act
 	case d.Removes() && !day.Before(today):
 		act.Error = "refused: today's and future days are never deleted"
 		return act
+	case isMonthly(cat) && (d.Action == ActionCompact || !monthEnd(day).Before(today)):
+		act.Error = "refused: the current month is never deleted, and monthly indices are never compacted"
+		return act
 	case d.Action == ActionCompact && !day.Before(today.AddDate(0, 0, -1)):
 		act.Error = "refused: today and yesterday are never compacted"
 		return act
+	case d.Action == ActionCold && (isMonthly(cat) || !day.Before(today.AddDate(0, 0, -1))):
+		act.Error = "refused: today, yesterday and monthly indices never move to cold storage"
+		return act
+	case (d.Action == ActionMount || d.snapshotOnly) && d.Snapshot == "":
+		act.Error = "refused: no cold storage snapshot named"
+		return act
 	}
-	if err := m.fence(ctx); err != nil {
+	if d.Action == ActionArchive && m.CanArchive != nil {
+		if ok, why := m.CanArchive(); !ok {
+			act.Error = "held back: this server cannot archive now (" + why + "), so the day was kept"
+			return act
+		}
+	}
+	if err := m.step(ctx, d.Index, d.Action); err != nil {
 		act.Error = err.Error()
 		return act
 	}
@@ -753,14 +837,22 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	switch {
 	case d.Action == ActionCompact:
 		err = m.compact(ctx, d, &act)
+	case d.Action == ActionCold:
+		err = m.toCold(ctx, d, &act)
+	case d.Action == ActionMount:
+		act.Snapshot = d.Snapshot
+		err = m.Cluster.MountSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot, d.Index)
+	case d.snapshotOnly:
+		act.Snapshot = d.Snapshot
+		err = m.Cluster.DeleteSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot)
 	case d.Action == ActionArchive:
 		err = m.archiveAndDelete(ctx, d, &act)
 	case d.verify:
 		err = m.verifiedDelete(ctx, d, &act)
 	default:
 		act.Docs = d.Docs
-		if err = m.Cluster.DeleteIndex(ctx, d.Index); err == nil {
-			act.Freed = d.Bytes
+		if err = m.deleteIndex(ctx, d, &act); err == nil {
+			act.Freed = m.frees(d)
 		}
 	}
 	if err != nil {
@@ -804,6 +896,44 @@ func (m *Manager) freeze(ctx context.Context, d Decision) (bool, error) {
 	return set, nil
 }
 
+// sealed checks, just before an index is deleted, that it still holds the
+// n events that were copied out of it. freeze cannot block writes to an
+// index under OpenSearch's flood-stage block, and OpenSearch lifts that
+// block on its own once the disk frees up, after which late events could
+// land in the index and be deleted with it. So when only the flood-stage
+// block held the index, sealed sets the write block now: refused means the
+// flood-stage block is still on and nothing can have been written; set
+// means it was lifted, and a recount shows whether events arrived.
+func (m *Manager) sealed(ctx context.Context, d Decision, n int64) error {
+	if !d.diskBlocked || d.writeBlock {
+		return nil
+	}
+	if err := m.Cluster.BlockWrites(ctx, d.Index, true); err != nil {
+		if isFloodStage(err) {
+			return nil
+		}
+		return fmt.Errorf("could not make the index read-only before deleting it, so it was kept: %w", err)
+	}
+	if err := m.Cluster.Refresh(ctx, d.Index); err != nil {
+		return fmt.Errorf("could not refresh the index before deleting it, so it was kept: %w", err)
+	}
+	got, err := m.Cluster.Count(ctx, d.Index)
+	if err != nil {
+		return fmt.Errorf("could not count its events again before deleting it, so it was kept: %w", err)
+	}
+	if got != n {
+		return fmt.Errorf("events arrived after OpenSearch lifted its disk block (%d, not %d), so the index was kept; the next run tries again", got, n)
+	}
+	return nil
+}
+
+// isFloodStage reports whether OpenSearch refused a change because of its
+// flood-stage (read-only-allow-delete) block.
+func isFloodStage(err error) bool {
+	s := err.Error()
+	return strings.Contains(s, "read-only-allow-delete") || strings.Contains(s, "flood-stage")
+}
+
 // thaw lifts the write block freeze set on an index that is kept, so it
 // keeps taking late events.
 func (m *Manager) thaw(ctx context.Context, d Decision, set bool) {
@@ -812,6 +942,10 @@ func (m *Manager) thaw(ctx context.Context, d Decision, set bool) {
 	}
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
+	if err := m.step(cctx, d.Index, "thaw"); err != nil {
+		m.Log.Warn("retention: did not make a kept index writable again", "index", d.Index, "err", err)
+		return
+	}
 	if err := m.Cluster.BlockWrites(cctx, d.Index, false); err != nil {
 		m.Log.Warn("retention: could not make a kept index writable again", "index", d.Index, "err", err)
 	}
@@ -847,10 +981,17 @@ func (m *Manager) archiveFrozen(ctx context.Context, d Decision, act *Action) er
 		return fmt.Errorf("archiving failed, so the index was kept: %w", err)
 	}
 	act.File, act.Docs = man.File, man.Docs
-	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+	// The export may have taken long: check again before deleting.
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
+		return fmt.Errorf("archived to %s, but the index was not deleted: %w", man.File, err)
+	}
+	if err := m.sealed(ctx, d, man.Docs); err != nil {
+		return fmt.Errorf("archived to %s, but %w", man.File, err)
+	}
+	if err := m.deleteIndex(ctx, d, act); err != nil {
 		return fmt.Errorf("archived to %s, but deleting the index failed: %w", man.File, err)
 	}
-	act.Freed = d.Bytes
+	act.Freed = m.frees(d)
 	return nil
 }
 
@@ -880,12 +1021,128 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 		return nil
 	}
 	act.Docs = n
-	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
 		m.thaw(ctx, d, set)
 		return err
 	}
-	act.Freed = d.Bytes
+	if err := m.sealed(ctx, d, n); err != nil {
+		return err
+	}
+	if err := m.deleteIndex(ctx, d, act); err != nil {
+		m.thaw(ctx, d, set)
+		return err
+	}
+	act.Freed = m.frees(d)
 	return nil
+}
+
+// frees is the disk deleting an index frees on the nodes: none for a day
+// in cold storage, whose data is in the snapshot repository.
+func (m *Manager) frees(d Decision) int64 {
+	if d.cold {
+		return 0
+	}
+	return d.Bytes
+}
+
+// deleteIndex deletes an index and, for a day in cold storage, then its
+// snapshot. A snapshot left behind by a failed delete is deleted by a
+// later run, which finds it with no index mounted from it.
+func (m *Manager) deleteIndex(ctx context.Context, d Decision, act *Action) error {
+	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+		return err
+	}
+	if !d.cold || d.Snapshot == "" {
+		return nil
+	}
+	act.Snapshot = d.Snapshot
+	if err := m.Cluster.DeleteSnapshot(ctx, ColdRepository(m.Prefix), d.Snapshot); err != nil {
+		return fmt.Errorf("deleted the index, but not its cold storage snapshot %s (the next run tries again): %w", d.Snapshot, err)
+	}
+	return nil
+}
+
+// toCold moves a day to cold storage: it blocks writes, refreshes and
+// counts, merges to one segment, snapshots the index alone, deletes it
+// from the nodes and mounts it back from the snapshot. Until the snapshot
+// is made and checked the index is left as it was; after the delete the
+// data is in the snapshot, and a mount that fails is tried again by the
+// next run (ActionMount).
+func (m *Manager) toCold(ctx context.Context, d Decision, act *Action) error {
+	repo := ColdRepository(m.Prefix)
+	name := ColdSnapshotName(d.Index, d.uuid)
+	act.Snapshot = name
+	if d.uuid == "" {
+		return errors.New("refused: the index's UUID is unknown")
+	}
+	set, err := m.freeze(ctx, d)
+	if err != nil {
+		return err
+	}
+	n, err := m.Cluster.Count(ctx, d.Index)
+	if err != nil {
+		m.thaw(ctx, d, set)
+		return fmt.Errorf("could not count its events, so it was kept: %w", err)
+	}
+	act.Docs = n
+	// One segment makes fewer, bigger files in the repository, which
+	// searches read faster. A day under the flood-stage block cannot be
+	// merged, and moving it frees the disk, so it goes as it is.
+	if !d.compacted && !d.diskBlocked {
+		if err := m.Cluster.ForceMerge(ctx, d.Index); err != nil {
+			m.thaw(ctx, d, set)
+			return fmt.Errorf("could not merge the index before moving it, so it was kept: %w", err)
+		}
+	}
+	if d.stale != "" {
+		// Left by an earlier move of this very index that stopped before
+		// the delete; events may have arrived since, so snapshot again.
+		if err := m.Cluster.DeleteSnapshot(ctx, repo, d.stale); err != nil {
+			m.thaw(ctx, d, set)
+			return fmt.Errorf("could not replace the snapshot an earlier move left, so the index was kept: %w", err)
+		}
+	}
+	if err := m.Cluster.SnapshotIndex(ctx, repo, name, d.Index); err != nil {
+		m.thaw(ctx, d, set)
+		return fmt.Errorf("the snapshot failed, so the index was kept: %w", err)
+	}
+	// The snapshot may have taken long: check again before deleting.
+	if err := m.step(ctx, d.Index, ActionDelete); err != nil {
+		return fmt.Errorf("snapshotted to %s, but the index was not deleted: %w", name, err)
+	}
+	if err := m.sealed(ctx, d, n); err != nil {
+		return fmt.Errorf("snapshotted to %s, but %w", name, err)
+	}
+	if err := m.Cluster.DeleteIndex(ctx, d.Index); err != nil {
+		return fmt.Errorf("snapshotted to %s, but deleting the index failed: %w", name, err)
+	}
+	act.Freed = d.Bytes
+	if err := m.step(ctx, d.Index, ActionMount); err != nil {
+		return fmt.Errorf("moved to %s, but not mounted yet (the next run mounts it): %w", name, err)
+	}
+	if err := m.Cluster.MountSnapshot(ctx, repo, name, d.Index); err != nil {
+		return fmt.Errorf("moved to %s, but mounting it failed (the next run tries again): %w", name, err)
+	}
+	if got, err := m.Cluster.Count(ctx, d.Index); err == nil && got != n {
+		return fmt.Errorf("moved to %s and mounted, but it counts %d events instead of %d", name, got, n)
+	}
+	return nil
+}
+
+// SetInterval changes how often Start enforces policies, at once: the
+// next run comes one new interval after the last one, or now when that
+// is past. retention.interval is shared by the servers of a cluster and
+// applies without a restart.
+func (m *Manager) SetInterval(d time.Duration) {
+	m.init()
+	if d <= 0 || d == m.interval() {
+		return
+	}
+	m.liveInterval.Store(int64(d))
+	select {
+	case m.reschedule <- struct{}{}:
+	default:
+	}
 }
 
 // Start enforces retention every Interval until ctx ends, and checks the
@@ -893,7 +1150,6 @@ func (m *Manager) verifiedDelete(ctx context.Context, d Decision, act *Action) e
 // server that runs the detection scheduler calls it.
 func (m *Manager) Start(ctx context.Context) {
 	m.init()
-	interval := m.interval()
 	m.mu.Lock()
 	m.automatic, m.baseCtx, m.nextRun = true, ctx, m.now().Add(firstRunDelay)
 	m.mu.Unlock()
@@ -911,16 +1167,32 @@ func (m *Manager) Start(ctx context.Context) {
 			m.Log.Info("retention run skipped; another job is in progress", "trigger", trigger)
 		}
 	}
+	// lastRun is when the last scheduled run ended; zero before the first,
+	// which comes a moment after the start whatever the interval.
+	var lastRun time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
 			scheduled(TriggerSchedule)
+			lastRun = m.now()
 			m.mu.Lock()
-			m.nextRun = m.now().Add(interval)
+			m.nextRun = lastRun.Add(m.interval())
 			m.mu.Unlock()
-			timer.Reset(interval)
+			timer.Reset(m.interval())
+		case <-m.reschedule:
+			if lastRun.IsZero() {
+				continue
+			}
+			next := lastRun.Add(m.interval())
+			if now := m.now(); next.Before(now) {
+				next = now
+			}
+			m.mu.Lock()
+			m.nextRun = next
+			m.mu.Unlock()
+			timer.Reset(next.Sub(m.now()))
 		case <-check.C:
 			if m.guardTripped(ctx) {
 				scheduled(TriggerGuard)
@@ -1123,12 +1395,20 @@ type Overview struct {
 	// disk passed its flood-stage watermark.
 	DiskBlocked int            `json:"disk_blocked"`
 	Archive     ArchiveSummary `json:"archive"`
+	Cold        ColdView       `json:"cold"`
 	Schedule    ScheduleView   `json:"schedule"`
 	// Pending is what the next run would do with the current settings.
 	Pending Summary  `json:"pending"`
 	Notes   []string `json:"notes"`
 	LastRun *Run     `json:"last_run"`
 	Recent  []Action `json:"recent"`
+	// RestoreQueued is set where restores asked on any server go to the
+	// one that runs retention (servers that share their archives).
+	RestoreQueued bool `json:"restore_queued,omitempty"`
+	// HistorySource says where the history is kept: "file" on a server
+	// of its own, "audit" when servers that share one OpenSearch keep it
+	// as audit records.
+	HistorySource string `json:"history_source"`
 	// Unmanaged lists indices under the prefix that are not daily indices
 	// of a known category; retention leaves them alone.
 	Unmanaged []IndexInfo `json:"unmanaged"`
@@ -1180,7 +1460,11 @@ type CategoryView struct {
 	NewestDay     string `json:"newest_day"`
 	CompactedDays int    `json:"compacted_days"`
 	RestoredDays  int    `json:"restored_days"`
-	Policy        Policy `json:"policy"`
+	// ColdDays are mounted from cold storage, holding ColdBytes there;
+	// Bytes counts only what is on the nodes' disks.
+	ColdDays  int    `json:"cold_days"`
+	ColdBytes int64  `json:"cold_bytes"`
+	Policy    Policy `json:"policy"`
 	// Source is default, ui, config or feeds; Editable is false for
 	// policies from signalith.yaml and for threat intel.
 	Source   string    `json:"source"`
@@ -1216,6 +1500,19 @@ type GuardView struct {
 	PauseReason string     `json:"pause_reason,omitempty"`
 }
 
+// ColdView says whether cold storage is set up and what it holds.
+type ColdView struct {
+	ColdState
+	// Used is set when a policy moves days to cold storage.
+	Used bool `json:"used"`
+	// Days and Bytes count the days mounted from cold storage.
+	Days  int   `json:"days"`
+	Bytes int64 `json:"bytes"`
+	// Message says what is missing, when something is.
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
 // ArchiveSummary describes the archive folder.
 type ArchiveSummary struct {
 	Dir      string   `json:"dir"`
@@ -1228,6 +1525,12 @@ type ArchiveSummary struct {
 	// SameDisk is true when the archive folder looks to be on the same
 	// disk as OpenSearch's data (this server's disk has the same size).
 	SameDisk bool `json:"same_disk,omitempty"`
+	// HeldBack says why this server cannot archive now, so runs keep the
+	// days they would archive; empty when it can.
+	HeldBack string `json:"held_back,omitempty"`
+	// On names the servers that can archive, when servers share one
+	// OpenSearch.
+	On []string `json:"on,omitempty"`
 }
 
 // ScheduleView says when retention runs.
@@ -1303,8 +1606,21 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		m.mu.Unlock()
 	}
 	ov.ETag, ov.Shared = m.ETag(), m.Shared
-	ov.LastRun, ov.Recent = m.hist.get()
+	ov.HistorySource = m.hist.Source()
+	if run, acts, err := m.hist.Recent(ctx); err != nil {
+		ov.Notes = append(ov.Notes, "The retention history could not be read: "+err.Error())
+	} else {
+		ov.LastRun, ov.Recent = run, acts
+	}
 	ov.Archive = ArchiveSummary{Dir: m.Archive.Dir, Problems: []string{}, Free: -1}
+	if m.CanArchive != nil {
+		if ok, why := m.CanArchive(); !ok {
+			ov.Archive.HeldBack = why
+		}
+	}
+	if m.ArchiveOn != nil {
+		ov.Archive.On = m.ArchiveOn()
+	}
 	iv := m.interval()
 	m.mu.Lock()
 	ov.Schedule = ScheduleView{Interval: shortDuration(iv), IntervalSeconds: int64(iv / time.Second),
@@ -1364,6 +1680,20 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 	}
 	steps := plan.Steps()
 	ov.Pending = Summarize(steps, plan.Records)
+	ov.Cold.Repository = ColdRepository(m.Prefix)
+	if st.snap.Cold != nil {
+		ov.Cold.ColdState = *st.snap.Cold
+	}
+	ov.Cold.Error = st.coldErr
+	for _, c := range Categories() {
+		if pol, _ := s.For(c.ID); c.Kind == KindEvents && pol.ColdAfterDays > 0 {
+			ov.Cold.Used = true
+		}
+	}
+	if ov.Cold.Used && !st.snap.Cold.Ready() && st.coldErr == "" && ov.Error == "" {
+		why := st.snap.Cold.Missing(m.Prefix)
+		ov.Cold.Message = strings.ToUpper(why[:1]) + why[1:] + "."
+	}
 
 	byCat := map[string]*CategoryView{}
 	for _, c := range Categories() {
@@ -1394,6 +1724,17 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 		cv.Pending = Summarize(cs, cr)
 		byCat[c.ID] = cv
 	}
+	// A busy day can be split into parts (ingest.Rollover), each its own
+	// index: the day counts once, whatever it is split into.
+	seen := map[string]bool{}
+	once := func(kind, cat, ds string) bool {
+		k := kind + "|" + cat + "|" + ds
+		if seen[k] {
+			return false
+		}
+		seen[k] = true
+		return true
+	}
 	for _, ix := range st.snap.Indices {
 		cat, day, ok := ParseIndex(m.Prefix, ix.Name)
 		if !ok {
@@ -1401,20 +1742,31 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 			continue
 		}
 		cv := byCat[cat]
-		cv.Bytes += ix.Bytes
-		cv.Docs += ix.Docs
-		cv.Days++
 		ds := day.Format(time.DateOnly)
+		cv.Docs += ix.Docs
+		if ix.Cold != nil {
+			if once("cold", cat, ds) {
+				cv.ColdDays++
+				ov.Cold.Days++
+			}
+			cv.ColdBytes += ix.Bytes
+			ov.Cold.Bytes += ix.Bytes
+		} else {
+			cv.Bytes += ix.Bytes
+		}
+		if once("day", cat, ds) {
+			cv.Days++
+		}
 		if cv.OldestDay == "" || ds < cv.OldestDay {
 			cv.OldestDay = ds
 		}
 		if ds > cv.NewestDay {
 			cv.NewestDay = ds
 		}
-		if ix.Compacted() {
+		if ix.Compacted() && ix.Cold == nil && once("compacted", cat, ds) {
 			cv.CompactedDays++
 		}
-		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today {
+		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today && once("restored", cat, ds) {
 			cv.RestoredDays++
 		}
 		if ix.DiskBlocked {
@@ -1438,7 +1790,9 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 	for _, c := range Categories() {
 		cv := byCat[c.ID]
 		// "Other events" only shows once there are some, or a policy for them.
-		if c.ID == "other" && cv.Days == 0 && cv.Source == SourceDefault {
+		// Neither do audit records, which only servers that share one
+		// OpenSearch keep.
+		if (c.ID == "other" || c.Kind == KindMonthly) && cv.Days == 0 && cv.Source == SourceDefault {
 			continue
 		}
 		ov.TotalBytes += cv.Bytes
@@ -1506,13 +1860,13 @@ func (m *Manager) Archives(ctx context.Context) (*ArchiveList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read the archive folder %s: %w", m.Archive.Dir, err)
 	}
-	out := &ArchiveList{Dir: m.Archive.Dir, Archives: []ArchiveView{}, Problems: []string{}, Restores: m.restoreStatuses(),
+	out := &ArchiveList{Dir: m.Archive.Dir, Archives: []ArchiveView{}, Problems: []string{}, Restores: m.RestoreStatuses(ctx),
 		DefaultKeepDays: DefaultRestoreDays, MaxKeepDays: MaxRestoreDays}
 	if problems != nil {
 		out.Problems = problems
 	}
 	live := map[string]IndexInfo{}
-	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*"); err != nil {
+	if ixs, err := m.Cluster.Indices(ctx, m.Prefix+"-*,"+m.Prefix+"_*"); err != nil {
 		out.Error = "could not check OpenSearch for restored days: " + err.Error()
 	} else {
 		for _, ix := range ixs {
@@ -1559,6 +1913,39 @@ func (m *Manager) updateRestore(st *RestoreStatus, change func(*RestoreStatus)) 
 	m.mu.Lock()
 	change(st)
 	m.mu.Unlock()
+	m.saveJobs()
+}
+
+// saveJobs shares the restores' progress, when servers share it.
+func (m *Manager) saveJobs() {
+	if m.Jobs == nil {
+		return
+	}
+	m.mu.Lock()
+	list := make([]RestoreStatus, len(m.restores))
+	for i, r := range m.restores {
+		list[i] = *r
+	}
+	m.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(m.ctx()), 10*time.Second)
+	defer cancel()
+	if err := m.Jobs.Save(ctx, list); err != nil {
+		m.Log.Debug("could not share the progress of restores", "err", err)
+	}
+}
+
+// RestoreStatuses returns recent restores, newest first: this server's
+// own, or, on a server that does not run them, those the server that
+// does shared.
+func (m *Manager) RestoreStatuses(ctx context.Context) []RestoreStatus {
+	m.init()
+	if m.Jobs != nil && m.readOnly() != nil {
+		if list, err := m.Jobs.Load(ctx); err == nil {
+			slices.Reverse(list)
+			return list
+		}
+	}
+	return m.restoreStatuses()
 }
 
 // restoreManifests checks a restore request and returns its archives.
@@ -1768,6 +2155,7 @@ func (m *Manager) Restore(ctx context.Context, ids []string, keepDays int, by st
 		out[i] = *st
 	}
 	m.mu.Unlock()
+	m.saveJobs()
 
 	go func() {
 		m.job.Lock()
@@ -1810,7 +2198,7 @@ func (m *Manager) RestoreArchive(ctx context.Context, man Manifest, until string
 	if err := m.Archive.Verify(man); err != nil {
 		return 0, fmt.Errorf("the archive file failed its check, so nothing was restored: %w", err)
 	}
-	if err := m.fence(ctx); err != nil {
+	if err := m.step(ctx, man.Index, ActionRestore); err != nil {
 		return 0, err
 	}
 	if err := m.Cluster.CreateIndex(ctx, man.Index); err != nil {
@@ -1869,4 +2257,44 @@ func (m *Manager) RestoreArchive(ctx context.Context, man Manifest, until string
 		return done, err
 	}
 	return done, nil
+}
+
+// WaitRestores waits until none of the archives ids is queued or being
+// restored by this server, and returns their latest statuses. progress,
+// when set, is called with the events restored so far and in all.
+func (m *Manager) WaitRestores(ctx context.Context, ids []string, progress func(done, total int64)) ([]RestoreStatus, error) {
+	m.init()
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		latest := map[string]RestoreStatus{}
+		for _, r := range m.restoreStatuses() {
+			if _, ok := latest[r.ID]; !ok && slices.Contains(ids, r.ID) {
+				latest[r.ID] = r
+			}
+		}
+		var done, total int64
+		busy := false
+		out := make([]RestoreStatus, 0, len(latest))
+		for _, id := range ids {
+			r, ok := latest[id]
+			if !ok {
+				continue
+			}
+			out = append(out, r)
+			done, total = done+r.Restored, total+r.Docs
+			busy = busy || r.State == RestoreQueued || r.State == RestoreRunning
+		}
+		if progress != nil {
+			progress(done, total)
+		}
+		if !busy {
+			return out, nil
+		}
+		select {
+		case <-ctx.Done():
+			return out, ctx.Err()
+		case <-tick.C:
+		}
+	}
 }

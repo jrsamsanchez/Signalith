@@ -33,8 +33,8 @@ SHA-256 hash of each (see [agent-tokens.md](agent-tokens.md#how-tokens-work)).
 
 | File | Encrypted values | Written by |
 | --- | --- | --- |
-| `signalith.yaml` | `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, each of `ingest.tokens` (shared agent tokens from older setups), and `intel.feeds[].password` and header values | You, `signalith init` and `signalith secrets`. The server never changes this file |
-| `settings.yaml` (lookups folder, or `SIGNALITH_SETTINGS_FILE`) | The OpenSearch password and the AI model's API key saved on the **Settings** page | The server, and `signalith settings reset` |
+| `signalith.yaml` | `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, `auth.oidc.client_secret`, `m365.client_secret`, `okta.private_key`, `okta.api_token`, each of `ingest.tokens` (shared agent tokens from older setups), and `intel.feeds[].password` and header values | You, `signalith init` and `signalith secrets`. The server never changes this file |
+| `settings.yaml` (lookups folder, or `SIGNALITH_SETTINGS_FILE`) | The OpenSearch password, the AI model's API key, and the other passwords and keys (such as Okta's private key) saved on the **Settings** page | The server, and `signalith settings reset` |
 | `directory.json` (lookups folder) | The service account password of directory sign-in set up on the **Users** page | The server |
 | `intel_feeds.yaml` (lookups folder) | Passwords and header values (API keys) of feeds added on the **Threat intel** page | The server |
 
@@ -89,7 +89,10 @@ Not encrypted, because they need not be:
 - **Environment variables** (`SIGNALITH_OPENSEARCH_PASSWORD` and the others) are used
   as they are and never written to a file, even when Signalith saves a file.
 - A value written as `${ENV_VAR}` (in a feed in `signalith.yaml`) holds no secret.
-- **Events**, in OpenSearch and in archives, are protected by disk encryption (below).
+- **Events** in OpenSearch are protected by disk encryption (below). Archived days
+  are encrypted with a key of their own, kept in the file encrypted with the master
+  key (and the cluster key on servers that share their settings); see
+  [Archives](retention.md#encryption).
 
 How: each value is encrypted with AES-256-GCM, under a key derived from the master
 key for that setting alone. A value copied to another setting, or changed, does not
@@ -413,7 +416,8 @@ Backups of files from before the rotation now need a backup of that key to be re
 `-prune` keeps the previous key, and says why, while a value still needs it (such
 as a file restored from a backup; `signalith secrets encrypt` encrypts it with the
 new key), while a value cannot be decrypted at all (it might need that key), or
-while the previous key cannot be read. A key in `SIGNALITH_MASTER_KEY` cannot be
+while the previous key cannot be read, or while an archived day was encrypted with
+it alone (keep the key as long as you keep such archives). A key in `SIGNALITH_MASTER_KEY` cannot be
 rotated by Signalith: change the variable yourself, or move the key to a file.
 
 ### Commands
@@ -422,7 +426,7 @@ rotated by Signalith: change the variable yourself, or move the key to a file.
 | --- | --- |
 | `signalith secrets status [-c file]` | Where the master key is, and how each stored password or key is kept |
 | `signalith secrets encrypt [-c file]` | Encrypts plain values (and values still under the previous key), changing nothing else in the files |
-| `signalith secrets set <setting> [-c file]` | Stores `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, or another of `ingest.tokens` (a shared agent token; per-agent tokens come from `signalith tokens create`), encrypted. It asks twice without showing what you type, or reads one line from a pipe; for an agent token, press Enter to have one made |
+| `signalith secrets set <setting> [-c file]` | Stores `opensearch.password`, `assistant.api_key`, `auth.ldap.bind_password`, `auth.oidc.client_secret`, `m365.client_secret`, `okta.private_key`, `okta.api_token`, or another of `ingest.tokens` (a shared agent token; per-agent tokens come from `signalith tokens create`), encrypted. It asks twice without showing what you type, or reads one line from a pipe (all of it for `okta.private_key`, so `< key.pem` works); for an agent token, press Enter to have one made |
 | `signalith secrets encrypt -new-key`, `set <setting> -new-key` | The same, making a new master key although the files hold values encrypted with one that is not found (when that key is lost) |
 | `signalith secrets rotate-master [-c file]` | Makes a new master key and encrypts every stored value again with it |
 | `signalith secrets rotate-master -prune [-c file]` | Removes the previous master key once nothing needs it |

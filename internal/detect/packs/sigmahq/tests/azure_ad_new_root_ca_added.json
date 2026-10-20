@@ -1,0 +1,5 @@
+{"rule": "4bb80281-3756-4ec8-a88e-523c5a6fda9e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"Set Company Information","TargetResources.modifiedProperties.newValue":"TrustedCAsForPasswordlessAuth"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"TargetResources.modifiedProperties.newValue":"TrustedCAsForPasswordlessAuth"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"Set Company Information"}}
+]}

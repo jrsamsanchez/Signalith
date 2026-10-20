@@ -1,0 +1,6 @@
+{"rule": "ad9012a6-e518-4432-9890-f3b82b8fc71f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"apps","objectRef.resource":"deployments","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"objectRef.resource":"deployments","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"apps","verb":"patch"}},
+  {"expect":false,"source":"synthesized","channel":"kubernetes","event_id":"audit","data":{"apiGroup":"apps","objectRef.resource":"deployments"}}
+]}

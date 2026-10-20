@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package retention decides how long each kind of data is kept and
 // enforces it. Daily event indices are compacted, archived and deleted by
 // per-category policies, resolved and closed findings and cases are
@@ -28,6 +31,11 @@ const (
 	// KindManaged is threat intel, which expires through each feed's
 	// max_age and is not managed here.
 	KindManaged = "managed"
+	// KindMonthly are monthly indices named <prefix>_<category>-YYYY.MM,
+	// such as the audit records of servers that share one OpenSearch.
+	// Only keep_days and archive apply: a month goes once its last day is
+	// older than keep_days, and the current month is never touched.
+	KindMonthly = "monthly"
 )
 
 // IDs of the categories that are not data models.
@@ -35,7 +43,13 @@ const (
 	Findings = "findings"
 	Cases    = "cases"
 	Intel    = "intel"
+	// Audit is the audit records of servers that share one OpenSearch.
+	Audit = "audit"
 )
+
+// DefaultAuditKeepDays is how long audit records are kept when the audit
+// category has no policy of its own.
+const DefaultAuditKeepDays = 400
 
 // Category is one kind of data a policy applies to.
 type Category struct {
@@ -69,6 +83,8 @@ func Categories() []Category {
 			Description: "Alerts raised by detections; only resolved and closed findings are ever deleted"},
 		Category{ID: Cases, Name: "Investigations", Kind: KindRecords,
 			Description: "Cases; only resolved and closed cases are ever deleted"},
+		Category{ID: Audit, Name: "Audit records", Kind: KindMonthly,
+			Description: "Who changed what, on every server; kept by month"},
 		Category{ID: Intel, Name: "Threat intel", Kind: KindManaged,
 			Description: "Indicators expire through each feed's max_age setting"},
 	)
@@ -122,6 +138,11 @@ type Policy struct {
 	CompactAfterDays int `yaml:"compact_after_days,omitempty" json:"compact_after_days"`
 	// Archive exports a day to the archive folder before it is deleted.
 	Archive bool `yaml:"archive,omitempty" json:"archive"`
+	// ColdAfterDays moves days older than this to cold storage: they are
+	// snapshotted to the cold storage repository (an S3 bucket, say),
+	// deleted from the nodes' disks and mounted back from the snapshot, so
+	// they stay searchable. 0 never moves them.
+	ColdAfterDays int `yaml:"cold_after_days,omitempty" json:"cold_after_days"`
 }
 
 // CapBytes returns the size cap in bytes, 0 for none.
@@ -140,13 +161,18 @@ func (p Policy) Problems(kind string) []string {
 	case p.KeepDays > MaxKeepDays:
 		out = append(out, fmt.Sprintf("keep_days must be at most %d (0 keeps data forever)", MaxKeepDays))
 	}
-	if kind == KindRecords {
+	if kind == KindRecords || kind == KindMonthly {
+		what := "findings and investigations, which only use keep_days"
+		if kind == KindMonthly {
+			what = "audit records, which only use keep_days and archive"
+		}
 		for _, f := range []struct {
 			name string
 			set  bool
-		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive}} {
+		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive && kind == KindRecords},
+			{"cold_after_days", p.ColdAfterDays != 0}} {
 			if f.set {
-				out = append(out, f.name+" does not apply to findings and investigations, which only use keep_days")
+				out = append(out, f.name+" does not apply to "+what)
 			}
 		}
 		return out
@@ -167,6 +193,14 @@ func (p Policy) Problems(kind string) []string {
 		out = append(out, "compact_after_days must be less than keep_days, or days are deleted before they are compacted")
 	case p.CompactAfterDays > MaxKeepDays:
 		out = append(out, fmt.Sprintf("compact_after_days must be at most %d", MaxKeepDays))
+	}
+	switch {
+	case p.ColdAfterDays < 0:
+		out = append(out, "cold_after_days cannot be negative (0 never moves days to cold storage)")
+	case p.KeepDays > 0 && p.ColdAfterDays >= p.KeepDays:
+		out = append(out, "cold_after_days must be less than keep_days, or days are deleted before they move to cold storage")
+	case p.ColdAfterDays > MaxKeepDays:
+		out = append(out, fmt.Sprintf("cold_after_days must be at most %d", MaxKeepDays))
 	}
 	return out
 }
@@ -246,7 +280,7 @@ func (c Config) Problems() []string {
 		switch {
 		case !ok:
 			out = append(out, fmt.Sprintf("retention.policies.%s: unknown category; use one of %s",
-				id, strings.Join(categoryIDs(KindEvents, KindRecords), ", ")))
+				id, strings.Join(categoryIDs(KindEvents, KindRecords, KindMonthly), ", ")))
 		case cat.Kind == KindManaged:
 			out = append(out, "retention.policies.intel: threat intel indicators expire through each feed's max_age setting")
 		default:
@@ -438,8 +472,11 @@ func (s Settings) For(id string) (Policy, string) {
 	if p, ok := s.Policies[id]; ok {
 		return p, s.Sources[id]
 	}
-	if cat.Kind == KindRecords {
+	switch cat.Kind {
+	case KindRecords:
 		return Policy{}, SourceDefault
+	case KindMonthly:
+		return Policy{KeepDays: DefaultAuditKeepDays}, SourceDefault
 	}
 	return s.Default, SourceDefault
 }

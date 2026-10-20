@@ -1,7 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -30,6 +36,9 @@ type Run struct {
 	Archived       int   `json:"archived"`
 	Deleted        int   `json:"deleted"`
 	DeletedRecords int64 `json:"deleted_records"`
+	// Days moved to cold storage, and moves that stopped finished.
+	Cold    int `json:"cold,omitempty"`
+	Mounted int `json:"mounted,omitempty"`
 	// Skipped counts steps left out because settings saved during the run
 	// no longer called for them.
 	Skipped int `json:"skipped,omitempty"`
@@ -42,7 +51,7 @@ type Run struct {
 // Action records one thing retention did, or failed to do.
 type Action struct {
 	Time     time.Time `json:"time"`
-	Action   string    `json:"action"` // compact, archive, delete, delete_records, restore
+	Action   string    `json:"action"` // compact, archive, delete, cold, mount, delete_records, restore
 	Category string    `json:"category"`
 	Index    string    `json:"index,omitempty"`
 	Day      string    `json:"day,omitempty"`
@@ -54,9 +63,48 @@ type Action struct {
 	Rule   string `json:"rule,omitempty"`
 	Reason string `json:"reason"`
 	File   string `json:"file,omitempty"`
-	By     string `json:"by,omitempty"`
-	Error  string `json:"error,omitempty"`
+	// Snapshot is the cold storage snapshot the action made, mounted or
+	// deleted.
+	Snapshot string `json:"snapshot,omitempty"`
+	By       string `json:"by,omitempty"`
+	Error    string `json:"error,omitempty"`
+	// Server is the server that took the action, when servers that share
+	// one OpenSearch keep one history.
+	Server string `json:"server,omitempty"`
 }
+
+// HistorySink keeps the last run and recent actions. A server on its own
+// keeps them in a file (HistoryFile); servers that share one OpenSearch
+// keep them as audit records, so the history survives a takeover.
+type HistorySink interface {
+	// Record adds a finished run (when not nil) and actions.
+	Record(ctx context.Context, run *Run, acts ...Action) error
+	// Recent returns the last run and the most recent actions, newest
+	// first, at most MaxActions.
+	Recent(ctx context.Context) (*Run, []Action, error)
+	// Source names where the history is kept: "file" or "audit".
+	Source() string
+}
+
+// History sources.
+const (
+	HistoryFromFile  = "file"
+	HistoryFromAudit = "audit"
+)
+
+// Record implements HistorySink.
+func (h *history) Record(_ context.Context, run *Run, acts ...Action) error {
+	return h.add(run, acts...)
+}
+
+// Recent implements HistorySink.
+func (h *history) Recent(context.Context) (*Run, []Action, error) {
+	run, acts := h.get()
+	return run, acts, nil
+}
+
+// Source implements HistorySink.
+func (h *history) Source() string { return HistoryFromFile }
 
 // Actions that are not index decisions.
 const (
@@ -122,4 +170,22 @@ func (h *history) get() (*Run, []Action) {
 	acts := make([]Action, len(h.data.Actions))
 	copy(acts, h.data.Actions)
 	return run, acts
+}
+
+// ReadHistoryFile reads a history file a server keeps on its own: the
+// last run and the recent actions, newest first. A missing file is no
+// history.
+func ReadHistoryFile(path string) (*Run, []Action, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var d historyData
+	if err := json.Unmarshal(b, &d); err != nil {
+		return nil, nil, fmt.Errorf("%s is not a retention history: %w", path, err)
+	}
+	return d.LastRun, d.Actions, nil
 }

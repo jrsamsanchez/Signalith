@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package users
 
 import (
@@ -87,6 +90,17 @@ func TestStoreLastAdminGuard(t *testing.T) {
 	s := NewMemory() // no built-in admin, so local admins are all there is
 	s.Create(context.Background(), newUser("ann", Admin))
 	s.Create(context.Background(), newUser("ben", Analyst))
+	// A tenant's admin cannot manage the install, so ann is still the
+	// last admin; and the tenant's last admin may go.
+	ta := newUser("tad", Admin)
+	ta.Tenant = "acme"
+	if _, err := s.Create(context.Background(), ta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Delete(context.Background(), "tad@acme"); err != nil {
+		t.Errorf("delete a tenant's last admin: %v", err)
+	}
+	s.Create(context.Background(), ta)
 	viewer, off := Viewer, true
 	if _, err := s.Update(context.Background(), "ann", Change{Role: &viewer}); !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("demote last admin: %v", err)
@@ -150,8 +164,8 @@ func TestPasswordsAndRoles(t *testing.T) {
 	if len(p) != 19 || strings.Count(p, "-") != 3 || GeneratePassword() == p {
 		t.Errorf("generated %q", p)
 	}
-	if _, err := HashPassword(strings.Repeat("x", 73)); err == nil {
-		t.Error("73-byte password accepted")
+	if _, err := HashPassword(strings.Repeat("x", MaxPasswordLength+1)); err == nil {
+		t.Error("an overlong password accepted")
 	}
 	if !Admin.AtLeast(Analyst) || Viewer.AtLeast(Analyst) || Role("root").AtLeast(Viewer) {
 		t.Error("role ranks")
@@ -164,5 +178,124 @@ func TestPasswordsAndRoles(t *testing.T) {
 	json.Unmarshal(b, &roles)
 	if len(roles) != 3 || roles[0].ID != Viewer {
 		t.Errorf("role infos %s", b)
+	}
+}
+
+// Hold is taken around the changes made on the Users page and to
+// passwords, and an error from it refuses them; sign-ins are not held.
+func TestHoldRefusesChanges(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.Create(ctx, newUser("ann", Admin)); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("moving")
+	held := 0
+	s.Hold = func() (func(), error) {
+		held++
+		return nil, refused
+	}
+	role := Viewer
+	for what, err := range map[string]error{
+		"create":   func() error { _, err := s.Create(ctx, newUser("bob", Viewer)); return err }(),
+		"update":   func() error { _, err := s.Update(ctx, "ann", Change{Role: &role}); return err }(),
+		"password": func() error { _, err := s.SetPassword(ctx, "ann", "another-pass-1", false); return err }(),
+		"delete":   func() error { _, err := s.Delete(ctx, "ann"); return err }(),
+	} {
+		if !errors.Is(err, refused) {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	s.RecordSignIn(ctx, "ann")
+	if u, _ := s.Get("ann"); held != 4 || u.LastSignIn == nil || u.Role != Admin {
+		t.Errorf("held %d times; ann %+v", held, u)
+	}
+
+	d, err := OpenDirectory(filepath.Join(t.TempDir(), "directory.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.Hold = s.Hold
+	if err := d.Save(ctx, Preset(TypeActiveDirectory)); !errors.Is(err, refused) {
+		t.Errorf("directory: %v", err)
+	}
+}
+
+// The changes the directory recheck makes to a directory user are held
+// like the changes made on the Users page.
+func TestHoldRefusesDirectoryChanges(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "users.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.SeeDirectoryUser(ctx, DirectoryUser{Username: "bob", Role: Viewer}); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("moving")
+	held := 0
+	s.Hold = func() (func(), error) {
+		held++
+		return nil, refused
+	}
+	if _, _, err := s.RefreshDirectoryUser(ctx, "bob", DirectoryUser{Username: "bob", Role: Admin}); !errors.Is(err, refused) {
+		t.Errorf("refresh: %v", err)
+	}
+	if _, _, err := s.RefuseDirectoryUser(ctx, "bob", "gone"); !errors.Is(err, refused) {
+		t.Errorf("refuse: %v", err)
+	}
+	if u, _ := s.Get("bob"); held != 2 || u.Role != Viewer || u.Refused != "" {
+		t.Errorf("held %d times; bob %+v", held, u)
+	}
+}
+
+// A tenant's users are kept as name@tenant, so a tenant's admin can
+// neither take nor find out about a name of the provider's or of another
+// tenant; the provider's users cannot take a name shaped like theirs.
+func TestTenantUsernames(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"ada", "ada@acme"}, {" Ada ", "ada@acme"}, {"ada@acme", "ada@acme"}, {"ADA@ACME", "ada@acme"},
+		{"ada@beta", ""}, {"ada@corp.com", ""}, {"@acme", ""}, {"", ""}, {strings.Repeat("a", 60), ""},
+	} {
+		got, err := TenantUsername(c.in, "acme")
+		if got != c.want || (err == nil) != (c.want != "") {
+			t.Errorf("TenantUsername(%q) = %q, %v; want %q", c.in, got, err, c.want)
+		}
+	}
+	ctx := context.Background()
+	s := NewMemory()
+	if _, err := s.Create(ctx, newUser("alice", Admin)); err != nil {
+		t.Fatal(err)
+	}
+	ada := newUser("alice", Admin)
+	ada.Tenant = "acme"
+	if u, err := s.Create(ctx, ada); err != nil || u.Username != "alice@acme" || u.Tenant != "acme" {
+		t.Fatalf("acme's alice: %+v %v", u, err)
+	}
+	ada.Tenant = "beta"
+	if u, err := s.Create(ctx, ada); err != nil || u.Username != "alice@beta" {
+		t.Fatalf("beta's alice: %+v %v", u, err)
+	}
+	for _, name := range []string{"bob@acme", "bob@zeta", "bob@default"} {
+		if _, err := s.Create(ctx, newUser(name, Viewer)); !errors.Is(err, ErrTenantSuffix) {
+			t.Errorf("provider user %s: %v", name, err)
+		}
+		if _, err := s.SeeSSOUser(ctx, SSOUser{Username: name, Subject: "s-" + name, Role: Viewer}, true); !errors.Is(err, ErrTenantSuffix) {
+			t.Errorf("sso user %s: %v", name, err)
+		}
+		if _, err := s.SeeDirectoryUser(ctx, DirectoryUser{Username: name, Role: Viewer}); !errors.Is(err, ErrTenantSuffix) {
+			t.Errorf("directory user %s: %v", name, err)
+		}
+		if _, err := s.Provision(ctx, Provisioned{Username: name, Active: true}); !errors.Is(err, ErrTenantSuffix) {
+			t.Errorf("provisioned user %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"bob@corp.com", "b@x.io", "carol"} {
+		if _, err := s.Create(ctx, newUser(name, Viewer)); err != nil {
+			t.Errorf("provider user %s: %v", name, err)
+		}
 	}
 }

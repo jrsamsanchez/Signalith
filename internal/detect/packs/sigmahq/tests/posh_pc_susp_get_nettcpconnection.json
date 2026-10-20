@@ -1,0 +1,4 @@
+{"rule": "b366adb4-d63d-422d-8a2c-186463b5ded0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"Get-NetTCPConnection"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

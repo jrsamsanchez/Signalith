@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -33,6 +36,11 @@ func cacheField(clusterID, prefix string) string { return "cluster.cache/" + clu
 // which tombstones are removed, after which a cache could bring back
 // deleted items.
 const CacheMaxAge = TombstoneAge
+
+// CacheRefresh is how long a cache may go unwritten while the shared
+// settings do not change: it is written again then, so the cache of a
+// server that keeps reading OpenSearch never gets older than CacheMaxAge.
+const CacheRefresh = 24 * time.Hour
 
 // CachePath is where cache.enc is kept in the state folder.
 func CachePath(stateDir string) string { return filepath.Join(stateDir, "cluster", "cache.enc") }
@@ -115,7 +123,11 @@ func (c Cache) Write(d CacheData) error {
 
 // Read opens the cache: an error wrapping fs.ErrNotExist when there is
 // none, ErrCacheOther when it is another cluster's, ErrCacheOld when it
-// was written more than CacheMaxAge before now.
+// was written more than CacheMaxAge before now. With ErrCacheOld it still
+// returns the revisions applied (Floors and MaxRev) and the cluster
+// document, which says what cluster key they are of, but no other
+// document: revisions only go up, so an old cache's are still lower
+// bounds that refuse a copy written back from before.
 func (c Cache) Read(now time.Time) (CacheData, error) {
 	var f cacheFile
 	if err := readJSON(c.Path, &f); err != nil {
@@ -136,7 +148,13 @@ func (c Cache) Read(now time.Time) (CacheData, error) {
 		return CacheData{}, fmt.Errorf("%s is damaged: %w", c.Path, err)
 	}
 	if now.Sub(d.WrittenAt) > CacheMaxAge {
-		return CacheData{}, ErrCacheOld
+		old := CacheData{Floors: d.Floors, MaxRev: d.MaxRev, WrittenAt: d.WrittenAt}
+		for _, cd := range d.Docs {
+			if cd.ID == ClusterDocID {
+				old.Docs = append(old.Docs, cd)
+			}
+		}
+		return old, ErrCacheOld
 	}
 	return d, nil
 }
@@ -215,7 +233,11 @@ func (w *CacheWriter) Flush() error {
 }
 
 // Run writes the cache after each change, waiting Timing.CacheEvery
-// between writes, until ctx ends; then it writes what is left.
+// between writes, until ctx ends; then it writes what is left. Without a
+// change it writes the cache again every CacheRefresh, as long as the hub
+// read the shared settings from OpenSearch in that time, so that the
+// cache does not get too old to use. A write that fails is tried again
+// after CacheEvery.
 func (w *CacheWriter) Run(ctx context.Context) {
 	for {
 		select {
@@ -227,8 +249,15 @@ func (w *CacheWriter) Run(ctx context.Context) {
 			}
 			return
 		case <-w.kick:
+		case <-w.hub.clock.After(CacheRefresh):
+			if w.hub.clock.Now().Sub(w.hub.Confirmed()) > CacheRefresh {
+				continue
+			}
 		}
-		_ = w.Flush()
+		if w.Flush() != nil {
+			// Not written: try again after CacheEvery, or as it stops.
+			w.Changed()
+		}
 		select {
 		case <-ctx.Done():
 		case <-w.hub.clock.After(w.hub.opts.Timing.CacheEvery):

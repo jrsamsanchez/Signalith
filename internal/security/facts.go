@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -38,6 +41,9 @@ type Facts struct {
 	// configuration; nil counts only the shared ones, as not read from
 	// OpenSearch.
 	AgentTokens *AgentTokenFacts
+	// APITokens are the API tokens of the AI tools server; nil where
+	// there are none to read, such as in the CLI or without shared users.
+	APITokens *APITokenFacts
 	// Uptime is how long the server has run (zero in the CLI).
 	Uptime time.Duration
 
@@ -56,6 +62,9 @@ type Facts struct {
 	Files      FileFacts
 	// ConfidentialVM is "AMD SEV-SNP" or "Intel TDX" when found.
 	ConfidentialVM string
+	// CRL is the revocation list OpenSearch checks client certificates
+	// against, nil when opensearch.crl_file is not set.
+	CRL *CRLFacts
 	// Feeds are the enabled threat intel feeds.
 	Feeds []Feed
 
@@ -121,6 +130,9 @@ type TLSFacts struct {
 	PublicHost        string
 	CAMissing         bool // the file does not include its CA, and it is not public
 	// Auto mode.
+	// ClusterCA is true when the certificate authority is the one all
+	// the cluster's servers share: it cannot be changed here yet.
+	ClusterCA  bool
 	CA         *tlsauto.CAInfo
 	Next       *tlsauto.CAInfo
 	Previous   *tlsauto.CAInfo
@@ -221,6 +233,10 @@ type RuntimeFacts struct {
 	LegacyProxies []string
 	// ClusterServer names this server among several, for the CA check.
 	ClusterServer string
+	// CRLProblem is what this server found wrong with OpenSearch's
+	// revocation list (cluster.CRLStatus), such as revoked certificates
+	// it does not name yet, which the file alone does not show.
+	CRLProblem string
 }
 
 // KeyFacts is about the master key.
@@ -255,9 +271,28 @@ type ArchiveFacts struct {
 	Disk     Disk
 	Policies bool // a retention policy archives
 	Volume   string
+	// Encrypting is true when new archives are encrypted
+	// (retention.encrypt_archives), and Plain counts the archived days
+	// that are not, such as those written before.
+	Encrypting bool
+	Plain      int
 }
 
 // OpenSearchFacts is about OpenSearch, as the probes found it.
+// CRLFacts are what the revocation list OpenSearch checks client
+// certificates against (opensearch.crl_file) says.
+type CRLFacts struct {
+	File string
+	// Missing is true when there is no such file; Err says why it cannot
+	// be used otherwise.
+	Missing bool
+	Err     string
+	// Revoked is how many certificates it names, and NextUpdate when it
+	// expires.
+	Revoked    int
+	NextUpdate time.Time
+}
+
 type OpenSearchFacts struct {
 	// Anonymous is open, closed or unknown: whether a request without
 	// sign-in could read events. AnonymousErr says why unknown.
@@ -573,6 +608,14 @@ type AgentTokenFacts struct {
 	Active int
 	// Legacy are the shared tokens of the configuration.
 	Legacy []LegacyTokenFact
+}
+
+// APITokenFacts are the accepted API tokens (see clusterauth.APITokenBody).
+type APITokenFacts struct {
+	// Active counts the accepted tokens; NeverExpire names those of them
+	// that never expire.
+	Active      int
+	NeverExpire []string
 }
 
 // LegacyTokenFact is a shared agent token from the configuration.

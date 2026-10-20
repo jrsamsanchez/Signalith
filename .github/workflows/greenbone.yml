@@ -1,0 +1,78 @@
+name: Greenbone OpenVAS
+# A real OpenVAS scan through Greenbone Community Edition
+# (deploy/ci/greenbone/compose.yaml): the feed loads, then Signalith's
+# GMP client scans two deliberately vulnerable containers and the
+# findings go to the job summary. It takes about an hour, so it runs
+# weekly, by hand, and on pull requests that change the OpenVAS code. It
+# is not a required check.
+on:
+  schedule:
+    - cron: '0 5 * * 0'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - internal/vulnscan/openvas*.go
+      - internal/vulnscan/credentials.go
+      - internal/vulnscan/greenbone_test.go
+      - deploy/ci/greenbone/**
+      - .github/workflows/greenbone.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: greenbone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openvas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      COMPOSE: docker compose -f deploy/ci/greenbone/compose.yaml
+      GVMD_SOCKET_DIR: /tmp/gvmd
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Free disk space for the feed
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Start Greenbone
+        run: |
+          mkdir -p "$GVMD_SOCKET_DIR" && chmod 777 "$GVMD_SOCKET_DIR"
+          # The key the signed-in scan uses, made fresh for each run.
+          mkdir -p deploy/ci/greenbone/keys
+          ssh-keygen -q -t ed25519 -N '' -C signalith-scan -f deploy/ci/greenbone/keys/scan
+          $COMPOSE pull --quiet
+          $COMPOSE up -d
+          $COMPOSE ps
+      - name: Build the check
+        run: go test -c -tags greenbone -o greenbone.test ./internal/vulnscan
+      - name: Scan with OpenVAS
+        run: |
+          # gvmd's socket belongs to its own user in the container.
+          for i in $(seq 1 120); do [ -S "$GVMD_SOCKET_DIR/gvmd.sock" ] && break; sleep 10; done
+          ls -l "$GVMD_SOCKET_DIR"
+          sudo -E ./greenbone.test -test.run TestGreenbone -test.v -test.timeout 170m
+        env:
+          SIGNALITH_GREENBONE_SOCKET: /tmp/gvmd/gvmd.sock
+          SIGNALITH_GREENBONE_SSH_KEY: ${{ github.workspace }}/deploy/ci/greenbone/keys/scan
+          SIGNALITH_GREENBONE_REPORT: ${{ github.workspace }}/greenbone-findings.md
+      - name: Findings to the job summary
+        if: always()
+        run: |
+          [ -f greenbone-findings.md ] && cat greenbone-findings.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Greenbone logs
+        if: failure()
+        run: |
+          $COMPOSE ps -a
+          for s in gvmd ospd-openvas openvasd pg-gvm; do echo "::group::$s"; $COMPOSE logs --tail 300 $s; echo "::endgroup::"; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: greenbone-findings
+          path: greenbone-findings.md
+          if-no-files-found: ignore

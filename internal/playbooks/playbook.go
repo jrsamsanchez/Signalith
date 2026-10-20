@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package playbooks runs simple response playbooks when a detection
 // raises a finding: tell a channel, run a response action (a firewall
 // block, disabling an account), open a case, set the finding's status or

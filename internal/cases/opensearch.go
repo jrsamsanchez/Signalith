@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cases
 
 import (
@@ -7,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -43,6 +47,10 @@ func properties() map[string]any {
 		"created":     map[string]any{"type": "date"},
 		"updated":     map[string]any{"type": "date"},
 		"entities":    off, "entries": off, "history": off,
+		"tickets": map[string]any{"type": "object", "properties": map[string]any{
+			"connection": kw, "system": kw, "key": kw, "remote_id": kw, "created_by": kw,
+			"url": map[string]any{"type": "keyword", "index": false}, "created": map[string]any{"type": "date"},
+		}},
 	}
 }
 
@@ -84,6 +92,16 @@ func (s *OpenSearch) Upgrade(ctx context.Context) error {
 func (s *OpenSearch) EnsureSampleField(ctx context.Context) error {
 	return s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index)+"/_mapping",
 		map[string]any{"properties": map[string]any{"sample": properties()["sample"]}}, nil)
+}
+
+// EnsureTicketsField maps the linked tickets (the "tickets" field) on an
+// index made before they existed. Linking a ticket calls it first, on
+// whichever server that happens, so the ticketing sync finds the case
+// even before Upgrade has run on the server that runs the background
+// jobs: adding one field is quick and changes nothing for older servers.
+func (s *OpenSearch) EnsureTicketsField(ctx context.Context) error {
+	return s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index)+"/_mapping",
+		map[string]any{"properties": map[string]any{"tickets": properties()["tickets"]}}, nil)
 }
 
 type doc struct {
@@ -156,12 +174,20 @@ func (s *OpenSearch) Modify(ctx context.Context, id string, change func(c *Case)
 		if err := json.Unmarshal(src, &c); err != nil {
 			return err
 		}
+		before := listed(&c)
 		changed, err := change(&c)
 		if err != nil {
 			return changeError{err}
 		}
 		if changed {
-			if _, err := vc.PutIf(ctx, s.Index, id, doc{Case: &c, EntityValues: c.EntityValues()}, v, true); err != nil {
+			// Waiting until the case can be searched again takes up to
+			// a refresh interval (a second). Only the cases list
+			// searches, and it shows neither the timeline nor the
+			// history, so a note or a pinned event is not waited for:
+			// the case itself is read in real time. The list may order
+			// such a case by its previous update time for that second.
+			refresh := listed(&c) != before
+			if _, err := vc.PutIf(ctx, s.Index, id, doc{Case: &c, EntityValues: c.EntityValues()}, v, refresh); err != nil {
 				return err
 			}
 		}
@@ -172,6 +198,15 @@ func (s *OpenSearch) Modify(ctx context.Context, id string, change func(c *Case)
 		return nil, modifyResult(err)
 	}
 	return out, nil
+}
+
+// listed returns what the cases list reads of a case and searches it by:
+// all of it except the timeline, the history and the update time.
+func listed(c *Case) string {
+	cp := *c
+	cp.Entries, cp.History, cp.Updated = nil, nil, time.Time{}
+	b, _ := json.Marshal(doc{Case: &cp, EntityValues: cp.EntityValues()})
+	return string(b)
 }
 
 // Delete removes one case; a missing one is not an error.
@@ -222,6 +257,12 @@ func filterQuery(flt Filter) map[string]any {
 			return map[string]any{"match_none": map[string]any{}}
 		}
 		fs = append(fs, map[string]any{"term": map[string]any{"sample": *flt.Sample}})
+	}
+	if !flt.UpdatedSince.IsZero() {
+		fs = append(fs, map[string]any{"range": map[string]any{"updated": map[string]any{"gte": flt.UpdatedSince.UTC().Format(time.RFC3339Nano)}}})
+	}
+	if flt.Ticketed {
+		fs = append(fs, map[string]any{"exists": map[string]any{"field": "tickets.key"}})
 	}
 	if t := strings.TrimSpace(flt.Text); t != "" {
 		fs = append(fs, map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{

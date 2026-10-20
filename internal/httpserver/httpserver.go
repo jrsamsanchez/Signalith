@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package httpserver builds the web server Signalith serves its UI, API
 // and agent ingest on, with timeouts and connection and request limits so
 // slow, idle or numerous clients cannot tie it up before anyone has signed
@@ -20,6 +23,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/proxyproto"
 )
 
 // Timeouts and limits for every connection. Request bodies have their own
@@ -99,6 +103,10 @@ type Limits struct {
 	// as a reverse proxy, load balancer or NAT gateway on another machine
 	// (server.shared_addresses).
 	Shared []netip.Prefix
+	// Proxy, when set, makes Listen read a PROXY protocol header from the
+	// trusted load balancers it lists, so requests carry the client's
+	// own address. Those balancers count as Shared.
+	Proxy *proxyproto.Config
 }
 
 func (l Limits) withDefaults() Limits {
@@ -111,11 +119,18 @@ func (l Limits) withDefaults() Limits {
 	return l
 }
 
-// Listen opens a TCP listener on addr with lim applied.
+// Listen opens a TCP listener on addr with lim applied. With lim.Proxy
+// set, connections read the balancer's PROXY header first: the
+// connection limits count the balancer, and requests the client.
 func Listen(addr string, lim Limits, logger *slog.Logger) (net.Listener, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
+	}
+	if lim.Proxy != nil {
+		cfg := *lim.Proxy
+		cfg.Log = logger
+		return proxyproto.Wrap(Limit(ln, lim, logger), cfg), nil
 	}
 	return Limit(ln, lim, logger), nil
 }
@@ -123,7 +138,7 @@ func Listen(addr string, lim Limits, logger *slog.Logger) (net.Listener, error) 
 // client returns what a connection or request from addr is counted
 // under, and false when it is not limited per client.
 func (l Limits) client(addr netip.Addr) (netip.Addr, bool) {
-	if clientaddr.Shared(addr, l.Shared) {
+	if clientaddr.Shared(addr, l.Shared) || l.Proxy != nil && l.Proxy.Trusts(addr) {
 		return netip.Addr{}, false
 	}
 	return clientaddr.Key(addr), true

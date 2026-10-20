@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package vulnscan
 
 import (
@@ -44,6 +47,12 @@ type Checker struct {
 	GOOS string
 	// Docker says Signalith runs in its container image.
 	Docker bool
+	// OpenVAS is this server's OpenVAS, when set up.
+	OpenVAS *OpenVAS
+	// Exploits are the KEV and EPSS feeds, for their status.
+	Exploits *ExploitFeeds
+	// Reach finds how this server reaches an address; nil is LocalRoute.
+	Reach func(ctx context.Context, entry string) Route
 }
 
 func (c *Checker) goos() string {
@@ -73,8 +82,9 @@ func (c *Checker) installNmap() []string {
 	}
 }
 
-// Run checks the machine. path is where Nmap was found, or "".
-func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path string) {
+// Run checks the machine, and whether it reaches mine, the networks it
+// scans. path is where Nmap was found, or "".
+func (c *Checker) Run(ctx context.Context, set Settings, mine []Target) (checks []Check, path string) {
 	find := c.FindNmap
 	if find == nil {
 		find = FindNmap
@@ -168,10 +178,17 @@ func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path s
 	}
 	checks = append(checks, key)
 
+	if c.Exploits != nil {
+		checks = append(checks, c.exploitsCheck(ctx, len(set.Targets) > 0))
+	}
+
+	checks = append(checks, c.openVASCheck(ctx, mine))
+
 	nets := Check{ID: "networks", Title: "Networks to scan",
-		Why: "Signalith scans only the networks you list, on the schedule you pick. Only list networks you own or have permission to scan."}
+		Why: "Signalith scans only the networks you list, on the schedule you pick. Only list networks you own or have permission to scan. " +
+			"Each network is scanned by one server: pick, for each, a server that can reach it, such as one inside a segmented network zone."}
 	enabled := 0
-	for _, t := range set.Targets {
+	for _, t := range mine {
 		if t.Enabled {
 			enabled++
 		}
@@ -179,12 +196,17 @@ func (c *Checker) Run(ctx context.Context, set Settings) (checks []Check, path s
 	switch {
 	case len(set.Targets) == 0:
 		nets.State, nets.Detail = CheckInfo, "No networks yet. Add one to start scanning."
+	case len(mine) == 0:
+		nets.State, nets.Detail = CheckInfo, "This server scans none of the networks; other servers scan them."
 	case enabled == 0:
-		nets.State, nets.Detail = CheckInfo, fmt.Sprintf("%d %s listed, all paused.", len(set.Targets), plural(len(set.Targets), "network", "networks"))
+		nets.State, nets.Detail = CheckInfo, fmt.Sprintf("This server scans %d %s, all paused.", len(mine), plural(len(mine), "network", "networks"))
 	default:
-		nets.State, nets.Detail = CheckOK, fmt.Sprintf("%d %s scheduled.", enabled, plural(enabled, "network", "networks"))
+		nets.State, nets.Detail = CheckOK, fmt.Sprintf("This server scans %d %s on a schedule.", enabled, plural(enabled, "network", "networks"))
 	}
 	checks = append(checks, nets)
+	for _, t := range mine {
+		checks = append(checks, c.reachCheck(ctx, t))
+	}
 	return checks, path
 }
 
@@ -218,4 +240,118 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// exploitsCheck says how the KEV and EPSS feeds stand. They are the same
+// for every server: the one running the background jobs downloads them.
+func (c *Checker) exploitsCheck(ctx context.Context, scanning bool) Check {
+	ck := Check{ID: "exploits", Title: "Exploit intelligence: CISA KEV and FIRST EPSS",
+		Why: "CISA's Known Exploited Vulnerabilities catalog lists the CVEs attackers are using now, and FIRST's EPSS scores give every CVE the chance it is exploited in the next 30 days. " +
+			"Signalith downloads both once a day and lists the vulnerabilities attackers use first, so the few that matter most are fixed first. Only the files are downloaded; nothing about your network is sent."}
+	kev, epss := c.Exploits.Status(ctx)
+	when := func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }
+	parts := []string{}
+	if kev.Count > 0 {
+		if kev.FetchedAt.IsZero() {
+			parts = append(parts, fmt.Sprintf("the KEV catalog built into Signalith (%s, %d CVEs)", kev.Version, kev.Count))
+		} else {
+			parts = append(parts, fmt.Sprintf("the KEV catalog of %s (%d CVEs)", kev.Version, kev.Count))
+		}
+	}
+	if epss.Count > 0 {
+		parts = append(parts, fmt.Sprintf("EPSS scores of %s (%d CVEs)", epss.Version, epss.Count))
+	}
+	using := "Using " + strings.Join(parts, " and ") + "."
+	var errs []string
+	if kev.Error != "" {
+		errs = append(errs, "KEV catalog: "+kev.Error)
+	}
+	if epss.Error != "" {
+		errs = append(errs, "EPSS scores: "+epss.Error)
+	}
+	switch {
+	case len(errs) > 0:
+		ck.State = CheckWarn
+		ck.Detail = "The last download failed (" + strings.Join(errs, "; ") + "). " + using
+		ck.Fix = []string{
+			"Allow outbound HTTPS (port 443) from the server that runs the background jobs to www.cisa.gov and epss.empiricalsecurity.com, or set HTTPS_PROXY for the Signalith service.",
+			"With no internet, copy both files to that server every day and enter their paths as Known exploited catalog address and EPSS scores address in Settings, under Vulnerability scans.",
+			"Signalith tries again every hour; scans meanwhile use the last copy.",
+		}
+	case !kev.FetchedAt.IsZero() && !epss.FetchedAt.IsZero():
+		ck.State = CheckOK
+		ck.Detail = using + " Last downloaded " + when(maxTime(kev.FetchedAt, epss.FetchedAt)) + "."
+	case !scanning:
+		ck.State = CheckInfo
+		ck.Detail = "Downloaded once there is a network to scan. " + using
+	default:
+		ck.State = CheckInfo
+		ck.Detail = "Not downloaded yet; the server that runs the background jobs does it shortly. " + using
+	}
+	return ck
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+// openVASCheck says whether OpenVAS, optional, is set up and answers.
+func (c *Checker) openVASCheck(ctx context.Context, mine []Target) Check {
+	ck := Check{ID: "openvas", Title: "OpenVAS for deeper scans",
+		Why: "OpenVAS (Greenbone Community Edition) tests each host for thousands of known weaknesses, such as missing patches, default passwords and weak TLS settings, " +
+			"where Nmap only reads software versions. It is much slower and sends far more traffic, so only networks with Also scan with OpenVAS turned on use it, on the server that scans them."}
+	wanted := 0
+	for _, t := range mine {
+		if t.OpenVAS {
+			wanted++
+		}
+	}
+	setup := []string{
+		"Install Greenbone Community Edition on this server, or where this server can reach its gvmd: https://greenbone.github.io/docs/latest/ (the Docker containers are the quickest).",
+		"Make a gvmd user for Signalith, such as: gvmd --create-user=signalith --password='a long password'.",
+		"Give Signalith the address of gvmd and that user: set SIGNALITH_OPENVAS_ADDRESS to gvmd's socket (such as /run/gvmd/gvmd.sock) or host:port of its TLS port (9390), " +
+			"SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD for the Signalith service, or vulns.openvas_address, vulns.openvas_username and vulns.openvas_password in signalith.yaml.",
+		"Restart Signalith, then edit a network on the Vulnerabilities page and turn on Also scan with OpenVAS.",
+	}
+	if c.Docker {
+		setup[2] += " In Docker, also mount the volume that holds gvmd's socket into the Signalith container."
+	}
+	if !c.OpenVAS.Configured() {
+		ck.State, ck.Detail, ck.Fix = CheckInfo, "Not set up. It is optional: Nmap scans work without it.", setup
+		if wanted > 0 {
+			ck.State = CheckWarn
+			ck.Detail = fmt.Sprintf("Not set up, but %d %s this server scans %s for it, so only Nmap runs there.", wanted, plural(wanted, "network", "networks"), plural(wanted, "asks", "ask"))
+		}
+		return ck
+	}
+	vctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	v, tests, err := c.OpenVAS.Ready(vctx)
+	cancel()
+	if err != nil {
+		ck.State, ck.Detail = CheckWarn, err.Error()
+		ck.Fix = []string{
+			"Check that gvmd runs and that " + c.OpenVAS.Address + " is its socket or TLS port, readable by the account Signalith runs as.",
+			"Check the user name and password (SIGNALITH_OPENVAS_USERNAME and SIGNALITH_OPENVAS_PASSWORD).",
+			"Then click Check again.",
+		}
+		return ck
+	}
+	if tests == 0 {
+		ck.State = CheckWarn
+		ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s) but is still loading its feed of tests, so it cannot scan yet.", c.OpenVAS.Address, v)
+		ck.Fix = []string{
+			"Wait for Greenbone to finish loading its feed. A new install takes up to an hour; the gvmd log says when it is done.",
+			"Then click Check again.",
+		}
+		return ck
+	}
+	ck.State = CheckOK
+	ck.Detail = fmt.Sprintf("OpenVAS answered at %s (GMP %s, %d tests ready).", c.OpenVAS.Address, v, tests)
+	if wanted > 0 {
+		ck.Detail += fmt.Sprintf(" %d %s this server scans %s it.", wanted, plural(wanted, "network", "networks"), plural(wanted, "uses", "use"))
+	}
+	return ck
 }

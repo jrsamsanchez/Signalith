@@ -5,6 +5,9 @@ check how this server is set up: what is encrypted on the network and on disk, w
 sign in, how passwords and keys are kept, and how Signalith runs on this computer. They
 say what to fix first and how, and they are honest about what Signalith can't see.
 
+What Signalith protects against, what it trusts, and its known limits are in the
+[threat model](threat-model.md). Signalith has not had an independent security audit yet.
+
 - [How the checks run](#how-the-checks-run)
 - [What the states mean](#what-the-states-mean)
 - [In transit](#in-transit)
@@ -70,7 +73,7 @@ up to 50 addresses of each, in memory only. Computers and agents on the server i
 aren't counted: what they send doesn't cross the network.
 
 - Good: HTTPS is on; or HTTPS is off but Signalith answers only on this computer
-  (such as `127.0.0.1:8080`); or a trusted reverse proxy serves HTTPS.
+  (such as `127.0.0.1:9000`); or a trusted reverse proxy serves HTTPS.
 - Needs attention: a proxy serves HTTPS, but people signed in, or agents sent events,
   to Signalith directly over plain HTTP; or HTTPS is left to a reverse proxy that
   Signalith believes only because `signalith.yaml` was written before HTTPS was the
@@ -84,7 +87,7 @@ the listen address so only the proxy reaches Signalith
 ([Behind a reverse proxy](https.md#behind-a-reverse-proxy)).
 
 **How to check by hand:** from another computer,
-`curl -sI http://siem.example.com:8080/` prints `Location: https://...` when Signalith
+`curl -sI http://siem.example.com:9000/` prints `Location: https://...` when Signalith
 serves HTTPS itself.
 
 ### HTTPS certificate
@@ -111,7 +114,7 @@ in its log when it starts.
 **How to check by hand:**
 
 ```sh
-openssl s_client -connect siem.example.com:8080 -servername siem.example.com </dev/null 2>/dev/null \
+openssl s_client -connect siem.example.com:9000 -servername siem.example.com </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -enddate -ext subjectAltName
 ```
 
@@ -137,6 +140,14 @@ that refused the new certificate (from failed TLS handshakes, over HTTPS and sys
 
 **To fix:** follow
 [Switching to a new certificate authority](https.md#switching-to-a-new-certificate-authority).
+
+On a server that uses the certificate authority the servers of a cluster share, the page
+shows a **Cluster certificate authority** card with its fingerprint instead of the steps
+to change it, and the buttons that would change it open the Servers page: the cluster's
+certificate authority isn't changed on one server (see
+[One certificate authority](servers.md#one-certificate-authority)). `GET /api/security`
+then says `"ca_owner": "cluster"`, and `POST /api/security/ca` answers `409`. Its key
+isn't in `tls/ca.key`, so the command below shows the copy of its certificate.
 
 **How to check by hand:**
 
@@ -170,6 +181,26 @@ names it. See [Upgrading from plain HTTP](https.md#upgrading-from-plain-http).
 
 **How to check by hand:** the **Health** page lists agents that send over plain HTTP.
 
+### Agent port
+
+Shown unless `server.agent_listen` is `off`, which sends agents to the web port on
+purpose.
+
+**Looks at:** **Agent address** (`server.agent_listen`). A server installed before 0.3
+doesn't set it, so its web port still takes agents besides the agent port (7779). The web
+page then has to be reachable from every computer that runs an agent.
+
+- Good: agents send to a port of their own, and the web port turns them away.
+- Needs attention: the web port still takes agents, or no agent port could be opened
+  because port 7779 is taken.
+
+**To fix:** let port 7779 through the firewall and any load balancer, set each agent up
+again from **Add data**, then set **Agent address**, such as `0.0.0.0:7779`. See
+[Upgrading to 0.3](sending-data.md#upgrading-to-03).
+
+**How to check by hand:** the log warns once a day for each agent that still sends to the
+web port.
+
 ### Syslog
 
 Shown when a syslog listener is on (`syslog.udp`, `syslog.tcp` or `syslog.tls`).
@@ -179,7 +210,8 @@ and how many devices sent over each protocol in the last day. A listener on a lo
 address, such as `127.0.0.1:5514`, takes syslog only from this computer, so only the
 others count.
 
-- Good: syslog arrives only over TLS; or plain syslog is accepted only from this
+- Good: syslog arrives only over TLS, as on a new install, where plain syslog is off
+  until it is turned on (Add data > Syslog); or plain syslog is accepted only from this
   computer, or only from the addresses in `syslog.allow`. Plain syslog isn't encrypted,
   which is normal for devices that can't use TLS.
 - Needs attention: plain syslog is accepted from any computer that can reach the port.
@@ -345,14 +377,19 @@ config file. Each disk is reported once.
 Shown when the archive folder holds archives, or a retention policy archives days.
 
 **Looks at:** the archive folder (`retention.archive_dir`): how many days it holds and
-their size, who can read it, and the disk under it, as for
-[Disk encryption](#disk-encryption). Signalith doesn't encrypt archives itself.
+their size, how many are plain files rather than encrypted, who can read it, and,
+when some are plain, the disk under it, as for [Disk encryption](#disk-encryption).
+Signalith encrypts archives unless `retention.encrypt_archives` is `false`; days
+archived before it did stay plain (see [Encryption](retention.md#encryption)).
 
-- Good: on an encrypted disk, readable only by Signalith.
-- Needs attention: other accounts can read the archives, or the disk isn't encrypted.
-- Can't tell: Signalith can't see the disk or share under them.
+- Good: every archive is encrypted, or the plain ones are on an encrypted disk, and
+  only Signalith can read the folder.
+- Needs attention: other accounts can read the archives, or plain archives are on a
+  disk that isn't encrypted.
+- Can't tell: Signalith can't see the disk or share under plain archives.
 
-**To fix:** keep the archive folder on an encrypted disk, readable only by Signalith; see
+**To fix:** keep the archive folder readable only by Signalith, and keep plain
+archives on an encrypted disk or leave archive encryption on; see
 [Archives](retention.md#archives). Copies of archives you move elsewhere are only as safe
 as where you put them.
 
@@ -499,16 +536,33 @@ certificate, and turn off **Skip certificate check**
 
 ### Sign-in sessions
 
-**Looks at:** **Sign out after** (`auth.session_timeout`, 12 hours by default): how
-long a sign-in lasts without use. An open tab's own refreshes (the Health card,
-dashboards and other timers) don't count as use, so a tab left unattended still signs
-out. Someone who ticks **Keep me signed in** isn't signed
-out for being idle; every sign-in ends after 7 days at most.
+**Looks at:** **Sign out after** (`auth.session_timeout`, 1 hour by default): how
+long a sign-in lasts without use, and **Sign in again after** (`auth.session_max_age`,
+24 hours by default): how long any sign-in lasts. An open tab's own refreshes (the
+Health card, dashboards and other timers) don't count as use, so a tab left unattended
+still signs out. Someone who ticks **Keep me signed in** isn't signed out for being
+idle, but is still signed out once **Sign in again after** has passed.
 
-- Good: 24 hours or less.
-- Needs attention: longer than 24 hours.
+- Good: 1 hour or less idle, and 24 hours or less in all: the NIST SP 800-63B rev 4
+  limits for AAL2.
+- Needs attention: longer than either.
 
-**To fix:** set **Sign out after** to 12h or less on the **Settings** page.
+**To fix:** set **Sign out after** to 1h or less and **Sign in again after** to 24h or
+less on the **Settings** page.
+
+### Two-step sign-in
+
+**Looks at:** **Require two-step sign-in** (`auth.mfa_required`, `off` by default):
+whether people who sign in with a password must also use a passkey or a code from
+an authenticator app (see [Two-step sign-in](users.md#two-step-sign-in)). Single sign-on
+users get their second step from their identity provider.
+
+- Good: `admins` or `everyone`.
+- Needs attention: `off`, so an admin's password alone signs in.
+
+**To fix:** set **Require two-step sign-in** to `admins` or `everyone` on the
+**Settings** page. Set it up for your own account first (user menu, **Two-step
+sign-in**), so you are not asked to in the middle of something.
 
 ### Agent tokens
 
@@ -561,6 +615,25 @@ or Signalith couldn't yet ask OpenSearch which it is. See
 
 See [Replace a shared token](agent-tokens.md#replace-a-shared-token).
 
+### API tokens
+
+Shown when there are API tokens that are accepted: tokens made on **Settings > API
+tokens** for the AI tools server or your own scripts. See
+[API tokens](ai-tools.md#api-tokens).
+
+**Looks at:** whether each accepted token expires. A token that never expires keeps
+working until someone revokes it, even if it leaks or the tool it was made for is long
+gone. Tokens made before Signalith had expiry never expire.
+
+- Good: every accepted token expires ("Every API token expires (N active).").
+- Needs attention: one or more tokens never expire; the check names them.
+
+**To fix:**
+
+1. On **Settings > API tokens**, make a new token for each tool the check names, one
+   that expires (90 days unless you pick another time).
+2. Put the new token in the tool's settings, then revoke the old one.
+
 ### Signalith's OpenSearch account
 
 Shown when OpenSearch requires sign-in and has its security plugin.
@@ -583,6 +656,32 @@ signing in with a certificate
 
 ```sh
 curl -s --cacert root-ca.pem --cert signalith.pem --key signalith-key.pem 'https://localhost:9200/_plugins/_security/authinfo?pretty'
+```
+
+### OpenSearch's revocation list
+
+Shown when `opensearch.crl_file` is set: the revocation list OpenSearch checks client
+certificates against, which makes a removed server lose its OpenSearch access at once
+(see [Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)).
+
+**Looks at:** whether the file is there, signed by the CA in `opensearch.ca_file`, and in
+force.
+
+- Good: it is, and OpenSearch hears of a revocation at once.
+- Needs attention: it expires within 30 days, with OpenSearch's CA.
+- At risk: it is missing, can't be read, isn't signed by OpenSearch's CA or has expired.
+  OpenSearch refuses every certificate sign-in, Signalith's included, while the list it
+  checks is in that state.
+
+**To fix:** on the Docker quick start, run `docker compose -f
+deploy/docker/docker-compose.yml up -d`, which makes it again. Otherwise, when the
+cluster keeps OpenSearch's CA, Signalith writes it again within a minute; `signalith
+cluster opensearch-ca crl -o crl.pem` writes a copy for OpenSearch's nodes.
+
+**How to check by hand:**
+
+```sh
+openssl crl -in crl.pem -CAfile root-ca.pem -noout -nextupdate
 ```
 
 ## This server
@@ -695,7 +794,8 @@ server:
   site.
 - Guessing passwords is slowed: after 10 wrong tries for one account from one address in
   15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.
-- Sign-ins end after 7 days at most, even with **Keep me signed in**.
+- Sign-ins end after 24 hours by default (`auth.session_max_age`, 30 days at most),
+  even with **Keep me signed in**.
 - Passwords are stored only as bcrypt hashes.
 - Logs, pages and the API never show stored passwords or keys.
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
@@ -707,14 +807,13 @@ server:
 Signalith can't see these, so it says so once rather than showing **Can't tell** for
 them every time:
 
-- **Firewalls**: which computers can reach Signalith's ports (8080 by default, and the
-  syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
+- **Firewalls**: which computers can reach Signalith's ports (9000 for the web page and
+  7779 for agents by default, and the syslog ports) and OpenSearch's (9200 by default). Check the firewall of this computer
   and of the network.
 - **Backups**, and whether the master key is kept apart from them (see
   [Backing up the key](encryption.md#backing-up-the-key)).
 - **Updates** for Signalith, OpenSearch and the operating system. Signalith doesn't
   contact the internet to check.
-- **Two-step sign-in**. Signalith has none of its own.
 - **The computers agents run on**.
 - **Copies of events outside Signalith**, such as exports, moved archives and OpenSearch
   snapshots.

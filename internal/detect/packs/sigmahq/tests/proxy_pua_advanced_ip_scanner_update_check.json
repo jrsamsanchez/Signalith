@@ -1,0 +1,5 @@
+{"rule": "1a9bb21a-1bb5-42d7-aa05-3219c7c8f47d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/checkupdate.php?rmode= product= lng= beta= ver= type=","c-uri-query":"rmode= product= lng= beta= ver= type=","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/?rmode= product= lng= beta= ver= type=","c-uri-query":"rmode= product= lng= beta= ver= type=","cs-host":"downloads.example.com"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/checkupdate.php","cs-host":"downloads.example.com"}}
+]}

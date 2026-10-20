@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clientaddr decides which client a network address belongs to,
 // for limits that give each client a share of something (connections,
 // requests in progress, memory for agent batches) so that one client

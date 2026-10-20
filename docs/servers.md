@@ -25,8 +25,15 @@ few seconds.
 | Server | The server's name (`cluster.node_name`), **This server** on the one you are signed in to, and its address (`server.node_url`) |
 | Status | **Running**, **Starting**, **Stopping**, **Stopped** (shut down on purpose), **Not answering** (no sign of life for 30 seconds), **Couldn't start** (a restart after a settings change failed with the new settings and the old ones: it receives nothing, runs no jobs and tries again every 30 seconds; its log says why), **Identity in use** (see [Identity](#identity)), or, on this server only, what keeps it from using OpenSearch, such as **Can't reach OpenSearch** (see [When this server can't use OpenSearch](#when-this-server-cant-use-opensearch)). Below it: how long it has been up, or when it was last seen, counted by the server that answered the page, so neither the other server's clock nor yours matters. A clock more than 2 seconds off is shown here too |
 | Background jobs | **Runs jobs** on the server that runs them. **Standby** on a server that would take them over, or why it would not. **Doesn't run them** on a server that may not, with the reason |
-| Settings | How it uses the [shared settings](#shared-settings-and-the-cluster-key): **Shared** when it uses the settings every server shares; **Its own files** when it is not part of the cluster (amber when it misses the cluster key, or could not reach OpenSearch when it started); **Saved copy** when it cannot read the shared settings now and works from its copy; **Missed a key change** or **Settings gone** when it needs `signalith cluster` (see [signalith cluster](cluster-cli.md)). Hover over it for what to do. Below it, a shared setting that was changed outside Signalith or by a newer version (the server keeps its last good copy), and the settings in its signalith.yaml or environment that differ from the shared ones |
+| Settings | How it uses the [shared settings](#shared-settings-and-the-cluster-key): **Shared** when it uses the settings every server shares; **Its own files** when it is not part of the cluster (amber when it misses the cluster key, or could not reach OpenSearch when it started); **Saved copy** when it cannot read the shared settings now and works from its copy; **Missed a key change** or **Settings gone** when it needs `signalith cluster` (see [signalith cluster](cluster-cli.md)). Hover over it for what to do. Below it, a shared setting that was changed outside Signalith or by a newer version (the server keeps its last good copy), the settings in its signalith.yaml or environment that differ from the shared ones, how many settings wait for its restart, and how many shared values it could not use |
 | Version | The Signalith version it runs |
+
+A server's name opens a panel with its settings: those that wait for its restart, the
+shared values it could not use (it keeps its own value of each, see
+[Settings on several servers](settings.md#when-a-server-cannot-use-a-shared-value)), how
+its last restart went, what differs in its own files, and, for 7 days after the
+settings became shared, the values its own Settings page had that differ from the
+shared ones. **Open its settings** opens the Settings page at that server.
 
 With one server, the page shows that server and nothing to set up. To add one, see
 [Adding a server by hand](#adding-a-server-by-hand). Servers that run a version of
@@ -70,6 +77,16 @@ it from the Signalith folder with
 | **OpenSearch not ready** | OpenSearch is starting, or its nodes can't find each other | Wait a few minutes. If it lasts, OpenSearch's log says why |
 | **OpenSearch answers with an error** | Any other error, such as a closed `<prefix>_runtime` index. The alert quotes it | OpenSearch's log may say more |
 
+## OpenSearch with several nodes
+
+With one OpenSearch node, losing it stops every server. Run three nodes, give each
+server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
+keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+indices without a copy on another node, and which of this server's addresses are being
+skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
+per-node certificates and snapshots.
+
 ## The background jobs
 
 These run on one server only:
@@ -110,9 +127,66 @@ is kept in OpenSearch, so every server shows the same Detections page, detection
 health and warnings, and **Run now** works on any of them.
 
 **Which servers may run them.** Every server, unless **Run detections on schedule**
-(`detections.scheduler`) is turned off on its Settings page. Leave it on: the
+(`detections.scheduler`) is turned off on its Settings page; once the servers share
+their settings it is called **May run background jobs** (`cluster.leader_eligible`,
+or `SIGNALITH_LEADER_ELIGIBLE`), one of each server's own settings. Leave it on: the
 servers take turns by themselves. Turn it off only on a server that should never
-run the jobs, for example one that only receives data.
+run the jobs, for example one that only receives data. A change applies at the
+server's next restart. A server added as a **scanner** (its **Server role**,
+`cluster.role: scanner`) never runs them, whatever this setting says; see
+[Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
+
+**Spreading detections over the servers.** With many rules, one server can be too
+few to run them all. So with two or more servers that may run the jobs, each runs
+a share of each tenant's rules: the rules are split into 64 groups, and the server
+running the jobs gives each group to one server, moving as few as it can when a
+server joins or leaves. A server that stops has its groups moved to the others,
+even when only one is left. This is **Spread detections over servers**
+(`detections.spread`, on the Settings page under Detections), on unless you turn
+it off; turned off, the server running the jobs runs every rule. It applies within
+seconds, and only once every running server is on a version that supports it and
+the cluster's features are up to date; until then, one server runs every rule as
+before. A server
+does not get a share while its detection or lookup files differ from those of the
+server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
+or while it cannot write its heartbeat for 20 seconds (it then stops its share by
+itself). While they are spread, the Servers page says under **Background jobs** how many of the
+groups each server runs, and how many it is handing over to another.
+
+Spread or not, the Servers page also shows, under **Background jobs**, how each server keeps up
+with the rules it ran last in the past day: how many rules, how long their last runs took (the
+median and the 95th percentile), how long after its time slot ended each run started, how many
+rules started more than one schedule interval late in the last hour, how many slots were skipped
+for being older than the catch-up limit (`detections.catch_up`), and how many runs timed out. A
+server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
+rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
+look at the slowest rules on the Detections page, or spread detections over more servers.
+
+When a group moves, its new server takes over from where the last run of each rule
+ended, so no time is skipped or searched twice. A server that is still running hands
+its groups over first: it starts no new run of them, finishes the runs it has going,
+and says so in its heartbeat, and only then does the new server start them (or after
+6 minutes, longer than any run may take, if it never says so). A server that stopped
+or lost contact gives its groups up at once. A server that just started gets groups
+only once it has been running for a minute, so one that restarts quickly does not
+move them back and forth. Each group also carries a number that grows with every
+move, and OpenSearch refuses run state written under an older one, so two servers
+never both record a run of the same rule.
+
+Every server's detection searches go to the same OpenSearch, so adding servers adds
+room to run rules, not room to search. While detections are spread, all servers
+together run at most **Detection searches at once** (`detections.search_budget`)
+searches; each server runs the share that matches its groups, at least one, for all
+tenants together, taking turns between tenants so a busy one cannot hold more than
+half of a server's searches while another waits. Left empty, it is half the
+searches OpenSearch's data nodes can run at once. When a tenant's searches are
+refused as too busy, do not answer in time, or take twice as long as over the 15
+minutes before, that tenant alone runs fewer at once for a while, so one tenant's
+heavy rules do not slow the others. When most of the tenants a server runs (at
+least two) show it within two minutes, or it runs a single tenant, OpenSearch is
+taken to be slow for everyone: the server halves how many it runs and gets one back a minute; the
+current runs go first, and missed runs are made up one at a time until it is back
+to its share.
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
@@ -175,17 +249,17 @@ refuses to start), and the one that was running goes on and shows an alert. A
 server that finds another one using its identity later shows **Identity in use**,
 runs no jobs, and tells load balancers to send it nothing.
 
-To give a server a new identity, stop it, delete `node.id` from its state folder
-and start it again. In Docker the state folder is the data volume, and the image
-has no shell, so, from the folder you cloned Signalith into:
+To give a server a new identity, stop it and run `signalith cluster new-identity` on
+it (see [docs/cluster-cli.md](cluster-cli.md#new-identity)). It moves `node.id` aside,
+deletes the node key and the copy of the cluster key, and the server makes a new
+identity when it starts. Give it the cluster key again to add it to the cluster. In
+Docker, from the folder you cloned Signalith into:
 
 ```
 docker compose -f deploy/docker/docker-compose.yml stop signalith
-docker run --rm -v docker_signalith-data:/d busybox rm /d/node.id
+docker compose -f deploy/docker/docker-compose.yml run --rm signalith signalith cluster new-identity
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
-
-`docker volume ls` shows the volume's name (here `docker_signalith-data`).
 
 **The state folder.** Signalith keeps the files it makes for itself in one folder:
 its master key (`keys`), its HTTPS certificate and certificate authority (`tls`),
@@ -237,7 +311,24 @@ with it, if anything.
 
 ## Adding a server by hand
 
-Until servers can be added from the Servers page:
+The easiest way: **Add a server** on the Servers page checks OpenSearch is ready and
+gives you one line to run on the new computer (see [Adding servers](multi-server.md)).
+
+From the command line, with OpenSearch secured (https and a sign-in), a new server can join with one
+command instead of the steps below: make a join token on a member with
+`signalith cluster token`, then, on the new computer with Signalith installed, run
+`sudo signalith join` and paste the token (see [join](cluster-cli.md#join)). It checks the
+member by the certificate the token names, receives the cluster key and the
+OpenSearch settings encrypted for it alone, checks it can use OpenSearch from there,
+and starts. Or start the new server with the same OpenSearch settings and no key: it
+waits with a fingerprint on its sign-in page, and `signalith cluster approve` on a
+member gives it the key once the fingerprints match (see
+[approve](cluster-cli.md#approve)). Users, settings and detections then come from
+the cluster. A server that served alone with users, feeds and retention policies of
+its own can add those the cluster lacks with `signalith join --merge`; what differs is
+kept in its migration report for you to decide.
+
+By hand:
 
 1. Install Signalith on the new computer as usual.
 2. Give it the same OpenSearch settings as the first server: `opensearch.url`, its
@@ -284,10 +375,64 @@ Until servers can be added from the Servers page:
    [Server settings](settings.md#using-the-page)), OpenSearch keeps a copy of each
    new day's events on a second node as soon as there is one, and a copy of
    findings, investigations and threat intel too. Days stored before then keep the
-   copies they had. Set Replicas the same on every server: the servers share one
-   index template, and the setting of the server that started last is used.
+   copies they had. Set Replicas, and Shards, the same on every server: the servers
+   share one index template, and the setting of the server that started last is used.
 
 When it starts, it appears on the Servers page of every server.
+
+## Draining and removing a server
+
+Each server's side panel on the Servers page (click its name) has a **Maintenance**
+part:
+
+- **Drain** prepares a server for maintenance. It tells load balancers it doesn't want
+  traffic (`/readyz` answers 503 with `draining`), hands the background jobs to another
+  server and doesn't take them back. It shows as **Draining**, and stays drained across
+  restarts until you click **Resume**. Stop it once it shows Draining.
+- **Run the background jobs here** moves the background jobs to that server. The server
+  that runs them now finishes the work in progress and lets go, and the other servers
+  wait a few seconds so the one you chose takes them. It needs a server that is running
+  normally and allowed to run the jobs.
+- **Remove from the cluster** takes a server out for good: off the list of servers and
+  out of the keyring, so it gets no new cluster key. Drain it or stop it first; a
+  server that just went offline can be removed after 10 minutes. A server cannot
+  remove itself from its own page: use another server's page, or run
+  `signalith cluster leave` on it while it is stopped.
+
+Removing a server rotates the cluster key unless you untick **Rotate the cluster key
+(recommended)**. The removed server keeps its copy of the old key, and only a rotation
+makes that copy useless. A removed server that starts again with its old copy shows
+that it was removed and runs no background jobs. To bring it back, give it the cluster
+key again with `signalith cluster import-key`.
+
+**Rotating the cluster key.** The **Cluster key** card under the list of servers shows
+the key in use and the servers removed, with **Rotate cluster key**. Rotate it after
+removing a server, or when a copy of the key may have leaked (an exported key file, a
+backup of a state folder). The server that runs the background jobs does it in steps:
+
+1. It makes a new key and gives every server in the keyring a copy, sealed so only
+   that server can open it.
+2. Once every running server has its copy, every server starts signing with the new key.
+3. The passwords and tokens kept in the shared settings, the certificate authority's
+   key and the sign-in sessions are sealed and signed again with the new key.
+4. The old key is retired. Nobody is signed out: browsers signed in before keep their
+   sessions.
+
+A second rotation within 7 days of the last one signs out the browsers that signed in
+before the first, and a server offline through both needs the key again.
+
+A server offline for more than 10 minutes isn't waited for. When it comes back within
+7 days, it picks up its copy by itself; later than that, give it the key again with
+`export-key` and `import-key`. If a step fails, for example because a server doesn't
+pick up the key within 10 minutes, the rotation stops where it is, both keys keep
+working, and **Finish the rotation** (or `signalith cluster rotate-key`) goes on from
+there. The key file of an old key stays in each server's state folder, so archives
+sealed with it still open. Rotating needs every server on a version that supports it.
+
+The same from the command line: `signalith cluster rotate-key`, `signalith cluster
+remove <server>` and `signalith cluster leave` (see
+[docs/cluster-cli.md](cluster-cli.md#rotate-key)). Admins can use the API too: see the
+cluster routes in [docs/users.md](users.md#roles-of-every-route).
 
 ## Shared settings and the cluster key
 
@@ -297,8 +442,9 @@ server keeps in its state folder (`keys/cluster-<id>.key`, encrypted with that
 server's master key) and never in OpenSearch, so someone who can write to OpenSearch
 cannot change them unnoticed. They share what makes them one cluster (its name, the
 list of servers and their keys), the threat intel feeds and the retention policies
-(see [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), and
-the users and sign-in (see [Shared users and sign-in](#shared-users-and-sign-in)).
+(see [Shared feeds and retention policies](#shared-feeds-and-retention-policies)),
+the users and sign-in (see [Shared users and sign-in](#shared-users-and-sign-in)), and
+the Settings page (see [Settings on several servers](settings.md#settings-on-several-servers)).
 
 The server that runs the background jobs makes the cluster by itself, the first
 time it runs this version: it makes the cluster key and writes the shared settings.
@@ -340,13 +486,212 @@ cannot be reached (it then answers `/readyz` with `degraded` and pauses changes)
 | --- | --- |
 | `signalith cluster status` | This server's place in the cluster, the servers with the key, and any problem |
 | `signalith cluster found` | Makes the cluster from this server's files when no server that runs the background jobs is up |
-| `signalith cluster export` | Prints the shared settings as YAML; stored passwords stay encrypted |
+| `signalith cluster export` | Prints the shared settings as YAML; stored passwords stay encrypted. `-settings` writes the settings of all servers as a file `apply` takes |
+| `signalith cluster apply -f` | Changes the settings of all servers to those of a file, such as one kept in version control |
 | `signalith cluster import -from-cache` | Writes this server's copy back after the `<prefix>_config` index was deleted; the other servers resume by themselves |
 | `signalith cluster export-key`, `import-key` | Gives another server the cluster key, encrypted with a passphrase |
 | `signalith cluster reset-key` | When every copy of the key is lost: with every server stopped, shows the shared settings, makes a new key and signs them with it. Passwords stored with the old key must be entered again |
 | `signalith cluster accept-restore` | After you restore an OpenSearch snapshot on purpose: makes every server accept the older shared settings, which they would otherwise refuse as changed outside Signalith |
 
 Each change is written to the log as an audit record.
+
+## One certificate authority
+
+Every server that serves HTTPS with its own certificate (**HTTPS** set to Automatic)
+gets it from a certificate authority (CA), which agents, syslog devices and browsers
+trust (see [https.md](https.md#trust-the-certificate)). On a server of its own that CA
+is in `tls/ca.pem` and `tls/ca.key` in its state folder. Once every server of the
+cluster runs a version that shares one, the servers share **one** CA, so one CA
+file works for every server, and an agent set up for one server also sends to the
+others.
+
+**What is shared.** The CA's certificate and its key are kept in the `tls` document of
+the shared settings, signed like the rest, with the key encrypted with the cluster key.
+The key cannot be read from OpenSearch without the cluster key, and it cannot be moved
+under another certificate. Each server still issues and renews its own certificate from
+it, for its own names, its node address, and the names any server added (an address an
+agent was set up with on Add data, up to 32), so no server has to be up for another to
+renew. No server keeps `ca.key` on disk any more: it is deleted once the shared copy has
+been read back from OpenSearch and the server's copy of the shared settings
+(`cluster/cache.enc`) was written. While OpenSearch can't be reached, servers renew
+from that copy. A server that has neither keeps serving the certificate it has (or, if
+that is gone or expired, a stand-in that agents and browsers refuse, until it can reach
+the shared CA) and never makes a new CA.
+
+**A cluster that grew from one server.** The server that makes the cluster shares its
+own CA when no other server seen in the last day uses another one of Signalith's own
+(a server with your own certificate files doesn't count: it keeps them whatever the
+cluster uses). If the servers' heartbeats can't be read at that moment, it shares
+nothing and tries again. Nothing changes for
+agents and browsers: same fingerprint, same CA file. A server that joins later takes the
+shared CA within seconds, issues itself a new certificate from it, and retires its own
+CA (below).
+
+**Servers set up separately.** When servers that each made their own CA meet, nothing is
+shared until an admin chooses which CA to keep, and each server keeps its own meanwhile.
+The **Certificate authority** card on the Servers page lists the CAs in use, one per
+server that holds it:
+
+- how many agents trust each one (from the agents' configurations, or, for older agents
+  that don't say, the servers they reached over HTTPS in the last week), and which agents
+  would need a new configuration if it is kept (agents that only reach servers with your
+  own certificate files are never among them);
+- the servers whose names it may not vouch for: a standard CA vouches only for private
+  names and its own server's names, and a strict one only for its server's
+  ([How far the certificate authority reaches](https.md#how-far-the-certificate-authority-reaches)).
+  Those servers' certificates would leave such names out, and the Servers page shows
+  that in red;
+- a suggestion: the one most agents use, then the one of the server that made the
+  cluster, then the oldest.
+
+**Keep this one** asks the server that holds it to share it (`signalith cluster tls
+choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#tls)).
+Only that server can, only while it runs (a CA whose servers are all offline is marked
+so, and can't be kept until one is started), and only while its CA is still the one you
+chose. The request is signed with the cluster key, so only a server of the cluster can
+ask for it. Once one is shared, choosing another is refused: changing the cluster's CA
+comes in a later version.
+
+**Retired CAs.** A server that takes the cluster's CA keeps a copy of its old `ca.pem`
+in `tls/retired/<date>-<fingerprint>/` and deletes its old `ca.key`, so the old CA never
+signs again. The cluster also lists it, so every server knows it. An agent whose
+configuration trusts only a retired CA is marked **Needs a new configuration** on the
+[Endpoints page](endpoints.md#log-agents): give it a new configuration from Add data,
+which trusts the cluster's CA. An agent whose configuration trusts both is fine.
+
+**What stays per server.**
+
+- A server with your own certificate files (**HTTPS** set to Your own certificate) never
+  shares its CA and never takes the cluster's. The Servers page warns when its CA differs
+  from the others, since agents set up for the other servers refuse it.
+- The Servers page also warns about a server whose certificate doesn't cover the
+  cluster's shared address (`server.public_url`), which agents sent there by a load
+  balancer would refuse.
+- A server in the middle of a change of its own CA (the Security page's steps) takes the
+  cluster's only once that change is finished or cancelled; until then the Servers page
+  says why it keeps its own. Once a server uses the cluster's CA, the Security page shows
+  **Cluster certificate authority** instead of those steps.
+- Syslog over TLS uses the same certificate, so devices trust the same CA.
+
+From a script, as an admin: `GET /api/cluster/tls` answers what the card shows (`on`
+and `off` say whether the cluster shares a CA yet, then `ca`, `retired`, `servers` with
+each one's `warnings`, and, while none is chosen, `candidates` with their agents, at most
+200 listed with whole counts in `agent_count` and `break_count`).
+`POST /api/cluster/tls/choose` with `{"ca_sha256": "<fingerprint>"}` asks the server
+holding that CA to share it and answers `202` with a `request_id` that
+`GET /api/requests/{id}` follows; `409` when the cluster already shares one, `400` when
+no server seen in the last day uses that CA, `503` when the shared settings can't be
+changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
+
+## Each server's own OpenSearch certificate
+
+When Signalith made OpenSearch's certificates (the Docker quick start, or `signalith
+opensearch-certs`), every server first signs in to OpenSearch with the same client
+certificate, `CN=signalith`. Hand OpenSearch's certificate authority to the cluster once,
+and each server signs in with a certificate of its own instead,
+`CN=signalith-server-<name>`, which `roles_mapping.yml` gives the same `signalith_server`
+role:
+
+- **Docker:** `docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key`
+  (see [Handing the CA key to Signalith](opensearch-security.md#handing-the-ca-key-to-signalith)).
+- **Without Docker:** `signalith cluster opensearch-ca import /path/to/ca/root-ca-key.pem`
+  on any server, with the `ca` folder `signalith opensearch-certs` wrote. Keep that folder
+  offline afterwards.
+
+Signalith checks that the CA is the one in `opensearch.ca_file`, keeps it in the shared
+settings with its key encrypted with the cluster key, and deletes the handed-over key
+file. Then each server that signs in with a certificate from that CA:
+
+1. makes a new key, which never leaves it, and issues itself a certificate that lasts 90
+   days;
+2. checks that OpenSearch lets the new certificate in with the `signalith_server` role;
+3. only then uses it, without a restart. It is kept in the `opensearch` folder of its
+   state folder, and used in place of `opensearch.cert_file` while it is valid.
+
+Each server renews its own certificate 30 days before it expires. A server that no
+longer has the cluster key can't renew, so its access to OpenSearch ends when its
+certificate expires, or at once with a revocation list (below). A server that signs in with a user name and password, or with a
+certificate from another CA, is left as it is.
+
+If OpenSearch's security settings predate `signalith-server-*` in `roles_mapping.yml`,
+step 2 fails and the server keeps the shared certificate. Load them again with
+`bootstrap-docker -apply-security` and `up -d` (see
+[Loading changed security settings](opensearch-security.md#loading-changed-security-settings));
+it tries again every 10 minutes.
+
+The **OpenSearch sign-in** card on the Servers page shows who each server signs in as.
+Once none uses `CN=signalith`, it suggests removing `"signalith"` from the
+`signalith_server` users in `roles_mapping.yml` (in Docker,
+`deploy/docker/opensearch/security/roles_mapping.yml`), then loading the security
+settings again, so the shared certificate opens nothing any more.
+
+Anyone who holds the cluster key can open this CA and so sign any certificate OpenSearch
+trusts, the admin one included. Signalith only ever signs `signalith-server-<name>`
+certificates, but keep the cluster key as safe as OpenSearch's admin certificate.
+
+`signalith cluster opensearch-ca` prints the CA and each server's sign-in (see
+[cluster-cli.md](cluster-cli.md#opensearch-ca)). From a script, as an admin:
+`GET /api/cluster/opensearch-identity` answers what the card shows: `ca` (the
+fingerprint, who handed it over and when, and how many certificates are `revoked`;
+`null` when the cluster keeps none) and `servers`, each with its `identity` (`cn` or
+`user`, `not_after`, `managed`, `shared`, `problem` and `crl`).
+
+### Ending a server's OpenSearch access at once
+
+A certificate stays valid until it expires, up to 90 days. To end a server's access
+sooner, Signalith revokes its certificates: removing a server does so, and so does
+`signalith cluster opensearch-ca revoke <server>`. The cluster then issues that server
+no certificate again unless it joins anew.
+
+OpenSearch only hears of it through a revocation list it checks every client certificate
+against, which it reads again on every connection, so a revocation takes effect at once,
+without a restart. Each server with `opensearch.crl_file` (or
+`SIGNALITH_OPENSEARCH_CRL_FILE`) set writes that list whenever the revoked certificates
+change. It is signed with OpenSearch's CA and valid until the CA expires.
+
+- **Docker:** set up already. The `setup` service makes an empty list in the
+  `opensearch-crl` volume, OpenSearch checks it once it is there, and Signalith keeps it.
+  From then on OpenSearch does not start without the list: if it is deleted, OpenSearch
+  waits, restarting, until Signalith or `docker compose ... up -d` writes it again.
+  OpenSearch warns at start that the list can be read by others: it holds no secret, and
+  Signalith writes it while OpenSearch reads it.
+- **Without Docker:** on each OpenSearch node, put the list where OpenSearch can read it
+  (`signalith cluster opensearch-ca crl -o crl.pem` writes it) and add to
+  `opensearch.yml`:
+
+  ```yaml
+  plugins.security.ssl.http.crl.validate: true
+  plugins.security.ssl.http.crl.file_path: crl.pem   # relative to OpenSearch's config folder
+  plugins.security.ssl.http.crl.disable_ocsp: true
+  plugins.security.ssl.http.crl.disable_crldp: true
+  plugins.security.ssl.http.crl.prefer_crlfile_over_ocsp: true
+  ```
+
+  Then restart the node. When a Signalith server runs on the same computer, set its
+  `opensearch.crl_file` to that file (Signalith needs to be able to write it) and it
+  keeps it; otherwise copy the list again after each revocation.
+
+**OpenSearch refuses every client certificate, the admin's included, while the list it
+checks is missing, unreadable or expired.** Signalith writes it again within a minute
+when it can, and says so loudly when it can't: a red banner on every page, the
+**OpenSearch sign-in** card on the Servers page, and the
+[OpenSearch's revocation list](security.md#opensearchs-revocation-list) check on the
+Security page. In Docker, `docker compose -f deploy/docker/docker-compose.yml up -d`
+makes it again too.
+
+**A revocation ends the access of a server that follows the cluster, not of its disk.**
+A removed server's state folder still holds the cluster key and its copy of the shared
+settings (`cluster/cache.enc`), and together they open OpenSearch's CA key: whoever has
+that disk can still sign new certificates OpenSearch trusts. For a server that was
+compromised or stolen, also make a new OpenSearch CA. In Docker, run
+`bootstrap-docker -new-ca`, then `bootstrap-docker -export-ca-key` again, so the cluster
+keeps the new CA in place of the old (see
+[Replacing the CA](opensearch-security.md#replacing-the-ca)); without Docker, make
+OpenSearch's certificates again under a new CA. A revocation does not touch the shared
+`CN=signalith` certificate or a user name and password either: whoever holds those keeps
+OpenSearch access until `roles_mapping.yml` no longer gives them the `signalith_server`
+role (see [Each server's own OpenSearch certificate](#each-servers-own-opensearch-certificate)),
+or the password is changed.
 
 ## Shared feeds and retention policies
 
@@ -360,7 +705,11 @@ longer used for them. A server switches to the shared ones by itself, with a qui
 in place, when it founds or joins the cluster. While the founder is still moving its files
 into OpenSearch, the other servers keep using their own and the Servers page says they wait
 for it; if that takes more than 30 minutes, it turns red: the founder finishes only while
-it runs the background jobs.
+it runs the background jobs. Between moving a page's files and the restart that switches
+to the shared ones (usually a few seconds), a server refuses changes on its Threat intel,
+Data retention and Users pages with "This server is moving its … into the cluster; try
+again in a moment" (`503` with `Retry-After` from the API), so a change is never saved to
+a file that is no longer read; saved again, it goes to the shared settings.
 
 **When the servers' policies differed.** If another server that ran in the last 7 days had
 retention policies of its own that differ from the founder's, the shared policies wait to be
@@ -380,13 +729,44 @@ server's heartbeat (`settings_drift`).
 retention. **Refresh** on a feed, and **Run now** or a policy change on the Data retention
 page, on another server ask it to: the request answers `202` with a `request_id`, which
 `GET /api/requests/{id}` follows until it is `done` or `failed`. Restoring archived days is
-still done on the server that runs the jobs.
+done on the server that runs the jobs; once the cluster keeps audit records, a restore asked
+on another server is sent there the same way (see below).
 
 **Changes at the same moment.** `GET /api/retention` and `GET /api/intel/feeds` (for
 admins) give each item's version (`ETag`, and `etags` for the feeds). A change sent with
 `If-Match` and that version is refused with `412` when someone changed the item meanwhile.
 While a server cannot use the shared settings (OpenSearch cannot be reached, or it misses
 the cluster key), changes there answer `503`.
+
+## Audit and archives across servers
+
+Once every server of the cluster runs this version, the cluster keeps its audit
+records and its archive list in OpenSearch, and `signalith cluster status` shows the cluster at
+level 4. The server that runs the background jobs first moves its retention history and
+its archive manifests into OpenSearch; the other servers keep their own until it is done.
+
+- **Audit records.** Each server writes its audit log lines (sign-ins, changes to users,
+  settings and retention) to monthly indices, `<prefix>_audit-YYYY.MM`, as well as
+  to its log. Lines wait in a small spool on disk (`audit-spool` in the state folder, at
+  most 50 MB) while OpenSearch is away, so none are lost. Search them on the
+  [Audit](audit.md) page. They are kept 400 days by default, by the **Audit records**
+  policy on the Data retention page.
+- **One retention history.** Retention runs and actions are audit records too, so every
+  server shows the same history, with the server that took each action, and it survives
+  a takeover.
+- **One archive list.** Every server lists the same archives. An archive is listed before
+  its file is written and marked complete once the file is checked; an archive left
+  unfinished for 6 hours (its server stopped while writing it) is removed with its file.
+- **No step taken twice.** Before deleting, archiving, compacting or restoring a day, the
+  server that runs retention claims that step in OpenSearch. A server that lost the jobs
+  partway through a run cannot repeat a step its successor already took.
+- **Restores from any server.** **Restore** on the Data retention page of any server, and
+  `signalith archive restore`, ask the server that runs retention to restore, and show its
+  progress.
+
+Set `retention.archive_dir` to the same shared folder on every server that may run the
+jobs. The Data retention page lists which servers can archive. When the server that runs
+retention cannot, it keeps the days it would archive rather than deleting them.
 
 ## Shared users and sign-in
 
@@ -406,10 +786,69 @@ While some servers still run an earlier version, each server keeps its own users
 sessions as before, and the Servers page and the Users page name the servers to
 upgrade.
 
+## Shared detections, dashboards and asset lists
+
+Once every server runs this version, the servers also share their custom detections, the
+choices made for built-in and content pack detections (on or off, and their
+[exceptions](detections.md#exceptions)), and their custom dashboards. A detection saved
+on any server runs on the server that runs the background jobs at its next scheduled run,
+and a dashboard saved anywhere is the same everywhere within a couple of seconds.
+
+The server that founds the cluster brings its own: the files in its detections folder
+(and its `state` folder) and its dashboards folder. From then on, each server's folders
+are an **inbox**:
+
+- A file added or changed in a folder, by hand or by a `git pull`, is shared with every
+  server within 15 seconds. A file that is not valid is logged and left out until it is
+  fixed.
+- A change made on any server is written back into every server's folders, so the
+  folders keep showing what runs and can still be backed up or kept in Git.
+- The files a server has when it joins are only its starting point: a stale copy left
+  on one server never undoes a change made on another. To share one of them, change or
+  save it again.
+- Removing a file changes nothing by default; the shared copy is written back. Set
+  **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
+  have a file removed from its folders remove that detection or dashboard from every
+  server.
+
+Each server records what it last saw of its files in `library-seen.json` in its state
+folder. Content pack updates stay per server (`detections.content_updates`), so give
+every server the same content update setting.
+
+**Changes at the same moment.** `GET /api/detections` and `GET /api/dashboards` give
+each item's version (`etag`). A change sent with `If-Match` and that version is refused
+with `412` when someone changed the item meanwhile, naming who did it, on which server
+and when; the Detections and Dashboards pages then offer to reload or overwrite.
+Changes sent without `If-Match`, such as from scripts, apply to the latest version.
+While a server cannot use the shared settings, changes there answer `503`.
+
+While some servers still run an earlier version, each server keeps its own detections
+and dashboards in its folders, as before.
+
+**Asset and identity lists.** Once every server runs a version that shares them, the
+asset and identity lists are shared too: a list uploaded on the **Assets & identities**
+page of any server is used for urgency and risk on every server within a few seconds.
+The server that founds the cluster brings its `assets.csv` and `identities.csv`. Each
+server's lookups folder is then an inbox in the same way as the detections folder: a new
+`assets.csv` or `identities.csv` copied there (an export from a CMDB or HR system) is
+shared, a list uploaded anywhere is written back into every server's folder, and the
+files a server has when it joins are only its starting point. Each server records what
+it last saw in `lookups-seen.json` in its state folder. `GET /api/lookups/assets` and
+`/api/lookups/identities` give the list's version (`etag`) for `If-Match`, as above. The
+rows the sample data adds stay on the server that loaded it, and lists of up to
+1,000,000 rows are kept in parts, so a server reading a list while it is replaced gets
+the old list or the new one, never a mix.
+
+**Notes on compliance controls.** The notes admins add on the
+[Compliance](compliance.md#controls-handled-elsewhere) page are kept in the shared
+settings too, so every server shows them and puts them in its reports. The server that
+founds the cluster brings the notes in its `compliance-notes.json`. While a server cannot
+use the shared settings, saving a note there answers `503`.
+
 ## Field names when several servers receive events
 
-Each day's events go to one index per data model, and OpenSearch allows at most 2,000
-fields in one index. Signalith's own fields always fit; the names senders choose (JSON
+Each day's events go to one index per data model, and Signalith lets one index hold at
+most 2,400 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 
@@ -418,7 +857,7 @@ keys, syslog structured data, CEF extensions) share what is left (see
   at least 100 for each. Each server's heartbeat says when it last stored an event, so
   the shares follow servers as they start and stop.
 - Before adding new names to an index, a server also looks at how many fields the index
-  really has (checked at most every 30 seconds) and adds none once it has 1,600.
+  really has (checked at most every 30 seconds) and adds none once it has 2,000.
 
 Fields over the limit are not lost: their values stay in the event's raw message
 (`_raw`), and the event says how many were left out in `dropped_fields`. Fields
@@ -433,57 +872,115 @@ trust a certificate authority the servers no longer use, are marked there.
 
 ## Upgrading servers you set up by hand
 
-Versions before this one do not take turns: each server with **Run detections on
-schedule** on runs the jobs itself, so two of them run detections, threat intel
-downloads and retention twice. They also do not appear on the Servers page.
+### Rolling upgrade, one server at a time
 
-The Servers page says this too, until an admin dismisses the note. When you
-upgrade servers that share one OpenSearch, either:
+Upgrade the servers one after the other, so the others keep receiving events and
+users stay signed in:
 
-- upgrade them all at the same time, or
-- first turn off **Run detections on schedule** (`detections.scheduler: false`) on
-  every server except one, upgrade them one by one, and turn it back on once all of
-  them run this version.
+1. Before each server, run `signalith cluster upgrade-check` on any server (see
+   [upgrade-check](cluster-cli.md#upgrade-check)), or open **Upgrade the servers** on
+   the Servers page, which shows the same check as a checklist for each server and
+   says which server to upgrade next. Wait while it says it is not safe yet.
+2. **Drain** the server on the Servers page (see
+   [Draining and removing a server](#draining-and-removing-a-server)).
+3. Install the new version on it: the new package on Linux (or by hand, as the
+   [README](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#linux) says),
+   the new MSI or `install.ps1` on
+   [Windows](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#windows)
+   (with apt, run `sudo apt update` first). In Docker, in the Signalith folder,
+   `git pull && docker compose -f deploy/docker/docker-compose.yml up -d`; for a
+   server added with **Add a server**, set `SIGNALITH_VERSION` in
+   `deploy/docker/join.env` to the new version, then
+   `docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env up -d`.
+4. Wait until the Servers page shows it on the new version: **Draining**, since a
+   drained server stays drained across the restart (or **Ready** if you did not drain
+   it). Upgrade no other server until then.
+5. **Resume** it, and go on with the next server.
 
-While servers of different versions share one OpenSearch, the newest one decides
-how new days' events are stored (the index template): a server of this version or
-later leaves a newer server's template as it is. A server from before this version
-does not know to do that and puts its older template back when it starts; the next
-start of a newer server puts the newer one back. Upgrade all servers to finish
-this.
+### Which server runs the jobs
+
+From this version on, the server that runs the background jobs hands them to the
+first upgraded server once that one has been ready for a minute and has caught up
+with the shared settings, so the jobs move once, to the new version. Upgrade the
+server that runs the jobs last; the checklist puts it at the end. A server that is in
+the middle of a retention run or an archive restore finishes it first. When only one
+server may run the jobs, they pause for about 40 seconds while it is upgraded.
+
+### New features while versions are mixed
+
+A feature that needs every server to read a newer format is greyed out, with
+**Available when every server runs** and the version, until every server seen in the
+last 24 hours runs the new version. Then the cluster's level rises by itself and the
+feature turns on; the Servers page names the servers it still waits for. After the
+raise, a server of an older version refuses to start. From this version on, its
+message names the version to install; an older release says only which level the
+shared settings are at, and that a newer version wrote them. A server you took away for good still counts for 24 hours:
+remove it on the Servers page so it stops counting at once.
+
+### Going back to the previous version
+
+Before the level rose, install the previous version again, one server at a time as
+above. After it rose, the previous version cannot read the shared settings, so they
+go back into each server's own files:
+
+1. Stop every server, so no change is made after the export.
+2. On each server but one, run `sudo signalith cluster export -c /etc/signalith/signalith.yaml --to-files <new folder>`
+   (see [export --to-files](cluster-cli.md#export-to-files)). The files are for that
+   server: their passwords and keys are sealed with its master key. A server cannot
+   export once the shared settings are put aside, and `-retire` refuses on a server
+   that has not exported.
+3. On the remaining server, run
+   `sudo signalith cluster export -c /etc/signalith/signalith.yaml -retire --to-files <new folder>`,
+   then `sudo signalith cluster export -c /etc/signalith/signalith.yaml -retire` on
+   each of the others. This puts the shared settings and the cluster keys aside.
+4. Copy the files on each server as the `README.txt` of its export says: it gives the
+   commands for the platform the export ran on.
+5. Install the previous version and start the servers. The server that runs the jobs
+   makes a new cluster, with a new cluster key, from its files.
+6. Give the other servers that key: `signalith cluster export-key` on that server and
+   `signalith cluster import-key` on each of the others (see
+   [export-key and import-key](cluster-cli.md#export-key-and-import-key)). Until then
+   they keep using their own files and never take the jobs over. Servers with
+   `SIGNALITH_CLUSTER_KEY_FILE` set to the same key file use it again instead.
+
+On Windows, run the commands in an administrator PowerShell with
+`& "$env:ProgramFiles\Signalith\signalith.exe"` in place of `sudo signalith`. In
+Docker, stop the server with `docker compose -f deploy/docker/docker-compose.yml stop signalith`
+and run each command as
+`docker compose -f deploy/docker/docker-compose.yml run --rm signalith cluster export -c /etc/signalith/signalith.yaml ...`
+(for a server added with **Add a server**, use the `docker-compose.server.yml` command
+of step 3 above and `-c /var/lib/signalith/signalith.yaml`). The export folder must
+then be a new folder directly in `/var/lib/signalith`, such as
+`/var/lib/signalith/export`, as that is the only folder Docker keeps.
+
+### Versions before the servers took turns
+
+Versions before the servers took turns run the background jobs on every server with
+**Run detections on schedule** on, so two of them run detections, threat intel
+downloads and retention twice, and they do not appear on the Servers page. Upgrade
+them all at the same time, or turn off **Run detections on schedule**
+(`detections.scheduler: false`) on every server but one, upgrade them one by one, and
+turn it back on once all of them run this version. Until then, a server of such a
+version puts its older index template back when it starts; the next start of a newer
+server puts the newer one back.
 
 **The cluster key.** The first server of this version to run the jobs founds the
 cluster and makes the cluster key (see
 [Shared settings and the cluster key](#shared-settings-and-the-cluster-key)). Every
-other server needs that key, with `signalith cluster import-key` or
-`SIGNALITH_CLUSTER_KEY_FILE`: until it has it, it keeps using its own files and
-never takes the jobs over, so if the server that runs them stops, nothing runs them.
-Setting `SIGNALITH_CLUSTER_KEY_FILE` to one key file on every server before the
-upgrade avoids this step: the first server then makes the cluster with that key (see
-[Shared settings and the cluster key](#shared-settings-and-the-cluster-key) for how to
-make the file). Upgrade
-every server, not only some: a server of an older version reads and writes its own
-files and does not see changes made on the pages of the others.
+other server needs it, with `signalith cluster import-key` or
+`SIGNALITH_CLUSTER_KEY_FILE` set to one key file on every server before the upgrade:
+until it has the key, a server keeps using its own files and never takes the jobs
+over. That first server runs each detection that is on once straight away, over its
+lookback (see [Schedules and missed runs](detections.md#schedules-and-missed-runs)).
 
-The first server of this version to run the jobs runs each detection that is on once
-straight away, over its lookback, so the time since the old version's last run is
-searched. Findings and risk events the old version raised keep holding back repeats
-for each detection's throttle window. See
-[Schedules and missed runs](detections.md#schedules-and-missed-runs).
-
-**Users and sign-in.** The servers start sharing their users once every server that
-ran in the last 24 hours runs this version (see
-[When the users become shared](users.md#when-the-users-become-shared)). Until then
-nothing changes for users; the Servers page names the servers still to upgrade. When
-the users become shared, each server restarts in place by itself and **everyone signs
-in once more**, on a single server too. From then on:
-
-- The directory sign-in settings can be changed on the Users page even when they come
-  from `auth.ldap` in signalith.yaml; the file applies again only when it changes.
-- `signalith passwd` changes the built-in admin's password for every server, with no
-  restart. `signalith passwd -local` is the break-glass password of one server, used
-  only while OpenSearch cannot be used.
-- A server of an earlier version can no longer start on this OpenSearch.
+**Users and settings.** The servers start sharing their users, and then their Settings
+page, once every server that ran in the last 24 hours runs a version that shares them
+(see [When the users become shared](users.md#when-the-users-become-shared) and
+[When the settings become shared](settings.md#when-the-settings-become-shared)). When
+the users become shared, each server restarts in place and everyone signs in once
+more; `signalith passwd` then changes the built-in admin's password for every server,
+and `signalith passwd -local` is one server's break-glass password while OpenSearch
+cannot be used.
 
 ## Load balancers: /readyz and /livez
 
@@ -507,6 +1004,7 @@ The reasons `/readyz` gives:
 | `degraded` | It is part of the cluster but cannot use the shared settings in OpenSearch now (see [Shared settings and the cluster key](#shared-settings-and-the-cluster-key)) |
 | `gone` | The shared settings in OpenSearch are gone: their index was deleted or replaced |
 | `key_missing` | The shared settings are signed with a cluster key this server does not have |
+| `draining` | An admin drained it for maintenance (see [Draining and removing a server](#draining-and-removing-a-server)); **Resume** on the Servers page undoes it |
 | `stopping` | It is shutting down and handing its jobs over. This takes up to a minute while jobs finish: the systemd unit allows 100 seconds, the compose file 90, and the Windows service waits 90 |
 
 Do not use `/readyz` to restart a server: a server that waits for OpenSearch is
@@ -520,9 +1018,24 @@ backend signalith
     balance source
     option httpchk GET /readyz
     http-check expect status 200
-    server siem-a 10.0.0.11:8080 check
-    server siem-b 10.0.0.12:8080 check
+    server siem-a 10.0.0.11:9000 check
+    server siem-b 10.0.0.12:9000 check
 ```
+
+Agents send to the [agent port](sending-data.md#the-agent-port) (7779 by default), so
+balance it the same way, with a backend of its own whose `server` lines use port 7779.
+The agent port answers `/readyz` and `/livez` too.
+
+**Seeing who really connected.** A load balancer that passes connections through
+(TCP mode, the usual choice, so HTTPS and syslog over TLS end at Signalith) hides the
+client's address: every browser, agent and device seems to be the balancer. Have it
+add a PROXY protocol v2 header (`send-proxy-v2` in HAProxy, plus `check-send-proxy`
+for its checks) and turn on **PROXY protocol from load balancers** for the web port
+and for syslog, with the balancer under **Trusted reverse proxies**. Sign-in limits,
+the audit log, agent limits, `syslog.allow` and each syslog event's host then see the
+real client. Samples for HAProxy, nginx and keepalived are in
+[deploy/loadbalancer](https://github.com/jrsamsanchez/Signalith/tree/main/deploy/loadbalancer),
+and [Load balancers](load-balancers.md) walks through them.
 
 Both addresses answer over HTTPS and also over plain `http://` on the same port
 (everything else on plain HTTP is sent to HTTPS), so the plain `check` above works
@@ -533,9 +1046,9 @@ Kubernetes container:
 
 ```yaml
 readinessProbe:
-  httpGet: { path: /readyz, port: 8080, scheme: HTTPS }
+  httpGet: { path: /readyz, port: 9000, scheme: HTTPS }
 livenessProbe:
-  httpGet: { path: /livez, port: 8080, scheme: HTTPS }
+  httpGet: { path: /livez, port: 9000, scheme: HTTPS }
 ```
 
 Kubernetes does not check the certificate of a probe, and without `scheme: HTTPS`
@@ -592,3 +1105,26 @@ another version in `X-Signalith-Version` reloads once to get that version's page
 if a server of the other version answers again within 2 minutes, the page says that
 Signalith is being upgraded instead of reloading again. The plain
 paths (`/app.js` and so on) keep working, for pages of earlier versions.
+
+**Where agents send.** With several servers, Add data asks **Where do agents send?**:
+the shared address (the public address, which should be the load balancer's or a DNS
+name over every server) or one server's own address, each on its agent port (each server reports its own; see
+[The agent port](sending-data.md#the-agent-port)). It looks the shared address up
+and says which servers it reaches, and warns when it is just one server's address:
+agents sent there wait while that server is down. Agents keep their events while they
+wait, and send them once a server answers. Configurations made while several servers
+share the work also have each agent open a new connection every 100 batches
+(`net.keepalive_max_recycle`), so a server that comes back gets its share again.
+A DNS name over several servers (round robin) works without a load balancer, but an
+agent keeps trying the address it picked while that server is down, and some
+resolvers keep a down server's address for minutes; a load balancer with health
+checks moves agents at once. With neither, agents sent to one server's address are the
+fallback, and the Health page and the Servers page say when a running server gets no
+agent traffic while another does.
+
+**Syslog behind a load balancer.** Syslog over TCP and TLS goes through the balancer
+like the web port, with a PROXY protocol header. UDP has no such header: send it to a
+virtual IP (keepalived, see the sample) or straight to one server. Never send one
+device to two servers at once: each message would be stored twice. When a server
+stops, devices on TCP reconnect through the balancer to another; a few messages sent
+just before may be stored twice or lost, as with any syslog server that restarts.

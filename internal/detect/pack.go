@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
@@ -13,6 +16,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/splcheck"
 )
@@ -25,7 +29,7 @@ import (
 // pass in CI are listed in the manifest (see pack_test.go and
 // internal/sigmacheck).
 //
-//go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml
+//go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml packs/*/lookups/*
 var packFS embed.FS
 
 // Origin says where a detection from a content pack came from. It is
@@ -72,6 +76,9 @@ type Pack struct {
 	Rules  []PackRule `yaml:"rules" json:"-"`
 
 	macros map[string]*splcheck.Macro
+	// lookups are a splunk pack's tables (lookups/), which its rules'
+	// lookup stages read, by their names in security_content.
+	lookups map[string]*splcheck.Lookup
 }
 
 // PackRule is one rule in a manifest.
@@ -104,6 +111,11 @@ func builtinPacks() *packSet {
 	embeddedOnce.Do(func() {
 		embedded.packs, embedded.dets, _, embedded.err = loadPacks(packFS, false)
 		embedded.version = packsVersion(embedded.packs)
+		packsMu.RLock()
+		if update == nil {
+			usePackTables(embedded.packs)
+		}
+		packsMu.RUnlock()
 	})
 	return &embedded
 }
@@ -168,13 +180,20 @@ func LoadPacks(fsys fs.FS) (ps []*Pack, ds []*Detection, skipped []error, err er
 // goes back to the packs built into Signalith. Libraries pick them up
 // with Library.ReloadPacks.
 func UsePacks(ps []*Pack, ds []*Detection, version string) {
+	var builtin *packSet
+	if ps == nil {
+		// Converted before the lock, which converting takes.
+		builtin = builtinPacks()
+	}
 	packsMu.Lock()
 	defer packsMu.Unlock()
 	if ps == nil {
 		update = nil
+		usePackTables(builtin.packs)
 		return
 	}
 	update = &packSet{packs: ps, dets: ds, version: version}
+	usePackTables(ps)
 }
 
 func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error) {
@@ -199,6 +218,9 @@ func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error)
 		dir := path.Dir(m)
 		if p.Format == "splunk" {
 			if p.macros, err = loadMacros(fsys, dir); err != nil {
+				return nil, nil, nil, err
+			}
+			if p.lookups, err = loadLookups(fsys, dir); err != nil {
 				return nil, nil, nil, err
 			}
 		}
@@ -271,6 +293,34 @@ func packThrottle(category, datamodel string) []string {
 	case "windefend":
 		// A Defender event: which one, and the threat, file or setting.
 		return []string{"host", "signature_id", "signature", "file_path", "setting"}
+	case "application", "code_integrity":
+		// An Application or Code Integrity event: which program logged
+		// which one.
+		return []string{"host", "provider", "signature_id"}
+	case "ps_module":
+		// A pipeline: who ran it, from which host program.
+		return []string{"host", "user", "process"}
+	case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+		// A Windows PowerShell log event: which one, and the host
+		// program that started the engine.
+		return []string{"host", "signature_id", "process"}
+	case "firewall_as":
+		// A firewall rule or setting changed: which change, and the rule
+		// and program.
+		return []string{"host", "signature_id", "firewall_rule_name", "firewall_application_path"}
+	case "bits_client":
+		// A BITS job: what it downloads, where to.
+		return []string{"host", "signature_id", "bits_remote_name", "bits_local_name"}
+	case "appxdeployment_server":
+		// An app package: which event, and which package from where.
+		return []string{"host", "signature_id", "appx_package_full_name", "appx_path"}
+	case "wmi":
+		// A WMI event: which one, and what it ran.
+		return []string{"host", "signature_id", "wmi_operation", "wmi_consumer"}
+	case "system_event":
+		// A System log event: which one, and what it names first (the
+		// service of a service event).
+		return []string{"host", "provider", "signature_id", "system_param1"}
 	case "auditd":
 		// An audit record: its type, program and what it ran or touched.
 		return []string{"host", "auditd_type", "auditd_exe", "process", "auditd_name"}
@@ -284,6 +334,9 @@ func packThrottle(category, datamodel string) []string {
 		return []string{"host", "process_path", "registry_path"}
 	case "network_resolution":
 		return []string{"host", "process_path", "query"}
+	case "web":
+		// A web request: the server, the client and the path asked for.
+		return []string{"host", "src", "uri_path"}
 	case "image_load":
 		return []string{"host", "process_path", "loaded_file_path"}
 	case "script":
@@ -333,17 +386,45 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	category := meta.Logsource.Category
-	if category == "" && strings.EqualFold(meta.Logsource.Service, "auditd") {
-		category = "auditd"
+	if service := strings.ToLower(meta.Logsource.Service); category == "" {
+		switch {
+		case service == "auditd", service == "windefend", service == "application":
+			category = service
+		case service == "codeintegrity-operational":
+			category = "code_integrity"
+		case service == "powershell-classic":
+			category = "powershell_classic"
+		default:
+			if _, ok := ingest.NamedChannelServices[service]; ok {
+				category = ingest.NamedChannelCategory(service)
+			}
+		case service == "system" && q.Datamodel == "Other":
+			category = "system_event"
+		}
 	}
 	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(category), q.Datamodel)}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
 	if score == 0 {
 		score = 25
 	}
-	d.Risk = &Risk{Score: score, Objects: []RiskObject{{Field: "user", Type: "user"}, {Field: "host", Type: "system"}}}
+	d.Risk = &Risk{Score: score, Objects: riskObjects(q.Datamodel)}
 	if l := strings.ToLower(meta.Level); l == "low" || l == "informational" {
 		d.Risk.Only = true
+	}
+	if ncat := sigmaNetworkCategory(map[string]any{
+		"product": meta.Logsource.Product, "category": meta.Logsource.Category, "service": meta.Logsource.Service,
+	}); ncat != "" {
+		// A network rule: about the address that sent the traffic, not
+		// the sensor ($host$) that saw it.
+		d.Title = strings.TrimSpace(meta.Title) + " from $src$"
+		d.Throttle.Fields = packNetworkThrottle(ncat, q.Datamodel)
+		d.Risk.Objects = []RiskObject{{Field: "src", Type: "system"}, {Field: "user", Type: "user"}}
+		if ncat == zeekCategoryPrefix+"x509" {
+			// A certificate has no client or account: it is about the
+			// sensor that saw it.
+			d.Title = strings.TrimSpace(meta.Title) + " seen by $host$"
+			d.Risk.Objects = []RiskObject{{Field: "host", Type: "system"}}
+		}
 	}
 	tags := []string{"sigma", p.Name}
 	if meta.Logsource.Product != "" {

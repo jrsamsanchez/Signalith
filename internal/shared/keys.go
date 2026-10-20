@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -28,9 +31,10 @@ import (
 
 // The cluster key is 32 random bytes every member keeps, sealed under its
 // own master key, and never in OpenSearch in a usable form. Sub-keys made
-// from it with HKDF-SHA256 sign the shared documents, encrypt the shared
-// secrets (the same scheme as the master key's, so values look like
-// enc:v1:<kid>:...), tag session cookies and encrypt archives. Its id is
+// from it with HKDF-SHA256 sign the shared documents and the audit
+// records, encrypt the shared secrets (the same scheme as the master
+// key's, so values look like enc:v1:<kid>:...), tag session cookies and
+// encrypt archives. Its id is
 // the same kind of fingerprint as a master key's.
 //
 // Each server also has a node key, an X25519 pair, so the cluster key can
@@ -45,6 +49,7 @@ const (
 	infoSeal    = "signalith seal-to-node v1"
 	infoBrowser = "signalith known browser v1"
 	infoLocks   = "signalith sign-in locks v1"
+	infoAudit   = "signalith audit chain v1"
 )
 
 const keySize = 32
@@ -160,6 +165,10 @@ func (k *ClusterKey) KnownBrowserKey() []byte { return k.sub(infoBrowser) }
 // address or account anyone could read back.
 func (k *ClusterKey) LockKey() []byte { return k.sub(infoLocks) }
 
+// AuditKey returns the key that signs the audit records each server
+// writes to OpenSearch (internal/audit), so any member can check them.
+func (k *ClusterKey) AuditKey() []byte { return k.sub(infoAudit) }
+
 func (k *ClusterKey) sub(info string) []byte {
 	b, err := hkdf.Key(sha256.New, k.raw, nil, info, 32)
 	if err != nil {
@@ -175,6 +184,9 @@ func (k *ClusterKey) sub(info string) []byte {
 type KeySet struct {
 	active *ClusterKey
 	byID   map[string]*ClusterKey
+	// cookie holds keys retired by the last rotation whose session
+	// cookies still pass the cookie check (see WithCookieKeys).
+	cookie map[string]*ClusterKey
 }
 
 // NewKeySet returns a set whose active key is active. others are only
@@ -205,6 +217,32 @@ func (s *KeySet) Get(kid string) *ClusterKey {
 		return nil
 	}
 	return s.byID[kid]
+}
+
+// WithCookieKeys returns the set with old, keys a rotation retired, kept
+// for the session cookie check only: a cookie they made still passes it,
+// but nothing they sign verifies, so a cookie needs a session document
+// signed with a key of the set to work.
+func (s *KeySet) WithCookieKeys(old ...*ClusterKey) *KeySet {
+	out := &KeySet{active: s.active, byID: s.byID, cookie: map[string]*ClusterKey{}}
+	for _, k := range old {
+		if k != nil && s.byID[k.ID()] == nil {
+			out.cookie[k.ID()] = k
+		}
+	}
+	return out
+}
+
+// CookieKey returns the key with id kid for the session cookie check: a
+// key of the set, or one kept by WithCookieKeys; nil when there is none.
+func (s *KeySet) CookieKey(kid string) *ClusterKey {
+	if s == nil {
+		return nil
+	}
+	if k := s.byID[kid]; k != nil {
+		return k
+	}
+	return s.cookie[kid]
 }
 
 // IDs lists the ids of the keys, sorted.
@@ -467,6 +505,16 @@ func (s KeyStore) SaveClusterKey(k *ClusterKey) error {
 		return err
 	}
 	return p.Commit()
+}
+
+// ClusterKeyCreated is when the cluster key kid was kept in the state
+// folder.
+func (s KeyStore) ClusterKeyCreated(kid string) (time.Time, error) {
+	var f keyFile
+	if err := readJSON(ClusterKeyPath(s.Dir, kid), &f); err != nil {
+		return time.Time{}, err
+	}
+	return f.Created, nil
 }
 
 // ClusterKeys reads the cluster keys kept in the state folder. A file

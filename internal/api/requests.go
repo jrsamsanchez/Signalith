@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -86,26 +89,20 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, typ string, args
 }
 
 // sharedError answers the errors of a change of the shared settings:
-// a change someone else made first (412), and settings that cannot be
-// changed or read now (503). It reports whether err was one of them.
+// a change someone else made first (412), settings that cannot be
+// changed or read now (503), and a change of this server's own files
+// while they move into the shared settings (503, asked again shortly).
+// It reports whether err was one of them.
 func sharedError(w http.ResponseWriter, err error) bool {
 	var stale *shared.StaleError
 	var paused *shared.PausedError
+	var moving *shared.MovingError
 	switch {
+	case errors.As(err, &moving):
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, err)
 	case errors.As(err, &stale):
-		// Who changed it, where and when, so a page can say so in its
-		// own words.
-		body := map[string]any{"error": err.Error(), "code": "stale"}
-		if stale.By != "" {
-			body["changed_by"] = stale.By
-		}
-		if stale.Node != "" {
-			body["changed_on"] = stale.Node
-		}
-		if stale.At != "" {
-			body["changed_at"] = stale.At
-		}
-		writeJSON(w, http.StatusPreconditionFailed, body)
+		writeJSON(w, http.StatusPreconditionFailed, staleBody(err, stale))
 	case errors.Is(err, intel.ErrFeedStale):
 		writeError(w, http.StatusPreconditionFailed, err)
 	case errors.As(err, &paused), errors.Is(err, intel.ErrFeedsUnavailable), errors.Is(err, clustercfg.ErrPoliciesUnavailable):
@@ -114,6 +111,22 @@ func sharedError(w http.ResponseWriter, err error) bool {
 		return false
 	}
 	return true
+}
+
+// staleBody is the body of a 412 for err, a change refused as stale:
+// who changed it, where and when, so a page can say so in its own words.
+func staleBody(err error, stale *shared.StaleError) map[string]any {
+	body := map[string]any{"error": err.Error(), "code": "stale"}
+	if stale.By != "" {
+		body["changed_by"] = stale.By
+	}
+	if stale.Node != "" {
+		body["changed_on"] = stale.Node
+	}
+	if stale.At != "" {
+		body["changed_at"] = stale.At
+	}
+	return body
 }
 
 // handleRequest returns a request: its state, progress and result.

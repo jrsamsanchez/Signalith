@@ -1,0 +1,4 @@
+{"rule": "139bdd4b-9cd7-49ba-a2f4-744d0a8f5d8c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"iam.resourceset.bindings.add"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

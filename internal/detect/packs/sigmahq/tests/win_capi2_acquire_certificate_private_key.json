@@ -1,0 +1,3 @@
+{"rule": "e2b5163d-7deb-4566-9af3-40afea6858c3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-CAPI2/Operational","event_id":"70","data":{}}
+]}

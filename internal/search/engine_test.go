@@ -1,9 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -59,7 +63,7 @@ func asJSON(v any) string {
 
 func TestCompileSearch(t *testing.T) {
 	p := compile(t, `datamodel=Authentication action=failure user=adm* NOT src=10.0.0.1 dest_port>=1024 "failed password" earliest=-7d@d`)
-	if p.Index != "signalith-authentication-*" {
+	if !namesDays(p.Index, "signalith-authentication-") {
 		t.Errorf("index = %s", p.Index)
 	}
 	got := asJSON(p.Body["query"])
@@ -356,5 +360,20 @@ func TestAllTimeIsNotTheDefault(t *testing.T) {
 		if got := strings.Contains(asJSON(p.Body["query"]), `"@timestamp"`); got != want {
 			t.Errorf("earliest %q: time range %v, want %v: %s", earliest, got, want, asJSON(p.Body["query"]))
 		}
+	}
+}
+
+type panicStore struct{}
+
+func (panicStore) Search(context.Context, string, map[string]any) (map[string]any, error) {
+	panic("a bug in a command")
+}
+
+// A panic while a search runs fails that search only: the detection
+// scheduler calls Execute outside any HTTP handler.
+func TestExecuteRecoversPanic(t *testing.T) {
+	res, err := (&Engine{Store: panicStore{}}).Run(context.Background(), `*`)
+	if !errors.Is(err, ErrInternal) || res != nil {
+		t.Fatalf("Run = %v, %v", res, err)
 	}
 }

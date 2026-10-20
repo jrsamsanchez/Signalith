@@ -1,0 +1,4 @@
+{"rule": "be4d9c86-d702-4030-b52e-c7859110e5e8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"riskyIPAddress"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

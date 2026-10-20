@@ -2,7 +2,7 @@ Signalith security report for siem-1
 Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.9). Linux, systemd
 service.
 
-Summary: 1 at risk, 3 need attention, 13 good, 2 Signalith can't check from
+Summary: 1 at risk, 3 need attention, 15 good, 2 Signalith can't check from
 here.
 
 Fix first
@@ -59,6 +59,9 @@ In transit
   [good]        HTTPS certificate
                 Signalith's own certificate is valid until 2027-08-09 and
                 renews itself 30 days before.
+  [good]        Agent port
+                Agents send to a port of their own (7779), and the web port
+                turns them away.
 
 At rest
   [can't tell]  Disk encryption
@@ -104,6 +107,11 @@ Accounts and sign-in
   [attention]   Built-in admin's password
                 The built-in admin still has the first password the Docker
                 setup made, which is kept as plain text in a Docker volume.
+  [good]        Two-step sign-in
+                Admins who sign in with a password also enter a code from an
+                authenticator app.
+                Other users can turn two-step sign-in on for themselves from
+                the user menu.
   [good]        Signalith's OpenSearch account
                 Signalith signs in to OpenSearch as signalith, an account
                 without admin rights.
@@ -113,9 +121,8 @@ Accounts and sign-in
                 page and keep the built-in admin for emergencies. The audit
                 log then shows who did what.
   [good]        Sign-in sessions
-                People are signed out after 12 hours without use, unless they
-                choose Keep me signed in, which keeps them signed in for up to
-                7 days.
+                People are signed out after 1 hour without use, unless they
+                choose Keep me signed in, and every sign-in ends after 1 day.
 
 This server
   [good]        File permissions
@@ -136,7 +143,8 @@ Always on
   - Guessing passwords is slowed: after 10 wrong tries for one account from
     one address in 15 minutes, sign-in pauses for 15 minutes. The API is
     limited the same way.
-  - Sign-ins end after 7 days at most, even with Keep me signed in.
+  - Sign-ins end after 24 hours by default (30 days at most), even with Keep
+    me signed in.
   - Passwords are stored only as bcrypt hashes.
   - Logs, pages and the API never show stored passwords or keys.
   - Agents set up from Add data check the server's certificate before sending.
@@ -148,7 +156,6 @@ Not checked here
   - Backups, and whether the master key is kept apart from them.
   - Updates for Signalith, OpenSearch and the operating system. Signalith
     doesn't contact the internet to check.
-  - Two-step sign-in. Signalith has none of its own.
   - The computers agents run on.
   - Copies of events outside Signalith, such as exports, moved archives and
     OpenSearch snapshots.

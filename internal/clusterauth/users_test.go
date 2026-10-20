@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterauth
 
 import (
@@ -213,5 +216,78 @@ func TestFirstDirectorySignInRace(t *testing.T) {
 	}
 	if puts := requestsTo(o.fake.Requests(), "user:dora"); len(puts) != 0 {
 		t.Errorf("a second sign-in wrote the user: %v", puts)
+	}
+}
+
+// While the built-in admin is renamed (signalith cluster apply), the user
+// documents of both names may be the built-in admin; any other is still
+// refused, and once the rename ends the old name no longer may be.
+func TestBuiltinRenameAcceptsBothNames(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	if _, err := a.rt.Cluster().Mutate(ctx, "test", func(c *shared.ClusterBody) error {
+		c.BuiltinPrev, c.Builtin = c.Builtin, "root"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	old, _, ok := a.docs.Users().Get("admin")
+	if !ok {
+		t.Fatal("no built-in admin")
+	}
+	builtin := func(name string) *UserBody {
+		return &UserBody{Username: name, Role: users.Admin, Source: users.SourceBuiltin, PasswordHash: old.PasswordHash, SessionEpoch: 1,
+			Created: time.Now().UTC(), Updated: time.Now().UTC()}
+	}
+	if _, err := a.docs.Users().Create(ctx, "test", "root", builtin("root")); err != nil {
+		t.Fatalf("the new name was refused during the rename: %v", err)
+	}
+	if _, err := a.docs.Users().Mutate(ctx, "test", "admin", func(v *UserBody) error { v.SessionEpoch++; return nil }); err != nil {
+		t.Fatalf("the old name was refused during the rename: %v", err)
+	}
+	b.cycle()
+	for _, n := range []string{"admin", "root"} {
+		if v, _, ok := b.docs.Users().Get(n); !ok || v.Source != users.SourceBuiltin {
+			t.Errorf("%s during the rename: %+v %v", n, v, ok)
+		}
+	}
+	if _, err := a.docs.Users().Create(ctx, "test", "mallory", builtin("mallory")); err == nil {
+		t.Error("made a third built-in admin during the rename")
+	}
+
+	if _, err := a.rt.Cluster().Mutate(ctx, "test", func(c *shared.ClusterBody) error {
+		c.BuiltinPrev = ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.docs.Users().Mutate(ctx, "test", "admin", func(v *UserBody) error { v.SessionEpoch++; return nil }); err == nil {
+		t.Error("the old name is still a built-in admin after the rename")
+	}
+	if a.docs.BuiltinName() != "root" {
+		t.Errorf("built-in admin = %q", a.docs.BuiltinName())
+	}
+}
+
+// A user provisioned (SCIM) on A is on B with its external id, and their
+// first sign-in on B binds their identity for A too.
+func TestProvisionedUserIsShared(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	if _, err := a.store.Provision(ctx, users.Provisioned{Username: "pat@example.com", Name: "Pat", ExternalID: "E9", Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	u, ok := b.store.Get("pat@example.com")
+	if !ok || u.ExternalID != "E9" || !u.Pending() {
+		t.Fatalf("B's pat: %+v %v", u, ok)
+	}
+	sub := users.SSOSubject("https://idp.example.com", "9")
+	if _, err := b.store.SeeSSOUser(ctx, users.SSOUser{Username: "pat@example.com", Role: users.Analyst, Subject: sub, IDs: []string{"9", "E9"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if u, _ := a.store.Get("pat@example.com"); u.Subject != sub || u.ExternalID != "E9" || u.Name != "Pat" {
+		t.Errorf("A's pat: %+v", u)
 	}
 }

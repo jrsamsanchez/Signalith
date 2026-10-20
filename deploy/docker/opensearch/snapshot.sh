@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Backs up and restores Signalith's events, findings and cases in the
 # Docker quick start, with OpenSearch snapshots written to the
 # opensearch-snapshots volume. From the Signalith folder:

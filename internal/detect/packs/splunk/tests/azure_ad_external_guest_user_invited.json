@@ -1,0 +1,5 @@
+{"rule": "c1fb4edb-cab1-4359-9b40-925ffd797fb5", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Invite external user","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Invite external uses","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}}
+]}

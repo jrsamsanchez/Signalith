@@ -1,0 +1,5 @@
+{"rule": "352a918a-34d8-4882-8470-44830c507aa3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"userIdentity.arn":"x:assumed-role/aws:x"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"RegisterManagedInstance","userIdentity.arn":"x:assumed-role/aws:x"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{}}
+]}

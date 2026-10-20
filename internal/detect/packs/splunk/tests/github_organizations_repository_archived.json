@@ -1,0 +1,5 @@
+{"rule": "4f568a0e-896f-4d94-a2f7-fa6d82ab1f77", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repo.archived"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"repo.archivee"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

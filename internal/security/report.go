@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package security checks how a Signalith server is set up and says what
 // to fix first. Every check is a pure function over Facts, so the server
 // (GET /api/security, the Security page) and the CLI (signalith security)
@@ -211,6 +214,7 @@ var checks = []def{
 	{"transit.certificate", "transit", "HTTPS certificate", 12, checkCertificate},
 	{"transit.ca_scope", "transit", "Certificate authority", 13, checkCAScope},
 	{"transit.agents_plain", "transit", "Agents on plain HTTP", 11, checkAgentsPlain},
+	{"transit.agent_port", "transit", "Agent port", 28, checkAgentPort},
 	{"transit.syslog", "transit", "Syslog", 16, checkSyslog},
 	{"transit.opensearch", "transit", "Connection to OpenSearch", 1, checkOpenSearchTransit},
 	{"transit.outbound", "transit", "AI assistant and threat intel", 7, checkOutbound},
@@ -228,8 +232,11 @@ var checks = []def{
 	{"accounts.temp_passwords", "accounts", "Temporary passwords", 22, checkTempPasswords},
 	{"accounts.directory", "accounts", "Directory sign-in", 5, checkDirectory},
 	{"accounts.sessions", "accounts", "Sign-in sessions", 23, checkSessions},
+	{"accounts.mfa", "accounts", "Two-step sign-in", 5, checkMFA},
 	{"accounts.agent_tokens", "accounts", "Agent tokens", 6, checkAgentTokens},
+	{"accounts.api_tokens", "accounts", "API tokens", 28, checkAPITokens},
 	{"accounts.opensearch_role", "accounts", "Signalith's OpenSearch account", 14, checkOpenSearchRole},
+	{"accounts.opensearch_crl", "accounts", "OpenSearch's revocation list", 27, checkOpenSearchCRL},
 	{"host.account", "host", "Account Signalith runs as", 15, checkAccount},
 	{"host.service", "host", "Service protections", 20, checkService},
 	{"host.files", "host", "File permissions", 9, checkFiles},
@@ -390,7 +397,7 @@ func alwaysOn(f *Facts) []string {
 	out = append(out,
 		"Every page has a strict Content Security Policy and can't be shown inside another site.",
 		"Guessing passwords is slowed: after 10 wrong tries for one account from one address in 15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.",
-		"Sign-ins end after 7 days at most, even with Keep me signed in.",
+		"Sign-ins end after 24 hours by default (30 days at most), even with Keep me signed in.",
 		"Passwords are stored only as bcrypt hashes.",
 		"Logs, pages and the API never show stored passwords or keys.")
 	if https {
@@ -404,7 +411,6 @@ func notChecked() []string {
 		"Firewalls: which computers can reach Signalith's ports.",
 		"Backups, and whether the master key is kept apart from them.",
 		"Updates for Signalith, OpenSearch and the operating system. Signalith doesn't contact the internet to check.",
-		"Two-step sign-in. Signalith has none of its own.",
 		"The computers agents run on.",
 		"Copies of events outside Signalith, such as exports, moved archives and OpenSearch snapshots.",
 	}

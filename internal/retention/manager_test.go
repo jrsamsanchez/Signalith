@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -10,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/datamodel"
 )
 
 type fixture struct {
@@ -86,7 +91,7 @@ func TestRunEnforcesPolicies(t *testing.T) {
 	// The history survives a restart.
 	m2 := &Manager{Cluster: f.mem, Prefix: "signalith", HistoryFile: f.m.HistoryFile, Archive: f.m.Archive, Now: f.m.Now}
 	m2.init()
-	last, acts := m2.hist.get()
+	last, acts, _ := m2.hist.Recent(context.Background())
 	if last == nil || last.Archived != 1 || len(acts) != 3 {
 		t.Fatalf("history = %+v %+v", last, acts)
 	}
@@ -117,7 +122,7 @@ func TestArchiveFailureKeepsTheIndex(t *testing.T) {
 	if !f.exists(a) || f.exists(b) || run.Archived != 1 || len(run.Errors) != 1 || !strings.Contains(run.Errors[0], "so the index was kept") {
 		t.Errorf("run = %+v", run)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Index != a || acts[0].Error == "" || acts[1].Index != b || acts[1].Error != "" {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -311,7 +316,7 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if n := len(f.mem.Records("signalith_cases")); n != 2 {
 		t.Errorf("cases left = %d", n)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Action != ActionDeleteRecords || acts[0].Category != Cases || acts[0].Docs != 1 {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -401,7 +406,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	if list, _ := f.m.Archives(context.Background()); len(list.Archives) != 1 || list.Archives[0].Restore == nil || list.Archives[0].Restore.State != RestoreDone {
 		t.Errorf("archives = %+v", list)
 	}
-	_, acts := f.m.hist.get()
+	_, acts, _ := f.m.hist.Recent(context.Background())
 	if !slices.ContainsFunc(acts, func(a Action) bool { return a.Action == ActionRestore && a.Docs == 1200 && a.By == "admin" }) {
 		t.Errorf("actions = %+v", acts)
 	}
@@ -515,7 +520,7 @@ func TestOverview(t *testing.T) {
 		cats[c.ID] = c
 	}
 	// No "other" events yet, so that row is left out.
-	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "risk", Findings, Cases, Intel}) {
+	if !slices.Equal(ids, []string{"authentication", "endpoint", "network_traffic", "change", "malware", "filesystem", "registry", "network_resolution", "intrusion_detection", "web", "certificates", "file_transfers", "image_load", "script", "inventory", "configuration_check", "alerts", "vulnerabilities", "risk", Findings, Cases, Intel}) {
 		t.Errorf("categories = %v", ids)
 	}
 	ep := cats["endpoint"]
@@ -550,10 +555,11 @@ func TestOverview(t *testing.T) {
 	}
 
 	// OpenSearch down: the page still gets policies (every category but
-	// "other", which has no events), and says why sizes are missing.
+	// "other" and "audit", which have no data), and says why sizes are
+	// missing.
 	f.mem.Fail["indices"] = errors.New("connection refused")
 	ov = f.m.Overview(context.Background())
-	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-1 || ov.Guard.Status.State != GuardUnknown {
+	if !strings.Contains(ov.Error, "connection refused") || len(ov.Categories) != len(Categories())-2 || ov.Guard.Status.State != GuardUnknown {
 		t.Errorf("down: %+v", ov)
 	}
 }
@@ -697,4 +703,25 @@ func TestBackgroundRunShowsAsRunningAtOnce(t *testing.T) {
 			t.Errorf("history not written before Wait returned: %v", err)
 		}
 	}
+}
+
+// A busy day split into parts by rollover is still one day on the page,
+// and every part's events and size count.
+func TestOverviewCountsDayPartsOnce(t *testing.T) {
+	f := newFixture(t, Config{Days: 30})
+	day := f.add("endpoint", 3, 2*GB, 10)
+	f.mem.AddIndex(datamodel.PartName(day, 2), GB, testDocs(5)...)
+	f.mem.AddIndex(datamodel.PartName(day, 3), GB, testDocs(5)...)
+	f.add("endpoint", 4, GB, 7)
+	ov := f.m.Overview(context.Background())
+	for _, cv := range ov.Categories {
+		if cv.ID != "endpoint" {
+			continue
+		}
+		if cv.Days != 2 || cv.Docs != 27 || cv.Bytes != 5*GB {
+			t.Errorf("endpoint: %d days, %d events, %d bytes", cv.Days, cv.Docs, cv.Bytes)
+		}
+		return
+	}
+	t.Fatal("no endpoint category")
 }

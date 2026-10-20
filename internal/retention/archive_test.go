@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -191,7 +194,7 @@ func (x xorReader) Read(p []byte) (int, error) {
 func TestArchiveSealHook(t *testing.T) {
 	dir := t.TempDir()
 	sealed := &Archive{Dir: dir, Encryption: "xor-test",
-		Seal:   func(w io.Writer) (io.WriteCloser, error) { return xorWriter{w}, nil },
+		Seal:   func(w io.Writer) (io.WriteCloser, []string, error) { return xorWriter{w}, []string{"k1"}, nil },
 		Unseal: func(r io.Reader) (io.Reader, error) { return xorReader{r}, nil }}
 	mem := NewMemory()
 	name := "signalith-endpoint-2026.07.02"

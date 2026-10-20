@@ -1,0 +1,4 @@
+{"rule": "0877ed01-da46-4c49-8476-d49cdd80dfa7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/sbin/screencapture","path":"/usr/sbin/screencapture"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","path":"/usr/local/bin/helper"}}
+]}

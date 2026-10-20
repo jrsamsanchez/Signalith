@@ -1,0 +1,6 @@
+{"rule": "1ab3c5ed-5baf-417b-bb6b-78ca33f6c3df", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"ModifyInstanceAttribute","eventSource":"ec2.amazonaws.com","requestParameters.attribute":"userData"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"ec2.amazonaws.com","requestParameters.attribute":"userData"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"ModifyInstanceAttribute","requestParameters.attribute":"userData"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"ModifyInstanceAttribute","eventSource":"ec2.amazonaws.com"}}
+]}

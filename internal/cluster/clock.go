@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cluster lets several Signalith servers share one OpenSearch.
 // Each server keeps an identity in its state folder, writes a heartbeat
 // document into <prefix>_runtime every 10 seconds, and the servers that
@@ -95,6 +98,11 @@ type Timing struct {
 	// it needs them now; reading the archive folder on a network share
 	// that does not answer must not hold it up.
 	FilesWait time.Duration
+	// YieldEvery is how often at most the server running the background
+	// jobs hands them to a server that runs a newer version, and
+	// YieldSettle how long that server must have been ready first (and
+	// how long the holder must have held them).
+	YieldEvery, YieldSettle time.Duration
 }
 
 // DefaultTiming is the timing servers run with.
@@ -103,6 +111,7 @@ var DefaultTiming = Timing{
 	Renew: 10 * time.Second, Retry: 2 * time.Second, Fence: 20 * time.Second, Takeover: 30 * time.Second,
 	Watch: 2 * time.Second, ReleaseWait: 60 * time.Second, PreferWait: 10 * time.Second,
 	ClockCheck: time.Minute, FilesCheck: 15 * time.Second, FilesWait: 5 * time.Second,
+	YieldEvery: 10 * time.Minute, YieldSettle: 60 * time.Second,
 }
 
 // MaxClockOffset is how far a server's clock may be off OpenSearch's

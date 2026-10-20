@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -24,6 +27,8 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -34,18 +39,39 @@ const clusterUsage = `usage:
   signalith cluster status         [-c file] [-json]          this server's place in the cluster, the keyring and any problem
   signalith cluster found          [-c file] [-force] [-name n]   make the servers sharing this OpenSearch a cluster, from this server's files
   signalith cluster export         [-c file] [-o file]        the shared settings as YAML (stored passwords stay encrypted)
+  signalith cluster export -settings [-c file] [-o file] [-server s]   the settings the servers share, as a file cluster apply takes
+  signalith cluster export --to-files <dir> [-c file] [-server s]   the shared settings as the files of a server on its own, for a downgrade
+  signalith cluster export -retire [--to-files <dir>] [-c file] [-yes] [-force]   with every server stopped, put the shared settings aside for a downgrade
+  signalith cluster apply          [-c file] -f file [-yes]   change the settings the servers share to those of a file
   signalith cluster import         [-c file] -from-cache      write this server's copy of the shared settings back to OpenSearch
   signalith cluster export-key     [-c file] [-o file]        the cluster key, encrypted with a passphrase, for another server
   signalith cluster import-key     [-c file] <file>           give this server the cluster key that export-key wrote
   signalith cluster reset-key      [-c file] [-yes]           make a new cluster key when every copy of it is lost
   signalith cluster accept-restore [-c file] [-yes]           accept the shared settings after an OpenSearch snapshot was restored
+  signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
+  signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
+  signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
+  signalith cluster token          [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+                                   a join token, which adds a server with signalith join
+  signalith cluster token          [-c file] -revoke <id>   cancel a join token
+  signalith cluster approve        [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
+  signalith cluster rotate-key     [-c file] [-yes]           give the cluster a new key; copies of the old one open nothing new
+  signalith cluster remove         [-c file] [-yes] [-no-rotate] <server>   take a drained or stopped server out of the cluster
+  signalith cluster leave          [-c file] [-yes] [-no-rotate]   take this stopped server out of the cluster
+  signalith cluster new-identity   [-c file] [-yes]           make this stopped server a new one (a cloned computer or copied folder)
+  signalith cluster opensearch-ca  [-c file] [-json]          OpenSearch's certificate authority, which gives each server its own certificate
+  signalith cluster opensearch-ca import [-c file] [-cert file] <root-ca-key.pem>   hand OpenSearch's certificate authority to the cluster
+  signalith cluster opensearch-ca revoke [-c file] [-yes] <server>   end a server's OpenSearch access at once
+  signalith cluster opensearch-ca crl    [-c file] [-o file]   the revocation list OpenSearch checks, for its nodes
 
 The servers that share one OpenSearch keep the settings they share in it
 (the <prefix>_config index), signed with the cluster key that each of them
 keeps in its state folder. The server that runs the background jobs makes
 the cluster by itself; these commands are for when something went wrong.
 Only found and reset-key change the cluster without a running server's
-help; the others may run while the server runs.
+help; the others may run while the server runs. apply changes the shared
+settings as a Settings page does: what applies at once does so on every
+server within a few seconds.
 `
 
 // cmdCluster runs signalith cluster.
@@ -61,8 +87,20 @@ type clusterCLI struct {
 	out    io.Writer
 	errOut io.Writer
 	by     string
-	// auth holds the users' documents of the runtime made last.
+	// auth holds the users' documents of the runtime made last, and docs
+	// its documents of the shared content and settings.
 	auth *clusterauth.Docs
+	docs *clustercfg.Docs
+	// tls holds the cluster's certificate authority of the same runtime.
+	tls *sharedTLS
+	// join holds the join tokens of the same runtime, and reports its
+	// migration reports.
+	join    *clusterjoin.Tokens
+	reports *clustercfg.Reports
+	// osca holds OpenSearch's certificate authority of the same runtime.
+	osca *clusterpki.OSCA
+	// shared is every collection of shared documents of the same runtime.
+	shared sharedDocs
 }
 
 // runCluster is cmdCluster with its input and output.
@@ -75,14 +113,31 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	flags.Usage = func() { fmt.Fprint(errOut, clusterUsage) }
 	path := configFlag(flags)
 	asJSON := flags.Bool("json", false, "print as JSON")
-	force := flags.Bool("force", false, "found even though a server that may run the background jobs seems up")
+	force := flags.Bool("force", false, "found: even though a server that may run the background jobs seems up; export -retire: on a server that never exported its files")
 	name := flags.String("name", "", "the cluster's name (default Signalith)")
 	outFile := flags.String("o", "", "write to this file instead of the standard output")
 	fromCache := flags.Bool("from-cache", false, "write this server's copy of the shared settings (cache.enc) back")
 	yes := flags.Bool("yes", false, "do it without asking")
+	settingsOnly := flags.Bool("settings", false, "export the settings the servers share, as a file signalith cluster apply takes")
+	server := flags.String("server", "", "with -settings, only this server's own settings; with --to-files, whose own settings to write (a name or node id)")
+	toFiles := flags.String("to-files", "", "export: write the shared settings as the files of a server on its own, in this new folder")
+	retire := flags.Bool("retire", false, "export: with every server stopped, put the shared settings aside for a downgrade")
+	file := flags.String("f", "", "the file of settings to apply")
+	var tok tokenOptions
+	flags.StringVar(&tok.platform, "platform", "", "token: the new server's platform, linux, windows or docker")
+	flags.StringVar(&tok.role, "role", "", "token: scanner adds a server that only scans its network zone and never runs the background jobs; empty adds a cluster server")
+	flags.DurationVar(&tok.ttl, "ttl", clusterjoin.DefaultTTL, "token: how long the token works (at most 24h)")
+	flags.StringVar(&tok.note, "note", "", "token: a note shown with the token on the Servers page")
+	flags.StringVar(&tok.nodeURL, "node-url", "", "token: the address the other servers will reach the new server at")
+	flags.StringVar(&tok.url, "url", "", "token: this server's https address the new server reaches (default server.node_url, else server.public_url)")
+	flags.StringVar(&tok.revoke, "revoke", "", "token: cancel the join token with this id")
+	fingerprint := flags.String("fingerprint", "", "approve: the fingerprint the waiting server shows, which must match")
+	noRotate := flags.Bool("no-rotate", false, "with remove or leave, do not rotate the cluster key")
+	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
-	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore":
+	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca",
+		"rotate-key", "remove", "leave", "new-identity", "token", "approve":
 	default:
 		return fmt.Errorf("unknown cluster command %q\n\n%s", sub, clusterUsage)
 	}
@@ -95,6 +150,10 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	x := &clusterCLI{c: c, log: log, in: in, out: out, errOut: errOut, by: cliUser()}
+	if sub == "new-identity" {
+		// The server is stopped, and OpenSearch is not needed.
+		return newIdentity(c.StateDir(), out, errOut, func(q string) error { return x.confirm(q, *yes) })
+	}
 	if x.self, err = cluster.ReadIdentity(c.StateDir()); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("this server has no identity yet (no node.id in %s): start it once with signalith serve, or check SIGNALITH_STATE_DIR", c.StateDir())
@@ -110,7 +169,18 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	case "found":
 		return x.found(ctx, *force, *name)
 	case "export":
+		if *toFiles != "" || *retire {
+			return x.exportToFiles(ctx, *toFiles, *server, *retire, *yes, *force)
+		}
+		if *settingsOnly {
+			return x.exportSettings(ctx, *outFile, *server)
+		}
 		return x.export(ctx, *outFile)
+	case "apply":
+		if *file == "" {
+			return errors.New("usage: signalith cluster apply [-c file] -f file [-yes]")
+		}
+		return x.apply(ctx, *file, *yes)
 	case "import":
 		if !*fromCache {
 			return errors.New("signalith cluster import needs -from-cache: it writes this server's copy of the shared settings back to OpenSearch")
@@ -127,6 +197,34 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return x.resetKey(ctx, *yes)
 	case "accept-restore":
 		return x.acceptRestore(ctx, *yes)
+	case "tls":
+		return x.tlsCommand(ctx, pos, *asJSON, *yes)
+	case "upgrade-check":
+		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
+	case "token":
+		if len(pos) != 0 {
+			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json], or signalith cluster token -revoke <id>")
+		}
+		if tok.revoke != "" {
+			return x.revokeToken(ctx, tok.revoke)
+		}
+		return x.token(ctx, tok, *asJSON)
+	case "approve":
+		if len(pos) > 1 {
+			return errors.New("usage: signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]")
+		}
+		return x.approve(ctx, strings.Join(pos, ""), *fingerprint, *yes)
+	case "rotate-key":
+		return x.rotateKey(ctx, *yes)
+	case "remove":
+		if len(pos) != 1 {
+			return errors.New("usage: signalith cluster remove [-yes] [-no-rotate] <server name or node id>")
+		}
+		return x.removeCLI(ctx, pos[0], *noRotate, *yes)
+	case "leave":
+		return x.leave(ctx, *noRotate, *yes)
+	case "opensearch-ca":
+		return x.osCACommand(ctx, pos, *caCert, *outFile, *asJSON, *yes)
 	}
 	return nil
 }
@@ -155,9 +253,8 @@ func (x *clusterCLI) keyStore() shared.KeyStore {
 // runtime returns a runtime that has looked for the cluster once.
 // readOnly writes nothing to OpenSearch or the state folder.
 func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
-	docs := clustercfg.NewDocs()
-	x.auth = clusterauth.NewDocs()
-	docs.UseAuth(x.auth)
+	d := newSharedDocs(clusterauth.NewDocs())
+	x.docs, x.auth, x.tls, x.osca, x.join, x.reports, x.shared = d.docs, d.auth, d.tls, d.osca, d.join, d.reports, d
 	files := x.files()
 	var made atomic.Pointer[shared.Runtime]
 	files.NodeCfg = func() *shared.Doc[shared.NodeCfg] {
@@ -175,14 +272,13 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 		},
 		// A founding from the command line imports this server's feeds,
 		// retention policies and users, as the server's own would.
-		Content: func(h *shared.Hub) {
-			docs.Track(h)
-			x.auth.Track(h)
-		},
-		Importers: clustercfg.Importers(docs, files),
+		Content:   d.track,
+		Importers: sharedImporters(d, files),
+		Version:   version,
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
+	x.auth.Tenants = rt.Tenants
 	rt.Use(x.cl, x.prefix(), x.c.Keyring())
 	return rt
 }
@@ -253,7 +349,7 @@ func (x *clusterCLI) peers(ctx context.Context, watch time.Duration) ([]shared.P
 			live = live && time.Since(hb.HeartbeatAt) < cliHeartbeatAge
 		}
 		p := shared.Peer{NodeID: hb.NodeID, Name: hb.Name, Live: live, Eligible: hb.LeaderEligible,
-			Leader: hb.Leader, MaxRev: hb.MaxRev, LevelMax: hb.LevelMax, Users: hb.FilesFingerprint.Users}
+			Leader: hb.Leader, MaxRev: hb.MaxRev, LevelMax: hb.LevelMax, Users: hb.FilesFingerprint.Users, Version: hb.Version}
 		if !live {
 			p.SeenAgo = max(time.Since(hb.HeartbeatAt), 0)
 		}
@@ -551,6 +647,10 @@ func (x *clusterCLI) exportKey(ctx context.Context, outFile string) error {
 }
 
 func (x *clusterCLI) importKey(ctx context.Context, file string) error {
+	// No second member on an OpenSearch without https and sign-in.
+	if err := joinSecured(x.c); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(file)
 	if err != nil {
 		return err
@@ -569,6 +669,12 @@ func (x *clusterCLI) importKey(ctx context.Context, file string) error {
 	x.audit("imported a cluster key", "cluster_key", k.ID())
 	rt := x.runtime(true, "")
 	m, _ := rt.Mode()
+	if m == shared.ModeMember && rt.RemovedSelf() {
+		// Given the key again on purpose: it may add itself back.
+		if err := rt.ForgetRemoved(ctx, x.self.NodeID); err != nil {
+			fmt.Fprintf(x.errOut, "warning: this server was removed from the cluster before, and that could not be undone: %v\n", err)
+		}
+	}
 	switch {
 	case rt.Status().ClusterKID == k.ID() && (m == shared.ModeMember || m == shared.ModeImporting):
 		fmt.Fprintf(x.out, "Kept cluster key %s in this server's state folder. The shared settings check out with it; a running server joins within seconds.\n", k.ID())

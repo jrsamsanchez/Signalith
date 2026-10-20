@@ -1,0 +1,4 @@
+{"rule": "980a7598-1e7f-4962-9372-2d754c930d0e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"v.Compute.PacketMirrorings.Insert"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

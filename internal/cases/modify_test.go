@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cases
 
 import (
@@ -5,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -153,5 +157,60 @@ func TestCreateNeverReplacesACaseInEitherStore(t *testing.T) {
 				t.Errorf("case = %+v %v", c, err)
 			}
 		})
+	}
+}
+
+// TestModifyWaitsForRefreshOnlyForTheList: a change the cases list shows
+// or searches by waits until the case can be searched again; a timeline
+// entry, which the list does not show, is answered at once, so many
+// analysts writing notes in one case are not each held up for a refresh.
+func TestModifyWaitsForRefreshOnlyForTheList(t *testing.T) {
+	ctx := context.Background()
+	fake := ostest.New(t)
+	s := NewOpenSearch(store.New(store.Config{URL: fake.URL}), "sig")
+	if err := s.Create(ctx, &Case{ID: "c1", Title: "t", Status: findings.StatusNew}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	status := findings.StatusInProgress
+	for _, tc := range []struct {
+		name   string
+		change func(c *Case) (bool, error)
+		wait   bool
+	}{
+		{"note", comment("looked at the VPN logs"), false},
+		{"pinned event", func(c *Case) (bool, error) {
+			_, err := c.AddEntry(Entry{Kind: KindEvent, Event: map[string]any{"host": "web01"}}, "ana", now)
+			return err == nil, err
+		}, false},
+		{"status", func(c *Case) (bool, error) { return c.Apply(Update{Status: &status}, "ana", now), nil }, true},
+		{"entity", func(c *Case) (bool, error) { return c.AddEntity(Entity{Field: "host", Value: "web01"}), nil }, true},
+		{"finding", func(c *Case) (bool, error) {
+			return c.AddFinding(&findings.Finding{ID: "f1", Title: "Brute force", Severity: "low"}, "ana", now)
+		}, true},
+	} {
+		fake.Requests()
+		if _, err := s.Modify(ctx, "c1", tc.change); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		var puts, waited int
+		for _, r := range fake.Requests() {
+			if strings.HasPrefix(r, http.MethodPut+" /sig_cases/_doc/c1") {
+				puts++
+				if strings.Contains(r, "refresh=wait_for") {
+					waited++
+				}
+			}
+		}
+		if puts != 1 || (waited == 1) != tc.wait {
+			t.Errorf("%s: %d writes, %d waited for a refresh; want 1, waiting %v", tc.name, puts, waited, tc.wait)
+		}
+	}
+	c, err := s.Get(ctx, "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Entries) != 3 || c.Status != status || len(c.Findings) != 1 {
+		t.Errorf("case = %d entries, %s, findings %v", len(c.Entries), c.Status, c.Findings)
 	}
 }

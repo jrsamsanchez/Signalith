@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -66,7 +69,7 @@ func loadConfig(t *testing.T, extra string) *config.Config {
 	return c
 }
 
-const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    plaintext_ingest: deny\n"
+const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  agent_listen: 0.0.0.0:7779\n  tls:\n    mode: auto\n    plaintext_ingest: deny\n"
 
 // goodFacts are the facts of a server set up safely: HTTPS with
 // Signalith's own strict certificate authority, an OpenSearch that
@@ -74,6 +77,9 @@ const httpsAuto = "server:\n  listen: 0.0.0.0:8080\n  tls:\n    mode: auto\n    
 func goodFacts(t *testing.T, extra string) *Facts {
 	t.Helper()
 	c := loadConfig(t, httpsAuto+"opensearch:\n  url: https://127.0.0.1:9200\n  username: signalith\n  password: "+sentinelOS+"\n  index_prefix: signalith\n"+extra)
+	if c.Auth.MFARequired == "" {
+		c.Auth.MFARequired = "admins"
+	}
 	ca := &tlsauto.CAInfo{Scope: tlsauto.ScopeStandard, Fingerprint: "AB:12", Subject: "Signalith Local CA (siem-1)",
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
@@ -399,6 +405,76 @@ func TestCAScope(t *testing.T) {
 				t.Errorf("%q", c.Details)
 			}
 		}},
+		// The certificate authority all servers share can't be changed
+		// yet: no step says to make a new one, and no button leads there.
+		{name: "cluster's, unconstrained", set: func(f *Facts) {
+			f.Runtime.ClusterServer, f.TLS.ClusterCA, f.TLS.CA.Scope = "siem-1", true, "unconstrained"
+		}, state: Attention, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Fix)
+			if len(c.Details) != 1 || !strings.Contains(c.Details[0], "All the cluster's servers share") {
+				t.Errorf("%q", c.Details)
+			}
+		}},
+		{name: "cluster's, mismatch", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.ScopeSetup = true, "strict" }, state: Attention,
+			line: "You chose a strict certificate authority, but the one all servers share is standard.",
+			fix:  func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "cluster's, standard", set: func(f *Facts) { f.TLS.ClusterCA = true }, state: Good, fix: func(t *testing.T, c *Check) {
+			noChange(t, c.Tip)
+			if strings.Contains(strings.Join(c.Tip.Steps, " "), "from this server") {
+				t.Errorf("tip %q", c.Tip.Steps)
+			}
+		}},
+	})
+}
+
+// noChange checks a fix offers no change of the cluster's certificate
+// authority: no button, and no step to make a new one.
+func noChange(t *testing.T, f *Fix) {
+	t.Helper()
+	if f == nil {
+		t.Fatal("no fix")
+	}
+	text := strings.Join(f.Steps, " ")
+	if f.Action != "" || strings.Contains(text, "Make a new") || strings.Contains(text, "switch to") {
+		t.Errorf("fix %+v", f)
+	}
+}
+
+func TestClusterCACertificate(t *testing.T) {
+	runCases(t, "transit.certificate", []checkCase{
+		{name: "outside", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.Outside = true, []string{"siem.example.com"} }, state: Attention,
+			fix: func(t *testing.T, c *Check) { noChange(t, c.Fix) }},
+		{name: "expiring", set: func(f *Facts) { f.TLS.ClusterCA, f.TLS.CA.NotAfter = true, now.AddDate(0, 3, 0) }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				noChange(t, c.Fix)
+				if !strings.Contains(c.Line, "all servers share expires") {
+					t.Errorf("line %q", c.Line)
+				}
+			}},
+	})
+}
+
+func TestAgentPort(t *testing.T) {
+	unset := func(f *Facts) { f.Config.Server.AgentListen = ""; f.Config.Validate() }
+	runCases(t, "transit.agent_port", []checkCase{
+		{name: "own port", state: Good, line: "Agents send to a port of their own (7779), and the web port turns them away."},
+		{name: "off", set: func(f *Facts) { f.Config.Server.AgentListen = "off" }, state: ""},
+		{name: "upgraded", set: unset, state: Attention,
+			line: "The web port (8080) still takes agents, besides the agent port (7779), because Agent address is not set, as on servers installed before 0.3. The web page then has to be open to every computer that runs an agent.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "server.agent_listen" || len(c.Fix.Steps) != 3 || c.Fix.Steps[2] != "Then set Agent address to 0.0.0.0:7779, so the web port stops taking agents." ||
+					c.Fix.Page == nil || c.Fix.Page.ID != "data" || c.Fix.Docs == nil || c.Fix.Docs.File != "sending-data.md" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "7779 taken", set: func(f *Facts) { f.Config.Syslog.TCP = "0.0.0.0:7779"; unset(f) }, state: Attention,
+			line: "Agents send to the web port (8080), since Agent address is not set and port 7779 is taken, so the web page has to be open to every computer that runs an agent."},
+		{name: "env", set: func(f *Facts) { unset(f); f.SettingEnv["server.agent_listen"] = "SIGNALITH_AGENT_LISTEN" }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.LockedBy != "SIGNALITH_AGENT_LISTEN" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
 	})
 }
 
@@ -779,7 +855,7 @@ func TestDisk(t *testing.T) {
 
 func TestArchives(t *testing.T) {
 	arch := func(f *Facts) {
-		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}}
+		f.Archive = &ArchiveFacts{Dir: "/var/lib/signalith/archive", Count: 120, Bytes: 3 << 30, Disk: Disk{Kind: DiskEncrypted}, Perm: &Perm{}, Encrypting: true, Plain: 120}
 	}
 	runCases(t, "rest.archives", []checkCase{
 		{name: "none", state: ""},
@@ -802,9 +878,20 @@ func TestArchives(t *testing.T) {
 			}
 		}},
 		{name: "plain disk", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain }, state: Attention,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Signalith doesn't encrypt archives itself."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encrypted", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 0 }, state: Good,
+			line: "120 archived days (3 GB) in /var/lib/signalith/archive are encrypted, readable only by Signalith."},
+		{name: "some plain", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Plain = 20 }, state: Attention,
+			line: "20 of the 120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
+		{name: "encryption off", set: func(f *Facts) { arch(f); f.Archive.Disk.Kind = DiskPlain; f.Archive.Encrypting = false }, state: Attention,
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive, on a disk that isn't encrypted. Archive encryption is turned off (retention.encrypt_archives: false).",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 2 {
+					t.Errorf("%q", c.Fix.Steps)
+				}
+			}},
 		{name: "share", set: func(f *Facts) { arch(f); f.Archive.Disk = Disk{Kind: DiskNetwork, Source: "nas:/a"} }, state: Unknown,
-			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted."},
+			line: "120 archived days (3 GB) are kept as plain files in /var/lib/signalith/archive. Signalith can't see whether the share under them is encrypted. They were written before Signalith encrypted archives; new archives are encrypted."},
 		{name: "many", set: func(f *Facts) { arch(f); f.Archive.Count, f.Archive.More = archiveMaxFiles, true }, state: Good,
 			fix: func(t *testing.T, c *Check) {
 				if !strings.HasPrefix(c.Line, "100,000+ archived days") {
@@ -1083,14 +1170,45 @@ func TestDirectory(t *testing.T) {
 
 func TestSessions(t *testing.T) {
 	runCases(t, "accounts.sessions", []checkCase{
-		// Keep me signed in skips the idle limit (see auth.Sessions).
-		{name: "default", state: Good, line: "People are signed out after 12 hours without use, unless they choose Keep me signed in, which keeps them signed in for up to 7 days."},
-		{name: "long", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention, line: "People stay signed in for up to 3 days without using Signalith.",
+		// Keep me signed in skips the idle limit, but not the maximum age
+		// (see auth.Sessions).
+		{name: "default", state: Good, line: "People are signed out after 1 hour without use, unless they choose Keep me signed in, and every sign-in ends after 1 day."},
+		{name: "long idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "3d" }, state: Attention,
+			line: "People stay signed in for up to 3 days without using Signalith. NIST SP 800-63B (AAL2) asks for at most 1 hour.",
 			fix: func(t *testing.T, c *Check) {
-				if c.Fix.Setting != "auth.session_timeout" {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 1 {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+		{name: "just over an hour idle", set: func(f *Facts) { f.Config.Auth.SessionTimeout = "2h" }, state: Attention},
+		{name: "long max age", set: func(f *Facts) { f.Config.Auth.SessionMaxAge = "7d" }, state: Attention,
+			line: "A sign-in lasts up to 7 days before people must sign in again. NIST SP 800-63B (AAL2) asks for at most 24 hours.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_max_age" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "both long", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "12h", "30d" }, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.session_timeout" || len(c.Fix.Steps) != 2 {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "stricter", set: func(f *Facts) { f.Config.Auth.SessionTimeout, f.Config.Auth.SessionMaxAge = "15m", "8h" }, state: Good,
+			line: "People are signed out after 15 minutes without use, unless they choose Keep me signed in, and every sign-in ends after 8 hours."},
+	})
+}
+
+func TestMFACheck(t *testing.T) {
+	runCases(t, "accounts.mfa", []checkCase{
+		{name: "off", set: func(f *Facts) { f.Config.Auth.MFARequired = "" }, state: Attention, line: "Admins can sign in with a password alone.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "auth.mfa_required" || c.Fix.Docs.Anchor != "two-step-sign-in" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "admins", set: func(f *Facts) { f.Config.Auth.MFARequired = "admins" }, state: Good, line: "Admins who sign in with a password also enter a code from an authenticator app."},
+		{name: "everyone", set: func(f *Facts) { f.Config.Auth.MFARequired = "everyone" }, state: Good, line: "Everyone who signs in with a password also enters a code from an authenticator app."},
 	})
 }
 
@@ -1107,6 +1225,20 @@ func TestAgentTokens(t *testing.T) {
 			t.Errorf("%+v", c.Fix)
 		}
 	}
+	runCases(t, "accounts.api_tokens", []checkCase{
+		{name: "none", state: ""},
+		{name: "none active", set: func(f *Facts) { f.APITokens = &APITokenFacts{} }, state: ""},
+		{name: "every one expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2} }, state: Good,
+			line: "Every API token expires (2 active)."},
+		{name: "one never expires", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"Claude Desktop"}} }, state: Attention,
+			line: "1 API token never expires: Claude Desktop.", fix: func(t *testing.T, c *Check) {
+				if c.Fix.Page == nil || c.Fix.Page.ID != "apitokens" || c.Fix.Docs == nil || c.Fix.Docs.Anchor != "api-tokens" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "two never expire", set: func(f *Facts) { f.APITokens = &APITokenFacts{Active: 2, NeverExpire: []string{"A", "B"}} }, state: Attention,
+			line: "2 API tokens never expire: A and B."},
+	})
 	runCases(t, "accounts.agent_tokens", []checkCase{
 		{name: "none", state: ""},
 		{name: "none, read", set: func(f *Facts) { f.AgentTokens = &AgentTokenFacts{Loaded: true} }, state: ""},
@@ -1268,6 +1400,31 @@ func TestOpenSearchRole(t *testing.T) {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
+	})
+}
+
+func TestOpenSearchCRL(t *testing.T) {
+	later := func(f *Facts) time.Time { return f.Now.Add(5 * 365 * 24 * time.Hour) }
+	runCases(t, "accounts.opensearch_crl", []checkCase{
+		{name: "not set", state: ""},
+		{name: "good", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once."},
+		{name: "names some", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Revoked: 2, NextUpdate: later(f)} }, state: Good,
+			line: "OpenSearch checks client certificates against a revocation list Signalith keeps, so a removed server's certificate stops working at once. It names 2 certificates."},
+		{name: "missing", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Missing: true} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem is missing. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "opensearch.crl_file" || c.Fix.Docs.Anchor != "ending-a-servers-opensearch-access-at-once" || !strings.Contains(c.Fix.Steps[0], "up -d") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "expired", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", Err: "it expired on 2026-01-01"} }, state: Risk,
+			line: "OpenSearch's revocation list /crl/crl.pem cannot be used: it expired on 2026-01-01. While OpenSearch checks it, it refuses every certificate sign-in, Signalith's included."},
+		{name: "expires soon", set: func(f *Facts) { f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: f.Now.Add(10 * 24 * time.Hour)} }, state: Attention},
+		{name: "behind", set: func(f *Facts) {
+			f.CRL = &CRLFacts{File: "/crl/crl.pem", NextUpdate: later(f)}
+			f.Runtime = &RuntimeFacts{CRLProblem: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."}
+		}, state: Risk, line: "OpenSearch's revocation list /crl/crl.pem does not name 1 revoked certificate yet, so it still opens OpenSearch."},
 	})
 }
 

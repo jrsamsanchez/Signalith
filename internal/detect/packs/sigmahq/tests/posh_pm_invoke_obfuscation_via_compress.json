@@ -1,0 +1,4 @@
+{"rule": "7034cbbb-cc55-4dc2-8dad-36c0b942e8f1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"text.encoding]::asciinew-objectsystem.io.compression.deflatestreamreadtoend"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

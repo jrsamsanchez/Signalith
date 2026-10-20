@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sample
 
 import (
@@ -89,8 +92,11 @@ type Loader struct {
 	// NodeID is this server's node ID ("" for the command). A job this
 	// node recorded from another process is known to have stopped.
 	NodeID string
-	Now    func() time.Time
-	Log    *slog.Logger
+	// URLQuery returns ingest.url_query in use (keep when nil), which the
+	// sample's events follow as every other event does.
+	URLQuery func() string
+	Now      func() time.Time
+	Log      *slog.Logger
 
 	// clock and sleep stand in for the monotonic clock and waiting, in
 	// tests.
@@ -243,6 +249,9 @@ func (l *Loader) Load(ctx context.Context, size Size, prog ProgressFn) (res *Sta
 	// It is also the only pipeline that marks events as sample data:
 	// every other one removes the marker from what senders send.
 	pipe := &ingest.Pipeline{Store: l.Bulk, Prefix: l.Prefix, MaxEventAge: MaxEventAge, Now: l.now, Log: l.Log, SampleMark: d.ID}
+	if l.URLQuery != nil {
+		pipe.SetURLQuery(l.URLQuery())
+	}
 	const chunk = 2000
 	total := len(d.Events)
 	var firstErr string
@@ -990,6 +999,25 @@ func (l *Loader) EventsSince(ctx context.Context, d time.Duration) int {
 		return -1
 	}
 	return out.Count
+}
+
+// AnyEventSince reports whether at least one event arrived in the last d:
+// true or false, or an error when OpenSearch could not tell. It stops at
+// the first event found, so it stays quick on a busy install.
+func (l *Loader) AnyEventSince(ctx context.Context, d time.Duration) (bool, error) {
+	if l.OS == nil {
+		return false, errNoDocs
+	}
+	var out struct {
+		Count int `json:"count"`
+	}
+	body := map[string]any{"query": map[string]any{"range": map[string]any{"@timestamp": map[string]any{
+		"gte": l.now().Add(-d).UTC().Format(time.RFC3339)}}}}
+	path := "/" + url.PathEscape(l.Prefix+"-*") + "/_count?ignore_unavailable=true&allow_no_indices=true&terminate_after=1"
+	if err := l.OS.Do(ctx, "POST", path, body, &out); err != nil {
+		return false, err
+	}
+	return out.Count > 0, nil
 }
 
 // CannotFire lists the built-in detections the load did not run (both are

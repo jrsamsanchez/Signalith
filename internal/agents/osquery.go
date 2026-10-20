@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
@@ -39,8 +42,9 @@ const (
 
 // OsqueryFlags returns the flags that make osquery use Signalith as its
 // management server: hostPort is where it connects (and the name it checks
-// the certificate for), ca the CA certificate file ("" to use the
-// system's).
+// the certificate for), secretPath the enroll secret file and ca the CA
+// certificate file ("" leaves either out: osquery then uses the system's
+// authorities).
 func OsqueryFlags(platform, hostPort, secretPath, ca string) string {
 	flags := []string{
 		"--tls_hostname=" + hostPort,
@@ -48,8 +52,10 @@ func OsqueryFlags(platform, hostPort, secretPath, ca string) string {
 	if ca != "" {
 		flags = append(flags, "--tls_server_certs="+ca)
 	}
+	if secretPath != "" {
+		flags = append(flags, "--enroll_secret_path="+secretPath)
+	}
 	flags = append(flags,
-		"--enroll_secret_path="+secretPath,
 		"--enroll_tls_endpoint="+osqueryEnroll,
 		// One record per machine, even after osquery is reinstalled.
 		"--host_identifier=uuid",
@@ -75,8 +81,51 @@ func OsqueryFlags(platform, hostPort, secretPath, ca string) string {
 	} else {
 		flags = append(flags, "--enable_file_events=true")
 	}
+	// Program starts on macOS, from EndpointSecurity (es_process_events),
+	// which osquery leaves off unless asked.
+	if platform == "darwin" {
+		flags = append(flags, "--disable_endpointsecurity=false")
+	}
 	flags = append(flags, "--utc")
 	return strings.Join(flags, "\n") + "\n"
+}
+
+// osqueryHostPort is the host:port osquery connects to and checks the
+// certificate for. osquery checks the server's certificate against the
+// name it connects to, with no way to check another name: an IP address
+// works only with Signalith's own CA (ownCA), which puts that address in
+// the certificate and vouches for nothing else.
+func osqueryHostPort(host, port string, ownCA bool) (string, error) {
+	if port == "" {
+		port = "443"
+	}
+	if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !ownCA {
+		return "", fmt.Errorf("%w: osquery checks the certificate against the address it connects to, and the certificate at %s comes from a certificate authority "+
+			"that also vouches for other computers. Use a host name the certificate covers as the address", ErrNoNameToCheck, host)
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return host + ":" + port, nil
+}
+
+// ManagedOsqueryFlags are the flags the Signalith Agent gives the osquery
+// it runs on platform, for an agent that reaches Signalith at
+// o.ServerURL: OsqueryFlags without the files, which the agent names
+// itself (the enroll secret is its token file).
+func ManagedOsqueryFlags(platform string, o Options) (string, error) {
+	u, err := ParseServerURL(o.ServerURL)
+	if err != nil {
+		return "", fmt.Errorf("server address %q: %w", o.ServerURL, err)
+	}
+	if u.Scheme != "https" {
+		return "", errors.New("osquery only talks to its management server over HTTPS; use an https:// address")
+	}
+	hostPort, err := osqueryHostPort(u.Hostname(), u.Port(), o.OwnCA)
+	if err != nil {
+		return "", err
+	}
+	return OsqueryFlags(platform, hostPort, "", ""), nil
 }
 
 func generateOsquery(o Options) (*Agent, error) {
@@ -101,23 +150,10 @@ func generateOsquery(o Options) (*Agent, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown platform %q; use linux, windows or darwin", platform)
 	}
-	host, port := u.Hostname(), u.Port()
-	if port == "" {
-		port = "443"
+	hostPort, err := osqueryHostPort(u.Hostname(), u.Port(), o.OwnCA)
+	if err != nil {
+		return nil, err
 	}
-	// osquery checks the server's certificate against the name it
-	// connects to, with no way to check another name: an IP address works
-	// only with Signalith's own CA, which puts that address in the
-	// certificate and vouches for nothing else.
-	if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !o.OwnCA {
-		return nil, fmt.Errorf("%w: osquery checks the certificate against the address it connects to, and the certificate at %s comes from a certificate authority "+
-			"that also vouches for other computers. Use a host name the certificate covers as the address", ErrNoNameToCheck, host)
-	}
-	hostPort := host
-	if strings.Contains(host, ":") {
-		hostPort = "[" + host + "]"
-	}
-	hostPort += ":" + port
 
 	a := &Agent{OS: "osquery", ServerURL: u.Scheme + "://" + u.Host, ServerLoopback: IsLoopback(u)}
 	ca := strings.TrimSpace(o.CA)
@@ -150,7 +186,7 @@ func generateOsquery(o Options) (*Agent, error) {
 		a.ConfigStep = len(a.Steps)
 		a.Steps = append(a.Steps, "Run it as root from the folder you saved it in: sudo sh signalith-osquery-setup.sh")
 		if platform == "darwin" {
-			a.Steps = append(a.Steps, "Give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk Access, add /opt/osquery/lib/osquery.app), so it can watch files and read inventory.")
+			a.Steps = append(a.Steps, "Give osqueryd Full Disk Access (System Settings, Privacy & Security, Full Disk Access, add /opt/osquery/lib/osquery.app), so it can watch files, see programs start and read inventory.")
 		}
 	}
 	a.Steps = append(a.Steps, "The host appears on the Endpoints page within a minute, and its inventory and file changes in Search soon after.")

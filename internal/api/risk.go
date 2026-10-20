@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -13,6 +16,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
 func (s *Server) routeRisk(api *router) {
@@ -70,6 +74,11 @@ func (s *Server) handleGetLookup(w http.ResponseWriter, r *http.Request) {
 		resp["items"] = list[:min(len(list), 1000)]
 		resp["sample"] = len(oi)
 	}
+	// Shared by the servers of a cluster: the version to send back in
+	// If-Match with an upload.
+	if s.Assets.Shared() {
+		resp["shared"], resp["etag"] = true, s.Assets.ETag(kind)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -90,23 +99,24 @@ func (s *Server) handlePutLookup(w http.ResponseWriter, r *http.Request) {
 		uploadFailed(w, err)
 		return
 	}
-	var n int
-	if kind == "assets" {
-		n, err = s.Assets.SetAssets(data)
-	} else {
-		n, err = s.Assets.SetIdentities(data)
-	}
+	n, err := s.Assets.SetIf(r.Context(), userOf(r), kind, data, ifMatch(r))
 	var pe *assets.ParseError
 	if errors.As(err, &pe) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "the file has problems; nothing was saved", "lines": pe.Lines})
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		if !sharedError(w, err) {
+			writeError(w, http.StatusBadRequest, err)
+		}
 		return
 	}
 	s.Log.Info("lookup list replaced", "list", kind, "entries", n, "by", userOf(r))
-	writeJSON(w, http.StatusOK, map[string]any{"count": n})
+	resp := map[string]any{"count": n}
+	if s.Assets.Shared() {
+		resp["etag"] = s.Assets.ETag(kind)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleLookupContext(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +179,7 @@ func (s *Server) handleRiskObjects(w http.ResponseWriter, r *http.Request) {
 		writeSearchError(w, err)
 		return
 	}
+	lastSeenAsTime(res.Rows)
 	for _, row := range res.Rows {
 		if s.Assets == nil {
 			break
@@ -184,6 +195,18 @@ func (s *Server) handleRiskObjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"objects": res.Rows, "query": q.String()})
+}
+
+// lastSeenAsTime turns each row's last_seen, max(_time) in epoch seconds,
+// into RFC 3339 text, which the Risk page reads as a date.
+func lastSeenAsTime(rows []search.Row) {
+	for _, row := range rows {
+		if sec, ok := row["last_seen"].(float64); ok {
+			row["last_seen"] = time.Unix(0, int64(sec*1e9)).UTC().Format(time.RFC3339Nano)
+		} else if sec, ok := row["last_seen"].(int64); ok {
+			row["last_seen"] = time.Unix(sec, 0).UTC().Format(time.RFC3339Nano)
+		}
+	}
 }
 
 // handleRiskObject returns the risk events for one object, newest first.

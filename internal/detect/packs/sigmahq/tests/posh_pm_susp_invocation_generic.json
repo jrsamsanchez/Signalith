@@ -1,0 +1,4 @@
+{"rule": "bbb80e91-5746-4fbe-8898-122e2cafdbf4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":"x -ec  -noni  -w 1 x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

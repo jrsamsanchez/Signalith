@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -31,16 +34,27 @@ import (
 // for uids 1000 and 65532. It prepares Linux container volumes, so the
 // tests using it do not run on Windows, where its read-only secrets could
 // not be cleaned up.
+// The CA's key is kept in a folder next to osDir.
 func bootstrap(t *testing.T, osDir, sigDir string) string {
+	t.Helper()
+	out, err := bootstrapWith(t, bootstrapOptions{OSDir: osDir, SigDir: sigDir, CADir: filepath.Join(filepath.Dir(osDir), "opensearch-ca")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// bootstrapWith runs bootstrap-docker with o, as root would for uids 1000
+// and 65532, at o.Now or the current time.
+func bootstrapWith(t *testing.T, o bootstrapOptions) (string, error) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("bootstrap-docker prepares Linux container volumes")
 	}
+	o.OSUID, o.SigUID = 1000, 65532
 	var out bytes.Buffer
-	if err := bootstrapDocker(&out, osDir, sigDir, 1000, 65532, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	return out.String()
+	err := bootstrapDocker(&out, o)
+	return out.String(), err
 }
 
 func readAll(t *testing.T, dir string) map[string]string {
@@ -175,16 +189,17 @@ func TestBootstrapDocker(t *testing.T) {
 	checkModes(t, filepath.Join(sigDir, "ingest-token"), 65532, 0o400)
 	checkModes(t, filepath.Join(sigDir, "opensearch-client-key.pem"), 65532, 0o400)
 
-	// A missing key means new certificates for both sides; the password
-	// and token stay.
+	// A missing key means a new node certificate under the same CA; the
+	// rest, the password and token stay.
 	os.Remove(filepath.Join(osDir, "node-key.pem"))
 	out = bootstrap(t, osDir, sigDir)
-	if !strings.Contains(out, "made new ones") || !strings.Contains(out, "restart") {
+	if !strings.Contains(out, "made a new node.pem, since node-key.pem is missing") || !strings.Contains(out, "restart") || strings.Contains(out, "admin.pem") {
 		t.Errorf("after a lost key:\n%s", out)
 	}
 	osNew, sigNew := readAll(t, osDir), readAll(t, sigDir)
-	if osNew["root-ca.pem"] == osFiles["root-ca.pem"] || sigNew["opensearch-ca.pem"] != osNew["root-ca.pem"] {
-		t.Error("certificates were not made again together")
+	if osNew["root-ca.pem"] != osFiles["root-ca.pem"] || sigNew["opensearch-ca.pem"] != osNew["root-ca.pem"] ||
+		osNew["node.pem"] == osFiles["node.pem"] || osNew["admin.pem"] != osFiles["admin.pem"] || sigNew["opensearch-client.pem"] != sigFiles["opensearch-client.pem"] {
+		t.Error("not just the node certificate was made again")
 	}
 	if sigNew["initial-admin-password"] != sigFiles["initial-admin-password"] || sigNew["ingest-token"] != sigFiles["ingest-token"] {
 		t.Error("the password or token changed")
@@ -266,7 +281,7 @@ func TestInitialPassword(t *testing.T) {
 		t.Fatal("the first password does not sign in")
 	}
 
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "my own admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "my own break-glass password")
 	printed := captureStdout(t, func() {
 		if err := cmdPasswd([]string{"-c", path}); err != nil {
 			t.Fatal(err)
@@ -283,7 +298,7 @@ func TestInitialPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.CheckPassword("admin", strings.TrimSpace(string(first))) || !c.CheckPassword("admin", "my own admin password") {
+	if c.CheckPassword("admin", strings.TrimSpace(string(first))) || !c.CheckPassword("admin", "my own break-glass password") {
 		t.Error("the first password still works, or the new one does not")
 	}
 	out.Reset()
@@ -291,19 +306,28 @@ func TestInitialPassword(t *testing.T) {
 		t.Errorf("initial-password after the change: %q %v", out.String(), err)
 	}
 	// A second change goes to the same place.
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "another admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "another break-glass password")
 	captureStdout(t, func() {
 		if err := cmdPasswd([]string{"-c", path}); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if c, err := config.Load(path); err != nil || !c.CheckPassword("admin", "another admin password") {
+	if c, err := config.Load(path); err != nil || !c.CheckPassword("admin", "another break-glass password") {
 		t.Errorf("second change: %v", err)
 	}
 
+	// The change is noted, so the server and initial-password know it
+	// without the variable too.
+	if fp, err := config.ReadFirstPassword(state); err != nil || fp.Changed.IsZero() {
+		t.Errorf("the change was not noted: %+v %v", fp, err)
+	}
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
-	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "no generated first password") {
+	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") {
 		t.Errorf("without the variable: %v", err)
+	}
+	// The setup step's file stays: the server reads it at every start.
+	if _, err := os.Stat(filepath.Join(sigDir, initialPasswordFile)); err != nil {
+		t.Error(err)
 	}
 }
 
@@ -312,7 +336,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	t.Cleanup(func() { ospki.KeyBits = 3072 })
 	out := filepath.Join(t.TempDir(), "pki")
 	var msg bytes.Buffer
-	if err := writeOpenSearchCerts(&msg, out, "search1", []string{"search1.example.com", "192.0.2.7"}, time.Now()); err != nil {
+	if err := writeOpenSearchCerts(&msg, osCertsOptions{Out: out, Node: "search1", Names: []string{"search1.example.com", "192.0.2.7"}, Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(msg.String(), "docs/opensearch-security.md") || !strings.Contains(msg.String(), "search1.example.com") {
@@ -328,9 +352,10 @@ func TestOpenSearchCerts(t *testing.T) {
 	})
 	slices.Sort(files)
 	want := []string{
+		"ca/root-ca-key.pem", "ca/root-ca.pem",
 		"opensearch/add-to-opensearch.yml",
 		"opensearch/certs/admin-key.pem", "opensearch/certs/admin.pem", "opensearch/certs/node-key.pem", "opensearch/certs/node.pem", "opensearch/certs/root-ca.pem",
-		"opensearch/opensearch-security/config.yml", "opensearch/opensearch-security/internal_users.yml",
+		"opensearch/opensearch-security/audit.yml", "opensearch/opensearch-security/config.yml", "opensearch/opensearch-security/internal_users.yml",
 		"opensearch/opensearch-security/roles.yml", "opensearch/opensearch-security/roles_mapping.yml",
 		"signalith/add-to-signalith.yaml", "signalith/opensearch-ca.pem", "signalith/opensearch-client-key.pem", "signalith/opensearch-client.pem",
 	}
@@ -343,6 +368,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		checkModes(t, filepath.Join(out, "opensearch", "certs", "node-key.pem"), os.Getuid(), 0o600)
 		checkModes(t, filepath.Join(out, "signalith", "opensearch-client-key.pem"), os.Getuid(), 0o600)
+		checkModes(t, filepath.Join(out, "ca", "root-ca-key.pem"), os.Getuid(), 0o600)
 		checkModes(t, out, os.Getuid(), 0o700)
 	}
 	settings, _ := os.ReadFile(filepath.Join(out, "opensearch", "add-to-opensearch.yml"))
@@ -368,7 +394,7 @@ func TestOpenSearchCerts(t *testing.T) {
 	}
 
 	// Never over files that are there.
-	if err := writeOpenSearchCerts(&msg, out, "", nil, time.Now()); err == nil || !strings.Contains(err.Error(), "already has files") {
+	if err := writeOpenSearchCerts(&msg, osCertsOptions{Out: out, Now: time.Now()}); err == nil || !strings.Contains(err.Error(), "already has files") {
 		t.Errorf("second run: %v", err)
 	}
 }
@@ -439,7 +465,117 @@ func TestInitSavePassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.CheckPassword("admin", pw) {
+	if !c.CheckPassword("signalithadmin", pw) {
 		t.Error("the saved password does not sign in")
+	}
+	// The server, which cannot read the file, is told the hash, so it asks
+	// for a new password at the first sign-in.
+	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
+		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
+	}
+
+	// signalith passwd replaces it: the file goes, and initial-password
+	// says it was changed.
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "the owner's own password")
+	printed = captureStdout(t, func() {
+		if err := cmdPasswd([]string{"-c", path}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if _, err := os.Stat(saved); !os.IsNotExist(err) || !strings.Contains(printed, "Removed "+saved) {
+		t.Errorf("the first password's file: %v; passwd said:\n%s", err, printed)
+	}
+	out.Reset()
+	if err := printInitialPassword(&out, path); err == nil || !strings.Contains(err.Error(), "was changed on") || out.Len() != 0 {
+		t.Errorf("initial-password after the change: %q %v", out.String(), err)
+	}
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" || !c.CheckPassword("signalithadmin", "the owner's own password") {
+		t.Errorf("after passwd: %v", err)
+	}
+}
+
+// An install from before init noted the first password's hash: the
+// packages' upgrade and the Linux unit's start note it with
+// initial-password -note while the password is still the first one, next
+// to the config file (root writes nothing in the service's state folder,
+// and what it wrote there before the service could not read), and never
+// once it was changed.
+func TestNoteFirstPassword(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
+	path := filepath.Join(root, "etc", "signalith.yaml")
+	os.MkdirAll(filepath.Dir(path), 0o750)
+	captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-save-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	// As an older version left it.
+	if err := os.Remove(config.FirstPasswordFileIn(state)); err != nil {
+		t.Fatal(err)
+	}
+	note := config.FirstPasswordFileIn(filepath.Dir(path))
+	// The root step reads nothing in the service's state folder: a note
+	// there that is a FIFO would hang it.
+	if err := makeFIFO(config.FirstPasswordFileIn(state)); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the second time, it is noted already
+		if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.Remove(config.FirstPasswordFileIn(state))
+	if _, err := os.Stat(config.FirstPasswordFileIn(state)); !os.IsNotExist(err) {
+		t.Errorf("written in the state folder: %v", err)
+	}
+	if fi, err := os.Stat(note); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
+		t.Errorf("the note next to the config file is %v, want the group to read it", fi.Mode().Perm())
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FirstPasswordHash() == "" || c.FirstPasswordHash() != c.Auth.AdminPasswordHash {
+		t.Errorf("noted hash %q, in use %q", c.FirstPasswordHash(), c.Auth.AdminPasswordHash)
+	}
+	// Once the password was changed on the page, the note goes, and the
+	// hash is not taken from it even if it is back.
+	if err := os.WriteFile(c.AdminHashFile(), []byte(c.Auth.AdminPasswordHash+"x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.NoteFirstPasswordChanged(state, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(note); !os.IsNotExist(err) {
+		t.Errorf("the note stayed after the change: %v", err)
+	}
+	if err := config.RecordFirstPasswordNextTo(path, c.Auth.AdminPasswordHash); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := config.Load(path); err != nil || c.FirstPasswordHash() != "" {
+		t.Errorf("a changed first password counts as in use again: %v", err)
+	}
+	// A password someone chose is not noted.
+	os.Remove(note)
+	os.Remove(c.AdminHashFile())
+	os.Remove(config.FirstPasswordFileIn(state))
+	h, _ := config.HashPassword("chosen by the admin")
+	if err := config.SetAdminPasswordHash(path, h); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdInitialPassword([]string{"-c", path, "-note"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(note); !os.IsNotExist(err) {
+		t.Errorf("a chosen password was noted: %v", err)
 	}
 }

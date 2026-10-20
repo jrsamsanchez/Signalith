@@ -1,0 +1,5 @@
+{"rule": "6d8a7cf1-8085-423b-b87d-7e880faabbdf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-o x","path":"/nscurl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/nscurl","path":"/nscurl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"-o x","path":"/usr/local/bin/helper"}}
+]}

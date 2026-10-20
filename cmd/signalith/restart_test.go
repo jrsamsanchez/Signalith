@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -118,6 +121,9 @@ type runOptions struct {
 	os    *ostest.Server
 	name  string
 	extra string
+	// dir starts the server of an earlier test start again, with its
+	// files as they are; "" makes a new one.
+	dir string
 }
 
 // noFollow is a client that does not follow redirects.
@@ -146,17 +152,25 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 	if fos == nil {
 		fos = ostest.New(t)
 	}
-	dir := t.TempDir()
+	dir := o.dir
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	h, err := config.HashPassword("s3cret-pass")
 	if err != nil {
 		t.Fatal(err)
 	}
 	addr := freeAddr(t)
 	path := filepath.Join(dir, "signalith.yaml")
-	body := "server:\n  listen: " + addr + "\n" + o.server + "opensearch:\n  url: " + fos.URL + "\nauth:\n  admin_password_hash: " + h +
-		"\ningest:\n  tokens: [tok-0123456789abcdef]\ndetections:\n  scheduler: " + strconv.FormatBool(o.scheduler) + "\n" + o.extra
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
+	if prev, err := config.LoadFile(path); err == nil && o.dir != "" {
+		// The same server again, with its files as they are.
+		addr = prev.Server.Listen
+	} else {
+		body := "server:\n  listen: " + addr + "\n" + o.server + "opensearch:\n  url: " + fos.URL + "\nauth:\n  admin_password_hash: " + h +
+			"\ningest:\n  tokens: [tok-0123456789abcdef]\ndetections:\n  scheduler: " + strconv.FormatBool(o.scheduler) + "\n" + o.extra
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(page) > 0 {
 		p := &config.PageSettings{}
@@ -211,7 +225,10 @@ func startRunnerWith(t *testing.T, o runOptions) *running {
 		})
 	}
 	t.Cleanup(rs.stop)
-	deadline := time.Now().Add(10 * time.Second)
+	// The first server of a test process parses the built-in detection
+	// packs (once per process), which takes well over 10s under -race on
+	// a busy machine.
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		// With HTTPS on, plain HTTP on the same port answers with a
 		// redirect.

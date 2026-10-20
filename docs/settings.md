@@ -8,13 +8,20 @@ whether it applies at once or after a restart, which the page does for you.
 
 **Settings**, at the foot of the sidebar, opens this page. Tabs along its top
 lead to the other pages that set Signalith up: **Users** (with directory
-sign-in), **Notifications**, **Data retention**, **Security**, **Servers** and
-**Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
+sign-in), **Notifications**, **Data retention**, **Security**, **Servers**,
+**Scanners** (which server scans which network; see
+[vulnerabilities.md](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
+**Network sensors** (each sensor's health, what to fix, and the rule tuning they fetch; see
+[network-sensor.md](network-sensor.md#settings-network-sensors)) and **Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
 intel**; the Settings page links to them too.
 
 Only admins see the page (**Settings** in the sidebar, or type "settings" in the
 **Jump to** box with Ctrl+K). Viewers and analysts do not see it, and its API
 answers them `403`.
+
+When several servers share one OpenSearch, the page changes the settings of all of
+them, and of any one of them, from any server: see
+[Settings on several servers](#settings-on-several-servers).
 
 ## Using the page
 
@@ -46,7 +53,7 @@ skipping OpenSearch's certificate check, turning the detection scheduler off, an
 allowing threat intel feeds from this computer. The server checks the changes
 first, so you are only asked about changes that can be saved. When the listen
 port or HTTPS changes and the public address still names the old one, the same
-question offers to change the public address too, since agents send there. A
+question offers to change the public address too, since agents send to its host. A
 listen address on `127.0.0.1` chosen from another computer says plainly that you
 could not open the page again from there.
 
@@ -55,6 +62,14 @@ address, and the page shows what it works out to. When it is set and does not
 match how Signalith answers (`http://` while it serves HTTPS, or another port),
 the page warns and offers the matching address with one click. That is right
 only behind a proxy or a port forward.
+
+**Agent address**, in the **Web server** card, is where agents send events
+(`server.agent_listen`, 7779 by default): Fluent Bit, the OpenTelemetry Collector,
+osquery and network sensors. It is a port of its own, apart from the web page, with the
+same certificate; **off** sends agents to the web port, as before 0.3. Add data gives
+agents the public address's host on this port. A change applies after a restart, and
+agents that send to the old port stop until you set them up again from **Add data**.
+See [The agent port](sending-data.md#the-agent-port).
 
 **Proxies and gateways**, in the **Web server** card, lists addresses that stand for
 many people, such as a NAT gateway or Docker Desktop's port forwarding. Such an
@@ -65,9 +80,17 @@ address. For a reverse proxy that sets `X-Forwarded-For` itself, list it under
 header**, so each person is counted by their own address. See
 [failed sign-in limits](users.md#signing-in). Applies after a restart.
 
-Turning syslog on is two settings in the **Syslog** card (UDP and TCP address,
-such as `0.0.0.0:514`), then a restart. The **Add data** page's syslog steps send
-you there.
+**PROXY protocol from load balancers**, in the **Web server** card and again in the
+**Syslog** card, reads the header a load balancer that passes connections through
+writes before each one, so Signalith sees each client's own address. Only the
+**Trusted reverse proxies** may send it. Both apply after a restart; see
+[Load balancers](load-balancers.md).
+
+A new install takes syslog over TLS only (**TLS address**, `0.0.0.0:6514`). Plain
+syslog is two settings in the **Syslog** card (UDP and TCP address, such as
+`0.0.0.0:514`), then a restart. It is unencrypted and can be forged, so it is off
+until you set them; **Turn on plain syslog** on the **Add data** page's Syslog option
+sets both in one click (see [Turning on plain syslog](sending-data.md#turning-on-plain-syslog)).
 
 **Replicas**, in the **OpenSearch** card, is how many extra copies of each day's
 events OpenSearch keeps on its other nodes, so losing one node loses no events. It
@@ -79,6 +102,33 @@ copies they have. Findings, investigations and threat intel follow the setting t
 from when they are first stored; if they were stored by an older version with no
 copy, they get the setting when a server starts running the background jobs.
 Copies someone set on them by hand in OpenSearch are kept.
+
+**Shards**, in the same card, is how many primary shards each new day's events get,
+per data model. It is automatic unless you change it: one per OpenSearch data node, up
+to 8, so every node writes and merges a share of each day instead of one node doing a
+whole day's merges. On one node that is one shard. Enter a number to fix it, up to 64;
+Signalith never uses more than the number of OpenSearch data nodes. That limit is there
+because OpenSearch refuses new indices once a node holds 1,000 shards
+(`cluster.max_shards_per_node`), and each day adds an index per data model, so too many
+shards would stop new events at the start of a day. For the same reason, automatic
+gives one shard per data model while OpenSearch already holds more than half the
+shards it allows, and logs a warning saying so. A change applies to the next day's
+events after a restart (with automatic, a data node added also counts within a few
+minutes); days already stored keep the shards they have, and a day restored from an
+archive gets the current setting. Findings, investigations and threat intel always
+have one shard; they are small.
+
+**Rollover size**, in the same card, keeps shards from growing without bound on a busy
+day. Once a day's index of one data model holds 40 GB per primary shard (or the size
+you enter, from 10 to 200 GB), that day's events continue in a new index with `-2`
+after the day, as in `signalith-network-2026.10.17-2`, then `-3`, and so on. Shards
+of 30 to 50 GB are what OpenSearch recommends for logs: a much larger shard merges
+ever larger files while it is written, which slows storing events with the CPUs
+mostly idle, and takes hours to move or recover. Searches, summaries, retention,
+cold storage and the archive treat every part as that day; each part is its own
+index on the Data retention page. Each server checks the size of the days being
+written every minute. An event sent again after its day rolled over is stored again
+in the new part rather than counted as a duplicate.
 
 ## HTTPS
 
@@ -182,11 +232,14 @@ settings:
 Every setting on the page shows which of these its value comes from, and
 **Reset** takes it off the page, so `signalith.yaml` or the default applies again.
 
+On servers that share their settings, the settings of all servers follow other rules:
+see [Which value wins on several servers](#which-value-wins-on-several-servers).
+
 ## Applying changes
 
 Settings marked **applies at once** take effect when you save: the public address,
-the sign-out time, the default time range and events per search, the quiet data
-source time, the most findings per run, the AI assistant, and the NVD API key for vulnerability scans. A new public address
+the sign-out time, the oldest event time, the default time range and events per search, the quiet data
+source time, the most findings per run, the AI assistant, and the NVD API key and feed addresses for vulnerability scans. A new public address
 waits for the restart when the listen address or the certificate also changes, so
 agents set up meanwhile are not sent to an address nothing answers yet.
 
@@ -314,10 +367,10 @@ mounted read-only, and the page keeps its changes in the `signalith-data` volume
   OpenSearch somewhere else: the quick start's own OpenSearch is set up for the
   client certificate in `signalith.yaml`.
 - A port Signalith listens on inside the container only reaches it when the
-  compose file publishes it under `ports:`. The quick start publishes 8080 (web),
-  514 to the container's 5514 (syslog over UDP and TCP) and 6514 (syslog over
-  TLS). If you change the listen port or a syslog address on the page, add the
-  port to `ports:` too (and for syslog set **Port devices send to** to the port on
+  compose file publishes it under `ports:`. The quick start publishes 9000 (web),
+  7779 (agents), 514 to the container's 5514 (plain syslog over UDP and TCP, which listens
+  only once it is turned on) and 6514 (syslog over TLS). If you change the listen port, the agent address or a syslog address on the
+  page, add the port to `ports:` too (and for syslog set **Port devices send to** to the port on
   the host). The page reminds you on those settings when it runs in a container.
 - To undo a change from the command line:
 
@@ -356,8 +409,20 @@ settings aren't loaded, it is too busy, or it took the request but didn't answer
 [When this server can't use OpenSearch](servers.md#when-this-server-cant-use-opensearch)
 says what to do about each. **Test** for the
 AI assistant asks the model one fixed question ("failed logins in the last 24
-hours") and shows the query it wrote. A result is marked out of date as soon as
-one of the settings it used changes.
+hours") and shows the query it wrote, or says what is wrong, such as an unknown
+model, a refused key, or a model too slow for **Answer time limit** (a local model on a
+CPU without a GPU may need `15m` or more). A result is marked out of date as soon as one
+of the settings it used changes.
+
+The AI assistant's **Address** lists the usual addresses for the provider chosen:
+the provider's own service, and for **Local model or OpenAI-compatible** also Ollama, LM Studio and
+vLLM on this computer (in Docker, on the computer running Docker) and other
+compatible services. **Other** takes any address. **Model** lists the models the
+provider offers: with an API key saved (or for a model server that needs none), the
+list is read from the provider through this server, so the key never reaches the
+browser; otherwise it shows the models Signalith knows of. **Other** takes any
+model's ID. A model written by its name, such as "Opus 5.5", is sent as its ID,
+`claude-opus-5-5`, and the page offers to save the ID.
 
 ## Exporting settings
 
@@ -376,11 +441,193 @@ change off the page.
 | Setting | Where instead |
 | --- | --- |
 | `retention.days` | The data retention page. |
-| `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. |
+| `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. On servers that share their settings, `signalith cluster apply` renames it (see [apply](cluster-cli.md#apply)). |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.users_file`, `intel.feeds_file`, `notify.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
+| `auth.oidc`, `auth.saml`, `auth.scim` | The **Single sign-on** tab of Settings; see [sso.md](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
+| `auth.users_file`, `intel.feeds_file`, `notify.file`, `ticketing.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
 | `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |
+| `demo.enabled`, `demo.admin_networks` | `signalith.yaml`, or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS`, only: demo mode turns off password sign-in, event intake and everything that reaches other systems, so no page may turn it off. See [demo.md](demo.md). |
+
+## Settings on several servers
+
+Servers that share one OpenSearch (see [Servers](servers.md)) share their settings
+too, once every server runs this version (see
+[When the settings become shared](#when-the-settings-become-shared)). The Settings page
+of any server then changes them for every server, and the own settings of any one
+server. One server on its own, not part of a cluster, works exactly as described
+above.
+
+### The three groups
+
+The page shows a server's settings in three groups, and each setting carries a
+badge with its group:
+
+- **All servers**: one value on every server. The public address, the sign-out
+  time, the oldest event time, extra certificate names, agents on plain HTTP,
+  trusted reverse proxies and the client address header, replicas and shards, the search
+  defaults and quiet data source time, the syslog senders allowed and the port
+  devices send to, the most findings per run, making up missed runs and the
+  detection content address, the AI assistant, threat intel from this computer,
+  the vulnerability scan settings, the cluster's name and the OpenSearch address new
+  servers are given. How often retention runs and the shared agent tokens of older
+  setups (`ingest.tokens`) are shared too, though they are not on the page.
+- **This server: siem-b**: the server's own settings, such as its listen address,
+  HTTPS mode, certificate files, syslog addresses, whether it updates its detection
+  content, what removing a file from its detection and dashboard folders does
+  (`detections.sync`) and **May run background jobs** (`cluster.leader_eligible`, the new name
+  of `detections.scheduler`). They can be changed for any server on any server's
+  page.
+- **This server's connection and folders**: what the server needs to reach
+  OpenSearch (its address, sign-in and certificates, the index prefix). They stay in
+  that server's `settings.yaml` and are changed only on its own page, also while
+  OpenSearch cannot be reached.
+
+**Settings of**, at the top of the page, picks the server to show; it is hidden while
+there is only one. Another server's page shows its own settings as it saved and runs
+them, and links to its own page for its connection and folders.
+
+Each shared setting says where its value came from: **Changed by ann on siem-a**, or
+**Applied from the environment on siem-b, 12 Oct** for one that came from a server's
+files (below). **Reset** takes a shared setting back to its default on every server.
+
+### Saving
+
+A change applies to every server; a change of another server's own settings is
+checked there first: that server checks it against its own files, environment and
+certificate files, and answers within 5 seconds. When it is offline, or does not
+answer in time, the change is saved after the page's own checks, and the page says
+so: that server checks it when it starts, and keeps its previous value if it cannot
+use it.
+
+Each setting is saved with the version the page read. When someone else changed the
+same setting in the meantime, nothing is saved, and the page says who changed it, on
+which server and when, with **Reload**; your changes stay on the page. Changes of
+other settings by someone else never get in the way.
+
+While the shared settings cannot be changed (OpenSearch refuses writes, or this
+server cannot read them and runs on its saved copy), the page says so, and only this
+server's connection and folder settings can be changed.
+
+### Applying changes on every server
+
+A change that applies at once reaches every server within a few seconds: the sign-out
+time, the public address, the search defaults, the most findings per run, the AI
+assistant, the vulnerability scan settings, trusted reverse proxies, the oldest event
+time, how often retention runs, the shared agent tokens and **Address for other
+servers**. The others wait for each server's restart, and the setting says where it is
+in use yet: "Applied on siem-a; waiting for a restart on siem-b".
+
+When servers other than this one wait for a restart, a banner names them and what
+waits, with **Restart these servers one at a time**. Each server restarts once the one
+before it serves again, so the others keep answering behind a load balancer; this
+server goes last. Each one checks the new settings first, as a restart of one server
+does, and keeps its current settings when they cannot work: then the servers after
+it are not restarted, and the banner says why. **Restart now**, in this server's own
+banner, still restarts this server alone.
+
+A restart that moves another server's web page (a new listen address or HTTPS mode)
+is confirmed by the server that asked for it, which opens the new address; without
+that within 2 minutes, the server goes back to its previous address. Until servers
+share one certificate authority, that check does not check the new address's
+certificate: the proof is a random token only the moving server knows.
+
+### When a server cannot use a shared value
+
+A shared value that one server cannot use (for example extra certificate names its
+certificate cannot be made for) never stops the others. That server keeps its
+previous value, records why, and reports it: the setting shows a red line
+("siem-b couldn't use the shared value, so it keeps its own") with **Try again**, the
+other servers' pages name it at the top, and the Servers page lists it. It keeps its
+own value until the shared value changes or someone clicks **Try again**.
+
+A server that cannot start with its saved settings starts without its own settings
+saved on a page, or, if that is not enough, with `signalith.yaml` alone, and says so
+at the top of its Settings page.
+
+### Which value wins on several servers
+
+| Group | Which value wins |
+| --- | --- |
+| All servers | The shared value, then the default. A value in a server's `signalith.yaml` or environment is **applied when it changes**: when you change `SIGNALITH_PUBLIC_URL` on siem-b and restart it, the new value becomes the shared one, and the audit log says "applied from the environment on siem-b". An unchanged value never undoes a change made on the page since, and taking a setting out of the file changes nothing. |
+| This server | Its environment, then the page, then its `signalith.yaml`, then the default, as on one server. A setting set by the environment is locked. |
+| Connection and folders | Its environment, then its `settings.yaml`, then its `signalith.yaml`, then the default, as on one server. |
+
+`auth.admin_user` is shared too, but only `signalith cluster apply` changes it (see
+[signalith cluster apply](cluster-cli.md#apply)): a changed name in one server's
+`signalith.yaml` is listed on the Servers page, never applied, so a forgotten edit on
+one server cannot rename the break-glass account everywhere. A value in a server's
+files that differs from the shared one without having changed is listed on the
+Servers page too (**Differs**).
+
+### When the settings become shared
+
+A new cluster shares its settings from the start. Servers set up by hand before this
+version start sharing them once every server seen in the last 24 hours runs it: the
+server that founded the cluster brings in its settings (or, when it has been gone for
+7 days, the server that runs the background jobs, and the Servers page says so), then
+every server restarts by itself, and brings in its own:
+
+- The shared settings are those of the server that brought them in: its page,
+  `signalith.yaml` and environment.
+- Each server's own settings saved on its page move to the shared settings, as that
+  server's.
+- A setting for all servers that one server's page had with another value is listed on
+  the Servers page, in that server's panel, for 7 days ("siem-b's Settings page had Sign
+  out after = 8h; the shared value is 12h"). Change the shared value if siem-b's was
+  the right one.
+- Each server's `settings.yaml` then keeps only its connection and folder settings; the
+  file as it was is kept next to it as `settings.yaml.imported-YYYYMMDD`.
+
+Until then, each server keeps its own settings and the page says which servers still
+run an older version. Once the settings are shared, an older version refuses to start
+against the cluster: upgrade it.
+
+What you will notice once the settings are shared:
+
+- A setting for all servers set by an environment variable is no longer locked: a
+  change on the page wins until the variable's value changes.
+- `settings.yaml` keeps only the connection and folder settings.
+- **Run detections on schedule** shows as **May run background jobs**
+  (`cluster.leader_eligible`); `detections.scheduler` still works in `signalith.yaml`.
+- Every server uses the same public address on Add data: the shared one.
+- The shared agent tokens of every server (`ingest.tokens`, `SIGNALITH_INGEST_TOKEN`
+  and `SIGNALITH_INGEST_TOKEN_FILE`) are accepted by every server, so agents keep
+  sending through a load balancer. A changed token file replaces that server's token;
+  an unchanged one never brings back a token retired on Add data. **Add data** names
+  the server whose files brought each one. Deleting a token's line from
+  `signalith.yaml`, or unsetting its variable, no longer stops it being accepted: the
+  servers keep it until it is retired on **Add data** (**Stop accepting**), which every
+  server follows within seconds.
+
+### Exporting and configuration as code
+
+On servers that share their settings, **Download settings as YAML** has the settings
+for all servers as one file in the shape of `signalith.yaml`, which
+`signalith cluster apply -f` takes as it is, then each server's own settings as
+comments marked "this server only", so pasting the file never turns on a second
+server's background jobs. Passwords and keys are left out. `signalith cluster export
+-settings` writes the same file (see [signalith cluster](cluster-cli.md#apply)).
+
+### When a server is locked out
+
+`signalith settings reset <setting>` on a member takes a setting for all servers back
+to its default for every server (within a few seconds), or one of this server's own
+off the page (restart it to apply). Without a setting it resets only this server's own
+settings and its `settings.yaml`, never the shared ones. It needs OpenSearch; when
+OpenSearch cannot be reached, it changes `settings.yaml` only, and
+`signalith settings reset -local <setting>` sets settings aside on this server alone:
+
+```
+sudo signalith settings reset -local -c /etc/signalith/signalith.yaml server.listen
+sudo systemctl restart signalith
+```
+
+The server then starts without them (they are kept in `cluster/setaside.json` in its
+state folder), and once OpenSearch takes writes again it records them as refused on
+this server, where its Settings page shows them with **Try again**, and deletes the
+file. `-local` is only for a member of a cluster; on one server, `settings reset`
+already works without OpenSearch.
 
 ## Audit log
 
@@ -397,6 +644,9 @@ address. Values of settings are logged; passwords and keys never are (they show 
 | `restart failed` | `by`, `client`, `settings`, `rolled_back`, `set_aside`, `reason` |
 | `new web address confirmed` | `by`, `client`, `host` |
 | `went back to the previous web address` | `settings`, `reason` |
+| `settings saved` on servers that share their settings | also `scope` (`cluster`, `server` or `bootstrap`) and `server` |
+| `restart of servers requested` | `by`, `client`, `servers`, `sequential`, `request` |
+| `<setting> applied from the environment on siem-b` (or `from signalith.yaml`) | the setting, the server |
 
 Addresses are logged without any password in them.
 
@@ -416,9 +666,23 @@ from the Signalith page itself.
 | `PUT /api/settings` | Saves changes: `{"values": {key: value}, "clear": [keys], "reset": [keys], "retry": [keys], "reset_all": false}`. With `"check_only": true` it saves nothing and answers `{"ok": true, "changed": [...], "confirm": [...]}`: what to ask before saving |
 | `POST /api/settings/test/opensearch` | Tests OpenSearch with `{"values": {...}}` over the saved settings; one test at a time (`429` `busy` otherwise) |
 | `POST /api/settings/test/assistant` | Tests the AI assistant the same way |
+| `POST /api/settings/assistant/models` | Lists the AI models the provider in `{"values": {...}}` offers: `{"models": [{"id", "name"}], "live": true}` when read from the provider, or the models Signalith knows of with `live` false and a `message` saying why |
 | `POST /api/settings/restart` | Restarts with the saved settings; answers 202 at once. `409` with `code` `restarting`, `awaiting` (a move waits for confirmation), `settings_invalid`, or `local_only` (send `{"local_only": true}` to go ahead) |
 | `POST /api/settings/restart/confirm` | From the new address after a move: confirms it (`GET /api/me` by an admin does too) |
-| `GET /api/settings/export` | `{"yaml": "...", "filename": "signalith-settings.yaml"}`; `?download=1` downloads the file |
+| `GET /api/settings/export` | `{"yaml": "...", "filename": "signalith-settings.yaml"}`; `?download=1` downloads the file. On servers that share their settings, `?server=` limits the commented part to one server |
+| `POST /api/cluster/restart` | On servers that share their settings: `{"servers": [names or node ids], "sequential": true}` restarts them one at a time; answers 202 with `{"request_id": "..."}`, which `GET /api/requests/{id}` follows (each server's part under `status` and `result`). `409` for an offline server |
+
+On servers that share their settings, `GET /api/settings?server=<name or node id>`
+shows another server, and each field also has `scope`, `version` (what `if_version`
+names), and, as they apply, `applied_from`, `kept` (a shared value the server shown
+could not use, with why) and `servers` (for a shared setting that waits for a restart:
+`applied`, `waiting` or `refused` by server name). The view has `servers` (each one's
+`restart_needed`, `refused`, `restart` and `offline`), `etag`, `writable` and
+`migrated`. `PUT /api/settings` takes `server` and `if_version` (`{key: version}`, as
+read): a setting changed since is refused with `412` and `code` `stale`, with
+`changed_by`, `changed_on` and `changed_at`; `503` while the shared settings cannot be
+changed (connection and folder settings still can). A save answers `notes` when
+another server could not check the change first.
 
 One setting in `GET /api/settings`:
 
@@ -436,7 +700,7 @@ A save with problems saves nothing and answers 400 with each problem by setting:
 
 ```json
 {"error": "Nothing was saved. Fix the settings marked below.",
- "fields": {"server.listen": "Must be host:port, for example 0.0.0.0:8080",
+ "fields": {"server.listen": "Must be host:port, for example 0.0.0.0:9000",
             "server.tls_cert": "Enter the full path of your certificate file."},
  "problems": []}
 ```

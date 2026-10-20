@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -11,8 +14,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/securefile"
@@ -37,6 +42,10 @@ type Runtime struct {
 
 	// stepMu lets one evaluation or watch cycle run at a time.
 	stepMu sync.Mutex
+	// polled says the step running came from the Poll timer rather than
+	// a Kick, so its watch cycle may stop at an unchanged mark (Hub.Poll).
+	// Guarded by stepMu.
+	polled bool
 	// running counts the loop and the cache writer, for Wait.
 	running sync.WaitGroup
 
@@ -82,10 +91,28 @@ type Runtime struct {
 	failed        bool
 	wake          chan struct{}
 	reqWake       chan struct{}
+	// srvWake wakes the loop of the requests that name this server
+	// (RunServerRequests), as reqWake wakes the leader's.
+	srvWake chan struct{}
+	// boot is this process's boot id, recorded with each request part it
+	// claims, so the next process can tell a part it left running.
+	boot          string
 	started       bool
 	keyFileWarned bool
+	// newerKID is the newer cluster key afterCycle last looked for the
+	// cluster with, so a cluster document that does not verify with it
+	// is looked at once, not on every cycle.
+	newerKID string
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
+	// approval is a waiting server's request to join (approval.go).
+	approval approvalState
+	// migMu lets one run of the level migrations go at a time; migAgain
+	// asks the run going on to go round once more, and migRunning says
+	// one runs (Busy), see runLevelMigrations.
+	migMu      sync.Mutex
+	migAgain   atomic.Bool
+	migRunning atomic.Bool
 }
 
 // Mode is how this server uses the shared configuration.
@@ -146,16 +173,33 @@ func (rt *Runtime) SharedContent() bool {
 // (every server reads them), and the users and the directory settings
 // were imported.
 func (rt *Runtime) SharedUsers() bool {
-	if !rt.SharedContent() {
-		return false
-	}
+	return rt.SharedContent() && rt.sharedAt(LevelSharedUsers, ImportUsers, ImportDirectory)
+}
+
+// SharedSettings reports whether this server takes the settings of the
+// Settings page from the shared settings rather than from its own files:
+// it keeps the users there, the cluster is at level 3 (every server reads
+// them and runs the requests that name it), and the founder's settings
+// were imported.
+func (rt *Runtime) SharedSettings() bool {
+	return rt.SharedUsers() && rt.sharedAt(LevelSharedSettings, ImportSettings)
+}
+
+// sharedAt reports whether a feature that comes with a cluster level is
+// on: the cluster is at level or above, and the importers named imports
+// ran. It says nothing of this server's mode, so a feature's gate chains
+// it on another gate, such as SharedSettings.
+func (rt *Runtime) sharedAt(level int, imports ...string) bool {
 	b, ok := rt.Cluster().Get()
-	if !ok || b.Level < LevelSharedUsers {
+	if !ok || b.Level < level {
 		return false
 	}
-	_, users := b.Import.Done[ImportUsers]
-	_, dir := b.Import.Done[ImportDirectory]
-	return users && dir
+	for _, name := range imports {
+		if _, done := b.Import.Done[name]; !done {
+			return false
+		}
+	}
+	return true
 }
 
 // ImportStalled is how long the founder may take to move its files into
@@ -223,7 +267,7 @@ func (rt *Runtime) founderWarning() *Warning {
 		}
 	}
 	founder := cmp.Or(b.CreatedBy, b.CreatedByID)
-	return &Warning{Level: "amber", Text: fmt.Sprintf("Users and sign-in become shared once %s, which founded the cluster, is back: it brings in its users and directory sign-in settings. "+
+	return &Warning{Level: "amber", Text: fmt.Sprintf("Users, sign-in and settings become shared once %s, which founded the cluster, is back: it brings in its users, directory sign-in settings and Settings page. "+
 		"Until then each server keeps its own. If %s is gone for good, the server that runs the background jobs brings in its own once %s has not been seen for 7 days.", founder, founder, founder)}
 }
 
@@ -252,6 +296,17 @@ func (e *PausedError) Error() string {
 	return "changes to the shared settings are paused on this server right now (" + e.Why + "); try again in a moment"
 }
 
+// MovingError is a change of this server's own files refused while what
+// they hold moves into the shared settings: the files were read for the
+// move, and the restart that switches this server to the shared settings
+// has not come yet, so a change saved in them would be lost. What names
+// it, such as "users".
+type MovingError struct{ What string }
+
+func (e *MovingError) Error() string {
+	return "this server is moving its " + e.What + " into the cluster; try again in a moment"
+}
+
 // Legacy reports whether a server in mode m uses its own files.
 func (m Mode) Legacy() bool {
 	return m == ModeLegacyA || m == ModeLegacyB || m == ModeLegacyC || m == ModeStarting
@@ -261,6 +316,9 @@ func (m Mode) Legacy() bool {
 type Self struct {
 	NodeID string
 	Name   string
+	// BootID is this process's boot id (the heartbeat's); a runtime
+	// without one makes its own.
+	BootID string
 }
 
 // Peer is a server as its heartbeat shows it, this one included.
@@ -283,6 +341,15 @@ type Peer struct {
 	// Users is the fingerprint of its users and directory sign-in
 	// settings, "" from versions without one.
 	Users string
+	// KeyIDs are the cluster keys it holds and accepts, and ClusterKID
+	// the one it signs with, from its heartbeat ("" and nil from versions
+	// before key rotations).
+	KeyIDs     []string
+	ClusterKID string
+	// Version is the version it runs, and OfflineSince when its
+	// heartbeat stopped (nil while it is live, or when not known).
+	Version      string
+	OfflineSince *time.Time
 }
 
 // RuntimeOptions are what a Runtime needs.
@@ -319,6 +386,21 @@ type RuntimeOptions struct {
 	Clock         Clock
 	Timing        Timing
 	Log           *slog.Logger
+	// JoinInfo says what a server waiting for approval tells about itself
+	// in its pending document (version, addresses, node_url); nil gives
+	// only its name, key and platform.
+	JoinInfo func() PendingDoc
+	// Secured checks that OpenSearch is secured as several servers need
+	// (clusterjoin.RequireSecured); a server with KeyFile warns when it
+	// fails. nil checks nothing.
+	Secured func() error
+	// Version is this server's version, recorded with each level it
+	// raises the cluster to (ClusterBody.LevelVersions).
+	Version string
+	// Migrations are the one-time migrations of the cluster's levels,
+	// which the server running the background jobs runs once each when
+	// the cluster reaches their level (see LevelMigration).
+	Migrations []LevelMigration
 
 	// levelMax stands in for LevelMax, so tests can run a runtime of an
 	// older version; 0 is LevelMax.
@@ -349,7 +431,10 @@ func NewRuntime(o RuntimeOptions) *Runtime {
 		o.DegradedAfter = 15 * time.Second
 	}
 	rt := &Runtime{opts: o, log: o.Log, clock: o.Clock, mode: ModeStarting, fatal: make(chan error, 1),
-		wake: make(chan struct{}, 1), reqWake: make(chan struct{}, 1)}
+		wake: make(chan struct{}, 1), reqWake: make(chan struct{}, 1), srvWake: make(chan struct{}, 1), boot: o.Self.BootID}
+	if rt.boot == "" {
+		rt.boot = newBootID()
+	}
 	rt.build()
 	return rt
 }
@@ -364,14 +449,12 @@ func (rt *Runtime) build() {
 	rt.nodecfg = NewDoc[NodeCfg](h, NodeCfgID(rt.opts.Self.NodeID), NodeCfgKind, 1)
 	rt.nodecfg.Local = true
 	rt.requests = NewRequests(h, rt.opts.Self.NodeID)
+	rt.requests.wake = rt.wakeRequests
 	if rt.opts.Content != nil {
 		rt.opts.Content(h)
 	}
 	h.Watch("requests", func(context.Context) error {
-		select {
-		case rt.reqWake <- struct{}{}:
-		default:
-		}
+		rt.wakeRequests()
 		return nil
 	})
 	rt.joined, rt.provisional, rt.keysSig, rt.listed = false, false, "", nil
@@ -436,6 +519,10 @@ func (rt *Runtime) keyStore() KeyStore {
 	defer rt.mu.Unlock()
 	return KeyStore{Dir: rt.opts.StateDir, Master: rt.master}
 }
+
+// Target returns the OpenSearch client and the index prefix the runtime
+// uses now.
+func (rt *Runtime) Target() (*store.Client, string) { return rt.target() }
 
 func (rt *Runtime) target() (*store.Client, string) {
 	rt.mu.Lock()
@@ -545,13 +632,16 @@ func (rt *Runtime) Start(ctx context.Context) {
 	}
 	rt.log.Info("shared settings watcher started")
 	rt.running.Go(func() {
+		polled := false
 		for {
-			rt.step(ctx)
+			rt.step(ctx, polled)
 			select {
 			case <-ctx.Done():
 				return
 			case <-rt.wake:
+				polled = false
 			case <-rt.clock.After(rt.opts.Timing.Poll):
+				polled = true
 			}
 		}
 	})
@@ -561,9 +651,11 @@ func (rt *Runtime) Start(ctx context.Context) {
 // writer of cache.enc to end; the writer saves what changed last first.
 func (rt *Runtime) Wait() { rt.running.Wait() }
 
-func (rt *Runtime) step(ctx context.Context) {
+func (rt *Runtime) step(ctx context.Context, polled bool) {
 	rt.stepMu.Lock()
 	defer rt.stepMu.Unlock()
+	rt.polled = polled
+	defer func() { rt.polled = false }()
 	rt.stepLocked(ctx, true)
 }
 
@@ -673,6 +765,9 @@ func (rt *Runtime) readKeys() (localKeys, error) {
 			if w := KeyFileWarning(p); w != "" && !warned {
 				rt.log.Warn(w)
 			}
+			if kw := rt.keyFileUnsecured(); kw != nil && !warned {
+				rt.log.Warn(kw.Text)
+			}
 			out.file = k
 			if out.get(k.ID()) == nil {
 				out.all = append(out.all, k)
@@ -701,12 +796,8 @@ func (rt *Runtime) restoreCache() {
 	ks := rt.keyStore()
 	cache := Cache{Path: path, Master: ks.Master, ClusterID: id, Prefix: prefix}
 	d, err := cache.Read(rt.clock.Now())
-	if errors.Is(err, ErrCacheOld) {
-		rt.log.Warn("the copy of the shared settings is older than 30 days, so it was removed", "path", path)
-		_ = cache.Remove()
-		return
-	}
-	if err != nil {
+	old := errors.Is(err, ErrCacheOld)
+	if err != nil && !old {
 		rt.log.Warn("the copy of the shared settings cannot be used", "path", path, "err", err)
 		return
 	}
@@ -718,6 +809,15 @@ func (rt *Runtime) restoreCache() {
 		}
 	}
 	if active == nil {
+		return
+	}
+	if old {
+		// Its documents are not used, but the revisions it applied still
+		// refuse an older copy written back into OpenSearch: revisions
+		// only go up. The file is kept for them until the writer
+		// replaces it.
+		rt.log.Warn("the copy of the shared settings is older than 30 days, so only the revisions it applied are used", "path", path)
+		rt.Hub().KeepFloors(d.Floors)
 		return
 	}
 	rt.mu.Lock()
@@ -765,6 +865,39 @@ func (rt *Runtime) markContact() {
 // holds the job lease, and otherwise works out which legacy mode it is
 // in.
 func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
+	rt.look(ctx, mayFound, nil)
+}
+
+// newerKey is the cluster key kid when this server keeps it in its state
+// folder and kept it after the key the hub signs with.
+func (rt *Runtime) newerKey(kid string) *ClusterKey {
+	active := rt.Hub().Keys().Active()
+	if active == nil {
+		return nil
+	}
+	keys, err := rt.readKeys()
+	if err != nil {
+		return nil
+	}
+	k := keys.get(kid)
+	if k == nil || slices.IndexFunc(keys.stored, func(s *ClusterKey) bool { return s.ID() == kid }) < 0 {
+		return nil
+	}
+	ks := rt.keyStore()
+	added, err := ks.ClusterKeyCreated(kid)
+	if err != nil {
+		return nil
+	}
+	was, err := ks.ClusterKeyCreated(active.ID())
+	if err != nil || !added.After(was) {
+		return nil
+	}
+	return k
+}
+
+// look is evaluate, verifying the cluster document with only the key
+// when one is given.
+func (rt *Runtime) look(ctx context.Context, mayFound bool, only *ClusterKey) {
 	c, prefix := rt.target()
 	keys, kerr := rt.readKeys()
 	if kerr != nil {
@@ -807,15 +940,23 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		return
 	}
 	if len(keys.all) == 0 {
-		rt.notMember()
+		rt.notMember(ctx)
 		return
 	}
+	candidates := keys.all
+	if only != nil {
+		candidates = []*ClusterKey{only}
+	}
 	var active *ClusterKey
-	for _, k := range keys.all {
+	for _, k := range candidates {
 		if Verify(NewKeySet(k), ClusterDocID, &e) == nil && e.ID == ClusterDocID {
 			active = k
 			break
 		}
+	}
+	if active == nil && only != nil {
+		rt.setMode(ModeKeyMissing, "the cluster document does not verify with cluster key "+only.ID())
+		return
 	}
 	if active == nil {
 		err := Verify(NewKeySet(keys.all[0], keys.all[1:]...), ClusterDocID, &e)
@@ -828,9 +969,20 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 			_ = json.Unmarshal([]byte(e.Body), &peek)
 			if id, ok := rt.hasCache(prefix); ok && id != "" && id == peek.ClusterID {
 				rt.setMode(ModeKeyMissing, err.Error())
+				if rt.catchUp(ctx) {
+					rt.Kick()
+				}
 				return
 			}
-			rt.notMember()
+			if keys.storedOther() {
+				// A server that keeps the key of a cluster it was a member
+				// of does not take a cluster it cannot verify for one it
+				// is not part of, which would put it back on its own
+				// files: the cluster document may have been replaced.
+				rt.setMode(ModeKeyMissing, err.Error())
+				return
+			}
+			rt.notMember(ctx)
 			return
 		}
 		rt.log.Error("config.tamper: the cluster document in OpenSearch was changed outside Signalith", "audit", true, "doc", ClusterDocID, "reason", err.Error())
@@ -906,14 +1058,16 @@ func (rt *Runtime) noteHolder() {
 
 // notMember is a look that found a cluster this server has no key to:
 // legacy (b). Its node key is made now, so the Servers page can show the
-// fingerprint an admin approves it by.
-func (rt *Runtime) notMember() {
+// fingerprint an admin approves it by, and it asks to join.
+func (rt *Runtime) notMember(ctx context.Context) {
 	rt.setMode(ModeLegacyB, "")
 	if !rt.opts.ReadOnly {
 		if _, err := rt.nodeKey(); err != nil {
 			rt.log.Debug("could not make this server's node key", "err", err)
 		}
 	}
+	// It asks to join, and takes the key once an admin approves it.
+	rt.awaitApproval(ctx)
 }
 
 // nodeKey returns this server's node key, making it the first time, and
@@ -946,6 +1100,16 @@ func (rt *Runtime) setKeys(active *ClusterKey, keys localKeys, listed []string) 
 		}
 	}
 	slices.Sort(ids[1:])
+	// The key the last rotation retired still passes the session cookie
+	// check while its catch-up copies are kept.
+	var retired *ClusterKey
+	if kr, ok := rt.Keyring().Get(); ok {
+		if cu := kr.catchUpLive(rt.clock.Now()); cu != nil && !slices.Contains(ids, cu.From) {
+			if retired = keys.get(cu.From); retired != nil {
+				ids = append(ids, "cookie:"+retired.ID())
+			}
+		}
+	}
 	sig := strings.Join(ids, ",")
 	rt.mu.Lock()
 	h := rt.hub
@@ -953,7 +1117,11 @@ func (rt *Runtime) setKeys(active *ClusterKey, keys localKeys, listed []string) 
 	rt.keysSig = sig
 	rt.mu.Unlock()
 	if !same {
-		h.SetKeys(NewKeySet(active, others...))
+		set := NewKeySet(active, others...)
+		if retired != nil {
+			set = set.WithCookieKeys(retired)
+		}
+		h.SetKeys(set)
 	}
 	return !same
 }
@@ -1015,7 +1183,11 @@ func (rt *Runtime) cycle(ctx context.Context) {
 	h := rt.hub
 	rt.mu.Unlock()
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	err := h.Cycle(cctx)
+	read := h.Cycle
+	if rt.polled {
+		read = h.Poll
+	}
+	err := read(cctx)
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -1045,6 +1217,21 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		rt.setMode(ModeGone, "")
 		return
 	}
+	// A copy of the shared settings (cache.enc) written before this
+	// server kept a new cluster key gives the hub only the key it was
+	// signed with: with the cluster document signed with a newer key this
+	// server keeps, it joins with that key. An older one, such as a key a
+	// rotation retired, never takes the cluster back.
+	if p := h.problemOf(ClusterDocID); p != nil && p.unknownKID != "" && h.Keys().Get(p.unknownKID) == nil {
+		rt.mu.Lock()
+		tried := rt.newerKID == p.unknownKID
+		rt.newerKID = p.unknownKID
+		rt.mu.Unlock()
+		if k := rt.newerKey(p.unknownKID); k != nil && !tried {
+			rt.look(ctx, false, k)
+			return
+		}
+	}
 	body, ok := cdoc.Get()
 	if !ok {
 		p := h.problemOf(ClusterDocID)
@@ -1054,12 +1241,19 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 			rt.joined = false
 			rt.mu.Unlock()
 			rt.setMode(ModeKeyMissing, p.Reason)
+			if rt.catchUp(ctx) {
+				rt.Kick()
+			}
 		case p != nil:
 			rt.setMode(ModeDegraded, "the cluster document in OpenSearch cannot be used: "+p.Reason)
 		}
 		return
 	}
 	if err := checkLevel(body.Level, rt.maxLevel()); err != nil {
+		var le *LevelError
+		if errors.As(err, &le) {
+			le.Since, le.Version = body.LevelVersions[strconv.Itoa(body.Level)], rt.opts.Version
+		}
 		rt.fail(err)
 		return
 	}
@@ -1071,12 +1265,22 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	if kok {
 		rt.useListed(kr.KIDs())
 	}
+	// A key rotation in progress hands this server a copy of the new key.
+	picked := kok && rt.pickUpKey(kr)
 	moved := kok && kr.Active != "" && h.Keys().Active() != nil && kr.Active != h.Keys().Active().ID()
-	if (len(h.KeyMissing()) > 0 || moved) && rt.newKeys() {
+	// A key this server lacks shows as missing when the keyring it read
+	// lists it, and as a change outside Signalith when it does not (the
+	// keyring itself is signed with the new key): either may be a
+	// rotation it missed, which catchUp checks with the old key.
+	// catchUp sets the keys from the keyring it verified, which the one
+	// in memory is behind.
+	if !picked && (len(h.KeyMissing()) > 0 || len(h.Tamper()) > 0) && rt.catchUp(ctx) {
+		rt.Kick()
+	} else if (len(h.KeyMissing()) > 0 || moved || picked || kok && rt.keysBehind(kr)) && rt.newKeys() {
 		// Read everything again with the key found.
 		rt.Kick()
 	}
-	if !rt.opts.ReadOnly {
+	if !rt.opts.ReadOnly && !rt.RemovedSelf() {
 		if _, listed := kr.Members[rt.opts.Self.NodeID]; !kok || !listed {
 			if addedBy == "" {
 				addedBy = AddedByImport
@@ -1098,14 +1302,24 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 		rt.setMode(ModeKeyMissing, "some shared settings are signed with a cluster key this server does not have: "+strings.Join(km, ", "))
 		return
 	}
+	// The cluster document and the keyring signed with a key this server
+	// has never heard of: a rotation it was left out of (it was removed)
+	// or missed by more than the catch-up time.
+	for _, id := range []string{ClusterDocID, KeyringDocID} {
+		if p := h.problemOf(id); p != nil && p.unknownKID != "" {
+			rt.setMode(ModeKeyMissing, "the cluster document is signed with cluster key "+p.unknownKID+
+				", which this server does not have: it was removed from the cluster, or missed a rotation of the cluster key")
+			return
+		}
+	}
 	rt.setMode(ModeMember, "")
 	if !rt.opts.ReadOnly {
 		// The founder brings in its own files whether or not it runs the
 		// background jobs: after a rolling upgrade another server may
 		// keep them for good.
 		lease := rt.holdsLease()
-		if lease {
-			rt.RaiseLevel(ctx)
+		if lease && rt.RaiseLevel(ctx) {
+			rt.runLevelMigrations(ctx)
 		}
 		if lease || body.CreatedByID == rt.opts.Self.NodeID {
 			if err := rt.lateImports(ctx, lease); err != nil && ctx.Err() == nil {
@@ -1418,6 +1632,8 @@ func (rt *Runtime) Housekeep(ctx context.Context) {
 		// The loop runs the imports the new level allows.
 		rt.Kick()
 	}
+	rt.runLevelMigrations(ctx)
+	rt.PruneMigrations(ctx)
 }
 
 // maxLevel is the highest level this version reads.
@@ -1493,6 +1709,12 @@ func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
 			return errRaised
 		}
 		b.Level = from + 1
+		if rt.opts.Version != "" {
+			if b.LevelVersions == nil {
+				b.LevelVersions = map[string]string{}
+			}
+			b.LevelVersions[strconv.Itoa(from+1)] = rt.opts.Version
+		}
 		return nil
 	})
 	if err != nil {
@@ -1509,13 +1731,29 @@ func (rt *Runtime) RaiseLevel(ctx context.Context) bool {
 	return true
 }
 
-// RunRequests runs the requests for this server until ctx ends: when
-// watch:requests changes, and every minute. It is one of the background
-// jobs, so it runs on the server that holds the job lease.
+// RunRequests runs the requests for the server that holds the job lease
+// until ctx ends: when watch:requests changes, and every minute. It is one
+// of the background jobs, so it runs on that server. Requests that name a
+// server are left to RunServerRequests.
 func (rt *Runtime) RunRequests(ctx context.Context, handlers map[string]Handler) {
+	rt.runRequests(ctx, handlers, RunLeader, rt.reqWake)
+}
+
+// RunServerRequests runs the requests that name this server (such as its
+// part of a restart of several servers, one at a time) until ctx ends:
+// when watch:requests changes, and every minute. Unlike RunRequests it runs
+// on every server, for as long as the process does, so an in-process
+// restart run from it does not end it. A part of this server's that an
+// earlier process left running (it stopped before the part was over) is
+// failed, so a request in sequence does not go on past it.
+func (rt *Runtime) RunServerRequests(ctx context.Context, handlers map[string]Handler) {
+	rt.runRequests(ctx, handlers, RunServer, rt.srvWake)
+}
+
+func (rt *Runtime) runRequests(ctx context.Context, handlers map[string]Handler, only string, wake <-chan struct{}) {
 	for {
 		if m, _ := rt.Mode(); m == ModeMember {
-			rn := &Runner{Requests: rt.Requests(), Handlers: handlers, Log: rt.log,
+			rn := &Runner{Requests: rt.Requests(), Handlers: handlers, Log: rt.log, Only: only, Boot: rt.boot,
 				Lease: func() (int64, bool) {
 					var e int64
 					if rt.opts.LeaseEpoch != nil {
@@ -1531,10 +1769,32 @@ func (rt *Runtime) RunRequests(ctx context.Context, handlers map[string]Handler)
 		select {
 		case <-ctx.Done():
 			return
-		case <-rt.reqWake:
+		case <-wake:
 		case <-rt.clock.After(time.Minute):
 		}
 	}
+}
+
+// wakeRequests wakes the loops that run requests: one was made, or a
+// part of one is over.
+func (rt *Runtime) wakeRequests() {
+	for _, ch := range []chan struct{}{rt.reqWake, rt.srvWake} {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// BootID returns this process's boot id, as recorded with the request
+// parts it claims.
+func (rt *Runtime) BootID() string { return rt.boot }
+
+// Self returns this server's node id and name.
+func (rt *Runtime) Self() Self {
+	s := rt.opts.Self
+	s.BootID = rt.boot
+	return s
 }
 
 // offline reports whether server nodeID's heartbeat stopped.
@@ -1565,8 +1825,12 @@ func (rt *Runtime) Ready() (bool, string) {
 // as far as the shared settings go; "" when it may. It reads only what
 // the runtime holds, so the node may ask while it holds its own lock.
 func (rt *Runtime) NotEligible() string {
+	removed := rt.RemovedSelf()
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	if removed && (rt.mode == ModeMember || rt.mode == ModeDegraded) {
+		return "it was removed from the cluster"
+	}
 	switch rt.mode {
 	case ModeLegacyA:
 		return "it waits for OpenSearch to move its settings into it"
@@ -1608,6 +1872,8 @@ type Status struct {
 	// Fingerprint is this server's node key's, "" before it has one.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	NotEligible string `json:"not_eligible,omitempty"`
+	// KeyIDs are the ids of the cluster keys this server accepts.
+	KeyIDs []string `json:"key_ids,omitempty"`
 }
 
 // Status returns the shared configuration as this server uses it.
@@ -1622,6 +1888,7 @@ func (rt *Runtime) Status() Status {
 		if k := h.Keys().Active(); k != nil {
 			st.ClusterKID = k.ID()
 		}
+		st.KeyIDs = h.Keys().IDs()
 		st.ConfigSeq, st.MaxRev = h.Applied(), h.MaxRev()
 		st.NeedsUpgrade, st.Tamper, st.KeyMissing = h.NeedsUpgrade(), h.Tamper(), h.KeyMissing()
 	}
@@ -1667,7 +1934,7 @@ func (rt *Runtime) Warnings() []Warning {
 			fp = " Its fingerprint is " + st.Fingerprint + "."
 		}
 		w = append(w, Warning{Level: "red", Text: "This server is not part of the cluster yet, so it uses its own files and runs no background jobs. " +
-			"Give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
+			"Approve it on another server after comparing the fingerprint (signalith cluster approve there), or give it the cluster key: export it on a member with signalith cluster export-key and run signalith cluster import-key here, or set SIGNALITH_CLUSTER_KEY_FILE. " +
 			"It joins within seconds of having the key." + fp,
 			Banner: "This server is not part of the cluster yet, so it runs no background jobs."})
 	case ModeLegacyC:
@@ -1689,7 +1956,8 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: text, Banner: "OpenSearch cannot be reached; changes are paused."})
 	case ModeKeyMissing:
 		w = append(w, Warning{Level: "red", Text: "The shared settings are signed with a cluster key this server does not have: it missed a change of the cluster key. " +
-			"Import the current key (signalith cluster export-key on a member, then signalith cluster import-key here).",
+			"A server that was offline during a key rotation catches up by itself for 7 days afterwards; after that, or for a server that was removed, re-join it: " +
+			"import the current key (signalith cluster export-key on a member, then signalith cluster import-key here).",
 			Banner: "This server missed a change of the cluster key, so it runs no background jobs."})
 	case ModeGone:
 		fix := "Restore them from this server's copy with signalith cluster import -from-cache; the other servers resume by themselves."
@@ -1701,11 +1969,19 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: "The shared settings in OpenSearch are gone (their index was deleted or replaced). " + fix,
 			Banner: "The shared settings in OpenSearch are gone."})
 	}
+	if r, ok := rt.removedSelf(); ok && !st.Mode.Legacy() {
+		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("This server was removed from the cluster by %s on %s. It runs no background jobs. "+
+			"Stop it and uninstall it, or give it a new identity (signalith cluster new-identity) and add it again.", cmp.Or(r.By, "an admin"), r.At.Format(time.DateOnly)),
+			Banner: "This server was removed from the cluster."})
+	}
 	if st.Mode == ModeMember {
 		if iw := rt.importWarning(); iw != nil {
 			w = append(w, *iw)
 		}
 		if lw := rt.lateWarning(); lw != nil {
+			w = append(w, *lw)
+		}
+		if lw := rt.levelWarning(); lw != nil {
 			w = append(w, *lw)
 		}
 		if fw := rt.founderWarning(); fw != nil {
@@ -1716,6 +1992,9 @@ func (rt *Runtime) Warnings() []Warning {
 		w = append(w, Warning{Level: "red", Text: fmt.Sprintf("Shared settings were changed in OpenSearch outside Signalith (%s), so this server keeps its last good copy. "+
 			"If a snapshot of OpenSearch was restored on purpose, run signalith cluster accept-restore.", strings.Join(st.Tamper, ", ")),
 			Banner: "Shared settings were changed in OpenSearch outside Signalith."})
+	}
+	if kw := rt.keyFileUnsecured(); kw != nil {
+		w = append(w, *kw)
 	}
 	if len(st.NeedsUpgrade) > 0 {
 		w = append(w, Warning{Level: "amber", Text: fmt.Sprintf("Some shared settings were written by a newer version of Signalith (%s), so this server keeps its last good copy. Upgrade it.",

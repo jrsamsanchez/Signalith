@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Endpoints page (analysts and admins): hosts running osquery that report
 // to Signalith, and the log agents (Fluent Bit, OpenTelemetry Collectors)
 // that send events, matched to the hosts by computer name. Hosts lists
@@ -6,6 +8,34 @@
 // on hosts now. "What hosts collect" (admins) sets the watched file paths
 // and how often inventory and checks run.
 'use strict';
+
+// sensorText words a network sensor's warnings (the codes of its status
+// line, and silent, no_status and tuning_failed): what to run on the
+// sensor to fix each. Settings > Network sensors uses it too. Logs differ
+// when the programs run in containers (layout docker).
+window.sensorText = (function () {
+  const COMPOSE = 'sudo docker compose -f /etc/signalith-sensor/docker/docker-compose.yml';
+  const logsOf = (s, unit, service) => (s.layout === 'docker' ? COMPOSE + ' logs ' + service : 'sudo journalctl -u ' + unit + ' -n 50');
+  const SENSOR_WARNING = {
+    capture_ip: () => 'The capture port has an IP address: it should only listen. Remove the address in the sensor’s network settings.',
+    capture_link: () => 'The capture port’s link is down: check its cable and the mirror port.',
+    no_traffic: () => 'No packets reached the capture port since the last check: check the mirror (SPAN) port.',
+    drops: () => 'It drops more than 5% of packets: give it more cores or memory, or mirror less traffic.',
+    rules_old: () => 'Its Suricata rules are more than 3 days old. On the sensor, run sudo systemctl start signalith-suricata-update, then see why with sudo journalctl -u signalith-suricata-update.',
+    rules_failed: () => 'The last Suricata rules update failed. On the sensor, see why with sudo journalctl -u signalith-suricata-update, then run sudo systemctl start signalith-suricata-update.',
+    zeek_stopped: (s) => 'Zeek is not running. On the sensor, see why with ' + logsOf(s, 'signalith-zeek', 'zeek') + ', or run the install line again.',
+    suricata_stopped: (s) => 'Suricata is not running. On the sensor, see why with ' + logsOf(s, 'signalith-suricata', 'suricata') + ', or run the install line again.',
+    disk_low: () => 'Less than 10% of its disk is free: give it a bigger disk.',
+    time_not_synced: () => 'Its clock is not synced, so event times may be off. On the sensor, run sudo timedatectl set-ntp true.',
+    // Why it failed is on Settings > Network sensors only: it can quote
+    // the tuning, which only admins read.
+    tuning_failed: () => 'The rule tuning from Signalith failed its test, so the sensor keeps the tuning it had. ' +
+      'An admin sees why in Settings > Network sensors, fixes the line in Rule tuning and saves; the sensor tries again within 10 minutes.',
+    silent: (s) => 'Signalith has heard nothing from it lately. Check the sensor is on and reaches Signalith, then see why its agent stopped sending with ' + logsOf(s, 'signalith-fluent-bit', 'fluent-bit') + '.',
+    no_status: () => 'It sends no status line, so only whether it sends can be checked: sensors you set up yourself send none. Install it with the line from Add data > Network sensor to see the rest.',
+  };
+  return { logsOf, warning: (w, s) => (SENSOR_WARNING[w] ? SENSOR_WARNING[w](s || {}) : w) };
+}());
 
 (function () {
   const PLATFORM = { windows: 'Windows', linux: 'Linux', darwin: 'macOS' };
@@ -23,6 +53,7 @@
   // Why a log agent needs a new configuration, in plain words.
   const AGENT_REASON = {
     ca: 'It trusts a different certificate authority than this server uses, so its connections fail.',
+    retired_ca: 'It trusts only a certificate authority a server retired when it took the cluster’s, so its connections fail. Give it a new configuration from Add data.',
     plain: 'It sends without encryption.',
     revoked: 'Its agent token was revoked.',
     old: 'It was set up before Signalith could tell agents apart; give it a new configuration to see its computer name.',
@@ -154,15 +185,21 @@
 
   // agentPlatform guesses the agent's system from its tag and how it sends.
   function agentPlatform(a) {
+    if (a.managed) return { os: 'agent', label: 'Signalith Agent' + (PLATFORM[a.managed.os] ? ' on ' + PLATFORM[a.managed.os] : '') };
     if (a.intake === 'otlp') return { os: 'otel', label: 'OpenTelemetry Collector' };
+    if (a.intake === 'hec') return { os: 'otel', label: 'Splunk HEC sender' };
     if ((a.tag || '').startsWith('win')) return { os: 'windows', label: 'Windows' };
     // Agents made from the Antivirus option need its ClamAV configuration.
     if ((a.tag || '').startsWith('linux.clamav')) return { os: 'antivirus', label: 'Antivirus (ClamAV)' };
+    // Fluent Bit on a network sensor, sending Zeek's or Suricata's logs,
+    // or the status line of a sensor the install script built.
+    if (a.sensor || /^(zeek|suricata|sensor)(\.|$)/.test(a.tag || '')) return { os: 'sensor', label: 'Network sensor' };
     if ((a.tag || '').startsWith('linux') || a.tag === 'wazuh') return { os: a.tag === 'wazuh' ? 'wazuh' : 'linux', label: a.tag === 'wazuh' ? 'Wazuh manager' : 'Linux' };
     return { os: '', label: '' };
   }
 
   function agentStatus(a) {
+    if (managedTrouble(a.managed) && !a.silent) return el('span', { class: 'badge badge--warning' }, icon('circle-alert'), managedTrouble(a.managed));
     if (needsConfig(a)) return el('span', { class: 'badge badge--warning' }, icon('circle-alert'), 'Needs a new configuration');
     if (a.silent) {
       const t = new Date(a.last_seen);
@@ -170,6 +207,122 @@
       return el('span', { class: 'ep-online' }, el('span', { class: 'pulse', 'data-state': 'idle' }), 'Silent since ' + when);
     }
     return el('span', { class: 'ep-online' }, el('span', { class: 'pulse' }), 'Sending, ' + ago(a.last_seen));
+  }
+
+  // ---------- the Signalith Agent ----------
+  // A computer the Signalith Agent runs reports every 5 minutes
+  // (a.managed): its version, its system, whether it got its
+  // configuration, and each collector it runs with its state.
+  // "update" is a signed update the agent is installing, or one that
+  // failed and was undone.
+  const COLLECTOR = { fluentbit: 'Fluent Bit', osquery: 'osquery', update: 'Update' };
+  const STATE = { running: 'running', starting: 'starting', failed: 'stopped', missing: 'not installed', off: 'off' };
+  const UPDATE_STATE = { starting: 'installing', failed: 'failed' };
+  const collectorName = (c) => COLLECTOR[c.name] || c.name;
+  const stateOf = (c) => (c.name === 'update' && UPDATE_STATE[c.state]) || STATE[c.state] || c.state;
+
+  // managedTrouble is the short word for what is wrong, or ''.
+  function managedTrouble(m) {
+    if (!m) return '';
+    const bad = (m.components || []).find((c) => c.state === 'failed' || c.state === 'missing');
+    if (bad) return collectorName(bad) + ' ' + stateOf(bad);
+    if (m.config_error) return 'Can’t get its configuration';
+    return '';
+  }
+
+  // managedLine is the row's second line: "Agent 0.4.0 · Fluent Bit
+  // 4.0.3 running · Ubuntu 24.04 LTS".
+  function managedLine(m) {
+    const parts = ['Agent ' + (m.version || '')].concat((m.components || []).map((c) => [collectorName(c), c.version, stateOf(c)].filter(Boolean).join(' ')));
+    if (m.system) parts.push(m.system);
+    return parts.join(' · ');
+  }
+
+  function managedFacts(m) {
+    const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
+    const trouble = managedTrouble(m);
+    // Where to read a collector's last lines on the computer: osquery and
+    // the updater have their own services on Linux; on Windows and macOS
+    // the updater writes updater.log and the rest agent.log.
+    const logFile = (c) => (c.name === 'update' ? 'updater' : 'agent') + '.log';
+    const logCommand = (c) => m.os === 'windows'
+      ? 'Get-Content \'C:\\ProgramData\\Signalith Agent\\' + logFile(c) + '\' -Tail 50'
+      : m.os === 'darwin' ? 'sudo tail -n 50 /var/lib/signalith-agent/' + logFile(c)
+        : 'sudo journalctl -u ' + ({ osquery: 'signalith-osquery', update: 'signalith-agent-update' }[c.name] || 'signalith-agent') + ' -n 50';
+    const why = [];
+    if (m.config_error) why.push('It could not get a new configuration from Signalith, so it keeps the one it has: ' + m.config_error);
+    for (const c of m.components || []) {
+      if (c.name === 'update') {
+        if (c.state === 'failed') why.push(['The update to ' + c.version + ' did not go in, and the agent kept the version it has. See why on the computer with ', el('code', {}, logCommand(c)), '.']);
+      } else if (c.state === 'missing') why.push(collectorName(c) + ' is not installed. Run the line from Add data > Signalith Agent again on the computer.');
+      else if (c.state === 'failed') why.push([collectorName(c) + ' stopped' + (c.restarts ? ' (' + c.restarts + (c.restarts === 1 ? ' restart' : ' restarts') + ')' : '') + '. The agent starts it again; see why on the computer with ', el('code', {}, logCommand(c)), '.']);
+    }
+    return [
+      el('h4', { class: 'ep-h4' }, 'Signalith Agent', trouble ? el('span', { class: 'badge badge--warning' }, trouble) : null),
+      el('dl', { class: 'ep-facts' },
+        ...fact('Version', m.version),
+        ...fact('System', [m.system, m.arch].filter(Boolean).join(', ')),
+        ...(m.components || []).flatMap((c) => fact(collectorName(c), [c.version, stateOf(c) + (c.since ? ' since ' + new Date(c.since).toLocaleString() : '')].filter(Boolean).join(', '))),
+        ...fact('Configuration', m.config_error ? 'Could not get a new one' : m.revision ? 'Up to date (' + m.revision.slice(0, 8) + ')' : 'None yet'),
+        ...fact('Started', m.started ? new Date(m.started).toLocaleString() : ''),
+        ...fact('Status sent', m.received ? new Date(m.received).toLocaleString() + ' (' + ago(m.received) + ')' : '')),
+      why.length ? el('ul', { class: 'ep-agent__why', role: 'list' }, ...why.map((w) => el('li', { 'data-tone': 'warning' }, icon('circle-alert'), el('span', {}, ...[].concat(w))))) : null,
+      ...(m.components || []).filter((c) => c.error && c.state !== 'running').map((c) => el('pre', { class: 'ep-agent__log', 'aria-label': collectorName(c) + '’s last lines' }, c.error)),
+    ];
+  }
+
+  // ---------- network sensors ----------
+  // A sensor the install script built sends a status line every 5
+  // minutes (a.sensor): versions, the rules' age, the capture port and
+  // its drops, and free disk.
+  // Each warning says what to run on the sensor to fix it; logs differ
+  // when the programs run in containers (layout docker).
+  const sensorWarning = window.sensorText.warning;
+
+  // rulesAge is how old the rules are, as "1 day old", or why there are none.
+  function rulesAge(s) {
+    if (s.rules_update === 'failed') return 'rules update failed';
+    const t = Date.parse(s.rules_updated || '');
+    if (!isFinite(t)) return 'no rules yet';
+    const h = Math.max(0, Math.floor(((Date.parse(s.at) || Date.now()) - t) / 3600000));
+    return 'rules ' + (h < 1 ? 'less than an hour' : h < 24 ? h + (h === 1 ? ' hour' : ' hours') : Math.floor(h / 24) + (h < 48 ? ' day' : ' days')) + ' old';
+  }
+
+  const toolText = (name, t) => (t ? [name, t.version].filter(Boolean).join(' ') + (t.running ? '' : ' stopped') : '');
+
+  // sensorLine is a sensor's row's second line: "Zeek 7.0.5, Suricata
+  // 8.0.1 · rules 1 day old · ens192 up · 0.1% dropped".
+  function sensorLine(s) {
+    const tools = [toolText('Zeek', s.zeek), toolText('Suricata', s.suricata)].filter(Boolean).join(', ');
+    return [tools, s.suricata ? rulesAge(s) : '', [s.interface, s.link].filter(Boolean).join(' '), (s.drop_percent || 0) + '% dropped'].filter(Boolean).join(' · ');
+  }
+
+  function sensorFacts(s) {
+    const fact = (k, v) => (v ? [el('dt', {}, k), el('dd', {}, v)] : []);
+    const gb = (b) => (b >= 1073741824 ? Math.round(b / 1073741824).toLocaleString() + ' GB' : Math.round(b / 1048576).toLocaleString() + ' MB');
+    const warnings = (s.warnings || []).map((w) => sensorWarning(w, s));
+    const tool = (t) => (t ? [t.version, t.running ? 'running' : 'stopped'].filter(Boolean).join(', ') : '');
+    const updated = Date.parse(s.rules_updated || '');
+    const rules = [s.rules_count ? s.rules_count.toLocaleString() + ' rules' : 'No rules yet',
+      isFinite(updated) ? 'updated ' + new Date(updated).toLocaleString() : '', s.rules_update === 'failed' ? 'the last update failed' : ''].filter(Boolean).join(', ');
+    return [
+      el('h4', { class: 'ep-h4' }, 'Network sensor', warnings.length ? el('span', { class: 'badge badge--warning' }, warnings.length === 1 ? '1 warning' : warnings.length + ' warnings') : null),
+      el('dl', { class: 'ep-facts' },
+        ...fact('Capture port', [s.interface, s.link].filter(Boolean).join(', link ')),
+        ...fact('Packets', s.packets ? s.packets.toLocaleString() + ' received, ' + (s.dropped || 0).toLocaleString() + ' dropped' : ''),
+        ...fact('Dropped lately', (s.drop_percent || 0) + '% of packets, over the last 5 minutes'),
+        ...fact('Zeek', tool(s.zeek)),
+        ...fact('Suricata', tool(s.suricata)),
+        ...fact('Suricata rules', s.suricata ? rules : ''),
+        ...fact('Agent', s.fluentbit ? 'Fluent Bit ' + s.fluentbit : ''),
+        ...fact('Installed with', [s.layout === 'docker' ? 'Docker' : s.layout === 'packages' ? 'Packages' : s.layout, s.version ? 'sensor script ' + s.version : ''].filter(Boolean).join(', ')),
+        ...fact('Disk free', (s.disk_free_percent || 0) + '%' + (s.disk_free_bytes ? ' (' + gb(s.disk_free_bytes) + ')' : '')),
+        ...fact('Disk encrypted', s.disk_encrypted ? 'Yes' : 'No'),
+        ...fact('Clock synced', s.time_synced ? 'Yes' : 'No'),
+        ...fact('Status sent', s.at ? new Date(s.at).toLocaleString() + ' (' + ago(s.at) + ')' : '')),
+      warnings.length ? el('ul', { class: 'ep-agent__why', role: 'list' }, ...warnings.map((w) => el('li', { 'data-tone': 'warning' }, icon('circle-alert'), w))) : null,
+      el('p', { class: 'ep-sensor__more', 'data-min-role': 'admin' }, el('a', { href: '#sensors', 'data-page': 'sensors' }, 'Open in Settings > Network sensors'), ' for its checklist and the rule tuning.'),
+    ];
   }
 
   // agentFacts are what a log agent's dialog says about it.
@@ -219,7 +372,7 @@
     const plat = agentPlatform(a);
     dlg.replaceChildren(
       head(a.name || a.addresses[0] || 'Log agent', a.refusing ? 'A computer that refuses this server’s certificate' : ['Log agent', plat.label].filter(Boolean).join(' · ')),
-      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1)),
+      el('div', { class: 'modal__body ep-host__body' }, ...agentSection(a, dlg).slice(1), ...(a.managed ? managedFacts(a.managed) : []), ...(a.sensor ? sensorFacts(a.sensor) : [])),
       el('div', { class: 'modal__foot' }, el('span', { class: 'spacer' }),
         el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
     if (!dlg.open) dlg.showModal();
@@ -288,7 +441,11 @@
         el('td', { 'data-label': 'Host' }, el('div', { class: 'ep-host-cell' },
           el('span', { class: 'ep-plat', title: 'Log agent' }, icon('file-text')),
           el('div', {}, el('div', { class: 'ep-name' }, label),
-            el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · '))))),
+            el('div', { class: 'ep-sub' }, a.refusing ? 'Refuses this server’s certificate' : ['Log agent only', plat.label].filter(Boolean).join(' · ')),
+            a.managed && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, managedLine(a.managed)) : null,
+            a.sensor && !a.refusing ? el('div', { class: 'ep-sub ep-sensor' }, sensorLine(a.sensor),
+              (a.sensor.warnings || []).length ? el('span', { class: 'ep-sensor__warn', title: a.sensor.warnings.map((w) => sensorWarning(w, a.sensor)).join(' ') }, icon('triangle-alert', 'icon--xs'),
+                a.sensor.warnings.length === 1 ? '1 warning' : a.sensor.warnings.length + ' warnings') : null) : null))),
         el('td', { 'data-label': 'Status' }, agentStatus(a)),
         el('td', { 'data-label': 'Checks', class: 'ep-c-checks' }, el('span', { class: 'ep-muted' }, '—')),
         el('td', { 'data-label': 'Address', class: 'mono ep-c-addr' }, a.addresses[0] || ''),
@@ -341,6 +498,14 @@
   }
 
   // ---------- one host ----------
+  // The Compliance page opens a host that fails a check. The dialog moves
+  // out of this page's section, which is hidden while another page shows.
+  window.openEndpointHost = (id) => {
+    const dlg = $('ep-host');
+    if (dlg.parentElement !== document.body) document.body.append(dlg);
+    return openHost(id);
+  };
+
   async function openHost(id) {
     const dlg = $('ep-host');
     dlg.replaceChildren(el('div', { class: 'modal__body' }, skeleton()));
@@ -377,6 +542,8 @@
           el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); searchHost(h.hostname, 'Inventory'); } }, icon('list'), 'Inventory changes'),
           can('admin') ? el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); dlg.close(); S.query = { targets: [h.id], label: h.hostname }; showTab('query'); } }, icon('terminal'), 'Live query') : null),
         ...(agent ? agentSection(agent, dlg) : []),
+        ...(agent && agent.managed ? managedFacts(agent.managed) : []),
+        ...(agent && agent.sensor ? sensorFacts(agent.sensor) : []),
         el('h4', { class: 'ep-h4' }, 'Configuration checks', failing ? el('span', { class: 'badge badge--danger' }, failing + ' failing') : null),
         checks.length ? el('ul', { class: 'ep-checks', role: 'list' }, ...checks.map(checkItem)) : el('p', { class: 'ep-muted' }, 'No checks for this platform.')),
       el('div', { class: 'modal__foot' },
@@ -633,15 +800,76 @@
   }
 
   // ---------- what hosts collect ----------
+  // What the Signalith Agents of each install line collect: each switch is
+  // on by default ("" stored), off is "off". The agents pick a change up
+  // the next time they fetch their configuration.
+  const AGENT_COLLECT = [
+    ['osquery', 'osquery', 'Where it is installed: inventory, file changes and checks'],
+    ['sysmon', 'Sysmon', 'Where it runs, on Windows and Linux'],
+    ['powershell', 'PowerShell logs', 'Windows: the scripts and commands that run'],
+    ['web_logs', 'Web server logs', 'Linux: Apache and Nginx access logs'],
+    ['audit_log', 'Audit log', 'Linux: auditd’s records'],
+  ];
+
+  // updatesSwitch pauses automatic updates for one install line, which is
+  // also how to roll a release out to a few computers first.
+  function updatesSwitch(c, change) {
+    const sw = el('input', { type: 'checkbox', onchange: () => change('updates', sw.checked ? '' : 'off') });
+    sw.checked = c.updates !== 'off';
+    return el('div', { class: 'ep-set__switches ep-set__updates' },
+      el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, 'Automatic updates'),
+        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))));
+  }
+
+  function agentCollectSection(lines, edits) {
+    const sec = el('section', { class: 'ep-set__group' },
+      el('div', {}, el('h4', { class: 'ep-set__title' }, 'Signalith Agent'),
+        el('p', { class: 'hint' }, 'For the computers installed with each line from Add endpoints. Everything is on by default.')));
+    if (!lines.length) {
+      sec.append(el('p', { class: 'hint' }, 'No Signalith Agent is installed yet. Add one with Add endpoints, then choose what it collects here.'));
+      return sec;
+    }
+    let cur = lines[0].id;
+    const pick = el('select', { class: 'select', id: 'ep-agent-line' }, ...lines.map((l) => el('option', { value: l.id }, l.name)));
+    const body = el('div', { class: 'ep-set__agent' });
+    const draw = () => {
+      const c = edits.get(cur) || { ...(lines.find((l) => l.id === cur).collect || {}) };
+      const change = (k, v) => {
+        const n = { ...c, [k]: v };
+        if (!v) delete n[k];
+        edits.set(cur, n);
+        draw();
+      };
+      body.replaceChildren(
+        el('div', { class: 'ep-set__switches' }, ...AGENT_COLLECT.map(([k, label, hint]) => {
+          const sw = el('input', { type: 'checkbox', onchange: () => change(k, sw.checked ? '' : 'off') });
+          sw.checked = c[k] !== 'off';
+          return el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, label), el('span', { class: 'hint' }, hint)));
+        })),
+        el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Linux sign-ins'),
+          seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')),
+        updatesSwitch(c, change));
+    };
+    pick.addEventListener('change', () => { cur = pick.value; draw(); });
+    draw();
+    sec.append(el('div', { class: 'field' }, el('label', { class: 'label', for: 'ep-agent-line' }, 'Install line'), pick), body);
+    return sec;
+  }
+
   async function openSettings() {
     const dlg = $('ep-settings-dialog');
     let d;
+    let lines = [];
     try {
-      d = await api('api/endpoints/settings');
+      const [set, toks] = await Promise.all([api('api/endpoints/settings'), api('api/agent-tokens').catch(() => null)]);
+      d = set;
+      lines = ((toks && toks.tokens) || []).filter((t) => t.purpose === 'agent' && t.status === 'active');
     } catch (e) {
       toast(e.message, null, { tone: 'danger', title: 'Couldn’t load the settings' });
       return;
     }
+    // edits maps a line's token ID to what it should collect, once changed.
+    const edits = new Map();
     const s = d.settings;
     let plat = 'windows';
     const paths = { windows: (s.file_paths.windows || []).join('\n'), linux: (s.file_paths.linux || []).join('\n'), darwin: (s.file_paths.darwin || []).join('\n') };
@@ -683,10 +911,13 @@
     dlg.replaceChildren(el('form', { method: 'dialog', novalidate: '' },
       el('div', { class: 'modal__head' }, el('div', {},
         el('h3', { class: 'modal__title', id: 'ep-set-title' }, 'What hosts collect'),
-        el('p', { class: 'modal__desc' }, 'For every endpoint. Hosts pick up changes within 5 minutes.')),
+        el('p', { class: 'modal__desc' }, 'Computers pick up changes within 5 minutes.')),
       el('button', { class: 'btn btn--ghost btn--icon btn--sm modal__close', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
       el('div', { class: 'modal__body' },
+        agentCollectSection(lines, edits),
         el('section', { class: 'ep-set__group' },
+          el('div', {}, el('h4', { class: 'ep-set__title' }, 'osquery'),
+            el('p', { class: 'hint' }, 'For every host running osquery, with the agent or on its own.')),
           el('label', { class: 'switch' }, fim, el('b', {}, 'Watch files for changes')),
           el('div', { class: 'ep-set__row' }, platSeg, restore),
           el('div', { class: 'field' }, el('label', { class: 'label', for: 'ep-paths' }, 'Watched paths, one per line'),
@@ -713,6 +944,12 @@
       };
       save.disabled = true;
       try {
+        for (const [id, c] of edits) {
+          const r = await api('api/agent-tokens/' + encodeURIComponent(id) + '/collect', c, 'PUT');
+          const l = lines.find((x) => x.id === id);
+          if (l && r && r.token) l.collect = r.token.collect;
+          edits.delete(id);
+        }
         await api('api/endpoints/settings', body, 'PUT');
         dlg.close();
         toast('Hosts pick up the new settings within 5 minutes.', null, { title: 'Saved' });

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sigmacheck
 
 import (
@@ -105,5 +108,29 @@ detection:
 	kw, _ := Parse([]byte("title: k\ndetection:\n  keywords: [evil]\n  condition: keywords\n"))
 	if _, err := kw.Synthesize(1); err == nil {
 		t.Error("synthesized a keyword rule")
+	}
+}
+
+// TestSynthesizeNeedsSet checks a rule that excludes events missing a
+// field, or matches any value of one, gets events with it set.
+func TestSynthesizeNeedsSet(t *testing.T) {
+	for _, src := range []string{
+		"title: t\ndetection:\n  sel:\n    Image|endswith: '\\regsvr32.exe'\n  filter:\n    CommandLine: null\n  condition: sel and not filter\n",
+		"title: t\ndetection:\n  sel:\n    Image|endswith: '\\regsvr32.exe'\n  filter:\n    - CommandLine: ''\n    - CommandLine|exists: false\n  condition: sel and not filter\n",
+		"title: t\ndetection:\n  sel:\n    Image|endswith: '\\regsvr32.exe'\n    CommandLine|contains: '*'\n  condition: sel\n",
+	} {
+		r, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		syn, err := r.Synthesize(1)
+		if err != nil {
+			t.Fatalf("%v: %s", err, src)
+		}
+		for _, ev := range syn.Positive {
+			if m, _ := r.Match(ev); !m || ev["CommandLine"] == "" {
+				t.Errorf("positive %s", String(ev))
+			}
+		}
 	}
 }

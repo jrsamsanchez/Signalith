@@ -1,0 +1,4 @@
+{"rule": "eaa9ac35-1730-441f-9587-25767bde99d7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"project.update_user_permission"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

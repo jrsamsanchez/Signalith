@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package query
 
 import "strings"
@@ -11,10 +14,11 @@ type Spec struct {
 	Filters   []Filter `json:"filters,omitempty"`
 	Earliest  string   `json:"earliest,omitempty"`
 
-	// Mode is "events" (list matching events), "stats" (a table) or
-	// "timechart" (a series over time).
+	// Mode is "events" (list matching events), "latest" (the newest event
+	// for each value of By), "stats" (a table) or "timechart" (a series
+	// over time).
 	Mode     string   `json:"mode,omitempty"`
-	AggFunc  string   `json:"agg_func,omitempty"`  // count, dc, sum, avg, min, max
+	AggFunc  string   `json:"agg_func,omitempty"`  // one of BuilderAggFuncs
 	AggField string   `json:"agg_field,omitempty"` // required unless AggFunc is count
 	By       []string `json:"by,omitempty"`
 	Span     string   `json:"span,omitempty"` // timechart only
@@ -66,10 +70,19 @@ func Build(s Spec) *Query {
 			tc.By = s.By[0]
 		}
 		q.Commands = append(q.Commands, tc)
+	case "latest":
+		if len(s.By) > 0 {
+			q.Commands = append(q.Commands, &Dedup{N: 1, Fields: s.By})
+		}
 	}
-	if s.Sort != "" {
-		k := SortKey{Field: strings.TrimLeft(s.Sort, "+-"), Desc: strings.HasPrefix(s.Sort, "-")}
-		q.Commands = append(q.Commands, &Sort{Keys: []SortKey{k}})
+	// One leading sign is the order; a second is part of the field name.
+	if k := (SortKey{Field: s.Sort}); s.Sort != "" {
+		if s.Sort[0] == '-' || s.Sort[0] == '+' {
+			k = SortKey{Field: s.Sort[1:], Desc: s.Sort[0] == '-'}
+		}
+		if k.Field != "" {
+			q.Commands = append(q.Commands, &Sort{Keys: []SortKey{k}})
+		}
 	}
 	if s.Limit > 0 {
 		q.Commands = append(q.Commands, &Head{N: s.Limit})
@@ -78,6 +91,18 @@ func Build(s Spec) *Query {
 		q.Commands = append(q.Commands, &Table{Fields: s.Fields})
 	}
 	return q
+}
+
+// BuilderAggFuncs lists the functions the builder's Calculate menu offers.
+var BuilderAggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "values"}
+
+func builderAgg(f string) bool {
+	for _, b := range BuilderAggFuncs {
+		if b == f {
+			return true
+		}
+	}
+	return false
 }
 
 // FromQuery converts a query back to a Spec. ok is false when the query uses
@@ -116,13 +141,13 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 	if len(cmds) > 0 {
 		switch c := cmds[0].(type) {
 		case *Stats:
-			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" {
+			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" || !builderAgg(c.Aggs[0].Func) {
 				return s, false
 			}
 			s.Mode, s.AggFunc, s.AggField, s.By = "stats", c.Aggs[0].Func, c.Aggs[0].Field, c.By
 			cmds = cmds[1:]
 		case *Timechart:
-			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" {
+			if len(c.Aggs) != 1 || c.Aggs[0].Alias != "" || !builderAgg(c.Aggs[0].Func) {
 				return s, false
 			}
 			s.Mode, s.AggFunc, s.AggField, s.Span = "timechart", c.Aggs[0].Func, c.Aggs[0].Field, c.Span
@@ -130,9 +155,15 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 				s.By = []string{c.By}
 			}
 			cmds = cmds[1:]
+		case *Dedup:
+			if c.N != 1 || c.KeepEmpty || c.Consecutive || len(c.SortBy) > 0 {
+				return s, false
+			}
+			s.Mode, s.By = "latest", c.Fields
+			cmds = cmds[1:]
 		}
 	}
-	if s.Mode == "events" && len(cmds) > 0 {
+	if (s.Mode == "events" || s.Mode == "latest") && len(cmds) > 0 {
 		if c, isTable := cmds[len(cmds)-1].(*Table); isTable {
 			s.Fields = c.Fields
 			cmds = cmds[:len(cmds)-1]
@@ -146,6 +177,8 @@ func FromQuery(q *Query) (s Spec, ok bool) {
 			s.Sort = c.Keys[0].Field
 			if c.Keys[0].Desc {
 				s.Sort = "-" + s.Sort
+			} else if strings.HasPrefix(s.Sort, "-") || strings.HasPrefix(s.Sort, "+") {
+				s.Sort = "+" + s.Sort
 			}
 			cmds = cmds[1:]
 		}

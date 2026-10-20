@@ -95,7 +95,7 @@ Signalith adds four fields to every event agents send:
 
 | Field | Holds |
 |---|---|
-| `signalith_intake` | How it came in: `agent` (Fluent Bit, `POST /api/ingest`), `otlp` (OpenTelemetry), `osquery` or `syslog` |
+| `signalith_intake` | How it came in: `agent` (Fluent Bit, `POST /api/ingest`), `otlp` (OpenTelemetry), `osquery`, `syslog`, `scanner` (Signalith's own vulnerability scans) or `signalith` (what Signalith notices itself, such as a [network sensor gone silent](network-sensor.md#settings-network-sensors)) |
 | `signalith_token` | The token's name when the event arrived, such as `Linux web servers` (never the token itself). A shared token shows as `Shared token 3f9c0a` |
 | `signalith_token_id` | The token's 12-character ID, which stays the same when the token is renamed |
 | `signalith_sender` | The address that sent it, without the port. Behind a [trusted proxy](https.md), the real client's address |
@@ -151,6 +151,13 @@ counts it as retired. It stays listed as **No longer accepted**.
 - **Environment (optional):** remove `SIGNALITH_INGEST_TOKEN` (or `_FILE`) from the
   service's environment and restart it.
 
+Once servers that share one OpenSearch share their settings (see
+[Settings](settings.md)), every server accepts the shared tokens of every server, and
+**Add data** names the server whose `signalith.yaml` or environment brought each one.
+Removing a token from a file or the environment then no longer stops it being
+accepted: **Stop accepting** on **Add data** is the only way to retire it, and every
+server follows it within seconds.
+
 The example token `change-this-ingest-token` from older Docker quick starts is handled
 on its own; see
 [The Docker quick start's old example token](https.md#the-docker-quick-starts-old-example-token).
@@ -184,7 +191,7 @@ fixed token in the configuration. New agents should get their own token instead.
 | Route | Role | Does |
 |---|---|---|
 | `GET /api/agent-tokens` | Analyst | Lists tokens and shared tokens: name, status, created, last used, events in the last hour. Never a token |
-| `POST /api/agent-tokens` | Admin | `{"name": "Linux servers", "purpose": "linux"}` creates a token. `purpose` is `linux`, `windows`, `otel`, `osquery` or empty. The `201` answer is the only one that holds the token, in `secret` |
+| `POST /api/agent-tokens` | Admin | `{"name": "Linux servers", "purpose": "linux"}` creates a token. `purpose` is `linux`, `windows`, `otel`, `osquery`, `sensor` (a network sensor), `agent` (the Signalith Agent, [signalith-agent.md](signalith-agent.md)) or empty. The `201` answer is the only one that holds the token, in `secret` |
 | `PATCH /api/agent-tokens/{id}` | Admin | `{"name": "New name"}` renames it |
 | `POST /api/agent-tokens/{id}/revoke` | Admin | Revokes it; answers `hosts_removed`, the osquery hosts removed with it |
 | `POST /api/agent-tokens/legacy/{id}/refuse` | Admin | Stops accepting a shared token |

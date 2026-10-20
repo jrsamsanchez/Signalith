@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agenttokens
 
 import (
@@ -485,4 +488,67 @@ func TestLoadRacingRevoke(t *testing.T) {
 	if _, res := r.Check(secret); res != Revoked {
 		t.Fatalf("after load: %v", res)
 	}
+}
+
+func TestSensorPurpose(t *testing.T) {
+	if !ValidPurpose(PurposeSensor) || ValidPurpose("Sensor") {
+		t.Error("sensor purpose")
+	}
+	fake := ostest.New(t)
+	r := newReg(t, fake.URL, "n1")
+	tok, secret, err := r.Create(context.Background(), "Network sensor nsm-01", PurposeSensor, "sam")
+	if err != nil || tok.Purpose != "sensor" {
+		t.Errorf("sensor token: %+v %v", tok, err)
+	}
+	// Check says what the token was made for, so the sensor's own routes
+	// can refuse other agents' tokens.
+	if id, res := r.Check(secret); res != Valid || id.Purpose != PurposeSensor {
+		t.Errorf("check: %+v %v", id, res)
+	}
+	if err := errPurposeInvalid(); !strings.Contains(err.Msg, "sensor") {
+		t.Errorf("message: %s", err.Msg)
+	}
+}
+
+func TestSetCollect(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	r := newReg(t, fake.URL, "n1")
+	a, _, _ := r.Create(ctx, "Agents", PurposeAgent, "sam")
+	l, _, _ := r.Create(ctx, "Linux", PurposeLinux, "sam")
+	if got, _ := r.Get(ctx, a.ID); got.Collect == nil || *got.Collect != (Collect{}) {
+		t.Fatalf("default: %+v", got.Collect)
+	}
+	if got, _ := r.Get(ctx, l.ID); got.Collect != nil {
+		t.Fatalf("a Linux token lists collect: %+v", got.Collect)
+	}
+	tok, old, err := r.SetCollect(ctx, a.ID, Collect{Osquery: " OFF ", LinuxLog: "Journal", Sysmon: "on"}, "kim")
+	want := Collect{Osquery: CollectOff, LinuxLog: LinuxLogJournal}
+	if err != nil || old != (Collect{}) || *tok.Collect != want || tok.CollectBy != "kim" || tok.CollectAt == nil {
+		t.Fatalf("%+v %+v %v", tok, old, err)
+	}
+	if r.Collect(a.ID) != want || r.Collect(l.ID) != (Collect{}) || r.Collect("nope") != (Collect{}) {
+		t.Error("not applied")
+	}
+	// Another server reads it from OpenSearch.
+	r2 := newReg(t, fake.URL, "n2")
+	if err := r2.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r2.Collect(a.ID) != want {
+		t.Errorf("other server: %+v", r2.Collect(a.ID))
+	}
+	_, old, err = r.SetCollect(ctx, a.ID, Collect{}, "kim")
+	if err != nil || old != want || r.Collect(a.ID) != (Collect{}) {
+		t.Fatalf("reset: %+v %v", old, err)
+	}
+	_, _, err = r.SetCollect(ctx, a.ID, Collect{PowerShell: "no"}, "kim")
+	wantCode(t, err, CodeCollectInvalid)
+	_, _, err = r.SetCollect(ctx, l.ID, want, "kim")
+	wantCode(t, err, CodePurposeInvalid)
+	if _, _, err := r.Revoke(ctx, a.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = r.SetCollect(ctx, a.ID, want, "kim")
+	wantCode(t, err, CodeRevoked)
 }

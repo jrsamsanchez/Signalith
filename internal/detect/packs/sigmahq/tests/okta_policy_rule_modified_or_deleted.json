@@ -1,0 +1,4 @@
+{"rule": "0c97c1d3-4057-45c9-b148-1de94b631931", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"policy.rule.delete"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

@@ -8,3 +8,33 @@ internal/detect/packs/** -text
 deploy/docker/opensearch/*.sh text eol=lf
 deploy/docker/opensearch/*.yml text eol=lf
 deploy/docker/opensearch/security/*.yml text eol=lf
+
+# Go reads a fuzz corpus file's first line as its version, which a Windows
+# line ending (CRLF) would break.
+**/testdata/fuzz/** text eol=lf
+
+# The install script the servers hand out runs on Linux, and its SHA-256 is
+# checked by the line pasted there: the same bytes on every system.
+deploy/linux/*.sh text eol=lf
+
+# Network sensor test lines: their document IDs are hashes of the exact
+# line, so they keep Unix line endings on Windows too.
+internal/ingest/testdata/zeek/** text eol=lf
+internal/ingest/testdata/suricata/** text eol=lf
+
+# The network sensor's install script, units, helpers and Compose file:
+# the script's SHA-256 is checked by the line pasted on the sensor, and it
+# carries the others byte for byte.
+deploy/sensor/** text eol=lf
+internal/ingest/testdata/sensor/** text eol=lf
+
+# The lab's setup script and cloud-init run on Linux: Unix line endings in
+# a checkout on Windows too, where Terraform reads them.
+deploy/lab/*.sh text eol=lf
+deploy/lab/*.tftpl text eol=lf
+# The Helm chart's copies of them, which go into ConfigMaps.
+deploy/helm/signalith/files/* text eol=lf
+
+# The Signalith Agent's install script: its SHA-256 is checked by the line
+# pasted on each computer, so the same bytes on every system.
+deploy/agent/** text eol=lf

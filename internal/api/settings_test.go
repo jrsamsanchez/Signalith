@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -19,6 +22,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"gopkg.in/yaml.v3"
 )
@@ -125,7 +129,7 @@ func TestSettingsRoutesAreAdminOnly(t *testing.T) {
 	ts, _, _ := newSettingsServer(t, "", nil)
 	for _, rt := range []struct{ method, path string }{
 		{"GET", "/api/settings"}, {"PUT", "/api/settings"}, {"POST", "/api/settings/test/opensearch"},
-		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
+		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/test/m365"}, {"POST", "/api/settings/test/okta"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
 		{"GET", "/api/settings/export"},
 	} {
 		if code, out := doAs(t, ts, "andy", "role-password", rt.method, rt.path, "{}"); code != 403 || out["code"] != "forbidden" {
@@ -159,7 +163,7 @@ func TestGetSettings(t *testing.T) {
 	if strings.Contains(raw, "hunter2-secret") {
 		t.Fatal("GET /api/settings returned a secret")
 	}
-	if n := len(view["sections"].([]any)); n != 10 {
+	if n := len(view["sections"].([]any)); n != 12 {
 		t.Errorf("sections %d", n)
 	}
 	pw := field(t, view, "opensearch.password")
@@ -181,7 +185,7 @@ func TestGetSettings(t *testing.T) {
 		t.Errorf("skip verify %v", f)
 	}
 	about := view["about"].(map[string]any)
-	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 11 {
+	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 12 {
 		t.Errorf("about %v", about)
 	}
 	restart := view["restart"].(map[string]any)
@@ -264,7 +268,7 @@ func TestSaveSettings(t *testing.T) {
 	}
 	// Reset goes back to signalith.yaml.
 	code, out = put(`{"reset":["server.listen","auth.session_timeout"]}`)
-	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != 12*time.Hour {
+	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != config.DefaultSessionIdle {
 		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.Sessions.Idle)
 	}
 	// The listen address is back to the one in use, so it needs no restart.
@@ -416,6 +420,61 @@ func TestTestAssistant(t *testing.T) {
 	}
 }
 
+func TestTestAssistantUnknownModel(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		w.Write([]byte(`{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"}}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.model":"claude-nope","assistant.api_key":"k"}}`
+	code, out, _ := call(t, ts, "POST", "/api/settings/test/assistant", body, "admin", "s3cret-pass", nil)
+	if code != 200 || out["ok"] != false || out["field"] != "assistant.model" || !strings.Contains(out["message"].(string), "Unknown model") {
+		t.Errorf("unknown model %d %v", code, out)
+	}
+}
+
+func TestAssistantModels(t *testing.T) {
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/v1/models" || r.Header.Get("x-api-key") != "good-key" {
+			w.WriteHeader(401)
+			w.Write([]byte(`{"error":{"message":"invalid x-api-key"}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"claude-opus-5-5","display_name":"Claude Opus 5.5"}]}`))
+	}))
+	defer model.Close()
+	ts, _, _ := newSettingsServer(t, "", nil)
+	list := func(body string) map[string]any {
+		t.Helper()
+		code, out, _ := call(t, ts, "POST", "/api/settings/assistant/models", body, "admin", "s3cret-pass", nil)
+		if code != 200 {
+			t.Fatalf("%d %v", code, out)
+		}
+		return out
+	}
+	// No key: the models Signalith knows of.
+	out := list(`{"values":{"assistant.provider":"anthropic"}}`)
+	if out["live"] != false || len(out["models"].([]any)) == 0 || out["message"] == "" {
+		t.Errorf("no key %v", out)
+	}
+	body := `{"values":{"assistant.provider":"anthropic","assistant.url":"` + model.URL + `","assistant.api_key":"good-key"}}`
+	out = list(body)
+	if out["live"] != true || len(out["models"].([]any)) != 1 || strings.Contains(mustJSON(out), "good-key") {
+		t.Errorf("live %v", out)
+	}
+	list(body)
+	if calls != 1 {
+		t.Errorf("the list was read %d times, want once", calls)
+	}
+	out = list(strings.Replace(body, "good-key", "bad-key", 1))
+	if out["live"] != false || !strings.Contains(out["message"].(string), "refused the API key") {
+		t.Errorf("bad key %v", out)
+	}
+}
+
 func TestRestartRoute(t *testing.T) {
 	ts, srv, _ := newSettingsServer(t, "server:\n  listen: 0.0.0.0:8080\n", nil)
 	if code, out := do(t, ts, "POST", "/api/settings/restart", "", true); code != 503 || out["code"] != "restart_unavailable" {
@@ -495,7 +554,7 @@ func TestExportSettings(t *testing.T) {
 	// for one, turn on a second job runner; shared ones are not. The
 	// public address is marked too: another server set up on its own has
 	// its own.
-	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:8080  # this server's own address\n",
+	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:9000  # this server's own address\n", "  agent_listen: \"\"  # this server's own address\n",
 		"  public_url: \"\"  # this server's own address\n", "  scheduler: true  # this server only\n", "  ca_file: \"\"  # a file on this server\n", "  max_events: 10000\n",
 		"    mode: auto  # this server only\n", "  trusted_proxies: []\n"} {
 		if !strings.Contains(text, want) {
@@ -591,6 +650,52 @@ func TestApplyLiveComparesTwoConfigs(t *testing.T) {
 	// Nothing changed: nothing applies.
 	if applied := srv.applyLive(&next, &next); applied != nil {
 		t.Errorf("no change applied %v", applied)
+	}
+}
+
+// eventAge records what the server passes to EventAge.
+type eventAge struct{ got []string }
+
+func (e *eventAge) Use(c *config.Config) { e.got = append(e.got, c.Ingest.MaxEventAge) }
+
+// TestMaxEventAgeAppliesAtOnce: ingest.max_event_age is put into use
+// without a restart, through EventAge.
+func TestMaxEventAgeAppliesAtOnce(t *testing.T) {
+	ages := &eventAge{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.EventAge = ages })
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.max_event_age":"30d"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 {
+		t.Fatalf("save %d %v", code, out)
+	}
+	if srv.conf().Ingest.MaxEventAge != "30d" || strings.Join(ages.got, ",") != "30d" {
+		t.Errorf("not applied: %q %v", srv.conf().Ingest.MaxEventAge, ages.got)
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+}
+
+// TestURLQueryAppliesAtOnce: ingest.url_query reaches the pipeline
+// without a restart, and a value it does not know is refused.
+func TestURLQueryAppliesAtOnce(t *testing.T) {
+	pipe := &ingest.Pipeline{}
+	ts, srv, _ := newSettingsServer(t, "", func(s *Server) { s.Pipeline = pipe })
+	if pipe.URLQuery() != ingest.URLQueryKeep {
+		t.Fatalf("starts as %s", pipe.URLQuery())
+	}
+	code, out, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"redact"}}`, "admin", "s3cret-pass", nil)
+	if code != 200 || srv.conf().Ingest.URLQuery != "redact" || pipe.URLQuery() != ingest.URLQueryRedact {
+		t.Fatalf("save %d %v: %q %s", code, out, srv.conf().Ingest.URLQuery, pipe.URLQuery())
+	}
+	if pending, _ := out["pending"].([]any); len(pending) != 0 {
+		t.Errorf("waits for a restart: %v", out["pending"])
+	}
+	if code, _, _ := call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"scramble"}}`, "admin", "s3cret-pass", nil); code == 200 {
+		t.Error("unknown mode saved")
+	}
+	call(t, ts, "PUT", "/api/settings", `{"values":{"ingest.url_query":"drop"}}`, "admin", "s3cret-pass", nil)
+	if pipe.URLQuery() != ingest.URLQueryDrop {
+		t.Errorf("drop: %s", pipe.URLQuery())
 	}
 }
 

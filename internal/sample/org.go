@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sample
 
 import "fmt"
@@ -212,6 +215,9 @@ func buildOrg() *org {
 		Priority: "high", Category: "server", BUnit: "IT", Location: "Data centre"})
 	addHost(Host{Name: "db-01", IP: netCompany + "140", OS: "linux", Role: "database",
 		Priority: "critical", Category: "server", BUnit: "IT", Location: "Data centre"})
+	// The network sensor: Zeek and Suricata on a mirror port.
+	addHost(Host{Name: "nsm-01", IP: netCompany + "155", OS: "linux", Role: "network-sensor",
+		Priority: "medium", Category: "server", BUnit: "IT", Location: "Data centre"})
 	addHost(Host{Name: "jump-01", IP: netCompany + "150", OS: "linux", Role: "bastion",
 		Priority: "high", Category: "server", BUnit: "IT", Location: "Data centre"})
 

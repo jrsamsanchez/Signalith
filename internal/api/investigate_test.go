@@ -1,9 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -99,5 +103,25 @@ func TestInvestigateStreamsAResult(t *testing.T) {
 	}
 	if code, _ := do(t, ts, "POST", "/api/findings/nope/investigate", "{}", true); code != 404 {
 		t.Errorf("unknown finding %d", code)
+	}
+}
+
+func TestShortDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		3 * time.Minute: "3m", 90 * time.Minute: "1h30m", time.Hour: "1h", 30 * time.Second: "30s", 2 * time.Hour: "2h",
+	} {
+		if got := shortDuration(d); got != want {
+			t.Errorf("shortDuration(%s) = %q, want %q", d, got, want)
+		}
+	}
+}
+
+// TestExplainAssistantTimeout: a Test that runs out of time points at the
+// answer time limit.
+func TestExplainAssistantTimeout(t *testing.T) {
+	err := errors.New(`could not reach the AI model at http://x/v1: Post "http://x/v1/chat/completions": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`)
+	msg, field := explainAssistant(err, "qwen3:4b", 3*time.Minute)
+	if field != "assistant.request_timeout" || !strings.Contains(msg, "(3m)") {
+		t.Errorf("got %q, %q", msg, field)
 	}
 }

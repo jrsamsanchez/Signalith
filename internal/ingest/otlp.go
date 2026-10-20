@@ -1,11 +1,19 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // OpenTelemetry logs arrive over OTLP/HTTP (POST /api/otlp/v1/logs) as an
@@ -46,14 +54,17 @@ type otlpLog struct {
 
 // IngestOTLP writes the log records of an OTLP/HTTP logs request body:
 // protobuf, or JSON when isJSON. The whole body is checked first, as in
-// IngestBody, so a refused request (a *BodyError) writes nothing.
+// IngestBody, so a refused request (a *BodyError) writes nothing. A record
+// that is too large, nests too deeply or doesn't decode is rejected on its
+// own (Result.Rejected, which the handler reports as OTLP partialSuccess),
+// so it doesn't make the sender drop the rest of its batch.
 func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*Result, error) {
 	walk := walkOTLPProto
 	if isJSON {
 		walk = walkOTLPJSON
 	}
 	n := 0
-	if err := walk(body, false, func(*otlpLog, int) error {
+	if err := walk(body, false, func(*otlpLog, int, *BodyError) error {
 		n++
 		if n > MaxRecords {
 			return tooLarge("the request has more than %d log records; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
@@ -82,12 +93,33 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		total.add(res)
 		return nil
 	}
-	err := walk(body, true, func(l *otlpLog, rawSize int) error {
-		batch = append(batch, otlpEvent(l, p.now()))
-		total.noteHost(&batch[len(batch)-1])
-		size += rawSize
-		if len(batch) >= batchEvents || size >= batchBytes {
-			return flush()
+	err := walk(body, true, func(l *otlpLog, rawSize int, bad *BodyError) error {
+		if bad != nil {
+			done++
+			p.stats.Failed.Add(1)
+			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: bad.Msg}}})
+			return nil
+		}
+		evs := otlpEvents(l, p.now())
+		if extra := len(evs) - 1; extra > 0 {
+			// An Event Hub message's records count as received one by one.
+			n += extra
+			total.Received += extra
+			p.stats.Received.Add(int64(extra))
+		}
+		// Each event takes its share of the record's size, and the batch
+		// is written as soon as it is full, so a message split into many
+		// records can't make an oversized bulk request.
+		share := max(rawSize/max(len(evs), 1), 1)
+		for _, ev := range evs {
+			batch = append(batch, ev)
+			total.noteHost(&batch[len(batch)-1])
+			size += share
+			if len(batch) >= batchEvents || size >= batchBytes {
+				if err := flush(); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -106,6 +138,59 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	return total, nil
 }
 
+// otlpEvents maps one OTLP log record to its events: one, each record of
+// an Azure Event Hub message, the Google Cloud log entry of a Pub/Sub
+// message, or each Okta System Log, Kubernetes audit or GitHub audit log event of a body
+// that holds them.
+func otlpEvents(l *otlpLog, now time.Time) []Event {
+	parse := ParseAzure
+	recs := azureFromOTLP(l.body)
+	if recs == nil {
+		if r := gcpFromOTLP(l.body); r != nil {
+			parse, recs = ParseGCP, []map[string]any{r}
+		}
+	}
+	if recs == nil {
+		if rs := oktaFromOTLP(l.body); rs != nil {
+			parse, recs = ParseOkta, rs
+		}
+	}
+	if recs == nil {
+		if rs := kubernetesFromOTLP(l.body); rs != nil {
+			parse, recs = ParseKubernetes, rs
+		}
+	}
+	if recs == nil {
+		if rs := githubFromOTLP(l.body); rs != nil {
+			parse, recs = ParseGitHub, rs
+		}
+	}
+	if recs == nil {
+		return []Event{otlpEvent(l, now)}
+	}
+	host, _ := l.resource["host.name"].(string)
+	out := make([]Event, 0, len(recs))
+	for _, r := range recs {
+		ev := parse(r)
+		if s, _ := ev.Fields["host"].(string); s == "" && host != "" {
+			ev.Fields["host"] = host
+		}
+		// The record's own time, else when Event Hubs or Pub/Sub took the
+		// message, or the Collector read it.
+		switch {
+		case !ev.Time.IsZero():
+		case l.time > 0:
+			ev.Time = otlpTime(l.time)
+		case l.observed > 0:
+			ev.Time = otlpTime(l.observed)
+		default:
+			ev.Time = now.UTC()
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
 // otlpEvent maps one OTLP log record to an event.
 func otlpEvent(l *otlpLog, now time.Time) Event {
 	host, _ := l.resource["host.name"].(string)
@@ -113,11 +198,28 @@ func otlpEvent(l *otlpLog, now time.Time) Event {
 	bodyMap, _ := l.body.(map[string]any)
 	bodyText, _ := l.body.(string)
 
+	var trail map[string]any
+	if strings.HasPrefix(bodyText, "{") && strings.Contains(bodyText, `"eventSource"`) {
+		trail = cloudTrailText(bodyText)
+	}
 	var ev Event
 	generic := false
 	switch {
 	case bodyMap != nil && has(bodyMap, "event_id") && has(bodyMap, "channel"):
 		ev = otlpWindows(bodyMap)
+	case isCloudTrailOTLP(l.attrs):
+		// The Collector's aws_s3 receiver on CloudTrail's bucket, with the
+		// aws_logs_encoding extension.
+		var t time.Time
+		if l.time > 0 {
+			t = otlpTime(l.time)
+		}
+		ev = ParseCloudTrail(cloudTrailFromOTLP(l.attrs, l.resource, t))
+	case bodyMap != nil && IsCloudTrailRecord(bodyMap):
+		ev = ParseCloudTrail(bodyMap)
+	case trail != nil:
+		// A CloudTrail record as JSON text, as CloudWatch Logs passes it on.
+		ev = ParseCloudTrail(trail)
 	case bodyMap != nil && has(bodyMap, "MESSAGE"):
 		ev = parseJournal(bodyMap)
 	case has(l.attrs, "appname") && has(l.attrs, "message"):
@@ -131,6 +233,9 @@ func otlpEvent(l *otlpLog, now time.Time) Event {
 			bodyText = str(l.attrs, "message")
 		}
 		ev.Fields["message"] = bodyText
+	case bodyText != "" && isWebAccessFile(l.attrs):
+		// The Collector's filelog receiver on a web server's access log.
+		ev = parseWebRecord(map[string]any{"log": bodyText, "file": cmp.Or(str(l.attrs, "log.file.path"), str(l.attrs, "log.file.name")), "hostname": host})
 	case bodyText != "" && syslogLine.MatchString(bodyText):
 		ev = parseSyslogLine(bodyText, otlpFileSourcetype(l.attrs), now)
 	default:
@@ -201,6 +306,16 @@ func otlpFileSourcetype(attrs map[string]any) string {
 		return "linux:auth"
 	}
 	return "syslog"
+}
+
+// isWebAccessFile reports whether a filelog record is from a web server's
+// access log (access.log, other_vhosts_access.log, access_log).
+func isWebAccessFile(attrs map[string]any) bool {
+	name := str(attrs, "log.file.name")
+	if name == "" {
+		name = baseName(str(attrs, "log.file.path"))
+	}
+	return strings.Contains(strings.ToLower(name), "access")
 }
 
 // otlpSemconv maps OpenTelemetry semantic-convention attribute names onto
@@ -341,6 +456,7 @@ func otlpWindows(b map[string]any) Event {
 
 	values := map[string]string{}
 	var ordered []any
+	binary := ""
 	if ed, ok := b["event_data"].(map[string]any); ok {
 		if list, ok := ed["data"].([]any); ok {
 			for _, item := range list {
@@ -354,6 +470,9 @@ func otlpWindows(b map[string]any) Event {
 			}
 		} else {
 			for k, v := range ed {
+				if k == "binary" {
+					binary = otlpText(v)
+				}
 				if k == "name" || k == "binary" {
 					continue
 				}
@@ -362,9 +481,17 @@ func otlpWindows(b map[string]any) Event {
 		}
 	}
 	if ordered == nil {
-		if schema, ok := windowsSchemaFor(channel, eventID); ok {
+		if schema, ok := windowsSchemaFor(channel, provider, eventID); ok {
 			for _, name := range schema {
 				ordered = append(ordered, values[name])
+			}
+		} else if channel == ApplicationChannel || strings.EqualFold(channel, CodeIntegrityChannel) ||
+			strings.EqualFold(channel, WindowsPowerShellChannel) {
+			// An Application, Code Integrity or Windows PowerShell
+			// event's data is searched as a whole, so its values go in
+			// by name.
+			for _, k := range slices.Sorted(maps.Keys(values)) {
+				ordered = append(ordered, values[k])
 			}
 		}
 	}
@@ -376,6 +503,9 @@ func otlpWindows(b map[string]any) Event {
 		"TimeCreated":   str(b, "system_time"),
 		"Message":       message,
 		"StringInserts": ordered,
+	}
+	if binary != "" {
+		rec["Binary"] = binary
 	}
 	var named map[string]string
 	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") {
@@ -390,17 +520,29 @@ func otlpWindows(b map[string]any) Event {
 	return ev
 }
 
-// windowsSchemaFor returns the schema order of a channel's event, for the
-// events the Windows parser reads by position.
-func windowsSchemaFor(channel, eventID string) ([]string, bool) {
+// windowsSchemaFor returns the schema order of a channel's event (from
+// provider, "" for the channel's usual one), for the events the Windows
+// parser reads by position.
+func windowsSchemaFor(channel, provider, eventID string) ([]string, bool) {
 	switch {
 	case channel == "Security":
-		s, ok := windowsSchema[eventID]
-		return s, ok
-	case channel == SystemChannel && eventID == "7045":
+		if s, ok := windowsSchema[eventID]; ok {
+			return s, true
+		}
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
+	case channel == SystemChannel && eventID == "7045" && (provider == "" || strings.EqualFold(provider, ServiceControlManager)):
 		return serviceInstallSchema, true
+	case channel == SystemChannel:
+		e, ok := systemEventFor(provider, eventID)
+		return e.data, ok
 	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4104":
 		return scriptBlockSchema, true
+	case strings.EqualFold(channel, PowerShellChannel) && eventID == "4103":
+		return moduleLogSchema, true
+	case IsNamedChannel(channel):
+		e, ok := namedChannelEvent(channel, eventID)
+		return e.data, ok
 	}
 	return nil, false
 }
@@ -475,6 +617,14 @@ var windowsSchema = map[string][]string{
 		"UserAccountControl", "UserParameters", "SidHistory"},
 	"4726": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
 		"SubjectLogonId"},
+	"4722": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4723": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId", "PrivilegeList"},
+	"4724": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
+	"4725": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName",
+		"SubjectLogonId"},
 	"4728": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
 		"SubjectDomainName", "SubjectLogonId"},
 	"4732": {"MemberName", "MemberSid", "TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
@@ -502,6 +652,11 @@ var windowsSchema = map[string][]string{
 		"SamAccountName", "SidHistory"},
 	"4737": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList",
 		"SamAccountName", "SidHistory"},
+	// The other groups created (4731 local, 4744 local distribution, 4749
+	// global distribution, 4754 and 4759 universal, 4783 basic
+	// application, 4790 LDAP query) have the data of 4727.
+	"4731": groupCreatedSchema, "4744": groupCreatedSchema, "4749": groupCreatedSchema, "4754": groupCreatedSchema,
+	"4759": groupCreatedSchema, "4783": groupCreatedSchema, "4790": groupCreatedSchema,
 	"4730": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "PrivilegeList"},
 	"4798": {"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "CallerProcessId",
 		"CallerProcessName"},
@@ -516,6 +671,10 @@ var windowsSchema = map[string][]string{
 	"5140": {"SubjectUserSid", "SubjectUserName", "SubjectDomainName", "SubjectLogonId", "ObjectType", "IpAddress", "IpPort", "ShareName",
 		"ShareLocalPath", "AccessMask", "AccessList"},
 }
+
+// groupCreatedSchema is the data of a group created (4727 and the like).
+var groupCreatedSchema = []string{"TargetUserName", "TargetDomainName", "TargetSid", "SubjectUserSid", "SubjectUserName",
+	"SubjectDomainName", "SubjectLogonId", "PrivilegeList", "SamAccountName", "SidHistory"}
 
 // hexID is an OTLP trace or span ID as lower-case hex, or "" when it is
 // empty or all zeros (not set).
@@ -552,5 +711,37 @@ func otlpInt(raw json.RawMessage) (int64, bool) {
 }
 
 // WindowsSecurityNames returns the names of a Security event's data
-// values in schema order, for the events the Windows parser reads.
-func WindowsSecurityNames(eventID string) []string { return windowsSchema[eventID] }
+// values in schema order, for the events the Windows parser reads (by
+// position or by name).
+func WindowsSecurityNames(eventID string) []string {
+	s, _ := windowsSchemaFor(SecurityChannel, "", eventID)
+	return s
+}
+
+// WindowsEventNames returns the names of the data values of a System log
+// event (of a provider, "" for the Service Control Manager) other than a
+// service installed, or of an event of a log the parser reads by name
+// (IsNamedChannel), in schema order, with the field each is stored as
+// (SystemDataField, ChannelDataField); none for an event the parser does
+// not read by name.
+func WindowsEventNames(channel, provider, eventID string) (names, fields []string) {
+	var s []string
+	switch {
+	case channel == SystemChannel && eventID != "7045":
+		e, _ := systemEventFor(provider, eventID)
+		s = e.data
+	case IsNamedChannel(channel):
+		e, _ := namedChannelEvent(channel, eventID)
+		s = e.data
+	}
+	for _, n := range s {
+		f, ok := SystemDataField(n)
+		if channel != SystemChannel {
+			f, ok = ChannelDataField(channel, n)
+		}
+		if ok {
+			names, fields = append(names, n), append(fields, f)
+		}
+	}
+	return names, fields
+}

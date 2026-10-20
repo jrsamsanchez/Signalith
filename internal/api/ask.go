@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -8,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
@@ -91,11 +95,13 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
 		q, err := ai.Translate(ctx, req.Question, res.Query)
+		sentTo := config.Origin(ai.URL)
 		if err != nil {
-			s.Log.Warn("AI query translation failed", "err", err)
+			s.Log.Warn("AI query translation failed", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "err", err)
 			resp["ai_error"] = err.Error()
 		} else {
 			resp["query"], resp["source"], resp["ai_model"] = q, "ai", ai.Name()
+			s.Log.Info("question translated with AI", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "chars_sent", len(req.Question)+len(res.Query))
 		}
 	}
 	if q, err := query.Parse(resp["query"].(string)); err == nil {

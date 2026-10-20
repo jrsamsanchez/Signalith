@@ -1,0 +1,5 @@
+{"rule": "f5141b6d-9f42-41c6-a7bf-2a780678b29b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"com.apple.quarantine -d","path":"/xattr"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/xattr","path":"/xattr"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"com.apple.quarantine -d","path":"/usr/local/bin/helper"}}
+]}

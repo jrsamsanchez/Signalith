@@ -1,9 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -22,8 +26,17 @@ import (
 // takes at once; each holds a few searches and a model conversation.
 const maxInvestigations = 3
 
-// investigateTimeout bounds one investigation, model turns included.
-const investigateTimeout = 6 * time.Minute
+// shortDuration writes a time limit the way it is entered: 3m, 1h30m.
+func shortDuration(d time.Duration) string {
+	t := d.String()
+	if strings.HasSuffix(t, "m0s") {
+		t = strings.TrimSuffix(t, "0s")
+	}
+	if strings.HasSuffix(t, "h0m") {
+		t = strings.TrimSuffix(t, "0m")
+	}
+	return t
+}
 
 // investigations counts the runs in progress on this server.
 var investigations atomic.Int32
@@ -157,7 +170,12 @@ func (s *Server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		_ = rc.Flush()
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), investigateTimeout)
+	// assistant.investigate_timeout bounds one investigation, model turns
+	// included. It may be longer than the server's write timeout, so this
+	// response gets its own deadline.
+	limit := s.conf().AssistantInvestigateTimeout()
+	_ = rc.SetWriteDeadline(time.Now().Add(limit + time.Minute))
+	ctx, cancel := context.WithTimeout(r.Context(), limit)
 	defer cancel()
 	var sentTo string
 	if c, ok := inv.Model.(*assistant.Client); ok {
@@ -165,20 +183,30 @@ func (s *Server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := inv.Run(ctx, f, send)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			err = errors.New("the investigation took too long and was stopped; try again, or use a faster model")
+		if strings.Contains(err.Error(), "Client.Timeout exceeded") {
+			err = fmt.Errorf("the AI model did not answer within its answer time limit (%s); an admin can raise Answer time limit in Settings, under AI assistant, or use a faster model", shortDuration(s.conf().AssistantRequestTimeout()))
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			err = fmt.Errorf("the investigation took longer than its time limit (%s) and was stopped; an admin can raise Investigation time limit in Settings, under AI assistant, or use a faster model", shortDuration(limit))
 		}
 		s.Log.Warn("Investigate with AI failed", "audit", true, "by", userOf(r), "finding", f.ID, "model", inv.Model.Name(), "sent_to", sentTo, "err", err)
 		send(investigate.Event{Type: "error", Text: err.Error()})
 		return
 	}
-	searches := 0
+	searches, refused := 0, 0
 	for _, st := range res.Steps {
-		if st.By == "ai" {
-			searches++
+		if st.By != "ai" {
+			continue
+		}
+		searches++
+		if strings.HasPrefix(st.Error, investigate.RefusedPrefix) {
+			// A search that could reveal masked values: planted text may
+			// have asked for it, so it is worth a look.
+			refused++
+			s.Log.Warn("AI investigation search refused", "audit", true, "by", userOf(r), "finding", f.ID, "model", res.Model,
+				"query", st.Query, "reason", strings.TrimPrefix(st.Error, investigate.RefusedPrefix))
 		}
 	}
 	s.Log.Info("finding investigated with AI", "audit", true, "by", userOf(r), "finding", f.ID, "model", res.Model, "sent_to", sentTo,
-		"chars_sent", res.Sent, "ai_searches", searches, "verdict", res.Verdict)
+		"chars_sent", res.Sent, "ai_searches", searches, "ai_searches_refused", refused, "verdict", res.Verdict)
 	send(investigate.Event{Type: "result", Result: res})
 }

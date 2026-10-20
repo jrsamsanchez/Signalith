@@ -1,0 +1,18 @@
+{"rule": "22c03600-f84a-47fa-abaa-ffbe3e72c782", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /proc/sysrq-trigger"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /proc/sysrq-trigger"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/proc/sysrq-trigger"}},
+  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/proc/sysrq-trigger"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATI","data":{"name":"/ /proc/sysrq-trigger"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"name":"/ /proc/sysrq-trigger"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"PATH","data":{"name":"/ /proc/sysrq-trigges"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWE","data":{"name":"/ /proc/sysrq-trigger"}},
+  {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"CWD","data":{"name":"/ /proc/sysrq-trigges"}}
+]}

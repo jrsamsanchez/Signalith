@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package config
 
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -27,21 +31,64 @@ func TestInitSaveLoadRoundTrip(t *testing.T) {
 	if !got.CheckPassword("admin", "correct horse") || got.CheckPassword("admin", "wrong") {
 		t.Error("password check failed")
 	}
-	if got.Server.PublicURL != "https://127.0.0.1:8080" {
+	if got.Server.PublicURL != "https://127.0.0.1:9000" {
 		t.Errorf("public url = %s", got.Server.PublicURL)
 	}
 }
 
 func TestValidationListsEveryProblem(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
-	os.WriteFile(path, []byte("server:\n  listen: nonsense\nopensearch:\n  url: ftp://x\n  index_prefix: Bad Prefix\nretention:\n  days: -1\n"), 0o600)
+	os.WriteFile(path, []byte("server:\n  listen: nonsense\nopensearch:\n  url: ftp://x\n  index_prefix: Bad Prefix\n  shards: 2000\nretention:\n  days: -1\n"), 0o600)
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("want error")
 	}
-	for _, want := range []string{"server.listen", "opensearch.url", "index_prefix", "retention.days", "admin_password_hash"} {
+	for _, want := range []string{"server.listen", "opensearch.url", "index_prefix", "opensearch.shards", "retention.days", "admin_password_hash"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// opensearch.shards adds number_of_shards to the event index settings:
+// automatic when it is not set (sized from the data nodes when the
+// template is written), none for one, or the number asked for.
+func TestEventIndexSettings(t *testing.T) {
+	for _, tc := range []struct {
+		shards int
+		want   map[string]any
+	}{
+		{0, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": "auto"}},
+		{1, map[string]any{"auto_expand_replicas": "0-1"}},
+		{3, map[string]any{"auto_expand_replicas": "0-1", "number_of_shards": 3}},
+	} {
+		o := OpenSearch{Replicas: ReplicasAuto, Shards: tc.shards}
+		if got := o.EventIndexSettings(); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("shards %d: %v, want %v", tc.shards, got, tc.want)
+		}
+	}
+	o := OpenSearch{Replicas: "2", Shards: 2}
+	if got := o.EventIndexSettings(); !reflect.DeepEqual(got, map[string]any{"number_of_replicas": 2, "number_of_shards": 2}) {
+		t.Errorf("replicas 2, shards 2: %v", got)
+	}
+}
+
+// opensearch.rollover_gb is 40 GB when not set, and only a size from
+// MinRolloverGB to MaxRolloverGB is taken.
+func TestRolloverGB(t *testing.T) {
+	if got := (&OpenSearch{}).RolloverBytes(); got != 40<<30 {
+		t.Errorf("default: %d bytes", got)
+	}
+	if got := (&OpenSearch{RolloverGB: 25}).RolloverBytes(); got != 25<<30 {
+		t.Errorf("25 GB: %d bytes", got)
+	}
+	for gb, ok := range map[int]bool{0: true, 10: true, 200: true, 5: false, 201: false, -1: false} {
+		c := Default()
+		c.OpenSearch.RolloverGB = gb
+		err := c.Validate()
+		bad := err != nil && strings.Contains(err.Error(), "rollover_gb")
+		if bad == ok {
+			t.Errorf("rollover_gb %d: problem %v, want %v", gb, bad, !ok)
 		}
 	}
 }
@@ -308,7 +355,7 @@ func TestSavedFileExplainsSyslog(t *testing.T) {
 	}
 	data, _ := os.ReadFile(path)
 	text := string(data)
-	for _, want := range []string{"# syslog.udp, .tcp", "# appliances, servers). Point them at this server on UDP or TCP port 514, or\n# TLS port 6514", "sender.\nsyslog:\n", "udp: 0.0.0.0:514"} {
+	for _, want := range []string{"# syslog.udp, .tcp", "# appliances, servers). Point them at this server over TLS on port 6514 (it\n", "# unencrypted and can be forged, so it is off unless udp or tcp is set", "sender.\nsyslog:\n", "udp: 0.0.0.0:514"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("saved file lacks %q:\n%s", want, text)
 		}
@@ -484,5 +531,34 @@ func TestMaxEventAge(t *testing.T) {
 		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "ingest.max_event_age") {
 			t.Errorf("%s: %v", bad, err)
 		}
+	}
+}
+
+// A server that joined a cluster has no built-in admin password of its
+// own: the cluster's users sign in. One that did not still needs one.
+func TestJoinedServerNeedsNoAdminPassword(t *testing.T) {
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "")
+	t.Setenv("SIGNALITH_ADMIN_PASSWORD_FILE", "")
+	dir := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", dir)
+	path := filepath.Join(dir, "signalith.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  listen: 0.0.0.0:8080\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "admin_password_hash") {
+		t.Fatalf("a server outside a cluster without a password: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "keys"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keys", "cluster-k1.key"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("a joined server without a password: %v", err)
+	}
+	if !c.JoinedCluster() || c.CheckPassword("admin", "") {
+		t.Error("the built-in admin signs in without a password")
 	}
 }

@@ -13,6 +13,8 @@ clear reason is the easiest kind to review and merge.
   report it privately through
   [GitHub security advisories](https://github.com/jrsamsanchez/Signalith/security/advisories/new).
 
+Everyone taking part is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
+
 ## Build
 
 Signalith is one Go program with the web UI embedded (`web/static`, plain JavaScript,
@@ -78,6 +80,22 @@ compare it byte for byte. Use `path/filepath` (not `path`) for file paths, and
 `filepath.IsAbs`, which knows `C:\`; and don't test exact file modes, which Windows
 does not keep.
 
+### Fuzz tests
+
+The code that reads untrusted input (the syslog, CEF and LEEF parsers, the ingest and
+OTLP bodies, Windows and auditd events, the search language, the Sigma and Splunk rule
+loaders, the CSV lists and the intake endpoints) has Go fuzz tests (`func Fuzz...`). CI
+runs each one for 10 seconds, and a nightly workflow for 5 minutes each. To run one
+yourself, or all of them:
+
+```sh
+go test -run='^$' -fuzz='^FuzzParse$' -fuzztime=1m ./internal/syslog
+FUZZTIME=30s .github/scripts/fuzz.sh
+```
+
+When a fuzz test fails, Go saves the input under the package's `testdata/fuzz/<target>/`.
+Commit that file with the fix, so plain `go test` checks it from then on.
+
 ### Completeness tests
 
 A few tests make sure nothing new slips through without the pieces around it. When one
@@ -89,6 +107,7 @@ fails, it says what is missing:
 | A setting in `signalith.yaml` | An entry in the settings registry in [`internal/config/settings.go`](internal/config/settings.go), or in its `Excluded` list with the reason it is not on the Settings page | `TestRegistryCoversEveryConfigSetting` |
 | A built-in detection that is on by default | Events in the sample data that make it fire ([`internal/sample`](internal/sample)) | `TestRecipeEveryEnabledDetectionHasData` |
 | A security check | A section with the check's title in [`docs/security.md`](docs/security.md) | `TestEveryCheckHasADocsSection` |
+| A source file (`.go`, `.js`, `.css`, `.sh`, `.ps1`, `.py`, `.tf`) | The copyright and `SPDX-License-Identifier: Apache-2.0` lines at the top; `python3 .github/scripts/add-license-headers.py` adds them | `TestEverySourceFileHasALicenseHeader` |
 
 ## Code style
 
@@ -96,7 +115,9 @@ fails, it says what is missing:
 - Prefer the standard library; a new dependency needs a good reason and a license that
   fits Apache 2.0.
 - Keep messages people read plain and specific: say what happened and what to change.
-- Write tests next to the code (`foo_test.go`), including the error paths.
+- Write tests next to the code (`foo_test.go`), including the error paths. New
+  features and bug fixes come with automated tests that would fail without the change;
+  a pull request without them is not merged unless it says why none are possible.
 - Update the docs in the same change when behaviour, settings or the API change.
 
 ## Detections
@@ -143,12 +164,37 @@ outside `docs/` with a full `https://github.com/jrsamsanchez/Signalith/blob/main
 address. Some docs are read by tests (`users.md`, `security.md`, `dashboards.md`), so
 keep their headings and lists in shape.
 
+## Code review
+
+Every change to `main` goes through a pull request; nothing is pushed to `main`
+directly. Before a pull request is merged:
+
+- Every required CI check is green on its latest commit.
+- A reviewer other than the author has read the diff. Until the project has a second
+  maintainer, the maintainer reviews outside contributions and an automated reviewer
+  checks the maintainer's own.
+- Changes to sign-in, sessions, tokens, intake, search, storage, the cluster, AI
+  features or deployment also get a security review against the
+  [threat model](https://signalith.io/docs/threat-model/).
+- Reviewers check that the change does what it says, has tests that would fail without
+  it, keeps the docs current, adds no new dependency without a reason, and follows the
+  code style above.
+
+Review comments are answered in the pull request: either fixed, or answered with why not.
+
+## First contributions
+
+Issues labeled
+[good first issue](https://github.com/jrsamsanchez/Signalith/labels/good%20first%20issue)
+are small, self-contained tasks for new contributors. Comment on one to say you are
+taking it. See [GOVERNANCE.md](GOVERNANCE.md) for who decides what.
+
 ## Commits and pull requests
 
 - Branch from `main` and keep one topic per pull request.
 - Write commit messages that say what changed and why, with a short first line.
 - Say in the pull request what you changed, why, and how you tested it; include a
-  screenshot for UI changes.
+  screenshot for UI changes. The pull request template has a place for each.
 - CI must be green before a merge. Pull requests are usually squash-merged.
 - In [ci.yml](.github/workflows/ci.yml), add new jobs rather than renaming existing
   ones: `main` requires its checks by name.

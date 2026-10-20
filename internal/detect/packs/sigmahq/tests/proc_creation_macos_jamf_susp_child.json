@@ -1,0 +1,5 @@
+{"rule": "2316929c-01aa-438c-970f-099145ab1ee6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/sh","parent_cmdline":"/jamf","parent_path":"/jamf","path":"/sh"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent_cmdline":"/jamf","parent_path":"/jamf","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/sh","path":"/sh"}}
+]}

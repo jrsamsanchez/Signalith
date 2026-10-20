@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package vulnscan scans the networks an admin lists with Nmap, on a
 // schedule or on demand, and matches the software versions it finds to
 // known vulnerabilities (CVEs) from the U.S. National Vulnerability
@@ -5,10 +8,11 @@
 // Vulnerabilities data model, so detections and searches see them) and the
 // asset list.
 //
-// Scans run on the server that runs the background jobs. Each network
-// names the scanner that scans it (Target.Scanner); "" is that server, so a
-// scanner server per network zone can take a network over later without
-// any change to how networks are kept.
+// Each network names the server that scans it (Target.Scanner), so a
+// server inside a segmented network zone scans the hosts only it can
+// reach. "" is the server that runs the background jobs. Every server
+// checks itself and runs the scans of its own networks; results go to the
+// same OpenSearch, so the pages, findings and asset list show them all.
 package vulnscan
 
 import (
@@ -49,11 +53,23 @@ type Target struct {
 	Ports string `json:"ports"`
 	// Gentle scans slowly and with fewer probes, for networks with fragile
 	// devices such as printers and building or industrial controllers.
-	Gentle   bool     `json:"gentle"`
-	Schedule Schedule `json:"schedule"`
-	Enabled  bool     `json:"enabled"`
-	// Scanner is the scanner that scans this network: "" is the server
-	// that runs the background jobs.
+	Gentle bool `json:"gentle"`
+	// OpenVAS also scans the network with OpenVAS after Nmap, on a scanner
+	// where it is set up: deeper, but much slower.
+	OpenVAS bool `json:"openvas,omitempty"`
+	// SSHLogin, SMBLogin, ESXiLogin and SNMPLogin are the IDs of the scan
+	// logins OpenVAS signs in to the hosts with, over SSH (Linux), SMB
+	// (Windows), the VMware API (ESXi) and SNMP (network devices); ""
+	// scans without signing in.
+	SSHLogin  string   `json:"ssh_login,omitempty"`
+	SMBLogin  string   `json:"smb_login,omitempty"`
+	ESXiLogin string   `json:"esxi_login,omitempty"`
+	SNMPLogin string   `json:"snmp_login,omitempty"`
+	Schedule  Schedule `json:"schedule"`
+	Enabled   bool     `json:"enabled"`
+	// Scanner is the node ID of the server that scans this network, one
+	// that can reach it (in its network zone): "" is the server that runs
+	// the background jobs.
 	Scanner   string    `json:"scanner,omitempty"`
 	CreatedBy string    `json:"created_by,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitzero"`
@@ -112,6 +128,8 @@ var (
 	hostnameRE = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.?$`)
 	portListRE = regexp.MustCompile(`^\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*$`)
 	idRE       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+	// scannerRE is a server's node ID, such as n_0123456789abcdef0123.
+	scannerRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 )
 
 // Validate checks settings an admin saved and tidies them: entries
@@ -184,8 +202,21 @@ func (t *Target) Validate() error {
 	if t.Schedule.Weekday < 0 || t.Schedule.Weekday > 6 {
 		return inputErrorf("%s: the day must be from 0 (Sunday) to 6 (Saturday)", t.Name)
 	}
+	// OpenVAS probes thousands of ports with many tests per host, which
+	// is what gentle mode exists to spare fragile devices.
+	if t.Gentle && t.OpenVAS {
+		return inputErrorf("%s: OpenVAS cannot scan a network in gentle mode: it sends far more traffic than fragile devices may take. Turn one of them off", t.Name)
+	}
+	for _, ref := range t.loginRefs() {
+		if !validLoginRef(ref.id) {
+			return inputErrorf("%s: its %s is not valid; reload the page and pick another", t.Name, ref.what)
+		}
+	}
+	if !t.OpenVAS && t.hasLogin() {
+		return inputErrorf("%s: only OpenVAS scans sign in to hosts; turn OpenVAS on or set the logins to None", t.Name)
+	}
 	t.Scanner = strings.TrimSpace(t.Scanner)
-	if t.Scanner != "" && !idRE.MatchString(t.Scanner) {
+	if t.Scanner != "" && !scannerRE.MatchString(t.Scanner) {
 		return inputErrorf("%s: unknown scanner %q", t.Name, t.Scanner)
 	}
 	return nil

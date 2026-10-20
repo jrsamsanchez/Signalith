@@ -1,0 +1,32 @@
+id: network-large-outbound-transfer
+title: $src$ sent $bytes_out$ bytes to $dest$
+name: Large outbound transfer
+description: An internal host sent more than 1 GB to one external address in connections that started within six hours, which can be data theft over the network.
+query: |
+  datamodel=Network_Traffic direction=outbound
+  | stats sum(bytes_out) as bytes_out, sum(bytes_in) as bytes_in, count, min(_time) as first_seen by src, dest
+  | where bytes_out >= 1000000000
+schedule: 30m
+lookback: 6h
+severity: medium
+mitre: [T1048, T1041]
+throttle:
+  fields: [src, dest]
+  window: 24h
+risk:
+  score: 40
+  objects:
+    - {field: src, type: system}
+  only: true
+enabled: true
+tags: [network, exfiltration, pci-dss:10.4.1, pci-dss:11.5.1, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Risk only: cloud backups, file sync and video calls send this much every day, so it
+  adds risk to the source rather than raising a finding on its own; with other signals
+  about the same host it raises a risk incident. Look up who the destination is
+  (Network_Resolution, Certificates, threat intel) and whether the host normally sends
+  this much (timechart sum(bytes_out) by dest over a week). Add an exception on dest for
+  your backup and sync services. It counts by when each connection started: the sensor
+  writes a connection only when it ends, stamped with its start time, so the six-hour
+  look back catches an upload of up to about five and a half hours. Longer single
+  uploads are missed.

@@ -1,0 +1,4 @@
+{"rule": "80eeab92-0979-4152-942d-96749e11df40", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.KEYVAULT/VAULTS/KEYS/PURGE/ACTION"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

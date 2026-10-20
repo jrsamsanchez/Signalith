@@ -1,0 +1,5 @@
+{"rule": "bf241472-f014-4f01-a869-96f99330ca8c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"mount x","path":"/hdiutil"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/hdiutil","path":"/hdiutil"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"mount x","path":"/usr/local/bin/helper"}}
+]}

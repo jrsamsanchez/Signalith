@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +15,8 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
+	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -25,6 +31,14 @@ func clusterServerDir(t *testing.T, dir, name string) cluster.Identity {
 	}
 	local.Close()
 	return local.Identity
+}
+
+// allowUnsecured lets the cluster commands add members on the fake
+// OpenSearch, which speaks plain http without sign-in.
+func allowUnsecured(t *testing.T) {
+	old := joinSecured
+	joinSecured = func(*config.Config) error { return nil }
+	t.Cleanup(func() { joinSecured = old })
 }
 
 func TestClusterCommands(t *testing.T) {
@@ -64,23 +78,18 @@ func TestClusterCommands(t *testing.T) {
 	// itself.
 	hb := cluster.Heartbeat{Kind: "node", NodeID: "n_other", Name: "siem-z", State: cluster.StateReady, LeaderEligible: true, HeartbeatAt: time.Now().UTC()}
 	fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
-	beating := make(chan struct{})
-	beat := make(chan struct{})
-	go func() {
-		defer close(beat)
-		for {
-			select {
-			case <-beating:
-				return
-			case <-time.After(2 * time.Millisecond):
-			}
+	// siem-z beats between the command's two reads of the heartbeats:
+	// every read of them finds a newer one. Beating on a timer instead
+	// races the watch window, which Windows timers (about 15ms) can skip.
+	fake.SetFault(func(method, uri string) *ostest.Fault {
+		if strings.Contains(uri, "cc_runtime") && strings.Contains(uri, "_search") {
 			hb.HeartbeatAt = time.Now().UTC()
 			fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
 		}
-	}()
+		return nil
+	})
 	out, err = run("", "found")
-	close(beating)
-	<-beat
+	fake.SetFault(nil)
 	if err == nil || !strings.Contains(err.Error(), "siem-z is up") {
 		t.Fatalf("found with a live scheduler server: %v\n%s", err, out)
 	}
@@ -122,6 +131,12 @@ func TestClusterCommands(t *testing.T) {
 	if !strings.Contains(out, "legacy_b") {
 		t.Errorf("status of a server without the key:\n%s", out)
 	}
+	// The fake OpenSearch speaks plain http without sign-in: no second
+	// member is added to it.
+	if _, err := run("correct horse battery\n", "import-key", keyFile); !errors.Is(err, clusterjoin.ErrNotSecured) {
+		t.Errorf("import-key with an unsecured OpenSearch: %v", err)
+	}
+	allowUnsecured(t)
 	if _, err := run("wrong passphrase\n", "import-key", keyFile); err == nil {
 		t.Error("a wrong passphrase opened the key")
 	}
@@ -163,9 +178,11 @@ func TestClusterCommands(t *testing.T) {
 	if out, _ := run("", "export"); strings.Contains(out, "verified: no") {
 		t.Errorf("export after reset-key:\n%s", out)
 	}
-	// The other server's key is the old one now.
+	// The other server's key is the old one now. It keeps that key, so it
+	// does not fall back to its own files (legacy b), even with no copy of
+	// the shared settings: it is told to import the current key.
 	t.Setenv("SIGNALITH_STATE_DIR", stateB)
-	if out, _ := run("", "status"); !strings.Contains(out, "legacy_b") {
+	if out, _ := run("", "status"); !strings.Contains(out, "key_missing") || !strings.Contains(out, "import-key") {
 		t.Errorf("status of a server with the old key:\n%s", out)
 	}
 }

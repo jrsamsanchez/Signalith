@@ -1,0 +1,5 @@
+{"rule": "3ed0d6ba-4791-4fa8-a1ef-403e438c7033", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.disable_two_factor_requirement"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.disable_two_factor_requiremenu"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

@@ -1,8 +1,22 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page (admins): the Signalith servers that share this OpenSearch,
 // and the one that runs the background jobs (detections, threat intel
 // downloads and retention). It only shows; it is live while open, so a
-// takeover shows up within seconds.
+// takeover shows up within seconds. A server's name opens a side panel
+// with its settings: those waiting for its restart, shared values it
+// could not use, and what its own Settings page had before the settings
+// were shared.
 'use strict';
+
+// serverPanels lists the parts of a server's side panel, in order: each
+// is a function of the panel's context ({ s, sh, view, name, list, part }:
+// the server, its shared block, its Settings page as api/settings?server=
+// has it, and helpers for a setting's name, a list of settings and a
+// titled part) that returns an element, an array of them, or null for
+// nothing. A page script loaded after this one appends its part with
+// serverPanels.push(fn).
+const serverPanels = [];
 
 (function () {
   const REFRESH_MS = 5000;
@@ -13,6 +27,7 @@
   // [pulse state, label] for each server state from api/cluster.
   const STATE = {
     ready: ['', 'Running'],
+    draining: ['idle', 'Draining'],
     starting: ['idle', 'Starting'],
     stopping: ['idle', 'Stopping'],
     stopped: ['idle', 'Stopped'],
@@ -145,9 +160,10 @@
     const addr = s.node_url || s.listen || '';
     return el('td', { 'data-col': 'server' },
       el('div', { class: 'sv-server' },
-        el('span', { class: 'sv-server__icon' }, icon('server')),
+        el('span', { class: 'sv-server__icon', 'data-role': s.role || 'server' }, icon(s.role === 'scanner' ? 'radar' : 'server')),
         el('div', { class: 'sv-server__text' },
-          el('div', { class: 'sv-server__name' }, el('span', { title: s.name }, s.name),
+          el('div', { class: 'sv-server__name' }, el('button', { type: 'button', class: 'link-btn sv-open', title: 'Settings of ' + s.name, onclick: () => openPanel(s.node_id || s.name) }, s.name),
+            s.role === 'scanner' ? el('span', { class: 'badge badge--accent', title: 'Added as a vulnerability scanner: it scans the networks picked for it and never runs the background jobs' }, 'Scanner') : null,
             s.self ? el('span', { class: 'badge badge--outline', title: 'The server that answered this page' }, 'This server') : null),
           addr ? el('div', { class: 'sv-server__addr mono', title: addr }, addr) : null)));
   }
@@ -199,10 +215,74 @@
     } else {
       body = [el('span', { class: 'sv-standby' }, 'Doesn’t run them')];
       let why = s.not_eligible || '';
-      if (/^detections\.scheduler is off/.test(why)) why = 'Run detections on schedule is off';
+      if (s.role === 'scanner') why = 'A scanner only scans its network zone';
+      // The setting's name as this server's Settings page shows it: its new
+      // name once that server takes its settings from the shared ones.
+      if (/^detections\.scheduler is off/.test(why)) why = (s.shared && s.shared.settings_rev ? 'May run background jobs' : 'Run detections on schedule') + ' is off';
       if (why) body.push(el('div', { class: 'sv-sub' }, cap(why)));
     }
+    const spread = spreadText(s, d);
+    if (spread) body.push(el('div', { class: 'sv-sub' }, icon('shield', 'icon--sm'), el('span', {}, spread)));
+    if (!gone(s)) {
+      for (const h of healthOf(s, d)) {
+        body.push(el('div', { class: 'sv-sub', title: 'Over each rule this server ran last in the last day: how long its last run took, and how long after its time slot ended that run started.' },
+          icon('activity', 'icon--sm'), el('span', {}, h.text)));
+        if (h.behind) body.push(el('div', { class: 'sv-sub sv-warn' }, icon('triangle-alert', 'icon--sm'), el('span', {}, 'Falling behind: ' + h.behind)));
+      }
+    }
     return el('td', { 'data-col': 'jobs' }, ...body);
+  }
+
+  // msText shows a time in milliseconds the way people read it.
+  function msText(ms) {
+    ms = Math.max(0, ms || 0);
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    if (ms < 10000) return `${(ms / 1000).toFixed(1)} s`;
+    if (ms < 120000) return `${Math.round(ms / 1000)} s`;
+    return `${Math.round(ms / 60000)} min`;
+  }
+
+  // healthOf says, per tenant, how server s keeps up with the detections it
+  // ran last: [{ text, behind }], behind being why it falls behind, or ''.
+  // The tenant is named only when more than one has detections running.
+  function healthOf(s, d) {
+    const views = (d.detections || []).filter((v) => v.health && Object.keys(v.health).length);
+    const out = [];
+    for (const v of views) {
+      const h = v.health[s.node_id];
+      if (!h || !h.rules) continue;
+      const parts = [`${views.length > 1 ? v.tenant + ': ' : ''}${h.rules} ${h.rules === 1 ? 'rule' : 'rules'}`,
+        `runs take ${msText(h.duration_p50_ms)} (p95 ${msText(h.duration_p95_ms)})`,
+        `start ${msText(h.lag_p50_ms)} after their slot (p95 ${msText(h.lag_p95_ms)})`];
+      if (h.late_hour) parts.push(`${h.late_hour} late in the last hour`);
+      if (h.skipped) parts.push(`${h.skipped} ${h.skipped === 1 ? 'slot' : 'slots'} skipped today`);
+      if (h.timed_out) parts.push(`${h.timed_out} timed out`);
+      out.push({ text: parts.join(' · '), behind: h.behind ? h.why || 'its detections run late' : '' });
+    }
+    return out;
+  }
+
+  // spreadText says, while detections are spread over the servers
+  // (detections.spread), how many of the rule groups server s runs, and
+  // how many it is handing over to another server; '' otherwise.
+  function spreadText(s, d) {
+    // Only tenants whose detections are spread: the others have run
+    // health but no groups.
+    const views = (d.detections || []).filter((v) => v.servers && Object.keys(v.servers).length);
+    if (!views.length) return '';
+    let run = 0, moving = 0, total = 0;
+    for (const v of views) {
+      total += v.buckets || 0;
+      const c = (v.servers || {})[s.node_id];
+      if (c) {
+        run += c.run || 0;
+        moving += c.moving || 0;
+      }
+    }
+    if (!run && !moving) return gone(s) ? '' : 'Runs no detection groups';
+    let text = `Runs ${run} of ${total} detection groups`;
+    if (moving) text += `, handing ${moving} over`;
+    return text;
   }
 
   // CONFIG names how a server uses the shared settings (its mode), and
@@ -226,6 +306,11 @@
     const out = [el('span', { class: tone ? 'sv-state sv-warn' : 'sv-standby', title: why }, label)];
     const odd = [...(sh.tamper || []).map((t) => 'changed outside Signalith: ' + t), ...(sh.needs_upgrade || []).map((t) => 'written by a newer version: ' + t)];
     if (odd.length) out.push(el('div', { class: 'sv-sub sv-warn' }, icon('triangle-alert', 'icon--sm'), el('span', {}, 'Keeps its last good copy of ' + odd.join('; '))));
+    const waiting = sh.restart_needed || [];
+    const refused = sh.settings_refused || [];
+    if (sh.restart && sh.restart.busy) out.push(el('div', { class: 'sv-sub' }, icon('rotate-ccw', 'icon--sm'), 'Restarting to apply settings'));
+    else if (waiting.length) out.push(el('div', { class: 'sv-sub sv-warn' }, icon('clock', 'icon--sm'), waiting.length === 1 ? '1 setting waits for a restart' : `${waiting.length} settings wait for a restart`));
+    if (refused.length) out.push(el('div', { class: 'sv-sub sv-bad' }, icon('circle-alert', 'icon--sm'), refused.length === 1 ? 'Couldn’t use 1 shared value' : `Couldn’t use ${refused.length} shared values`));
     const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
     for (const [src, keys] of drift) {
       const file = src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'environment' : src;
@@ -269,6 +354,14 @@
       for (const p of s.problems || []) {
         const [title, body] = split(p);
         out.push(alertBox('warning', `${s.name}: ${title}`, body));
+      }
+    }
+    for (const s of servers) {
+      if (gone(s)) continue;
+      for (const h of healthOf(s, d)) {
+        if (!h.behind) continue;
+        out.push(alertBox('warning', `${s.name}: detections are falling behind.`,
+          `${cap(h.behind)}. Findings come late until it catches up. Look at the slowest rules on the Detections page, or spread detections over more servers (Settings, Detections).`));
       }
     }
     return out;
@@ -335,9 +428,10 @@
   function view(d, servers) {
     const lease = d.lease || {};
     return JSON.stringify([d.warnings, d.writes_refused, lease.frozen, lease.holder_name, (d.opensearch || {}).status, (d.opensearch || {}).problem, noteHidden(),
+      servers.map((s) => [spreadText(s, d), healthOf(s, d)]),
       servers.map((s) => [s.node_id, s.name, s.self, s.state, (s.opensearch || {}).problem, s.jobs, s.version, s.node_url, s.listen, s.cannot_take_over, s.not_eligible,
         clockOff(s), s.problems, s.seen_seconds_ago == null, s.uptime_seconds == null,
-        s.shared && [s.shared.mode, s.shared.tamper, s.shared.needs_upgrade, s.shared.settings_drift]])]);
+        s.shared && [s.shared.mode, s.shared.tamper, s.shared.needs_upgrade, s.shared.settings_drift, s.shared.restart_needed, s.shared.settings_refused, s.shared.restart]])]);
   }
 
   function render(d) {
@@ -372,6 +466,114 @@
     if (note) parts.push(note);
     box.replaceChildren(...parts);
     foot();
+    syncPanel();
+  }
+
+  // ---------- the side panel: one server's settings ----------
+  // P.id is the server shown (its node id), P.view its Settings page as
+  // api/settings?server= has it, for the names of the settings and the
+  // values brought in from its own page.
+  const P = { id: '', view: null, seq: 0 };
+  // Values brought in from a server's own Settings page are listed for a
+  // week after the settings became shared.
+  const MIGRATED_DAYS = 7;
+
+  // The panel's own parts. A new part goes in its own file (serverPanels).
+  serverPanels.push(
+    // Why it reports nothing about the shared settings.
+    ({ s, sh }) => (!s.shared || sh.mode !== 'member' ? el('p', { class: 'sv-panel__text' }, s.shared
+      ? 'It doesn’t use the shared settings right now (' + ((CONFIG[sh.mode] || [sh.mode])[0] || '').toLowerCase() + '), so it reports nothing about them.'
+      : 'It keeps every setting in its own files.') : null),
+    ({ sh }) => (sh.restart && sh.restart.busy ? alertBox('info', 'Restarting to apply settings', '') : null),
+    ({ sh, part, list }) => {
+      const waiting = sh.restart_needed || [];
+      return part('Waiting for a restart', waiting.length ? list(waiting)
+        : el('p', { class: 'sv-panel__text' }, 'Nothing: it runs every setting saved for it.'));
+    },
+    ({ sh, part, list }) => {
+      const refused = sh.settings_refused || [];
+      if (!refused.length) return null;
+      return part('Shared values it couldn’t use', el('p', { class: 'sv-panel__text' }, 'It keeps its own value of each until the shared one changes, or until someone tries it again on its Settings page.'), list(refused));
+    },
+    ({ sh, part }) => {
+      const last = sh.restart && sh.restart.last;
+      if (!last) return null;
+      const when = el('span', { title: new Date(last.at).toLocaleString() }, ago(last.at));
+      return part('Last restart', el('p', { class: 'sv-panel__text' + (last.ok ? '' : ' sv-bad') }, last.ok ? 'Restarted with the saved settings, ' : (last.rolled_back ? 'Went back to its previous settings, ' : 'Failed, '), when,
+        last.ok ? '.' : ': ' + (last.error || 'no reason given')));
+    },
+    ({ sh, part, list }) => {
+      const drift = Object.entries(sh.settings_drift || {}).filter(([, keys]) => keys && keys.length);
+      if (!drift.length) return null;
+      return part('Differs in its own files', el('p', { class: 'sv-panel__text' }, 'The shared value is used: a change in its file or environment applies to every server when it is made.'),
+        ...drift.map(([src, keys]) => el('div', {}, el('b', {}, src === 'yaml' ? 'signalith.yaml' : src === 'env' ? 'Environment' : src), list(keys))));
+    },
+    ({ s, view, name, part }) => {
+      const recent = ((view && view.migrated) || []).filter((m) => !m.at || Date.now() - Date.parse(m.at) < MIGRATED_DAYS * 86400000);
+      if (!recent.length) return null;
+      const val = (v) => (v === undefined || v === null ? 'empty' : typeof v === 'object' && v.set ? 'a value of its own' : Array.isArray(v) ? v.join(', ') : String(v));
+      return part('Before the settings were shared', el('p', { class: 'sv-panel__text' }, `${s.name}’s Settings page had other values than the shared ones. The shared values are used; change them on the Settings page if ${s.name}’s were the right ones.`),
+        el('ul', { class: 'sv-panel__list', role: 'list' }, ...recent.map((m) => el('li', {}, el('span', {}, name(m.key)),
+          el('span', { class: 'sv-panel__was' }, 'had ', el('span', { class: 'mono' }, val(m.value)), m.shared !== undefined ? '; shared ' : '', m.shared !== undefined ? el('span', { class: 'mono' }, val(m.shared)) : null)))));
+    },
+  );
+
+  function openPanel(id) {
+    P.id = id;
+    P.view = null;
+    const d = modalDialog('sv-panel');
+    d.classList.add('sv-panel');
+    sidePanel(d, 'server');
+    d.onclose = () => {
+      const from = P.id && document.querySelector(`#servers tr[data-server="${CSS.escape(P.id)}"] .sv-open`);
+      P.id = '';
+      if (from) from.focus();
+    };
+    syncPanel();
+    if (!d.open) d.showModal();
+    const seq = ++P.seq;
+    const s = ((S.data || {}).servers || []).find((x) => (x.node_id || x.name) === id);
+    api('api/settings' + (s && !s.self ? '?server=' + encodeURIComponent(id) : '')).then((v) => {
+      if (seq !== P.seq || P.id !== id) return;
+      P.view = v;
+      syncPanel();
+    }, () => {
+      if (seq !== P.seq || P.id !== id) return;
+      P.view = { failed: true };
+      syncPanel();
+    });
+  }
+
+  // syncPanel draws the open panel from the last answers.
+  function syncPanel() {
+    const d = $('sv-panel');
+    if (!d || !P.id) return;
+    const s = ((S.data || {}).servers || []).find((x) => (x.node_id || x.name) === P.id);
+    if (!s) { d.close(); return; }
+    const keep = d.contains(document.activeElement) ? document.activeElement.dataset.focus : '';
+    const sh = s.shared || {};
+    const labels = {};
+    for (const sec of (P.view && P.view.sections) || []) for (const f of sec.fields) labels[f.key] = f.label;
+    const name = (k) => labels[k] || k;
+    const list = (keys) => el('ul', { class: 'sv-panel__list', role: 'list' }, ...keys.map((k) => el('li', {}, el('span', {}, name(k)), labels[k] ? el('span', { class: 'mono sv-panel__key' }, k) : null)));
+    const part = (title, ...kids) => el('section', { class: 'sv-panel__part' }, el('h3', { class: 'section-title' }, title), ...kids);
+    const ctx = { s, sh, view: P.view, name, list, part };
+    const parts = [];
+    for (const panel of serverPanels) {
+      const out = panel(ctx);
+      if (Array.isArray(out)) parts.push(...out.filter(Boolean)); else if (out) parts.push(out);
+    }
+    if (P.view && P.view.failed) parts.push(el('p', { class: 'sv-panel__text' }, 'Its settings couldn’t be read now, so settings show by their names.'));
+    const open = el('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'open', onclick: () => {
+      const id = s.self ? '' : s.node_id;
+      d.close();
+      if (typeof window.openServerSettings === 'function') window.openServerSettings(id); else showPage('settings');
+    } }, icon('settings'), 'Open its settings');
+    fill(d, modalHead('sv-panel', s.name, s.node_url || s.listen || '', () => d.close()),
+      el('div', { class: 'modal__body sv-panel__body' }, ...parts),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', 'data-focus': 'close', onclick: () => d.close() }, 'Close'), open));
+    const f = keep && d.querySelector(`[data-focus="${keep}"]`);
+    if (f) f.focus();
   }
 
   // foot says when the list was last read.
