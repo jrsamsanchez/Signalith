@@ -388,7 +388,7 @@ func cefTime(v string, now time.Time) (time.Time, bool) {
 		return time.Unix(n, 0).UTC(), true
 	}
 	if isDigit(v[0]) {
-		if t, n, ok := parseISO(v); ok && n == len(v) {
+		if t, n, _, ok := parseISO(v); ok && n == len(v) {
 			return t, true
 		}
 		return time.Time{}, false

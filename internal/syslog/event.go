@@ -35,9 +35,10 @@ var severityNames = [8]string{"emergency", "alert", "critical", "error", "warnin
 // Event turns a parsed message into an event for the ingest pipeline.
 // sender is the address the message came from and received is when it
 // arrived; they fill dvc, host when the message names none, and the time
-// when the message has no usable timestamp. A message time older than
-// maxAge (zero: DefaultMaxAge) or more than ingest.MaxEventAhead ahead is
-// not used for the event time; it is kept in device_time instead.
+// when the message has no usable timestamp or one without a zone. A
+// message time older than maxAge (zero: DefaultMaxAge) or more than
+// ingest.MaxEventAhead ahead is not used for the event time; it is kept in
+// device_time instead.
 func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Duration) ingest.Event {
 	if maxAge <= 0 {
 		maxAge = DefaultMaxAge
@@ -55,6 +56,15 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	wazuh, suricata := false, false
 	var ev ingest.Event
 	t := m.Time
+	// A time without a zone (RFC 3164) was read as this server's local
+	// time, but the device's clock may be in another zone and the event
+	// would be filed hours off: the receive time is used instead, unless
+	// the record has a time of its own, and the time as the device wrote
+	// it is kept in device_clock.
+	var clock time.Time
+	if m.Zoneless && !t.IsZero() {
+		clock, t = t, time.Time{}
+	}
 	// structured is a CEF or LEEF record, mapped by its own keys.
 	structured := func(f map[string]any, ct time.Time, rec avRecord) {
 		// The record's own time (CEF rt, end or start, LEEF devTime) is
@@ -181,6 +191,9 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	}
 	if !wazuh && !suricata {
 		f["message"] = m.Raw // a Wazuh alert or EVE event keeps its own JSON
+	}
+	if !clock.IsZero() {
+		f[ingest.DeviceClockField] = ingest.FormatDeviceClock(clock.In(time.Local))
 	}
 	ev.Time = received.UTC()
 	if plausible(t, received, maxAge) {
