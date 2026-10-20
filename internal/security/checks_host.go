@@ -15,7 +15,7 @@ func checkAccount(f *Facts) *Check {
 		return &Check{State: Unknown, Line: processWhy(p), Fix: processFix(p)}
 	}
 	if f.Server.OS == "windows" {
-		fix := &Fix{Steps: []string{"Run install.ps1 from this version again, in an elevated PowerShell. It moves the service to its own account."}, Docs: doc(docReadmeWindows)}
+		fix := &Fix{Steps: []string{"Run install.ps1 from this version again, in an elevated PowerShell. It moves the service to its own account."}, Docs: doc(docStartWindows)}
 		switch {
 		case p.SID == "S-1-5-18":
 			return &Check{State: Attention, Line: "Signalith runs as Local System, the most powerful account on Windows.", Fix: fix}
@@ -26,14 +26,14 @@ func checkAccount(f *Facts) *Check {
 		case p.AdminUnknown:
 			return &Check{State: Unknown, Line: "Signalith runs as " + p.UserName + ". Signalith couldn't tell whether that account is an administrator.",
 				Fix: &Fix{Steps: []string{"Check whether " + p.UserName + " is in the Administrators group. If it is, run install.ps1 from this version again, in an elevated PowerShell. It moves the service to its own account."},
-					Commands: cmds("", "net localgroup Administrators", ""), Docs: doc(docReadmeWindows)}}
+					Commands: cmds("", "net localgroup Administrators", ""), Docs: doc(docStartWindows)}}
 		}
 		return &Check{State: Good, Line: "Signalith runs as " + p.UserName + ", without administrator rights."}
 	}
 	switch {
 	case p.Root && f.InContainer:
 		return &Check{State: Attention, Line: "Signalith runs as root inside its container.",
-			Fix: &Fix{Steps: []string{"Remove the user: line that overrides the image's account in your compose file; the image runs as uid 65532."}, Docs: doc(docReadmeDocker)}}
+			Fix: &Fix{Steps: []string{"Remove the user: line that overrides the image's account in your compose file; the image runs as uid 65532."}, Docs: doc(docDockerStart)}}
 	case p.Root:
 		return &Check{State: Attention, Line: "Signalith runs as root, so a flaw in it could reach the whole computer.", Fix: &Fix{
 			Steps: []string{"Run Signalith as its own account, with the systemd unit from this version."},
@@ -41,7 +41,7 @@ func checkAccount(f *Facts) *Check {
 				"sudo chown -R signalith /etc/signalith /var/lib/signalith\n"+
 				"sudo cp deploy/systemd/signalith.service /etc/systemd/system/\n"+
 				"sudo systemctl daemon-reload && sudo systemctl restart signalith", "", ""),
-			Docs: doc(docReadmeLinux)}}
+			Docs: doc(docStartLinux)}}
 	case f.InContainer:
 		return &Check{State: Good, Line: "Signalith runs as an unprivileged account (uid " + itoa(p.UID) + ") in its container."}
 	}
@@ -80,7 +80,7 @@ func checkService(f *Facts) *Check {
 		Commands: cmds("sudo cp deploy/systemd/signalith.service /etc/systemd/system/\n"+
 			"sudo systemctl daemon-reload && sudo systemctl restart signalith\n"+
 			"systemd-analyze security signalith", "", ""),
-		Docs: doc(docReadmeLinux)}
+		Docs: doc(docStartLinux)}
 	var missing []string
 	add := func(ok bool, name string) {
 		if !ok {
@@ -108,7 +108,7 @@ func checkService(f *Facts) *Check {
 		if len(missing) > 0 {
 			return &Check{State: Attention, Line: "Signalith's container is missing protections from the quick start: " + joinAnd(missing) + ".",
 				Fix: &Fix{Steps: []string{"Keep read_only: true, cap_drop: [ALL], security_opt: [no-new-privileges:true] and ulimits core: 0 for the signalith service in docker-compose.yml."},
-					Docs: doc(docReadmeDocker)}}
+					Docs: doc(docDockerStart)}}
 		}
 		return &Check{State: Good, Line: "Signalith's container runs read-only, without extra privileges or capabilities."}
 	case !p.Systemd:

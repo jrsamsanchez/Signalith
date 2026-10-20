@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -166,6 +167,27 @@ func checkFolder(dir string) (warnings []string, shared string, err error) {
 // IdentityPath is the file in the state folder dir that holds this
 // server's identity (node.id).
 func IdentityPath(dir string) string { return filepath.Join(dir, nodeFile) }
+
+// InUse reports whether a Signalith process uses the state folder dir
+// now: whether another open file holds its cluster/lock. It changes
+// nothing, and is false where files cannot be locked.
+func InUse(dir string) (bool, error) {
+	path := filepath.Join(dir, "cluster", lockName)
+	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	unlock, err := lockFile(path)
+	switch {
+	case errors.Is(err, errLocked):
+		return true, nil
+	case errors.Is(err, errLockUnsupported):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	unlock()
+	return false, nil
+}
 
 // ReadIdentity reads node.id in the state folder dir without locking the
 // folder or changing anything, for a command run while the server runs.

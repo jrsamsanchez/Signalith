@@ -83,7 +83,7 @@ To move over:
 The Docker quick start is different: its updated files publish 9000 and 7779 and set
 `server.agent_listen`, so after the update open `https://localhost:9000` and set up each
 agent again from **Add data** (see
-[Upgrading to 0.3](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-to-03-the-agent-port)).
+[Upgrading to 0.3](docker.md#upgrading-to-03-the-agent-port)).
 
 ## What each source becomes
 
