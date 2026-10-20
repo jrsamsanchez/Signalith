@@ -32,17 +32,20 @@
 #      Microsoft (its license does not allow handing it out otherwise),
 #      checks that Microsoft signed it, and installs it with the
 #      configuration below. A Sysmon already installed keeps its own.
-#   5. With -Osquery: when osquery is not installed yet, downloads its MSI
+#   5. Turns on process creation auditing with the command line (Security
+#      event 4688), which CIS recommends and most Windows detections read,
+#      unless -NoProcessAuditing. Removing the agent leaves it on.
+#   6. With -Osquery: when osquery is not installed yet, downloads its MSI
 #      from its publisher (the version pinned below), checks its signature
 #      (or -OsquerySha256), and installs it. osquery's own service is
 #      turned off: the agent runs osquery with the flags it writes from
 #      Signalith's configuration, and osquery enrolls with the agent token.
 #      -OsqueryMsi uses an MSI already on the computer instead.
-#   6. Downloads the agent program from Signalith and checks its SHA-256,
+#   7. Downloads the agent program from Signalith and checks its SHA-256,
 #      writes the agent's settings, token and certificate authority to a
 #      folder only SYSTEM and Administrators can open, and starts the
 #      SignalithAgent service.
-#   7. Waits until the agent runs Fluent Bit (and osquery) with Signalith's
+#   8. Waits until the agent runs Fluent Bit (and osquery) with Signalith's
 #      configuration and Signalith has its status.
 #
 # Run it again to repair, or to upgrade Fluent Bit and the agent: it
@@ -65,6 +68,8 @@ param(
   [string]$Token = "",
   # Also install Sysmon, downloaded from Microsoft.
   [switch]$Sysmon,
+  # Leave Windows' process creation auditing as it is.
+  [switch]$NoProcessAuditing,
   # A Fluent Bit for Windows zip (fluent-bit-<version>-win64.zip) already
   # on this computer, used instead of downloading one.
   [string]$FluentBitZip = "",
@@ -768,6 +773,42 @@ function Sysmon-Install {
   Ok "installed Sysmon with the agent's configuration"
 }
 
+# --- Process creation auditing ----------------------------------------------
+
+# Process Creation, by its GUID, which auditpol takes in every language.
+$ProcessCreationGuid = "{0CCE922B-69AE-11D9-BED3-505054503030}"
+$CmdLineKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit"
+
+# Process-Auditing has Windows log each program start (Security 4688) with
+# its command line: Audit Process Creation and Include command line in
+# process creation events, as the CIS benchmarks recommend. Most Windows
+# detections read program starts; without Sysmon this is where they come
+# from. A domain's group policy that sets them wins over this.
+function Process-Auditing {
+  if ($NoProcessAuditing) { return }
+  if ($DryRun) {
+    Would "auditpol /set /subcategory:$ProcessCreationGuid /success:enable"
+    Would "Set-ItemProperty $CmdLineKey ProcessCreationIncludeCmdLine_Enabled 1"
+    return
+  }
+  $cmdline = (Get-ItemProperty -LiteralPath $CmdLineKey -Name ProcessCreationIncludeCmdLine_Enabled -ErrorAction SilentlyContinue).ProcessCreationIncludeCmdLine_Enabled
+  if ($cmdline -ne 1) {
+    if (-not (Test-Path -LiteralPath $CmdLineKey)) { New-Item -Path $CmdLineKey -Force | Out-Null }
+    Set-ItemProperty -LiteralPath $CmdLineKey -Name ProcessCreationIncludeCmdLine_Enabled -Value 1 -Type DWord
+    $script:changed = $true
+  }
+  $ErrorActionPreference = "Continue"
+  $out = & auditpol.exe /set "/subcategory:$ProcessCreationGuid" /success:enable 2>&1
+  $ErrorActionPreference = "Stop"
+  if ($LASTEXITCODE -ne 0) {
+    $out | Select-Object -Last 5 | ForEach-Object { Write-Host "      $_" }
+    Warn "Could not turn on process creation auditing (auditpol exit code $LASTEXITCODE): rules that read program starts stay quiet on this computer." "auditpol /set /subcategory:`"Process Creation`" /success:enable"
+    return
+  }
+  Manifest-Add "process-auditing"
+  Ok "Windows logs each program start with its command line (Security 4688)"
+}
+
 # --- osquery -----------------------------------------------------------------
 
 # Osquery-Wanted says whether the agent runs osquery here: asked for now,
@@ -1153,6 +1194,7 @@ try {
     if (-not $DryRun) { Vendor-FluentBit }
     FluentBit-Install
     Sysmon-Install
+    Process-Auditing
     Osquery-Install
     Agent-Program
     Agent-Files

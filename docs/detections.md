@@ -929,10 +929,33 @@ feed [risk-based alerting](#risk) without flooding the queue. Each is tagged
 `sigma`, the pack name, the product and the log source.
 
 On the **Detections** page, the pack card shows how many rules are on.
-**Turn on N high and critical rules** is the suggested start; **Browse rules** lists
+**Turn on N starter rules** is the suggested start; **Browse rules** lists
 the pack so you can filter, read a rule's source and turn rules on or off one at a
 time or all shown at once (with Undo). Pack rules cannot be deleted, only turned
 off; editing one saves an override that keeps the credit.
+
+### The starter set
+
+The starter set is about 140 high and critical rules from both packs (tagged
+`starter`) that read only what hosts send as installed: the Windows event logs
+the Signalith Agent collects by default (the Security events Windows audits by
+default, System, Application, Defender, Code Integrity, BITS, the DNS client, the
+firewall and the like) and web server access logs. Most pack rules read logging a
+default install does not have, and stay quiet until hosts send it. Browse rules
+marks them, and each is tagged for what it needs:
+
+| Tag | Shown as | What hosts must send |
+|---|---|---|
+| `needs-sysmon` | Needs Sysmon | Sysmon events: tick **Sysmon** on the Windows install line |
+| `needs-process-auditing` | Needs process auditing | Program starts: Sysmon, or the Security log's 4688 events with the command line (**Audit Process Creation** and **Include command line in process creation events**) |
+| `needs-powershell-logging` | Needs PowerShell logging | PowerShell script block or module logging: tick **PowerShell** on the Windows install line and turn the logging on by group policy |
+| `needs-auditd` | Needs the audit log | The Linux audit log, recording the programs that run |
+
+Type a tag in the filter of Browse rules to list those rules, such as `starter` or
+`needs-sysmon`. The starter set also leaves out rules for cloud services and
+network sensors, and Security events that need an audit policy Windows leaves off
+(object access, file shares, directory service changes, the filtering platform,
+scheduled task changes).
 
 Licence: the SigmaHQ rules are under the [Detection Rule License 1.1](https://github.com/SigmaHQ/Detection-Rule-License)
 (full text in the pack folder). As it requires, every finding from a pack rule
@@ -1578,7 +1601,8 @@ its test events, so CI checks real events too:
 go run ./internal/detect/attackgen -write   # downloads the recordings, about 2 GB
 ```
 
-On the pack card, **Turn on N TTP rules** is the suggested start.
+On the pack card, **Turn on N starter rules** turns on this pack's rules of the
+[starter set](#the-starter-set).
 
 Licence: the rules are © Splunk Inc. under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
