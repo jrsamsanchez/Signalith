@@ -37,8 +37,11 @@ interested, say so in an issue.
 
 If the maintainer cannot continue, the project should be able to carry on within a week:
 
-- The maintainer's GitHub account has a designated successor, so the repository,
-  releases and GitHub Pages site can be transferred.
+- The maintainer keeps everything needed to run the project in a password manager:
+  the GitHub account and its two-factor recovery codes, the signalith.io domain
+  registration, and the release signing keys. A trusted person has emergency access
+  to it, so they can create and close issues, merge changes, publish releases and
+  keep the site running, or hand the project to a new maintainer.
 - Everything needed to build, test and release is in this repository: the build and
   test steps in [CONTRIBUTING.md](CONTRIBUTING.md) and the release steps in
   [docs/releasing.md](docs/releasing.md).
