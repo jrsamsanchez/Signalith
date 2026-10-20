@@ -351,6 +351,71 @@ jobs:
           name: signalith-binaries
           path: dist/
 
+  # Fails when a Go file isn't formatted with gofmt. Not a required check.
+  gofmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt -l
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go'))
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt -w:"; echo "$unformatted"; exit 1
+          fi
+
+  # Measures statement coverage of the unit tests, writes the total to the
+  # job summary and fails below 80%. Not a required check.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - run: go test -short -timeout 20m -coverprofile=coverage.out ./...
+      - name: Total coverage
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%", "", $3); print $3}')
+          echo "Statement coverage: $total%" | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" 'BEGIN { exit !(t >= 80) }' || { echo "Coverage is below 80%"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  # Builds the release binaries twice, from two checkouts of the commit in
+  # different folders with an empty build cache the second time, and fails
+  # when the files differ. Not a required check.
+  rebuild-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Build twice and compare
+        run: |
+          build() {
+            for target in linux/amd64 linux/arm64 windows/amd64; do
+              os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" -o "$1/signalith-$os-$arch$ext" ./cmd/signalith
+            done
+          }
+          build "$RUNNER_TEMP/first"
+          copy="$RUNNER_TEMP/elsewhere/signalith"
+          # A clone, not a worktree: Go records the commit only in a
+          # checkout with a .git folder.
+          git clone -q --no-checkout . "$copy"
+          git -C "$copy" checkout -q --detach "$(git rev-parse HEAD)"
+          go clean -cache
+          (cd "$copy" && build "$RUNNER_TEMP/second")
+          (cd "$RUNNER_TEMP/first" && sha256sum *) | tee first.sha256
+          (cd "$RUNNER_TEMP/second" && sha256sum *) > second.sha256
+          diff first.sha256 second.sha256 && echo "Both builds are identical." | tee -a "$GITHUB_STEP_SUMMARY"
+
   # Builds the .deb, .rpm and .msi packages and tests installing,
   # upgrading from the latest release and removing each one.
   packages:
