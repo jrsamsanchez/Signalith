@@ -209,8 +209,8 @@ type aggState struct {
 	min, max float64
 	distinct map[string]any // each value's text, and the first value with it
 	clipped  bool           // values() or list() left values out
-	nums     []float64 // for median, percentiles, stdev and var
-	vals     []any     // values in row order, for list, first, last and mode
+	nums     []float64      // for median, percentiles, stdev and var
+	vals     []any          // values in row order, for list, first, last and mode
 	times    []time.Time
 }
 

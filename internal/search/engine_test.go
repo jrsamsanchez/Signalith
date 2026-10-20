@@ -220,23 +220,47 @@ func TestEventColumnsOrder(t *testing.T) {
 }
 
 func TestTimechartByPivotsColumns(t *testing.T) {
-	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":9}},"aggregations":{"time":{"buckets":[
-		{"key_as_string":"2026-10-11T00:00:00.000Z","doc_count":4,"by":{"buckets":[{"key":"failure","doc_count":3},{"key":"success","doc_count":1}]}},
-		{"key_as_string":"2026-10-11T01:00:00.000Z","doc_count":5,"by":{"buckets":[{"key":"success","doc_count":5}]}}]}}}`}}
+	// First the series over the whole range, then each hour's count of
+	// each series, the other values and events without the field
+	// (SL-04).
+	fs := &fakeStore{responses: []string{
+		`{"hits":{"total":{"value":12}},"aggregations":{"series":{"sum_other_doc_count":2,"buckets":[{"key":"success","doc_count":6},{"key":"failure","doc_count":3}]}}}`,
+		`{"aggregations":{"time":{"buckets":[
+		{"key_as_string":"2026-10-11T00:00:00.000Z","doc_count":5,"by":{"buckets":{"s0":{"doc_count":1},"s1":{"doc_count":3},"OTHER":{"doc_count":1},"NULL":{"doc_count":0}}}},
+		{"key_as_string":"2026-10-11T01:00:00.000Z","doc_count":7,"by":{"buckets":{"s0":{"doc_count":5},"s1":{"doc_count":0},"OTHER":{"doc_count":1},"NULL":{"doc_count":1}}}}]}}}`,
+	}}
 	e := &Engine{Store: fs}
 	res, err := e.Run(context.Background(), `* earliest=-24h | timechart span=1h count by action`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hist := fs.bodies[0]["aggs"].(map[string]any)["time"].(map[string]any)["date_histogram"].(map[string]any)
-	if hist["fixed_interval"] != "1h" {
-		t.Errorf("interval = %v", hist)
+	series := fs.bodies[0]["aggs"].(map[string]any)["series"].(map[string]any)["terms"].(map[string]any)
+	if series["field"] != "action" || series["size"] != 10 {
+		t.Errorf("series = %v", series)
 	}
-	if !reflect.DeepEqual(res.Columns, []string{"_time", "success", "failure"}) {
+	split, _ := json.Marshal(fs.bodies[1])
+	for _, want := range []string{`"fixed_interval":"1h"`, `"s0":{"term":{"action":"success"}}`, `"OTHER":{"bool":{"filter":[{"exists":{"field":"action"}}],"must_not":[{"terms":{"action":["success","failure"]}}]}}`, `"NULL":{"bool":{"must_not":[{"exists":{"field":"action"}}]}}`} {
+		if !strings.Contains(string(split), want) {
+			t.Errorf("split request lacks %s: %s", want, split)
+		}
+	}
+	if !reflect.DeepEqual(res.Columns, []string{"_time", "success", "failure", "OTHER", "NULL"}) {
 		t.Errorf("columns = %v", res.Columns)
 	}
-	if res.Rows[1]["failure"] != int64(0) {
-		t.Errorf("missing value should be 0, got %v", res.Rows[1]["failure"])
+	if res.Rows[1]["failure"] != int64(0) || res.Rows[0]["NULL"] != int64(0) || res.Rows[1]["OTHER"] != int64(1) {
+		t.Errorf("rows = %v", res.Rows)
+	}
+
+	// useother=f usenull=f ask for neither.
+	fs = &fakeStore{responses: []string{
+		`{"aggregations":{"series":{"sum_other_doc_count":2,"buckets":[{"key":"success","doc_count":6}]}}}`,
+		`{"aggregations":{"time":{"buckets":[]}}}`,
+	}}
+	if _, err := (&Engine{Store: fs}).Run(context.Background(), `* | timechart count by action useother=f usenull=f`); err != nil {
+		t.Fatal(err)
+	}
+	if split, _ := json.Marshal(fs.bodies[1]); strings.Contains(string(split), "OTHER") || strings.Contains(string(split), "NULL") {
+		t.Errorf("split request = %s", split)
 	}
 }
 

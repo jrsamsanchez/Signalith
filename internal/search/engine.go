@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -244,6 +245,9 @@ type Plan struct {
 	// fill is a fillnull of by fields just before stats, run in
 	// OpenSearch as buckets for events that lack those fields.
 	fill *query.Fillnull
+	// split is a timechart by a field's date histogram, run once Body
+	// has found its series.
+	split map[string]any
 }
 
 func (e *Engine) opts() Options {
@@ -568,6 +572,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
+				// The series are the by field's largest values over
+				// the whole range, asked for first; then each time
+				// bucket counts those, the rest (OTHER) and events
+				// without the field (NULL). See timechartSplit.
 				size := 10
 				switch {
 				case c.Limit == query.NoTimechartLimit:
@@ -576,21 +584,25 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 					size = min(c.Limit, maxTimechartSeries)
 				}
 				terms := map[string]any{"field": storedField(c.By), "size": size}
+				series := map[string]any{"terms": terms}
 				if summed {
 					// A summary row stands for many events: the
 					// largest values are those with the most events,
 					// not the most rows.
 					terms["order"] = map[string]any{"m0": "desc"}
+					series["aggs"] = map[string]any{"m0": countAgg()}
 				}
-				by := map[string]any{"terms": terms}
 				if len(sub) > 0 {
-					by["aggs"] = sub
+					ts["aggs"] = sub // moved under the series by timechartSplit
 				}
-				ts["aggs"] = map[string]any{"by": by}
-			} else if len(sub) > 0 {
-				ts["aggs"] = sub
+				p.split = ts
+				body["aggs"] = map[string]any{"series": series}
+			} else {
+				if len(sub) > 0 {
+					ts["aggs"] = sub
+				}
+				body["aggs"] = map[string]any{"time": ts}
 			}
-			body["aggs"] = map[string]any{"time": ts}
 			addEventsAgg(body, summed)
 			return p, nil
 		}
@@ -1012,6 +1024,11 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 	case "timechart":
 		res.Kind = "timechart"
 		tc := p.transform.(*query.Timechart)
+		if p.split != nil {
+			if resp, err = e.timechartSplit(ctx, p, tc, resp); err != nil {
+				return nil, err
+			}
+		}
 		res.Rows, res.Columns = timechartRows(resp, tc, summed)
 		return res, nil
 	}
@@ -1218,17 +1235,27 @@ func timechartRows(resp map[string]any, tc *query.Timechart, summed bool) ([]Row
 		}
 		return rows, cols
 	}
-	// One column per value of the by field, ordered by overall total.
+	// One column per series: the by field's values, ordered by overall
+	// total, then OTHER and NULL when they have events.
+	names, _ := resp[seriesKey].([]string)
 	totals := map[string]float64{}
+	seen := map[string]bool{}
 	a := tc.Aggs[0]
 	for _, b := range bs {
 		bm, _ := b.(map[string]any)
 		row := Row{"_time": bm["key_as_string"]}
 		by, _ := bm["by"].(map[string]any)
-		vbs, _ := by["buckets"].([]any)
-		for _, vb := range vbs {
+		vbs, _ := by["buckets"].(map[string]any)
+		for key, vb := range vbs {
+			name := key
+			if i, err := strconv.Atoi(strings.TrimPrefix(key, "s")); err == nil && strings.HasPrefix(key, "s") && i < len(names) {
+				name = names[i]
+			}
 			vm, _ := vb.(map[string]any)
-			name := fmt.Sprint(normalize(vm["key"]))
+			n, _ := asFloat(toNumber(vm["doc_count"]))
+			if (key == otherSeries || key == nullSeries) && n == 0 {
+				continue
+			}
 			var val any
 			switch {
 			case a.Func == "count" && a.Field == "" && summed:
@@ -1239,30 +1266,31 @@ func timechartRows(resp map[string]any, tc *query.Timechart, summed bool) ([]Row
 				val = aggValue(a, vm, "m0")
 			}
 			row[name] = val
+			seen[name] = true
 			if f, ok := asFloat(val); ok {
 				totals[name] += f
-			} else if _, ok := totals[name]; !ok {
-				totals[name] = 0
 			}
 		}
 		rows = append(rows, row)
 	}
-	names := make([]string, 0, len(totals))
-	for n := range totals {
-		names = append(names, n)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if totals[names[i]] != totals[names[j]] {
-			return totals[names[i]] > totals[names[j]]
+	var series []string
+	for _, n := range names {
+		if seen[n] {
+			series = append(series, n)
 		}
-		return names[i] < names[j]
-	})
+	}
+	sort.SliceStable(series, func(i, j int) bool { return totals[series[i]] > totals[series[j]] })
+	for _, n := range []string{otherSeries, nullSeries} {
+		if seen[n] && !slices.Contains(series, n) {
+			series = append(series, n)
+		}
+	}
 	for _, r := range rows {
-		for _, n := range names {
+		for _, n := range series {
 			if _, ok := r[n]; !ok && (a.Func == "count" || a.Func == "dc") {
 				r[n] = int64(0)
 			}
 		}
 	}
-	return rows, append(cols, names...)
+	return rows, append(cols, series...)
 }

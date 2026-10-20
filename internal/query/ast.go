@@ -232,6 +232,10 @@ type Timechart struct {
 	// Limit is how many of the by field's values become series: 0 the
 	// default of 10, NoTimechartLimit as many as Signalith charts.
 	Limit int
+	// NoOther leaves out the OTHER series of the values beyond Limit, and
+	// NoNull the NULL series of events without the by field
+	// (useother=f, usenull=f).
+	NoOther, NoNull bool
 }
 
 // NoTimechartLimit is timechart limit=0.
@@ -396,6 +400,12 @@ func CommandString(c Command) string {
 		case c.Limit > 0 && c.Limit != 10:
 			s += " limit=" + strconv.Itoa(c.Limit)
 		}
+		if c.NoOther {
+			s += " useother=f"
+		}
+		if c.NoNull {
+			s += " usenull=f"
+		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
 			s += " by " + c.By
@@ -430,7 +440,8 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
-		if c.Limit > 0 {
+		// A first key named with digits would read as the limit.
+		if c.Limit > 0 || len(c.Keys) > 0 && !c.Keys[0].Desc && c.Keys[0].As == "" && isDigits(c.Keys[0].Field) {
 			return "sort " + strconv.Itoa(c.Limit) + " " + sortKeysString(c.Keys)
 		}
 		return "sort " + sortKeysString(c.Keys)
