@@ -136,9 +136,9 @@ You need Docker Compose 2.24.4 or newer, a DNS name for the computer and port
 On a new Ubuntu 24.04 cloud server, `deploy/demo/cloud-init.yaml` does all of
 this for you: change `demo.example.com` in it to the demo's name and paste it
 into the provider's "Cloud config" or "user data" box when creating the
-server. It installs Docker, starts the demo and updates it every Sunday. Give
-the server an SSH key, and open port 443 to everyone and port 22 only to your
-own address.
+server. It installs Docker, starts the demo and updates it to the newest build
+of `main` every day at 08:00 UTC. Give the server an SSH key, and open port 443
+to everyone and port 22 only to your own address.
 
 To sign in as the admin from your own address, set
 `SIGNALITH_DEMO_ADMIN_NETWORKS` in `deploy/demo/docker-compose.demo.yml` and
