@@ -511,7 +511,9 @@ func TestDispatcherEscalatesLateFindings(t *testing.T) {
 	}
 	ctx := context.Background()
 	bob := "bob"
-	if _, err := r.fs.Modify(ctx, owned.ID, func(f *findings.Finding) (bool, error) { return f.Apply(findings.Update{Owner: &bob}, "bob", r.clock.Now()), nil }); err != nil {
+	if _, err := r.fs.Modify(ctx, owned.ID, func(f *findings.Finding) (bool, error) {
+		return f.Apply(findings.Update{Owner: &bob}, "bob", r.clock.Now()), nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	// High is due within the hour: not yet late.
