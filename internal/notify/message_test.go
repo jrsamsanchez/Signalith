@@ -6,10 +6,14 @@ package notify
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/quotedprintable"
+	"net/mail"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 )
 
@@ -104,6 +108,60 @@ func TestMessageKinds(t *testing.T) {
 	}
 	if got := cut("abcdef", 4); got != "abc…" {
 		t.Errorf("cut = %q", got)
+	}
+}
+
+// A finding from a content pack rule carries its author's credit, as the
+// rule's licence (DRL 1.1) asks, into every channel's message.
+func TestMessageCredit(t *testing.T) {
+	now := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+	o := &detect.Origin{Pack: "sigmahq", PackTitle: "SigmaHQ community rules", Rule: "r1", Author: "Florian Roth (Nextron Systems)",
+		License: "DRL-1.1", LicenseURL: "https://github.com/SigmaHQ/Detection-Rule-License"}
+	f := &findings.Finding{ID: "f1", DetectionID: "sigma-r1", Title: "Mimikatz use", Severity: "high", Created: now, Credit: o.Credit()}
+	m := NewMessage(f, "https://siem.example.com/#findings")
+	if m.Credit != o.Credit() {
+		t.Fatalf("credit = %q", m.Credit)
+	}
+	from, to := &mail.Address{Address: "siem@example.com"}, []*mail.Address{{Address: "soc@example.com"}}
+	raw, err := buildMail(from, to, m, "SOC email", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body, _ := strings.Cut(string(raw), "\r\n\r\n")
+	email, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slack := Channel{ID: "s", Name: "#soc", Type: TypeSlack}
+	teams := Channel{ID: "t", Name: "SOC", Type: TypeTeams}
+	app := Channel{ID: "a", Name: "SOC app", Type: TypeTeamsApp, AppID: "00000000-0000-0000-0000-000000000001", AppPassword: "pw-123456"}
+	approval := ApprovalMessage(f, "Playbook X waits for approval to: block 203.0.113.7.", "", "run-1", 1)
+	for name, body := range map[string]string{
+		"email": string(email), "slack": render(t, m.slackBody(slack)), "teams": render(t, m.teamsBody(teams)),
+		"teams app": render(t, m.teamsCard(app)), "webhook": render(t, m.webhookBody(now)), "approval email": approval.text("SOC email"),
+	} {
+		if !strings.Contains(body, "Rule by Florian Roth (Nextron Systems), from SigmaHQ community rules (DRL-1.1") {
+			t.Errorf("%s body has no credit: %s", name, body)
+		}
+	}
+	var wb struct {
+		Finding struct {
+			Credit string `json:"credit"`
+		} `json:"finding"`
+	}
+	if err := json.Unmarshal([]byte(render(t, m.webhookBody(now))), &wb); err != nil || wb.Finding.Credit != o.Credit() {
+		t.Errorf("webhook credit = %q, %v", wb.Finding.Credit, err)
+	}
+
+	// A built-in rule has no credit, and no line for it.
+	f.Credit = ""
+	m = NewMessage(f, "")
+	for name, body := range map[string]string{
+		"text": m.text("SOC email"), "slack": render(t, m.slackBody(slack)), "teams": render(t, m.teamsCard(teams)),
+	} {
+		if strings.Contains(body, "Rule by") || strings.Contains(body, `"context"`) || strings.Contains(body, "isSubtle") {
+			t.Errorf("%s body without credit = %s", name, body)
+		}
 	}
 }
 

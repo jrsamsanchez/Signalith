@@ -258,7 +258,7 @@ settings:
    variable's name: change them where Signalith's environment is set (for example
    `docker-compose.yml` or the service's settings), then restart it.
 2. The **Settings page**.
-3. **`signalith.yaml`**.
+3. **`signalith.yaml`** (every setting is in [Configuration file](configuration.md#all-settings)).
 4. The **built-in default**.
 
 Every setting on the page shows which of these its value comes from, and

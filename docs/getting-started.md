@@ -6,16 +6,16 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 # Getting started
 
-Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
+Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and so does Windows: its installer sets up OpenSearch too. On Linux
-you install OpenSearch first and then Signalith next to it.
+runs both for you, and from the next release (0.3.1) so does the Windows installer. On
+Linux, and on Windows with 0.3.0, you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
 | [Linux](#linux) | A systemd service on a server | OpenSearch, then a few commands |
-| [Windows](#windows) | A Windows service | One installer (OpenSearch included) |
+| [Windows](#windows) | A Windows service | One installer (OpenSearch included from 0.3.1) |
 
 ## Docker quick start
 
@@ -56,26 +56,15 @@ docker compose -f deploy/docker/docker-compose.yml restart signalith
 
 Settings changed on the **Settings** page are kept in the `signalith-data` volume, so
 they survive updates. To update, run `git pull` and then the `up` command again; it
-downloads the Signalith image built from the newest code. To run a release instead, or to
-build the image from your own checkout, see
-[Running a release, or building the image yourself](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#running-a-release-or-building-the-image-yourself). After a reboot everything starts again by itself
-once Docker is running (in Docker Desktop, turn on *Start Docker Desktop when you sign
-in*).
+downloads the Signalith image built from the newest code. After a reboot everything
+starts again by itself once Docker is running (in Docker Desktop, turn on *Start Docker
+Desktop when you sign in*).
 
-If an update stays at `Container docker-signalith-1 Stopping` for more than about two
-minutes, Docker itself is stuck, not Signalith, which stops in seconds. On Windows, quit
-Docker Desktop, run `wsl --shutdown` in PowerShell, start Docker Desktop again and run the
-`up` command again. Your data is kept. If `wsl --shutdown` hangs too, restart the
-computer, or run `taskkill /F /IM wslservice.exe` in PowerShell as administrator. It
-happens most when the computer is short of memory; the README's
-[Docker quick start](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#docker-evaluation)
-shows how to give WSL a fixed share of memory in `.wslconfig`.
-
-!!! note "Coming from an older quick start?"
-    Earlier versions served plain HTTP and took the admin password from
-    `docker-compose.yml`. The README has
-    [step-by-step upgrade instructions](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-the-docker-quick-start)
-    that keep your events, findings, users and detections.
+[Docker quick start](docker.md) has the rest: which ports are open and how to limit
+them, [running a release or your own build](docker.md#running-a-release-or-building-the-image-yourself),
+[what to do if an update gets stuck](docker.md#if-an-update-gets-stuck), and
+[step-by-step upgrades from older quick starts](docker.md#upgrading-the-docker-quick-start)
+that keep your events, findings, users and detections.
 
 ## Try it with sample data
 
@@ -129,7 +118,7 @@ browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have t
 
 ## Linux
 
-1. Install OpenSearch 2.x or 3.x
+1. Install OpenSearch 2.17 or newer (3.x included)
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
 
@@ -172,8 +161,9 @@ Older versions cannot read encrypted values: before going back to one, run
 ## Windows
 
 The easiest way is the `.msi` installer: see [Install from packages](install-packages.md#windows).
-It installs OpenSearch as well, so there is nothing to set up first. To install by hand
-instead:
+From the next release (0.3.1) it installs OpenSearch as well, so there is nothing to set
+up first; with 0.3.0, install OpenSearch first and give the installer its address with
+`OPENSEARCHURL`. To install by hand instead:
 
 1. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:
@@ -182,7 +172,7 @@ instead:
     .\install.ps1
     ```
 
-    This installs OpenSearch on this computer (see
+    From 0.3.1, this installs OpenSearch on this computer (see
     [OpenSearch on Windows](install-packages.md#opensearch-on-windows)), writes
     `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and
     starts it. The service runs as its own account, `NT SERVICE\Signalith`, and only
@@ -197,8 +187,12 @@ instead:
 
 To upgrade, put the new `signalith.exe` next to the script and run it again: it stops
 the service, replaces the program, encrypts passwords an older version kept as plain
-text, and starts it again. Before going back to an older version, run
-`signalith secrets decrypt`.
+text, moves the service off LocalSystem and starts it again. An archive folder outside
+`C:\ProgramData\Signalith` (`retention.archive_dir`), and certificate and key files named in
+`signalith.yaml` or on the **Settings** page, are given to the service's account too; the
+script says which. After naming one outside `C:\ProgramData\Signalith` on the page later,
+run `signalith service install` again, as Administrator, so the service may read it.
+Before going back to an older version, run `signalith secrets decrypt`.
 
 ## Install from packages
 
