@@ -9,6 +9,7 @@ package cases
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -141,6 +142,48 @@ type Entry struct {
 
 	RunID  string `json:"run_id,omitempty"`
 	Status string `json:"status,omitempty"` // of the run: succeeded or failed
+
+	// SHA256 fingerprints a pinned event or a search snapshot when it is
+	// added (EvidenceHash), so a report can show it is unchanged since.
+	SHA256 string `json:"sha256,omitempty"`
+}
+
+// EvidenceHash is the SHA-256, in hex, of what an evidence entry holds:
+// the pinned event, or the search with its snapshot. It is taken over
+// JSON with sorted keys, so it is the same wherever it is computed. Other
+// kinds of entry have none.
+func EvidenceHash(e Entry) string {
+	var v any
+	switch e.Kind {
+	case KindEvent:
+		v = map[string]any{"kind": e.Kind, "event": e.Event}
+	case KindSearch:
+		v = map[string]any{"kind": e.Kind, "query": e.Query, "earliest": e.Earliest, "latest": e.Latest,
+			"result_kind": e.Result, "columns": e.Columns, "rows": e.Rows, "matched": e.Matched, "truncated": e.Truncated}
+	default:
+		return ""
+	}
+	// Round-trip through JSON first, so values read back from the store
+	// (numbers as float64, times as text) hash the same as when added.
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	var norm any
+	if err := json.Unmarshal(b, &norm); err != nil {
+		return ""
+	}
+	if b, err = json.Marshal(norm); err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// EvidenceIntact reports whether an evidence entry still matches the hash
+// taken when it was added; entries without one are taken as intact.
+func EvidenceIntact(e Entry) bool {
+	return e.SHA256 == "" || e.SHA256 == EvidenceHash(e)
 }
 
 // Filter selects cases.
@@ -236,6 +279,7 @@ func (c *Case) AddEntry(e Entry, author string, now time.Time) (*Entry, error) {
 	e.ID = NewEntryID()
 	e.Author = author
 	e.Time = now
+	e.SHA256 = EvidenceHash(e)
 	c.Entries = append(c.Entries, e)
 	c.Updated = now
 	return &c.Entries[len(c.Entries)-1], nil

@@ -867,7 +867,7 @@ function entryNode(c, e, linked) {
     }
     case 'event':
       return tlItem({ kind: 'event', icon: 'pin', time: e.time, text: [who, ' pinned an event'],
-        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null, eventBody(e.event || {})],
+        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null, eventBody(e.event || {}), evidenceLine(e)],
         remove: removeEntryButton(c, e, 'event') });
     case 'search':
       return tlItem({ kind: 'search', icon: 'search', time: e.time, text: [who, ' ran a search'],
@@ -876,7 +876,7 @@ function entryNode(c, e, linked) {
           el('pre', { class: 'c-query' }, e.query),
           el('div', { class: 'c-search-meta' }, el('span', {}, searchSummary(e)),
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
-          snapshotTable(e)],
+          snapshotTable(e), evidenceLine(e)],
         remove: removeEntryButton(c, e, 'search') });
     case 'notebook':
       // A hunting notebook linked to this case; unlinking happens from the
@@ -899,6 +899,19 @@ function entryNode(c, e, linked) {
 }
 
 const CASE_HISTORY_ICON = { status: 'circle-dot', owner: 'user', severity: 'gauge', title: 'pencil', description: 'pencil', resolution: 'pencil', finding: 'unlink', entity: 'tag', timeline: 'trash-2', ticket: 'ticket', tasks: 'list-checks', task: 'list-checks' };
+// evidenceLine shows the hash taken when evidence was added, and warns
+// when the evidence no longer matches it.
+function evidenceLine(e) {
+  if (!e.sha256) return null;
+  const changed = ((caseState.data && caseState.data.evidence_changed) || []).includes(e.id);
+  if (changed) {
+    return el('p', { class: 'c-evidence is-changed', role: 'note' }, icon('triangle-alert', 'icon--xs'),
+      'This no longer matches the SHA-256 taken when it was added: it was changed outside Signalith.');
+  }
+  return el('p', { class: 'c-evidence', title: 'SHA-256 when added: ' + e.sha256 }, icon('fingerprint', 'icon--xs'),
+    'SHA-256 ', el('span', { class: 'mono' }, e.sha256.slice(0, 16) + '…'));
+}
+
 function historyNode(h) {
   const who = el('b', {}, h.author || 'Someone');
   const label = (field, v) => {

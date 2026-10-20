@@ -4,10 +4,13 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/cases"
 )
 
 // A case opened from a template gets its tasks; analysts tick them off
@@ -91,5 +94,32 @@ func TestCaseTasksAndTemplates(t *testing.T) {
 	code, out = do(t, ts, "POST", "/api/cases", `{"title":"Line 2 HMI","template":"ot"}`, true)
 	if code != http.StatusCreated || out["case"].(map[string]any)["severity"] != "critical" {
 		t.Errorf("from a custom template: %d %v", code, out)
+	}
+}
+
+// Pinned evidence carries the hash taken when it was pinned, and a case
+// whose evidence changed outside Signalith says so.
+func TestCaseEvidenceHash(t *testing.T) {
+	var srv *Server
+	ts, _ := newTestServerWith(t, func(s *Server) { srv = s })
+	_, out := do(t, ts, "POST", "/api/cases", `{"title":"x"}`, true)
+	id := out["case"].(map[string]any)["id"].(string)
+	code, out := do(t, ts, "POST", "/api/cases/"+id+"/entries", `{"kind":"event","event":{"host":"web-01","bytes":12}}`, true)
+	if code != http.StatusCreated || len(out["entry"].(map[string]any)["sha256"].(string)) != 64 {
+		t.Fatalf("pin: %d %v", code, out)
+	}
+	_, out = do(t, ts, "GET", "/api/cases/"+id, "", true)
+	if ch := out["evidence_changed"].([]any); len(ch) != 0 {
+		t.Errorf("changed %v", ch)
+	}
+	if _, err := srv.Cases.Modify(context.Background(), id, func(c *cases.Case) (bool, error) {
+		c.Entries[0].Event["host"] = "web-02"
+		return true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, out = do(t, ts, "GET", "/api/cases/"+id, "", true)
+	if ch := out["evidence_changed"].([]any); len(ch) != 1 {
+		t.Errorf("changed %v", ch)
 	}
 }

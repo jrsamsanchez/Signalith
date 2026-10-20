@@ -5,6 +5,7 @@ package cases
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -226,5 +227,32 @@ func TestSampleFilterNeverMeansAll(t *testing.T) {
 	}
 	if q := filterQuery(Filter{Sample: &id}); !strings.Contains(fmt.Sprint(q), "sample:"+id) {
 		t.Errorf("a sample ID searches with %v", q)
+	}
+}
+
+// Evidence keeps the hash taken when it was pinned, and the hash stays
+// the same after the case is stored and read back.
+func TestEvidenceHash(t *testing.T) {
+	c := &Case{}
+	now := time.Now()
+	ev, _ := c.AddEntry(Entry{Kind: KindEvent, Event: map[string]any{"host": "web-01", "bytes": int64(9007199254740993), "at": now}}, "ana", now)
+	if len(ev.SHA256) != 64 || !EvidenceIntact(*ev) {
+		t.Fatalf("event hash %q", ev.SHA256)
+	}
+	note, _ := c.AddEntry(Entry{Kind: KindNote, Text: "x"}, "ana", now)
+	if note.SHA256 != "" {
+		t.Error("a note got a hash")
+	}
+	b, _ := json.Marshal(c)
+	var back Case
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !EvidenceIntact(back.Entries[0]) {
+		t.Error("hash changed after a round trip through JSON")
+	}
+	back.Entries[0].Event["host"] = "web-02"
+	if EvidenceIntact(back.Entries[0]) {
+		t.Error("a changed event still matches its hash")
 	}
 }

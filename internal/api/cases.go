@@ -298,8 +298,16 @@ func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
 			linked = append(linked, f)
 		}
 	}
+	// Evidence that no longer matches the hash taken when it was added
+	// was changed outside Signalith.
+	changed := []string{}
+	for _, e := range c.Entries {
+		if !cases.EvidenceIntact(e) {
+			changed = append(changed, e.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"case": c, "findings": linked, "missing_findings": missing,
-		"entity_context": s.entityContext(c.Entities)})
+		"entity_context": s.entityContext(c.Entities), "evidence_changed": changed})
 }
 
 // entityContext looks each case entity up in the asset and identity

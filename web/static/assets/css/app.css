@@ -2379,6 +2379,8 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #case-picker .cp-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; }
 #case-picker .cp-new .hint:empty { display: none; }
 #case-picker .cp-new--nested { padding-left: 36px; }
+#page-cases .c-evidence { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: var(--fs-xs); color: var(--text-3); }
+#page-cases .c-evidence.is-changed { color: var(--danger); font-weight: 500; }
 #page-cases .c-tasks .card__head { align-items: center; }
 #page-cases .c-task-bar { width: 120px; height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; flex: none; }
 #page-cases .c-task-bar > span { display: block; height: 100%; width: var(--w); background: var(--success, var(--accent)); border-radius: inherit; }

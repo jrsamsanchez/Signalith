@@ -34,6 +34,10 @@ The **timeline** holds notes, searches and events.
 - [Response actions](response-actions.md) run from the case with **Respond** are
   noted on its timeline.
 
+Each pinned event and search snapshot records a **SHA-256** of its content when it is
+added, shown under it. If the stored copy is ever changed outside Signalith, the case
+says so in red, so the evidence can be trusted in a report.
+
 A case holds at most 1,000 timeline entries and 500 findings.
 
 ## Templates and tasks
