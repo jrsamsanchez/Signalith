@@ -13,10 +13,11 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the runs of its older pushes.
+# A new push to a pull request cancels the runs of its older pushes, and a new
+# push to main cancels the run of the one before it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
