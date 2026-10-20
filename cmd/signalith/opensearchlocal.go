@@ -32,13 +32,15 @@ const opensearchUsage = `usage:
   signalith opensearch status                show what is installed
   signalith opensearch adopt -c CONFIG       on an upgrade: install it when CONFIG's OpenSearch was never set up
 
-The Windows installer runs these (docs/install-packages.md). install
-downloads OpenSearch ` + oslocal.Version + ` for Windows and checks its SHA-512;
+The Windows installer runs these; on Linux, run them as root after
+installing Signalith's package (docs/install-packages.md). install
+downloads OpenSearch ` + oslocal.Version + ` for this system and checks its SHA-512;
 -zip uses a copy of that file instead, for a computer without internet
 access; -proxy downloads through a proxy (by default the computer's own
 proxy setting is used). adopt installs it the same way, and points CONFIG at it, only when
 CONFIG still has the address older installers wrote (plain http on this
-computer, port 9200, no sign-in) and nothing answers there.
+computer, port 9200, no sign-in) and nothing answers there. On Linux,
+install also sets Signalith to use it.
 `
 
 // localOpenSearch is what installing OpenSearch needs from the system.
@@ -69,7 +71,7 @@ func cmdOpenSearch(args []string) error {
 	fs.StringVar(&l.Home, "home", def.Home, "folder for OpenSearch's program")
 	fs.StringVar(&l.Data, "data", def.Data, "folder for OpenSearch's config, data and logs")
 	fs.StringVar(&l.Client, "client", def.Client, "folder for Signalith's certificate for OpenSearch")
-	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" .zip for Windows to install, instead of downloading it")
+	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" release file for this system ("+oslocal.File()+") to install, instead of downloading it")
 	proxy := fs.String("proxy", "", "the proxy to download through (host:port); by default the computer's own proxy setting")
 	path := configFlag(fs)
 	fs.Parse(args)
@@ -83,7 +85,10 @@ func cmdOpenSearch(args []string) error {
 	}
 	switch cmd {
 	case "install":
-		return installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client)
+		if err := installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client); err != nil {
+			return err
+		}
+		return afterOpenSearchInstall(os.Stdout, l)
 	case "adopt":
 		applyServiceEnv(*path)
 		c, err := loadConfig(*path, newLogger(os.Stderr))
@@ -98,12 +103,15 @@ func cmdOpenSearch(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Release installed: %s, SHA-512 %s\n", oslocal.URL(), oslocal.SHA512)
+		fmt.Printf("Release installed: %s, SHA-512 %s\n", oslocal.URL(), oslocal.SHA512())
 		if st == nil {
 			fmt.Println("Signalith has not installed OpenSearch on this computer.")
 			return nil
 		}
 		fmt.Printf("OpenSearch %s at %s, the %s service (there: %v)\n", st.Version, st.URL(), oslocal.ServiceName, sys.exists())
+		if oslocal.Newer(oslocal.Version, st.Version) {
+			fmt.Printf("This Signalith installs OpenSearch %s; upgrade to it with: signalith opensearch install\n", oslocal.Version)
+		}
 		return nil
 	}
 	fmt.Fprint(os.Stderr, opensearchUsage)

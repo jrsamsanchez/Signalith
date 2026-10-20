@@ -25,11 +25,26 @@ import (
 )
 
 func TestPin(t *testing.T) {
-	if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(SHA512) || SHA512 == strings.Repeat("0", 128) {
-		t.Fatalf("SHA512 must be 128 lower-case hex digits, got %q", SHA512)
+	if !versionRE.MatchString(Version) {
+		t.Fatalf("Version %q", Version)
 	}
-	if !versionRE.MatchString(Version) || !strings.Contains(URL(), "/"+Version+"/opensearch-"+Version+"-windows-x64.zip") {
-		t.Fatalf("Version %q, URL %q", Version, URL())
+	for system, r := range Releases {
+		if r.SHA512 == "" && strings.HasPrefix(system, "linux/") {
+			// Pinned from what OpenSearch publishes, which CI checks
+			// (.github/scripts/test-deb.sh).
+			t.Logf("%s: not pinned yet", system)
+			continue
+		}
+		if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(r.SHA512) || r.SHA512 == strings.Repeat("0", 128) {
+			t.Errorf("%s: SHA512 must be 128 lower-case hex digits, got %q", system, r.SHA512)
+		}
+		if !strings.HasPrefix(r.File, "opensearch-"+Version+"-") || !strings.HasSuffix(ReleaseURL(r.File), "/"+Version+"/"+r.File) {
+			t.Errorf("%s: file %q, URL %q", system, r.File, ReleaseURL(r.File))
+		}
+	}
+	if !strings.HasSuffix(Releases["windows/amd64"].File, "-windows-x64.zip") || !strings.HasSuffix(Releases["linux/amd64"].File, "-linux-x64.tar.gz") ||
+		!strings.HasSuffix(Releases["linux/arm64"].File, "-linux-arm64.tar.gz") {
+		t.Errorf("releases %v", Releases)
 	}
 }
 

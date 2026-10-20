@@ -21,8 +21,10 @@ Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.17 or newer
 Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)),
 from the next release (0.3.1) on; with 0.3.0 and older, install OpenSearch first and give
 the installer its address with `OPENSEARCHURL`.
-On Linux, install it first
-([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)):
+On Linux, from 0.3.2 on, `sudo signalith opensearch install` sets it up on the same server
+after you install the package ([OpenSearch on Linux](#opensearch-on-linux)). To use an
+OpenSearch you run yourself instead
+([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)),
 the Linux packages expect it at `http://127.0.0.1:9200`; if yours is elsewhere, change the
 address afterwards on the **Settings** page (**OpenSearch** > **Address**). Then
 [secure OpenSearch](opensearch-security.md) and give Signalith a certificate to sign in
@@ -93,6 +95,44 @@ sudo dnf install ./signalith-0.3.0-1.x86_64.rpm
 - On removal, stop the service and keep `/etc/signalith` and `/var/lib/signalith`, so
   installing again picks up where you left off. Delete them by hand to remove
   everything; events stay in OpenSearch.
+
+### OpenSearch on Linux
+
+After installing the package, set up OpenSearch on the same server with one command
+(from 0.3.2 on):
+
+```sh
+sudo signalith opensearch install
+```
+
+It sets up OpenSearch for Signalith the same way the Windows installer does
+([OpenSearch on Windows](#opensearch-on-windows)), and then points Signalith at it:
+
+- It downloads the official OpenSearch release for Linux (version 3.9.0, x64 or arm64,
+  about 1 GB) from `artifacts.opensearch.org` and installs it only if its SHA-512 is the
+  one pinned in Signalith. It needs about 3.5 GB free. To go through a proxy, add
+  `-proxy proxy.example.com:3128` (`sudo` drops `HTTPS_PROXY`). Without internet access, download
+  `opensearch-3.9.0-linux-x64.tar.gz` (or `-linux-arm64`) from
+  [opensearch.org](https://opensearch.org/downloads.html) on another computer and run
+  `sudo signalith opensearch install -zip opensearch-3.9.0-linux-x64.tar.gz`.
+- The program goes to `/opt/signalith-opensearch`, which only root can change. Its
+  settings, data and logs go to `/var/lib/signalith-opensearch`.
+- It runs as the `signalith-opensearch` systemd service under its own system account,
+  `signalith-opensearch`, sandboxed so it may write only to its settings, data, logs and
+  temporary folders.
+- It listens on this server only (`127.0.0.1`, port 9200, or the next free one), over
+  HTTPS with certificates from a CA of its own. There are no passwords and no demo users;
+  the CA's key and the admin certificate stay in `/var/lib/signalith-opensearch/ca`, which
+  only root can read. Signalith's certificate goes to `/etc/signalith/opensearch`.
+- Its Java heap is a quarter of the server's memory, from 1 to 8 GB, and it sets
+  `vm.max_map_count` to 262144 (in `/etc/sysctl.d/90-signalith-opensearch.conf`).
+- It sets Signalith's OpenSearch address and certificate on the **Settings** page and
+  restarts Signalith.
+
+Run it again after an upgrade of Signalith that pins a newer OpenSearch (the upgrade
+says so); it keeps the data. `sudo signalith opensearch status` shows what is installed,
+`sudo journalctl -u signalith-opensearch` its log, and `sudo signalith opensearch remove`
+removes the service and program, keeping `/var/lib/signalith-opensearch`.
 
 ## Windows
 

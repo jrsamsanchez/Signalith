@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package oslocal installs OpenSearch on the same computer as Signalith,
-// for the Windows installer: the official OpenSearch release for Windows,
+// for the Windows installer and "signalith opensearch install" on Linux:
+// the official OpenSearch release for the system,
 // at the version pinned here and checked against the SHA-512 pinned here,
 // set up the way the Docker quick start sets up its OpenSearch. It listens
 // on this computer only (127.0.0.1), over HTTPS with certificates from a
@@ -11,17 +12,19 @@
 // made for it.
 //
 // OpenSearch is downloaded when it is installed, not shipped inside the
-// installer: the release for Windows is far larger than Signalith, and
-// an upgrade of Signalith then downloads it only when the pinned version
-// changes. A computer without internet access is given the same .zip
-// file (Fetch's local).
+// installer: the release is far larger than Signalith, and an upgrade of
+// Signalith then downloads it only when the pinned version changes. A
+// computer without internet access is given the same file (Fetch's
+// local).
 //
 // This file holds the parts that are the same on every system, which the
 // tests run everywhere; cmd/signalith installs and runs the service.
 package oslocal
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
@@ -35,6 +38,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -43,28 +47,68 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
-// The OpenSearch release installed, and the SHA-512 of its Windows .zip
-// as OpenSearch publishes it next to the file (URL + ".sha512"). A new
-// version changes both, and an upgrade of Signalith then upgrades
-// OpenSearch too.
-const (
-	Version = "3.9.0"
-	SHA512  = "8d6d1420a93de227b20c4bd4de4987279349841e291b936cf87b40a3522bfd0e" +
-		"f8c1753a92bf35bfd82713a609b55682de2e450633ca964d2bc0631c3a64b01e"
-)
+// The OpenSearch release installed. A new version changes it and every
+// pin in Releases, and an upgrade of Signalith then upgrades OpenSearch
+// too.
+const Version = "3.9.0"
 
-// pinned is SHA512; the tests change it.
-var pinned = SHA512
-
-// URL is where the release's .zip for Windows is downloaded from.
-func URL() string {
-	return "https://artifacts.opensearch.org/releases/bundle/opensearch/" + Version +
-		"/opensearch-" + Version + "-windows-x64.zip"
+// Release is the release's file for one system, and its SHA-512 as
+// OpenSearch publishes it next to the file (its URL + ".sha512").
+type Release struct {
+	File   string
+	SHA512 string
 }
 
-// ServiceName is OpenSearch's Windows service; it runs as its own virtual
-// account, NT SERVICE\SignalithOpenSearch.
-const ServiceName = "SignalithOpenSearch"
+// Releases are the files Signalith installs, by GOOS/GOARCH.
+var Releases = map[string]Release{
+	"windows/amd64": {
+		File: "opensearch-" + Version + "-windows-x64.zip",
+		SHA512: "8d6d1420a93de227b20c4bd4de4987279349841e291b936cf87b40a3522bfd0e" +
+			"f8c1753a92bf35bfd82713a609b55682de2e450633ca964d2bc0631c3a64b01e",
+	},
+	"linux/amd64": {
+		File:   "opensearch-" + Version + "-linux-x64.tar.gz",
+		SHA512: "",
+	},
+	"linux/arm64": {
+		File:   "opensearch-" + Version + "-linux-arm64.tar.gz",
+		SHA512: "",
+	},
+}
+
+// release is this system's; File is empty where there is none.
+var release = Releases[runtime.GOOS+"/"+runtime.GOARCH]
+
+// pinned is release's SHA-512; the tests change it.
+var pinned = release.SHA512
+
+// File is the name of this system's release file, or "" when Signalith
+// has none for it.
+func File() string { return release.File }
+
+// SHA512 is the pinned SHA-512 of File.
+func SHA512() string { return pinned }
+
+// URL is where this system's release file is downloaded from.
+func URL() string { return ReleaseURL(release.File) }
+
+// ReleaseURL is where a release file is downloaded from.
+func ReleaseURL(file string) string {
+	return "https://artifacts.opensearch.org/releases/bundle/opensearch/" + Version + "/" + file
+}
+
+// ServiceName is OpenSearch's service: on Windows SignalithOpenSearch,
+// which runs as its own virtual account, NT SERVICE\SignalithOpenSearch;
+// on Linux the systemd unit signalith-opensearch, which runs as the
+// signalith-opensearch account.
+var ServiceName = serviceName()
+
+func serviceName() string {
+	if runtime.GOOS == "linux" {
+		return "signalith-opensearch"
+	}
+	return "SignalithOpenSearch"
+}
 
 // FirstPort is the port OpenSearch takes when it is free; otherwise the
 // next free one up to FirstPort+9 (another OpenSearch may be there).
@@ -83,8 +127,16 @@ type Layout struct {
 	Client string
 }
 
-// DefaultLayout is the layout the Windows installer uses.
+// DefaultLayout is the layout the Windows installer uses, or on Linux
+// the one "signalith opensearch install" uses.
 func DefaultLayout() Layout {
+	if runtime.GOOS == "linux" {
+		return Layout{
+			Home:   "/opt/signalith-opensearch",
+			Data:   "/var/lib/signalith-opensearch",
+			Client: "/etc/signalith/opensearch",
+		}
+	}
 	pf := os.Getenv("ProgramFiles")
 	if pf == "" {
 		pf = `C:\Program Files`
@@ -196,6 +248,10 @@ func Newer(a, b string) bool {
 // changed after. The caller deletes it when done. client is what it is
 // downloaded with (see Client).
 func Fetch(ctx context.Context, local, dir string, client *http.Client, out io.Writer) (string, error) {
+	if release.File == "" || pinned == "" {
+		return "", fmt.Errorf("Signalith has no OpenSearch release pinned for %s/%s; install OpenSearch from its own packages "+
+			"and give Signalith its address on the Settings page (docs/install-packages.md)", runtime.GOOS, runtime.GOARCH)
+	}
 	if local != "" {
 		f, err := os.Open(local)
 		if err != nil {
@@ -213,7 +269,7 @@ func save(r io.Reader, dir, what string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(dir, "opensearch-*.zip")
+	f, err := os.CreateTemp(dir, "opensearch-*.download")
 	if err != nil {
 		return "", err
 	}
@@ -266,18 +322,28 @@ func checkSum(got, what string) error {
 		"Nothing was installed. Use the file from %s", what, Version, got, pinned, URL())
 }
 
-// Extract unpacks the release's .zip into dest (which must not exist
-// yet), dropping the opensearch-x.y.z folder every file is in. Nothing is
-// written outside dest: names that would leave it, and links, are refused.
-func Extract(zipFile, dest string) error {
+// Extract unpacks the release's .zip or .tar.gz into dest (which must
+// not exist yet), dropping the opensearch-x.y.z folder everything is in.
+// Nothing is written outside dest: names that would leave it are refused,
+// and so are links, except (in a .tar.gz) relative ones to somewhere else
+// in the release, which its Java has; everything is written through
+// os.Root, which never follows a link out of dest.
+func Extract(file, dest string) error {
 	if _, err := os.Lstat(dest); err == nil {
 		return fmt.Errorf("%s already exists", dest)
 	}
-	r, err := zip.OpenReader(zipFile)
+	f, err := os.Open(file)
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer f.Close()
+	var magic [2]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return fmt.Errorf("%s is not an OpenSearch release: %w", file, err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	partial := dest + ".partial"
 	if err := os.RemoveAll(partial); err != nil {
 		return err
@@ -291,37 +357,21 @@ func Extract(zipFile, dest string) error {
 			os.RemoveAll(partial)
 		}
 	}()
-	top := ""
-	for _, f := range r.File {
-		name := strings.ReplaceAll(f.Name, `\`, "/")
-		first, rest, _ := strings.Cut(name, "/")
-		if top == "" {
-			top = first
-		}
-		if first != top || !strings.HasPrefix(top, "opensearch-") {
-			return fmt.Errorf("%s is not an OpenSearch release: %q is outside its opensearch-<version> folder", zipFile, f.Name)
-		}
-		if rest == "" {
-			continue
-		}
-		clean := path.Clean(rest)
-		if !filepath.IsLocal(filepath.FromSlash(clean)) || strings.Contains(clean, ":") {
-			return fmt.Errorf("%s has a file outside its folder: %q", zipFile, f.Name)
-		}
-		target := filepath.Join(partial, filepath.FromSlash(clean))
-		mode := f.Mode()
-		switch {
-		case mode.IsDir():
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-		case mode.IsRegular():
-			if err := extractFile(f, target); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("%s has %q, which is not a file or a folder", zipFile, f.Name)
-		}
+	root, err := os.OpenRoot(partial)
+	if err != nil {
+		return err
+	}
+	u := &unpacker{root: root, file: file}
+	if magic == [2]byte{0x1f, 0x8b} {
+		err = u.tarGz(f)
+	} else {
+		err = u.zip()
+	}
+	if cerr := root.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
 	}
 	if err := os.Rename(partial, dest); err != nil {
 		return err
@@ -330,24 +380,157 @@ func Extract(zipFile, dest string) error {
 	return nil
 }
 
-func extractFile(f *zip.File, target string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
+// unpacker writes a release's files into root.
+type unpacker struct {
+	root *os.Root
+	file string
+	top  string // the opensearch-x.y.z folder
+}
+
+// name is where the entry n goes in root, or "" for the top folder.
+func (u *unpacker) name(n string) (string, error) {
+	n = strings.ReplaceAll(n, `\`, "/")
+	first, rest, _ := strings.Cut(strings.TrimPrefix(n, "./"), "/")
+	if u.top == "" {
+		u.top = first
 	}
-	rc, err := f.Open()
+	if first != u.top || !strings.HasPrefix(u.top, "opensearch-") {
+		return "", fmt.Errorf("%s is not an OpenSearch release: %q is outside its opensearch-<version> folder", u.file, n)
+	}
+	if rest == "" || rest == "." {
+		return "", nil
+	}
+	clean := path.Clean(rest)
+	if !filepath.IsLocal(filepath.FromSlash(clean)) || strings.Contains(clean, ":") {
+		return "", fmt.Errorf("%s has a file outside its folder: %q", u.file, n)
+	}
+	return filepath.FromSlash(clean), nil
+}
+
+func (u *unpacker) zip() error {
+	r, err := zip.OpenReader(u.file)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
-	w, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644|f.Mode().Perm()&0o111)
+	defer r.Close()
+	for _, f := range r.File {
+		name, err := u.name(f.Name)
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			continue
+		}
+		mode := f.Mode()
+		switch {
+		case mode.IsDir():
+			err = u.root.MkdirAll(name, 0o755)
+		case mode.IsRegular():
+			var rc io.ReadCloser
+			if rc, err = f.Open(); err == nil {
+				err = u.write(name, rc, mode)
+				rc.Close()
+			}
+		default:
+			err = fmt.Errorf("%s has %q, which is not a file or a folder", u.file, f.Name)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (u *unpacker) tarGz(f io.Reader) error {
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("%s is not an OpenSearch release: %w", u.file, err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", u.file, err)
+		}
+		name, err := u.name(h.Name)
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			continue
+		}
+		switch h.Typeflag {
+		case tar.TypeDir:
+			err = u.root.MkdirAll(name, 0o755)
+		case tar.TypeReg:
+			err = u.write(name, tr, h.FileInfo().Mode())
+		case tar.TypeSymlink:
+			err = u.link(name, h.Linkname)
+		default:
+			err = fmt.Errorf("%s has %q, which is not a file, a folder or a link", u.file, h.Name)
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// write writes a file, executable if it was in the release.
+func (u *unpacker) write(name string, r io.Reader, mode os.FileMode) error {
+	if err := u.root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		return err
+	}
+	w, err := u.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644|mode.Perm()&0o111)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := io.Copy(w, r); err != nil {
 		w.Close()
 		return err
 	}
 	return w.Close()
+}
+
+// link makes a link to target, which must be relative and somewhere in
+// the release, through folders only: a ".." after another link could
+// leave it.
+func (u *unpacker) link(name, target string) error {
+	t := filepath.FromSlash(target)
+	refuse := fmt.Errorf("%s has a link outside its folder: %q to %q", u.file, name, target)
+	if filepath.IsAbs(t) || strings.Contains(target, ":") {
+		return refuse
+	}
+	var at []string
+	parts := append(strings.Split(filepath.Dir(name), string(filepath.Separator)), strings.Split(t, string(filepath.Separator))...)
+	for i, p := range parts {
+		switch {
+		case p == "." || p == "":
+		case p == "..":
+			if len(at) == 0 {
+				return refuse
+			}
+			at = at[:len(at)-1]
+		default:
+			at = append(at, p)
+			if i == len(parts)-1 {
+				break
+			}
+			if fi, err := u.root.Lstat(filepath.Join(at...)); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+				return refuse
+			}
+		}
+	}
+	if len(at) == 0 {
+		return refuse
+	}
+	if err := u.root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		return err
+	}
+	return u.root.Symlink(t, name)
 }
 
 // FreePort returns the first port from first that nothing listens on at
