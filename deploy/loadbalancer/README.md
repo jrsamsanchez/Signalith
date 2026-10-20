@@ -6,9 +6,9 @@ one OpenSearch. The walkthrough, the settings and troubleshooting are in
 
 | File | What it is |
 | --- | --- |
-| `haproxy.cfg` | HAProxy passing the web port (8443 to each server's 9000), the agent port (7779), syslog over TLS (6514) and syslog over TCP (514) through to the servers, with PROXY protocol v2 and `/readyz` health checks |
+| `haproxy.cfg` | HAProxy passing the web port (8443 to each server's 9000), the agent port (7779), syslog over TLS (6514) and syslog over TCP (514) through to the servers, with PROXY protocol v2 and `/readyz` health checks on every backend (the syslog backends are checked on the web port) |
 | `nginx-stream.conf` | The same with nginx's stream module (passive health checks only) |
-| `keepalived.conf` | A virtual IP shared by two balancers, and syslog over UDP |
+| `keepalived.conf` | A virtual IP shared by two balancers, and syslog over UDP, with a `/readyz` check (curl over plain HTTP on each server's web port) |
 
 In Signalith, on every server:
 
