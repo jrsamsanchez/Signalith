@@ -1150,6 +1150,10 @@ type Detections struct {
 	// SLA is how soon findings of each urgency should be picked up and
 	// resolved; see FindingSLA.
 	SLA FindingSLA `yaml:"sla,omitempty"`
+	// RequireDisposition asks analysts for a disposition (true positive,
+	// false positive...) when they resolve or close a finding from the
+	// queue. Unset means on (see RequireDispositionOn).
+	RequireDisposition *bool `yaml:"require_disposition,omitempty"`
 	// Spread runs each tenant's detections on every server that may run
 	// background work, each rule on one of them, instead of all on the
 	// server running the background jobs. Unset means on (see SpreadOn).
@@ -1592,6 +1596,10 @@ func (c *Config) StaleAfter() time.Duration {
 
 // DetectionsCatchUp returns detections.catch_up as a duration: 6h when it
 // is unset or invalid (Validate reports invalid values), 0 when off.
+// RequireDispositionOn reports whether resolving a finding from the
+// queue needs a disposition: on unless turned off.
+func (d Detections) RequireDispositionOn() bool { return d.RequireDisposition == nil || *d.RequireDisposition }
+
 // FindingSLA is the targets for findings: per urgency, how soon a person
 // should first pick one up and how soon it should be resolved, such as
 // 15m and 4h. Empty means the default; "0" means no target.

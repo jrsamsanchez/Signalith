@@ -457,6 +457,9 @@ var Registry = []Setting{
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
 		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
 
+	{Key: "detections.require_disposition", Scope: ScopeCluster, Section: "detections", Label: "Ask for a disposition to resolve", Type: TypeBool,
+		Help: "Resolving or closing a finding from the Findings page asks what it turned out to be: true positive, benign, false positive or undetermined. " +
+			"That record is what shows which detections are noisy. On by default."},
 	{Key: "detections.sla.critical_respond", Scope: ScopeCluster, Section: "detections", Label: "Critical: pick up within", Type: TypeDuration,
 		Help: slaRespondHelp("critical"), Placeholder: "15m", EmptyMeans: "15m"},
 	{Key: "detections.sla.critical_resolve", Scope: ScopeCluster, Section: "detections", Label: "Critical: resolve within", Type: TypeDuration,

@@ -589,6 +589,23 @@ func (s *Server) updateFinding(ctx context.Context, id string, u findings.Update
 	})
 }
 
+// errNeedsDisposition is the answer to resolving a finding from the queue
+// without saying what it turned out to be, while that is required.
+var errNeedsDisposition = errors.New("pick a disposition (true positive, benign, false positive or undetermined) to resolve or close a finding")
+
+// triageFinding is an analyst's change from the queue: updateFinding, but
+// resolving or closing an open finding needs a disposition when
+// detections.require_disposition is on.
+func (s *Server) triageFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
+	need := u.Status != nil && !findings.IsOpen(*u.Status) && s.conf() != nil && s.conf().Detections.RequireDispositionOn()
+	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		if need && findings.IsOpen(f.Status) && (u.Disposition == nil || *u.Disposition == "") && f.Disposition == "" {
+			return false, errNeedsDisposition
+		}
+		return f.Apply(u, author, time.Now().UTC()), nil
+	})
+}
+
 // errFindingBusy is what an analyst sees when other changes to the same
 // finding kept getting in first.
 var errFindingBusy = errors.New("Someone else changed this finding at the same moment. Try again.")
@@ -606,7 +623,11 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	f, err := s.updateFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	f, err := s.triageFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	if errors.Is(err, errNeedsDisposition) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if errors.Is(err, findings.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -645,7 +666,7 @@ func (s *Server) handleBulkFindings(w http.ResponseWriter, r *http.Request) {
 	failed := map[string]string{}
 	updated := 0
 	for _, id := range req.IDs {
-		if _, err := s.updateFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
+		if _, err := s.triageFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
 			failed[id] = err.Error()
 			continue
 		}

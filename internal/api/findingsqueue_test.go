@@ -87,3 +87,18 @@ func TestFindingViews(t *testing.T) {
 		t.Errorf("after a refused put: %d %v", code, out)
 	}
 }
+
+// TestDispositionToResolve: resolving from the queue needs a disposition
+// unless detections.require_disposition is off; reopening never does.
+func TestDispositionToResolve(t *testing.T) {
+	off := false
+	ts, _ := newTestServerWith(t, func(s *Server) { s.Config.Detections.RequireDisposition = &off })
+	_, out := do(t, ts, "POST", "/api/findings", `{"title":"x","query":"* | head 1"}`, true)
+	id := out["id"].(string)
+	if code, out := do(t, ts, "PATCH", "/api/findings/"+id, `{"status":"resolved"}`, true); code != http.StatusOK {
+		t.Errorf("resolve with the requirement off: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/findings/"+id, `{"status":"new"}`, true); code != http.StatusOK {
+		t.Errorf("reopen: %d %v", code, out)
+	}
+}

@@ -979,14 +979,18 @@ $('f-bulk-mine').addEventListener('click', () => {
   if (!currentUser) return;
   bulkButton($('f-bulk-mine'), { owner: currentUser }, 'Assigned to you:');
 });
-$('f-bulk-resolve').addEventListener('click', () => bulkButton($('f-bulk-resolve'), { status: 'resolved' }, 'Resolved'));
-$('f-bulk-edit').addEventListener('click', () => {
+// Resolve opens the edit dialog with the status set, because resolving
+// asks for a disposition (true positive, benign, false positive...).
+function openBulkEdit(status) {
   for (const id of ['f-bulk-status', 'f-bulk-disposition', 'f-bulk-owner', 'f-bulk-comment']) $(id).value = '';
   $('f-bulk-error').classList.add('hidden');
-  $('f-bulk-title').textContent = `Update ${dxPlural(selected.size, 'finding')}`;
+  $('f-bulk-status').value = status || '';
+  $('f-bulk-title').textContent = status ? `Resolve ${dxPlural(selected.size, 'finding')}` : `Update ${dxPlural(selected.size, 'finding')}`;
   $('f-bulk-dialog').showModal();
-  $('f-bulk-status').focus();
-});
+  $(status ? 'f-bulk-disposition' : 'f-bulk-status').focus();
+}
+$('f-bulk-resolve').addEventListener('click', () => openBulkEdit('resolved'));
+$('f-bulk-edit').addEventListener('click', () => openBulkEdit(''));
 for (const id of ['f-bulk-cancel']) $(id).addEventListener('click', () => $('f-bulk-dialog').close());
 $('f-bulk-dialog').querySelector('.dx-close').addEventListener('click', () => $('f-bulk-dialog').close());
 $('f-bulk-form').addEventListener('submit', async (ev) => {

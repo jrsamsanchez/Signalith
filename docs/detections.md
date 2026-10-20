@@ -359,6 +359,12 @@ an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positiv
 `undetermined`), comments, and a history of every change. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
 
+Resolving or closing a finding asks for a disposition, so the false positive rate
+of each detection stays honest. **Resolve** on selected findings opens the edit
+dialog with the status set; pick the disposition there. Playbooks and case closes
+set their own. To turn the check off, set `detections.require_disposition: false`
+(Settings > Detections).
+
 ### The findings queue
 
 The **Findings** page lists findings most urgent first. Click **Urgency** or **Age** to
