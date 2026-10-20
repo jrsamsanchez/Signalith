@@ -146,6 +146,10 @@ type Status struct {
 	ConfigError string `json:"config_error,omitempty"`
 	// Components are the collectors it runs.
 	Components []Component `json:"components"`
+	// CAs are the SHA-256 fingerprints (lowercase hex) of the
+	// certificate authorities in its ca.pem, at most MaxCAs; none from
+	// agents before they reported them.
+	CAs []string `json:"ca_sha256,omitempty"`
 }
 
 // Component states.
@@ -179,6 +183,7 @@ type Component struct {
 const (
 	MaxStatusBytes  = 64 << 10
 	MaxComponents   = 8
+	MaxCAs          = 8
 	MaxTextLen      = 2000
 	maxShortTextLen = 128
 )
@@ -206,6 +211,14 @@ func (s Status) Clean() Status {
 	}
 	if revisionHex.MatchString(s.Revision) {
 		out.Revision = s.Revision
+	}
+	for _, fp := range s.CAs {
+		if len(out.CAs) == MaxCAs {
+			break
+		}
+		if fp = strings.ToLower(fp); sha256Hex.MatchString(fp) {
+			out.CAs = append(out.CAs, fp)
+		}
 	}
 	for _, c := range s.Components {
 		if len(out.Components) == MaxComponents {

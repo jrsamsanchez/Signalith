@@ -12,12 +12,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -346,11 +348,45 @@ func TestSecurityWithoutClusterCA(t *testing.T) {
 func TestAgentOfRetiredCA(t *testing.T) {
 	s := &Server{}
 	a := agentinv.Agent{Key: "k", CA: []string{"aaaa"}, LastSeen: time.Now(), NeedsConfig: true, Reason: agentinv.ReasonRetiredCA}
-	if v := s.agentFlags(a, "bbbb", "", time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "retired_ca" {
+	if v := s.agentFlags(a, "bbbb", "", nil, time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "retired_ca" {
 		t.Errorf("retired: %v", v.NeedsConfig)
 	}
 	a.NeedsConfig, a.Reason = false, ""
-	if v := s.agentFlags(a, "bbbb", "", time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "ca" {
+	if v := s.agentFlags(a, "bbbb", "", nil, time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "ca" {
 		t.Errorf("other CA: %v", v.NeedsConfig)
+	}
+}
+
+// A Signalith Agent whose ca.pem holds a certificate authority the
+// servers never handed out is flagged; the one in use and the next are
+// fine, however the fingerprint is written.
+func TestAgentOfUnknownCA(t *testing.T) {
+	m, other := newCertManager(t), newCertManager(t)
+	s := &Server{TLS: m}
+	cur := strings.ToLower(strings.ReplaceAll(m.Fingerprint(), ":", ""))
+	a := agentinv.Agent{Key: "k", LastSeen: time.Now(), Managed: &agentinv.ManagedStatus{Status: agentproto.Status{CAs: []string{cur}}}}
+	flags := func() []string { return s.agentFlags(a, "", "", s.knownCAs(), time.Now()).NeedsConfig }
+	if got := flags(); len(got) != 0 {
+		t.Errorf("the CA in use: %v", got)
+	}
+	if err := m.Prepare("standard"); err != nil {
+		t.Fatal(err)
+	}
+	a.Managed.CAs = []string{cur, strings.ToLower(strings.ReplaceAll(m.Next().Fingerprint, ":", ""))}
+	if got := flags(); len(got) != 0 {
+		t.Errorf("the CA in use and the next: %v", got)
+	}
+	a.Managed.CAs = append(a.Managed.CAs, strings.ToLower(strings.ReplaceAll(other.Fingerprint(), ":", "")))
+	if got := flags(); !slices.Equal(got, []string{"unknown_ca"}) {
+		t.Errorf("an unknown CA: %v", got)
+	}
+	// An agent that doesn't report its CAs, and a server with none.
+	a.Managed.CAs = nil
+	if got := flags(); len(got) != 0 {
+		t.Errorf("no CAs reported: %v", got)
+	}
+	a.Managed.CAs = []string{"00"}
+	if got := (&Server{}).agentFlags(a, "", "", (&Server{}).knownCAs(), time.Now()).NeedsConfig; len(got) != 0 {
+		t.Errorf("no TLS: %v", got)
 	}
 }

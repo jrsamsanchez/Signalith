@@ -86,3 +86,22 @@ func TestOsqueryFlagAllowed(t *testing.T) {
 		}
 	}
 }
+
+// Clean keeps at most MaxCAs certificate authority fingerprints, each
+// 64 hex digits, in lowercase.
+func TestCleanCAs(t *testing.T) {
+	fp := strings.Repeat("Ab", 32)
+	in := Status{CAs: []string{fp, "not hex", strings.Repeat("a", 63), "<script>"}}
+	for range MaxCAs + 2 {
+		in.CAs = append(in.CAs, strings.Repeat("c", 64))
+	}
+	out := in.Clean()
+	if len(out.CAs) != MaxCAs || out.CAs[0] != strings.ToLower(fp) {
+		t.Errorf("CAs %v", out.CAs)
+	}
+	for _, c := range out.CAs {
+		if len(c) != 64 {
+			t.Errorf("kept %q", c)
+		}
+	}
+}

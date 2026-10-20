@@ -115,7 +115,10 @@ The **Log agent** column says one of:
     certificate, even though none of its events got through);
   - it sends without encryption (plain HTTP) from another computer (plain HTTP from the
     Signalith computer itself never crosses the network, so it is fine);
-  - its [agent token](agent-tokens.md) was revoked.
+  - its [agent token](agent-tokens.md) was revoked;
+  - a Signalith Agent's `ca.pem` holds a certificate authority that no server handed out
+    (not the one in use, the next or the previous one). Someone may have put it there:
+    check the computer, then give it a new configuration.
 
 Use the **All / Silent / Needs a new configuration** buttons to narrow the list. Opening
 an agent shows its addresses, the servers it sends to, HTTPS or plain HTTP, its agent

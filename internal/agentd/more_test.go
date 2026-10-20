@@ -139,7 +139,8 @@ func TestRunWithDefaults(t *testing.T) {
 	if !strings.Contains(s.query[0], "sysmon=true") || !strings.Contains(s.query[0], "osquery=true") {
 		t.Errorf("query %q", s.query[0])
 	}
-	if a.Status().Revision != "r1" {
+	// Named by the agent's own sum of it, not the revision it was kept with.
+	if a.Status().Revision != agentproto.RevisionOf(agentproto.Config{Osquery: &agentproto.Osquery{Flags: "--utc\n"}}) {
 		t.Errorf("the kept configuration is not in use: %+v", a.Status())
 	}
 }

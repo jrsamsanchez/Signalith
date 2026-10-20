@@ -628,10 +628,15 @@ step the cluster is at, with its date, and what each step waits for.
    authentication only, 10 years. Its key is encrypted with the cluster key and bound
    to its fingerprint, like the other's. Every server then hands out both CAs, and the
    one in use stays: in the CA file of Add data and `GET /api/tls/ca.pem?which=both`,
-   in the install lines' pins, and in the configuration managed agents fetch. Managed
-   agents keep the new file by themselves, over the connection they already trust, and
-   only when it still vouches for the server they talk to. Give other agents, browsers
-   and syslog devices the file with both CAs.
+   in the install lines' pins, and in the configuration managed agents fetch. A managed
+   agent that is online takes the new file at its next configuration fetch. It keeps it
+   only when it still vouches for the server it talks to. That check doesn't tell a real
+   server from one that holds a leaked CA key: such a one could give the agent a file
+   with a CA of its own. So each managed agent reports the fingerprints in its file, and
+   the Endpoints page marks one that holds a CA that isn't the cluster's current, next
+   or previous one (**Needs a new configuration**, for an unknown certificate
+   authority). The card and `signalith cluster tls` count the managed agents that have
+   the new CA. Give other agents, browsers and syslog devices the file with both CAs.
 2. **Switch** (**Switch to it**). Refused until every running server hands out the new
    CA. Then each server issues itself a certificate from the new CA within seconds. The
    old CA is still handed out, and its key kept, so nothing that trusts either one

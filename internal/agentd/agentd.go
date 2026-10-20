@@ -15,8 +15,10 @@ package agentd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -332,6 +334,15 @@ func (a *Agent) sync(ctx context.Context) error {
 // itself, and restarts Fluent Bit (and osquery, when its flags changed)
 // with it.
 func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
+	// The revision is the agent's own sum of what it got, never the one
+	// the server claims: a stale or forged claim could otherwise make the
+	// agent skip a configuration, or keep reporting one it doesn't run.
+	if rev := agentproto.RevisionOf(*cfg); cfg.Revision != rev {
+		if cfg.Revision != "" {
+			a.Log.Warn("the configuration's revision doesn't match what it holds; the agent's own is kept", "claimed", cfg.Revision, "revision", rev)
+		}
+		cfg.Revision = rev
+	}
 	a.mu.Lock()
 	same := a.cfg != nil && a.cfg.Revision == cfg.Revision && cfg.Revision != ""
 	a.mu.Unlock()
@@ -427,6 +438,7 @@ func (a *Agent) loadConfig() (*agentproto.Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
+	cfg.Revision = agentproto.RevisionOf(cfg)
 	return &cfg, nil
 }
 
@@ -491,8 +503,32 @@ func (a *Agent) Status() agentproto.Status {
 	return agentproto.Status{
 		Version: a.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, System: systemName(),
 		Revision: rev, Started: a.started.UTC().Format(time.RFC3339), ConfigError: cerr,
-		Components: comps,
+		Components: comps, CAs: a.caFingerprints(),
 	}
+}
+
+// caFingerprints are the SHA-256 fingerprints (lowercase hex) of the
+// certificate authorities the agent trusts now (its ca.pem), for the
+// server to tell whether it took a new one; nil when it has none.
+func (a *Agent) caFingerprints() []string {
+	b, err := os.ReadFile(a.Paths.caFile())
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for len(out) < agentproto.MaxCAs {
+		var blk *pem.Block
+		blk, b = pem.Decode(b)
+		if blk == nil {
+			break
+		}
+		if blk.Type != "CERTIFICATE" {
+			continue
+		}
+		sum := sha256.Sum256(blk.Bytes)
+		out = append(out, hex.EncodeToString(sum[:]))
+	}
+	return out
 }
 
 // osqueryComponent is osquery as the agent reports it, nil when the

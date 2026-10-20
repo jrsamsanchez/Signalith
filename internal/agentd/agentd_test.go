@@ -8,8 +8,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -382,5 +384,49 @@ func TestSwVersName(t *testing.T) {
 	}
 	if got := swVersName("nothing"); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// The agent names a configuration by its own sum of what it got, never
+// by the revision the server claims, and reports the fingerprints of the
+// certificate authorities it trusts.
+func TestAgentRecomputesRevision(t *testing.T) {
+	a := syncAgent(t, "http://127.0.0.1:1")
+	cfg := agentproto.Config{PollSeconds: 300}
+	want := agentproto.RevisionOf(cfg)
+	cfg.Revision = "0000000000000000000000000000dead"
+	if err := a.apply(&cfg, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st := a.Status(); st.Revision != want {
+		t.Fatalf("revision %q, want %q", st.Revision, want)
+	}
+	kept, err := a.loadConfig()
+	if err != nil || kept.Revision != want {
+		t.Fatalf("kept %+v %v", kept, err)
+	}
+	// Another configuration that claims the revision in use is applied.
+	other := agentproto.Config{PollSeconds: 60, Revision: want}
+	if err := a.apply(&other, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st := a.Status(); st.Revision != agentproto.RevisionOf(other) || st.Revision == want {
+		t.Fatalf("a claimed revision skipped a new configuration: %q", st.Revision)
+	}
+
+	if st := a.Status(); len(st.CAs) != 0 {
+		t.Errorf("CAs with no ca.pem: %v", st.CAs)
+	}
+	der := selfSigned(t)
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := a.writeCA(string(ca), nil); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(der)
+	if st := a.Status(); len(st.CAs) != 1 || st.CAs[0] != hex.EncodeToString(sum[:]) {
+		t.Errorf("CAs %v", st.CAs)
+	}
+	if st := a.Status().Clean(); len(st.CAs) != 1 {
+		t.Errorf("Clean dropped the CAs: %v", st.CAs)
 	}
 }
