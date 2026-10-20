@@ -209,10 +209,10 @@
       ]), el('p', { class: 'ca-text' }, 'Every server issues its certificate from the new one and still hands out the old one. Retire it once every server’s certificate comes from the new one.')];
     }
     const go = el('button', { type: 'button', class: 'btn btn--' + (step === 'prepare' ? 'secondary' : 'primary') + ' btn--sm', 'data-focus': 'ca-rotate', onclick: () => confirmStep(step) }, STEPS[step].button);
-    go.disabled = !!S.asking || (step !== 'prepare' && blockers.length > 0);
+    go.disabled = !!S.asking || blockers.length > 0;
     return [
       info,
-      step !== 'prepare' && blockers.length ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
+      blockers.length ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
       S.asking ? el('p', { class: 'ca-progress', role: 'status' }, icon('clock', 'icon--sm'), S.asking) : null,
       el('div', { class: 'ca-actions' }, download, go,
         step === 'prepare' ? el('span', { class: 'ca-muted' }, 'Replace it when its key may have leaked, or a server you removed may still hold it.') : null),

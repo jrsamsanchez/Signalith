@@ -359,6 +359,10 @@ type TLSStatus struct {
 	// is replaced. Replacing it waits for both on every server.
 	LeafCASHA256 string `json:"leaf_ca_sha256,omitempty"`
 	NextCASHA256 string `json:"next_ca_sha256,omitempty"`
+	// CARotation is true on a version that keeps the cluster's next and
+	// previous certificate authorities (and reseals their keys in a key
+	// rotation): replacing the cluster's waits for every server to say so.
+	CARotation bool `json:"ca_rotation,omitempty"`
 }
 
 // SettingsRev is the revisions of the settings document and of a server's

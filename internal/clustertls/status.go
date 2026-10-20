@@ -28,10 +28,10 @@ func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatu
 	if m == nil {
 		// Nothing to hand out, and nothing to wait for while the
 		// cluster's certificate authority is replaced.
-		return &cluster.TLSStatus{Mode: ModeOff, CoversShared: true}
+		return &cluster.TLSStatus{Mode: ModeOff, CoversShared: true, CARotation: true}
 	}
 	st := &cluster.TLSStatus{Mode: ModeFiles, Names: m.Names(), Outside: m.Outside(), AdoptError: adoptErr,
-		CoversShared: sharedHost == "" || m.Covers(sharedHost)}
+		CoversShared: sharedHost == "" || m.Covers(sharedHost), CARotation: true}
 	if m.LocalCA() {
 		st.Mode = ModeAuto
 		st.Cluster = m.Store() == tlsauto.KindCluster

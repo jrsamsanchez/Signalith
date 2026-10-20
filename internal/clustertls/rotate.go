@@ -324,6 +324,9 @@ func CheckStep(b *Body, blockers []string, step string) (string, error) {
 		if b.Previous != nil {
 			return "", ErrRetireFirst
 		}
+		if b.Next == nil && len(blockers) > 0 {
+			return "", fmt.Errorf("not every server is ready to replace the cluster's certificate authority: %s", strings.Join(blockers, "; "))
+		}
 		return b.CASHA256, nil
 	case StepSwitch:
 		if b.Next == nil {
@@ -345,29 +348,33 @@ func CheckStep(b *Body, blockers []string, step string) (string, error) {
 	return "", ErrBadStep
 }
 
-// Blockers lists, for the step after b's state (switch once prepared,
-// retire once switched), the servers running now that are not ready for
-// it, with why; empty when they all are, or there is no such step. A
-// server is running when its heartbeat (hbs) says so and is at most
-// UpWithin old at now. Servers with their own certificate files, or that
-// do not serve HTTPS, never use the cluster's certificate authority, and
-// a server that keeps its own for now takes the new one directly, so
-// none of them holds a step up.
+// Blockers lists, for the step after b's state (prepare while none is
+// under way, switch once prepared, retire once switched), the servers
+// running now that are not ready for it, with why; empty when they all
+// are. A server is running when its heartbeat (hbs) says so and is at
+// most UpWithin old at now.
+//
+// Prepare waits for every running server to run a version that keeps the
+// next and previous certificate authorities (TLSStatus.CARotation): an
+// older one running the background jobs would rotate the cluster key
+// without resealing their keys. Switch and retire wait only for servers
+// that use the cluster's certificate authority: servers with their own
+// certificate files, or that do not serve HTTPS, never use it, and a
+// server that keeps its own for now takes the new one directly.
 func Blockers(b *Body, hbs []cluster.Heartbeat, now time.Time) []string {
 	if b == nil {
 		return nil
 	}
-	var step string
-	var fp string
+	var step, fp string
 	switch {
 	case b.Next != nil:
 		step, fp = StepSwitch, b.Next.CASHA256
 	case b.Previous != nil:
 		step, fp = StepRetire, b.CASHA256
 	default:
-		return nil
+		step = StepPrepare
 	}
-	var out []string
+	var out, older []string
 	sorted := slices.Clone(hbs)
 	slices.SortFunc(sorted, func(a, b cluster.Heartbeat) int { return cmp.Compare(a.Name, b.Name) })
 	for _, hb := range sorted {
@@ -375,11 +382,11 @@ func Blockers(b *Body, hbs []cluster.Heartbeat, now time.Time) []string {
 			continue
 		}
 		t := hb.TLS
-		switch {
-		case t == nil:
-			out = append(out, hb.Name+" runs a version that doesn't report its certificate: upgrade it, or stop it")
+		if t == nil || !t.CARotation {
+			older = append(older, hb.Name)
 			continue
-		case t.Mode != ModeAuto || !t.Cluster:
+		}
+		if t.Mode != ModeAuto || !t.Cluster {
 			// Its own certificate files, no HTTPS, or a certificate
 			// authority of its own for now: it takes the cluster's later,
 			// the new one by then.
@@ -391,6 +398,14 @@ func Blockers(b *Body, hbs []cluster.Heartbeat, now time.Time) []string {
 		case step == StepRetire && (!SameFingerprint(t.CASHA256, fp) || !SameFingerprint(t.LeafCASHA256, fp)):
 			out = append(out, hb.Name+"'s certificate doesn't come from the new certificate authority yet")
 		}
+	}
+	if len(older) > 0 {
+		verb := "runs a version"
+		if len(older) > 1 {
+			verb = "run a version"
+		}
+		out = append([]string{strings.Join(older, ", ") + " " + verb + " that can't replace the cluster's certificate authority: upgrade " +
+			plural(len(older), "it", "them") + ", or stop " + plural(len(older), "it", "them")}, out...)
 	}
 	return out
 }
@@ -420,6 +435,17 @@ func RotateHandler(t *TLS, servers func(context.Context) ([]cluster.Heartbeat, e
 		res := RotateResult{Step: a.Step}
 		switch a.Step {
 		case StepPrepare:
+			if b, _ := t.Get(); b.Next == nil && b.Previous == nil {
+				// Checked here again: a server on an older version may
+				// have started since the admin looked.
+				hbs, err := servers(ctx)
+				if err != nil {
+					return fmt.Errorf("the servers' heartbeats cannot be read, so it is not safe to prepare now: %w", err)
+				}
+				if bl := Blockers(b, hbs, time.Now()); len(bl) > 0 {
+					return fmt.Errorf("not every server is ready to replace the cluster's certificate authority: %s", strings.Join(bl, "; "))
+				}
+			}
 			fp, already, err := t.PrepareNext(ctx, by, a.CASHA256)
 			if err != nil {
 				return err

@@ -165,6 +165,7 @@ func (r *runner) sharedTLS(ctx context.Context, in *instance, c *config.Config, 
 		return func() *cluster.TLSStatus { return clustertls.StatusOf(certs, host, "") }
 	}
 	s.certs.Store(certs)
+	s.tls.SetLog(r.log)
 	// With the cluster's certificate authority, the certificate also
 	// covers the address the other servers reach this one at, which the
 	// move probe checks; on a server of its own nothing changes.

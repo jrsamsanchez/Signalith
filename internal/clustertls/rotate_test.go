@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,7 +25,7 @@ import (
 // from leaf.
 func heartbeat(name, cur, next, leaf string, now time.Time) cluster.Heartbeat {
 	return cluster.Heartbeat{NodeID: "n_" + name, Name: name, State: cluster.StateReady, HeartbeatAt: now,
-		TLS: &cluster.TLSStatus{Mode: ModeAuto, Cluster: true, CASHA256: cur, NextCASHA256: next, LeafCASHA256: leaf}}
+		TLS: &cluster.TLSStatus{Mode: ModeAuto, Cluster: true, CASHA256: cur, NextCASHA256: next, LeafCASHA256: leaf, CARotation: true}}
 }
 
 // The cluster's certificate authority is replaced in three steps: the
@@ -109,13 +110,13 @@ func TestRotateCASteps(t *testing.T) {
 	}
 	// Stopped, offline, own files, no HTTPS: not waited for.
 	hbs[1].State = cluster.StateStopped
-	files := cluster.Heartbeat{Name: "siem-f", State: cluster.StateReady, HeartbeatAt: now, TLS: &cluster.TLSStatus{Mode: ModeFiles}}
+	files := cluster.Heartbeat{Name: "siem-f", State: cluster.StateReady, HeartbeatAt: now, TLS: &cluster.TLSStatus{Mode: ModeFiles, CARotation: true}}
 	off := cluster.Heartbeat{Name: "siem-o", State: cluster.StateReady, HeartbeatAt: now, TLS: StatusOf(nil, "", "")}
 	old := cluster.Heartbeat{Name: "siem-old", State: cluster.StateReady, HeartbeatAt: now}
 	if bl := Blockers(b, append(hbs, files, off), now); len(bl) != 0 {
 		t.Errorf("blockers %v", bl)
 	}
-	if bl := Blockers(b, append(hbs, old), now); len(bl) != 1 || !strings.Contains(bl[0], "siem-old runs a version") {
+	if bl := Blockers(b, append(hbs, old), now); len(bl) != 1 || !strings.Contains(bl[0], "siem-old runs a version that can't replace") {
 		t.Errorf("an older server: %v", bl)
 	}
 
@@ -261,5 +262,88 @@ func TestResealNext(t *testing.T) {
 	next, _ := b.Next.Cert()
 	if _, _, err := tl.openSealed(next, b.Next.CASHA256, b.Next.CAKey); err != nil {
 		t.Error(err)
+	}
+}
+
+// Prepare waits for every running server to run a version that keeps the
+// next and previous certificate authorities, and names the others.
+func TestPrepareWaitsForOlderServers(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ca := makeCA(t, "a", time.Now().Add(-time.Hour))
+	tl, _ := e.server("siem-a")
+	if err := tl.Publish(ctx, "admin", "siem-a", ca.pem, ca.key, nil); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := tl.Get()
+	now := time.Now()
+	older := heartbeat("siem-c", ca.fp, "", ca.fp, now)
+	older.TLS.CARotation = false
+	noTLS := cluster.Heartbeat{Name: "siem-d", State: cluster.StateReady, HeartbeatAt: now}
+	stopped := cluster.Heartbeat{Name: "siem-e", State: cluster.StateStopped, HeartbeatAt: now}
+	hbs := []cluster.Heartbeat{heartbeat("siem-a", ca.fp, "", ca.fp, now), older, noTLS, stopped}
+	bl := Blockers(b, hbs, now)
+	if len(bl) != 1 || !strings.Contains(bl[0], "siem-c, siem-d run a version that can't replace") || strings.Contains(bl[0], "siem-a") || strings.Contains(bl[0], "siem-e") {
+		t.Fatalf("blockers %v", bl)
+	}
+	if _, err := CheckStep(b, bl, StepPrepare); err == nil || !strings.Contains(err.Error(), "siem-c, siem-d") {
+		t.Errorf("check: %v", err)
+	}
+	run := RotateHandler(tl, func(context.Context) ([]cluster.Heartbeat, error) { return hbs, nil }, "siem-a", nil)
+	raw, _ := json.Marshal(RotateArgs{Step: StepPrepare, CASHA256: ca.fp})
+	if err := run(ctx, &shared.Request{ID: "rq_1", RequestedBy: "admin", Args: raw}); err == nil || !strings.Contains(err.Error(), "siem-c, siem-d") {
+		t.Fatalf("handler: %v", err)
+	}
+	if b, _ := tl.Get(); b.Next != nil {
+		t.Fatal("prepared with an older server running")
+	}
+	hbs = hbs[:1]
+	if err := run(ctx, &shared.Request{ID: "rq_2", RequestedBy: "admin", Args: raw}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := tl.Get(); b.Next == nil {
+		t.Fatal("not prepared once every server can")
+	}
+}
+
+// A next key the resealer cannot open keeps its sealed value, and the
+// failure is logged for the audit; the current key is still resealed.
+func TestResealKeepsWhatItCannotOpen(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ca := makeCA(t, "a", time.Now().Add(-time.Hour))
+	tl, h := e.server("siem-a")
+	var logs strings.Builder
+	tl.SetLog(slog.New(slog.NewTextHandler(&logs, nil)))
+	if err := tl.Publish(ctx, "admin", "siem-a", ca.pem, ca.key, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tl.PrepareNext(ctx, "admin", ""); err != nil {
+		t.Fatal(err)
+	}
+	// The next key sealed with a key no server has any more.
+	lost, _ := shared.NewClusterKey()
+	b, _ := tl.Get()
+	bogus, err := lost.SecretsKey().Seal(keyField(b.Next.CASHA256), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tl.Doc().Mutate(ctx, "test", func(c *Body) error { c.Next.CAKey = bogus; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	k2, _ := shared.NewClusterKey()
+	h.SetKeys(shared.NewKeySet(k2, e.key))
+	if err := tl.Resealer()(ctx); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = tl.Get()
+	if b.Next == nil || b.Next.CAKey != bogus {
+		t.Fatalf("the next key was not kept: %+v", b.Next)
+	}
+	if !strings.Contains(b.CAKey, k2.ID()) {
+		t.Error("the current key was not resealed")
+	}
+	if out := logs.String(); !strings.Contains(out, "audit=true") || !strings.Contains(out, "old sealed value is kept") || !strings.Contains(out, b.Next.CASHA256) {
+		t.Errorf("log: %s", out)
 	}
 }

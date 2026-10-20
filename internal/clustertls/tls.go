@@ -23,6 +23,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -188,6 +189,24 @@ type TLS struct {
 	hub  *shared.Hub
 	doc  *shared.Doc[Body]
 	subs []func(old, new *Body)
+	log  *slog.Logger
+}
+
+// SetLog sets where the holder logs what it does by itself (a key it
+// could not reseal); nil is slog.Default.
+func (t *TLS) SetLog(l *slog.Logger) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.log = l
+}
+
+func (t *TLS) logger() *slog.Logger {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.log == nil {
+		return slog.Default()
+	}
+	return t.log
 }
 
 // New returns the holder; Track makes the document.

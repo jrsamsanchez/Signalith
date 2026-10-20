@@ -641,8 +641,11 @@ step the cluster is at, with its date, and what each step waits for.
 
 A server that is stopped or offline isn't waited for: it takes the new CA when it
 starts. Servers with your own certificate files, or that don't serve HTTPS themselves,
-never use the cluster's CA. A server on a version that doesn't report its certificate
-holds both steps up: upgrade it, or stop it. Each step asked again does nothing more,
+never use the cluster's CA. **Prepare** is refused while a running server is on a
+version that can't replace the CA, and the refusal names it: upgrade it, or stop it.
+Such a server, running the background jobs, would rotate the cluster key without
+encrypting the new CA's key again. A key rotation that can't encrypt the new or old
+CA's key again keeps it as it was, and writes that to the audit log. Each step asked again does nothing more,
 and each is written to the audit log. A key rotation encrypts the new CA's key again
 too.
 
