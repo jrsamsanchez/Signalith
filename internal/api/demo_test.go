@@ -307,3 +307,25 @@ func TestDemoSignInsAreLimited(t *testing.T) {
 		t.Errorf("the 11th demo sign-in in a minute = %d, want 429 with Retry-After", resp.StatusCode)
 	}
 }
+
+// Each demo visitor's searches count against a share of the search slots
+// of their own; everyone else's against their user's.
+func TestSearchUserPerDemoSession(t *testing.T) {
+	a, b := demoPrincipal(), demoPrincipal()
+	a.token, b.token = "token-a", "token-b"
+	if searchUser(a) == searchUser(b) {
+		t.Errorf("two visitors share %q", searchUser(a))
+	}
+	if !strings.HasPrefix(searchUser(a), demoUser+":") {
+		t.Errorf("visitor's search user = %q", searchUser(a))
+	}
+	a2 := demoPrincipal()
+	a2.token = "token-a"
+	if searchUser(a) != searchUser(a2) {
+		t.Error("one session's search user changes")
+	}
+	u := &principal{Username: "alice", Source: "local", token: "token-a"}
+	if got := searchUser(u); got != "alice" {
+		t.Errorf("user's search user = %q, want alice", got)
+	}
+}

@@ -29,7 +29,12 @@ Visitors' sessions are kept in the server's memory only, apart from the users'
 sessions. One ends after 30 minutes without use and 2 hours after it started,
 and when the browser closes. A visitor's address can start 10 sessions a minute,
 and the server 3,000 an hour in all; past that the button answers `429` with
-`Retry-After`. A restart ends every visitor's session, and a visitor's session
+`Retry-After`. Someone with many addresses can use up the hourly total and keep
+everyone else out for the rest of the hour; if that happens, limit requests per
+address in front of the server (at the cloud firewall or a rate-limiting proxy)
+and restart Signalith to start the count again. Each visitor's searches count
+against a share of the search slots of their own, so one visitor's slow searches
+don't hold back the others. A restart ends every visitor's session, and a visitor's session
 works only on the server that made it: run a demo on one server, or keep each
 visitor on one server (sticky sessions) behind a load balancer.
 
