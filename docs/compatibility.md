@@ -2,8 +2,12 @@
 
 Signalith's query language is pipe-based, like Splunk's SPL, so most searches an SPL user
 writes run as they are. This page lists what is supported, what works differently and what
-is missing, so you know before you type. Signalith is not affiliated with Splunk; SPL is
-named here only to describe compatibility.
+is missing, so you know before you type.
+
+Signalith is an independent project. It is not affiliated with, endorsed by or sponsored by
+Splunk or Cisco. Splunk and SPL are trademarks or registered trademarks of Splunk LLC, a
+Cisco company, in the United States and other countries; they are named here only to
+describe compatibility.
 
 ## What "94%" means
 
