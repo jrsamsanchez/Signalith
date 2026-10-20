@@ -236,6 +236,14 @@ func TestAgentReportsUndoneUpdate(t *testing.T) {
 	if c.srv.gets != 0 {
 		t.Fatal("tried an update that was undone again")
 	}
+	// A day later it is tried again (ASI-07): what made it fail may have
+	// passed.
+	c.agent.now = func() time.Time { return time.Now().Add(failedRetry + time.Minute) }
+	c.agent.checkUpdate(context.Background())
+	if comp := c.component(); comp == nil || strings.Contains(comp.Error, "was undone") {
+		t.Fatalf("did not try the undone update again a day later: %+v", comp)
+	}
+	c.agent.now = time.Now
 	// Once the server no longer offers it, there is nothing to say.
 	c.agent.cfg.Update = nil
 	c.agent.checkUpdate(context.Background())

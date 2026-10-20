@@ -811,14 +811,17 @@ window.sensorText = (function () {
     ['audit_log', 'Audit log', 'Linux: auditd’s records'],
   ];
 
-  // updatesSwitch pauses automatic updates for one install line, which is
-  // also how to roll a release out to a few computers first.
+  // updatesSwitch pauses automatic updates for one install line, or rolls
+  // a new version out to a share of its computers first.
   function updatesSwitch(c, change) {
     const sw = el('input', { type: 'checkbox', onchange: () => change('updates', sw.checked ? '' : 'off') });
     sw.checked = c.updates !== 'off';
     return el('div', { class: 'ep-set__switches ep-set__updates' },
       el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, 'Automatic updates'),
-        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))));
+        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))),
+      c.updates !== 'off' ? el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Update first'),
+        seg([['10', '1 in 10'], ['25', 'A quarter'], ['50', 'Half'], ['', 'All']], c.update_share || '', (v) => change('update_share', v), 'Update first'),
+        el('span', { class: 'hint' }, 'A new version goes to this share of the line’s computers, always the same ones. Raise it once they look good.')) : null);
   }
 
   function agentCollectSection(lines, edits) {

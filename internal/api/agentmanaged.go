@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -344,7 +346,7 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 			cfg.Osquery = agentOsquery(goos, opts)
 		}
 	}
-	cfg.Update = s.agentUpdate(r, goos, collect)
+	cfg.Update = s.agentUpdate(r, goos, who.ID, collect)
 	cfg.Revision = agentproto.RevisionOf(cfg)
 	etag := `"` + cfg.Revision + `"`
 	w.Header().Set("ETag", etag)
@@ -360,8 +362,8 @@ func (s *Server) handleAgentManagedConfig(w http.ResponseWriter, r *http.Request
 // none or the admin paused updates for its install line. The agent says
 // its version in a header; it checks the update against the signed
 // manifest itself.
-func (s *Server) agentUpdate(r *http.Request, goos string, c agenttokens.Collect) *agentproto.Update {
-	if c.Updates == agenttokens.CollectOff {
+func (s *Server) agentUpdate(r *http.Request, goos, tokenID string, c agenttokens.Collect) *agentproto.Update {
+	if c.Updates == agenttokens.CollectOff || !inUpdateShare(tokenID, r.Header.Get(agentproto.HeaderName), c.UpdateShare) {
 		return nil
 	}
 	u, err := s.agentPrograms().Update(goos, r.URL.Query().Get("arch"), r.Header.Get(agentproto.HeaderVersion))
@@ -372,6 +374,20 @@ func (s *Server) agentUpdate(r *http.Request, goos string, c agenttokens.Collect
 		return nil
 	}
 	return u
+}
+
+// inUpdateShare says whether the computer name of an install line's
+// token is among the share (percent, "" for all) of its computers that
+// take an update while it rolls out. The same name is always in or out
+// for a share, and in for any larger one.
+func inUpdateShare(tokenID, name, share string) bool {
+	n, err := strconv.Atoi(share)
+	if share == "" || err != nil || n >= 100 {
+		return true
+	}
+	h := fnv.New32a()
+	h.Write([]byte(tokenID + "\x00" + strings.ToLower(name)))
+	return int(h.Sum32()%100) < n
 }
 
 // handleAgentManagedManifest hands an agent the signed manifest of the

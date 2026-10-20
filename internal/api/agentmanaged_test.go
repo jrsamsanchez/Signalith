@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -544,6 +545,36 @@ func TestManagedAgentUpdate(t *testing.T) {
 		t.Error("not offered after resuming")
 	}
 
+	// Rolling out to a share of the line's computers (ASI-07): only the
+	// computers in it are offered the update, and the same ones each time.
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"update_share":"10"}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("share: %d %s", code, raw)
+	}
+	offered := 0
+	for i := range 200 {
+		name := fmt.Sprintf("host-%03d", i)
+		code, _, body := agentDo(t, ts, "GET", path, agent, "", "", map[string]string{agentproto.HeaderVersion: "1.0.0", agentproto.HeaderName: name})
+		var cfg agentproto.Config
+		if code != 200 || json.Unmarshal([]byte(body), &cfg) != nil {
+			t.Fatalf("config: %d %s", code, body)
+		}
+		if (cfg.Update != nil) != inUpdateShare(id, name, "10") {
+			t.Errorf("%s: offered = %v", name, cfg.Update != nil)
+		}
+		if cfg.Update != nil {
+			offered++
+		}
+	}
+	if offered < 5 || offered > 40 {
+		t.Errorf("offered to %d of 200 computers with a 10%% share", offered)
+	}
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"update_share":"7"}`, "admin", adminPass, nil); code != 400 || !strings.Contains(raw, "update_share") {
+		t.Errorf("share 7: %d %s", code, raw)
+	}
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"update_share":"100"}`, "admin", adminPass, nil); code != 200 {
+		t.Fatalf("share 100: %d %s", code, raw)
+	}
+
 	// A program that is not the one signed is never offered.
 	if err := os.WriteFile(filepath.Join(dir, agentproto.ProgramName("linux", "amd64")), []byte("something else, and longer"), 0o755); err != nil {
 		t.Fatal(err)
@@ -559,5 +590,33 @@ func TestManagedAgentUpdate(t *testing.T) {
 	}
 	if cfg := fetch("1.0.0"); cfg.Update != nil {
 		t.Errorf("offered with an untrusted signature: %+v", cfg.Update)
+	}
+}
+
+// A computer in a share of the rollout stays in it, and in every larger
+// share, so raising the share only adds computers.
+func TestInUpdateShare(t *testing.T) {
+	counts := map[string]int{}
+	for i := range 2000 {
+		name := fmt.Sprintf("WEB-%04d", i)
+		prev := false
+		for _, share := range []string{"10", "25", "50", ""} {
+			in := inUpdateShare("tok1", name, share)
+			if prev && !in {
+				t.Fatalf("%s is in a smaller share than %s but not in it", name, share)
+			}
+			if in != inUpdateShare("tok1", strings.ToLower(name), share) {
+				t.Fatalf("%s: the name's case changes the share", name)
+			}
+			prev = in
+			if in {
+				counts[share]++
+			}
+		}
+	}
+	for share, want := range map[string]int{"10": 200, "25": 500, "50": 1000, "": 2000} {
+		if got := counts[share]; got < want*7/10 || got > want*13/10 {
+			t.Errorf("share %q holds %d of 2000, want about %d", share, got, want)
+		}
 	}
 }

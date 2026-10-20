@@ -279,6 +279,7 @@ configuration, within 5 minutes; nothing needs to be done on the computers.
 | **Audit log** | Off stops reading the Linux audit log |
 | **Linux sign-ins** | Where sign-ins are read from: where the computer writes them (the default), `auth.log` or `secure`, or the systemd journal |
 | **Automatic updates** | Off keeps the line's computers on the version they run (see [Updates](#updates)) |
+| **Update first** | The share of the line's computers a new version goes to: 1 in 10, a quarter, half or all (the default) |
 
 Turning a log off hides what happens on those computers, so saving asks for your
 password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
@@ -287,7 +288,8 @@ and after, so a gap in what detections see can be traced to the change. Only adm
 analysts see it in the token list. The osquery part of the same window (watched files,
 checks and how often they run) applies to every osquery host. The API is
 `PUT /api/agent-tokens/{id}/collect` with `{"osquery": "off", "linux_log": "journal"}`
-(any choice left out is on, or `auto` for `linux_log`).
+(any choice left out is on, or `auto` for `linux_log`; `update_share` is `10`, `25`, `50`
+or `100`, the default).
 
 ## osquery
 
@@ -374,10 +376,18 @@ How it works, and why it is safe:
    updater puts the version before back and restarts it. The computer's row on the
    **Endpoints** page then says the update failed, with the reason.
 
-To hold a group of computers at the version they run, turn **Automatic updates** off for
-their install line in **Endpoints > What hosts collect**. That is also how to roll a
-release out in stages: leave updates on for a small test line first, and turn them on for
-the others once it looks good. Turning updates back on lets the line catch up.
+An update that was undone is tried again a day later, since what made it fail (a full
+disk, a server that was down) may have passed; a version that does not work on the
+computer is undone again.
+
+To roll a new version out in stages, set **Update first** for an install line in
+**Endpoints > What hosts collect** to 1 in 10, a quarter or half: only that share of the
+line's computers takes it. Which computers are in the share depends only on the line and
+the computer's name, so they are the same ones each time, and raising the share adds
+computers without taking any back. Check the first ones on the **Endpoints** page, then
+raise it to all. To hold a group of computers at the version they run, turn
+**Automatic updates** off for their install line; turning it back on lets the line catch
+up.
 
 Agents installed before signed updates, and builds made from source (which have no
 release key), do not update themselves; run the install line again to upgrade them.
