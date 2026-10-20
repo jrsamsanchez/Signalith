@@ -31,7 +31,7 @@ go build -o signalith ./cmd/signalith                                  # this sy
 GOOS=windows GOARCH=amd64 go build -o signalith.exe ./cmd/signalith    # Windows
 ```
 
-To try a change end to end, run the [Docker quick start](README.md#docker-evaluation)
+To try a change end to end, run the [Docker quick start](https://signalith.io/docs/docker/)
 with the build file added, so it builds Signalith from your working copy instead of
 pulling the published image:
 
