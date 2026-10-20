@@ -98,6 +98,14 @@ func TestIPLocationWithoutDatabase(t *testing.T) {
 		if strings.Contains(qe.Msg, string(filepath.Separator)+"geoip") || strings.Contains(qe.Msg, os.TempDir()) {
 			t.Errorf("%s: message shows a server path: %s", name, qe.Msg)
 		}
+		// Only a folder without a database is setup the scheduler can
+		// tell apart from a bad query.
+		if got := errors.Is(err, geoip.ErrNoDatabase); got != (name == "empty dir") {
+			t.Errorf("%s: errors.Is(err, geoip.ErrNoDatabase) = %v", name, got)
+		}
+		if qe.Err != nil && strings.Contains(qe.Err.Error(), os.TempDir()) {
+			t.Errorf("%s: wrapped error shows a server path: %v", name, qe.Err)
+		}
 	}
 }
 

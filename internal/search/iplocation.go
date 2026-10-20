@@ -42,7 +42,8 @@ func (e *Engine) ipLocation(ctx context.Context, res *Result, c *query.IPLocatio
 	// admins, not to everyone who searches.
 	if file, err := e.GeoIP.Status(); file == "" {
 		if errors.Is(err, geoip.ErrNoDatabase) {
-			return &QueryError{Msg: errNoGeoIP}
+			// The sentinel, not err: err names the folder's path.
+			return &QueryError{Msg: errNoGeoIP, Err: geoip.ErrNoDatabase}
 		}
 		if errors.Is(err, geoip.ErrLoading) {
 			return errGeoIPLoading()

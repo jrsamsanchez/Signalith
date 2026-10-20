@@ -5,6 +5,8 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -984,8 +986,23 @@ func (s *Server) credentialKey(user, pass string) ([32]byte, time.Duration) {
 	default:
 		version, ttl = fmt.Sprintf("directory:%d", s.dir().Revision()), basicCacheDirectory
 	}
-	return sha256.Sum256([]byte(user + "\x00" + pass + "\x00" + version)), ttl
+	mac := hmac.New(sha256.New, credKeySecret())
+	mac.Write([]byte(user + "\x00" + pass + "\x00" + version))
+	var key [32]byte
+	copy(key[:], mac.Sum(nil))
+	return key, ttl
 }
+
+// credKeySecret keys the credential cache's HMAC. It is random per
+// process and never stored, so a cache key seen in a memory dump cannot
+// be used to guess the password offline.
+var credKeySecret = sync.OnceValue(func() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
+})
 
 // checkBasic checks HTTP Basic credentials, from the cache when it can.
 func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, error) {

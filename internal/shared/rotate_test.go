@@ -498,3 +498,35 @@ func TestKeyRotationRemoveDuring(t *testing.T) {
 		t.Errorf("removed list = %+v", rm)
 	}
 }
+
+// A cluster document signed with the key a rotation retired (often
+// rotated away because it leaked) does not take a member back to that
+// key, though the member still keeps it in its state folder.
+func TestRetiredKeyDoesNotTakeTheClusterBack(t *testing.T) {
+	rc := newRotationCluster(t)
+	old := rc.a.key()
+	res, err := rc.rotate(RotateOptions{By: "admin", Reason: "rotate-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := rc.a.rt.readKeys()
+	if keys.get(old.ID()) == nil {
+		t.Fatal("siem-a no longer keeps the old key; the test needs it")
+	}
+	raw, _ := json.Marshal(rc.e.os.Source(testIndex, ClusterDocID))
+	var env Envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	rc.e.putSigned(old, ClusterDocID, env.Kind, env.Format, env.Rev+1, env.Body, nil)
+
+	for range 4 {
+		rc.a.step()
+	}
+	if got := rc.a.key().ID(); got != res.KID {
+		t.Errorf("siem-a signs with %s, not the new key %s", got, res.KID)
+	}
+	if m, why := rc.a.rt.Mode(); m != ModeKeyMissing {
+		t.Errorf("mode %v (%s)", m, why)
+	}
+}
