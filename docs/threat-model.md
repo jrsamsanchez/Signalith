@@ -85,7 +85,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 | Stolen password | Two-step sign-in with an app code or a passkey ([Two-step sign-in](users.md#two-step-sign-in), [Passkeys](users.md#passkeys)); single sign-on with your identity provider's MFA ([Single sign-on](sso.md)) |
 | Stolen or left-open session | `__Host-` HTTPS-only cookie; sessions end after 1 hour idle and 24 hours at most; sensitive actions ask for the password or a passkey again ([Confirming it's you](users.md#confirming-its-you)) |
 | The generated first password | The built-in admin must change it at first sign-in |
-| Cross-site requests and framing | Same-origin check on every request that changes something; strict Content-Security-Policy, no framing ([Hardening built in](https://github.com/jrsamsanchez/Signalith#hardening-built-in)) |
+| Cross-site requests and framing | Same-origin check on every request that changes something; strict Content-Security-Policy, no framing ([Always on](security.md#always-on)) |
 | Role or tenant escape | Role looked up on every request, not kept in the session; every API route has a declared role, checked by a test; tenant data in indices whose names can't overlap ([Roles](users.md#roles), [Multi-tenant mode](multi-tenant.md)) |
 | Forged SSO answers | OIDC with PKCE and state checks; SAML signatures checked against the configured certificate only, with signature-wrapping variants refused, single-use requests and signed state ([Single sign-on](sso.md)) |
 | Long-lived API tokens | API tokens are read-only for AI tools, expire after 90 days by default and can be revoked ([API tokens](ai-tools.md#api-tokens)) |
@@ -96,7 +96,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 | --- | --- |
 | Forged events from anyone on the network | Each agent group sends with its own token, kept only as a hash; revoking it turns its agents away within seconds; every event records the token and sender, which senders can't set ([Agent tokens](agent-tokens.md)) |
 | Agents and admins sharing one port | Agents send to their own port (7779), so the web page needn't be reachable from every monitored computer ([Agent port](security.md#agent-port)) |
-| Floods and oversized batches | Limits on connections per client, request time, batch size and memory per sender ([Ingest limits](https://github.com/jrsamsanchez/Signalith#ingest-limits)) |
+| Floods and oversized batches | Limits on connections per client, request time, batch size and memory per sender ([Ingest limits](sending-data.md#ingest-limits)) |
 | Malformed input crashing a parser | Parsers have fuzz targets run in CI and for longer every night; a parser that panics on one request fails only that request |
 | Log text attacking the viewer | Events are shown as text, never as HTML; invisible and reordering Unicode characters are shown marked |
 | Sniffing events in transit | HTTPS by default; plain HTTP for agents can be refused ([Agents on plain HTTP](security.md#agents-on-plain-http)). Syslog over UDP is plain text by nature; prefer TLS syslog ([Syslog](security.md#syslog)) |
@@ -160,6 +160,9 @@ Each arrow is a boundary where data from the other side is not trusted:
 | An AI tool changing things | The MCP server sends only reads, and its token's role is checked like a person's |
 
 ### Outbound requests and supply chain
+
+[Outbound connections](outbound.md) lists every host Signalith and its installers reach, and
+[Where your data goes](data-residency.md) what each feature sends.
 
 | Threat | What stands in the way |
 | --- | --- |

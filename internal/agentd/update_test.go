@@ -265,7 +265,8 @@ type fakeService struct {
 	p        Paths
 	versions map[string]string // SHA-256 of a program: its version
 	// broken is how the new version fails: "silent" never reports,
-	// "crash" reports and then restarts.
+	// "crash" reports and then restarts, "unreachable" runs but cannot
+	// reach the server.
 	broken   string
 	newSum   string
 	mu       sync.Mutex
@@ -294,6 +295,13 @@ func (s *fakeService) Restart(context.Context) error {
 	s.restarts = append(s.restarts, s.versions[sum])
 	if sum == s.newSum && s.broken == "silent" {
 		return nil
+	}
+	rep := "yes"
+	if sum == s.newSum && s.broken == "unreachable" {
+		rep = "no"
+	}
+	if err := os.WriteFile(s.p.HealthFile(), []byte("config=ok\nfluentbit=running\nreported="+rep+"\n"), 0o644); err != nil {
+		return err
 	}
 	st, _ := json.Marshal(agentproto.Status{Version: s.versions[sum], Started: time.Now().UTC().Format(time.RFC3339)})
 	return os.WriteFile(s.p.StatusFile(), st, 0o600)
@@ -408,7 +416,7 @@ func TestUpdaterInstallsUpdate(t *testing.T) {
 }
 
 func TestUpdaterGoesBackWhenNewVersionFails(t *testing.T) {
-	for broken, want := range map[string]string{"silent": "did not report", "crash": "stopped and was restarted"} {
+	for broken, want := range map[string]string{"silent": "did not report", "crash": "stopped and was restarted", "unreachable": "did not report"} {
 		t.Run(broken, func(t *testing.T) {
 			c := newUpdaterCase(t, releaseKey(t), "2.0.0")
 			c.svc.broken = broken

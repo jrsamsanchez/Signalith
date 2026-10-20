@@ -67,7 +67,7 @@ how Signalith knows the lines are Wazuh alerts.
 ## The manager's syslog output (no agent)
 
 The Wazuh manager can send each alert as JSON over syslog to Signalith's
-[syslog receiver](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#syslog). In `/var/ossec/etc/ossec.conf` on the manager, add:
+[syslog receiver](sending-data.md#syslog). In `/var/ossec/etc/ossec.conf` on the manager, add:
 
 ```xml
 <ossec_config>
