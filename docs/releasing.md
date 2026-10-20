@@ -19,7 +19,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    `ghcr.io/jrsamsanchez/signalith:<version>` (and `:latest` unless the version has a
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
    provenance. (Between releases, the **Image (main)** workflow publishes the same kind
-   of signed image as `:main` on every push to `main`; the Docker quick start runs it.)
+   of signed image as `:main` on every push to `main`; the public demo runs it.)
 4. Packages the Helm chart (`deploy/helm/signalith`) with the release's version, which
    also picks the image it runs, pushes it to `oci://ghcr.io/jrsamsanchez/charts/signalith`
    and signs it with Sigstore. Its `.tgz` goes on the release page with the other files.
@@ -27,7 +27,9 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    it, and weekly; see [Kubernetes](kubernetes.md).)
 5. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
-   the key is set up (below), and GitHub build provenance for every file.
+   the key is set up (below), and GitHub build provenance for every file. Before the
+   checksums it makes `signalith-<version>-docker.tar.gz`, the Docker quick start with
+   the image locked to the digest pushed in step 3 (`.github/scripts/docker-release.sh`).
 6. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
    with the version's own notes (`.github/releases/<version>.md`, such as `0.3.0.md`,
    when there is one), install and verify steps (`.github/release-notes.md`) and the

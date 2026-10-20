@@ -203,6 +203,31 @@ OpenSearch: the newest release by default, or another version when you set
 `SIGNALITH_VERSION`, for example `SIGNALITH_VERSION=main` for the `:main` image, rebuilt on
 every change to `main` and not yet released.
 
+### The quick start locked to a release
+
+Each release also has `signalith-<version>-docker.tar.gz`: the same quick start with
+Signalith's image locked to the digest the release pushed and signed
+(`ghcr.io/jrsamsanchez/signalith:<version>@sha256:...`), so it runs exactly that image
+whatever later happens to the tag, and `SIGNALITH_VERSION` doesn't change it. It needs no
+`git`: check it against `SHA256SUMS` (below), unpack it and run the quick start's
+commands from its folder:
+
+```sh
+tar -xzf signalith-0.3.2-docker.tar.gz
+cd signalith-0.3.2-docker
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+To update, unpack the next release's file and run the same command from its folder. It is
+the same Compose project as before (`docker`), so your data is kept. To check the image's
+own Sigstore signature as well:
+
+```sh
+cosign verify ghcr.io/jrsamsanchez/signalith:0.3.2 \
+  --certificate-identity-regexp '^https://github.com/jrsamsanchez/Signalith/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 ## Check a download
 
 Every release is built by GitHub Actions from the tagged source, and you can check that
