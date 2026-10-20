@@ -2431,7 +2431,15 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-risk .r-timeline .timeline__text > b { font-weight: 600; }
 #page-risk .r-ev__meta { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-size: var(--fs-sm); color: var(--text-3); }
 #page-risk .r-ev__meta .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
-#page-risk .r-ev__normal { font-size: var(--fs-sm); min-height: 0; }
+#page-risk .r-ev__title, #page-risk .r-ev__title:visited { font-weight: 500; color: var(--text); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+#page-risk .r-ev__title:hover { color: var(--accent); text-decoration-color: currentColor; }
+#page-risk .r-ev__links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin-top: 4px; }
+#page-risk .r-ev__links:empty { display: none; }
+#page-risk .r-ev__link { font-size: var(--fs-sm); }
+#page-risk .r-tactic { border: 0; background: none; font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: box-shadow var(--t-fast), background var(--t-fast), color var(--t-fast); }
+#page-risk .r-tactic:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+#page-risk .r-tactic[aria-pressed="true"] { color: var(--text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent); }
+#page-risk .inspector__foot { flex-wrap: wrap; }
 #page-risk .inspector__foot .btn { flex: none; }
 #page-risk .r-tactics { gap: 6px; }
 @media (min-width: 1360px) {

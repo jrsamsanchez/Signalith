@@ -158,6 +158,11 @@ activity, such as a sign-in from a new country.
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 
+The **Risk** page lists the users and systems with the most risk. Open one to see
+what added its risk: each entry opens the detection that added it, with a link to
+the finding raised with it (or, for a risk-only detection, to the risk event in
+Search). Click an ATT&CK tactic to show only the entries for that tactic.
+
 ## Exceptions
 
 An exception tunes a detection without editing its query, so that
