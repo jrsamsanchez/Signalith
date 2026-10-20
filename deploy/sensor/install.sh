@@ -111,6 +111,7 @@ zeek_workers=''
 suricata_threads=''
 docker=no
 check_only=no
+take_over=no
 dryrun=''
 uninstall=no
 purge=no
@@ -147,7 +148,7 @@ Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signali
          [--name <name>] [--interface <port>] [--networks <cidr,...>]
          [--no-zeek | --no-suricata] [--suricata-protocols] [--local-rules <file>]
          [--zeek-workers <n>] [--suricata-threads <n>] [--docker]
-         [--check-only] [--dry-run <folder>]
+         [--take-over] [--check-only] [--dry-run <folder>]
        sudo sh install.sh --uninstall [--purge]
 
   --role              What to build: sensor (the only role for now).
@@ -170,6 +171,11 @@ Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signali
   --zeek-workers      Zeek processes reading the port (default from the cores).
   --suricata-threads  Suricata capture threads (default: half the cores).
   --docker            Run the three programs in containers (Docker Engine).
+  --take-over         Stop and mask Fluent Bit's or Suricata's own service
+                      when it already runs here for something else (the
+                      sensor runs its own copies); --uninstall starts it
+                      again. Without it the script stops before changing
+                      anything.
   --check-only        Check the machine and Signalith, change nothing.
   --dry-run           Write every file under this folder and print the
                       commands instead of running them.
@@ -211,6 +217,7 @@ while [ $# -gt 0 ]; do
     --suricata-threads) need "$1" $#; suricata_threads=$2; shift 2 ;;
     --suricata-threads=*) suricata_threads=${1#*=}; shift ;;
     --docker) docker=yes; shift ;;
+    --take-over) take_over=yes; shift ;;
     --check-only) check_only=yes; shift ;;
     --dry-run) need "$1" $#; dryrun=$2; shift 2 ;;
     --dry-run=*) dryrun=${1#*=}; shift ;;
@@ -794,6 +801,29 @@ sensor_pick_port() {
   ok "capture port: $iface"
 }
 
+# sensor_vendor_checks finds Fluent Bit's or Suricata's own service
+# already running here (shipping logs somewhere else, say): installing
+# stops and masks it, so the sensor's copies are the only ones capturing
+# and sending. That needs --take-over; a service a run before this one
+# masked is the sensor's already.
+sensor_vendor_checks() {
+  [ "$docker" != yes ] && [ -z "$dryrun" ] || return 0
+  units=fluent-bit.service
+  if [ "$suricata" = yes ]; then units="suricata.service $units"; fi
+  for u in $units; do
+    state=$(systemctl is-enabled "$u" 2>/dev/null || true)
+    [ "$state" != masked ] || continue
+    if ! systemctl is-active --quiet "$u" && [ "$state" != enabled ]; then continue; fi
+    if [ "$take_over" = yes ]; then
+      warn "$u already runs here: it will be stopped and masked, so whatever it sends elsewhere stops (--take-over). --uninstall starts it again."
+    elif [ "$check_only" = yes ]; then
+      warn "$u already runs here, probably for something else: installing would stop it." "Install with --docker, which leaves it alone, or add --take-over to stop it and run the sensor's own copy."
+    else
+      fail "$u already runs here, probably for something else: installing would stop it and mask it. Nothing was changed." "Install with --docker, which leaves it alone, or add --take-over to the line to stop it and run the sensor's own copy (--uninstall starts it again)."
+    fi
+  done
+}
+
 sensor_port_checks() {
   link=$(link_of "$iface")
   if [ "$link" = up ]; then
@@ -1007,7 +1037,10 @@ mask_vendor() {
   fi
   if [ "$(systemctl is-enabled "$1" 2>/dev/null)" != masked ]; then
     # --uninstall starts it again.
-    if systemctl is-active --quiet "$1"; then manifest_add "was running $1"; fi
+    if systemctl is-active --quiet "$1"; then
+      manifest_add "was running $1"
+      info "stopped $1, which ran here before (--take-over); --uninstall starts it again"
+    fi
     systemctl mask --now "$1" >/dev/null 2>&1 || true
     manifest_add "mask $1"
   fi
@@ -3031,6 +3064,7 @@ say "Signalith sensor: checking this machine"
 common_machine
 sensor_sources
 sensor_resources
+sensor_vendor_checks
 if [ "$docker" = yes ]; then sensor_docker_checks; fi
 say ""
 say "Signalith"
