@@ -4,6 +4,8 @@
 package clustertls
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
@@ -14,6 +16,8 @@ import (
 const (
 	ModeAuto  = "auto"
 	ModeFiles = "files"
+	// ModeOff is a server that does not serve HTTPS itself.
+	ModeOff = "off"
 )
 
 // StatusOf is what m serves, for this server's heartbeat: sharedHost is
@@ -22,7 +26,9 @@ const (
 // none).
 func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatus {
 	if m == nil {
-		return nil
+		// Nothing to hand out, and nothing to wait for while the
+		// cluster's certificate authority is replaced.
+		return &cluster.TLSStatus{Mode: ModeOff, CoversShared: true}
 	}
 	st := &cluster.TLSStatus{Mode: ModeFiles, Names: m.Names(), Outside: m.Outside(), AdoptError: adoptErr,
 		CoversShared: sharedHost == "" || m.Covers(sharedHost)}
@@ -31,12 +37,24 @@ func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatu
 		st.Cluster = m.Store() == tlsauto.KindCluster
 		st.ChangePending = m.Next() != nil || m.Previous() != nil
 	}
-	if pem := m.CAPEM(); pem != nil {
-		st.CACertPEM, st.CASHA256 = string(pem), m.Fingerprint()
+	var ca *x509.Certificate
+	if p := m.CAPEM(); p != nil {
+		st.CACertPEM, st.CASHA256 = string(p), m.Fingerprint()
+		if block, _ := pem.Decode(p); block != nil {
+			ca, _ = x509.ParseCertificate(block.Bytes)
+		}
 	}
 	if leaf := m.Leaf(); leaf != nil {
 		exp := leaf.NotAfter.UTC()
 		st.LeafExpires = &exp
+		if ca != nil && leaf.CheckSignatureFrom(ca) == nil {
+			st.LeafCASHA256 = tlsauto.Fingerprint(ca.Raw)
+		}
+	}
+	if st.Cluster {
+		if next := m.Next(); next != nil {
+			st.NextCASHA256 = next.Fingerprint
+		}
 	}
 	return st
 }

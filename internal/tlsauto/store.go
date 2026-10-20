@@ -49,7 +49,7 @@ const (
 
 // ErrClusterCA refuses a change of certificate authority on a server that
 // uses the cluster's.
-var ErrClusterCA = &StateError{"This server uses the cluster's certificate authority. Changing it comes in a later version."}
+var ErrClusterCA = &StateError{"This server uses the cluster's certificate authority. Replace it for every server at once on the Servers page, or with signalith cluster tls rotate-ca."}
 
 // errNoCAKey: the cluster's certificate authority is known but its key is
 // not available here yet.

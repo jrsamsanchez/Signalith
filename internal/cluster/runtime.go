@@ -352,6 +352,13 @@ type TLSStatus struct {
 	AdoptError    string `json:"adopt_error,omitempty"`
 	// LeafExpires is when the certificate expires.
 	LeafExpires *time.Time `json:"leaf_expires,omitempty"`
+	// LeafCASHA256 is the fingerprint of the certificate authority that
+	// signed the certificate served now ("" when it is not CASHA256's).
+	// NextCASHA256 is the cluster's next certificate authority, which the
+	// server hands out to agents with the one in use while the cluster's
+	// is replaced. Replacing it waits for both on every server.
+	LeafCASHA256 string `json:"leaf_ca_sha256,omitempty"`
+	NextCASHA256 string `json:"next_ca_sha256,omitempty"`
 }
 
 // SettingsRev is the revisions of the settings document and of a server's

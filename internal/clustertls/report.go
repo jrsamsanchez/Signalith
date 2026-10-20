@@ -36,6 +36,43 @@ type Report struct {
 	// Candidates are the certificate authorities to choose from while
 	// none is published, the preselected first; empty once one is.
 	Candidates []Candidate `json:"candidates"`
+	// Rotation is how far replacing the cluster's certificate authority
+	// came, nil while none is published.
+	Rotation *RotationView `json:"rotation,omitempty"`
+}
+
+// RotationView is how far replacing the cluster's certificate authority
+// came.
+type RotationView struct {
+	// State is none, prepared (Next is handed out with the one in use)
+	// or switched (Previous is still handed out until it is retired).
+	State    string     `json:"state"`
+	Next     *OtherView `json:"next,omitempty"`
+	Previous *OtherView `json:"previous,omitempty"`
+	// Blockers are the servers running that are not ready for the next
+	// step (switch, or retire), with why; empty when they all are.
+	Blockers []string `json:"blockers"`
+}
+
+// OtherView is the cluster's next or previous certificate authority. At
+// is when it was prepared, or when the switch away from it happened.
+type OtherView struct {
+	CASHA256 string    `json:"ca_sha256"`
+	Subject  string    `json:"subject"`
+	NotAfter time.Time `json:"not_after"`
+	By       string    `json:"by,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+func otherView(o *OtherCA) *OtherView {
+	if o == nil {
+		return nil
+	}
+	v := &OtherView{CASHA256: o.CASHA256, By: o.By, At: o.At}
+	if c, err := o.Cert(); err == nil {
+		v.Subject, v.NotAfter = c.Subject.CommonName, c.NotAfter.UTC()
+	}
+	return v
 }
 
 // CAView is the cluster's certificate authority.
@@ -84,6 +121,10 @@ type ServerView struct {
 	CoversShared  bool       `json:"covers_shared"`
 	ChangePending bool       `json:"change_pending,omitempty"`
 	LeafExpires   *time.Time `json:"leaf_expires,omitempty"`
+	// LeafCASHA256 is the certificate authority its certificate comes
+	// from, and NextCASHA256 the cluster's next one it hands out with it.
+	LeafCASHA256 string `json:"leaf_ca_sha256,omitempty"`
+	NextCASHA256 string `json:"next_ca_sha256,omitempty"`
 	// Problem says why it has not taken the cluster's certificate
 	// authority, "" when it has or there is none.
 	Problem string `json:"problem,omitempty"`
@@ -124,6 +165,11 @@ func BuildReport(in ReportInput) *Report {
 			}
 		}
 		r.CA = v
+		r.Rotation = &RotationView{State: b.Rotation(), Next: otherView(b.Next), Previous: otherView(b.Previous),
+			Blockers: Blockers(b, in.Heartbeats, now)}
+		if r.Rotation.Blockers == nil {
+			r.Rotation.Blockers = []string{}
+		}
 		for i := len(b.Retired) - 1; i >= 0; i-- {
 			old := b.Retired[i]
 			if ca := parsePEM(old.CACertPEM); ca != nil {
@@ -173,6 +219,7 @@ func serverView(hb cluster.Heartbeat, self, clusterFP string, roots map[string]b
 	v.Reported = true
 	v.Mode, v.CASHA256, v.Cluster, v.CoversShared, v.ChangePending, v.LeafExpires, v.Problem =
 		t.Mode, t.CASHA256, t.Cluster, t.CoversShared, t.ChangePending, t.LeafExpires, t.AdoptError
+	v.LeafCASHA256, v.NextCASHA256 = t.LeafCASHA256, t.NextCASHA256
 	v.Names = append(v.Names, t.Names...)
 	v.Outside = append(v.Outside, t.Outside...)
 	if len(t.Outside) > 0 {

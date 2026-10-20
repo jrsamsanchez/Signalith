@@ -645,3 +645,43 @@ func TestRecorderKeepsNewest(t *testing.T) {
 		}
 	}
 }
+
+// A certificate authority made to replace another keeps its name
+// constraints exactly, and the template every one of Signalith's has.
+func TestNewCALike(t *testing.T) {
+	now := time.Now()
+	dns, excluded, ips := constraints([]string{"siem-a.example.com", "10.1.2.3"}, false)
+	cur := caTemplate("old", now.AddDate(-2, 0, 0), dns, excluded, ips)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	der, err := x509.CreateCertificate(rand.Reader, cur, cur, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _ := x509.ParseCertificate(der)
+	if _, _, err := NewCALike(nil, "x", now); err == nil {
+		t.Error("made one like nothing")
+	}
+	ca, k, err := NewCALike(old, "Signalith Cluster CA (test)", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePublicKey(ca.PublicKey, k.Public()) || samePublicKey(ca.PublicKey, key.Public()) {
+		t.Error("not a new key of its own")
+	}
+	if !slices.Equal(ca.PermittedDNSDomains, old.PermittedDNSDomains) || !slices.Equal(ca.ExcludedDNSDomains, old.ExcludedDNSDomains) ||
+		len(ca.PermittedIPRanges) != len(old.PermittedIPRanges) || !ca.PermittedDNSDomainsCritical {
+		t.Errorf("constraints %v %v %v", ca.PermittedDNSDomains, ca.ExcludedDNSDomains, ca.PermittedIPRanges)
+	}
+	for i := range ca.PermittedIPRanges {
+		if ca.PermittedIPRanges[i].String() != old.PermittedIPRanges[i].String() {
+			t.Errorf("IP range %d: %s, want %s", i, ca.PermittedIPRanges[i], old.PermittedIPRanges[i])
+		}
+	}
+	if !ca.IsCA || !ca.MaxPathLenZero || !ServerOnly(ca) || ca.KeyUsage != old.KeyUsage ||
+		!slices.Equal(ca.PermittedEmailAddresses, []string{noSuchName}) || ca.NotAfter.Before(now.AddDate(CAYears, 0, -1)) {
+		t.Errorf("template %+v", ca)
+	}
+	if classify(ca) != classify(old) {
+		t.Errorf("scope %s, was %s", classify(ca), classify(old))
+	}
+}
