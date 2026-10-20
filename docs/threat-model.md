@@ -161,6 +161,9 @@ Each arrow is a boundary where data from the other side is not trusted:
 
 ### Outbound requests and supply chain
 
+[Outbound connections](outbound.md) lists every host Signalith and its installers reach, and
+[Where your data goes](data-residency.md) what each feature sends.
+
 | Threat | What stands in the way |
 | --- | --- |
 | Feeds or downloads reaching internal addresses | Threat intel feed downloads are checked after DNS and on every redirect, and never reach link-local or cloud metadata addresses, or this machine unless allowed ([Threat intel](threat-intel.md)). The CVE, KEV and EPSS addresses are admin settings and are fetched as set |

@@ -117,6 +117,7 @@ nav:
   - Getting started:
       - Overview: getting-started.md
       - Install from packages: install-packages.md
+      - Supported platforms: platforms.md
       - Kubernetes (Helm): kubernetes.md
       - How Signalith compares: comparison.md
       - Architecture: architecture.md
@@ -176,6 +177,8 @@ nav:
   - Security:
       - Security checks: security.md
       - Threat model: threat-model.md
+      - Outbound connections: outbound.md
+      - Where your data goes: data-residency.md
       - HTTPS: https.md
       - Encryption: encryption.md
       - Securing OpenSearch: opensearch-security.md
