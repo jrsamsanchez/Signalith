@@ -21,6 +21,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 // The Signalith Agent's install (Add data > Signalith Agent): one pasted
@@ -184,6 +185,10 @@ const AgentProgramsEnv = "SIGNALITH_AGENT_PROGRAMS"
 type Programs struct {
 	// Dir is the folder; empty looks in DefaultProgramsDir.
 	Dir string
+	// Revocations is the server's kept revocation list, whose revoked
+	// keys the manifest may not be signed with; nil uses the built-in
+	// list alone.
+	Revocations *keytrust.Store
 
 	mu   sync.Mutex
 	sums map[string]programSum
@@ -337,12 +342,18 @@ func (p *Programs) Manifest() (data, sig []byte, m *agentproto.Manifest, err err
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	m, err = agentproto.VerifyManifest(agentproto.ReleaseKeys, data, sig)
+	var list *keytrust.List
+	if p.Revocations != nil {
+		// A kept list that cannot be read is no reason to stop handing
+		// out programs: the built-in list still applies.
+		list, _, _, _ = p.Revocations.Load()
+	}
+	m, err = agentproto.VerifyManifest(agentproto.TrustedKeys(list), data, sig)
 	if errors.Is(err, agentproto.ErrNoReleaseKey) {
 		return nil, nil, nil, ErrNoManifest
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, keytrust.Explain(err, sig, keytrust.RevokedIDs(list))
 	}
 	return data, sig, m, nil
 }

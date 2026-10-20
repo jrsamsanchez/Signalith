@@ -50,6 +50,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
@@ -1364,7 +1365,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	// A content update installed earlier goes into use before the
 	// detections load.
-	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log}
+	// The newest signing key revocation list this server has seen, which
+	// content checks download and agents are handed (docs/key-management.md).
+	revocations := &keytrust.Store{Dir: filepath.Join(c.StateDir(), "keytrust")}
+	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log, Revocations: revocations}
 	updater.Start()
 	lib, problems, err := detect.NewLibrary(c.DetectionsDir())
 	if err != nil {
@@ -1703,6 +1707,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Sample:       sampleLoader,
 		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:      updater,
+		Revocations:  revocations,
 		Endpoints:    estore,
 		SensorTuning: tuning,
 		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},

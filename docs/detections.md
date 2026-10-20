@@ -1451,12 +1451,19 @@ signature is read from the same address plus `.sig`. Each server keeps its updat
 `content/` in its detections folder. Upgrading Signalith to a version with newer rules
 built in uses those instead of an older update.
 
+Each check also downloads the project's
+[revocation list](key-management.md#revocation-lists) from the same place. When it
+revokes the key an installed update was signed with, the server removes that update
+and goes back to the built-in rules.
+
 From the command line (as the service, with `-c` for the config file):
 
 ```sh
 signalith content status
 signalith content install signalith-content.tar.gz   # reads signalith-content.tar.gz.sig too
 signalith content remove
+signalith content revocations                      # the signing keys this server refuses
+signalith content import-revocations signalith-revoked.json   # reads its .sig too
 ```
 
 Restart Signalith after `install` or `remove` so a running server uses the change, or

@@ -15,15 +15,18 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 // Signed updates: a release's agent programs come with a manifest, the
 // SHA-256 of each program and the version they are, signed with the
 // release key (ManifestFile and SignatureFile, next to the programs on the
 // server). An agent updates itself only to a program the manifest lists,
-// signed by a key in ReleaseKeys, and only to a newer version: a server
-// that was broken into can hand out neither a program of its own nor an
-// older one.
+// signed by a key in ReleaseKeys or a root key (internal/keytrust) that is
+// not revoked, and only to a newer version: a server that was broken into
+// can hand out neither a program of its own nor an older one. The server
+// hands out its revocation list with the manifest, and the agent keeps it.
 
 // RouteManifest answers the signed manifest of the programs the server
 // hands out (ManifestAnswer), 404 when it has none.
@@ -59,6 +62,10 @@ type Manifest struct {
 type ManifestAnswer struct {
 	Manifest  string `json:"manifest"`
 	Signature string `json:"signature"`
+	// Revocation and RevocationSignature are the newest revocation list
+	// the server has (keytrust.ListFile and its signature), if any.
+	Revocation          string `json:"revocation,omitempty"`
+	RevocationSignature string `json:"revocation_signature,omitempty"`
 }
 
 // Update is the part of a Config that offers the agent a newer version:
@@ -75,6 +82,12 @@ var releaseKeys string
 // ReleaseKeys are the public keys whose programs this build updates to:
 // the lines of release.keys that are not comments. Tests replace them.
 var ReleaseKeys = mustKeys(releaseKeys)
+
+// TrustedKeys are the keys a manifest may be signed with: ReleaseKeys and
+// the root keys, without those the built-in list and lists revoke.
+func TrustedKeys(lists ...*keytrust.List) []ed25519.PublicKey {
+	return keytrust.Trusted(ReleaseKeys, keytrust.RevokedIDs(lists...))
+}
 
 func mustKeys(s string) []ed25519.PublicKey {
 	k, err := ParseKeys(s)

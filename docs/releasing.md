@@ -65,6 +65,9 @@ The first time an image is pushed, check that the package is public: the reposit
 Every release is signed with [Sigstore](https://www.sigstore.dev) and has GitHub build
 provenance without any setup: GitHub vouches for the workflow that built it.
 
+[Key management](key-management.md) lists every key, how to replace each one, and
+what to do when one leaks.
+
 ### GPG (Linux packages and checksums)
 
 `apt`, `dnf` and `rpm` check packages with GPG keys. When the repository has a

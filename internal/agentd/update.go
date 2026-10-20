@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 // Updates: when the server offers a newer version (Config.Update), the
@@ -51,6 +52,12 @@ func (p Paths) stagedManifest() string { return filepath.Join(p.updateDir(), age
 func (p Paths) stagedSignature() string {
 	return filepath.Join(p.updateDir(), agentproto.SignatureFile)
 }
+
+// trustDir is where the agent keeps the newest revocation list its
+// server handed it; rootTrustDir is the updater's own copy, next to the
+// version before, where the agent's sandbox cannot write.
+func (p Paths) trustDir() string     { return filepath.Join(p.State, "keytrust") }
+func (p Paths) rootTrustDir() string { return filepath.Join(filepath.Dir(p.Prev), "keytrust") }
 
 // nextProgram is where the updater copies a program before it replaces
 // Program with it; Windows wants it to end in .exe to run it.
@@ -203,9 +210,21 @@ func (a *Agent) stageUpdate(ctx context.Context, u *agentproto.Update) error {
 	if err := json.Unmarshal([]byte(buf.String()), &ans); err != nil {
 		return errors.New("the manifest the server sent is not valid JSON")
 	}
-	m, err := agentproto.VerifyManifest(agentproto.ReleaseKeys, []byte(ans.Manifest), []byte(ans.Signature))
+	// A revocation list the server hands over is kept when it is newer;
+	// a bad one is ignored, never a reason to trust a revoked key.
+	store := &keytrust.Store{Dir: a.Paths.trustDir()}
+	if ans.Revocation != "" {
+		if _, err := store.Offer([]byte(ans.Revocation), []byte(ans.RevocationSignature)); err != nil && !errors.Is(err, keytrust.ErrNoRoot) {
+			a.Log.Warn("ignoring the revocation list the server sent", "err", err)
+		}
+	}
+	list, listData, listSig, err := store.Load()
 	if err != nil {
-		return err
+		a.Log.Warn("the kept revocation list cannot be read", "err", err)
+	}
+	m, err := agentproto.VerifyManifest(agentproto.TrustedKeys(list), []byte(ans.Manifest), []byte(ans.Signature))
+	if err != nil {
+		return keytrust.Explain(err, []byte(ans.Signature), keytrust.RevokedIDs(list))
 	}
 	want := m.Programs[runtime.GOOS+"-"+runtime.GOARCH]
 	if m.Version != u.Version || want == "" || want != u.SHA256 {
@@ -237,6 +256,19 @@ func (a *Agent) stageUpdate(ctx context.Context, u *agentproto.Update) error {
 	}
 	if err := writeFile(a.Paths.stagedSignature(), []byte(ans.Signature), 0o600); err != nil {
 		return err
+	}
+	// The list goes to the updater too, which keeps its own copy.
+	stagedList := filepath.Join(a.Paths.updateDir(), keytrust.ListFile)
+	stagedListSig := filepath.Join(a.Paths.updateDir(), keytrust.SignatureFile)
+	_ = os.Remove(stagedList)
+	_ = os.Remove(stagedListSig)
+	if listData != nil {
+		if err := writeFile(stagedListSig, listSig, 0o600); err != nil {
+			return err
+		}
+		if err := writeFile(stagedList, listData, 0o600); err != nil {
+			return err
+		}
 	}
 	return writeFile(a.Paths.readyFile(), []byte(m.Version+"\n"), 0o600)
 }
@@ -338,9 +370,10 @@ func (u *Updater) check() (*agentproto.Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := agentproto.VerifyManifest(agentproto.ReleaseKeys, data, sig)
+	list := u.revocations()
+	m, err := agentproto.VerifyManifest(agentproto.TrustedKeys(list), data, sig)
 	if err != nil {
-		return nil, err
+		return nil, keytrust.Explain(err, sig, keytrust.RevokedIDs(list))
 	}
 	if !agentproto.Newer(m.Version, u.Version) {
 		return nil, fmt.Errorf("version %s is not newer than %s", m.Version, u.Version)
@@ -349,6 +382,27 @@ func (u *Updater) check() (*agentproto.Manifest, error) {
 		return nil, fmt.Errorf("version %s has no program for %s/%s", m.Version, runtime.GOOS, runtime.GOARCH)
 	}
 	return m, nil
+}
+
+// revocations keeps the revocation list the agent staged, when it is
+// newer than the updater's own copy, and returns the updater's copy: a
+// revocation the updater saw once stays, whatever the agent leaves later.
+func (u *Updater) revocations() *keytrust.List {
+	store := &keytrust.Store{Dir: u.Paths.rootTrustDir()}
+	if data, err := u.read(keytrust.ListFile, false, keytrust.MaxList); err == nil {
+		sig, err := u.read(keytrust.SignatureFile, false, 1024)
+		if err == nil {
+			_, err = store.Offer(data, sig)
+		}
+		if err != nil && !errors.Is(err, keytrust.ErrNoRoot) {
+			u.Log.Warn("ignoring the revocation list the agent left", "err", err)
+		}
+	}
+	list, _, _, err := store.Load()
+	if err != nil {
+		u.Log.Warn("the kept revocation list cannot be read", "err", err)
+	}
+	return list
 }
 
 // install puts version m in place and restarts the agent, going back to

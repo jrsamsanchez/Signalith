@@ -1,0 +1,156 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
+package keytrust
+
+import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func newKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pub, priv
+}
+
+// useRoot makes a root key the only one this build trusts.
+func useRoot(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
+	t.Helper()
+	pub, priv := newKey(t)
+	old, oldRevoked := Roots, Revoked
+	Roots, Revoked = []ed25519.PublicKey{pub}, nil
+	t.Cleanup(func() { Roots, Revoked = old, oldRevoked })
+	return pub, priv
+}
+
+func signedList(t *testing.T, priv ed25519.PrivateKey, issued time.Time, ids ...string) ([]byte, []byte) {
+	t.Helper()
+	l := List{Format: Format, Issued: issued}
+	for _, id := range ids {
+		l.Revoked = append(l.Revoked, RevokedKey{ID: id, Note: "test"})
+	}
+	data, err := json.Marshal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data, Sign(priv, data)
+}
+
+func TestBuiltinFilesParse(t *testing.T) {
+	if _, err := ParseKeys(rootKeys); err != nil {
+		t.Fatal(err)
+	}
+	mustIDs(revokedKeys)
+}
+
+func TestVerify(t *testing.T) {
+	_, rootPriv := useRoot(t)
+	_, other := newKey(t)
+	online, _ := newKey(t)
+	now := time.Now()
+	data, sig := signedList(t, rootPriv, now, KeyID(online))
+	if l, err := Verify(Roots, data, sig); err != nil || len(l.Revoked) != 1 || l.Revoked[0].ID != KeyID(online) {
+		t.Fatalf("good list: %+v %v", l, err)
+	}
+	if _, err := Verify(nil, data, sig); err != ErrNoRoot {
+		t.Errorf("no root: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		data, sig []byte
+		want      string
+	}{
+		"signed by another key": {data: data, sig: Sign(other, data), want: "does not match"},
+		"changed":               {data: bytes.Replace(data, []byte(KeyID(online)), []byte("000000000000"), 1), sig: sig, want: "does not match"},
+		"not a signature":       {data: data, sig: []byte("x"), want: "not a Signalith signature"},
+		"too large":             {data: make([]byte, MaxList+1), sig: sig, want: "larger"},
+	} {
+		if _, err := Verify(Roots, tc.data, tc.sig); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
+	}
+	for name, l := range map[string]string{
+		"format":    `{"format":2,"issued":"2026-10-20T00:00:00Z"}`,
+		"no issued": `{"format":1}`,
+		"bad ID":    `{"format":1,"issued":"2026-10-20T00:00:00Z","revoked":[{"id":"../../etc"}]}`,
+	} {
+		if _, err := Verify(Roots, []byte(l), Sign(rootPriv, []byte(l))); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestStoreKeepsNewestList(t *testing.T) {
+	_, rootPriv := useRoot(t)
+	a, _ := newKey(t)
+	b, _ := newKey(t)
+	s := &Store{Dir: filepath.Join(t.TempDir(), "keytrust")}
+	if l, _, _, err := s.Load(); l != nil || err != nil {
+		t.Fatalf("empty store: %+v %v", l, err)
+	}
+	now := time.Now().UTC()
+	d1, s1 := signedList(t, rootPriv, now, KeyID(a))
+	if kept, err := s.Offer(d1, s1); !kept || err != nil {
+		t.Fatalf("first list: %v %v", kept, err)
+	}
+	// The same list again, or an older one, changes nothing: a server
+	// cannot take a revocation back by handing out an old list.
+	d0, s0 := signedList(t, rootPriv, now.Add(-time.Hour))
+	for _, l := range [][2][]byte{{d1, s1}, {d0, s0}} {
+		if kept, err := s.Offer(l[0], l[1]); kept || err != nil {
+			t.Fatalf("not newer: %v %v", kept, err)
+		}
+	}
+	if l, _, _, _ := s.Load(); !RevokedIDs(l)[KeyID(a)] {
+		t.Fatal("the revocation was lost")
+	}
+	d2, s2 := signedList(t, rootPriv, now.Add(time.Hour), KeyID(a), KeyID(b))
+	if kept, err := s.Offer(d2, s2); !kept || err != nil {
+		t.Fatalf("newer list: %v %v", kept, err)
+	}
+	l, data, sig, err := s.Load()
+	if err != nil || !bytes.Equal(data, d2) || !bytes.Equal(sig, s2) || len(RevokedIDs(l)) != 2 {
+		t.Fatalf("load = %+v %v", l, err)
+	}
+	// A bad list is refused and the kept one stays.
+	if _, err := s.Offer(d2, s1); err == nil {
+		t.Fatal("bad signature accepted")
+	}
+	// A kept list changed on disk is not used.
+	if err := os.WriteFile(filepath.Join(s.Dir, ListFile), d1, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.Load(); err == nil {
+		t.Fatal("changed kept list used")
+	}
+}
+
+func TestTrusted(t *testing.T) {
+	root, _ := useRoot(t)
+	online, _ := newKey(t)
+	other, _ := newKey(t)
+	// A list (or the built-in revoked.keys) cannot revoke a root key.
+	Revoked = []string{KeyID(other), KeyID(root)}
+	l := &List{Format: Format, Issued: time.Now(), Revoked: []RevokedKey{{ID: KeyID(online)}, {ID: KeyID(root)}}}
+	ids := RevokedIDs(l)
+	if ids[KeyID(root)] || !ids[KeyID(online)] || !ids[KeyID(other)] {
+		t.Fatalf("revoked = %v", ids)
+	}
+	got := Trusted([]ed25519.PublicKey{online, other, root}, ids)
+	if len(got) != 1 || !got[0].Equal(root) {
+		t.Fatalf("trusted = %d keys, want only the root", len(got))
+	}
+	if got := Trusted([]ed25519.PublicKey{online}, RevokedIDs()); len(got) != 2 {
+		t.Fatalf("trusted with no list = %d keys, want the online key and the root", len(got))
+	}
+}

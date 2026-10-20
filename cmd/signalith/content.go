@@ -6,17 +6,22 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 const contentUsage = `usage:
@@ -28,11 +33,22 @@ const contentUsage = `usage:
   signalith content bundle  -packs DIR -o FILE      make a bundle from a packs folder (internal/detect/packs)
   signalith content sign    FILE                    sign a bundle with the key in SIGNALITH_CONTENT_KEY, writing FILE.sig
   signalith content pubkey                          print the public key of SIGNALITH_CONTENT_KEY
+  signalith content revocations [-c file]           the signing keys revoked on this server
+  signalith content import-revocations [-c file] <list>
+                                                    keep a signed revocation list (its signature is <list>.sig),
+                                                    such as on a computer without internet access
+  signalith content revoke -o FILE [-from FILE] [-note TEXT] <key ID>...
+                                                    write a revocation list signed with the root key in
+                                                    SIGNALITH_ROOT_KEY, adding to the list in -from
 
 Content updates bring newer SigmaHQ and Splunk rules, tested and signed by
 the Signalith project, without a new Signalith release. The Detections page
 checks for them and takes uploads; restart Signalith after install or
 remove here for a running server to use the change.
+
+A signing key that leaked is revoked with a list signed by the project's
+offline root key; servers download it next to the content updates and hand
+it to their agents. See docs/key-management.md.
 `
 
 func cmdContent(args []string) error { return runContent(args, os.Stdout) }
@@ -47,15 +63,25 @@ func runContent(args []string, out io.Writer) error {
 	fs.SetOutput(out)
 	path := configFlag(fs)
 	packs := fs.String("packs", "internal/detect/packs", "packs folder (bundle)")
-	output := fs.String("o", "", "bundle file to write (bundle)")
+	output := fs.String("o", "", "file to write (bundle, revoke)")
+	from := fs.String("from", "", "revocation list to add to (revoke)")
+	note := fs.String("note", "", "why the keys are revoked (revoke)")
 	rest := parseInterleaved(fs, args)
+	var revocations *keytrust.Store
 	dir := func() (string, error) {
 		useServiceEnv(*path, out)
 		c, err := config.Load(*path)
 		if err != nil {
 			return "", err
 		}
+		revocations = &keytrust.Store{Dir: filepath.Join(c.StateDir(), "keytrust")}
 		return filepath.Join(c.DetectionsDir(), "content"), nil
+	}
+	// trusted are the content keys this server trusts: built in, plus the
+	// root keys, less the keys revoked.
+	trusted := func() ([]ed25519.PublicKey, error) {
+		list, _, _, err := revocations.Load()
+		return keytrust.Trusted(content.TrustedKeys(), keytrust.RevokedIDs(list)), err
 	}
 	switch cmd {
 	case "keygen":
@@ -115,7 +141,11 @@ func runContent(args []string, out io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(out, "Rules built into this Signalith: %s\n", detect.BuiltinContentVersion())
-		b, err := content.Installed(d, content.TrustedKeys())
+		keys, err := trusted()
+		if err != nil {
+			fmt.Fprintf(out, "The kept revocation list cannot be read: %v\n", err)
+		}
+		b, err := content.Installed(d, keys)
 		switch {
 		case err != nil:
 			fmt.Fprintf(out, "Installed update in %s cannot be used: %v\n", d, err)
@@ -130,7 +160,7 @@ func runContent(args []string, out io.Writer) error {
 				fmt.Fprintln(out, "It is older than the rules built into Signalith, which are used.")
 			}
 		}
-		if len(content.TrustedKeys()) == 0 {
+		if len(keys) == 0 {
 			fmt.Fprintln(out, "This build has no key to check content updates with, so it cannot take any.")
 		}
 		return nil
@@ -150,7 +180,7 @@ func runContent(args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("the signature: %w", err)
 		}
-		u := &content.Updater{Dir: d}
+		u := &content.Updater{Dir: d, Revocations: revocations}
 		u.Start()
 		st, err := u.Install(data, sig)
 		if errors.Is(err, content.ErrNotNewer) {
@@ -166,6 +196,48 @@ func runContent(args []string, out io.Writer) error {
 		}
 		fmt.Fprintln(out, " Restart Signalith to use it, or upload it on the Detections page instead.")
 		return nil
+	case "revocations":
+		if _, err := dir(); err != nil {
+			return err
+		}
+		return printRevocations(out, revocations)
+	case "import-revocations":
+		if len(rest) != 1 {
+			return errors.New("name the revocation list to import; its signature must be next to it, ending in .sig")
+		}
+		d, err := dir()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(rest[0])
+		if err != nil {
+			return err
+		}
+		sig, err := os.ReadFile(rest[0] + ".sig")
+		if err != nil {
+			return fmt.Errorf("the signature: %w", err)
+		}
+		kept, err := revocations.Offer(data, sig)
+		if err != nil {
+			return err
+		}
+		if !kept {
+			fmt.Fprintln(out, "Nothing to do: the list kept here is as new or newer.")
+			return nil
+		}
+		fmt.Fprintln(out, "Revocation list kept.")
+		if keys, err := trusted(); err == nil {
+			if _, err := content.Installed(d, keys); err != nil {
+				if err := content.Remove(d); err != nil {
+					return err
+				}
+				fmt.Fprintln(out, "The installed content update was signed with a revoked key and is removed.")
+			}
+		}
+		fmt.Fprintln(out, "Restart Signalith for a running server to use it; it hands the list to its agents.")
+		return printRevocations(out, revocations)
+	case "revoke":
+		return writeRevocations(out, rest, *output, *from, *note)
 	case "remove":
 		d, err := dir()
 		if err != nil {
@@ -178,4 +250,105 @@ func runContent(args []string, out io.Writer) error {
 		return nil
 	}
 	return fmt.Errorf("unknown content command %q\n\n%s", cmd, contentUsage)
+}
+
+// printRevocations lists the keys revoked on this server.
+func printRevocations(out io.Writer, store *keytrust.Store) error {
+	list, _, _, err := store.Load()
+	if err != nil {
+		return err
+	}
+	if len(keytrust.Roots) == 0 {
+		fmt.Fprintln(out, "This build has no root key, so it cannot take revocation lists.")
+	}
+	if list != nil {
+		fmt.Fprintf(out, "Revocation list issued %s.\n", list.Issued.UTC().Format(time.RFC3339))
+	}
+	ids := keytrust.RevokedIDs(list)
+	if len(ids) == 0 {
+		fmt.Fprintln(out, "No signing keys are revoked.")
+		return nil
+	}
+	fmt.Fprintln(out, "Revoked signing keys:")
+	for _, id := range slices.Sorted(maps.Keys(ids)) {
+		why := "built in"
+		if list != nil {
+			for _, r := range list.Revoked {
+				if r.ID == id {
+					why = r.Note
+				}
+			}
+		}
+		fmt.Fprintf(out, "  %s  %s\n", id, why)
+	}
+	return nil
+}
+
+var keyIDRE = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// writeRevocations writes a revocation list with the keys in ids added to
+// the one in from, signed with the root key in SIGNALITH_ROOT_KEY.
+func writeRevocations(out io.Writer, ids []string, output, from, note string) error {
+	if output == "" {
+		return errors.New("-o is required")
+	}
+	if len(ids) == 0 {
+		return errors.New("name the key IDs to revoke (the first word of a .sig file)")
+	}
+	priv, err := content.ParsePrivateKey(os.Getenv("SIGNALITH_ROOT_KEY"))
+	if err != nil {
+		return fmt.Errorf("SIGNALITH_ROOT_KEY: %w", err)
+	}
+	root := priv.Public().(ed25519.PublicKey)
+	list := keytrust.List{Format: keytrust.Format}
+	if from != "" {
+		data, err := os.ReadFile(from)
+		if err != nil {
+			return err
+		}
+		sig, err := os.ReadFile(from + ".sig")
+		if err != nil {
+			return fmt.Errorf("the signature of %s: %w", from, err)
+		}
+		old, err := keytrust.Verify([]ed25519.PublicKey{root}, data, sig)
+		if err != nil {
+			return fmt.Errorf("%s: %w", from, err)
+		}
+		list = *old
+	}
+	for _, id := range ids {
+		switch {
+		case !keyIDRE.MatchString(id):
+			return fmt.Errorf("%q is not a key ID: a key ID is 12 hex digits, the first word of a .sig file", id)
+		case id == keytrust.KeyID(root):
+			return errors.New("a root key cannot be revoked by a list it signs; ship a release without it instead")
+		case slices.ContainsFunc(list.Revoked, func(r keytrust.RevokedKey) bool { return r.ID == id }):
+			continue
+		}
+		list.Revoked = append(list.Revoked, keytrust.RevokedKey{ID: id, Note: note})
+	}
+	// Newer than the list it adds to, or servers keep the old one.
+	prev := list.Issued
+	if list.Issued = time.Now().UTC().Truncate(time.Second); !list.Issued.After(prev) {
+		list.Issued = prev.Add(time.Second)
+	}
+	data, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if _, err := keytrust.Verify([]ed25519.PublicKey{root}, data, keytrust.Sign(priv, data)); err != nil {
+		return err
+	}
+	if err := os.WriteFile(output, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(output+".sig", keytrust.Sign(priv, data), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s and %s.sig written with root key %s: %d keys revoked.\n", output, output, keytrust.KeyID(root), len(list.Revoked))
+	if !slices.ContainsFunc(keytrust.Roots, func(k ed25519.PublicKey) bool { return keytrust.KeyID(k) == keytrust.KeyID(root) }) {
+		fmt.Fprintln(out, "Warning: this build does not trust that root key; servers will refuse the list.")
+	}
+	return nil
 }

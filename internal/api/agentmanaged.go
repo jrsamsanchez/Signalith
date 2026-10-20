@@ -68,6 +68,9 @@ func (s *Server) agentPrograms() *clusterinstall.Programs {
 		if s.AgentPrograms == nil {
 			s.AgentPrograms = &clusterinstall.Programs{}
 		}
+		if s.AgentPrograms.Revocations == nil {
+			s.AgentPrograms.Revocations = s.Revocations
+		}
 	})
 	return s.AgentPrograms
 }
@@ -393,8 +396,14 @@ func (s *Server) handleAgentManagedManifest(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent programs' manifest"))
 		return
 	}
+	ans := agentproto.ManifestAnswer{Manifest: string(data), Signature: string(sig)}
+	if s.Revocations != nil {
+		if l, ldata, lsig, err := s.Revocations.Load(); err == nil && l != nil {
+			ans.Revocation, ans.RevocationSignature = string(ldata), string(lsig)
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, agentproto.ManifestAnswer{Manifest: string(data), Signature: string(sig)})
+	writeJSON(w, http.StatusOK, ans)
 }
 
 // agentOsquery is the osquery part of the configuration of an agent

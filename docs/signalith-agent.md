@@ -357,6 +357,9 @@ How it works, and why it is safe:
    outside the agent's fenced-in service (the agent itself cannot change its own
    program); on Windows a copy of the agent. The updater checks the signature and the
    SHA-256 again itself, keeps the version before, and restarts the agent.
+   Neither takes a manifest signed with a revoked key: the server hands each agent
+   its [revocation list](key-management.md#revocation-lists), and the agent and the
+   updater each keep the newest one they have seen.
 4. If the new version does not report within 3 minutes, or does not keep running, the
    updater puts the version before back and restarts it. The computer's row on the
    **Endpoints** page then says the update failed, with the reason.

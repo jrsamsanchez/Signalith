@@ -43,6 +43,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
@@ -279,6 +280,9 @@ type Server struct {
 	// (clusterinstall.DefaultProgramsDir).
 	AgentPrograms     *clusterinstall.Programs
 	agentProgramsOnce sync.Once
+	// Revocations is the newest signing key revocation list this server
+	// has, which agents are handed with the manifest; nil hands none.
+	Revocations *keytrust.Store
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
