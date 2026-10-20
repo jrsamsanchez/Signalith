@@ -2,7 +2,9 @@
 
 Signalith logs every change an admin or the server makes as an **audit line**: sign-ins
 and failed sign-ins, users and roles, settings, agent tokens, response actions and playbooks, retention policies and
-what retention deleted, archived or restored. It also logs every [search](#searches) someone runs. On a server of its own these lines are in
+what retention deleted, archived or restored, triage of findings, investigation cases,
+detections and their exceptions, and threat intel (see [Triage, cases, detections and
+threat intel](#triage-cases-detections-and-threat-intel)). It also logs every [search](#searches) someone runs. On a server of its own these lines are in
 the server's log, marked `audit=true`.
 
 When servers share one OpenSearch as a cluster (see
@@ -13,7 +15,8 @@ server also writes its audit lines to OpenSearch, and the **Audit** tab of **Set
 ## The Audit page
 
 Filter by time range, server, user, words, and named actions (data retention, shared
-settings, lost audit records, audit checkpoints); the newest lines come first, and **Show older** pages back. Each line
+settings, searches, findings, cases, detections, threat intel, lost audit records, audit
+checkpoints); the newest lines come first, and **Show older** pages back. Each line
 shows when it happened, on which server, who did it, what it did and to what, and from
 which address. The **Audit** buttons on the Users and Settings pages open the page searching
 for their kind of change. **Check integrity** checks that no line in the time range (of the
@@ -42,6 +45,35 @@ The query text can itself hold personal data or a secret someone typed, such as 
 name or a password they searched for, so these lines are kept like every other audit line:
 only the provider's admins see them (tenant admins do not), they are chained and signed,
 and the **Audit records** retention policy decides how long they are kept.
+
+## Triage, cases, detections and threat intel
+
+Who closed a finding, stopped a detection from alerting or added an indicator is
+written as an audit line, with the old and new values where there are any, so it is
+chained and signed like every other line and not only kept in the finding's or case's own
+history. Pick **Findings**, **Cases**, **Detections** or **Threat intel** under actions on
+the Audit page to see only these lines (or `action=finding.` and so on in the API). Each
+action and what its line holds:
+
+| Action | When | Holds |
+| --- | --- | --- |
+| `finding.update` | A finding's status, owner, severity or disposition changed, or a comment was added | the finding (`target`), its detection, `changes` (such as `status: new -> closed`), `commented` |
+| `finding.bulk_update` | Several findings changed at once | one line for the request: the `update`, how many were `updated` and `failed`, and the first 50 `findings` |
+| `finding.suppress` | **Don't alert on this again** from a finding | the detection (`target`), the exception, the `finding`, its `match`, `until` and `comment`; the finding's own change is a `finding.update` line |
+| `detection.exception_add`, `detection.exception_remove` | An exception added to or removed from a detection | the detection (`target`), the exception, its `match` and `until`; on removal also who added it (`added_by`) |
+| `detection.create`, `detection.save`, `detection.delete`, `detection.enable` | A detection created, saved, deleted (or its override removed), or turned on or off | the detection (`target`), whether it is `enabled`; for several at once, the `count` and the first 50 |
+| `case.create`, `case.update` | An investigation case created or changed | the case (`target`); its title, severity, owner and linked findings when created; `changes` (status, owner, severity, title; for the description and resolution only that they were edited) and `commented` when changed |
+| `case.close_findings` | A case closed with its findings | the case, the `status` and `disposition` set, how many were `closed` and `failed`, and the first 50 |
+| `case.finding_add`, `case.finding_remove` | Findings linked to or taken out of a case | the case and the findings |
+| `case.entry_add`, `case.entry_remove` | A note, search or event added to or removed from a case's timeline | the case, the `entry` and its `kind`; on removal also who added it and when (`added_by`, `added`) and its text or query (up to 500 characters each) |
+| `case.entity_add` | An entity added to a case | the case and the `entity` |
+| `intel.indicator_add`, `intel.indicator_delete` | An indicator added by hand or deleted | the value (`target`), its `type`, `source`, `weight`, `expires`, `tags` and `indicator` ID |
+| `intel.indicator_upload` | Indicators uploaded from a file | how many, how many of each type, and the first 20 values |
+| `intel.feed_add`, `intel.feed_change`, `intel.feed_delete` | A feed added (on the page or from the catalog), changed or deleted | the `feed`, its `url`, `kind`, `collection`, `format`, `type`, `interval`, `max_age`, `weight` and `enabled`; a change also lists its `changes` with old and new values; a deletion how many indicators went with it |
+| `intel.feed_test`, `intel.feed_refresh` | A feed tested, or downloaded now by hand | the feed or its `url`, and how many indicators it found |
+
+A feed's `url` is logged without its user name, password and query string, which can hold
+an API key, and a feed's password and headers are only said to have changed, never logged.
 
 ## How the lines are kept
 

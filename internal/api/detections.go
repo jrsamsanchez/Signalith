@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -218,7 +220,7 @@ func (s *Server) handleCreateDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection created", "detection", d.ID, "by", userOf(r))
+	s.audit(r, "detection.create: detection created", "target", d.ID, "enabled", d.Enabled)
 	s.detectionSaved(w, http.StatusCreated, d.ID)
 }
 
@@ -244,7 +246,7 @@ func (s *Server) handlePutDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection saved", "detection", d.ID, "enabled", d.Enabled, "by", userOf(r))
+	s.audit(r, "detection.save: detection saved", "target", d.ID, "enabled", d.Enabled)
 	s.detectionSaved(w, http.StatusOK, d.ID)
 }
 
@@ -257,7 +259,7 @@ func (s *Server) handleDeleteDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection deleted", "detection", id, "by", userOf(r))
+	s.audit(r, "detection.delete: detection deleted", "target", id)
 	// Deleting an override brings the built-in back; return what remains.
 	if d, err := s.Detections.Get(id); err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"deleted": false, "reverted": d})
@@ -412,7 +414,8 @@ func (s *Server) handleEnableDetections(w http.ResponseWriter, r *http.Request) 
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled], "count", len(req.IDs), "by", userOf(r))
+	s.audit(r, "detection.enable: detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled],
+		"enabled", req.Enabled, "count", len(req.IDs), "detections", auditIDs(req.IDs))
 	writeJSON(w, http.StatusOK, map[string]any{"changed": len(req.IDs), "enabled": req.Enabled})
 }
 
@@ -504,9 +507,46 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 // someone else changed the finding meanwhile, so no comment or status
 // change made at the same moment is lost.
 func (s *Server) updateFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
-	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
-		return f.Apply(u, author, time.Now().UTC()), nil
+	f, _, err := s.changeFinding(ctx, id, u, author)
+	return f, err
+}
+
+// changeFinding is updateFinding that also returns what changed, for the
+// audit line.
+func (s *Server) changeFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, []findings.Change, error) {
+	var changes []findings.Change
+	f, err := s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		n := len(f.History)
+		changed := f.Apply(u, author, time.Now().UTC())
+		changes = slices.Clone(f.History[n:])
+		return changed, nil
 	})
+	return f, changes, err
+}
+
+// describeHistory writes history entries for an audit line, such as
+// "status: new -> closed, owner: (none) -> bob".
+func describeHistory(ch []findings.Change) string {
+	parts := make([]string, 0, len(ch))
+	for _, c := range ch {
+		from, to := c.From, c.To
+		if from == "" {
+			from = "(none)"
+		}
+		if to == "" {
+			to = "(none)"
+		}
+		parts = append(parts, c.Field+": "+safelog.Cut(from, 200)+" -> "+safelog.Cut(to, 200))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// auditIDs lists IDs for an audit line, the first 50 of them.
+func auditIDs(ids []string) string {
+	if len(ids) > 50 {
+		return strings.Join(ids[:50], ",") + fmt.Sprintf(" and %d more", len(ids)-50)
+	}
+	return strings.Join(ids, ",")
 }
 
 // errFindingBusy is what an analyst sees when other changes to the same
@@ -526,7 +566,7 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	f, err := s.updateFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	f, changes, err := s.changeFinding(r.Context(), r.PathValue("id"), u, userOf(r))
 	if errors.Is(err, findings.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -538,6 +578,10 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
+	}
+	if len(changes) > 0 || strings.TrimSpace(u.Comment) != "" {
+		s.audit(r, "finding.update: finding changed", "target", f.ID, "detection", f.DetectionID,
+			"changes", describeHistory(changes), "commented", strings.TrimSpace(u.Comment) != "")
 	}
 	writeJSON(w, http.StatusOK, f)
 }
@@ -563,15 +607,37 @@ func (s *Server) handleBulkFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	failed := map[string]string{}
-	updated := 0
+	var updated []string
 	for _, id := range req.IDs {
 		if _, err := s.updateFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
 			failed[id] = err.Error()
 			continue
 		}
-		updated++
+		updated = append(updated, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"updated": updated, "failed": failed})
+	// One line for the whole request: the update asked for, and which
+	// findings took it.
+	s.audit(r, "finding.bulk_update: findings changed together", "update", describeUpdate(req.Update),
+		"updated", len(updated), "failed", len(failed), "findings", auditIDs(updated))
+	writeJSON(w, http.StatusOK, map[string]any{"updated": len(updated), "failed": failed})
+}
+
+// describeUpdate writes a triage update for an audit line, such as
+// "status=closed, disposition=false_positive, comment".
+func describeUpdate(u findings.Update) string {
+	var parts []string
+	for _, f := range []struct {
+		name string
+		v    *string
+	}{{"status", u.Status}, {"owner", u.Owner}, {"severity", u.Severity}, {"disposition", u.Disposition}} {
+		if f.v != nil {
+			parts = append(parts, f.name+"="+*f.v)
+		}
+	}
+	if strings.TrimSpace(u.Comment) != "" {
+		parts = append(parts, "comment")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // handleCreateFinding raises a finding by hand, for example from a search
