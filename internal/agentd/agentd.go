@@ -177,7 +177,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-time.After(wait):
 		}
 		if err := a.sync(ctx); err != nil {
-			a.refused(errors.Is(err, errTokenRefused))
+			// Only a refusal counts; any other failure (the server is
+			// down, a timeout) leaves the count and the collectors as
+			// they are, so a revoked token that also meets outages
+			// still stops them.
+			if errors.Is(err, errTokenRefused) {
+				a.refused(true)
+			}
 			if a.idle {
 				a.Log.Warn("Signalith refuses this computer's token; the collectors stay stopped until it is accepted", "err", err)
 				a.setConfigErr(err.Error() + "; collectors stopped until it is accepted")
@@ -238,8 +244,8 @@ func (a *Agent) reportSoon() {
 	}
 }
 
-// refused counts a refusal of the token, or (no) an answer that was not
-// one, and stops or starts the collectors to match.
+// refused counts a refusal of the token, or (no) an accepted answer, and
+// stops or starts the collectors to match.
 func (a *Agent) refused(yes bool) {
 	if !yes {
 		a.refusals = 0
@@ -617,7 +623,12 @@ func (a *Agent) sendStatus(ctx context.Context) {
 	// The health file first: the updater takes a new status.json as
 	// this run's, then reads the health file for whether it reached
 	// Signalith (see Updater.reported).
-	_ = writeFile(a.Paths.HealthFile(), []byte(health), 0o644)
+	if err := writeFile(a.Paths.HealthFile(), []byte(health), 0o644); err != nil {
+		// Without this run's health file, a new status.json would
+		// vouch for the one before it.
+		a.Log.Warn("could not write the health file", "err", err)
+		return
+	}
 	_ = writeFile(a.Paths.StatusFile(), b, 0o600)
 }
 

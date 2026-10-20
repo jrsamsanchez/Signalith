@@ -102,14 +102,21 @@ type fakeServer struct {
 	statuses []agentproto.Status
 	asks     []*http.Request
 	notMod   int
-	// revoked answers every request as for a revoked token.
+	// revoked answers every request as for a revoked token, and down
+	// (when set) answers 503 instead, as a server that is starting.
 	revoked bool
+	down    bool
 }
 
 func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.asks = append(f.asks, r)
+	if f.down {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":"starting"}`)
+		return
+	}
 	if f.revoked {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"error":"This token was revoked.","code":"token_revoked"}`)
@@ -292,7 +299,22 @@ func TestAgentStopsCollectorsWhileTokenIsRefused(t *testing.T) {
 	if _, err := os.Stat(p.osqueryFlags()); !os.IsNotExist(err) {
 		t.Errorf("osquery's flags are still there: %v", err)
 	}
+	// A server that cannot answer is not an accepted token: the
+	// collectors stay stopped.
 	fs.mu.Lock()
+	fs.down = true
+	asked := len(fs.asks)
+	fs.mu.Unlock()
+	waitFor(t, "the agent to meet the 503s", func() bool {
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		return len(fs.asks) >= asked+4
+	})
+	if h, _ := os.ReadFile(p.HealthFile()); !strings.Contains(string(h), "fluentbit=off") || !strings.Contains(string(h), "osquery=off") {
+		t.Errorf("a 503 started the collectors again: %q", h)
+	}
+	fs.mu.Lock()
+	fs.down = false
 	fs.revoked = false
 	fs.mu.Unlock()
 	waitFor(t, "Fluent Bit running again with the new configuration", func() bool {
