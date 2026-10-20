@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
 var (
@@ -58,6 +59,30 @@ type IntelStore interface {
 	DeleteSource(ctx context.Context, source string) (int, error)
 }
 
+// VulnStore keeps the scan results the Vulnerabilities page shows
+// (vulnscan.Store). The sample's are the hosts of the network VulnTarget:
+// saving none removes them.
+type VulnStore interface {
+	EnsureIndex(ctx context.Context) error
+	SaveHosts(ctx context.Context, targetID string, hosts []*vulnscan.Host) error
+}
+
+// saveVulnHosts makes the sample's scan results hosts, or none. They are
+// extra to the sample's events, so one that fails is logged and the load
+// or removal goes on: the next one tries again.
+func (l *Loader) saveVulnHosts(ctx context.Context, hosts []*vulnscan.Host) {
+	if l.Vulns == nil {
+		return
+	}
+	err := l.Vulns.EnsureIndex(ctx)
+	if err == nil {
+		err = l.Vulns.SaveHosts(ctx, VulnTarget, hosts)
+	}
+	if err != nil {
+		l.log().Warn("could not update the sample's scan results on the Vulnerabilities page", "hosts", len(hosts), "err", err)
+	}
+}
+
 type intelSyncer interface {
 	Sync(ctx context.Context) (bool, error)
 }
@@ -75,6 +100,7 @@ type Loader struct {
 	Bulk     ingest.Bulker
 	OS       OSClient
 	Intel    IntelStore
+	Vulns    VulnStore
 	Assets   *assets.Store
 	Library  *detect.Library
 	Engine   *search.Engine
@@ -301,6 +327,8 @@ func (l *Loader) Load(ctx context.Context, size Size, prog ProgressFn) (res *Sta
 		}
 		st.Assets, st.Identities = len(d.Assets), len(d.Identities)
 	}
+	// The scan results, for the Vulnerabilities page.
+	l.saveVulnHosts(ctx, d.VulnHosts)
 	_ = j.save(st)
 
 	if err := ctx.Err(); err != nil {
@@ -611,6 +639,7 @@ func (l *Loader) removeOwn(ctx context.Context, r *reporter) error {
 			return fmt.Errorf("removing sample asset and identity context: %w", err)
 		}
 	}
+	l.saveVulnHosts(ctx, nil)
 	return nil
 }
 

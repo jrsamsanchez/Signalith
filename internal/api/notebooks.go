@@ -106,6 +106,11 @@ type rights struct {
 func rightsOf(r *http.Request, n *notebooks.Notebook) rights {
 	p := principalOf(r)
 	analyst, admin := p != nil && p.Role.AtLeast(users.Analyst), p != nil && p.Role.AtLeast(users.Admin)
+	// The demo's visitor is an analyst who only reads: a run of theirs
+	// is never saved, even into a notebook shared for editing.
+	if p != nil && p.Source == sourceDemo {
+		analyst = false
+	}
 	return rights{
 		Edit:   n.CanEdit(userOf(r), analyst, admin),
 		Manage: n.CanManage(userOf(r), admin),
