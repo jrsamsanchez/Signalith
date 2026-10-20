@@ -6,10 +6,12 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/keytrust"
@@ -27,19 +29,25 @@ func TestContentRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A second root key, not the one signing, cannot be revoked either.
+	otherRoot, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	old := keytrust.Roots
-	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	keytrust.Roots = []ed25519.PublicKey{rootPub, otherRoot}
 	t.Cleanup(func() { keytrust.Roots = old })
 	t.Setenv("SIGNALITH_ROOT_KEY", priv)
 
 	list := filepath.Join(t.TempDir(), keytrust.ListFile)
 	var out strings.Builder
 	for args, want := range map[string]string{
-		"revoke a1b2c3d4e5f6":                               "-o is required",
-		"revoke -o " + list:                                 "name the key IDs",
-		"revoke -o " + list + " nothex":                     "not a key ID",
-		"revoke -o " + list + " " + keytrust.KeyID(rootPub): "a root key cannot be revoked",
-		"import-revocations":                                "name the revocation list",
+		"revoke a1b2c3d4e5f6":                                 "-o is required",
+		"revoke -o " + list:                                   "name the key IDs",
+		"revoke -o " + list + " nothex":                       "not a key ID",
+		"revoke -o " + list + " " + keytrust.KeyID(rootPub):   "is a root key",
+		"revoke -o " + list + " " + keytrust.KeyID(otherRoot): "is a root key",
+		"import-revocations":                                  "name the revocation list",
 	} {
 		if err := runContent(strings.Fields(args), &out); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v, want %q", args, err, want)
@@ -82,5 +90,49 @@ func TestContentRevoke(t *testing.T) {
 	}
 	if l, _, _, err := (&keytrust.Store{Dir: filepath.Join(state, "keytrust")}).Load(); err != nil || l == nil {
 		t.Fatalf("kept list: %+v %v", l, err)
+	}
+}
+
+// A list made -from one issued in the future carries that time, with a
+// warning.
+func TestContentRevokeFutureList(t *testing.T) {
+	priv, pub, err := content.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPub, err := base64.StdEncoding.DecodeString(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = old })
+	t.Setenv("SIGNALITH_ROOT_KEY", priv)
+	rootPriv, err := content.ParsePrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := filepath.Join(t.TempDir(), keytrust.ListFile)
+	data, err := json.Marshal(keytrust.List{Format: keytrust.Format, Issued: time.Now().Add(48 * time.Hour).UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(from, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(from+".sig", keytrust.Sign(rootPriv, data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	list := filepath.Join(t.TempDir(), keytrust.ListFile)
+	if err := runContent([]string{"revoke", "-o", list, "-from", from, "a1b2c3d4e5f6"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "in the future") {
+		t.Fatalf("no warning:\n%s", out.String())
+	}
+	out.Reset()
+	if err := runContent([]string{"revoke", "-o", list, "a1b2c3d4e5f6"}, &out); err != nil || strings.Contains(out.String(), "in the future") {
+		t.Fatalf("a list issued now: %v\n%s", err, out.String())
 	}
 }

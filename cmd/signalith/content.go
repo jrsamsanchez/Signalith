@@ -320,8 +320,8 @@ func writeRevocations(out io.Writer, ids []string, output, from, note string) er
 		switch {
 		case !keyIDRE.MatchString(id):
 			return fmt.Errorf("%q is not a key ID: a key ID is 12 hex digits, the first word of a .sig file", id)
-		case id == keytrust.KeyID(root):
-			return errors.New("a root key cannot be revoked by a list it signs; ship a release without it instead")
+		case id == keytrust.KeyID(root) || slices.ContainsFunc(keytrust.Roots, func(k ed25519.PublicKey) bool { return keytrust.KeyID(k) == id }):
+			return fmt.Errorf("%s is a root key, which a list cannot revoke; ship a release without it instead", id)
 		case slices.ContainsFunc(list.Revoked, func(r keytrust.RevokedKey) bool { return r.ID == id }):
 			continue
 		}
@@ -332,6 +332,9 @@ func writeRevocations(out io.Writer, ids []string, output, from, note string) er
 	if list.Issued = time.Now().UTC().Truncate(time.Second); !list.Issued.After(prev) {
 		list.Issued = prev.Add(time.Second)
 	}
+	// A list issued in the future (made -from one) makes every list after
+	// it carry that time on, so each must be made -from the one before.
+	future := list.Issued.After(time.Now().Add(time.Hour))
 	data, err := json.MarshalIndent(list, "", "  ")
 	if err != nil {
 		return err
@@ -347,6 +350,9 @@ func writeRevocations(out io.Writer, ids []string, output, from, note string) er
 		return err
 	}
 	fmt.Fprintf(out, "%s and %s.sig written with root key %s: %d keys revoked.\n", output, output, keytrust.KeyID(root), len(list.Revoked))
+	if future {
+		fmt.Fprintf(out, "Warning: this list is issued %s, in the future; make every later list with -from, or servers keep this one.\n", list.Issued.Format(time.RFC3339))
+	}
 	if !slices.ContainsFunc(keytrust.Roots, func(k ed25519.PublicKey) bool { return keytrust.KeyID(k) == keytrust.KeyID(root) }) {
 		fmt.Fprintln(out, "Warning: this build does not trust that root key; servers will refuse the list.")
 	}
