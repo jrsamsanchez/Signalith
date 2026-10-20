@@ -6,6 +6,7 @@
 package agentd
 
 import (
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -29,5 +30,17 @@ func TestAgentJobCapsCollectorMemory(t *testing.T) {
 	}
 	if info.BasicLimitInformation.LimitFlags&windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE == 0 {
 		t.Error("the job no longer ends the collectors with the agent")
+	}
+}
+
+// TestMemoryHint: a collector Windows reported at its memory limit says
+// so once when it stops (ASI15-01).
+func TestMemoryHint(t *testing.T) {
+	memoryHit.Store(uint32(4242), true)
+	if h := memoryHint(4242); !strings.Contains(h, "512 MB") {
+		t.Errorf("hint = %q", h)
+	}
+	if h := memoryHint(4242); h != "" {
+		t.Errorf("hint again = %q", h)
 	}
 }

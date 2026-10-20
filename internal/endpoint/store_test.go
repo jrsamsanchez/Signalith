@@ -246,14 +246,19 @@ func TestCapRows(t *testing.T) {
 }
 
 // A live query may not read the tables osquery runs with off (ASI-12),
-// but may name them in a string.
+// but may name them in a single-quoted string; in double quotes SQLite
+// reads a name.
 func TestLiveQueryRefusesDisabledTables(t *testing.T) {
 	for sql, refused := range map[string]bool{
 		"SELECT result FROM curl WHERE url = 'http://169.254.169.254/'":   true,
 		"select * from Curl_Certificate where hostname='example.com:443'": true,
 		"select p.name from processes p join `curl` c":                    true,
 		"select * from processes where name = 'curl'":                     false,
-		`select * from processes where cmdline like "%curl_certificate%"`: false,
+		`select * from "curl" where url='http://169.254.169.254/'`:        true,
+		`select * from "Curl_certificate"`:                                true,
+		"select * from [curl]":                                            true,
+		`select * from processes where cmdline like "%curl_certificate%"`: true,
+		"select * from processes where cmdline like '%curl_certificate%'": false,
 		"select * from curling_scores":                                    false,
 		"select * from processes":                                         false,
 	} {

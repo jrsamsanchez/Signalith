@@ -873,7 +873,7 @@ func (s *Store) NewLiveQuery(ctx context.Context, sql string, targets []string, 
 	case len(targets) > maxLiveTargets:
 		return nil, inputErrorf("a live query can go to at most %d hosts", maxLiveTargets)
 	case readsDisabledTable(sql):
-		return nil, inputErrorf("osquery's curl and curl_certificate tables are off on every host, since they make the computer fetch any address")
+		return nil, inputErrorf("osquery's curl and curl_certificate tables are off on every host, since they make the computer fetch any address (to match the word curl in text, put it in single quotes)")
 	}
 	b := make([]byte, 9)
 	if _, err := rand.Read(b); err != nil {
@@ -893,8 +893,9 @@ func (s *Store) NewLiveQuery(ctx context.Context, sql string, targets []string, 
 	return q, nil
 }
 
-// quoted is a string in SQL, in single or double quotes.
-var quoted = regexp.MustCompile(`'(?:[^']|'')*'|"(?:[^"]|"")*"`)
+// quoted is a string in SQL: single quotes only, since SQLite reads a
+// double-quoted word as a name ("curl" is the table).
+var quoted = regexp.MustCompile(`'(?:[^']|'')*'`)
 
 // disabledTable names a table osquery runs with off (see
 // agentproto.OsqueryDisabledTables).
@@ -903,8 +904,8 @@ var disabledTable = regexp.MustCompile(`(?i)\bcurl(?:_certificate)?\b`)
 // readsDisabledTable says whether sql names a table every host runs
 // osquery with off (ASI-12). The agent turns them off on the host; this
 // says so before the query is sent, and covers an osquery set up by hand
-// before the flag. A table named in a string (processes where name =
-// 'curl') does not count.
+// before the flag. A table named in a single-quoted string (processes
+// where name = 'curl') does not count; one in double quotes does.
 func readsDisabledTable(sql string) bool {
 	return disabledTable.MatchString(quoted.ReplaceAllString(sql, "''"))
 }
