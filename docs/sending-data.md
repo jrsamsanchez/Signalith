@@ -106,8 +106,8 @@ or detection covers every source of the same kind.
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Splunk HEC senders ([Splunk HEC senders](hec.md)) | by sourcetype: Authentication, Web and the cloud sources' models; Other for the rest |
-| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
-| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
+| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; Modbus, DNP3 and the ICSNPP industrial protocol logs in Industrial; other Zeek logs in Other |
+| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; modbus, dnp3 and enip in Industrial; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
 | A log you saved a parser for on **Add data → Any other log** ([Any other log](custom-logs.md)) | The data model you chose, with the parser's sourcetype |
 | Anything else | Other (searchable by text and fields) |
@@ -151,7 +151,7 @@ limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, 
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
 1,000 new names per daily index each time Signalith starts. With several servers, those
 1,000 are shared among the servers that stored events in the last 10 minutes (at least
-100 each), and no server adds new names to a day whose index already has 2,000 fields
+100 each), and no server adds new names to a day whose index already has 2,100 fields
 (see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in

@@ -1,0 +1,3 @@
+{"ts":1791720200.1,"uid":"CmbRead1aBcDeFgHi","id.orig_h":"192.168.50.11","id.orig_p":50211,"id.resp_h":"192.168.50.41","id.resp_p":502,"tid":17,"unit":1,"func":"READ_HOLDING_REGISTERS","pdu_type":"REQ"}
+{"ts":1791720201.2,"uid":"CmbWrite2bCdEfGhI","id.orig_h":"192.168.50.11","id.orig_p":50212,"id.resp_h":"192.168.50.41","id.resp_p":502,"func":"WRITE_SINGLE_REGISTER"}
+{"ts":1791720202.3,"uid":"CmbExc3cDeFgHiJk","id.orig_h":"192.168.50.11","id.orig_p":50213,"id.resp_h":"192.168.50.42","id.resp_p":502,"unit":3,"func":"READ_COILS","pdu_type":"RESP","exception":"ILLEGAL_DATA_ADDRESS"}

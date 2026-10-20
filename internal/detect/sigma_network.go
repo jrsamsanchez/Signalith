@@ -57,6 +57,9 @@ func sigmaNetworkModel(category string) (string, bool) {
 		if m, ok := zeekLogModels[log]; ok {
 			return m, true
 		}
+		if ingest.IsZeekIndustrial(log) {
+			return ingest.IndustrialModel, true
+		}
 		return "Other", true
 	}
 	switch category {
