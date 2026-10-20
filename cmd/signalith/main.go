@@ -39,6 +39,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -1712,6 +1713,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		CaseTemplates:     &casetemplates.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:           updater,
 		Endpoints:         estore,
 		SensorTuning:      tuning,

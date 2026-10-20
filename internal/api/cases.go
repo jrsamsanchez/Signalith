@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -185,10 +186,28 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		Severity    string   `json:"severity"`
 		Owner       string   `json:"owner"`
 		Findings    []string `json:"findings"`
+		// Template fills the severity and description when they are not
+		// given, and adds the template's tasks.
+		Template string `json:"template"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	var tmpl *casetemplates.Template
+	if req.Template != "" {
+		t, err := s.findCaseTemplate(r, req.Template)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		tmpl = &t
+		if req.Severity == "" {
+			req.Severity = t.Severity
+		}
+		if strings.TrimSpace(req.Description) == "" {
+			req.Description = t.Description
+		}
 	}
 	if req.Severity == "" {
 		req.Severity = "medium"
@@ -223,6 +242,13 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Owner != "" {
 		c.Status = findings.StatusInProgress
+	}
+	if tmpl != nil {
+		c.Template = tmpl.ID
+		if _, err := c.AddTasks(tmpl.Tasks, user, now); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 	}
 	if err := s.createCase(r.Context(), c, now); err != nil {
 		writeError(w, http.StatusBadGateway, err)

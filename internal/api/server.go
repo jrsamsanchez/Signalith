@@ -30,6 +30,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
@@ -148,6 +149,9 @@ type Server struct {
 	// ExceptionRequests keeps the exceptions analysts propose until an
 	// admin decides; nil keeps them in memory.
 	ExceptionRequests exceptionreqs.Store
+	// CaseTemplates keeps the admins' case templates; nil keeps them in
+	// memory.
+	CaseTemplates casetemplates.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -323,6 +327,7 @@ type Server struct {
 	setupGuideMem        setupguide.Memory
 	findingViewsMem      findingviews.Memory
 	exceptionRequestsMem exceptionreqs.Memory
+	caseTemplatesMem     casetemplates.Memory
 	pageCache            pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
@@ -467,6 +472,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSetupGuide(api)
 	s.routeFindingViews(api)
 	s.routeExceptionRequests(api)
+	s.routeCaseTasks(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)

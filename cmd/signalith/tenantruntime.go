@@ -19,6 +19,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -517,6 +518,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
 		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: prefix},
 		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: prefix},
+		CaseTemplates:     &casetemplates.OpenSearch{Docs: cl, Prefix: prefix},
 		Content:           updater,
 		Endpoints:         estore,
 		Background:        front.Background,

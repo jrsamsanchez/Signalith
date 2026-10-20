@@ -36,6 +36,19 @@ The **timeline** holds notes, searches and events.
 
 A case holds at most 1,000 timeline entries and 500 findings.
 
+## Templates and tasks
+
+**New case** can start from a template: it sets the severity, fills the
+description, and adds the tasks most investigations of that kind need, such as
+"Disable the account or end its sessions" for an account compromise. Signalith comes
+with Phishing, Account compromise, Malware on a host, Ransomware, and Insider or data
+loss. Admins add their own with **Templates** on the Investigations page.
+
+**Tasks** are the case's checklist. Tick one off when it is done; the case records
+who did it and when. Give a task an owner to split the work, add your own with
+**Add task**, or add a template's tasks to a case that already exists. A case holds at
+most 100 tasks.
+
 ## Working a case
 
 Set status, severity and owner as you work. Cases use the same statuses as findings:

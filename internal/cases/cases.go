@@ -70,6 +70,11 @@ type Case struct {
 	// Tickets are the issues in Jira or ServiceNow opened for the case
 	// (package ticketing), which are kept in step with it.
 	Tickets []Ticket `json:"tickets,omitempty"`
+	// Tasks are the investigation's steps (tasks.go), often from a
+	// template.
+	Tasks []Task `json:"tasks,omitempty"`
+	// Template is the ID of the template the case was opened from.
+	Template string `json:"template,omitempty"`
 	// Sample marks a case the sample-data feature created, holding the
 	// load's ID, so Remove can delete it; empty for real investigations.
 	Sample    string    `json:"sample,omitempty"`
