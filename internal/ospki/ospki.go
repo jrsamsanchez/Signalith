@@ -414,7 +414,10 @@ plugins.security.audit.config.exclude_sensitive_headers: true
 // each index's primary shards over the nodes. OpenSearch otherwise only
 // balances how many shards each node holds, and may put every primary of
 // a day's index on one node while the others hold its replicas, so that
-// one node does nearly all the indexing work.
+// one node does nearly all the indexing work. prefer_primary only places
+// new shards, so it also lets OpenSearch move primaries back: after a node
+// restarts, its primaries have been promoted on the others and would
+// otherwise stay there.
 func clusterBalance(peers []string) string {
 	if len(peers) == 0 {
 		return ""
@@ -422,5 +425,8 @@ func clusterBalance(peers []string) string {
 	return `# Spread each index's primary shards over the nodes, not only the
 # number of shards: the primaries do most of the indexing work.
 cluster.routing.allocation.balance.prefer_primary: true
+# Move primaries back over the nodes after one restarts: its primaries
+# were promoted on the others and would otherwise stay there.
+cluster.routing.allocation.rebalance.primary.enable: true
 `
 }
