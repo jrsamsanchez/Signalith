@@ -61,10 +61,11 @@ func TestUpgradeDetectionSpread(t *testing.T) {
 		t.Fatalf("turning detections.spread on next to %s: %d %s", b.prevVersion, code, body)
 	}
 
-	// For longer than a server waits to join the spread, the old siem-a
-	// keeps it from starting: no bucket has an owner.
+	// For longer than a server waits to join the spread, an old siem-a
+	// that can't spread keeps it from starting: no bucket has an owner.
+	// A previous release that spreads too just joins in.
 	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
+	for !caps.spread && time.Now().Before(deadline) {
 		if v, ok := sb.spread(); ok && len(v.Servers) > 0 {
 			t.Fatalf("detections spread while siem-a runs %s: %+v", b.prevVersion, v.Servers)
 		}
