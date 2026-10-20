@@ -1178,7 +1178,7 @@ function lastRunCell(st, d) {
 
 // errorKindLabel names what went wrong in the last scheduled run, short.
 function errorKindLabel(st) {
-  return st.timed_out || st.error_kind === 'timeout' ? 'Timed out' : st.error_kind === 'transient' ? 'Retrying' : st.error_kind === 'query' ? 'Query error' : 'Failed';
+  return st.timed_out || st.error_kind === 'timeout' ? 'Timed out' : st.error_kind === 'transient' ? 'Retrying' : st.error_kind === 'query' ? 'Query error' : st.error_kind === 'setup' ? 'Needs setup' : 'Failed';
 }
 
 // errorKindText says, in a sentence, what a failed run means and what
@@ -1186,6 +1186,7 @@ function errorKindLabel(st) {
 function errorKindText(st) {
   switch (st.error_kind) {
     case 'query': return 'The query has an error; fix it and the next run uses it.';
+    case 'setup': return 'The rule is fine, but this server is missing something it needs. The guidance below says what to add.';
     case 'transient': return 'OpenSearch did not answer; this run is retried.';
     case 'timeout': return 'The run took longer than its time limit. It is tried up to three times, then the next run goes on.';
   }
@@ -1638,7 +1639,7 @@ function renderDetectionInspector() {
     el('div', { class: 'inspector__body dx-detbody' },
       msg,
       det.stateError ? dxAlert('warning', 'The run state could not be read just now.', 'What is shown may be out of date. It is read again when the page reloads.') : null,
-      st.last_error ? dxAlert(st.error_kind === 'transient' ? 'warning' : 'danger', st.timed_out || st.error_kind === 'timeout' ? 'The last run timed out.' : st.error_kind === 'transient' ? 'The last run could not finish.' : 'The last run failed.',
+      st.last_error ? dxAlert(st.error_kind === 'transient' || st.error_kind === 'setup' ? 'warning' : 'danger', st.timed_out || st.error_kind === 'timeout' ? 'The last run timed out.' : st.error_kind === 'transient' ? 'The last run could not finish.' : st.error_kind === 'setup' ? 'This rule needs setup.' : 'The last run failed.',
         [errorKindText(st), st.last_error].filter(Boolean).join(' ')) : null,
       d.description ? el('p', { class: 'dx-lede' }, d.description) : null,
       d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
