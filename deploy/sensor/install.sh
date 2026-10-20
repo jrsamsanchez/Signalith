@@ -1295,7 +1295,7 @@ EOF
     if [ -z "$dryrun" ] && [ -e "$site/packages/$p" ]; then zkg remove --force "$p" || true; fi
     zkg_forget "$p"
     info "Zeek: building CISA's ICSNPP analyzer for $n"
-    zkg install --force --skip-tests --version "$c" "$ICSNPP_REPO/$p" ||
+    zkg install --force --skiptests --nodeps --version "$c" "$ICSNPP_REPO/$p" ||
       fail "Installing CISA's ICSNPP analyzer for $n failed (see above)." "Check that this machine reaches github.com and has 2 GB of disk free, then run the line again; or run it without --ot."
     # The commit zkg checked out is the pinned one, whatever zkg does.
     if [ -z "$dryrun" ]; then

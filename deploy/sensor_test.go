@@ -593,7 +593,7 @@ func TestSensorScriptDryRunOptions(t *testing.T) {
 	if conf := readFile(t, filepath.Join(root, "var/lib/signalith-sensor/zkg/config")); !strings.Contains(conf, "[sources]\n[paths]\nstate_dir = /var/lib/signalith-sensor/zkg\n") {
 		t.Errorf("--ot: zkg config: %s", conf)
 	}
-	pin := regexp.MustCompile(`would run: /opt/zeek/bin/zkg --configfile \S+/var/lib/signalith-sensor/zkg/config install --force --skip-tests --version [0-9a-f]{40} https://github\.com/cisagov/icsnpp-[a-z0-9-]+\n`)
+	pin := regexp.MustCompile(`would run: /opt/zeek/bin/zkg --configfile \S+/var/lib/signalith-sensor/zkg/config install --force --skiptests --nodeps --version [0-9a-f]{40} https://github\.com/cisagov/icsnpp-[a-z0-9-]+\n`)
 	if n := len(pin.FindAllString(out, -1)); n != 10 || !strings.Contains(out, "would run: env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake make g++") {
 		t.Errorf("--ot: %d ICSNPP analyzers installed by commit:\n%s", n, out)
 	}
