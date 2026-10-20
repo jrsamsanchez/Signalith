@@ -2401,6 +2401,19 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-cases .c-export .menu__item { justify-content: space-between; }
 #page-cases .c-export .menu__hint { font-size: var(--fs-sm); color: var(--text-3); }
 #case-templates.ctm-dialog { width: min(640px, calc(100vw - 32px)); }
+#case-reports.crk-dialog { width: min(600px, calc(100vw - 32px)); }
+#case-reports .crk-body { display: grid; gap: 14px; }
+#case-reports .crk-pick { display: grid; gap: 6px; }
+#case-reports .crk-pick__row { display: flex; gap: 8px; align-items: center; }
+#case-reports .crk-pick__row .input { flex: 1; min-width: 0; }
+#case-reports .crk-result .alert p { margin: 4px 0 0; }
+#case-reports .crk-warn { display: flex; gap: 6px; align-items: flex-start; color: var(--warning); }
+#case-reports .crk-keys-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+#case-reports .crk-keys-head .label { margin: 0; }
+#case-reports .crk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+#case-reports .crk-key { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 10px; border-radius: var(--r-md); background: var(--sunken, var(--hover)); }
+#case-reports .crk-key__main { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+#case-reports .crk-key > .hint { flex-basis: 100%; margin: 0; }
 #case-templates .ctm-list { display: grid; gap: 12px; }
 #case-templates .ctm-item { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-md); background: var(--sunken, var(--hover)); }
 #case-templates .ctm-item__row { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; gap: 8px; align-items: center; }

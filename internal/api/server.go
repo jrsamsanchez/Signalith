@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +54,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/reportkeys"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/saml"
@@ -152,6 +154,12 @@ type Server struct {
 	// CaseTemplates keeps the admins' case templates; nil keeps them in
 	// memory.
 	CaseTemplates casetemplates.Store
+	// ReportSigner returns the key that signs case reports and where it
+	// comes from (reportkeys.FromCluster or FromMaster); nil, or an
+	// error, exports reports unsigned. ReportKeys keeps the public keys
+	// that ever signed one, so a report verifies after its key changed.
+	ReportSigner func() (ed25519.PrivateKey, string, error)
+	ReportKeys   reportkeys.Registry
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say

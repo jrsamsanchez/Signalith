@@ -1095,7 +1095,7 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
 `GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/case-templates` ([case templates](cases.md#templates-and-tasks)), `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
+`GET /api/cases/{id}`, `GET /api/case-templates` ([case templates](cases.md#templates-and-tasks)), `GET /api/cases/reports/keys` (the [report keys](cases.md#report-keys)), `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/storyline` (the [attack storyline](storyline.md)), `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
@@ -1116,7 +1116,7 @@ clicks still need the Analyst role), and the web UI.
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `GET /api/cases/{id}/report` (exporting a case's [report](cases.md#exporting-a-report)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `GET /api/cases/{id}/report` (exporting a case's [report](cases.md#exporting-a-report)), `POST /api/cases/reports/verify` ([checking a report](cases.md#checking-a-report)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
 `PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
 `POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes
@@ -1150,7 +1150,7 @@ Signalith Agents of an install line collect; see
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`, `PUT /api/case-templates`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`, `PUT /api/case-templates`, `POST /api/cases/reports/keys/{id}/revoke` ([revoking a report key](cases.md#report-keys)),
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,

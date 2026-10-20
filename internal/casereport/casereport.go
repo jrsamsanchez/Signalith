@@ -9,8 +9,10 @@ package casereport
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/reportkeys"
 )
 
 // Format names the report's JSON; Version changes only when a field's
@@ -38,7 +41,10 @@ type Report struct {
 	Generated   time.Time `json:"generated"`
 	GeneratedBy string    `json:"generated_by"`
 	// Server is the Signalith server's public address or name.
-	Server   string     `json:"server,omitempty"`
+	Server string `json:"server,omitempty"`
+	// Tenant is the index prefix of the tenant the case belongs to, so one
+	// tenant's report cannot pass as another's.
+	Tenant   string     `json:"tenant,omitempty"`
 	Case     cases.Case `json:"case"`
 	Findings []Finding  `json:"findings"`
 	// Missing are the IDs of linked findings that are gone (retention).
@@ -73,9 +79,9 @@ type Evidence struct {
 }
 
 // New builds a case's report.
-func New(c *cases.Case, linked []*findings.Finding, missing []string, by, server string, now time.Time) (*Report, error) {
+func New(c *cases.Case, linked []*findings.Finding, missing []string, by, server, tenant string, now time.Time) (*Report, error) {
 	r := &Report{
-		Format: Format, Version: Version, Generated: now.UTC(), GeneratedBy: by, Server: server,
+		Format: Format, Version: Version, Generated: now.UTC(), GeneratedBy: by, Server: server, Tenant: tenant,
 		Case: *c, Findings: []Finding{}, Missing: missing, Evidence: []Evidence{},
 	}
 	for _, f := range linked {
@@ -124,40 +130,205 @@ func (r *Report) Canonical() ([]byte, error) {
 	return json.Marshal(norm)
 }
 
-// JSON is the report as a file: indented, with its hash.
+// JSON is the report's data: indented, with its hash. These are the
+// bytes Sign signs.
 func (r *Report) JSON() ([]byte, error) {
-	return json.MarshalIndent(r, "", "  ")
+	b, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
-// dataStart and dataEnd fence the report's JSON in its page.
+// MaxSize caps a report Verify reads.
+const MaxSize = 16 << 20
+
+// PayloadType names the signed bytes in a report's JSON envelope.
+const PayloadType = "application/vnd.signalith.case-report+json"
+
+// Signed is a report with the exact bytes of its JSON, and the signature
+// over those bytes when the server had a key to sign with.
+type Signed struct {
+	Report  *Report
+	Payload []byte
+	// KeyID and Sig (base64) are empty on an unsigned report.
+	KeyID string
+	Sig   string
+}
+
+// Sign signs the report's JSON with key; a nil key leaves it unsigned.
+func (r *Report) Sign(key ed25519.PrivateKey) (*Signed, error) {
+	b, err := r.JSON()
+	if err != nil {
+		return nil, err
+	}
+	s := &Signed{Report: r, Payload: b}
+	if key != nil {
+		pub, _ := key.Public().(ed25519.PublicKey)
+		s.KeyID = reportkeys.KeyID(pub)
+		s.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(key, b))
+	}
+	return s, nil
+}
+
+// SignatureLine is the signature as Signalith's other signatures are
+// written: "<key ID> <base64 signature>", or "" when unsigned.
+func (s *Signed) SignatureLine() string {
+	if s.KeyID == "" {
+		return ""
+	}
+	return s.KeyID + " " + s.Sig
+}
+
+type envelope struct {
+	PayloadType string `json:"payload_type"`
+	Payload     string `json:"payload"`
+	KeyID       string `json:"key_id,omitempty"`
+	Sig         string `json:"sig,omitempty"`
+}
+
+// JSON is the file a JSON export gives: the report itself when unsigned;
+// signed, an envelope of the exact bytes signed (base64) and the
+// signature, so no reformatting can make the two disagree.
+func (s *Signed) JSON() ([]byte, error) {
+	if s.KeyID == "" {
+		return s.Payload, nil
+	}
+	b, err := json.MarshalIndent(envelope{PayloadType: PayloadType, Payload: base64.StdEncoding.EncodeToString(s.Payload), KeyID: s.KeyID, Sig: s.Sig}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+// The page fences the signed bytes and the signature line.
 const (
 	dataStart = `<pre id="report-data">`
-	dataEnd   = `</pre>`
+	sigStart  = `<pre id="report-signature">`
+	preEnd    = `</pre>`
 )
 
-// Extract returns the report's JSON from a file that is either the JSON
-// export or the page.
-func Extract(data []byte) []byte {
-	i := bytes.Index(data, []byte(dataStart))
+func fenced(page []byte, start string) ([]byte, bool) {
+	i := bytes.Index(page, []byte(start))
 	if i < 0 {
-		return data
+		return nil, false
 	}
-	rest := data[i+len(dataStart):]
-	j := bytes.Index(rest, []byte(dataEnd))
+	rest := page[i+len(start):]
+	j := bytes.Index(rest, []byte(preEnd))
 	if j < 0 {
-		return data
+		return nil, false
 	}
-	return []byte(html.UnescapeString(string(rest[:j])))
+	return []byte(html.UnescapeString(string(rest[:j]))), true
 }
 
-// Verify checks a report read from a file, the JSON export or the page:
-// its hash, and that its evidence hashes match its entries.
-func Verify(data []byte) (*Report, error) {
-	page := data
-	data = Extract(data)
-	isPage := len(data) != len(page)
+// Extract returns the report's JSON from a file that is the page, the
+// JSON export or its envelope.
+func Extract(data []byte) []byte {
+	if f, err := parse(data); err == nil {
+		return f.payload
+	}
+	return data
+}
+
+// file is a report file taken apart.
+type file struct {
+	payload []byte
+	keyID   string
+	sig     string
+	// page is the page, with Windows line ends made Unix ones, when the
+	// file is one.
+	page []byte
+}
+
+func parse(data []byte) (*file, error) {
+	if len(data) > MaxSize {
+		return nil, fmt.Errorf("the file is larger than %d MiB, more than any case report", MaxSize>>20)
+	}
+	if p := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n")); bytes.Contains(p, []byte(dataStart)) {
+		payload, ok := fenced(p, dataStart)
+		if !ok {
+			return nil, errors.New("this page holds no complete report data")
+		}
+		f := &file{payload: payload, page: p}
+		if line, ok := fenced(p, sigStart); ok {
+			id, sig, ok := strings.Cut(strings.TrimSpace(string(line)), " ")
+			if !ok {
+				return nil, errors.New("the report's signature line is not \"<key ID> <signature>\"")
+			}
+			f.keyID, f.sig = id, sig
+		}
+		return f, nil
+	}
+	var env envelope
+	if json.Unmarshal(data, &env) == nil && env.PayloadType != "" {
+		if env.PayloadType != PayloadType {
+			return nil, errors.New("this is not a Signalith case report")
+		}
+		payload, err := base64.StdEncoding.DecodeString(env.Payload)
+		if err != nil {
+			return nil, errors.New("the report's payload is not base64")
+		}
+		return &file{payload: payload, keyID: env.KeyID, sig: env.Sig}, nil
+	}
+	return &file{payload: data}, nil
+}
+
+// Keys finds a signing key by its ID; ok is false for a key it does not
+// know.
+type Keys func(id string) (k *reportkeys.Key, ok bool)
+
+// Result is what Verify found.
+type Result struct {
+	Report *Report
+	// Signed is true when the file carries a signature, and KeyID names
+	// its key. KeyStatus is the key's status in the list Verify was
+	// given (current, retired or revoked), or "" when it had none.
+	Signed    bool
+	KeyID     string
+	KeyStatus string
+}
+
+// ErrChanged wraps every way a report can fail to verify: changed after
+// it was made, or signed with a key Verify does not accept.
+var ErrChanged = errors.New("the report did not verify")
+
+func changed(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrChanged}, args...)...)
+}
+
+// Verify checks a report read from a file, the page or the JSON export.
+// The signature, when there is one and keys is not nil, is checked over
+// the exact bytes first, before anything in them is read; then the
+// report's hash, each piece of evidence, and for the page that nothing
+// on it was edited. A report signed with a key keys does not know, or
+// without a signature when keys is not nil and requireSigned is set,
+// does not verify.
+func Verify(data []byte, keys Keys, requireSigned bool) (*Result, error) {
+	f, err := parse(data)
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{Signed: f.keyID != "", KeyID: f.keyID}
+	switch {
+	case f.keyID != "" && keys != nil:
+		k, ok := keys(f.keyID)
+		if !ok {
+			return res, changed("it was signed with key %s, which this server never used", f.keyID)
+		}
+		pub, err := k.PublicKey()
+		if err != nil {
+			return res, err
+		}
+		sig, err := base64.StdEncoding.DecodeString(f.sig)
+		if err != nil || !ed25519.Verify(pub, f.payload, sig) {
+			return res, changed("its signature does not match: it was changed after it was made, or not made by key %s", f.keyID)
+		}
+		res.KeyStatus = k.Status()
+	case f.keyID == "" && keys != nil && requireSigned:
+		return res, changed("it is not signed")
+	}
 	var r Report
-	if err := json.Unmarshal(data, &r); err != nil {
+	if err := json.Unmarshal(f.payload, &r); err != nil {
 		return nil, fmt.Errorf("this is not a case report: %w", err)
 	}
 	if r.Format != Format {
@@ -166,32 +337,32 @@ func Verify(data []byte) (*Report, error) {
 	if r.Version > Version {
 		return nil, fmt.Errorf("this report is version %d, from a newer Signalith", r.Version)
 	}
+	res.Report = &r
 	b, err := r.Canonical()
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	sum := sha256.Sum256(b)
 	if hex.EncodeToString(sum[:]) != r.SHA256 {
-		return &r, errors.New("the report was changed after it was made: its SHA-256 does not match")
+		return res, changed("its SHA-256 does not match")
 	}
 	for _, e := range r.Case.Entries {
 		if !cases.EvidenceIntact(e) {
-			return &r, fmt.Errorf("the evidence in timeline entry %s does not match its SHA-256", e.ID)
+			return res, changed("the evidence in timeline entry %s does not match its SHA-256", e.ID)
 		}
 	}
-	if isPage {
-		// The page is made from its JSON alone, so making it again shows
+	if f.page != nil {
+		// The page is made from its data alone, so making it again shows
 		// whether anything the reader sees was edited.
-		again, err := r.HTML()
+		again, err := (&Signed{Report: &r, Payload: f.payload, KeyID: f.keyID, Sig: f.sig}).HTML()
 		if err != nil {
-			return &r, err
+			return res, err
 		}
-		norm := bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n"))
-		if !bytes.Equal(again, norm) {
-			return &r, errors.New("the report's page was changed after it was made: it differs from the page its data makes")
+		if !bytes.Equal(again, f.page) {
+			return res, changed("its page was edited: it differs from the page its data makes")
 		}
 	}
-	return &r, nil
+	return res, nil
 }
 
 //go:embed report.html
@@ -224,11 +395,17 @@ var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 }).Parse(page))
 
 // HTML renders the report as a page that stands alone: no scripts, no
-// requests, everything escaped, with the report's JSON at the end so the
-// page carries what its hash covers.
-func (r *Report) HTML() ([]byte, error) {
+// requests, everything escaped, with the exact bytes signed and the
+// signature at the end.
+func (s *Signed) HTML() ([]byte, error) {
 	var b bytes.Buffer
-	if err := tmpl.Execute(&b, r); err != nil {
+	data := struct {
+		*Report
+		Payload   string
+		Signature string
+		KeyID     string
+	}{s.Report, string(s.Payload), s.SignatureLine(), s.KeyID}
+	if err := tmpl.Execute(&b, data); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil

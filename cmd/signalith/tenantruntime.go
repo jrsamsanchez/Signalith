@@ -542,6 +542,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	// Rules that escalate late findings follow the due times set on the
 	// Settings page.
 	dispatcher.SLA = func() findings.SLA { return srv.Running().FindingSLA() }
+	// Tenants exist only in a cluster: their reports are signed with the
+	// cluster's report key, and say which tenant they are for.
+	if t.r.sharedContent != nil {
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, t.r.shared, t.r.sharedContent.reportKeys)
+	}
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
 		Notify: notes, Sender: senders, Deliveries: deliveries, Server: server, Log: log,

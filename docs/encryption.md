@@ -404,6 +404,11 @@ A running server picks up the new key by itself.
 Next: back up the new key, then remove the previous one with: signalith secrets rotate-master -prune
 ```
 
+New case reports are then signed with a new report key; reports signed before still
+verify. When the old key may have leaked, also revoke the report key it made
+(`signalith report revoke-key`; see [Report keys](cases.md#report-keys)), since
+someone with it could sign a report.
+
 Every file is written next to its place first and checked; if any cannot be put in
 place, everything (the key included) is put back as it was and the command says
 "Nothing was changed". The previous key is kept so that a file restored from an

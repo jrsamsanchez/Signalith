@@ -1750,6 +1750,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, r.shared, r.sharedContent.reportKeys)
+	} else {
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, nil, nil)
 	}
 	wireFeatures(srv, r.shared)
 	if parts == nil && r.sharedContent != nil {

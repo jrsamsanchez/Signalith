@@ -49,6 +49,7 @@ footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
 <dt>Last change</dt><dd>{{when .Case.Updated}}</dd>
 {{if .Case.Template}}<dt>Template</dt><dd>{{.Case.Template}}</dd>{{end}}
 <dt>Report SHA-256</dt><dd class="hash">{{.SHA256}}</dd>
+<dt>Signature</dt><dd>{{if .Signature}}Signed with report key <span class="hash">{{.KeyID}}</span>{{else}}Not signed{{end}}</dd>
 </dl>
 
 {{if .Case.Description}}<h2>Description</h2><div class="text">{{.Case.Description}}</div>{{end}}
@@ -95,8 +96,9 @@ footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
 
 <section class="raw">
 <h2>Report data</h2>
-<p class="meta">The report as JSON. Its SHA-256 is taken over this JSON without the sha256 field; <code>signalith report verify</code> checks the report is intact; it does not prove who made it.</p>
-<pre id="report-data">{{json .}}</pre>
+{{if .Signature}}<p class="meta">The report as JSON, and its Ed25519 signature by this server's report key. <code>signalith report verify</code> checks the signature against the server's keys, then the hashes and this page.</p>{{else}}<p class="meta">The report as JSON. Its SHA-256 is taken over this JSON without the sha256 field. It is not signed: <code>signalith report verify</code> checks the report is intact; it does not prove who made it.</p>{{end}}
+<pre id="report-data">{{.Payload}}</pre>{{if .Signature}}
+<pre id="report-signature">{{.Signature}}</pre>{{end}}
 </section>
 
 <footer>Made by Signalith. This page loads nothing and runs no scripts.</footer>

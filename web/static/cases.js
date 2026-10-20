@@ -26,6 +26,7 @@ refreshCaseCount();
 // ---------- small helpers ----------
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
 const fullTime = (t) => new Date(t).toLocaleString();
+const shortDate = (t) => new Date(t).toLocaleDateString();
 // shortAgo drops the "ago" for table cells: 48m, 3h, 2d.
 const shortAgo = (t) => { const a = ago(t); return a === 'just now' ? 'now' : a.replace(/ ago$/, ''); };
 // when gives a timeline time: relative for a week, then the date.
@@ -1371,6 +1372,98 @@ async function editCaseTemplates() {
   dlg.showModal();
 }
 $('c-templates').addEventListener('click', editCaseTemplates);
+
+// ----- checking reports, and the keys that sign them (docs/cases.md#checking-a-report) -----
+const KEY_STATUS = { current: ['In use', 'badge--success'], retired: ['Retired', ''], revoked: ['Revoked', 'badge--danger'] };
+
+async function openReportCheck() {
+  const dlg = $('case-reports');
+  const close = () => dlg.close();
+  const result = el('div', { class: 'crk-result', 'aria-live': 'polite' });
+  const file = el('input', { class: 'input', type: 'file', accept: '.html,.htm,.json,text/html,application/json', id: 'crk-file', 'aria-label': 'Report file' });
+  const check = el('button', { type: 'submit', class: 'btn btn--primary', disabled: '' }, icon('shield-check'), 'Check');
+  file.addEventListener('change', () => { check.disabled = !file.files.length; fill(result); });
+  const keys = el('div', { class: 'crk-keys' });
+  const admin = can('admin');
+
+  const showResult = (r) => {
+    const ok = r.verified;
+    const lines = [];
+    if (r.case) lines.push(el('p', {}, el('b', {}, r.title || r.case), ` · ${r.case}`));
+    if (r.generated) lines.push(el('p', { class: 'hint' }, `Made ${fullTime(r.generated)} by ${r.generated_by}`));
+    if (r.signed) lines.push(el('p', { class: 'hint' }, `Signed with report key ${r.key_id}` + (r.key_status ? ` (${(KEY_STATUS[r.key_status] || [r.key_status])[0].toLowerCase()})` : '')));
+    if (r.warning) lines.push(el('p', { class: 'crk-warn' }, icon('triangle-alert'), r.warning));
+    if (!ok && r.error) lines.push(el('p', {}, sentence(String(r.error).replace(/^the report did not verify: /, ''))));
+    fill(result, el('div', { class: 'alert', 'data-tone': ok ? (r.warning ? 'warning' : 'success') : 'danger', role: 'status' },
+      icon(ok ? 'shield-check' : 'shield-x'),
+      el('div', {}, el('b', {}, !ok ? 'This report did not verify.' : r.warning ? 'Signed with a key that may have leaked.' : 'Verified: this server signed it, and nothing changed since.'), ...lines)));
+  };
+
+  const drawKeys = (ks) => {
+    if (!ks.length) { fill(keys, el('p', { class: 'hint' }, 'No report has been signed yet. The first export makes the key.')); return; }
+    fill(keys, el('ul', { class: 'crk-list' }, ...ks.map((k) => {
+      const [label, tone] = KEY_STATUS[k.status || (k.revoked ? 'revoked' : k.retired ? 'retired' : 'current')] || ['', ''];
+      const st = k.revoked ? 'revoked' : k.retired ? 'retired' : 'current';
+      const revoke = admin && st !== 'revoked' ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => revokeKey(k) }, 'Revoke…') : null;
+      return el('li', { class: 'crk-key' },
+        el('div', { class: 'crk-key__main' },
+          el('span', { class: 'mono' }, k.id),
+          el('span', { class: 'badge ' + (KEY_STATUS[st] || ['', ''])[1] }, (KEY_STATUS[st] || [st])[0]),
+          el('span', { class: 'hint' }, `${k.source === 'cluster' ? 'Cluster key' : 'Master key'} · since ${shortDate(k.first_used)}`)),
+        k.revoked ? el('p', { class: 'hint' }, `Revoked ${shortDate(k.revoked)}${k.revoked_by ? ' by ' + k.revoked_by : ''}${k.reason ? ': ' + k.reason : ''}`) : null,
+        revoke);
+    })));
+  };
+  const loadKeys = async () => {
+    try { drawKeys((await api('api/cases/reports/keys')).keys || []); } catch (e) { fill(keys, el('p', { class: 'hint' }, 'The report keys could not be loaded.')); }
+  };
+  const revokeKey = async (k) => {
+    const reason = el('textarea', { class: 'textarea', rows: '2', maxlength: '500', placeholder: 'Why, such as "the master key was in a leaked backup"', 'aria-label': 'Reason' });
+    const d = modalDialog('crk-revoke');
+    const ok = el('button', { type: 'button', class: 'btn btn--danger' }, 'Revoke key');
+    ok.onclick = async () => {
+      const done = busy(ok, 'Revoking…');
+      try {
+        drawKeys((await api(`api/cases/reports/keys/${encodeURIComponent(k.id)}/revoke`, { reason: reason.value }, 'POST')).keys || []);
+        d.close();
+        toast('Key revoked. Reports it signed now say it may have leaked.');
+      } catch (e) { done(); toastError('Couldn’t revoke the key', e); }
+    };
+    fill(d, modalHead('crk-revoke', `Revoke report key ${k.id}?`, 'Do this when the cluster key or master key it comes from may have leaked: someone with it could sign a report. Reports it signed still check, with a warning. Rotate that key too, so new reports get a new one.', () => d.close()),
+      el('div', { class: 'modal__body' }, reason),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
+    d.showModal();
+    reason.focus();
+  };
+
+  const form = el('form', { method: 'dialog', onsubmit: async (ev) => {
+    ev.preventDefault();
+    const f = file.files[0];
+    if (!f) return;
+    if (f.size > 16 * 1024 * 1024) { showResult({ verified: false, error: 'the file is larger than 16 MiB, more than any case report' }); return; }
+    const done = busy(check, 'Checking…');
+    try {
+      const resp = await apiRaw('api/cases/reports/verify', { method: 'POST', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
+      const r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+      showResult(r);
+    } catch (e) { showResult({ verified: false, error: e.message }); }
+    done();
+  } },
+    modalHead('crk', 'Check a report', 'Check a case report someone sent you: that this server signed it, and that nothing in it changed since.', close),
+    el('div', { class: 'modal__body crk-body' },
+      el('div', { class: 'crk-pick' }, el('label', { class: 'label', for: 'crk-file' }, 'Report file (.html or .json)'), el('div', { class: 'crk-pick__row' }, file, check)),
+      result,
+      el('div', { class: 'crk-keys-head' },
+        el('p', { class: 'label' }, 'Report keys'),
+        el('a', { class: 'btn btn--ghost btn--sm', href: 'api/cases/reports/keys', download: 'signalith-report-keys.json', title: 'For checking reports on another computer: signalith report verify -keys signalith-report-keys.json report.html' }, icon('download'), 'Download')),
+      keys),
+    el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Close')));
+  fill(dlg, form);
+  dlg.showModal();
+  loadKeys();
+}
+$('c-reports').addEventListener('click', openReportCheck);
 
 // caseTemplates loads the case templates once a page view.
 let caseTemplatesP = null;
