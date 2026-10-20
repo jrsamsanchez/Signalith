@@ -7,7 +7,9 @@
 // keep their own, the card asks an admin which to keep, with the one most
 // agents use preselected and the agents each choice would break. Each
 // server's side panel (serverPanels) says which certificate authority it
-// uses. Everything comes from api/cluster/tls.
+// uses. Once one is shared, the card replaces it in three steps (prepare,
+// switch, retire; api/cluster/tls/rotate-ca). Everything comes from
+// api/cluster/tls.
 'use strict';
 
 (function () {
@@ -163,10 +165,99 @@
           el('p', { class: 'ca-text' }, 'The certificate authorities servers used before the cluster’s. They never sign again. Agents whose configuration trusts only one of them are marked “Needs a new configuration” on the ', el('a', { href: '#endpoints', 'data-page': 'endpoints' }, 'Endpoints page'), '.'),
           el('ul', { class: 'ca-list', role: 'list' }, ...retired.map((r) => el('li', {}, fpEl(r.ca_sha256),
             el('span', { class: 'ca-muted' }, `${r.server ? r.server + '’s, ' : ''}retired ${dayText(r.retired_at)}`)))))) : null,
-      el('div', { class: 'ca-actions' },
-        el('a', { class: 'btn btn--secondary btn--sm', href: 'api/tls/ca.pem', download: 'signalith-ca.pem' }, icon('download'), 'Download the certificate authority'),
-        el('span', { class: 'ca-muted' }, 'Changing it comes in a later version.')),
+      rotation(rep),
     ];
+  }
+
+  // ---------- replacing it ----------
+  const STEPS = {
+    prepare: {
+      button: 'Replace it…', title: 'Make a new certificate authority for every server?', ok: 'Make it',
+      text: 'Every server hands it out with the one in use from now on. Nothing changes for agents and browsers until you switch. Managed agents take it by themselves; give other agents, browsers and syslog devices the CA file again before the switch.',
+      done: 'Every server now hands out the new certificate authority with the one in use.',
+    },
+    switch: {
+      button: 'Switch to it…', title: 'Switch every server to the new certificate authority?', ok: 'Switch',
+      text: 'Each server issues itself a certificate from the new one within seconds. The old one is still trusted until you retire it. An agent, browser or device that doesn’t trust the new one by then refuses the servers.',
+      done: 'Every server now issues its certificate from the new certificate authority.',
+    },
+    retire: {
+      button: 'Retire the old one…', title: 'Retire the old certificate authority?', ok: 'Retire it',
+      text: 'No server hands it out any more, and its key is deleted from the shared settings. Agents that trust only it need a new configuration.',
+      done: 'The old certificate authority is retired.',
+    },
+  };
+
+  function rotation(rep) {
+    const r = rep.rotation || { state: 'none', blockers: [] };
+    const blockers = r.blockers || [];
+    const download = el('a', { class: 'btn btn--secondary btn--sm', href: r.state === 'none' ? 'api/tls/ca.pem' : 'api/tls/ca.pem?which=both', download: 'signalith-ca.pem' },
+      icon('download'), r.state === 'none' ? 'Download the certificate authority' : 'Download both certificate authorities');
+    let step = 'prepare';
+    let info = null;
+    if (r.state === 'prepared' && r.next) {
+      step = 'switch';
+      info = [facts([
+        ['New certificate authority', el('span', { class: 'mono ca-fp--full' }, r.next.ca_sha256)],
+        ['Prepared', `${r.next.by ? 'by ' + r.next.by + ' ' : ''}on ${dayText(r.next.at)}, valid until ${dayText(r.next.not_after)}`],
+      ]), el('p', { class: 'ca-text' }, 'Every server hands out both. Managed agents take the new one by themselves. Give other agents, browsers and syslog devices the file with both before you switch.')];
+    } else if (r.state === 'switched' && r.previous) {
+      step = 'retire';
+      info = [facts([
+        ['Old certificate authority', el('span', { class: 'mono ca-fp--full' }, r.previous.ca_sha256)],
+        ['Switched', `${r.previous.by ? 'by ' + r.previous.by + ' ' : ''}on ${dayText(r.previous.at)}`],
+      ]), el('p', { class: 'ca-text' }, 'Every server issues its certificate from the new one and still hands out the old one. Retire it once every server’s certificate comes from the new one.')];
+    }
+    const go = el('button', { type: 'button', class: 'btn btn--' + (step === 'prepare' ? 'secondary' : 'primary') + ' btn--sm', 'data-focus': 'ca-rotate', onclick: () => confirmStep(step) }, STEPS[step].button);
+    go.disabled = !!S.asking || (step !== 'prepare' && blockers.length > 0);
+    return [
+      info,
+      step !== 'prepare' && blockers.length ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
+      S.asking ? el('p', { class: 'ca-progress', role: 'status' }, icon('clock', 'icon--sm'), S.asking) : null,
+      el('div', { class: 'ca-actions' }, download, go,
+        step === 'prepare' ? el('span', { class: 'ca-muted' }, 'Replace it when its key may have leaked, or a server you removed may still hold it.') : null),
+    ];
+  }
+
+  function confirmStep(step) {
+    const st = STEPS[step];
+    const d = modalDialog('ca-rotate');
+    const ok = el('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'ca-rotate-ok' }, st.ok);
+    const err = el('div', { class: 'alert hidden', 'data-tone': 'danger', role: 'alert' });
+    ok.addEventListener('click', async () => {
+      const back = busy(ok, 'Asking…');
+      try {
+        const r = await api('api/cluster/tls/rotate-ca', { step });
+        d.close();
+        followStep(r, st);
+      } catch (e) {
+        fill(err, icon('circle-alert'), el('div', {}, el('b', {}, 'Nothing changed'), el('p', {}, e.message)));
+        err.classList.remove('hidden');
+      } finally {
+        back();
+      }
+    });
+    fill(d, modalHead('ca-rotate', st.title, st.text, () => d.close()),
+      el('div', { class: 'modal__body' }, err),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
+    d.showModal();
+    ok.focus();
+  }
+
+  // followStep shows the request's progress on the card until the server
+  // that runs the background jobs has taken the step.
+  async function followStep(r, st) {
+    S.asking = 'Asking the server that runs the background jobs…';
+    render();
+    const req = await followRequest(r.request_id, () => {
+      S.asking = 'The server that runs the background jobs is on it…';
+      render();
+    });
+    S.asking = null;
+    if (req && req.state === 'done') toast(st.done);
+    else if (req && req.state === 'failed') toastError('Nothing changed', new Error(req.error || 'no reason given'));
+    else toast('It hasn’t answered yet; this page shows it once it has.');
+    load();
   }
 
   // ---------- the choice ----------
@@ -287,11 +378,13 @@
       kids.push(el('p', { class: 'sv-panel__text' }, 'Its version doesn’t report its certificate.'));
     } else {
       let what;
-      if (v.mode === 'files') what = v.ca_sha256 ? ['Your own certificate files, from ', fpEl(v.ca_sha256), '.'] : ['Your own certificate files, from a public certificate authority.'];
+      if (v.mode === 'off') what = ['It doesn’t serve HTTPS itself.'];
+      else if (v.mode === 'files') what = v.ca_sha256 ? ['Your own certificate files, from ', fpEl(v.ca_sha256), '.'] : ['Your own certificate files, from a public certificate authority.'];
       else if (v.cluster) what = ['The cluster’s, ', fpEl(v.ca_sha256), '.'];
       else what = ['Its own, ', fpEl(v.ca_sha256), rep.published ? '. It takes the cluster’s within seconds.' : '.'];
       kids.push(el('p', { class: 'sv-panel__text' }, ...what));
       if (v.leaf_expires) kids.push(el('p', { class: 'sv-panel__text' }, 'Its certificate renews itself; this one is valid until ' + dayText(v.leaf_expires) + '.'));
+      if (v.next_ca_sha256) kids.push(el('p', { class: 'sv-panel__text' }, 'It hands out the new certificate authority, ', fpEl(v.next_ca_sha256), ', with the one in use.'));
       if (v.problem) kids.push(el('p', { class: 'sv-panel__text sv-bad' }, cap(v.problem) + '.'));
       for (const w of v.warnings || []) kids.push(el('p', { class: 'sv-panel__text sv-warn' }, w));
     }

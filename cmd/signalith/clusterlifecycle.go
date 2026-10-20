@@ -19,6 +19,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
+	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -55,6 +56,8 @@ func (r *runner) lifecycleLeaderHandlers() map[string]shared.Handler {
 	return map[string]shared.Handler{
 		clustercfg.RequestReleaseJobs: r.handleReleaseJobs,
 		clustercfg.RequestRotateKey:   r.handleRotateKey,
+		// Replacing the cluster's certificate authority (sharedtls.go).
+		clustertls.RequestRotateCA: r.rotateCAHandler(),
 	}
 }
 
@@ -568,7 +571,7 @@ func (x *clusterCLI) caKeptNote(name string) {
 	}
 	fmt.Fprintf(x.out, "%s may still hold the cluster's HTTPS certificate authority key (%s), in a backup of its state folder or a copy of its shared settings, "+
 		"and with it could make certificates that agents, browsers and syslog devices trust. "+
-		"That stays true until the cluster's certificate authority is replaced (docs/servers.md, When a server leaves).\n", name, b.CASHA256)
+		"That stays true until the cluster's certificate authority is replaced: run signalith cluster tls rotate-ca prepare, then switch and retire (docs/servers.md, When a server leaves).\n", name, b.CASHA256)
 }
 
 // forgetCluster deletes, in the state folder dir, the cluster key's

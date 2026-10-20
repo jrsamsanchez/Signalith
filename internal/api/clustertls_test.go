@@ -62,6 +62,12 @@ func (f *fakeClusterTLS) Publish(_ context.Context, node, fp, _ string) (*shared
 	f.asked = append(f.asked, node, fp)
 	return &shared.Request{ID: "rq_1"}, nil
 }
+func (f *fakeClusterTLS) RotateCA(_ context.Context, step, fp, _ string) (*shared.Request, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, step, fp)
+	return &shared.Request{ID: "rq_2"}, nil
+}
 
 // tlsCluster is two servers with their certificates' heartbeats.
 type tlsCluster struct {
@@ -120,6 +126,9 @@ func TestClusterTLSIsForAdmins(t *testing.T) {
 		}
 		if code, _ := doAs(t, ts, user, "role-password", "POST", "/api/cluster/tls/choose", `{"ca_sha256":"`+a.Fingerprint()+`"}`); code != http.StatusForbidden {
 			t.Errorf("%s POST: %d", user, code)
+		}
+		if code, _ := doAs(t, ts, user, "role-password", "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`); code != http.StatusForbidden {
+			t.Errorf("%s rotate-ca: %d", user, code)
 		}
 	}
 }
@@ -222,6 +231,49 @@ func TestClusterTLSChoose(t *testing.T) {
 	// siem-a still uses its own: amber nothing, but not the cluster's.
 	if sa := out["servers"].([]any)[0].(map[string]any); sa["cluster"] != false || sa["ca_sha256"] != a.Fingerprint() {
 		t.Errorf("siem-a %v", sa)
+	}
+}
+
+// Replacing the cluster's certificate authority: each step asks the
+// server that runs the jobs, and switch and retire wait for every server.
+func TestClusterTLSRotate(t *testing.T) {
+	a, b := newCertManager(t), newCertManager(t)
+	ct := &fakeClusterTLS{}
+	ts, cl := newClusterTLSServer(t, ct, a, b)
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`, true); code != http.StatusConflict {
+		t.Errorf("nothing published: %d %v", code, out)
+	}
+	ct.body = &clustertls.Body{CACertPEM: caPEM(b), CASHA256: b.Fingerprint(), PublishedBy: "siem-b", PublishedAt: time.Now()}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"bogus"}`, true); code != http.StatusBadRequest {
+		t.Errorf("bogus: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict {
+		t.Errorf("switch with nothing prepared: %d %v", code, out)
+	}
+	code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`, true)
+	if code != http.StatusAccepted || out["request_id"] != "rq_2" || len(ct.asked) != 2 || ct.asked[0] != "prepare" || ct.asked[1] != b.Fingerprint() {
+		t.Fatalf("prepare %d %v %v", code, out, ct.asked)
+	}
+	// Prepared: siem-b uses the cluster's but doesn't hand out the next.
+	ct.mu.Lock()
+	ct.body.Next = &clustertls.OtherCA{CACertPEM: caPEM(a), CASHA256: a.Fingerprint(), By: "admin", At: time.Now()}
+	ct.mu.Unlock()
+	cl.b.Cluster = true
+	_, out = do(t, ts, "GET", "/api/cluster/tls", "", true)
+	rot, _ := out["rotation"].(map[string]any)
+	if rot == nil || rot["state"] != "prepared" || len(rot["blockers"].([]any)) != 1 {
+		t.Fatalf("rotation %v", out["rotation"])
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict ||
+		!strings.Contains(out["error"].(string), "siem-b doesn't hand out") {
+		t.Errorf("switch before siem-b is ready: %d %v", code, out)
+	}
+	cl.b.NextCASHA256 = a.Fingerprint()
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusAccepted || out["ca_sha256"] != a.Fingerprint() {
+		t.Errorf("switch: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"retire"}`, true); code != http.StatusConflict {
+		t.Errorf("retire with nothing switched: %d %v", code, out)
 	}
 }
 

@@ -138,7 +138,7 @@ func TestClusterTLSImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := note.String(); !strings.Contains(got, "works until "+leaf.Format(time.DateOnly)) ||
-		!strings.Contains(got, "siem-z may still hold the cluster's HTTPS certificate authority key ("+fpA) {
+		!strings.Contains(got, "siem-z may still hold the cluster's HTTPS certificate authority key ("+fpA) || !strings.Contains(got, "rotate-ca prepare") {
 		t.Errorf("notes:\n%s", got)
 	}
 }

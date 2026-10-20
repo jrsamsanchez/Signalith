@@ -139,7 +139,8 @@
       'It leaves the list of servers and the keyring. To bring it back, give it the cluster key again.', close),
     el('div', { class: 'modal__body' },
       el('div', { class: 'field' }, el('label', { class: 'check' }, rotate, 'Rotate the cluster key (recommended)'),
-        el('p', { class: 'hint' }, why))),
+        el('p', { class: 'hint' }, why)),
+      el('p', { class: 'hint' }, `${s.name} may still hold the cluster’s HTTPS certificate authority key, which a key rotation doesn’t change. If you don’t trust it any more, replace the certificate authority afterwards on its card on this page.`)),
     el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), ok));
     d.showModal();
     ok.focus();

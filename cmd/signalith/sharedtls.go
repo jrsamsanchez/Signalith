@@ -175,6 +175,14 @@ func (r *runner) sharedTLS(ctx context.Context, in *instance, c *config.Config, 
 		}
 		return []string{nodeHost}
 	})
+	// While the cluster's certificate authority is replaced, agents,
+	// browsers and syslog devices get the next (or previous) one with it.
+	certs.SetClusterCAs(func() (next, previous *tlsauto.ClusterCA) {
+		if s.attached.Load() != certs {
+			return nil, nil
+		}
+		return s.tls.Others()
+	})
 	if agents != nil {
 		agents.Retired = func() []string { return s.retiredPins(certs) }
 	}
@@ -442,4 +450,31 @@ func (a tlsAPI) Writable() error { return a.rt.Writable() }
 
 func (a tlsAPI) Publish(ctx context.Context, node, fp, by string) (*shared.Request, error) {
 	return a.s.tls.SubmitPublish(ctx, a.rt.Requests(), node, fp, by)
+}
+
+func (a tlsAPI) RotateCA(ctx context.Context, step, fp, by string) (*shared.Request, error) {
+	return submitRotateCA(ctx, a.rt, step, fp, by)
+}
+
+// submitRotateCA asks the server that runs the background jobs to take
+// step of replacing the cluster's certificate authority, which the admin
+// by saw at fp.
+func submitRotateCA(ctx context.Context, rt *shared.Runtime, step, fp, by string) (*shared.Request, error) {
+	return rt.Requests().Submit(ctx, clustertls.RequestRotateCA, shared.TargetLeader, clustertls.RotateArgs{Step: step, CASHA256: fp}, by)
+}
+
+// rotateCAHandler runs, on the server that runs the background jobs, the
+// steps of replacing the cluster's certificate authority.
+func (r *runner) rotateCAHandler() shared.Handler {
+	ct := r.sharedContent
+	servers := func(ctx context.Context) ([]cluster.Heartbeat, error) {
+		t := ct.target.Load()
+		if t == nil {
+			return nil, errors.New("no OpenSearch to read them from")
+		}
+		hctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return readHeartbeats(hctx, t.cl, t.prefix)
+	}
+	return clustertls.RotateHandler(ct.tls.tls, servers, r.node.Name(), r.log)
 }

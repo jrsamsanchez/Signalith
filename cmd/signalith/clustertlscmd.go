@@ -80,6 +80,7 @@ func (x *clusterCLI) tlsStatus(ctx context.Context, asJSON bool) error {
 			fmt.Fprintf(w, "Key:\tlost with the cluster key: no server can renew its certificate until signalith cluster tls import <ca.key> gives it back\n")
 		}
 		fmt.Fprintf(w, "Names:\t%s\n", cmp.Or(strings.Join(ca.Names, ", "), "(none added)"))
+		printRotation(w, st.Rotation)
 		for i, old := range st.Retired {
 			label := ""
 			if i == 0 {
@@ -137,7 +138,7 @@ func (x *clusterCLI) tlsChoose(ctx context.Context, what string, yes bool) error
 		return err
 	}
 	if st.Published {
-		return fmt.Errorf("the cluster already has a certificate authority (%s); changing it comes in a later version", st.CA.CASHA256)
+		return fmt.Errorf("the cluster already has a certificate authority (%s); to change it, replace it with signalith cluster tls rotate-ca", st.CA.CASHA256)
 	}
 	c, ok := st.Find(what)
 	if !ok {
@@ -193,7 +194,8 @@ var cliRequestWait = time.Minute
 // errTLSUsage is the usage of signalith cluster tls.
 var errTLSUsage = errors.New("usage: signalith cluster tls [-c file] [-json]\n" +
 	"       signalith cluster tls choose [-c file] [-yes] <server or fingerprint>\n" +
-	"       signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>")
+	"       signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>\n" +
+	"       signalith cluster tls rotate-ca [-c file] [-yes] prepare|switch|retire")
 
 // tlsCommand runs signalith cluster tls with its arguments.
 func (x *clusterCLI) tlsCommand(ctx context.Context, pos []string, certFile string, asJSON, yes bool) error {
@@ -204,6 +206,117 @@ func (x *clusterCLI) tlsCommand(ctx context.Context, pos []string, certFile stri
 		return x.tlsChoose(ctx, pos[1], yes)
 	case len(pos) == 2 && pos[0] == "import":
 		return x.tlsImport(ctx, pos[1], certFile, yes)
+	case len(pos) == 2 && pos[0] == "rotate-ca":
+		return x.tlsRotate(ctx, pos[1], yes)
 	}
 	return errTLSUsage
+}
+
+// rotateQuestions are what tlsRotate asks before each step.
+var rotateQuestions = map[string]string{
+	clustertls.StepPrepare: "Make a new certificate authority for the cluster? Every server hands it out with the one in use from now on, so agents, browsers and syslog devices can trust it before the switch.",
+	clustertls.StepSwitch:  "Switch every server to the new certificate authority (%s)? Each issues itself a new certificate from it; the old one is still trusted until you retire it.",
+	clustertls.StepRetire:  "Retire the old certificate authority (%s)? Its key is deleted from the shared settings, and agents that trust only it need a new configuration.",
+}
+
+// tlsRotate takes step (prepare, switch or retire) of replacing the
+// cluster's certificate authority: the server that runs the background
+// jobs takes it, after checking the servers again.
+func (x *clusterCLI) tlsRotate(ctx context.Context, step string, yes bool) error {
+	rt, st, _, err := x.tlsReport(ctx)
+	if err != nil {
+		return err
+	}
+	b, ok := x.tls.tls.Get()
+	if !st.Published || !ok {
+		return errors.New("the cluster has no certificate authority yet, so there is none to replace")
+	}
+	if err := rt.Writable(); err != nil {
+		return err
+	}
+	var blockers []string
+	if st.Rotation != nil {
+		blockers = st.Rotation.Blockers
+	}
+	fp, err := clustertls.CheckStep(b, blockers, step)
+	if errors.Is(err, clustertls.ErrBadStep) {
+		return errTLSUsage
+	}
+	if err != nil {
+		return err
+	}
+	q := rotateQuestions[step]
+	if strings.Contains(q, "%s") {
+		q = fmt.Sprintf(q, fp)
+	}
+	if err := x.confirm(q, yes); err != nil {
+		return err
+	}
+	req, err := submitRotateCA(ctx, rt, step, fp, x.by)
+	if err != nil {
+		return err
+	}
+	x.audit("asked to replace the cluster's certificate authority", "step", step, "ca_sha256", fp, "request", req.ID)
+	deadline := time.Now().Add(cliRequestWait)
+	for {
+		got, ok, err := rt.Requests().Get(ctx, req.ID)
+		if err == nil && ok && got.Over() {
+			if got.State == shared.RequestFailed {
+				return fmt.Errorf("the %s step was not taken: %s", step, got.Error)
+			}
+			var res clustertls.RotateResult
+			_ = json.Unmarshal(got.Result, &res)
+			x.rotateDone(step, res)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			fmt.Fprintf(x.out, "Asked the server that runs the background jobs to %s (request %s); it has not answered yet. signalith cluster tls shows when it has.\n", step, req.ID)
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+// rotateDone says what step did, and what comes next.
+func (x *clusterCLI) rotateDone(step string, res clustertls.RotateResult) {
+	again := ""
+	if res.Already {
+		again = " (it was already)"
+	}
+	switch step {
+	case clustertls.StepPrepare:
+		fmt.Fprintf(x.out, "The cluster has a new certificate authority, %s%s. Every server hands it out with the one in use within seconds.\n", res.CASHA256, again)
+		fmt.Fprintln(x.out, "Managed agents take both by themselves. Give the others, browsers and syslog devices the CA file from Add data again (both CAs), then run signalith cluster tls rotate-ca switch.")
+	case clustertls.StepSwitch:
+		fmt.Fprintf(x.out, "Every server now issues its certificate from the new certificate authority, %s%s, within seconds. The old one is still trusted.\n", res.CASHA256, again)
+		fmt.Fprintln(x.out, "Once signalith cluster tls shows every server's certificate from it, run signalith cluster tls rotate-ca retire.")
+	case clustertls.StepRetire:
+		fmt.Fprintf(x.out, "The old certificate authority, %s, is retired%s: no server hands it out, and its key is gone from the shared settings.\n", res.CASHA256, again)
+		fmt.Fprintln(x.out, "Copies of the old key elsewhere (backups, removed servers) no longer make certificates agents trust, once each agent has the new CA file only.")
+	}
+}
+
+// printRotation prints how far replacing the cluster's certificate
+// authority came.
+func printRotation(w *tabwriter.Writer, r *clustertls.RotationView) {
+	if r == nil {
+		return
+	}
+	switch r.State {
+	case clustertls.RotationPrepared:
+		fmt.Fprintf(w, "Replacing it:\tprepared on %s by %s: %s is handed out with it\n", r.Next.At.Format(time.DateOnly), cmp.Or(r.Next.By, "-"), r.Next.CASHA256)
+		fmt.Fprintf(w, "\tnext: signalith cluster tls rotate-ca switch\n")
+	case clustertls.RotationSwitched:
+		fmt.Fprintf(w, "Replacing it:\tswitched on %s by %s: the old one, %s, is still trusted\n", r.Previous.At.Format(time.DateOnly), cmp.Or(r.Previous.By, "-"), r.Previous.CASHA256)
+		fmt.Fprintf(w, "\tnext: signalith cluster tls rotate-ca retire\n")
+	default:
+		return
+	}
+	for _, b := range r.Blockers {
+		fmt.Fprintf(w, "\twaiting: %s\n", b)
+	}
 }
