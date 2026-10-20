@@ -230,7 +230,14 @@ sudo tail -n 50 /var/lib/signalith-agent/agent.log     # the agent's and osquery
 ### All of them
 
 When Signalith cannot be reached, the agent keeps running the configuration it has and
-Fluent Bit keeps events in its buffer until Signalith is back.
+Fluent Bit keeps events in its buffer until Signalith is back. The buffer holds at most
+1 GB on disk (4 GB on a network sensor); past that, the oldest events are dropped rather
+than filling the computer's disk.
+
+When Signalith refuses the computer's token three times in a row (it was revoked, or the
+server no longer knows it), the agent stops Fluent Bit and osquery instead of having them
+read events Signalith would refuse. They keep their place in each log, and start again
+from it once Signalith accepts the token. `signalith-agent status` shows why they stopped.
 
 ## What it collects
 
@@ -360,7 +367,7 @@ How it works, and why it is safe:
    Neither takes a manifest signed with a revoked key: the server hands each agent
    its [revocation list](key-management.md#revocation-lists), and the agent and the
    updater each keep the newest one they have seen.
-4. If the new version does not report within 3 minutes, or does not keep running, the
+4. If the new version does not reach Signalith within 3 minutes, or does not keep running, the
    updater puts the version before back and restarts it. The computer's row on the
    **Endpoints** page then says the update failed, with the reason.
 

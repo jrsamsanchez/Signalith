@@ -501,7 +501,7 @@ func (u *Updater) waitWorking(ctx context.Context, version string) error {
 			break
 		}
 		if u.now().After(deadline) {
-			return fmt.Errorf("version %s did not report within %s", version, healthWait)
+			return fmt.Errorf("version %s did not report to Signalith within %s", version, healthWait)
 		}
 		if err := sleepCtx(ctx, pollEvery); err != nil {
 			return err
@@ -524,7 +524,11 @@ func (u *Updater) waitWorking(ctx context.Context, version string) error {
 }
 
 // reported says whether the agent wrote a status as version, started
-// since then.
+// since then, and reached Signalith with it (ASI-04): a version that
+// starts but cannot reach the server (a TLS, proxy or protocol fault)
+// is not working, and goes back. The agent writes the health file
+// before status.json, so once status.json is the new version's, so is
+// the health file.
 func (u *Updater) reported(version string, since time.Time) bool {
 	b, err := u.read(filepath.Base(u.Paths.StatusFile()), true, agentproto.MaxStatusBytes)
 	if err != nil {
@@ -535,8 +539,23 @@ func (u *Updater) reported(version string, since time.Time) bool {
 		return false
 	}
 	started, err := time.Parse(time.RFC3339, st.Started)
-	return err == nil && st.Version == version && !started.Before(since)
+	if err != nil || st.Version != version || started.Before(since) {
+		return false
+	}
+	h, err := u.read(filepath.Base(u.Paths.HealthFile()), true, maxHealthBytes)
+	if err != nil {
+		return false
+	}
+	for _, l := range strings.Split(string(h), "\n") {
+		if l == "reported=yes" {
+			return true
+		}
+	}
+	return false
 }
+
+// maxHealthBytes caps the health file the updater reads.
+const maxHealthBytes = 64 << 10
 
 // result writes what the updater did for the agent to report.
 func (u *Updater) result(version string, err error) {
