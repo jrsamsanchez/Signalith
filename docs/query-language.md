@@ -2,7 +2,8 @@
 
 A query is a **search** followed by zero or more **commands**, each after a `|`.
 The search selects events; commands reshape the results. It reads like Splunk's SPL,
-but it is Signalith's own language and does not claim SPL compatibility.
+but it is Signalith's own language. [Splunk SPL compatibility](compatibility.md) lists what
+works as in SPL, what works differently and what is missing.
 
 ```
 datamodel=Authentication action=failure earliest=-24h
