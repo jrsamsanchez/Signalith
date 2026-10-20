@@ -226,6 +226,9 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// The values are the finding's, from the logs: a logged * or ? is a
+	// character, not a wildcard that would silence every result.
+	e.Exact = true
 	var d *detect.Detection
 	note := "Stopped alerting on " + e.Describe()
 	if scope := strings.TrimSpace(req.Scope); scope != "" {

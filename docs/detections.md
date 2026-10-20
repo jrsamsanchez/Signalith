@@ -237,7 +237,9 @@ window.
   **Don't alert on this again**, tick the values to match (the finding's host, user
   and so on), pick how long (24 hours, 7 days, 30 days or until removed), and add a
   comment. The finding can be closed in the same step, as a false positive by
-  default, and its activity records what was suppressed.
+  default, and its activity records what was suppressed. Values taken from a finding
+  match exactly, ignoring case: a logged `*` or `?` is a plain character, not a
+  wildcard.
 - **On the detection**: the **Exceptions** section of a detection lists each
   exception with who added it, when and why, and how long it lasts. Admins remove
   one with its bin icon, or add one by hand with **Add**: one `field=value` per line,

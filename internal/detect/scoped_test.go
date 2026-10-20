@@ -179,3 +179,25 @@ func TestScopedExceptionsLimits(t *testing.T) {
 		t.Errorf("put reserved = %v", err)
 	}
 }
+
+// An exact exception compares whole values, ignoring case, with * and ?
+// as plain characters; one without Exact keeps its wildcards.
+func TestExactException(t *testing.T) {
+	e := Exception{ID: "ex-1", Match: map[string]string{"user": "svc*"}, Exact: true}
+	for v, want := range map[string]bool{"svc*": true, "SVC*": true, "svc-backup": false, "bob": false} {
+		if got := e.Matches(map[string]any{"user": v}); got != want {
+			t.Errorf("exact svc* on %q = %v", v, got)
+		}
+	}
+	if !e.Matches(map[string]any{"user": []any{"bob", "svc*"}}) {
+		t.Error("exact on a multi-valued field")
+	}
+	e.Exact = false
+	if !e.Matches(map[string]any{"user": "svc-backup"}) {
+		t.Error("a wildcard exception no longer matches")
+	}
+	d := &Detection{ID: "exceptions", Title: "x", Query: "user=x", Schedule: "5m", Lookback: "5m"}
+	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("the id exceptions = %v", err)
+	}
+}

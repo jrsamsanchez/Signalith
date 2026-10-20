@@ -120,8 +120,11 @@ func (d *Detection) Validate() error {
 	var p []string
 	if !idPattern.MatchString(d.ID) {
 		p = append(p, "id must be 3-64 lowercase letters, digits, - or _")
-	} else if d.ID == ScopedID {
-		p = append(p, "the id "+ScopedID+" is reserved")
+	} else if d.ID == ScopedID || d.ID == "exceptions" {
+		// exceptions is also the page of exceptions for many detections
+		// (/api/detections/exceptions), which a detection of that id
+		// could not be read past.
+		p = append(p, "the id "+d.ID+" is reserved")
 	}
 	if strings.TrimSpace(d.Title) == "" {
 		p = append(p, "title is required")

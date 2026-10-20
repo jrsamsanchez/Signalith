@@ -5,10 +5,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 )
 
@@ -87,5 +89,32 @@ func TestScopedExceptionsAPI(t *testing.T) {
 	}
 	if code, _ := do(t, ts, "POST", "/api/findings/f-1/suppress", `{"fields":["dest"],"scope":"rules"}`, true); code != 400 {
 		t.Errorf("bad scope from a finding = %d", code)
+	}
+
+	// A value from the logs is taken as it is: a user someone named "*"
+	// in a failed sign-in must not silence every result with a user.
+	f2 := &findings.Finding{ID: "f-2", DetectionID: "auth-brute-force", Title: "Brute force", Severity: "medium",
+		Status: findings.StatusNew, Result: map[string]any{"user": "*", "count": 40},
+		Created: time.Now(), Updated: time.Now()}
+	if err := store.Create(context.Background(), f2); err != nil {
+		t.Fatal(err)
+	}
+	code, body = do(t, ts, "POST", "/api/findings/f-2/suppress", `{"fields":["user"],"scope":"all","for":"7d"}`, true)
+	if code != 200 {
+		t.Fatalf("suppress * = %d %v", code, body)
+	}
+	if ex := body["exception"].(map[string]any); ex["exact"] != true {
+		t.Errorf("an exception from a finding is not exact: %v", ex)
+	}
+	_, body = do(t, ts, "GET", "/api/detections/exceptions", "", true)
+	for _, raw := range body["exceptions"].([]any) {
+		b, _ := json.Marshal(raw)
+		var e detect.Exception
+		if err := json.Unmarshal(b, &e); err != nil {
+			t.Fatal(err)
+		}
+		if e.Finding == "f-2" && (e.Matches(map[string]any{"user": "bob"}) || !e.Matches(map[string]any{"user": "*"})) {
+			t.Errorf("exception from a logged * = %+v", e)
+		}
 	}
 }
