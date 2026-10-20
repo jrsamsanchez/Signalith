@@ -1,14 +1,21 @@
 # Install from packages
 
 Each [release](https://github.com/jrsamsanchez/Signalith/releases) has ready-made
-packages that install Signalith as a service in one step:
+packages that install Signalith as a service in one step. Downloads for the current
+release, 0.3.0 (newer ones are on the
+[latest release](https://github.com/jrsamsanchez/Signalith/releases/latest) page):
 
-| System | Package |
+| System | Download |
 | --- | --- |
-| Debian, Ubuntu (amd64, arm64) | `signalith_<version>-1_amd64.deb`, `signalith_<version>-1_arm64.deb` |
-| Red Hat, Rocky, Alma, Fedora, SUSE (x86_64, aarch64) | `signalith-<version>-1.x86_64.rpm`, `signalith-<version>-1.aarch64.rpm` |
-| Windows 10, 11, Server 2019 and later (64-bit) | `signalith-<version>-x64.msi` |
-| Docker | `ghcr.io/jrsamsanchez/signalith:<version>` |
+| Debian, Ubuntu | [amd64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith_0.3.0-1_amd64.deb), [arm64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith_0.3.0-1_arm64.deb) |
+| Red Hat, Rocky, Alma, Fedora, SUSE | [x86_64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-1.x86_64.rpm), [aarch64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-1.aarch64.rpm) |
+| Windows 10, 11, Server 2019 and later (64-bit) | [signalith-0.3.0-x64.msi](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/signalith-0.3.0-x64.msi) |
+| Docker | `ghcr.io/jrsamsanchez/signalith:0.3.0` |
+| Checksums | [SHA256SUMS](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.0/SHA256SUMS) ([check a download](#check-a-download)) |
+
+On Linux, the [apt](#debian-and-ubuntu) and [dnf](#red-hat-rocky-alma-fedora-and-suse)
+repositories are easier than a download: they install the latest release and upgrade
+with the rest of the system.
 
 Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x or 3.x. The
 Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)),
@@ -41,7 +48,7 @@ sudo signalith initial-password
 Or install a downloaded package (upgrades are then by hand, with the next one):
 
 ```sh
-sudo apt install ./signalith_0.1.0-1_amd64.deb
+sudo apt install ./signalith_0.3.0-1_amd64.deb
 ```
 
 ## Red Hat, Rocky, Alma, Fedora and SUSE
@@ -61,7 +68,7 @@ On SUSE: `sudo zypper addrepo https://signalith.io/rpm/signalith.repo`, then
 Or install a downloaded package (upgrades are then by hand, with the next one):
 
 ```sh
-sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
+sudo dnf install ./signalith-0.3.0-1.x86_64.rpm
 ```
 
 ### What the Linux packages do
@@ -89,9 +96,10 @@ sudo dnf install ./signalith-0.1.0-1.x86_64.rpm
 
 ## Windows
 
-Double-click `signalith-0.1.0-x64.msi` and follow the steps (it asks for administrator
-rights). It installs OpenSearch as well, which it downloads (about 1 GB), so the first
-install takes a few minutes. When it finishes, Signalith and OpenSearch are running as
+Double-click the `.msi` and follow the steps (it asks for administrator rights). From
+0.3.1 on, it installs OpenSearch as well, which it downloads (about 1 GB), so the first
+install takes a few minutes. With 0.3.0, install OpenSearch first and give its address
+with `OPENSEARCHURL` (below). When it finishes, Signalith and OpenSearch are running as
 the **Signalith** and **SignalithOpenSearch** services. Open
 **Signalith** from the Start menu (https://localhost:9000) and sign in as `signalithadmin`. To see
 the first password, open PowerShell **as Administrator** and run:
@@ -108,14 +116,14 @@ protected your PC". [Check the download](#check-a-download) first, then click
 For a silent install, for example from a deployment tool:
 
 ```powershell
-msiexec /i signalith-0.1.0-x64.msi /qn
+msiexec /i signalith-0.3.0-x64.msi /qn
 ```
 
 To use an OpenSearch you already run instead of installing one, give its address (then
 [secure it](opensearch-security.md) and give Signalith a certificate to sign in with):
 
 ```powershell
-msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
+msiexec /i signalith-0.3.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 ```
 
 ### What the Windows installer does
@@ -170,7 +178,7 @@ A computer without internet access: download
 over, and install with:
 
 ```powershell
-msiexec /i signalith-0.1.0-x64.msi OPENSEARCHZIP=C:\Downloads\opensearch-3.9.0-windows-x64.zip
+msiexec /i signalith-<version>-x64.msi OPENSEARCHZIP=C:\Downloads\opensearch-3.9.0-windows-x64.zip
 ```
 
 `signalith opensearch status`, in PowerShell as Administrator, shows what is installed.
@@ -181,13 +189,13 @@ OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
 Each release is also a container image for amd64 and arm64:
 
 ```sh
-docker pull ghcr.io/jrsamsanchez/signalith:0.1.0
+docker pull ghcr.io/jrsamsanchez/signalith:0.3.0
 ```
 
 The [Docker quick start](getting-started.md#docker-quick-start) runs this image with
 OpenSearch: the newest code on `main` by default (the `:main` image, rebuilt on every
 change), or a release when you set `SIGNALITH_VERSION`, for example
-`SIGNALITH_VERSION=0.1.0`.
+`SIGNALITH_VERSION=0.3.0`.
 
 ## Check a download
 
@@ -197,8 +205,8 @@ what you downloaded is exactly what it built.
 **With the GitHub CLI** (any file from the release, or the image):
 
 ```sh
-gh attestation verify signalith_0.1.0-1_amd64.deb --repo jrsamsanchez/Signalith
-gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.1.0 --repo jrsamsanchez/Signalith
+gh attestation verify signalith_0.3.0-1_amd64.deb --repo jrsamsanchez/Signalith
+gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.3.0 --repo jrsamsanchez/Signalith
 ```
 
 **With the checksums**: download `SHA256SUMS` and its signatures from the release, then
@@ -216,7 +224,7 @@ gpg --verify SHA256SUMS.asc SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-On Windows, `Get-FileHash signalith-0.1.0-x64.msi` prints the SHA-256 to compare with the
+On Windows, `Get-FileHash signalith-0.3.0-x64.msi` prints the SHA-256 to compare with the
 line in `SHA256SUMS`.
 
 The `.rpm` packages are signed with the same GPG key, so `dnf` and `rpm -K` can check
