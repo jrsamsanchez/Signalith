@@ -70,7 +70,9 @@ func TestClusterRemoveAfterRotateKey(t *testing.T) {
 	srv := shared.NewRuntime(shared.RuntimeOptions{StateDir: stateA, Self: shared.Self{NodeID: a.NodeID, Name: a.Name}})
 	srv.Use(cl, "cc", c.Keyring())
 	sctx, stop := context.WithCancel(ctx)
-	t.Cleanup(stop)
+	// Stopped and waited for before the state folder is removed: Windows
+	// cannot remove a file the server still has open.
+	t.Cleanup(func() { stop(); srv.Wait() })
 	srv.Start(sctx)
 	if err := srv.FlushCache(); err != nil {
 		t.Fatal(err)
