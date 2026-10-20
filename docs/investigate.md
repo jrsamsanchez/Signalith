@@ -102,14 +102,20 @@ can do:
   so far is refused, whatever field it names (`TargetUserName=adm*` or `administrator`
   when `user` is masked). Regular expressions (`=~`, `match()`) are not allowed at all, a
   wildcard pattern needs at least three characters between wildcards, `<` and `>` work
-  only on numbers and `_time` (and not at all while a masked value is a number), a
-  network such as `10.0.0.0/8` cannot be matched while a masked value is an address, and
-  `where` may use only functions that do not take a value apart (`len`, `lower`, `like`,
-  `in`, `if`, `coalesce` and the like). A refusal does tell the model that something it
-  wrote matches a masked value, so it can still confirm a guess of a whole value, or of
-  three characters of one, a few searches at a time; it cannot spell a value out one
-  character at a time. Mask every field that holds a sensitive value, or use a model on
-  your own network, when that matters.
+  only on numbers and `_time` (and not at all while a masked value is a number), and a
+  network such as `10.0.0.0/8` cannot be matched while a masked value is an address.
+  `where` may only compare a field with one value as written: `=`, `!=`, `<` and `>` on
+  numbers, `like(field, "pattern")`, `in(field, values)`, `cidrmatch("network", field)`,
+  `isnull` and `isnotnull`, joined with `AND`, `OR` and `NOT`. Nothing computed from a
+  field (`len()`, `ltrim()`, `min()`, `if()`, joined strings) is allowed, so every value is
+  checked whole.
+- A refusal for a masked value would itself tell the model that its guess matched, so
+  such a search **ends the investigation**: the model is not told, its other searches do
+  not run, nothing more is sent to it, and the page says the investigation stopped
+  because the model searched for a masked value. The model can therefore learn at most
+  that one guess matched by being cut off, once per investigation, never spell a value
+  out a character at a time. Mask every field that holds a sensitive value, or use a
+  model on your own network, when that matters.
 - A search that does not parse is not run either. A refused search shows on the page with
   the reason, and goes in the audit log.
 - The model may suggest only containment actions (blocking an address, isolating a host,

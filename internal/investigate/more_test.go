@@ -329,7 +329,7 @@ func TestGuardMore(t *testing.T) {
 		`user=adm* OR src=1.2.3.4`:                   false,
 		`NOT (src=1 OR user=bob)`:                    false,
 		`* | where -len(user) < 3`:                   false,
-		`* | where len(src) > 3`:                     true,
+		`* | where len(src) > 3`:                     false,
 		`masked-user-1 | where user="masked-user-1"`: true,
 		`* | eval x=1`:                               false,
 	} {

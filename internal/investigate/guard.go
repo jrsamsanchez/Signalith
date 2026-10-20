@@ -28,12 +28,12 @@ import (
 // TargetUserName, or the message text), so the values themselves are
 // guarded on every field: a literal, wildcard pattern or free-text word
 // that could match a masked value seen so far is refused, whatever field
-// it names. A refusal still tells the model that something it wrote
-// matches a masked value, so the rules that do not depend on the values
-// (no regular expressions, at least three characters between wildcards,
-// no ranges on text, no functions that take a value apart) keep each
-// refusal to a guess of a whole value or of three characters of one,
-// never a character at a time.
+// it names. Such a refusal (MaskedValueError) would itself confirm a
+// guess, so it ends the run without telling the model (see Run). The
+// rules that do not depend on the values (no regular expressions, at
+// least three characters between wildcards, no ranges on text, where
+// limited to a field compared with a literal) keep every value the model
+// writes whole, so it is checked as written.
 
 // guardQuery checks a search the model wrote, before its stand-ins are
 // turned back into real values.
@@ -159,11 +159,17 @@ func guardExpr(e query.Expr, m *Masker, piped bool) error {
 	return nil
 }
 
-// errMaskedValue refuses a value that could match a masked one. It does
-// not say which one, or of which field.
-func errMaskedValue(v string) error {
-	return fmt.Errorf("%q could match a masked value; match masked values only with their stand-ins, such as masked-user-1", v)
+// MaskedValueError refuses a value that could match a masked one. It does
+// not say which one, or of which field. The refusal itself says that a
+// masked value matched, so a run stops at the first one (see Run): a
+// model cannot grow a guess one refused search at a time.
+type MaskedValueError struct{ Value string }
+
+func (e *MaskedValueError) Error() string {
+	return fmt.Sprintf("%q could match a masked value; match masked values only with their stand-ins, such as masked-user-1", e.Value)
 }
+
+func errMaskedValue(v string) error { return &MaskedValueError{Value: v} }
 
 // guardCompare checks a comparison on any field against the masked values.
 func (m *Masker) guardCompare(e *query.Compare) error {
@@ -233,57 +239,109 @@ func (m *Masker) guardRange(field, v string) error {
 	return nil
 }
 
-// safeCalls are the functions a where expression may use: none of them
-// takes a value apart, so a value is only ever compared whole.
-var safeCalls = []string{"len", "lower", "upper", "trim", "ltrim", "rtrim", "abs", "ceil", "ceiling", "floor", "round",
-	"min", "max", "isnull", "isnotnull", "isnum", "isint", "isstr", "coalesce", "if", "case", "like", "in", "cidrmatch",
-	"mvcount", "now", "relative_time", "null", "true", "false"}
-
-// guardEval checks a where expression on fields that are not masked: only
-// safeCalls, text compared whole (=, !=, in()) or by like() under the
-// pattern rules, and no ranges on text.
+// guardEval checks a where expression. Only plain comparisons of a field
+// with a literal are allowed, so every value the model wrote is checked
+// whole against the masked values, and nothing computed from a field
+// (lengths, trimming, joined strings, orderings of text) can test a
+// guess:
+//
+//   - field = literal, field != literal (and == ), field = field;
+//   - field < number and the like, while no masked value is a number;
+//   - field LIKE "pattern", like(field, "pattern"), in(field, literals),
+//     cidrmatch("network", field), isnull(field), isnotnull(field);
+//   - AND, OR, XOR and NOT of these.
 func (m *Masker) guardEval(x query.EvalExpr) error {
 	switch x := x.(type) {
-	case nil, *query.Num, *query.Field:
+	case *query.Field:
+		return nil
+	case *query.Num:
 		return nil
 	case *query.Str:
 		return m.guardLiteral("", x.Value)
 	case *query.Unary:
-		return m.guardEval(x.X)
+		if strings.EqualFold(x.Op, "NOT") {
+			return m.guardEval(x.X)
+		}
+		if _, ok := x.X.(*query.Num); ok && x.Op == "-" {
+			return nil
+		}
 	case *query.Binary:
-		_, ls := x.L.(*query.Str)
-		_, rs := x.R.(*query.Str)
-		switch strings.ToUpper(x.Op) {
-		case "LIKE":
-			if s, ok := x.R.(*query.Str); ok {
-				if err := m.guardPattern("like ", s.Value, "%", "_"); err != nil {
-					return err
-				}
-				return m.guardEval(x.L)
+		op := strings.ToUpper(x.Op)
+		switch op {
+		case "AND", "OR", "XOR":
+			if err := m.guardEval(x.L); err != nil {
+				return err
 			}
+			return m.guardEval(x.R)
+		case "=", "==", "!=":
+			if !plainOperand(x.L) || !plainOperand(x.R) {
+				break
+			}
+			if err := m.guardEval(x.L); err != nil {
+				return err
+			}
+			return m.guardEval(x.R)
 		case "<", "<=", ">", ">=":
-			if ls || rs {
-				return fmt.Errorf("comparing text with < or > is not allowed in an AI investigation's searches; use = or !=")
+			_, lf := x.L.(*query.Field)
+			_, rf := x.R.(*query.Field)
+			if !(lf && isNumber(x.R)) && !(rf && isNumber(x.L)) {
+				break
 			}
 			if m.anyNumber() {
 				return fmt.Errorf("comparing with < or > is not allowed while masked values include numbers")
 			}
+			return nil
+		case "LIKE":
+			_, lf := x.L.(*query.Field)
+			if s, ok := x.R.(*query.Str); ok && lf {
+				return m.guardPattern("like ", s.Value, "%", "_")
+			}
 		}
-		if err := m.guardEval(x.L); err != nil {
-			return err
-		}
-		return m.guardEval(x.R)
 	case *query.Call:
-		f := strings.ToLower(x.Func)
-		if !slices.Contains(safeCalls, f) {
-			return fmt.Errorf("%s() is not allowed in an AI investigation's where expressions; compare fields with = or !=, or use len(), like() or in()", x.Func)
+		return m.guardCall(x)
+	}
+	return fmt.Errorf("where in an AI investigation's searches may only compare a field with a value (=, !=, < and > on numbers, like(), in(), cidrmatch(), isnull()), joined with AND, OR and NOT: %s", x.String())
+}
+
+// guardCall checks the few functions a where expression may use.
+func (m *Masker) guardCall(c *query.Call) error {
+	field := func(i int) bool {
+		if i >= len(c.Args) {
+			return false
 		}
-		for i, a := range x.Args {
-			if s, ok := a.(*query.Str); ok && f == "like" && i == 1 {
-				if err := m.guardPattern("like ", s.Value, "%", "_"); err != nil {
-					return err
-				}
-				continue
+		_, ok := c.Args[i].(*query.Field)
+		return ok
+	}
+	str := func(i int) (string, bool) {
+		if i >= len(c.Args) {
+			return "", false
+		}
+		s, ok := c.Args[i].(*query.Str)
+		if !ok {
+			return "", false
+		}
+		return s.Value, true
+	}
+	switch strings.ToLower(c.Func) {
+	case "isnull", "isnotnull":
+		if len(c.Args) == 1 && field(0) {
+			return nil
+		}
+	case "like":
+		if p, ok := str(1); ok && len(c.Args) == 2 && field(0) {
+			return m.guardPattern("like ", p, "%", "_")
+		}
+	case "cidrmatch":
+		if n, ok := str(0); ok && len(c.Args) == 2 && field(1) {
+			return m.guardLiteral("cidrmatch ", n)
+		}
+	case "in":
+		if len(c.Args) < 2 || !field(0) {
+			break
+		}
+		for _, a := range c.Args[1:] {
+			if !isLiteral(a) {
+				return fmt.Errorf("in() in an AI investigation's searches takes a field and values: %s", c.String())
 			}
 			if err := m.guardEval(a); err != nil {
 				return err
@@ -291,7 +349,36 @@ func (m *Masker) guardEval(x query.EvalExpr) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("this kind of expression is not allowed in an AI investigation's searches")
+	return fmt.Errorf("where in an AI investigation's searches may only use like(field, \"pattern\"), in(field, values), cidrmatch(\"network\", field), isnull(field) and isnotnull(field): %s", c.String())
+}
+
+// plainOperand is a field or a literal, nothing computed.
+func plainOperand(x query.EvalExpr) bool {
+	_, f := x.(*query.Field)
+	return f || isLiteral(x)
+}
+
+// isLiteral is a string or number literal, or a negative number.
+func isLiteral(x query.EvalExpr) bool {
+	switch x := x.(type) {
+	case *query.Str, *query.Num:
+		return true
+	case *query.Unary:
+		_, ok := x.X.(*query.Num)
+		return ok && x.Op == "-"
+	}
+	return false
+}
+
+// isNumber is a number literal, or a negative one.
+func isNumber(x query.EvalExpr) bool {
+	_, ok := x.(*query.Num)
+	return ok || (isLiteral(x) && !isStr(x))
+}
+
+func isStr(x query.EvalExpr) bool {
+	_, ok := x.(*query.Str)
+	return ok
 }
 
 // holds reports whether a value is a masked value, or holds one long
