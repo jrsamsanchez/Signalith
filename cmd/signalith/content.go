@@ -68,20 +68,26 @@ func runContent(args []string, out io.Writer) error {
 	note := fs.String("note", "", "why the keys are revoked (revoke)")
 	rest := parseInterleaved(fs, args)
 	var revocations *keytrust.Store
+	var state string
 	dir := func() (string, error) {
 		useServiceEnv(*path, out)
 		c, err := config.Load(*path)
 		if err != nil {
 			return "", err
 		}
-		revocations = &keytrust.Store{Dir: filepath.Join(c.StateDir(), "keytrust")}
+		state = c.StateDir()
+		revocations = &keytrust.Store{Dir: filepath.Join(state, "keytrust")}
 		return filepath.Join(c.DetectionsDir(), "content"), nil
 	}
 	// trusted are the content keys this server trusts: built in, plus the
 	// root keys, less the keys revoked.
 	trusted := func() ([]ed25519.PublicKey, error) {
+		// A kept list that cannot be read trusts no key, as the server does.
 		list, _, _, err := revocations.Load()
-		return keytrust.Trusted(content.TrustedKeys(), keytrust.RevokedIDs(list)), err
+		if err != nil {
+			return nil, err
+		}
+		return keytrust.Trusted(content.TrustedKeys(), keytrust.RevokedIDs(list)), nil
 	}
 	switch cmd {
 	case "keygen":
@@ -143,7 +149,8 @@ func runContent(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "Rules built into this Signalith: %s\n", detect.BuiltinContentVersion())
 		keys, err := trusted()
 		if err != nil {
-			fmt.Fprintf(out, "The kept revocation list cannot be read: %v\n", err)
+			fmt.Fprintf(out, "No content update is used or taken: %v\n", err)
+			return nil
 		}
 		b, err := content.Installed(d, keys)
 		switch {
@@ -216,6 +223,9 @@ func runContent(args []string, out io.Writer) error {
 		sig, err := os.ReadFile(rest[0] + ".sig")
 		if err != nil {
 			return fmt.Errorf("the signature: %w", err)
+		}
+		if err := asServiceUser(state, "content import-revocations "+rest[0]); err != nil {
+			return err
 		}
 		kept, err := revocations.Offer(data, sig)
 		if err != nil {
@@ -310,7 +320,9 @@ func writeRevocations(out io.Writer, ids []string, output, from, note string) er
 		if err != nil {
 			return fmt.Errorf("the signature of %s: %w", from, err)
 		}
-		old, err := keytrust.Verify([]ed25519.PublicKey{root}, data, sig)
+		// Signed by this root key or one this build trusts, so a list can be
+		// signed again with a new root key.
+		old, err := keytrust.Verify(append(slices.Clone(keytrust.Roots), root), data, sig)
 		if err != nil {
 			return fmt.Errorf("%s: %w", from, err)
 		}

@@ -218,3 +218,49 @@ func TestTrusted(t *testing.T) {
 		t.Fatalf("trusted with no list = %d keys, want the online key and the root", len(got))
 	}
 }
+
+// A keytrust folder that is a link is not written through: whoever owns
+// the folder above could point it anywhere.
+func TestStoreDoesNotFollowLinkedFolder(t *testing.T) {
+	_, rootPriv := useRoot(t)
+	state, target := t.TempDir(), t.TempDir()
+	dir := filepath.Join(state, "keytrust")
+	if err := os.Symlink(target, dir); err != nil {
+		t.Skip("cannot make a link:", err)
+	}
+	data, sig := signedList(t, rootPriv, time.Now())
+	if kept, err := (&Store{Dir: dir}).Offer(data, sig); kept || err == nil || !strings.Contains(err.Error(), "link") {
+		t.Fatalf("offer through a link: %v %v", kept, err)
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Fatalf("written through the link: %v", entries)
+	}
+}
+
+// A list kept from a root key a later build dropped no longer checks, so
+// the server refuses updates until a list signed with a current root key
+// replaces it.
+func TestListFromRemovedRootIsReplaced(t *testing.T) {
+	_, oldPriv := useRoot(t)
+	a, _ := newKey(t)
+	dir := filepath.Join(t.TempDir(), "keytrust")
+	now := time.Now().UTC()
+	d1, s1 := signedList(t, oldPriv, now, KeyID(a))
+	if kept, err := (&Store{Dir: dir}).Offer(d1, s1); !kept || err != nil {
+		t.Fatalf("offer: %v %v", kept, err)
+	}
+	newPub, newPriv := newKey(t)
+	Roots = []ed25519.PublicKey{newPub}
+	s := &Store{Dir: dir}
+	if _, _, _, err := s.Load(); err == nil {
+		t.Fatal("a list signed with a dropped root key was used")
+	}
+	// The same list signed again with the new root key, even with the
+	// same issue time, is taken.
+	if kept, err := s.Offer(d1, Sign(newPriv, d1)); !kept || err != nil {
+		t.Fatalf("re-signed list: %v %v", kept, err)
+	}
+	if l, _, _, err := (&Store{Dir: dir}).Load(); err != nil || !RevokedIDs(l)[KeyID(a)] {
+		t.Fatalf("after: %+v %v", l, err)
+	}
+}

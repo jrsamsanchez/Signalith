@@ -136,3 +136,82 @@ func TestContentRevokeFutureList(t *testing.T) {
 		t.Fatalf("a list issued now: %v\n%s", err, out.String())
 	}
 }
+
+// A list can be signed again with a new root key, -from the list the old
+// root key signed, before a release drops the old one.
+func TestContentRevokeResignWithNewRoot(t *testing.T) {
+	oldPriv, oldPub, err := content.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPriv, newPub, err := content.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roots []ed25519.PublicKey
+	for _, p := range []string{oldPub, newPub} {
+		k, err := base64.StdEncoding.DecodeString(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		roots = append(roots, k)
+	}
+	old := keytrust.Roots
+	keytrust.Roots = roots
+	t.Cleanup(func() { keytrust.Roots = old })
+	var out strings.Builder
+	list := filepath.Join(t.TempDir(), keytrust.ListFile)
+	t.Setenv("SIGNALITH_ROOT_KEY", oldPriv)
+	if err := runContent([]string{"revoke", "-o", list, "a1b2c3d4e5f6"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIGNALITH_ROOT_KEY", newPriv)
+	list2 := filepath.Join(t.TempDir(), keytrust.ListFile)
+	if err := runContent([]string{"revoke", "-o", list2, "-from", list, "0123456789ab"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(list2)
+	sig, _ := os.ReadFile(list2 + ".sig")
+	l, err := keytrust.Verify(roots[1:], data, sig)
+	if err != nil || len(l.Revoked) != 2 {
+		t.Fatalf("re-signed list: %+v %v", l, err)
+	}
+}
+
+// With a kept revocation list that cannot be read, status trusts no key.
+func TestContentStatusUnreadableList(t *testing.T) {
+	path, _ := contentConfig(t)
+	state := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", state)
+	priv, pub, err := content.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPub, err := base64.StdEncoding.DecodeString(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = old })
+	rootPriv, err := content.ParsePrivateKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(state, "keytrust")
+	data := []byte(`{"format":1,"issued":"2026-10-20T00:00:00Z"}`)
+	if _, err := (&keytrust.Store{Dir: dir}).Offer(data, keytrust.Sign(rootPriv, data)); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("kept files: %v %v", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, entries[0].Name()), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := runContent([]string{"status", "-c", path}, &out); err != nil || !strings.Contains(out.String(), "No content update is used or taken") {
+		t.Fatalf("status: %v\n%s", err, out.String())
+	}
+}

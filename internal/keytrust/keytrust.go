@@ -288,10 +288,12 @@ func (s *Store) Offer(data, sig []byte) (bool, error) {
 	if err == nil && cur != nil && !l.Issued.After(cur.list.Issued) {
 		return false, nil
 	}
-	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
-		return false, err
+	// Whoever owns the folder above could put a link here; the list is
+	// only written to a real folder.
+	if fi, err := os.Lstat(s.Dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return false, fmt.Errorf("%s is a link, not a folder; the revocation list is not kept through it", s.Dir)
 	}
-	if err := ownLike(filepath.Dir(s.Dir), s.Dir); err != nil {
+	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return false, err
 	}
 	if err := writeAtomic(filepath.Join(s.Dir, keptFile), slices.Concat(sig, data)); err != nil {
@@ -392,11 +394,6 @@ func writeAtomic(path string, data []byte) error {
 		}
 	}()
 	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
-	// Run as root (sudo signalith content import-revocations), the file
-	// still belongs to the service, as the folder above Dir does.
-	if err := ownLike(filepath.Dir(filepath.Dir(path)), tmp.Name()); err != nil {
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {

@@ -87,6 +87,8 @@ updates until it can. Forgetting a revocation would be worse. Its log and the
 Detections page say so. The usual cause is a `keytrust/` folder, or a file in it, that
 does not belong to the user Signalith runs as. Fix the owner, for example with
 `sudo chown -R signalith: /var/lib/signalith/keytrust`, or import the list again.
+A kept list signed by a root key that a later release dropped cannot be read either,
+until a list signed by a current root key arrives (see [Root key](#replacing-a-key-on-a-schedule)).
 
 To see which keys a server refuses:
 
@@ -118,6 +120,19 @@ repositories still work.
 **Root key.** Add a second root key to `root.keys` and make a release. Once that
 release is in wide use, the old root key can be removed. A root key cannot be revoked
 by a list, so a root key is retired by releasing without it.
+
+Before the release that drops the old root key, sign the published revocation list
+again with the new root key and publish it. Also add the IDs it revokes to
+`internal/keytrust/revoked.keys`. A server keeps refusing content and agent updates
+while its kept list is signed by a root key it no longer trusts, until it gets a list
+signed by a current one. It takes such a list even when it is no newer.
+
+```sh
+export SIGNALITH_ROOT_KEY='<new root private key>'
+signalith content revoke -o new/signalith-revoked.json -from signalith-revoked.json -note "signed with the new root key" <a key ID already in the list>
+```
+
+`-from` takes a list signed by any root key the build trusts.
 
 ## A signing key leaked
 
@@ -155,11 +170,11 @@ key and can change the repository's secrets.
    with no internet access need the two files copied over, and then:
 
    ```sh
-   sudo signalith content import-revocations signalith-revoked.json
+   sudo -u signalith signalith content import-revocations signalith-revoked.json
    ```
 
-   Run as root, the command gives the files it keeps to the owner of the state folder,
-   so the service can still read them.
+   Run it as the user Signalith runs as, so the service can read the files it keeps.
+   Run as root, it refuses a state folder that belongs to another user.
 
 5. **Make a new key.** Put it in the secret, and add its public key to the trusted
    file. Until a release trusts the new key, sign the next bundle or agent release
@@ -175,8 +190,10 @@ key and publish its fingerprint. Rebuild the apt and dnf repositories,
 and tell users to import the new `signalith-release-key.asc`.
 
 **If the root key leaked:** a list cannot revoke a root key. Make a new root key and
-release without the old one in `root.keys`. Revoke any online key the attacker could
-have replaced. Write an advisory telling users to upgrade. Until they do, they trust
+release without the old one in `root.keys`. Before that release, sign the published
+list again with the new root key, publish it, and add the IDs it revokes to
+`revoked.keys`, as for [replacing the root key](#replacing-a-key-on-a-schedule).
+Revoke any online key the attacker could have replaced. Write an advisory telling users to upgrade. Until they do, they trust
 what the old root key signs.
 
 **Sigstore** has no key to leak. What an attacker would need is a way to run the
