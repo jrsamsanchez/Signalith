@@ -507,6 +507,16 @@ func (s KeyStore) SaveClusterKey(k *ClusterKey) error {
 	return p.Commit()
 }
 
+// ClusterKeyCreated is when the cluster key kid was kept in the state
+// folder.
+func (s KeyStore) ClusterKeyCreated(kid string) (time.Time, error) {
+	var f keyFile
+	if err := readJSON(ClusterKeyPath(s.Dir, kid), &f); err != nil {
+		return time.Time{}, err
+	}
+	return f.Created, nil
+}
+
 // ClusterKeys reads the cluster keys kept in the state folder. A file
 // that cannot be read is an error: a key that is there but cannot be
 // opened must not pass for a missing one.
