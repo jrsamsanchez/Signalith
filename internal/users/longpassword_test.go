@@ -58,3 +58,18 @@ func TestLongPasswords(t *testing.T) {
 		t.Error("an empty hash matches")
 	}
 }
+
+// Password hashes are made at bcrypt's default cost. This package's tests
+// never call UseFastHashesInTests, so this checks the production cost.
+func TestHashPasswordCost(t *testing.T) {
+	h, err := HashPassword("correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := bcrypt.Cost([]byte(h)); err != nil || c != bcrypt.DefaultCost {
+		t.Fatalf("cost %d (%v), want %d", c, err, bcrypt.DefaultCost)
+	}
+	if c, err := bcrypt.Cost(dummyHash()); err != nil || c != bcrypt.DefaultCost {
+		t.Fatalf("dummy hash cost %d (%v), want %d", c, err, bcrypt.DefaultCost)
+	}
+}
