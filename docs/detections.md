@@ -259,6 +259,11 @@ exception records who proposed and who approved it, and the audit log records th
 proposal and the decision. A request nobody decides in 14 days expires. Up to 200
 requests can wait at once, 50 of them from one person.
 
+The values come from the finding, so the exception matches them **exactly**
+(ignoring case): a logged `*` or `adm?` is taken as those characters, never as a
+wildcard. An admin who proposes an exception cannot approve it; another admin does,
+or they add the exception on the detection directly.
+
 Each run counts the results exceptions matched; **Last run** on the Detections page
 shows them. An exception that has ended stays listed, greyed out, until it is
 removed. A detection can have up to 500 exceptions, each matching up to 8 fields.
@@ -435,8 +440,8 @@ OpenSearch index `<index_prefix>_findings`, which event searches never include.
 
 Resolving or closing a finding asks for a disposition, so the false positive rate
 of each detection stays honest. **Resolve** on selected findings opens the edit
-dialog with the status set; pick the disposition there. Playbooks and case closes
-set their own. To turn the check off, set `detections.require_disposition: false`
+dialog with the status set; pick the disposition there. Closing a case with its
+findings asks for one disposition for them all. Playbooks set their own. To turn the check off, set `detections.require_disposition: false`
 (Settings > Detections).
 
 ### The findings queue

@@ -4,9 +4,11 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +31,30 @@ func (s *Server) exceptionRequests() exceptionreqs.Store {
 		return s.ExceptionRequests
 	}
 	return &s.exceptionRequestsMem
+}
+
+// modifyExceptionRequests changes the requests and audits those that
+// expired since the last change (AW4-06): Tidy marks them expired, and
+// the first change after stamps when, so each is audited once.
+func (s *Server) modifyExceptionRequests(ctx context.Context, r *http.Request, fn func([]exceptionreqs.Request) ([]exceptionreqs.Request, error)) error {
+	var expired []exceptionreqs.Request
+	err := s.exceptionRequests().Modify(ctx, func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+		expired = expired[:0]
+		now := time.Now().UTC()
+		for i := range rs {
+			if rs[i].Status == exceptionreqs.Expired && rs[i].Decided == nil {
+				rs[i].Decided = &now
+				expired = append(expired, rs[i])
+			}
+		}
+		return fn(rs)
+	})
+	if err == nil {
+		for _, x := range expired {
+			s.audit(r, "detection exception request expired", "detection", x.DetectionID, "request", x.ID, "proposed_by", x.By)
+		}
+	}
+	return err
 }
 
 func (s *Server) handleProposeException(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +108,14 @@ func (s *Server) handleProposeException(w http.ResponseWriter, r *http.Request) 
 		}
 		match[field] = v
 	}
+	// The length comes from the analyst, so only a short, canonical one is
+	// kept (AW4-02).
+	if req.For != "" {
+		if req.For, err = exceptionreqs.CanonicalFor(req.For); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	// Check now what the approval would add, so an admin is never asked
 	// to approve an exception that cannot be saved.
 	er := exceptionRequest{Match: match, For: req.For, Comment: req.Comment}
@@ -97,7 +131,7 @@ func (s *Server) handleProposeException(w http.ResponseWriter, r *http.Request) 
 		ID: exceptionreqs.NewID(), DetectionID: d.ID, DetectionTitle: d.BaseTitle(), FindingID: f.ID, FindingTitle: f.Title,
 		Match: e.Match, For: req.For, Comment: e.Comment, By: userOf(r), Created: time.Now().UTC(), Status: exceptionreqs.Pending,
 	}
-	if err := s.exceptionRequests().Modify(r.Context(), func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+	if err := s.modifyExceptionRequests(r.Context(), r, func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
 		return exceptionreqs.Add(rs, pr)
 	}); err != nil {
 		writeError(w, http.StatusConflict, err)
@@ -159,8 +193,16 @@ func readDecisionNote(r *http.Request) (string, error) {
 	return note, nil
 }
 
+var (
+	errSelfApproval = errors.New("you proposed this exception, so another admin approves it; or add the exception yourself on the detection")
+	// errLookOnly ends a read of a detection's exceptions without saving.
+	errLookOnly = errors.New("look only")
+)
+
 func writeRequestError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errSelfApproval):
+		writeError(w, http.StatusForbidden, err)
 	case errors.Is(err, exceptionreqs.ErrNotFound):
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, exceptionreqs.ErrDecided):
@@ -191,7 +233,12 @@ func (s *Server) handleApproveExceptionRequest(w http.ResponseWriter, r *http.Re
 	now := time.Now()
 	exID := detect.NewExceptionID()
 	var pr *exceptionreqs.Request
-	if err := s.exceptionRequests().Modify(r.Context(), func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+	if err := s.modifyExceptionRequests(r.Context(), r, func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+		// Approving one's own request would read as two people agreeing
+		// (AW4-05); an admin adds the exception directly instead.
+		if i := slices.IndexFunc(rs, func(x exceptionreqs.Request) bool { return x.ID == id }); i >= 0 && rs[i].Status == exceptionreqs.Pending && rs[i].By == userOf(r) {
+			return nil, errSelfApproval
+		}
 		out, x, err := exceptionreqs.Decide(rs, id, exceptionreqs.Approved, userOf(r), note, exID, now)
 		pr = x
 		return out, err
@@ -203,27 +250,63 @@ func (s *Server) handleApproveExceptionRequest(w http.ResponseWriter, r *http.Re
 	er := exceptionRequest{Match: pr.Match, For: pr.For, Comment: pr.Comment}
 	e, err := er.exception(userOf(r), pr.FindingID, now)
 	var d *detect.Detection
+	hasIt := func(es []detect.Exception) bool {
+		return slices.ContainsFunc(es, func(x detect.Exception) bool { return x.ID == exID })
+	}
 	if err == nil {
-		e.ID, e.ProposedBy = exID, pr.By
+		// Values from a finding match literally: a logged "*" must not
+		// silence the detection for everyone (AW4-01).
+		e.ID, e.ProposedBy, e.Exact = exID, pr.By, true
 		d, err = s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), pr.DetectionID, "", func(es []detect.Exception) ([]detect.Exception, error) {
+			if hasIt(es) {
+				return es, nil
+			}
 			return append(es, e), nil
 		})
 	}
 	if err != nil {
-		if rerr := s.exceptionRequests().Modify(r.Context(), func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
-			for i := range rs {
-				if rs[i].ID == id && rs[i].ExceptionID == exID {
-					rs[i].Status, rs[i].DecidedBy, rs[i].Decided, rs[i].Note, rs[i].ExceptionID = exceptionreqs.Pending, "", nil, "", ""
-				}
-			}
-			return rs, nil
-		}); rerr != nil {
-			s.Log.Warn("an exception request is marked approved but its exception was not saved", "request", id, "err", rerr)
+		// The save may have landed and only its answer been lost: look
+		// again before putting the request back (AW4-03). The client may
+		// be gone by now, so neither step uses its context.
+		ctx := context.WithoutCancel(r.Context())
+		landed := false
+		_, perr := s.Detections.UpdateExceptionsIf(ctx, userOf(r), pr.DetectionID, "", func(es []detect.Exception) ([]detect.Exception, error) {
+			landed = hasIt(es)
+			return nil, errLookOnly
+		})
+		switch {
+		case !errors.Is(perr, errLookOnly):
+			// Unsure whether it landed: the request stays approved, which
+			// at worst leaves the detection alerting, never silenced with
+			// the request still waiting.
+			s.Log.Warn("an exception request is marked approved and its exception may not be saved", "request", id, "exception", exID, "err", err)
+			s.audit(r, "detection exception approval unconfirmed", "detection", pr.DetectionID, "request", id, "exception", exID, "err", err.Error())
+			writeDetectionError(w, err)
+			return
+		case landed:
+			d, err = s.Detections.Get(pr.DetectionID)
 		}
-		writeDetectionError(w, err)
-		return
+		if !landed {
+			if rerr := s.modifyExceptionRequests(ctx, r, func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+				for i := range rs {
+					if rs[i].ID == id && rs[i].ExceptionID == exID {
+						rs[i].Status, rs[i].DecidedBy, rs[i].Decided, rs[i].Note, rs[i].ExceptionID = exceptionreqs.Pending, "", nil, "", ""
+					}
+				}
+				return rs, nil
+			}); rerr != nil {
+				s.Log.Warn("an exception request is marked approved but its exception was not saved", "request", id, "err", rerr)
+			}
+			s.audit(r, "detection exception approval rolled back", "detection", pr.DetectionID, "request", id, "exception", exID, "err", err.Error())
+			writeDetectionError(w, err)
+			return
+		}
+		if err != nil {
+			writeDetectionError(w, err)
+			return
+		}
 	}
-	s.audit(r, "detection exception approved", "detection", d.ID, "request", id, "exception", e.ID, "proposed_by", pr.By, "match", e.Describe())
+	s.audit(r, "detection exception approved", "detection", d.ID, "request", id, "exception", e.ID, "proposed_by", pr.By, "match", e.Describe(), "note", note)
 	s.noteOnFinding(r, pr, "Approved the proposed exception on "+e.Describe(), note)
 	writeJSON(w, http.StatusOK, map[string]any{"request": pr, "exception": e, "detection": d})
 }
@@ -240,7 +323,7 @@ func (s *Server) handleDeclineExceptionRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var pr *exceptionreqs.Request
-	if err := s.exceptionRequests().Modify(r.Context(), func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
+	if err := s.modifyExceptionRequests(r.Context(), r, func(rs []exceptionreqs.Request) ([]exceptionreqs.Request, error) {
 		out, x, err := exceptionreqs.Decide(rs, id, exceptionreqs.Declined, userOf(r), note, "", time.Now())
 		pr = x
 		return out, err
@@ -248,7 +331,7 @@ func (s *Server) handleDeclineExceptionRequest(w http.ResponseWriter, r *http.Re
 		writeRequestError(w, err)
 		return
 	}
-	s.audit(r, "detection exception declined", "detection", pr.DetectionID, "request", id, "proposed_by", pr.By)
+	s.audit(r, "detection exception declined", "detection", pr.DetectionID, "request", id, "proposed_by", pr.By, "note", note)
 	s.noteOnFinding(r, pr, "Declined the proposed exception; the detection still alerts on these values", note)
 	writeJSON(w, http.StatusOK, map[string]any{"request": pr})
 }

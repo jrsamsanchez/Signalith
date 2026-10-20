@@ -101,3 +101,20 @@ func TestLimits(t *testing.T) {
 		t.Errorf("kept %d, first %v", len(kept), kept[0].Match)
 	}
 }
+
+func TestCanonicalForAndSize(t *testing.T) {
+	for in, want := range map[string]string{"7d": "7d", "007D": "7d", " 12 h": "12h", "999999w": "999999w"} {
+		if got, err := CanonicalFor(in); err != nil || got != want {
+			t.Errorf("%q: %q %v", in, got, err)
+		}
+	}
+	for _, in := range []string{"", "0d", "1000000d", "7y", strings.Repeat("0", 40) + "7d"} {
+		if _, err := CanonicalFor(in); err == nil {
+			t.Errorf("%q accepted", in)
+		}
+	}
+	big := Request{ID: NewID(), DetectionID: "d", Match: map[string]string{"x": strings.Repeat("a", MaxRequestBytes)}, By: "ana", Status: Pending}
+	if _, err := Add(nil, big); err == nil {
+		t.Error("an oversized request was kept")
+	}
+}

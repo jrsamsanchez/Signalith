@@ -714,9 +714,12 @@
     const admin = can('admin');
     const note = admin ? el('textarea', { class: 'textarea ap-note', rows: '2', maxlength: '1000', placeholder: 'Add a note (optional): why, a ticket number', 'aria-label': 'Note', 'data-key': 'n:' + k }) : null;
     if (note) { note.value = AP.notes.get(k) || ''; note.addEventListener('input', () => AP.notes.set(k, note.value)); }
-    const approve = admin ? el('button', { class: 'btn btn--primary', type: 'button', 'data-key': 'a:' + k, onclick: () => decideException(x, true) }, icon('check'), busy ? 'Working…' : 'Approve') : null;
+    // Another admin approves an admin's own request; they can still withdraw it.
+    const own = x.by === currentUser;
+    const approve = admin && !own ? el('button', { class: 'btn btn--primary', type: 'button', 'data-key': 'a:' + k, onclick: () => decideException(x, true) }, icon('check'), busy ? 'Working…' : 'Approve') : null;
     const decline = admin ? el('button', { class: 'btn btn--secondary', type: 'button', 'data-key': 'r:' + k, onclick: () => decideException(x, false) }, 'Decline') : null;
-    if (admin) approve.disabled = decline.disabled = busy;
+    if (approve) approve.disabled = busy;
+    if (decline) decline.disabled = busy;
     const expires = new Date(new Date(x.created).getTime() + 14 * 86400000).toISOString();
     return el('li', { class: 'card ap-card' },
       el('div', { class: 'ap-card__top' },
@@ -727,9 +730,9 @@
         el('span', { class: 'ap-card__icon' }, icon('bell-off')),
         el('div', { class: 'ap-card__what' },
           el('p', { class: 'ap-card__label' }, `${x.by} proposes an exception to ${x.detection_title || x.detection_id}`),
-          el('p', { class: 'ap-card__sentence' }, 'Stop alerting where ', ...matchNodes(x.match), ', ' + forText(x.for) + '.'),
+          el('p', { class: 'ap-card__sentence' }, 'Stop alerting where ', ...matchNodes(x.match), ' exactly, ' + forText(x.for) + '.'),
           el('p', { class: 'ap-card__meta' }, `“${x.comment}”`, el('span', { class: 'dotsep', 'aria-hidden': 'true' }), `asked ${ago(x.created)}`))),
-      admin ? el('div', { class: 'ap-card__foot' }, note, el('div', { class: 'ap-card__btns' }, decline, approve))
+      admin ? el('div', { class: 'ap-card__foot' }, note, own ? el('p', { class: 'ap-card__meta' }, 'You proposed this, so another admin approves it.') : null, el('div', { class: 'ap-card__btns' }, decline, approve))
         : el('p', { class: 'ap-card__meta ap-card__wait' }, 'Waiting for an admin to approve or decline.'));
   }
 

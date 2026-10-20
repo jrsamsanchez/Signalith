@@ -24,6 +24,8 @@ func TestExceptionRequests(t *testing.T) {
 			Result: map[string]any{"user": "svc-backup", "count": 40}, Created: now, Updated: now},
 		{ID: "f-2", DetectionID: "auth-brute-force", Title: "Brute force", Severity: "medium", Status: findings.StatusNew,
 			Result: map[string]any{"user": "scanner"}, Created: now, Updated: now},
+		{ID: "f-star", DetectionID: "auth-brute-force", Title: "Brute force", Severity: "medium", Status: findings.StatusNew,
+			Result: map[string]any{"user": "adm*"}, Created: now, Updated: now},
 		{ID: "f-manual", DetectionID: "manual", Title: "By hand", Severity: "low", Status: findings.StatusNew, Created: now, Updated: now},
 	} {
 		if err := srv.Findings.Create(context.Background(), f); err != nil {
@@ -41,8 +43,10 @@ func TestExceptionRequests(t *testing.T) {
 		id, body string
 		code     int
 	}{
-		{"f-1", `{"fields":["user"]}`, 400},                             // no reason
-		{"f-1", `{"fields":["count"],"comment":"x","for":"soon"}`, 400}, // bad duration
+		{"f-1", `{"fields":["user"]}`, 400},                                                            // no reason
+		{"f-1", `{"fields":["count"],"comment":"x","for":"soon"}`, 400},                                // bad duration
+		{"f-1", `{"fields":["count"],"comment":"x","for":"` + strings.Repeat("0", 5000) + `7d"}`, 400}, // AW4-02
+		{"f-1", `{"fields":["count"],"comment":"x","for":"9999999d"}`, 400},
 		{"f-1", `{"fields":["nope"],"comment":"x"}`, 400},
 		{"f-manual", `{"fields":["title"],"comment":"x"}`, 400}, // no detection
 		{"f-none", `{"fields":["user"],"comment":"x"}`, 404},
@@ -111,5 +115,34 @@ func TestExceptionRequests(t *testing.T) {
 	_, out = ana("GET", "/api/exception-requests", "")
 	if out["pending"] != float64(0) || len(out["requests"].([]any)) != 2 {
 		t.Errorf("list after: %v", out)
+	}
+
+	// AW4-01: a logged "adm*" is matched as those characters, so the
+	// exception does not silence the detection for administrator.
+	code, out = ana("POST", "/api/findings/f-star/propose-exception", `{"fields":["user"],"for":"007d","comment":"odd test account"}`)
+	if code != 200 || out["request"].(map[string]any)["for"] != "7d" {
+		t.Fatalf("propose adm*: %d %v", code, out)
+	}
+	id3 := out["request"].(map[string]any)["id"].(string)
+	if code, out := do(t, ts, "POST", "/api/exception-requests/"+id3+"/approve", `{}`, true); code != 200 {
+		t.Fatalf("approve adm*: %d %v", code, out)
+	}
+	d, _ = srv.Detections.Get("auth-brute-force")
+	e := d.Exceptions[len(d.Exceptions)-1]
+	if !e.Exact || e.Matches(map[string]any{"user": "administrator"}) || !e.Matches(map[string]any{"user": "ADM*"}) {
+		t.Errorf("exception from adm*: %+v", e)
+	}
+
+	// AW4-05: an admin cannot approve their own request.
+	if code, out := do(t, ts, "POST", "/api/findings/f-2/propose-exception", `{"fields":["user"],"comment":"mine"}`, true); code != 200 {
+		t.Fatalf("admin proposes: %d %v", code, out)
+	} else {
+		own := out["request"].(map[string]any)["id"].(string)
+		if code, _ := do(t, ts, "POST", "/api/exception-requests/"+own+"/approve", `{}`, true); code != http.StatusForbidden {
+			t.Errorf("self approval: %d", code)
+		}
+		if code, _ := do(t, ts, "POST", "/api/exception-requests/"+own+"/decline", `{}`, true); code != 200 {
+			t.Errorf("withdrawing one's own: %d", code)
+		}
 	}
 }

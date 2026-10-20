@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,7 +53,24 @@ const (
 	// old ask is not approved by surprise months later.
 	ExpireAfter = 14 * 24 * time.Hour
 	MaxNote     = 1000
+	// MaxRequestBytes caps one request as stored, and MaxDocBytes all of
+	// them, so the document stays far below OpenSearch's request limit
+	// (AW4-02).
+	MaxRequestBytes = 32 << 10
+	MaxDocBytes     = 4 << 20
 )
+
+var forPattern = regexp.MustCompile(`^0*([1-9][0-9]{0,5})\s*(s|m|h|d|w)$`)
+
+// CanonicalFor checks how long an exception should last, such as 7d, and
+// returns it in its short form.
+func CanonicalFor(s string) (string, error) {
+	m := forPattern.FindStringSubmatch(strings.ToLower(strings.TrimSpace(s)))
+	if len(s) > 32 || m == nil {
+		return "", errors.New("for must be a number and a unit, such as 12h, 7d or 2w")
+	}
+	return m[1] + m[2], nil
+}
 
 // Request is one proposed exception.
 type Request struct {
@@ -144,7 +162,29 @@ func Add(rs []Request, r Request) ([]Request, error) {
 			mine++
 		}
 	}
+	if r.For != "" {
+		f, err := CanonicalFor(r.For)
+		if err != nil {
+			return nil, err
+		}
+		r.For = f
+	}
+	b, err := json.Marshal(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxRequestBytes {
+		return nil, fmt.Errorf("the request is larger than %d KiB", MaxRequestBytes>>10)
+	}
+	total := len(b)
+	for i := range rs {
+		if b, err := json.Marshal(rs[i]); err == nil {
+			total += len(b)
+		}
+	}
 	switch {
+	case total > MaxDocBytes:
+		return nil, errors.New("the exception requests kept are too large; ask an admin to go through them")
 	case pending >= MaxPending:
 		return nil, fmt.Errorf("%d exception requests already wait for an admin; ask one to go through them", pending)
 	case mine >= MaxPendingPerUser:
