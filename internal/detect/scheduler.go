@@ -192,6 +192,10 @@ const (
 	// ErrorTransient is OpenSearch not answering, or too busy: the slot
 	// is tried again.
 	ErrorTransient = "transient"
+	// ErrorSetup is a rule that is right but needs something the server
+	// does not have yet, such as a GeoIP database for iplocation: like
+	// ErrorQuery the slot is not run again, but the rule is not wrong.
+	ErrorSetup = "setup"
 )
 
 // RuleError is a detection that cannot run as written: its query or its
@@ -214,7 +218,8 @@ func (e *searchError) Unwrap() error { return e.Err }
 // bad request), ErrorTransient otherwise (connection problems, 429, 5xx,
 // timeouts of one request, a cancelled run, an iplocation while the
 // server's first GeoIP database is still loading, and any failed write
-// of a finding, risk event or throttle, so the slot is run again). A run
+// of a finding, risk event or throttle, so the slot is run again), or
+// ErrorSetup for an iplocation on a server with no GeoIP database. A run
 // that ran out of its own time is ErrorTimeout, which only the scheduler
 // can tell.
 func ErrorKind(err error) string {
@@ -230,6 +235,8 @@ func ErrorKind(err error) string {
 	case errors.Is(err, geoip.ErrLoading):
 		// A QueryError, but the same search runs once the database is in.
 		return ErrorTransient
+	case errors.Is(err, geoip.ErrNoDatabase):
+		return ErrorSetup
 	case errors.As(err, &re), errors.As(err, &qe), errors.As(err, &pe):
 		return ErrorQuery
 	case errors.As(err, &sr) && errors.As(sr.Err, &se) && se.Status == http.StatusBadRequest:
@@ -270,7 +277,7 @@ type RunState struct {
 	LastThrottled  int    `json:"last_throttled"`
 	LastDuplicates int    `json:"last_duplicates"`
 	LastError      string `json:"last_error,omitempty"`
-	// ErrorKind is ErrorQuery, ErrorTimeout or ErrorTransient.
+	// ErrorKind is ErrorQuery, ErrorSetup, ErrorTimeout or ErrorTransient.
 	ErrorKind string `json:"error_kind,omitempty"`
 	// TimedOut says the last run was stopped for taking longer than its
 	// timeout; LastError says how long that was.
@@ -741,7 +748,7 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 		st.LastResults, st.LastFindings, st.LastRisk = res.Results, len(res.Findings), res.Risk
 		st.LastThrottled, st.LastDuplicates, st.LastSuppressed, st.Capped = res.Throttled, res.Duplicates, res.Suppressed, res.Capped
 		st.LastError, st.ErrorKind, st.TimedOut, st.Attempts = "", "", false, 0
-	case ErrorQuery:
+	case ErrorQuery, ErrorSetup:
 		advance = true
 		st.LastResults, st.LastFindings, st.LastRisk, st.LastThrottled, st.LastDuplicates, st.LastSuppressed, st.Capped = 0, 0, 0, 0, 0, 0, false
 		st.LastError, st.ErrorKind, st.TimedOut, st.Attempts = err.Error(), kind, false, 0

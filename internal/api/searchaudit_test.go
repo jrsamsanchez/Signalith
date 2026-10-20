@@ -52,3 +52,20 @@ func auditLine(t *testing.T, logs, has string) string {
 	t.Fatalf("no log line with %s in:\n%s", has, logs)
 	return ""
 }
+
+// A demo visitor's searches are logged, but not as audit records.
+func TestDemoVisitorSearchesAreNotAuditRecords(t *testing.T) {
+	var logs logBuffer
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Config.Demo.Enabled = true
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	c := demoVisit(t, ts)
+	if code, body, _ := call(t, ts, "POST", "/api/search", `{"query":"| makeresults count=2"}`, "", "", c); code != http.StatusOK {
+		t.Fatalf("visitor search = %d %v", code, body)
+	}
+	line := auditLine(t, logs.String(), `msg="search.run: ran a search"`)
+	if strings.Contains(line, "audit=true") || !strings.Contains(line, "demo=true") || !strings.Contains(line, "by=demo") {
+		t.Errorf("visitor search line = %s", line)
+	}
+}
