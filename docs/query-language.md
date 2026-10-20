@@ -194,7 +194,7 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
 | `stdev(f)`, `var(f)` | Sample standard deviation and variance; 0 for a single value, as in Splunk |
 | `mode(f)` | The most common value |
-| `values(f)` | The distinct values, sorted, up to 100 |
+| `values(f)` | The distinct values, sorted as text: up to 10,000, or 100 when `stats` runs in OpenSearch. A result that leaves values out is marked truncated |
 | `list(f)` | The values, newest first, up to 100 |
 | `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
 

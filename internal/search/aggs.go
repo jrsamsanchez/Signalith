@@ -12,8 +12,14 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
-// maxAggValues caps the values values() and list() return per group.
+// maxAggValues caps the values list() returns per group, and values()
+// when stats runs in OpenSearch; a result that reaches the cap is marked
+// truncated.
 const maxAggValues = 100
+
+// maxValues caps the values values() returns per group when stats runs in
+// Signalith, as Splunk's default limit does.
+const maxValues = 10000
 
 // metricAgg returns the OpenSearch aggregation for one stats function, or
 // nil when the bucket's doc_count already answers it (a bare count).
@@ -72,6 +78,21 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 		return byTime("asc", 1), nil
 	}
 	return nil, fmt.Errorf("unsupported function %q", a.Func)
+}
+
+// aggClipped reports whether values() or list(), run in OpenSearch, left
+// values out of the aggregation named name inside container.
+func aggClipped(a query.Agg, container map[string]any, name string) bool {
+	m, _ := container[name].(map[string]any)
+	switch a.Func {
+	case "values":
+		n, _ := asFloat(toNumber(m["sum_other_doc_count"]))
+		return n > 0
+	case "list":
+		n, _ := asFloat(toNumber(m["doc_count"]))
+		return n > maxAggValues
+	}
+	return false
 }
 
 // aggValue reads one stats function's result from the aggregation named
@@ -186,24 +207,30 @@ type aggState struct {
 	sum      float64
 	numeric  int64
 	min, max float64
-	distinct map[string]bool
+	distinct map[string]any // each value's text, and the first value with it
+	clipped  bool           // values() or list() left values out
 	nums     []float64 // for median, percentiles, stdev and var
 	vals     []any     // values in row order, for list, first, last and mode
 	times    []time.Time
 }
 
 func newAggState() *aggState {
-	return &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]bool{}}
+	return &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]any{}}
 }
 
 func (s *aggState) add(a query.Agg, v any, r Row) {
 	s.count++
 	if a.Func == "dc" || a.Func == "values" {
-		if a.Func == "dc" || len(s.distinct) < maxMultiValues {
-			for _, x := range asList(v) {
-				k, _ := evStr(x)
-				s.distinct[k] = true
+		for _, x := range asList(v) {
+			k, _ := evStr(x)
+			if _, seen := s.distinct[k]; seen {
+				continue
 			}
+			if a.Func == "values" && len(s.distinct) >= maxValues {
+				s.clipped = true
+				break
+			}
+			s.distinct[k] = x
 		}
 	}
 	f, ok := asFloat(v)
@@ -290,17 +317,15 @@ func (s *aggState) result(a query.Agg) any {
 		}
 		return numOut(v)
 	case "values":
-		keys := make([]string, 0, len(s.distinct))
+		// Sorted as text, as Splunk does, each keeping its type.
+		var keys []string
 		for k := range s.distinct {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		if len(keys) > maxAggValues {
-			keys = keys[:maxAggValues]
-		}
-		out := make([]any, len(keys))
-		for i, k := range keys {
-			out[i] = k
+		var out []any
+		for _, k := range keys {
+			out = append(out, s.distinct[k])
 		}
 		return mvOut(out)
 	case "list":
@@ -308,6 +333,7 @@ func (s *aggState) result(a query.Agg) any {
 		for _, v := range s.vals {
 			out = append(out, asList(v)...)
 			if len(out) >= maxAggValues {
+				s.clipped = s.clipped || len(out) > maxAggValues
 				out = out[:maxAggValues]
 				break
 			}

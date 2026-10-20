@@ -102,3 +102,31 @@ func TestStatsByMultivalueCountsEachValue(t *testing.T) {
 		}
 	}
 }
+
+// values() keeps up to 10,000 values, each with its type, and says when
+// it left some out (SL-10).
+func TestValuesKeepsTypesAndSaysWhenClipped(t *testing.T) {
+	res, err := (&Engine{}).Run(context.Background(), `| makeresults count=150 | streamstats count as n | stats values(n) as vals, dc(n) as d`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals, _ := res.Rows[0]["vals"].([]any)
+	if len(vals) != 150 || res.Truncated {
+		t.Fatalf("%d values, truncated %v", len(vals), res.Truncated)
+	}
+	if _, isNum := vals[0].(int64); !isNum || fmt.Sprint(vals[:3]) != "[1 10 100]" {
+		t.Errorf("values = %v (%T), want numbers sorted as text", vals[:3], vals[0])
+	}
+	res, err = (&Engine{}).Run(context.Background(), `| makeresults count=10000 | eval n=mvappend(-1, -2) | streamstats count as m | eval n=mvappend(n, m) | stats values(n) as vals`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vals, _ := res.Rows[0]["vals"].([]any); len(vals) != maxValues || !res.Truncated {
+		t.Errorf("%d values, truncated %v", len(vals), res.Truncated)
+	}
+	clipped := `{"hits":{"total":{"value":500}},"aggregations":{"m0":{"sum_other_doc_count":400,"buckets":[{"key":"a","doc_count":100}]}}}`
+	fs := &fakeStore{responses: []string{clipped}}
+	if res, err := (&Engine{Store: fs}).Run(context.Background(), `* | stats values(user)`); err != nil || !res.Truncated {
+		t.Errorf("OpenSearch values() left values out: truncated %v, %v", res.Truncated, err)
+	}
+}

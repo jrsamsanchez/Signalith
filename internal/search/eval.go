@@ -1539,7 +1539,9 @@ func applyFillnull(res *Result, c *query.Fillnull) {
 }
 
 func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) error {
-	groups, cols, err := goStatsBy(ctx, res.Rows, &query.Stats{Aggs: c.Aggs, By: c.By}, false)
+	var clipped bool
+	groups, cols, err := goStatsBy(ctx, res.Rows, &query.Stats{Aggs: c.Aggs, By: c.By}, false, &clipped)
+	res.Truncated = res.Truncated || clipped
 	if err != nil {
 		return err
 	}

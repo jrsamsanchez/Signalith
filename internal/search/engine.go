@@ -946,6 +946,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 					}
 				} else {
 					row[a.Column()] = aggValue(a, aggs, fmt.Sprintf("m%d", i))
+					res.Truncated = res.Truncated || aggClipped(a, aggs, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = []Row{row}
@@ -977,6 +978,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 					row[a.Column()] = toNumber(b["doc_count"])
 				default:
 					row[a.Column()] = aggValue(a, b, fmt.Sprintf("m%d", i))
+					res.Truncated = res.Truncated || aggClipped(a, b, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = append(res.Rows, row)

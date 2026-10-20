@@ -93,10 +93,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			}
 		}
 	case *query.Stats:
-		rows, cols, err := goStats(ctx, res.Rows, c)
+		var clipped bool
+		rows, cols, err := goStatsBy(ctx, res.Rows, c, true, &clipped)
 		if err != nil {
 			return err
 		}
+		res.Truncated = res.Truncated || clipped
 		res.Rows, res.Columns = rows, cols
 		res.Kind = "table"
 	case *query.Top:
@@ -401,12 +403,13 @@ func groupCombos(r Row, fields []string) (keys []string, vals []Row, ok bool, er
 // goStats aggregates rows in memory, for stats after another transform.
 // A row with several values in a by field counts in the group of each.
 func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string, error) {
-	return goStatsBy(ctx, rows, st, true)
+	return goStatsBy(ctx, rows, st, true, nil)
 }
 
 // goStatsBy is goStats; with expand false a multivalue by field groups by
-// its whole list, as eventstats looks its groups up.
-func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool) ([]Row, []string, error) {
+// its whole list, as eventstats looks its groups up. clipped, when not
+// nil, is set when values() or list() left values out.
+func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, clipped *bool) ([]Row, []string, error) {
 	type group struct {
 		keys   Row
 		states []*aggState
@@ -471,6 +474,9 @@ func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool) ([
 		}
 		for i, a := range st.Aggs {
 			row[a.Column()] = g.states[i].result(a)
+			if clipped != nil && g.states[i].clipped {
+				*clipped = true
+			}
 		}
 		out = append(out, row)
 	}
