@@ -34,7 +34,10 @@ func newLocalOpenSearch() (localOpenSearch, error) { return windowsOpenSearch{},
 const openSearchAccount = `NT SERVICE\` + oslocal.ServiceName
 
 func (windowsOpenSearch) prepare(l oslocal.Layout, home string) error {
-	if err := securefile.MkdirPrivate(l.Data); err != nil {
+	// Administrators only, not Signalith's account: it holds the CA key
+	// and the admin certificate. Made again on each run, so an install
+	// whose folder still gave Signalith access loses it.
+	if err := securefile.MkdirAdminOnly(l.Data); err != nil {
 		return err
 	}
 	// Any user may make folders in ProgramData: one made before Signalith

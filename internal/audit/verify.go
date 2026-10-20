@@ -150,7 +150,8 @@ const (
 // holds none), its link to the record before it, the gaps between them
 // against the audit.lost records, and the latest records the
 // audit.checkpoint records saw. With no audit index yet, the report is
-// empty.
+// empty, unless servers sign their records (q.SignedSince): then it says
+// the records were removed (see noneLeft).
 func Verify(ctx context.Context, c Searcher, prefix string, q VerifyQuery, keys KeyFunc) (*Report, error) {
 	read := q
 	if !read.From.IsZero() {
@@ -159,7 +160,7 @@ func Verify(ctx context.Context, c Searcher, prefix string, q VerifyQuery, keys 
 	if !read.To.IsZero() {
 		read.To = read.To.Add(verifyMargin)
 	}
-	hits, limited, err := readAll(ctx, c, prefix, read)
+	hits, limited, noIndex, err := readAll(ctx, c, prefix, read)
 	if err != nil {
 		return nil, err
 	}
@@ -169,13 +170,72 @@ func Verify(ctx context.Context, c Searcher, prefix string, q VerifyQuery, keys 
 	}
 	r := Check(hits, q, keys)
 	r.Limited = limited
+	if len(hits) == 0 {
+		noneLeft(r, q, verifyNow(), noIndex)
+	}
 	return r, nil
+}
+
+// verifyNow is the clock of Verify (tests).
+var verifyNow = time.Now
+
+// quietLimit is how long the records of servers that sign them can be
+// absent from OpenSearch before Verify calls the gap a removal: the
+// server that runs the background jobs writes an audit.checkpoint every
+// hour.
+const quietLimit = 2 * time.Hour
+
+// noneLeft reports, for a check that read no record at all, records that
+// must be there: those of the servers the cluster document says sign
+// their records (q.SignedSince), in the part of the range that is both
+// after they started and in the current month, which retention never
+// deletes. Removing every audit index, or every record in them, would
+// otherwise look like a clean report.
+func noneLeft(r *Report, q VerifyQuery, now time.Time, noIndex bool) {
+	end := now
+	if !q.To.IsZero() && q.To.Before(end) {
+		end = q.To
+	}
+	month := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	var first time.Time
+	var nodes []string
+	for node, t := range q.SignedSince {
+		if t.IsZero() {
+			continue
+		}
+		nodes = append(nodes, node)
+		if first.IsZero() || t.Before(first) {
+			first = t
+		}
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	start := first
+	for _, t := range []time.Time{q.From, month} {
+		if t.After(start) {
+			start = t
+		}
+	}
+	if end.Sub(start) < quietLimit {
+		return
+	}
+	sort.Strings(nodes)
+	what := "No audit record is dated"
+	if noIndex {
+		what = "There is no audit index in OpenSearch, so no audit record is dated"
+	}
+	r.Truncated++
+	r.Problems = append(r.Problems, Problem{Kind: ProblemTruncated, Time: start, NodeID: nodes[0],
+		Detail: fmt.Sprintf("%s between %s and %s, although %d %s %s signed %s records since %s (the cluster settings say so) and an audit checkpoint is written every hour. Unless every server was stopped all that time, the records were removed.",
+			what, start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339), len(nodes), plural(int64(len(nodes)), "server", "servers"),
+			plural(int64(len(nodes)), "has", "have"), plural(int64(len(nodes)), "its", "their"), first.UTC().Format(time.RFC3339))})
 }
 
 // readAll reads the records q selects, oldest first. With q.Server set it
 // also reads every server's audit.checkpoint records, which say what that
-// server's records were.
-func readAll(ctx context.Context, c Searcher, prefix string, q VerifyQuery) ([]Hit, bool, error) {
+// server's records were. noIndex says there is no audit index at all.
+func readAll(ctx context.Context, c Searcher, prefix string, q VerifyQuery) (_ []Hit, limited, noIndex bool, _ error) {
 	limit := q.Limit
 	if limit <= 0 {
 		limit = DefaultVerifyLimit
@@ -201,10 +261,10 @@ func readAll(ctx context.Context, c Searcher, prefix string, q VerifyQuery) ([]H
 		}
 		res, err := c.Search(ctx, Pattern(prefix), body)
 		if missing(err) {
-			return out, false, nil
+			return out, false, true, nil
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
 		var page struct {
 			Hits struct {
@@ -217,20 +277,20 @@ func readAll(ctx context.Context, c Searcher, prefix string, q VerifyQuery) ([]H
 			} `json:"hits"`
 		}
 		if err := remarshal(res, &page); err != nil {
-			return nil, false, fmt.Errorf("audit verify: %w", err)
+			return nil, false, false, fmt.Errorf("audit verify: %w", err)
 		}
 		for _, h := range page.Hits.Hits {
 			var ev Event
 			if err := json.Unmarshal(h.Source, &ev); err != nil {
-				return nil, false, fmt.Errorf("audit verify: record %s: %w", h.ID, err)
+				return nil, false, false, fmt.Errorf("audit verify: record %s: %w", h.ID, err)
 			}
 			if len(out) == limit {
-				return out, true, nil
+				return out, true, false, nil
 			}
 			out = append(out, Hit{Event: ev, ID: h.ID, Index: h.Index})
 		}
 		if len(page.Hits.Hits) < size {
-			return out, false, nil
+			return out, false, false, nil
 		}
 		after = page.Hits.Hits[len(page.Hits.Hits)-1].Sort
 	}

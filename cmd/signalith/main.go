@@ -1472,6 +1472,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// The SSH and Windows logins OpenVAS signs in with, encrypted.
 	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
+	// The addresses are set on the Settings page: download them as feeds
+	// are, never from this machine, its OpenSearch or a metadata service.
+	nvd.HTTP = newDownloadClient(c)
+	nvd.HTTP.Timeout = 2 * time.Minute
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
@@ -1640,6 +1644,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
+	exploits.HTTP = newDownloadClient(c)
+	exploits.HTTP.Timeout = 5 * time.Minute
 	exploits.Log = log
 	scanner := &vulnscan.Scanner{
 		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas, Exploits: exploits,

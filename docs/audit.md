@@ -88,7 +88,10 @@ removed** (not signed with a key the server holds, though their server signed it
 them: a server that signs keeps signing, so the MAC was removed or replaced, or the line was
 put in), **not linked** (the line before was changed, or one was put in), **removed** (missing from a
 chain, and no signed `audit.lost` line names them), and **removed at the end** (a checkpoint saw
-later lines of a server than there are). It exits 2 when it finds any. Only signed `audit.lost` and
+later lines of a server than there are). When it finds no line at all, though the cluster
+settings say servers sign theirs, it also reports lines **removed at the end** for the part of
+the range in the current month after they started (retention never deletes those), at least
+two hours long: the audit indices, or every line in them, were deleted. It exits 2 when it finds any. Only signed `audit.lost` and
 `audit.checkpoint` lines count, as anyone who can write to OpenSearch could write unsigned
 ones; a gap where nothing is signed and only an unsigned `audit.lost` line names it is
 counted as **unverifiable**. It also counts the lines dropped and recorded, the unsigned ones, those signed with a cluster key this server

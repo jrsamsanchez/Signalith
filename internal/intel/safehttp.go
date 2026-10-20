@@ -306,6 +306,17 @@ var errTooManyRedirects = fmt.Errorf("the server redirected more than %d times",
 // secretHeadersKey marks the request headers that hold secrets.
 type secretHeadersKey struct{}
 
+// WithSecretHeaders marks the named request headers as secrets for a
+// request made with ctx through a NewDownloadClient client: a redirect to
+// another server drops them, as it drops Authorization.
+func WithSecretHeaders(ctx context.Context, names ...string) context.Context {
+	return context.WithValue(ctx, secretHeadersKey{}, names)
+}
+
+// SameOrigin reports whether a redirect from a to b stays on the same
+// server, so headers that hold secrets may go with it (see checkRedirect).
+func SameOrigin(a, b *url.URL) bool { return sameOrigin(a, b) }
+
 // plainError is a message already written for people.
 type plainError struct{ msg string }
 

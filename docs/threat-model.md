@@ -163,7 +163,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 
 | Threat | What stands in the way |
 | --- | --- |
-| Feeds or downloads reaching internal addresses | Threat intel feed downloads are checked after DNS and on every redirect, and never reach link-local or cloud metadata addresses, or this machine unless allowed ([Threat intel](threat-intel.md)). The CVE, KEV and EPSS addresses are admin settings and are fetched as set |
+| Feeds or downloads reaching internal addresses | Threat intel feed downloads are checked after DNS and on every redirect, and never reach link-local or cloud metadata addresses, or this machine unless allowed ([Threat intel](threat-intel.md)). The CVE, KEV and EPSS addresses are admin settings and are downloaded under the same checks; the NVD API key never follows a redirect to another server |
 | A tampered detection content update | Bundles must be signed by a key built into Signalith and newer than the rules in use ([Content packs](detections.md#content-packs)) |
 | A tampered release | Release files and images are signed with Sigstore and come with build provenance and an SBOM ([Check a download](install-packages.md#check-a-download)) |
 | Vulnerable dependencies | govulncheck, Dependabot, CodeQL and Trivy image scans in CI |

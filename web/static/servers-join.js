@@ -121,28 +121,34 @@
       h('div', { class: 'sj-pending__text' },
         h('div', { class: 'sj-pending__name' }, h('b', {}, p.name || p.node_id), p.version ? h('span', { class: 'badge badge--outline badge--mono' }, p.version) : null,
           p.os ? h('span', { class: 'sj-muted' }, [p.os, p.arch].filter(Boolean).join(' ')) : null),
-        h('div', { class: 'sj-muted' }, 'Fingerprint ', h('span', { class: 'mono sj-fp' }, p.fingerprint || 'unknown'),
+        h('div', { class: 'sj-muted' }, 'Fingerprint ', h('span', { class: 'mono sj-fp' }, p.fingerprint ? p.fingerprint.split('-')[0] + '-…' : 'unknown'),
           p.requested_at ? ' · asked ' + ago(p.requested_at) : '', p.node_url ? ' · ' + p.node_url : '')),
       h('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: () => approve(p) }, icon('user-check'), 'Approve…')));
     fill(box, h('div', { class: 'card sj-card' },
       h('div', { class: 'card__head' }, h('div', {},
         h('h3', { class: 'card__title' }, plural(S.pending.length, 'server waits', 'servers wait') + ' to join'),
-        h('p', { class: 'card__sub' }, 'Each one reaches this OpenSearch but has no cluster key yet. Approve only a server you set up: compare its fingerprint first.'))),
+        h('p', { class: 'card__sub' }, 'Each one reaches this OpenSearch but has no cluster key yet. Approve only a server you set up: you type the fingerprint it shows.'))),
       h('ul', { class: 'sj-pending', role: 'list' }, ...rows)));
   }
 
-  // approve asks the admin to compare the fingerprint the new server
-  // shows (on its sign-in page and in its log) before it gets the key.
+  // approve asks the admin to type the fingerprint the new server shows
+  // (on its sign-in page and in its log) before it gets the key. The
+  // fingerprint in the waiting list comes from a document anyone who can
+  // write to OpenSearch could have made, so it is not shown here to be
+  // ticked off: the server checks the typed one against the node key.
   function approve(p) {
     const d = modalDialog('sj-approve');
-    const match = h('input', { type: 'checkbox', id: 'sj-approve-match' });
+    const norm = (v) => v.toUpperCase().replace(/[^0-9A-F]/g, '');
+    const typed = h('input', { class: 'input mono', type: 'text', id: 'sj-approve-fp', autocomplete: 'off', spellcheck: 'false',
+      placeholder: '4F2A-91C0-…', 'aria-describedby': 'sj-approve-help' });
     const err = formAlert();
     const ok = h('button', { type: 'button', class: 'btn btn--primary', disabled: '' }, icon('user-check'), 'Approve');
-    match.addEventListener('change', () => { ok.disabled = !match.checked; });
+    // A fingerprint is eight groups of four: 32 letters and digits.
+    typed.addEventListener('input', () => { ok.disabled = norm(typed.value).length !== 32; });
     ok.addEventListener('click', async () => {
       const restore = busy(ok, 'Approving…');
       try {
-        await api('api/cluster/servers/' + encodeURIComponent(p.node_id) + '/approve', { fingerprint: p.fingerprint }, 'POST');
+        await api('api/cluster/servers/' + encodeURIComponent(p.node_id) + '/approve', { fingerprint: typed.value }, 'POST');
         d.close();
         toast(`${p.name || 'The server'} was approved. It joins within a minute.`, null, { tone: 'success' });
         loadPending();
@@ -153,13 +159,14 @@
     });
     fill(d, modalHead('sj-approve', `Approve ${p.name || 'this server'}?`, 'It gets the cluster key: it can read and change every shared setting, user and detection.', () => d.close()),
       h('div', { class: 'modal__body' },
-        h('p', {}, 'On the new server, its sign-in page and its log show a fingerprint. Approve it only if it is this one:'),
-        h('div', { class: 'sj-fp-big mono' }, p.fingerprint || 'unknown'),
-        h('label', { class: 'switch sj-match', for: 'sj-approve-match' }, match, h('span', {}, 'The new server shows the same fingerprint')),
+        h('div', { class: 'field' },
+          h('label', { class: 'label', for: 'sj-approve-fp' }, 'Fingerprint the new server shows'),
+          typed,
+          h('p', { class: 'sj-muted', id: 'sj-approve-help' }, 'Its sign-in page and its log show it, eight groups such as 4F2A-91C0-…. Type or paste it from there: it is approved only if it matches.')),
         err),
       h('div', { class: 'modal__foot' }, h('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
     d.showModal();
-    match.focus();
+    typed.focus();
   }
 
   // openAddServer opens Add a server from another page, such as Settings

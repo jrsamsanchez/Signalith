@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,5 +184,45 @@ func TestSearchWaitsForStartingShards(t *testing.T) {
 	s = &startingSearcher{fails: 100}
 	if _, err := Servers(context.Background(), s, testPrefix); err == nil || s.calls != 1 {
 		t.Fatalf("with no time to wait: err %v after %d calls; want the error after 1", err, s.calls)
+	}
+}
+
+// TestVerifyNoRecordsLeft: with every audit index deleted, or every record
+// in them, the check reports records removed when servers sign theirs,
+// and stays clean when none does yet, or when the range is before they
+// started or too short to hold a checkpoint.
+func TestVerifyNoRecordsLeft(t *testing.T) {
+	now := time.Date(2026, 10, 20, 15, 0, 0, 0, time.UTC)
+	old := verifyNow
+	verifyNow = func() time.Time { return now }
+	defer func() { verifyNow = old }()
+	gone := stubSearcher{err: &store.Error{Status: 404, Body: `{"error":{"type":"index_not_found_exception"}}`}}
+	empty := stubSearcher{res: map[string]any{"hits": map[string]any{"hits": []any{}}}}
+	signed := map[string]time.Time{"n1": now.Add(-30 * 24 * time.Hour)}
+	for _, tc := range []struct {
+		name     string
+		c        Searcher
+		q        VerifyQuery
+		tampered bool
+	}{
+		{"indices deleted", gone, VerifyQuery{SignedSince: signed}, true},
+		{"records deleted", empty, VerifyQuery{SignedSince: signed, From: now.Add(-24 * time.Hour)}, true},
+		{"nobody signs yet", gone, VerifyQuery{}, false},
+		{"started signing an hour ago", empty, VerifyQuery{SignedSince: map[string]time.Time{"n1": now.Add(-time.Hour)}}, false},
+		{"range before signing", empty, VerifyQuery{SignedSince: signed, To: now.Add(-40 * 24 * time.Hour)}, false},
+		{"range an hour long", empty, VerifyQuery{SignedSince: signed, From: now.Add(-time.Hour)}, false},
+		// Retention may have deleted months before this one.
+		{"last month only", empty, VerifyQuery{SignedSince: signed, From: now.Add(-25 * 24 * time.Hour), To: now.Add(-20 * 24 * time.Hour)}, false},
+	} {
+		r, err := Verify(context.Background(), tc.c, testPrefix, tc.q, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if r.Tampered() != tc.tampered {
+			t.Errorf("%s: tampered = %v, want %v: %+v", tc.name, r.Tampered(), tc.tampered, r.Problems)
+		}
+		if tc.tampered && (len(r.Problems) != 1 || r.Problems[0].Kind != ProblemTruncated || !strings.Contains(r.Problems[0].Detail, "removed")) {
+			t.Errorf("%s: problems = %+v", tc.name, r.Problems)
+		}
 	}
 }
