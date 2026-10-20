@@ -1,0 +1,29 @@
+id: ot-controller-stop-start
+title: $src$ sent $functions$ to the controller $dest$ ($app$)
+name: Controller stopped, started or restarted
+description: A host told a PLC, RTU or other industrial device to stop, start, restart, reset or stop talking, over an industrial protocol (S7comm, DNP3, CIP, BACnet, Modbus). Outside planned maintenance this halts or changes the process the device runs.
+query: |
+  datamodel=Industrial NOT type=response
+  ot_function IN (PLC_STOP, PLC_CONTROL, STOP, START, RESET, STOP_APPL, START_APPL, COLD_RESTART, WARM_RESTART, INITIALIZE_APPL, REINITIALIZE_DEVICE, DEVICE_COMMUNICATION_CONTROL, DISABLE_UNSOLICITED)
+  | stats count, min(_time) as first_seen, values(ot_function) as functions by src, dest, app
+schedule: 10m
+lookback: 15m
+severity: high
+mitre: [T0816, T0858, T0881]
+throttle:
+  fields: [src, dest]
+  window: 4h
+risk:
+  score: 60
+  objects:
+    - {field: dest, type: system}
+    - {field: src, type: system}
+enabled: true
+tags: [network, ot, impact, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Ask the site whether maintenance was planned on the device; engineering software stops
+  and starts controllers when it loads a new program, so look for a program transfer from
+  the same src just before (ot-program-transfer). If nobody planned it, find out what else
+  src did (datamodel=Industrial src=<host>, datamodel=Endpoint dest=<host>) and check the
+  device's state with the site. PLC_CONTROL is S7comm's run or start command. Needs a
+  network sensor that sees the industrial network.

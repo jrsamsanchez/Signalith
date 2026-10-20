@@ -126,12 +126,12 @@ type RiskStore interface {
 	Exists(ctx context.Context, detectionID, groupKey string, since time.Time) (bool, error)
 }
 
-// Tactics returns the ATT&CK tactic names of techniques, deduplicated.
+// Tactics returns the ATT&CK tactic names of techniques (Enterprise or
+// ICS), deduplicated.
 func Tactics(techniques []string) []string {
-	c := ATTACK()
 	var out []string
 	for _, id := range techniques {
-		if t, ok := c.Technique(id); ok {
+		if t, ok := AnyTechnique(id); ok {
 			for _, tac := range t.Tactics {
 				if !slices.Contains(out, tac) {
 					out = append(out, tac)

@@ -1,0 +1,26 @@
+id: ot-command-from-outside
+title: $src$ outside the network sent $functions$ to $dest$ ($app$)
+name: Industrial command from outside the network
+description: An address outside your network sent a write, control or program command to an industrial device. Industrial protocols have no sign-in, so a device that answers the internet can be changed by anyone who finds it.
+query: |
+  datamodel=Industrial direction=inbound category IN (write, control, program) NOT type=response
+  | stats count, min(_time) as first_seen, values(ot_function) as functions by src, dest, app, dest_port
+schedule: 10m
+lookback: 15m
+severity: high
+mitre: [T0883, T0886, T1692.001]
+throttle:
+  fields: [src, dest]
+  window: 24h
+risk:
+  score: 70
+  objects:
+    - {field: dest, type: system}
+enabled: true
+tags: [network, ot, initial-access, nist-800-53:SC-7, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Block the device's industrial ports at the firewall unless a remote party really needs
+  them, and then only through a VPN. Check whether src is a known integrator or vendor
+  connection; otherwise check the device's values and program with the site. An internal
+  address counts as outside only when it is outside every private range (see direction on
+  the Network sensor page).

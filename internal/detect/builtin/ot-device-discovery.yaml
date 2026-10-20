@@ -1,0 +1,26 @@
+id: ot-device-discovery
+title: $src$ asked $devices$ industrial devices who they are
+name: Industrial device discovery
+description: A host sent identification or discovery requests (EtherNet/IP List Identity, Modbus device identification, S7 SZL reads, BACnet Who-Is) to 10 or more devices in a short time. Attackers map an industrial network this way to find the controllers they want.
+query: |
+  datamodel=Industrial category=discovery NOT type=response
+  | stats count, dc(dest) as devices, values(app) as protocols, min(_time) as first_seen by src
+  | where devices >= 10
+schedule: 10m
+lookback: 15m
+severity: medium
+mitre: [T0846, T0888]
+throttle:
+  fields: [src]
+  window: 4h
+risk:
+  score: 40
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, ot, discovery, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Asset inventory tools and engineering software scan this way; add an exception on src
+  for them. BACnet Who-Is is broadcast, so a building controller announcing itself can
+  count many devices at once. Otherwise find out what src ran and what it did next on
+  the industrial network (datamodel=Industrial src=<host>).

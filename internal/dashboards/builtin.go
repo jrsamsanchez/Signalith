@@ -13,6 +13,10 @@ import (
 	"strings"
 )
 
+// IndustrialID is the ID of the built-in Industrial network dashboard,
+// filled by a network sensor on an industrial network.
+const IndustrialID = "ot-network"
+
 // MalwareID is the ID of the built-in Malware dashboard.
 const MalwareID = "malware"
 

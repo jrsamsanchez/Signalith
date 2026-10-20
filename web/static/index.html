@@ -958,6 +958,10 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="kpis cov-kpis" id="c-summary" aria-live="polite"></div>
     <div class="alert hidden" data-tone="warning" id="cov-unknown"><svg class="icon" aria-hidden="true"><use href="#i-triangle-alert"/></svg><div><b>Some techniques are not in this ATT&amp;CK version.</b><p id="cov-unknown-text"></p></div></div>
     <div class="toolbar cov-toolbar">
+      <div class="seg hidden" id="c-matrix-pick" role="group" aria-label="ATT&amp;CK matrix">
+        <button type="button" data-matrix="" aria-pressed="true">Enterprise</button>
+        <button type="button" data-matrix="ics" aria-pressed="false">ICS</button>
+      </div>
       <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input class="input" id="cov-filter" type="search" placeholder="Find a technique" aria-label="Find a technique by ID or name" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>
       <label class="switch"><input type="checkbox" id="c-only">Only techniques with detections</label>
       <span class="spacer"></span>

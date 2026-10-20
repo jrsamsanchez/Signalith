@@ -400,7 +400,6 @@ func cellNumber(v any) float64 {
 // complianceDetections reads each detection's data models and ATT&CK
 // tactics.
 func complianceDetections(list []*detect.Detection) []compliance.Detection {
-	cat := detect.ATTACK()
 	out := make([]compliance.Detection, 0, len(list))
 	for _, d := range list {
 		cd := compliance.Detection{ID: d.ID, Name: d.BaseTitle(), Enabled: d.Enabled, Tags: d.Tags}
@@ -410,9 +409,9 @@ func complianceDetections(list []*detect.Detection) []compliance.Detection {
 			}
 		}
 		for _, t := range d.MITRE {
-			tech, ok := cat.Technique(t)
+			tech, ok := detect.AnyTechnique(t)
 			if !ok && strings.Contains(t, ".") {
-				tech, ok = cat.Technique(t[:strings.Index(t, ".")])
+				tech, ok = detect.AnyTechnique(t[:strings.Index(t, ".")])
 			}
 			if !ok {
 				continue
