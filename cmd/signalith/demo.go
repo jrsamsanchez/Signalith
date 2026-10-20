@@ -41,7 +41,7 @@ func logDemo(c *config.Config, log *slog.Logger) {
 	if !c.DemoOn() {
 		return
 	}
-	log.Warn("this server is a public demo (demo.enabled): visitors sign in as a read-only viewer, and event intake, syslog, the AI assistant, " +
+	log.Warn("this server is a public demo (demo.enabled): visitors sign in as a read-only analyst, and event intake, syslog, the AI assistant, " +
 		"notifications, ticketing, chat buttons, response actions, playbooks, vulnerability scans, threat intel downloads, Microsoft 365, Okta, " +
 		"single sign-on, SCIM and tenants are off; the sample data is loaded again every day")
 	if n := len(c.DemoAdminNetworks()); n == 0 {

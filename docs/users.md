@@ -1222,8 +1222,8 @@ ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the thre
 downloads, the two single sign-on routes and the two routes Slack and Teams post button clicks
 to, which check the chat app's signature instead) is admin-only.
 
-On a [public demo](demo.md) the demo's visitor may use only the Viewer routes that
-read (and running a search, dashboard or notebook), and some routes are refused to
+On a [public demo](demo.md) the demo's visitor may use only the Viewer and Analyst
+routes that read (and running a search, dashboard or notebook, and Ask), and some routes are refused to
 every role: see [What demo mode turns off](demo.md#what-demo-mode-turns-off).
 
 A refused request:

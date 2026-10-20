@@ -10,7 +10,7 @@
   const RANGES = [['1h', 'Last hour', 3600e3], ['24h', 'Last 24 hours', 864e5], ['7d', 'Last 7 days', 7 * 864e5],
     ['30d', 'Last 30 days', 30 * 864e5], ['all', 'All time', 0]];
   // Most records are found by their words; these actions are named.
-  const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['config.', 'Shared settings'],
+  const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['config.', 'Shared settings'], ['search.', 'Searches'],
     ['audit.lost', 'Audit records lost'], ['audit.checkpoint', 'Audit checkpoints']];
 
   const page = () => $('page-audit');

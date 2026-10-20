@@ -934,7 +934,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if req.WriteLookups && mayWriteLookups(principalOf(r)) {
 		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
 	}
+	start := time.Now()
 	res, err := s.Engine.Execute(ctx, q)
+	s.auditSearch(r, "search.run: ran a search", s.searchAuditAttrs(req.Query, q, res, err, time.Since(start))...)
 	if err != nil {
 		writeSearchError(w, err)
 		return
@@ -1065,7 +1067,9 @@ func (s *Server) handleFieldValues(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	start := time.Now()
 	res, err := s.Engine.Execute(ctx, q)
+	s.auditSearch(r, "search.values: listed a field's top values", s.searchAuditAttrs(q.String(), q, res, err, time.Since(start))...)
 	if err != nil {
 		writeSearchError(w, err)
 		return

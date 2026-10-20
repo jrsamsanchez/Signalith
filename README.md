@@ -27,6 +27,7 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
 
 | Try it | |
 | --- | --- |
+| In your browser, nothing to install | [demo.signalith.io](https://demo.signalith.io), a read-only demo with the sample data |
 | On your own computer, with Docker | [Quick start](#docker-evaluation), two commands after `git clone` |
 | With made-up data that has attacks hidden in it | [Sample data](#try-it-with-sample-data), one click |
 | On a Linux or Windows server | [Linux](#linux), [Windows](#windows), [Kubernetes](#kubernetes-helm) |
@@ -810,7 +811,7 @@ are counted for each person's own address, not the proxy's. See
 | `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
-| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a viewer, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
+| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a read-only analyst, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
@@ -1157,7 +1158,7 @@ Windows and Linux installs, install Nmap from your package manager or nmap.org. 
 
 The **Compliance** page maps Signalith's data, detections, configuration checks and
 settings to NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, the HIPAA
-Security Rule and SOC 2. Each control shows evidence, partial or gap, what Signalith
+Security Rule, SOC 2, the EU NIS2 Directive and the GDPR. Each control shows evidence, partial or gap, what Signalith
 found, and what to fix; a coverage score per framework sums it up. Admins can note a
 control as handled outside Signalith or not applicable. Each framework exports as CSV
 or as a report to print or save as PDF for an auditor. The mapping is Signalith's own,

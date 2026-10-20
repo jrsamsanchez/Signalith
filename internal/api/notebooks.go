@@ -106,6 +106,11 @@ type rights struct {
 func rightsOf(r *http.Request, n *notebooks.Notebook) rights {
 	p := principalOf(r)
 	analyst, admin := p != nil && p.Role.AtLeast(users.Analyst), p != nil && p.Role.AtLeast(users.Admin)
+	// The demo's visitor is an analyst who only reads: a run of theirs
+	// is never saved, even into a notebook shared for editing.
+	if p != nil && p.Source == sourceDemo {
+		analyst = false
+	}
 	return rights{
 		Edit:   n.CanEdit(userOf(r), analyst, admin),
 		Manage: n.CanManage(userOf(r), admin),
@@ -439,6 +444,13 @@ func (s *Server) handleRunNotebook(w http.ResponseWriter, r *http.Request) {
 	for _, i := range todo {
 		c := n.Cells[i]
 		res := s.runNotebookCell(ctx, c.Query, rng)
+		attrs := []any{"notebook", n.ID, "cell", c.ID, "query", auditQuery(c.Query), "range", rng, "outcome", "ok"}
+		if res.Error != "" {
+			attrs[len(attrs)-1] = "failed"
+		} else {
+			attrs = append(attrs, "matched", res.Matched)
+		}
+		s.auditSearch(r, "search.notebook: ran a notebook search", attrs...)
 		res.RanBy = user
 		results[c.ID], queries[c.ID] = res, c.Query
 		n.Cells[i].Result = res
