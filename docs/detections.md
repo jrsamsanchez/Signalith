@@ -264,6 +264,11 @@ The values come from the finding, so the exception matches them **exactly**
 wildcard. An admin who proposes an exception cannot approve it; another admin does,
 or they add the exception on the detection directly.
 
+If saving an approved exception fails and Signalith cannot tell whether it was
+saved, the request stays approved and the audit log records **detection exception
+approval unconfirmed**. Check the detection's exceptions then, and add the exception
+by hand if it is missing: the request cannot be approved again.
+
 Each run counts the results exceptions matched; **Last run** on the Detections page
 shows them. An exception that has ended stays listed, greyed out, until it is
 removed. A detection can have up to 500 exceptions, each matching up to 8 fields.
