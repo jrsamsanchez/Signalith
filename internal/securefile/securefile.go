@@ -261,6 +261,11 @@ func writeInPlace(path string, data []byte) error {
 	return f.Close()
 }
 
+// MakePrivateFile makes the open file f private (see the package
+// comment): mode 0600, and on Windows an access list of its own instead of
+// the folder's. Call it on a file just created, before writing to it.
+func MakePrivateFile(f *os.File) error { return makePrivate(f) }
+
 // OtherLinks returns how many other names (hard links) the file at path
 // has. Replacing the file gives path new content, but those names keep
 // the old, so a caller encrypting passwords in it should say so. It is 0

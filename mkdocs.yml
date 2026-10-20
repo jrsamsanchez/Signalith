@@ -171,6 +171,7 @@ nav:
       - Performance and sizing: performance.md
       - Summary indexes: summaries.md
       - Data retention: retention.md
+      - Backup and restore: backup.md
       - Cold storage: cold-storage.md
       - Audit: audit.md
   - Security:

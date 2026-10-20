@@ -86,7 +86,7 @@ func flagValue(args []string, name string) string {
 
 func TestDockerCompose(t *testing.T) {
 	svc, vols, raw := readCompose(t)
-	for _, name := range []string{"opensearch-data", "opensearch-certs", "signalith-data", "signalith-secrets"} {
+	for _, name := range []string{"opensearch-data", "opensearch-snapshots", "opensearch-certs", "signalith-data", "signalith-secrets"} {
 		if _, ok := vols[name]; !ok {
 			t.Errorf("volume %s is not declared", name)
 		}
@@ -132,6 +132,28 @@ func TestDockerCompose(t *testing.T) {
 				t.Errorf("%s mounts the CA's key: %s", name, v)
 			}
 		}
+	}
+	// setup gives OpenSearch the snapshots volume, which OpenSearch's
+	// path.repo names (docs/backup.md).
+	// It comes from the environment, not the command: an older image has
+	// no -snapshots-dir flag and would not start.
+	snapDir := ""
+	for _, e := range setup.Environment {
+		if v, ok := strings.CutPrefix(e, "SIGNALITH_SETUP_SNAPSHOTS_DIR="); ok {
+			snapDir = v
+		}
+	}
+	if flagValue(setup.Command, "-snapshots-dir") != "" {
+		t.Errorf("setup command names -snapshots-dir, which older images refuse: %v", setup.Command)
+	}
+	if snapDir == "" || !slices.Contains(setup.Volumes, "opensearch-snapshots:"+snapDir) {
+		t.Errorf("setup does not prepare the snapshots volume: %v %v", setup.Command, setup.Volumes)
+	}
+	if !slices.Contains(svc["opensearch"].Volumes, "opensearch-snapshots:/usr/share/opensearch/snapshots") {
+		t.Errorf("opensearch does not mount the snapshots volume: %v", svc["opensearch"].Volumes)
+	}
+	if b, err := os.ReadFile("../../deploy/docker/opensearch/opensearch.yml"); err != nil || !strings.Contains(string(b), `path.repo: ["/usr/share/opensearch/snapshots"]`) {
+		t.Errorf("opensearch.yml does not set path.repo to the snapshots volume (%v)", err)
 	}
 	if setup.User != "0:0" || setup.Restart != "no" || setup.NetworkMode != "none" {
 		t.Errorf("setup: user %q restart %q network %q", setup.User, setup.Restart, setup.NetworkMode)
