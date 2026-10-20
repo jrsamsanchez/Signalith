@@ -6,16 +6,16 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 # Getting started
 
-Signalith needs two things: **OpenSearch 2.x or 3.x**, where events are stored, and the
+Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and so does Windows: its installer sets up OpenSearch too. On Linux
-you install OpenSearch first and then Signalith next to it.
+runs both for you, and from the next release (0.3.1) so does the Windows installer. On
+Linux, and on Windows with 0.3.0, you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
 | [Linux](#linux) | A systemd service on a server | OpenSearch, then a few commands |
-| [Windows](#windows) | A Windows service | One installer (OpenSearch included) |
+| [Windows](#windows) | A Windows service | One installer (OpenSearch included from 0.3.1) |
 
 ## Docker quick start
 
@@ -129,7 +129,7 @@ browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have t
 
 ## Linux
 
-1. Install OpenSearch 2.x or 3.x
+1. Install OpenSearch 2.17 or newer (3.x included)
    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
 
@@ -172,8 +172,9 @@ Older versions cannot read encrypted values: before going back to one, run
 ## Windows
 
 The easiest way is the `.msi` installer: see [Install from packages](install-packages.md#windows).
-It installs OpenSearch as well, so there is nothing to set up first. To install by hand
-instead:
+From the next release (0.3.1) it installs OpenSearch as well, so there is nothing to set
+up first; with 0.3.0, install OpenSearch first and give the installer its address with
+`OPENSEARCHURL`. To install by hand instead:
 
 1. In an elevated PowerShell, from the folder holding `signalith.exe` and
    `deploy\windows\install.ps1`:
@@ -182,7 +183,7 @@ instead:
     .\install.ps1
     ```
 
-    This installs OpenSearch on this computer (see
+    From 0.3.1, this installs OpenSearch on this computer (see
     [OpenSearch on Windows](install-packages.md#opensearch-on-windows)), writes
     `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and
     starts it. The service runs as its own account, `NT SERVICE\Signalith`, and only

@@ -85,5 +85,5 @@ its work. See
 
 ## Built with
 
-Go (standard library crypto, no cgo of its own), OpenSearch 2.17 or 3.x, Fluent Bit,
+Go (standard library crypto, no cgo of its own), OpenSearch 2.17 or newer (3.x included), Fluent Bit,
 osquery, and plain HTML, CSS and JavaScript for the web interface with no build step.

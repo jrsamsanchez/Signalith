@@ -209,7 +209,7 @@ aggregates exist.
 
 ## Antivirus detections
 
-Eight built-in detections read the Malware data model (see
+Ten built-in detections read the Malware data model (see
 [antivirus.md](antivirus.md#detections) for what each means and what to do). All
 are on by default and raise findings:
 

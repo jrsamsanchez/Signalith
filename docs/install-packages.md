@@ -17,7 +17,7 @@ On Linux, the [apt](#debian-and-ubuntu) and [dnf](#red-hat-rocky-alma-fedora-and
 repositories are easier than a download: they install the latest release and upgrade
 with the rest of the system.
 
-Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x or 3.x. The
+Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.17 or newer (3.x included). The
 Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)),
 from the next release (0.3.1) on; with 0.3.0 and older, install OpenSearch first and give
 the installer its address with `OPENSEARCHURL`.
@@ -155,7 +155,7 @@ those folders by hand to remove everything.
 
 ### OpenSearch on Windows
 
-On a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
+From 0.3.1, on a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
 Signalith the same way the [Docker quick start](getting-started.md#docker-quick-start)
 does:
 

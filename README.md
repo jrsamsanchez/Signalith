@@ -331,7 +331,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
 
 ### Linux
 
-1. Install OpenSearch 2.x or 3.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
+1. Install OpenSearch 2.17 or newer (3.x included) ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
    ```sh
    sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -379,7 +379,7 @@ give its address. To install by hand:
    ```powershell
    .\install.ps1
    ```
-   This installs OpenSearch on this computer (listening on this computer only, over HTTPS, with
+   From 0.3.1, this installs OpenSearch on this computer (listening on this computer only, over HTTPS, with
    Signalith signing in with a certificate), writes `C:\ProgramData\Signalith\signalith.yaml`, installs
    the **Signalith** service and starts it. To use an OpenSearch of your own instead, add
    `-OpenSearchUrl https://<its address>:9200` and secure it as
@@ -605,8 +605,8 @@ most recent senders.
 ### Sign in and users
 
 The web UI has its own sign-in page. Sessions end after `auth.session_timeout` without
-activity (12 hours by default) or when you sign out; tick **Keep me signed in** to stay
-signed in for up to 7 days. Ten wrong passwords for one account from one address within
+activity (1 hour by default), after `auth.session_max_age` (24 hours by default, also
+with **Keep me signed in**), or when you sign out. Ten wrong passwords for one account from one address within
 15 minutes lock that account out for that address for 15 minutes (with wider limits per
 address and per account; see [docs/users.md](docs/users.md#signing-in)). Scripts and API
 clients can keep using HTTP Basic auth with the same username and password, over HTTPS.
@@ -778,7 +778,7 @@ are counted for each person's own address, not the proxy's. See
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](#data-retention) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
-| `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
+| `auth.session_timeout` | `1h` | Sign the web UI out after this long without activity; `auth.session_max_age` (`24h`) ends every session, "Keep me signed in" too |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
 | `auth.oidc` | off | Single sign-on with an OpenID Connect provider, usually set up under **Settings > Single sign-on**; see [docs/sso.md](docs/sso.md#setting-it-in-signalithyaml) |
@@ -993,10 +993,10 @@ confidential VMs. HTTPS is in [docs/https.md](docs/https.md).
 ## Detections and findings
 
 A detection is a query that runs on a schedule. Each row it returns becomes a
-**finding** in the queue. Signalith ships 21
-detections mapped to MITRE ATT&CK (brute force, password spray, encoded PowerShell,
+**finding** in the queue. Signalith ships 59
+built-in detections mapped to MITRE ATT&CK (brute force, password spray, encoded PowerShell,
 Office spawning shells, shadow copy deletion, credential dumping, privileged group
-changes and more, plus two risk incident rules); 19 are on by default.
+changes, malware and more, plus two risk incident rules); 54 are on by default.
 
 - **Findings** is the triage queue: filter by status, severity, owner or entity;
   assign, change status and disposition, comment, and update many at once. Each
@@ -1014,7 +1014,7 @@ changes and more, plus two risk incident rules); 19 are on by default.
   Windows, Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
-  both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as
+  both packs on, rules are tagged with 181 ATT&CK techniques. Newer tested rules arrive as
   signed content updates, without a new Signalith release (from the internet or as an
   upload). See [docs/detections.md](docs/detections.md#content-packs).
 - **ATT&CK coverage** shows the Enterprise matrix with techniques covered by enabled
@@ -1467,15 +1467,8 @@ go build -o signalith ./cmd/signalith                         # Linux
 GOOS=windows GOARCH=amd64 go build -o signalith.exe ./cmd/signalith  # Windows
 ```
 
-The end-to-end tests need an OpenSearch without security, such as the one in CI:
-
-```sh
-SIGNALITH_TEST_OPENSEARCH=http://localhost:9200 go test -tags integration ./internal/integration/
-```
-
-The `TestCluster` tests among them start several `signalith serve` processes that
-share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Without
-`SIGNALITH_TEST_OPENSEARCH` they run against a built-in stand-in for OpenSearch.
+The end-to-end tests run against the Docker quick start's secured OpenSearch; see
+[CONTRIBUTING.md](CONTRIBUTING.md#test) for the settings they need.
 
 ## Roadmap
 
