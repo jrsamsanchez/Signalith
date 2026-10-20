@@ -4,14 +4,16 @@
 package investigate
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"net/netip"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/respond"
@@ -31,23 +33,44 @@ import (
 // it names. Such a refusal (MaskedValueError) would itself confirm a
 // guess, so it ends the run without telling the model (see Run). The
 // rules that do not depend on the values (no regular expressions, at
-// least three characters between wildcards, no ranges on text, where
-// limited to a field compared with a literal) keep every value the model
-// writes whole, so it is checked as written.
+// least three characters between wildcards, ranges only on _time and on
+// counts, where limited to a field compared with a literal, ASCII only)
+// keep every value the model writes whole, so it is checked as written.
 
 // guardQuery checks a search the model wrote, before its stand-ins are
 // turned back into real values.
 func guardQuery(q *query.Query, m *Masker) error {
-	if err := guardExpr(q.Search, m, false); err != nil {
+	if err := guardExpr(q.Search, m, false, nil); err != nil {
 		return err
 	}
+	// counted holds the columns that hold counts at this point of the
+	// query: a range works on them, and on _time, only.
+	var counted map[string]bool
 	for _, c := range q.Commands {
 		switch c := c.(type) {
 		case *query.Stats:
 			if err := guardAggs(c.Aggs, m); err != nil {
 				return err
 			}
+			counted = map[string]bool{}
+			for _, a := range c.Aggs {
+				if slices.Contains(countOnly, strings.ToLower(a.Func)) {
+					counted[strings.ToLower(a.Column())] = true
+				}
+			}
+			uncount(counted, c.By)
+		case *query.Top:
+			counted = map[string]bool{}
+			if !c.NoCount {
+				counted[strings.ToLower(cmp.Or(c.CountField, "count"))] = true
+			}
+			if !c.NoPercent {
+				counted[strings.ToLower(cmp.Or(c.PercentField, "percent"))] = true
+			}
+			uncount(counted, c.Fields)
+			uncount(counted, c.By)
 		case *query.Timechart:
+			counted = nil
 			if err := guardAggs(c.Aggs, m); err != nil {
 				return err
 			}
@@ -59,10 +82,10 @@ func guardQuery(q *query.Query, m *Masker) error {
 		case *query.Where:
 			// After a command, a search's free text would match inside
 			// any column, masked ones too.
-			if err := guardExpr(c.Expr, m, true); err != nil {
+			if err := guardExpr(c.Expr, m, true, counted); err != nil {
 				return err
 			}
-		case *query.Top, *query.Sort, *query.Head, *query.Tail, *query.Table, *query.Dedup,
+		case *query.Sort, *query.Head, *query.Tail, *query.Table, *query.Dedup,
 			*query.Reverse, *query.FieldsRemove:
 			// These keep each value under its own column name, which is
 			// what masking goes by.
@@ -71,6 +94,13 @@ func guardQuery(q *query.Query, m *Masker) error {
 		}
 	}
 	return nil
+}
+
+// uncount drops the columns that hold a field's values from counted.
+func uncount(counted map[string]bool, fields []string) {
+	for _, f := range fields {
+		delete(counted, strings.ToLower(f))
+	}
 }
 
 // guarded reports whether a field may be matched only against stand-ins:
@@ -95,29 +125,29 @@ func guardAggs(aggs []query.Agg, m *Masker) error {
 // free text only as whole words, and no field against anything that
 // could match a masked value: a wildcard would let counts spell out a
 // hidden value one character at a time.
-func guardExpr(e query.Expr, m *Masker, piped bool) error {
+func guardExpr(e query.Expr, m *Masker, piped bool, counted map[string]bool) error {
 	switch e := e.(type) {
 	case nil:
 		return nil
 	case *query.And:
 		for _, c := range e.Children {
-			if err := guardExpr(c, m, piped); err != nil {
+			if err := guardExpr(c, m, piped, counted); err != nil {
 				return err
 			}
 		}
 	case *query.Or:
 		for _, c := range e.Children {
-			if err := guardExpr(c, m, piped); err != nil {
+			if err := guardExpr(c, m, piped, counted); err != nil {
 				return err
 			}
 		}
 	case *query.Not:
-		return guardExpr(e.Child, m, piped)
+		return guardExpr(e.Child, m, piped, counted)
 	case *query.Compare:
 		if guarded(e.Field, m) && ((e.Op != "=" && e.Op != "!=") || !m.isToken(e.Value)) {
 			return fmt.Errorf("%s is masked: match it only with = or != and one of its stand-ins, such as masked-%s-1", e.Field, kindOf(e.Field))
 		}
-		return m.guardCompare(e)
+		return m.guardCompare(e, counted)
 	case *query.In:
 		for _, v := range e.Values {
 			if guarded(e.Field, m) && !m.isToken(v) {
@@ -130,6 +160,9 @@ func guardExpr(e query.Expr, m *Masker, piped bool) error {
 	case *query.Text:
 		if m.isToken(e.Value) {
 			return nil
+		}
+		if err := m.guardASCII("", e.Value); err != nil {
+			return err
 		}
 		if piped {
 			return fmt.Errorf("free text after a command is not allowed; name the field to match, such as src=10.0.0.1")
@@ -152,7 +185,7 @@ func guardExpr(e query.Expr, m *Masker, piped bool) error {
 		if f := maskedIn(e.X, m); f != "" {
 			return fmt.Errorf("%s is masked: a where expression cannot use it", f)
 		}
-		return m.guardEval(e.X)
+		return m.guardEval(e.X, counted)
 	default:
 		return fmt.Errorf("this kind of condition is not allowed in an AI investigation's searches: %s", e.String())
 	}
@@ -172,14 +205,14 @@ func (e *MaskedValueError) Error() string {
 func errMaskedValue(v string) error { return &MaskedValueError{Value: v} }
 
 // guardCompare checks a comparison on any field against the masked values.
-func (m *Masker) guardCompare(e *query.Compare) error {
+func (m *Masker) guardCompare(e *query.Compare, counted map[string]bool) error {
 	switch e.Op {
 	case "=", "!=":
 		return m.guardLiteral(e.Field+e.Op, e.Value)
 	case "=~":
 		return fmt.Errorf("regular expressions (=~) are not allowed in an AI investigation's searches; use = with a value, or with * for part of one")
 	case "<", "<=", ">", ">=":
-		return m.guardRange(e.Field, e.Value)
+		return guardRange(e.Field, e.Value, counted)
 	}
 	return fmt.Errorf("the operator %s is not allowed in an AI investigation's searches", e.Op)
 }
@@ -189,6 +222,9 @@ func (m *Masker) guardCompare(e *query.Compare) error {
 func (m *Masker) guardLiteral(what, v string) error {
 	if m.isToken(v) {
 		return nil
+	}
+	if err := m.guardASCII(what, v); err != nil {
+		return err
 	}
 	if strings.ContainsAny(v, "*?") {
 		return m.guardPattern(what, v, "*", "?")
@@ -209,6 +245,9 @@ func (m *Masker) guardLiteral(what, v string) error {
 // wildcards must be at least minTextMask characters long, whatever the
 // masked values are, and none may lie inside a masked value or hold one.
 func (m *Masker) guardPattern(what, v string, many, one string) error {
+	if err := m.guardASCII(what, v); err != nil {
+		return err
+	}
 	chunks := strings.FieldsFunc(v, func(r rune) bool { return strings.ContainsRune(many+one, r) })
 	if len(chunks) == 0 {
 		return fmt.Errorf("%s%s: a pattern needs some text besides wildcards", what, v)
@@ -224,19 +263,40 @@ func (m *Masker) guardPattern(what, v string, many, one string) error {
 	return nil
 }
 
-// guardRange allows a range only on time, or on a number while no masked
-// value is a number: halving a range search by search would find one.
-func (m *Masker) guardRange(field, v string) error {
+// guardASCII refuses a value with characters outside ASCII while some
+// values are masked: the search folds case more widely than a plain
+// comparison (ſ is s, ı can be i), so such a letter could stand for one
+// in a masked value without being checked as one.
+func (m *Masker) guardASCII(what, v string) error {
+	if len(m.byValue) == 0 {
+		return nil
+	}
+	for _, r := range v {
+		if r >= utf8.RuneSelf {
+			return fmt.Errorf("%s%s: values may only use ASCII characters while some values are masked; match masked values with their stand-ins", what, v)
+		}
+	}
+	return nil
+}
+
+// plainNumber is a number written in digits, without exponent, sign or
+// words such as Infinity.
+var plainNumber = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+
+// guardRange allows a range (<, <=, >, >=) only on _time, or on a column
+// of counts made earlier in the query by stats or top, against a plain
+// number. On any other field it would compare text when the field holds
+// text, whatever the literal looks like, and the field may hold a masked
+// value under another name: halving the range search by search would
+// spell the value out.
+func guardRange(field, v string, counted map[string]bool) error {
 	if strings.EqualFold(field, "_time") {
 		return nil
 	}
-	if _, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err != nil {
-		return fmt.Errorf("%s: ranges (<, >) work only on numbers and _time in an AI investigation's searches", field)
+	if counted[strings.ToLower(field)] && plainNumber.MatchString(strings.TrimSpace(v)) {
+		return nil
 	}
-	if m.anyNumber() {
-		return fmt.Errorf("%s: ranges are not allowed while masked values include numbers", field)
-	}
-	return nil
+	return fmt.Errorf("%s: ranges (<, >) work only on _time, and on counts made by stats or top (such as | stats count by src | where count > 10), in an AI investigation's searches", field)
 }
 
 // guardEval checks a where expression. Only plain comparisons of a field
@@ -246,11 +306,12 @@ func (m *Masker) guardRange(field, v string) error {
 // guess:
 //
 //   - field = literal, field != literal (and == ), field = field;
-//   - field < number and the like, while no masked value is a number;
+//   - _time < literal and the like, and a count column made earlier by
+//     stats or top < number and the like (see guardRange);
 //   - field LIKE "pattern", like(field, "pattern"), in(field, literals),
 //     cidrmatch("network", field), isnull(field), isnotnull(field);
 //   - AND, OR, XOR and NOT of these.
-func (m *Masker) guardEval(x query.EvalExpr) error {
+func (m *Masker) guardEval(x query.EvalExpr, counted map[string]bool) error {
 	switch x := x.(type) {
 	case *query.Field:
 		return nil
@@ -260,7 +321,7 @@ func (m *Masker) guardEval(x query.EvalExpr) error {
 		return m.guardLiteral("", x.Value)
 	case *query.Unary:
 		if strings.EqualFold(x.Op, "NOT") {
-			return m.guardEval(x.X)
+			return m.guardEval(x.X, counted)
 		}
 		if _, ok := x.X.(*query.Num); ok && x.Op == "-" {
 			return nil
@@ -269,28 +330,29 @@ func (m *Masker) guardEval(x query.EvalExpr) error {
 		op := strings.ToUpper(x.Op)
 		switch op {
 		case "AND", "OR", "XOR":
-			if err := m.guardEval(x.L); err != nil {
+			if err := m.guardEval(x.L, counted); err != nil {
 				return err
 			}
-			return m.guardEval(x.R)
+			return m.guardEval(x.R, counted)
 		case "=", "==", "!=":
 			if !plainOperand(x.L) || !plainOperand(x.R) {
 				break
 			}
-			if err := m.guardEval(x.L); err != nil {
+			if err := m.guardEval(x.L, counted); err != nil {
 				return err
 			}
-			return m.guardEval(x.R)
+			return m.guardEval(x.R, counted)
 		case "<", "<=", ">", ">=":
-			_, lf := x.L.(*query.Field)
-			_, rf := x.R.(*query.Field)
-			if !(lf && isNumber(x.R)) && !(rf && isNumber(x.L)) {
+			f, ok := x.L.(*query.Field)
+			lit := x.R
+			if !ok {
+				f, ok = x.R.(*query.Field)
+				lit = x.L
+			}
+			if !ok || !isLiteral(lit) {
 				break
 			}
-			if m.anyNumber() {
-				return fmt.Errorf("comparing with < or > is not allowed while masked values include numbers")
-			}
-			return nil
+			return guardRange(f.Name, literalText(lit), counted)
 		case "LIKE":
 			_, lf := x.L.(*query.Field)
 			if s, ok := x.R.(*query.Str); ok && lf {
@@ -300,7 +362,7 @@ func (m *Masker) guardEval(x query.EvalExpr) error {
 	case *query.Call:
 		return m.guardCall(x)
 	}
-	return fmt.Errorf("where in an AI investigation's searches may only compare a field with a value (=, !=, < and > on numbers, like(), in(), cidrmatch(), isnull()), joined with AND, OR and NOT: %s", x.String())
+	return fmt.Errorf("where in an AI investigation's searches may only compare a field with a value (=, !=, < and > on _time and counts, like(), in(), cidrmatch(), isnull()), joined with AND, OR and NOT: %s", x.String())
 }
 
 // guardCall checks the few functions a where expression may use.
@@ -343,7 +405,7 @@ func (m *Masker) guardCall(c *query.Call) error {
 			if !isLiteral(a) {
 				return fmt.Errorf("in() in an AI investigation's searches takes a field and values: %s", c.String())
 			}
-			if err := m.guardEval(a); err != nil {
+			if err := m.guardEval(a, nil); err != nil {
 				return err
 			}
 		}
@@ -370,23 +432,26 @@ func isLiteral(x query.EvalExpr) bool {
 	return false
 }
 
-// isNumber is a number literal, or a negative one.
-func isNumber(x query.EvalExpr) bool {
-	_, ok := x.(*query.Num)
-	return ok || (isLiteral(x) && !isStr(x))
-}
-
-func isStr(x query.EvalExpr) bool {
-	_, ok := x.(*query.Str)
-	return ok
+// literalText is a literal as written: a string's value, or a number.
+func literalText(x query.EvalExpr) string {
+	switch x := x.(type) {
+	case *query.Str:
+		return x.Value
+	case *query.Num:
+		return x.Text
+	case *query.Unary:
+		return x.Op + literalText(x.X)
+	}
+	return ""
 }
 
 // holds reports whether a value is a masked value, or holds one long
 // enough to be masked in text, ignoring case.
 func (m *Masker) holds(v string) bool {
-	l := strings.ToLower(strings.TrimSpace(v))
+	l := fold(strings.TrimSpace(v))
 	for mv := range m.byValue {
-		if l == mv || (len(mv) >= minTextMask && strings.Contains(l, mv)) {
+		f := fold(mv)
+		if l == f || (len(mv) >= minTextMask && strings.Contains(l, f)) {
 			return true
 		}
 	}
@@ -397,7 +462,7 @@ func (m *Masker) holds(v string) bool {
 // inside one (as its start, its end or any other part), ignoring case.
 func (m *Masker) overlaps(parts ...string) bool {
 	for _, p := range parts {
-		l := strings.ToLower(strings.TrimSpace(p))
+		l := fold(strings.TrimSpace(p))
 		if l == "" {
 			continue
 		}
@@ -405,7 +470,7 @@ func (m *Masker) overlaps(parts ...string) bool {
 			return true
 		}
 		for mv := range m.byValue {
-			if strings.Contains(mv, l) {
+			if strings.Contains(fold(mv), l) {
 				return true
 			}
 		}
@@ -418,7 +483,7 @@ func (m *Masker) overlaps(parts ...string) bool {
 func (m *Masker) globMatches(pattern, many, one string) bool {
 	var b strings.Builder
 	b.WriteString(`(?is)^`)
-	for _, r := range pattern {
+	for _, r := range fold(pattern) {
 		switch {
 		case strings.ContainsRune(many, r):
 			b.WriteString(`.*`)
@@ -434,27 +499,32 @@ func (m *Masker) globMatches(pattern, many, one string) bool {
 		return true
 	}
 	for mv := range m.byValue {
-		if re.MatchString(mv) {
+		if re.MatchString(fold(mv)) {
 			return true
 		}
 	}
 	return false
+}
+
+// fold spells each letter one way whatever its case, so values the
+// search would match alike compare equal here. It folds more widely than
+// strings.ToLower: ſ and s, ı, I and i, and K (the Kelvin sign) and k
+// each become one letter.
+func fold(s string) string {
+	return strings.Map(func(r rune) rune {
+		r = unicode.ToLower(unicode.ToUpper(r))
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
+		}
+		return least
+	}, s)
 }
 
 // anyIP reports whether a masked value is an IP address.
 func (m *Masker) anyIP() bool {
 	for mv := range m.byValue {
 		if _, err := netip.ParseAddr(mv); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-// anyNumber reports whether a masked value is a number.
-func (m *Masker) anyNumber() bool {
-	for mv := range m.byValue {
-		if _, err := strconv.ParseFloat(mv, 64); err == nil {
 			return true
 		}
 	}

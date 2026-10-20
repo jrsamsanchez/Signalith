@@ -101,11 +101,14 @@ can do:
   wildcard pattern or free-text word that equals, holds or lies inside a masked value seen
   so far is refused, whatever field it names (`TargetUserName=adm*` or `administrator`
   when `user` is masked). Regular expressions (`=~`, `match()`) are not allowed at all, a
-  wildcard pattern needs at least three characters between wildcards, `<` and `>` work
-  only on numbers and `_time` (and not at all while a masked value is a number), and a
-  network such as `10.0.0.0/8` cannot be matched while a masked value is an address.
-  `where` may only compare a field with one value as written: `=`, `!=`, `<` and `>` on
-  numbers, `like(field, "pattern")`, `in(field, values)`, `cidrmatch("network", field)`,
+  wildcard pattern needs at least three characters between wildcards, values may use
+  only ASCII characters (the search treats some other letters, such as `ſ` and `ı`, as
+  `s` and `i`), and a network such as `10.0.0.0/8` cannot be matched while a masked
+  value is an address. `<` and `>` work only on `_time` and on counts made earlier by
+  `stats` or `top` (`| stats count by src | where count > 10`): on a field that holds
+  text they compare text, so `src_ip>=10.23 src_ip<10.24` on an unmasked copy of a masked
+  address would close in on it. `where` may only compare a field with one value as
+  written: `=`, `!=`, `<` and `>` on `_time` and counts, `like(field, "pattern")`, `in(field, values)`, `cidrmatch("network", field)`,
   `isnull` and `isnotnull`, joined with `AND`, `OR` and `NOT`. Nothing computed from a
   field (`len()`, `ltrim()`, `min()`, `if()`, joined strings) is allowed, so every value is
   checked whole.
@@ -116,6 +119,11 @@ can do:
   that one guess matched by being cut off, once per investigation, never spell a value
   out a character at a time. Mask every field that holds a sensitive value, or use a
   model on your own network, when that matters.
+- Known limit: ordering shows where a value sorts. `sort`, `dedup ... sortby`, and
+  `stats min()`, `max()` and `values()` on a field that is not masked but holds a copy of
+  a masked value (`TargetUserName` when only `user` is masked) show where the hidden value
+  falls among the others, though not the value itself. Mask every field that holds the
+  value to keep that hidden too.
 - A search that does not parse is not run either. A refused search shows on the page with
   the reason, and goes in the audit log.
 - The model may suggest only containment actions (blocking an address, isolating a host,

@@ -404,9 +404,12 @@ func TestGuardMaskedValuesOnAliases(t *testing.T) {
 		`process=*powershell*`:                              true,
 		`src=10.1.*`:                                        true,
 		`dest_ip=10.0.0.0/8`:                                true,
-		`bytes>1000`:                                        true,
-		`* | where bytes > 200 AND like(process, "%mimikatz%")`: true,
-		`mimikatz`: true,
+		`* | where like(process, "%mimikatz%")`:             true,
+		`mimikatz`:                                          true,
+		// Letters the search folds like ASCII ones (long s, dotless i).
+		`TargetUserName=ADMINIſTRATOR`: false,
+		`TargetUserName=*FıNANCE*`:     false,
+		`résumé`:                       false,
 	} {
 		q, err := query.Parse(src)
 		if err != nil {
@@ -426,12 +429,34 @@ func TestGuardMaskedValuesOnAliases(t *testing.T) {
 	m2.Value("src", "10.9.8.7")
 	m2.Value("uid", "1001")
 	for src, ok := range map[string]bool{
-		`dest_ip=10.0.0.0/8`:             false,
-		`dest_ip=10.9.8.7`:               false,
-		`dest_ip=10.9.8.8`:               true,
-		`* | where account_id > 1000`:    false,
-		`dest_port>1000`:                 false,
-		`_time>"2026-01-01"`:             true,
+		`dest_ip=10.0.0.0/8`:          false,
+		`dest_ip=10.9.8.7`:            false,
+		`dest_ip=10.9.8.8`:            true,
+		`* | where account_id > 1000`: false,
+		`dest_port>1000`:              false,
+		`_time>"2026-01-01"`:          true,
+		// Ranges compare text on a text field, so on an unmasked copy of
+		// the address they would halve their way to it, whatever the
+		// literal looks like.
+		`src_ip<10.24`:               false,
+		`src_ip>=10.23 src_ip<10.24`: false,
+		`src_ip<Infinity`:            false,
+		`src_ip<1e5`:                 false,
+		`* | where src_ip >= "10.23" AND src_ip < "10.24"`: false,
+		`* | where src_ip < 10.24`:                         false,
+		`* | where 10.24 > src_ip`:                         false,
+		`bytes>1000`:                                       false,
+		`* | where _time > 1700000000`:                     true,
+		// Counts made by stats or top are numbers.
+		`* | stats count by src_ip | where count > 10`:                 true,
+		`* | stats dc(user) as users by src_ip | where users >= 3`:     true,
+		`* | top src_ip | where percent > 5`:                           true,
+		`* | stats count by src_ip | where count > 1e5`:                false,
+		`* | stats count by src_ip | where count < Infinity`:           false,
+		`* | stats count as src_ip by src_ip | where src_ip < 11`:      false,
+		`* | stats max(bytes) as count by host | where count > 1`:      false,
+		`* | stats count by src_ip | table src_ip | where src_ip < 11`: false,
+		`count > 10`:                     false,
 		`dest_ip=masked-src-1`:           true,
 		`* | where dest_ip = "10.9.8.7"`: false,
 	} {
