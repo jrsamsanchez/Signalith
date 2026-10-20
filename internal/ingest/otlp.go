@@ -81,7 +81,11 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	}
 	batch := make([]Event, 0, min(n, batchEvents))
 	ids := make([]string, 0, cap(batch))
-	seed := bodySeed("otlp", body)
+	// The agent token that sent the request is part of the seed, so the
+	// same bytes from another sender can't take its records' IDs (and so
+	// be counted as duplicates of them instead of being stored). The
+	// token, not the address, since a resend may come from another one.
+	seed := bodySeed("otlp\x00"+OriginFrom(ctx).TokenID, body)
 	size, done, pos := 0, 0, 0
 	flush := func() error {
 		res, err := p.write(ctx, batch, ids)

@@ -695,5 +695,14 @@ func TestOTLPResendIsDuplicate(t *testing.T) {
 		if err != nil || res.Duplicates != 4 || res.Rejected != 0 {
 			t.Fatalf("json=%v: resend: %+v %v", isJSON, res, err)
 		}
+		// The same bytes from another agent token are its own records.
+		other := WithOrigin(context.Background(), Origin{Intake: IntakeOTLP, TokenID: "tok-b"})
+		res, err = p.IngestOTLP(other, body, isJSON)
+		if err != nil || res.Duplicates != 0 || res.Indexed != 4 {
+			t.Fatalf("json=%v: other sender: %+v %v", isJSON, res, err)
+		}
+		if res, err = p.IngestOTLP(other, body, isJSON); err != nil || res.Duplicates != 4 {
+			t.Fatalf("json=%v: other sender's resend: %+v %v", isJSON, res, err)
+		}
 	}
 }
