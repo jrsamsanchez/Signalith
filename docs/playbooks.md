@@ -32,7 +32,7 @@ run, so a sample finding can block a real address or send a real message.
 | --- | --- |
 | **Notify a channel** | Sends the finding to one [notification channel](notifications.md), as a rule would. It does not wait for the notification rules: it sends even when no rule matches. A finding goes to a channel once, so when a rule already sent it there, the step says so and sends nothing more, and a rule that matches later sends nothing either. A message that fails is tried again, as a rule's is, and shows under Recent deliveries. |
 | **Run a response action** | Runs one [response action](response-actions.md) on a target taken from the finding. See below. |
-| **Open a case** | Opens an [investigation](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#investigations) with the finding in it. The title may use `{title}` `{detection}` `{urgency}` `{src}` `{dest}` `{user}` `{host}` `{finding_id}` (it is the finding's title when left empty), and an owner may be set. With **Add later findings to the case this playbook opened** on, a later finding goes into the last case this playbook opened while that case is still open, instead of opening another one. |
+| **Open a case** | Opens an [investigation](cases.md) with the finding in it. The title may use `{title}` `{detection}` `{urgency}` `{src}` `{dest}` `{user}` `{host}` `{finding_id}` (it is the finding's title when left empty), and an owner may be set. With **Add later findings to the case this playbook opened** on, a later finding goes into the last case this playbook opened while that case is still open, instead of opening another one. |
 | **Set the finding** | Sets the finding's status, its owner, or both. |
 
 A playbook has at most 20 steps, and a server at most 100 playbooks.
