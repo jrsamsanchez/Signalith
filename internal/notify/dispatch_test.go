@@ -496,3 +496,56 @@ func TestSendOnceSharesTheRulesDelivery(t *testing.T) {
 		t.Errorf("sent %d, %+v", r.sender.count("aaa"), d)
 	}
 }
+
+// A rule that escalates sends a finding again, once, when it is still
+// unassigned past its due time; an owned or closed finding is not.
+func TestDispatcherEscalatesLateFindings(t *testing.T) {
+	r := newRig(t, RuleInput{ID: "r1", Name: "urgent", Enabled: on(), Channels: []string{"aaa"}, Late: true})
+	r.d.SLA = func() findings.SLA { return findings.DefaultSLA() }
+	r.clock.add(time.Second)
+	r.raise("f1", "high", "brute")
+	owned := r.raise("f2", "high", "brute")
+	r.pass()
+	if r.sender.count("aaa") != 2 {
+		t.Fatalf("first messages: %+v", r.sender.sent)
+	}
+	ctx := context.Background()
+	bob := "bob"
+	if _, err := r.fs.Modify(ctx, owned.ID, func(f *findings.Finding) (bool, error) { return f.Apply(findings.Update{Owner: &bob}, "bob", r.clock.Now()), nil }); err != nil {
+		t.Fatal(err)
+	}
+	// High is due within the hour: not yet late.
+	r.clock.add(30 * time.Minute)
+	r.pass()
+	if r.sender.count("aaa") != 2 {
+		t.Fatalf("escalated early: %+v", r.sender.sent)
+	}
+	r.clock.add(31 * time.Minute)
+	r.pass()
+	if r.sender.count("aaa") != 3 {
+		t.Fatalf("escalation: %+v", r.sender.sent)
+	}
+	m := r.sender.sent[2].msg
+	if !m.Late || m.FindingID != "f1" || !strings.HasPrefix(m.Title, "Unassigned and late: ") {
+		t.Errorf("late message %+v", m)
+	}
+	r.clock.add(2 * LateEvery)
+	r.pass()
+	if r.sender.count("aaa") != 3 {
+		t.Errorf("escalated twice: %d", r.sender.count("aaa"))
+	}
+}
+
+// Without the rule asking, or with due times off, nothing is escalated.
+func TestDispatcherEscalatesOnlyWhenAsked(t *testing.T) {
+	r := newRig(t, RuleInput{ID: "r1", Name: "urgent", Enabled: on(), Channels: []string{"aaa"}})
+	r.d.SLA = func() findings.SLA { return findings.DefaultSLA() }
+	r.clock.add(time.Second)
+	r.raise("f1", "high", "brute")
+	r.pass()
+	r.clock.add(2 * time.Hour)
+	r.pass()
+	if r.sender.count("aaa") != 1 {
+		t.Errorf("sent %d", r.sender.count("aaa"))
+	}
+}
