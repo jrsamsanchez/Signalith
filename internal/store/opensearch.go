@@ -671,6 +671,15 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 	if len(docs) == 0 {
 		return nil, nil
 	}
+	body, err := encodeBulk(docs)
+	if err != nil {
+		return nil, err
+	}
+	return c.sendBulk(ctx, body)
+}
+
+// encodeBulk writes docs as a _bulk request body.
+func encodeBulk(docs []IndexedDoc) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	for _, d := range docs {
@@ -689,6 +698,11 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 			return nil, err
 		}
 	}
+	return buf.Bytes(), nil
+}
+
+// sendBulk sends a _bulk request body and returns its rejected documents.
+func (c *Client) sendBulk(ctx context.Context, body []byte) ([]BulkItemError, error) {
 	var out struct {
 		Errors bool `json:"errors"`
 		Items  []map[string]struct {
@@ -700,7 +714,7 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 			} `json:"error"`
 		} `json:"items"`
 	}
-	if err := c.Do(ctx, http.MethodPost, "/_bulk", buf.Bytes(), &out); err != nil {
+	if err := c.Do(ctx, http.MethodPost, "/_bulk", body, &out); err != nil {
 		return nil, err
 	}
 	var errs []BulkItemError
