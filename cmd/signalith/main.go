@@ -47,6 +47,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
@@ -1702,6 +1703,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Retention:    ret,
 		Sample:       sampleLoader,
 		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		FindingViews: &findingviews.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:      updater,
 		Endpoints:    estore,
 		SensorTuning: tuning,

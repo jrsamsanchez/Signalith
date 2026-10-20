@@ -554,6 +554,20 @@ tags: [attack.t1059.001]
 		}
 	}
 	every, total, _ := fs.Search(ctx, findings.Filter{})
+	if gs, err := fs.Groups(ctx, findings.Filter{}, findings.GroupDetection); err != nil || len(gs) == 0 {
+		t.Errorf("groups by detection: %v %v", gs, err)
+	} else {
+		sum := 0
+		for _, g := range gs {
+			sum += g.Count
+		}
+		if sum != total || gs[0].Urgency == "" {
+			t.Errorf("groups by detection %+v add up to %d of %d", gs, sum, total)
+		}
+	}
+	if counts, err := fs.UrgencyCounts(ctx, findings.Filter{}); err != nil || counts["low"] < 1 {
+		t.Errorf("urgency counts %v %v", counts, err)
+	}
 	owned := 0
 	for _, f := range every {
 		if f.Owner != "" {

@@ -41,6 +41,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
@@ -140,6 +141,9 @@ type Server struct {
 	// SetupGuide keeps each user's answers to the setup guide; nil keeps
 	// them in this server's memory.
 	SetupGuide setupguide.Store
+	// FindingViews keeps each user's saved views of the findings queue;
+	// nil keeps them in this server's memory.
+	FindingViews findingviews.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -313,6 +317,7 @@ type Server struct {
 	aiModels          modelCache     // model lists read from the AI model's service
 	sampleJob         sampleJob      // the one running sample-data load or remove
 	setupGuideMem     setupguide.Memory
+	findingViewsMem   findingviews.Memory
 	pageCache         pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
@@ -455,6 +460,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeSetupGuide(api)
+	s.routeFindingViews(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)

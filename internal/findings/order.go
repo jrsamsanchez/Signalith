@@ -10,6 +10,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 // Orders a search can return findings in. Every order ends with the
@@ -159,4 +160,53 @@ func osSort(o string, after *Cursor) ([]any, []any) {
 // that pass a filter, for the queue's urgency pills.
 type UrgencyCounter interface {
 	UrgencyCounts(ctx context.Context, flt Filter) (map[string]int, error)
+}
+
+// Fields a queue can be grouped by.
+const (
+	GroupDetection = "detection"
+	GroupEntity    = "entity"
+)
+
+// MaxGroups is how many groups a grouping returns, largest first.
+const MaxGroups = 100
+
+// Group is the findings that share a detection or an entity value.
+type Group struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+	// Urgency is the highest urgency among them.
+	Urgency string `json:"urgency"`
+}
+
+// Grouper is a store that groups the findings that pass a filter by a
+// detection or an entity value, for the queue's group-by.
+type Grouper interface {
+	Groups(ctx context.Context, flt Filter, by string) ([]Group, error)
+}
+
+// topUrgency is the highest of urgencies.
+func topUrgency(us []string) string {
+	best := ""
+	for _, u := range us {
+		if UrgencyRank(u) > UrgencyRank(best) {
+			best = u
+		}
+	}
+	return best
+}
+
+// sortGroups orders groups largest first, then by key, and keeps
+// MaxGroups.
+func sortGroups(gs []Group) []Group {
+	slices.SortFunc(gs, func(a, b Group) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
+	if len(gs) > MaxGroups {
+		gs = gs[:MaxGroups]
+	}
+	return gs
 }

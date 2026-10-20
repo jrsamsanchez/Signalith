@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -112,8 +113,10 @@ type doc struct {
 
 func entityValues(f *Finding) []string {
 	var out []string
-	for _, v := range f.Entities {
-		if s := fmt.Sprint(v); s != "" {
+	for k, v := range f.Entities {
+		// risk_object_type says what kind the risk object is (user,
+		// system); it names no entity.
+		if s := fmt.Sprint(v); s != "" && k != "risk_object_type" && !slices.Contains(out, s) {
 			out = append(out, s)
 		}
 	}
@@ -435,4 +438,58 @@ func (s *OpenSearch) UrgencyCounts(ctx context.Context, flt Filter) (map[string]
 		res[b.Key] = b.Count
 	}
 	return res, nil
+}
+
+func (s *OpenSearch) Groups(ctx context.Context, flt Filter, by string) ([]Group, error) {
+	field := "detection_id"
+	if by == GroupEntity {
+		field = "entity_values"
+	}
+	body := map[string]any{
+		"size":  0,
+		"query": filterQuery(flt),
+		"aggs": map[string]any{"g": map[string]any{
+			"terms": groupTerms(field),
+			"aggs":  map[string]any{"u": map[string]any{"terms": map[string]any{"field": "urgency", "size": 10}}},
+		}},
+	}
+	type bucket struct {
+		Key   string `json:"key"`
+		Count int    `json:"doc_count"`
+	}
+	var out struct {
+		Aggregations struct {
+			G struct {
+				Buckets []struct {
+					bucket
+					U struct {
+						Buckets []bucket `json:"buckets"`
+					} `json:"u"`
+				} `json:"buckets"`
+			} `json:"g"`
+		} `json:"aggregations"`
+	}
+	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
+		return nil, err
+	}
+	gs := make([]Group, 0, len(out.Aggregations.G.Buckets))
+	for _, b := range out.Aggregations.G.Buckets {
+		var us []string
+		for _, u := range b.U.Buckets {
+			us = append(us, u.Key)
+		}
+		gs = append(gs, Group{Key: b.Key, Count: b.Count, Urgency: topUrgency(us)})
+	}
+	return sortGroups(gs), nil
+}
+
+// groupTerms is the terms aggregation of a grouping. Findings stored
+// before entity values left out risk_object_type hold "user", "system"
+// or "other" as a value; a grouping by entity leaves those out.
+func groupTerms(field string) map[string]any {
+	t := map[string]any{"field": field, "size": MaxGroups}
+	if field == "entity_values" {
+		t["exclude"] = []string{"user", "system", "other"}
+	}
+	return t
 }

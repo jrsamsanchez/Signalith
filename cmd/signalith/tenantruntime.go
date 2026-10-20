@@ -27,6 +27,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
@@ -489,34 +490,35 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ti.jobs.Go(func() { agentsInv.Run(ctx) })
 
 	srv := &api.Server{
-		Config:     c,
-		Tokens:     tokens,
-		Agents:     agentsInv,
-		Engine:     eng,
-		Pipeline:   pipeline,
-		EventAge:   live,
-		Backend:    cl,
-		Detections: lib,
-		Scheduler:  sched,
-		Findings:   fstore,
-		Assets:     lists,
-		Intel:      indicators,
-		Feeds:      feeds,
-		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
-		Dashboards: boards,
-		Cases:      cstore,
-		Notebooks:  nstore,
-		Respond:    responder,
-		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
-		Baselines:  blStore,
-		Ticketing:  &api.Ticketing{Service: tsync},
-		Retention:  ret,
-		Sample:     sampleLoader,
-		SetupGuide: &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
-		Content:    updater,
-		Endpoints:  estore,
-		Background: front.Background,
-		Assistant:  newAssistant(c),
+		Config:       c,
+		Tokens:       tokens,
+		Agents:       agentsInv,
+		Engine:       eng,
+		Pipeline:     pipeline,
+		EventAge:     live,
+		Backend:      cl,
+		Detections:   lib,
+		Scheduler:    sched,
+		Findings:     fstore,
+		Assets:       lists,
+		Intel:        indicators,
+		Feeds:        feeds,
+		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
+		Dashboards:   boards,
+		Cases:        cstore,
+		Notebooks:    nstore,
+		Respond:      responder,
+		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Baselines:    blStore,
+		Ticketing:    &api.Ticketing{Service: tsync},
+		Retention:    ret,
+		Sample:       sampleLoader,
+		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
+		FindingViews: &findingviews.OpenSearch{Docs: cl, Prefix: prefix},
+		Content:      updater,
+		Endpoints:    estore,
+		Background:   front.Background,
+		Assistant:    newAssistant(c),
 		// The provider's users and sessions: everyone signs in on the
 		// default tenant's server, which hands a tenant's requests on.
 		Users:         front.Users,

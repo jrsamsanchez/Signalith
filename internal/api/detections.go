@@ -450,6 +450,14 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 		Unowned:     v.Get("unowned") == "true",
 		Order:       v.Get("sort"),
 	}
+	if e := v.Get("entity"); e != "" {
+		flt.EntityValues = []string{e}
+	}
+	group := v.Get("group")
+	if group != "" && group != findings.GroupDetection && group != findings.GroupEntity {
+		writeError(w, http.StatusBadRequest, errors.New("group must be detection or entity"))
+		return
+	}
 	if !findings.ValidOrder(flt.Order) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("sort must be one of %s", strings.Join(findings.Orders, ", ")))
 		return
@@ -501,6 +509,16 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resp["by_urgency"] = counts
+	}
+	if g, ok := s.Findings.(findings.Grouper); ok && group != "" {
+		cf := flt
+		cf.After = nil
+		groups, err := g.Groups(r.Context(), cf, group)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["groups"] = groups
 	}
 	limit := flt.Limit
 	if limit <= 0 {

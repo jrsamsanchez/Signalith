@@ -223,3 +223,26 @@ func (m *Memory) UrgencyCounts(_ context.Context, flt Filter) (map[string]int, e
 	}
 	return out, nil
 }
+
+func (m *Memory) Groups(_ context.Context, flt Filter, by string) ([]Group, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	urg := map[string][]string{}
+	for _, f := range m.byID {
+		if !Matches(f, flt) {
+			continue
+		}
+		keys := []string{f.DetectionID}
+		if by == GroupEntity {
+			keys = entityValues(f)
+		}
+		for _, k := range keys {
+			urg[k] = append(urg[k], f.EffectiveUrgency())
+		}
+	}
+	gs := make([]Group, 0, len(urg))
+	for k, us := range urg {
+		gs = append(gs, Group{Key: k, Count: len(us), Urgency: topUrgency(us)})
+	}
+	return sortGroups(gs), nil
+}

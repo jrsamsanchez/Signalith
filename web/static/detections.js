@@ -19,6 +19,7 @@ function onPageShown(name) {
   if (name === 'findings') {
     if (pageQuery) { readFindingsHash(pageQuery); pageQuery = ''; }
     loadFindings();
+    if (!findingViews) loadFindingViews();
   }
   if (name === 'detections') loadDetections();
   if (name === 'coverage') loadCoverage();
@@ -325,7 +326,7 @@ const URG_RANK = { critical: 4, high: 3, medium: 2, low: 1, informational: 0 };
 const urgencyOf = (f) => f.urgency || f.severity;
 const fnd = {
   urgency: new Set(), since: '7d', detection: '', sort: { key: 'urgency', dir: 'desc' },
-  counts: {}, all: 0, total: 0, next: '', loaded: false, loadedAt: 0, stale: null, sig: '',
+  counts: {}, all: 0, total: 0, next: '', groups: null, entity: '', view: '', loaded: false, loadedAt: 0, stale: null, sig: '',
   closed: false, tab: 'overview', owners: new Set(), seq: 0, detailSeq: 0,
 };
 const FND_DEFAULT_STATUS = 'new,in_progress,pending';
@@ -358,6 +359,7 @@ async function loadFindings(opts = {}) {
   const want = opts.quiet ? Math.min(FND_LIMIT, Math.max(FND_PAGE, findingsList.length)) : FND_PAGE;
   p.set('limit', String(want));
   p.set('counts', 'urgency');
+  if ($('f-group').value) p.set('group', $('f-group').value);
   let skel = null;
   if (!opts.quiet) {
     if (!fnd.loaded) renderFindingsSkeleton();
@@ -370,7 +372,8 @@ async function loadFindings(opts = {}) {
     const rows = res.findings;
     const counts = res.by_urgency || {};
     rows.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
-    const sig = JSON.stringify([counts, res.total, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
+    const sig = JSON.stringify([counts, res.total, res.groups || null, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
+    fnd.groups = res.groups || null;
     fnd.loadedAt = Date.now();
     fnd.stale = null;
     fnd.counts = counts;
@@ -442,6 +445,7 @@ function findingsQuery() {
   if (q) p.set('q', q);
   if (fnd.since) p.set('since', fnd.since);
   if (fnd.detection) p.set('detection', fnd.detection);
+  if (fnd.entity) p.set('entity', fnd.entity);
   if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
   p.set('sort', FND_ORDER[fnd.sort.key + ':' + fnd.sort.dir] || 'urgency');
   return p;
@@ -452,6 +456,16 @@ function findingsQuery() {
 // a history entry.
 function writeFindingsHash() {
   if (currentPage !== 'findings') return;
+  const p = findingsState();
+  const hash = '#findings' + (p.size ? '?' + p : '');
+  if (location.hash !== hash) {
+    try { history.replaceState(null, '', hash); } catch (_) { /* sandboxed */ }
+  }
+}
+
+// findingsState is the filters that differ from the defaults, as the
+// address and saved views keep them.
+function findingsState() {
   const p = new URLSearchParams();
   if ($('f-status').value !== FND_DEFAULT_STATUS) p.set('status', $('f-status').value || 'any');
   if ($('f-owner').value) p.set('owner', $('f-owner').value);
@@ -461,10 +475,10 @@ function writeFindingsHash() {
   if (fnd.detection) p.set('detection', fnd.detection);
   if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
   if (fnd.sort.key !== 'urgency' || fnd.sort.dir !== 'desc') p.set('sort', fnd.sort.key + ':' + fnd.sort.dir);
-  const hash = '#findings' + (p.size ? '?' + p : '');
-  if (location.hash !== hash) {
-    try { history.replaceState(null, '', hash); } catch (_) { /* sandboxed */ }
-  }
+  if (fnd.entity) p.set('entity', fnd.entity);
+  if ($('f-group').value) p.set('group', $('f-group').value);
+  p.sort();
+  return p;
 }
 
 // readFindingsHash sets the filters from an address writeFindingsHash
@@ -486,6 +500,9 @@ function readFindingsHash(query) {
   fnd.urgency = new Set((p.get('urgency') || '').split(',').filter((u) => SEVERITIES.includes(u)));
   const [key, dir] = (p.get('sort') || '').split(':');
   fnd.sort = FND_ORDER[key + ':' + dir] ? { key, dir } : { key: 'urgency', dir: 'desc' };
+  fnd.entity = (p.get('entity') || '').slice(0, 500);
+  const g = p.get('group');
+  $('f-group').value = g === 'detection' || g === 'entity' ? g : '';
 }
 function filterSeverity(sv) { fnd.urgency = new Set(sv ? [sv] : []); loadFindings(); }
 
@@ -503,7 +520,7 @@ function syncOwnerOptions() {
 
 function findingFiltersActive() {
   return $('f-status').value !== FND_DEFAULT_STATUS || $('f-owner').value !== '' || $('f-text').value.trim() !== ''
-    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '';
+    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '' || fnd.entity !== '' || $('f-group').value !== '';
 }
 function syncFindingFilters() {
   $('f-since').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.since === fnd.since)));
@@ -514,6 +531,13 @@ function syncFindingFilters() {
     fill(chip, el('span', { class: 'fnd-filter__label' }, 'Detection'), el('code', {}, fnd.detection),
       dxBtn('ghost', '', () => { fnd.detection = ''; loadFindings(); }, { sm: true, icon: 'x', title: 'Show every detection' }));
   }
+  const ent = $('f-entity');
+  ent.classList.toggle('hidden', !fnd.entity);
+  if (fnd.entity) {
+    fill(ent, el('span', { class: 'fnd-filter__label' }, 'Entity'), el('code', {}, fnd.entity),
+      dxBtn('ghost', '', () => { fnd.entity = ''; loadFindings(); }, { sm: true, icon: 'x', title: 'Show every entity' }));
+  }
+  renderFindingViews();
 }
 function clearFindingFilters() {
   $('f-status').value = FND_DEFAULT_STATUS;
@@ -522,6 +546,8 @@ function clearFindingFilters() {
   fnd.since = '7d';
   fnd.urgency.clear();
   fnd.detection = '';
+  fnd.entity = '';
+  $('f-group').value = '';
   loadFindings();
 }
 
@@ -650,6 +676,7 @@ function renderFindings() {
     if (!openFinding) closeFindingInspector({ keepState: true });
     return;
   }
+  if (fnd.groups) { renderFindingGroups(box); return; }
   const all = el('input', { type: 'checkbox', id: 'f-all', 'aria-label': 'Select every finding shown' });
   all.addEventListener('change', () => {
     findingsList.forEach((f) => (all.checked ? selected.add(f.id) : selected.delete(f.id)));
@@ -661,6 +688,161 @@ function renderFindings() {
   renderFindingsFoot();
 }
 
+// renderFindingGroups lists the groups of the queue: the findings that
+// share a detection or an entity, largest first. Opening one filters the
+// queue to it.
+function renderFindingGroups(box) {
+  const by = $('f-group').value;
+  const open = (g) => {
+    if (by === 'detection') fnd.detection = g.key; else fnd.entity = g.key;
+    $('f-group').value = '';
+    loadFindings();
+  };
+  const rows = fnd.groups.map((g) => {
+    const b = el('button', { class: 'link-btn', type: 'button', title: 'Show these findings' }, by === 'detection' ? el('code', {}, g.key) : g.key);
+    b.addEventListener('click', () => open(g));
+    return el('tr', {},
+      el('td', { 'data-col': 'sev' }, g.urgency ? sevBadge(g.urgency) : null),
+      el('td', { 'data-col': 'title' }, b),
+      el('td', { 'data-col': 'age', class: 'num' }, g.count.toLocaleString()));
+  });
+  const what = by === 'detection' ? 'Detection' : 'Entity';
+  box.replaceChildren(fnd.groups.length
+    ? el('table', { class: 'table table--stack findings fnd-groups' },
+      el('thead', {}, el('tr', {}, el('th', { 'data-col': 'sev' }, 'Highest urgency'), el('th', { 'data-col': 'title' }, what), el('th', { 'data-col': 'age', class: 'num' }, 'Findings'))),
+      el('tbody', {}, ...rows))
+    : dxEmpty({ icon: 'layers', title: 'No groups', text: 'No findings match these filters.' }));
+  updateBulk();
+  renderFindingsFoot();
+}
+
+// Saved views: built-in ones every user has, then the user's own.
+const FND_BUILTIN_VIEWS = [
+  { name: 'Open findings', query: '' },
+  { name: 'Assigned to me', query: 'owner=__me' },
+  { name: 'Unassigned critical and high', query: 'owner=__none&urgency=critical,high' },
+  { name: 'New in the last 24 hours', query: 'since=24h&status=new' },
+];
+let findingViews = null; // the user's saved views once read
+
+async function loadFindingViews() {
+  try { findingViews = (await api('api/me/finding-views')).views || []; } catch (_) { findingViews = findingViews || []; }
+  renderFindingViews();
+}
+
+// currentFindingView names the view whose filters are on screen.
+function currentFindingView() {
+  const now = findingsState().toString();
+  const norm = (q) => { const p = new URLSearchParams(q); p.sort(); return p.toString(); };
+  return [...FND_BUILTIN_VIEWS, ...(findingViews || [])].find((v) => norm(v.query) === now) || null;
+}
+
+function applyFindingView(v) {
+  readFindingsHash(v.query);
+  loadFindings();
+}
+
+function renderFindingViews() {
+  const box = $('f-views');
+  if (!box) return;
+  const cur = currentFindingView();
+  const mine = findingViews || [];
+  const panel = el('div', { class: 'menu__panel', role: 'menu' });
+  const d = el('details', { class: 'menu fnd-views' },
+    el('summary', { class: 'btn btn--ghost', title: 'Saved views', 'aria-label': 'Saved views' + (cur ? ': ' + cur.name : '') },
+      icon('bookmark'), el('span', { class: 'fnd-views__name' }, cur ? cur.name : 'Views')), panel);
+  const item = (ic, label, run, opts = {}) => {
+    const n = el('button', { class: 'menu__item' + (opts.danger ? ' menu__item--danger' : ''), role: 'menuitem', type: 'button' }, icon(ic), label);
+    if (opts.on) n.setAttribute('aria-current', 'true');
+    n.addEventListener('click', () => { d.removeAttribute('open'); run(); });
+    panel.append(n);
+  };
+  for (const v of FND_BUILTIN_VIEWS) item(v === cur ? 'check' : 'list-filter', v.name, () => applyFindingView(v), { on: v === cur });
+  if (mine.length) panel.append(el('div', { class: 'menu__sep' }));
+  for (const v of mine) item(v === cur ? 'check' : 'bookmark', v.name, () => applyFindingView(v), { on: v === cur });
+  panel.append(el('div', { class: 'menu__sep' }));
+  if (!cur) item('plus', 'Save these filters as a view…', saveFindingView);
+  if (cur && mine.includes(cur)) item('x', `Delete “${cur.name}”`, () => deleteFindingView(cur), { danger: true });
+  box.replaceChildren(d);
+}
+
+async function putFindingViews(list, done) {
+  try {
+    findingViews = (await api('api/me/finding-views', { views: list }, 'PUT')).views;
+    renderFindingViews();
+    dxNotify(done);
+  } catch (e) { dxNotify('Couldn’t save your views: ' + e.message, null, { tone: 'danger' }); }
+}
+
+async function saveFindingView() {
+  const name = await askViewName();
+  if (!name) return;
+  const id = 'v-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await putFindingViews([...(findingViews || []), { id, name, query: findingsState().toString() }], `Saved the view “${name}”.`);
+}
+
+async function deleteFindingView(v) {
+  const dlg = viewsDialog();
+  const ok = await new Promise((resolve) => {
+    let result = false;
+    const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+    const del = el('button', { class: 'btn btn--danger', type: 'button' }, 'Delete view');
+    del.addEventListener('click', () => { result = true; dlg.close(); });
+    dlg.onclose = () => resolve(result);
+    fill(dlg,
+      el('div', { class: 'modal__head' }, el('div', {}, el('h2', { class: 'modal__title', id: 'd-fviews-title' }, `Delete the view “${v.name}”?`),
+        el('p', { class: 'modal__desc' }, 'The findings stay as they are; only the saved filters go.'))),
+      el('div', { class: 'modal__foot' }, cancel, del));
+    dlg.showModal();
+    cancel.focus();
+  });
+  if (ok) await putFindingViews((findingViews || []).filter((x) => x.id !== v.id), `Deleted the view “${v.name}”.`);
+}
+
+// viewsDialog is the dialog for saving and deleting views. It sits on
+// the body, as the confirm dialog belongs to the Detections page.
+function viewsDialog() {
+  let dlg = $('d-fviews');
+  if (!dlg) {
+    dlg = el('dialog', { class: 'modal', id: 'd-fviews', 'aria-labelledby': 'd-fviews-title' });
+    document.body.append(dlg);
+  }
+  return dlg;
+}
+
+// askViewName asks for a new view's name.
+function askViewName() {
+  const dlg = viewsDialog();
+  return new Promise((resolve) => {
+    let result = '';
+    const input = el('input', { class: 'input', id: 'f-view-name', type: 'text', maxlength: '60', autocomplete: 'off', placeholder: 'My critical, unowned' });
+    const err = el('p', { class: 'hint hidden', role: 'alert' });
+    const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
+    const ok = dxBtn('primary', 'Save view', null, { type: 'submit' });
+    const form = el('form', { method: 'dialog' },
+      el('div', { class: 'modal__head' }, el('div', {}, el('h2', { class: 'modal__title', id: 'd-fviews-title' }, 'Save these filters as a view'),
+        el('p', { class: 'modal__desc' }, 'The view keeps the status, owner, urgency, time range, search, grouping and sort shown now. Only you see it.'))),
+      el('div', { class: 'modal__body' }, dxField('Name', input), err),
+      el('div', { class: 'modal__foot' }, cancel, ok));
+    form.addEventListener('submit', (ev) => {
+      const name = input.value.trim();
+      const taken = [...FND_BUILTIN_VIEWS, ...(findingViews || [])].some((v) => v.name.toLowerCase() === name.toLowerCase());
+      if (!name || taken) {
+        ev.preventDefault();
+        err.textContent = name ? 'A view with that name already exists.' : 'Give the view a name.';
+        err.classList.remove('hidden');
+        input.focus();
+        return;
+      }
+      result = name;
+    });
+    dlg.onclose = () => resolve(result);
+    fill(dlg, form);
+    dlg.showModal();
+    input.focus();
+  });
+}
+
 function renderFindingsFoot() {
   const foot = $('f-foot');
   if (!fnd.loaded) { foot.classList.add('hidden'); return; }
@@ -669,7 +851,9 @@ function renderFindingsFoot() {
     ? el('span', { class: 'live', title: fnd.stale.message }, el('span', { class: 'pulse', 'data-state': 'warn' }), 'Couldn’t refresh · updated ' + ago(fnd.loadedAt))
     : el('span', { class: 'live' }, el('span', { class: 'pulse' }), 'Live · updated ' + ago(fnd.loadedAt));
   let more = null;
-  if (fnd.total > findingsList.length) {
+  if (fnd.groups) {
+    more = el('span', {}, `${dxPlural(fnd.groups.length, 'group')} of ${dxPlural(fnd.total, 'finding')}` + (fnd.groups.length >= 100 ? ', the 100 largest' : ''));
+  } else if (fnd.total > findingsList.length) {
     const left = fnd.total - findingsList.length;
     const btn = fnd.next ? dxBtn('ghost', `Load ${Math.min(FND_PAGE, left)} more`, null, { sm: true, title: `${left} more match these filters` }) : null;
     if (btn) btn.addEventListener('click', () => loadMoreFindings(btn));
@@ -775,6 +959,7 @@ $('f-bulk-form').addEventListener('submit', async (ev) => {
 // toolbar
 $('f-status').addEventListener('change', () => loadFindings());
 $('f-owner').addEventListener('change', () => loadFindings());
+$('f-group').addEventListener('change', () => loadFindings());
 $('f-since').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-since]');
   if (!b) return;

@@ -371,6 +371,16 @@ The filters are kept in the address, such as `#findings?owner=__none&urgency=cri
 for unassigned critical findings, so a bookmark or a link to a colleague opens the same
 queue.
 
+**Views** next to the pills switches between saved filters: **Open findings**, **Assigned
+to me**, **Unassigned critical and high** and **New in the last 24 hours** are there for
+everyone. **Save these filters as a view** keeps the filters on screen under a name of
+your own (up to 30). Your views are yours alone and follow you from browser to browser;
+they keep filters only, never findings.
+
+**Group by detection** or **Group by entity** shows, instead of findings, the detections
+or the hosts, users and addresses the matching findings share, largest first, each with
+its highest urgency. Pick one to see its findings.
+
 Keys: **J** and **K** move through the list, **X** selects the open finding, **A**
 assigns it to you (and moves a new one to In progress), **R** picks Resolved in its form
 and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search box.
@@ -1603,7 +1613,8 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
-| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&q=&since=7d&limit=&sort=&after=&counts=urgency` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter |
+| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&entity=&q=&since=7d&limit=&sort=&after=&counts=urgency&group=` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter. `group=detection` or `group=entity` adds `groups`: up to 100 of `{key, count, urgency}`, largest first |
+| `GET`, `PUT /api/me/finding-views` | Your saved views: `{"views": [{"id", "name", "query"}]}`; a PUT replaces the list |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |
 | `POST /api/findings` | Raise a finding by hand |
