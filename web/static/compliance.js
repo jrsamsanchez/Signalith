@@ -21,7 +21,7 @@
   const PAGES = {
     data: 'Add data', detections: 'Detections', endpoints: 'Endpoints', vulns: 'Vulnerabilities', findings: 'Findings', cases: 'Investigations',
     notify: 'Notifications', respond: 'Response actions', intel: 'Threat intel', retention: 'Data retention', users: 'Users',
-    security: 'Security', assets: 'Assets & identities', health: 'Health', search: 'Search',
+    security: 'Security', settings: 'Settings', assets: 'Assets & identities', health: 'Health', search: 'Search',
   };
   const S = { data: null, fw: '', tab: 'controls', find: '', show: 'all', open: new Set(), loading: false, seq: 0 };
   try { S.fw = localStorage.getItem(FW_KEY) || ''; } catch (_) { /* storage may be blocked */ }
@@ -151,6 +151,7 @@
     });
     fill($('cp-body'),
       el('div', { class: 'card cp-panel' }, head, summary, ...notes,
+        f.scope ? el('p', { class: 'cp-scope' }, f.scope) : null,
         el('p', { class: 'cp-scope' }, `Only the ${f.controls.length} controls a SIEM can give evidence for are listed. Controls with partial evidence count half toward the score${noted ? '; controls noted as not applicable are left out of it' : ''}.`),
         tabs,
         dxPanel('cp', 'controls', S.tab, S.tab === 'controls' ? controlsPanel(f) : null),

@@ -182,6 +182,7 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	snap := &compliance.Snapshot{Now: now, Data: map[string]compliance.DataSeen{}, Assets: -1}
 	conf := s.conf()
 	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
+	snap.MFA = conf.MFARequiredMode()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -271,7 +272,20 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 		if set, err := s.Retention.Settings(); err == nil {
 			rt := &compliance.Retention{KeepDays: set.Default.KeepDays, Archive: set.Default.Archive, MaxSizeGB: set.Default.MaxSizeGB, Guard: set.Guard.IsEnabled()}
 			for _, c := range retention.Categories() {
+				if c.Kind == retention.KindRecords {
+					if p, _ := set.For(c.ID); p.KeepDays == 0 {
+						rt.Longer = append(rt.Longer, c.Name+" (kept forever)")
+					}
+					continue
+				}
 				p, ok := set.Policies[c.ID]
+				if ok && c.Kind == retention.KindEvents && rt.KeepDays > 0 && (p.KeepDays == 0 || p.KeepDays > rt.KeepDays) {
+					if p.KeepDays == 0 {
+						rt.Longer = append(rt.Longer, c.Name+" (kept forever)")
+					} else {
+						rt.Longer = append(rt.Longer, c.Name+" ("+strconv.Itoa(p.KeepDays)+" days)")
+					}
+				}
 				if !ok || c.Kind != retention.KindEvents || c.ID == strings.ToLower(datamodel.RiskModel) {
 					continue
 				}
