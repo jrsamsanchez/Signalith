@@ -42,10 +42,18 @@ type Not struct{ Child Expr }
 // Compare is field <op> value, where op is one of = != < <= > >=, or =~
 // for a regular expression found anywhere in the value (RE2 syntax, ^ and
 // $ to anchor it).
+//
+// Ref is set on a where command's comparison whose value is a bare name,
+// as in where bytes_out > bytes_in: on a row that has a field of that
+// name, the comparison is with the field's value, as in Splunk; on any
+// other row, with the text.
 type Compare struct {
 	Field string
 	Op    string
 	Value string
+	Ref   bool
+
+	lit bool // written in a where command, so a bare name is put in quotes
 }
 
 // In is field IN (v1, v2, ...).
@@ -69,6 +77,9 @@ func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")"
 func (e *Not) String() string { return "NOT " + e.Child.String() }
 func (e *Compare) String() string {
 	v := FormatValue(e.Value)
+	if e.lit && !e.Ref && v == e.Value && isEvalIdent(v) && e.Op != "=~" {
+		v = quote(v) // bare, it would name a field
+	}
 	if e.Op == "=" && strings.HasPrefix(v, "~") {
 		v = quote(v) // =~ would read as a regular expression match
 	}
@@ -389,7 +400,7 @@ func CommandString(c Command) string {
 		if c.Search {
 			return "search " + topLevel(c.Expr, " ")
 		}
-		return "where " + topLevel(c.Expr, " AND ")
+		return "where " + topLevel(whereLiterals(c.Expr), " AND ")
 	case *Eval:
 		return evalString(c)
 	case *Rex:
@@ -552,6 +563,33 @@ func aggList(aggs []Agg) string {
 }
 
 // topLevel renders an expression without its outermost parentheses.
+// whereLiterals returns e with its comparisons marked as written in a
+// where command, so that a value that is not a field reference prints in
+// quotes and reads back as text.
+func whereLiterals(e Expr) Expr {
+	switch e := e.(type) {
+	case *And:
+		return &And{Children: whereLiteralList(e.Children)}
+	case *Or:
+		return &Or{Children: whereLiteralList(e.Children)}
+	case *Not:
+		return &Not{Child: whereLiterals(e.Child)}
+	case *Compare:
+		c := *e
+		c.lit = true
+		return &c
+	}
+	return e
+}
+
+func whereLiteralList(es []Expr) []Expr {
+	var out []Expr
+	for _, c := range es {
+		out = append(out, whereLiterals(c))
+	}
+	return out
+}
+
 func topLevel(e Expr, andSep string) string {
 	// Without its parentheses, a term such as earliest=0 would read back
 	// as the query's own earliest=, not as a search of that field.
