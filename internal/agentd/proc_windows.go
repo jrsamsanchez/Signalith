@@ -35,6 +35,10 @@ var (
 	jobErr  error
 )
 
+// collectorMemory is the most memory each collector may commit, as the
+// Linux service's MemoryMax.
+const collectorMemory = 512 << 20
+
 func agentJob() (windows.Handle, error) {
 	jobOnce.Do(func() {
 		h, err := windows.CreateJobObject(nil, nil)
@@ -43,7 +47,11 @@ func agentJob() (windows.Handle, error) {
 			return
 		}
 		info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		// Each collector may commit at most collectorMemory: a fault
+		// then stops it, and the agent starts it again, rather than
+		// take the computer's memory.
+		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY
+		info.ProcessMemoryLimit = collectorMemory
 		if _, err := windows.SetInformationJobObject(h, windows.JobObjectExtendedLimitInformation,
 			uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 			windows.CloseHandle(h)
