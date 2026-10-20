@@ -196,9 +196,11 @@ A comparison with a missing field is null, which `where` treats as false. Use `i
 
 `where` keeps its plain filter reading for conditions such as `count > 20`,
 `user=adm*` or `src IN (a, b)`: there the right side is a value, matching ignores case and
-`*` is a wildcard. As soon as the condition uses a function, arithmetic or a quoted field
-name it is read as an expression, so `where bytes_out > bytes_in` compares the text
-`bytes_in`, while `where bytes_out > bytes_in * 1` compares the two fields.
+`*` is a wildcard. A bare name on the right names a field, as in Splunk:
+`where bytes_out > bytes_in` compares the two fields on every row that has `bytes_in`, and
+compares with the text `bytes_in` only on rows without it. Put a value in double quotes
+(`where user="admin"`) to always compare with the text. As soon as the condition uses a
+function, arithmetic or a single-quoted field name it is read as an expression.
 
 | Functions | |
 | --- | --- |
