@@ -823,8 +823,24 @@ func (x *clusterCLI) resetKey(ctx context.Context, yes bool) error {
 		return errors.New("none of the shared settings can be signed again")
 	}
 	docs = sign
+	// The cluster's certificate authority key goes with the lost key.
+	var certs []certExpiry
+	caFP := lostCA(docs)
+	if caFP != "" {
+		certs = x.caExpiries(ctx, caFP)
+		fmt.Fprint(x.out, caLossText(certs))
+	}
 	if err := x.confirm("Sign these with a new cluster key? Every other server then needs the new key (export-key, import-key).", yes); err != nil {
 		return err
+	}
+	if caFP != "" {
+		q := "Lose the cluster's certificate authority key, so that no HTTPS certificate can be renewed?"
+		if len(certs) > 0 {
+			q = fmt.Sprintf("Lose the cluster's certificate authority key, so that HTTPS certificates stop working from %s?", shortDay(certs[0].Expires))
+		}
+		if err := x.confirm(q, yes); err != nil {
+			return err
+		}
 	}
 	k, err := shared.NewClusterKey()
 	if err != nil {
@@ -845,11 +861,22 @@ func (x *clusterCLI) resetKey(ctx context.Context, yes bool) error {
 	// The copy is of the old key's documents.
 	_ = os.Remove(path)
 	fmt.Fprintf(x.out, "Signed %d shared documents with the new cluster key %s.\n", len(docs), k.ID())
+	// The certificate authority's key cannot be entered again: it is
+	// told apart below.
+	dropped = slices.DeleteFunc(dropped, func(d string) bool { return caFP != "" && d == caKeyValue })
 	if len(dropped) > 0 {
 		fmt.Fprintln(x.out, "These stored passwords and keys were encrypted with the lost key and were emptied; enter them again:")
 		for _, d := range dropped {
 			fmt.Fprintln(x.out, "  "+d)
 		}
+	}
+	if caFP != "" {
+		until := "they expire"
+		if len(certs) > 0 {
+			until = shortDay(certs[0].Expires)
+		}
+		fmt.Fprintf(x.out, "The cluster's certificate authority key was emptied with them: the servers' HTTPS certificates cannot be renewed, and work until %s. "+
+			"Before then, agents, browsers and syslog senders need a new certificate authority to trust.\n", until)
 	}
 	fmt.Fprintln(x.out, "Give the other servers the new key: signalith cluster export-key here, then signalith cluster import-key there.")
 	return err

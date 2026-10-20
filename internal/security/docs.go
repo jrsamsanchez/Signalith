@@ -42,6 +42,7 @@ var (
 	docHTTPSAgents     = DocLink{File: "https.md", Anchor: "agents-and-syslog"}
 	docHTTPSTrust      = DocLink{File: "https.md", Anchor: "trust-the-certificate"}
 	docHTTPSOldToken   = DocLink{File: "https.md", Anchor: "the-docker-quick-starts-old-example-token"}
+	docClusterResetKey = DocLink{File: "cluster-cli.md", Anchor: "reset-key"}
 	docOSPoint         = DocLink{File: "opensearch-security.md", Anchor: "4-point-signalith-at-it"}
 	docOSLinux         = DocLink{File: "opensearch-security.md", Anchor: "opensearch-on-linux-or-windows"}
 	docOSCerts         = DocLink{File: "opensearch-security.md", Anchor: "1-make-the-certificates"}
@@ -83,7 +84,7 @@ var (
 // AllDocs lists every section of the docs the report may link to.
 func AllDocs() []DocLink {
 	return []DocLink{docHTTPSUpgrade, docHTTPSProxy, docHTTPSOwn, docHTTPSNames, docHTTPSSwitch, docHTTPSReach,
-		docHTTPSAgents, docHTTPSTrust, docHTTPSOldToken, docOSPoint, docOSLinux, docOSCerts, docOSDocker, docOSNotLoaded, docOSRoles, docEncDocker,
+		docHTTPSAgents, docHTTPSTrust, docHTTPSOldToken, docClusterResetKey, docOSPoint, docOSLinux, docOSCerts, docOSDocker, docOSNotLoaded, docOSRoles, docEncDocker,
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
 		docReadmeWindows, docReadmeDocker, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,

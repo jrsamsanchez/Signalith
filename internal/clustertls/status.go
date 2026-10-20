@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
@@ -39,6 +40,35 @@ func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatu
 		st.LeafExpires = &exp
 	}
 	return st
+}
+
+// KeyLost reports whether the cluster's certificate authority key is
+// lost for good: m uses the cluster's certificate authority without its
+// key, and the tls document, among the shared settings' problems, is
+// refused because its key was emptied (signalith cluster reset-key does
+// that when every copy of the cluster key is lost). While OpenSearch
+// cannot be reached the key is only not available yet, which is not this.
+func KeyLost(m *tlsauto.Manager, problems []shared.Problem) bool {
+	if m == nil || !m.CAKeyMissing() {
+		return false
+	}
+	for _, p := range problems {
+		if p.ID == DocID && p.Kind == shared.ProblemInvalid && p.Reason == ErrKeyNotSealed.Error() {
+			return true
+		}
+	}
+	return false
+}
+
+// KeyLostText is the warning shown while the cluster's certificate
+// authority key is lost, with the day the certificate in use expires
+// (zero when it is not known).
+func KeyLostText(expires time.Time) string {
+	head := "The cluster's certificate authority key was lost; HTTPS certificates cannot be renewed and stop working when they expire. "
+	if !expires.IsZero() {
+		head = "The cluster's certificate authority key was lost; HTTPS certificates expire on " + expires.UTC().Format("2 Jan 2006") + " and cannot be renewed. "
+	}
+	return head + "Before then, agents, browsers and syslog senders need a new certificate authority to trust."
 }
 
 // UpWithin is how fresh a heartbeat must be for its server to count as

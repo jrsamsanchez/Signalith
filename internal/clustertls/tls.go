@@ -50,6 +50,11 @@ const systemUser = "signalith"
 // ErrOtherCA: the cluster already has another certificate authority.
 var ErrOtherCA = errors.New("the cluster already has another certificate authority")
 
+// ErrKeyNotSealed refuses a tls document without its sealed key, as
+// signalith cluster reset-key leaves it when every copy of the cluster
+// key it was sealed with is lost.
+var ErrKeyNotSealed = errors.New("the tls document's key is not sealed")
+
 // Body is the tls document's body.
 type Body struct {
 	// CACertPEM is the certificate authority, in PEM.
@@ -114,7 +119,7 @@ func validate(b *Body) error {
 		return errors.New("the tls document's fingerprint does not match its certificate")
 	}
 	if !secrets.IsSealed(b.CAKey) {
-		return errors.New("the tls document's key is not sealed")
+		return ErrKeyNotSealed
 	}
 	if len(b.Names) > MaxNames {
 		return fmt.Errorf("the tls document has %d names, more than %d", len(b.Names), MaxNames)
