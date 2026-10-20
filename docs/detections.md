@@ -269,6 +269,42 @@ Exceptions are checked against the fields of each result row, so match on fields
 query returns: after `stats ... by src, dest`, only `src`, `dest` and the
 aggregates exist.
 
+### Exceptions for many detections
+
+Some hosts and accounts trip many rules on purpose: the SCCM server, the Ansible
+account, a vulnerability scanner. Rather than add the same exception to every
+PowerShell or process rule, add one exception for many detections, with a scope:
+
+- `all`: every detection.
+- `pack:<name>`: every rule of a content pack, such as `pack:sigmahq`.
+- `tag:<tag>`: every detection with that tag (case is ignored).
+
+They match like a detection's own exceptions (the same `field=value` patterns,
+start and end, comment, and who added it), have the same limits (up to 500, each
+matching up to 8 fields; one that matches every result needs an end time), and are
+checked first, before each detection's own. What they hold back counts in each
+run's suppressed results.
+
+- **From a finding**: admins choose **More actions** (⋯) > **Except this host/user
+  from all rules**, or **Don't alert on this again** and pick **Except from**: this
+  detection, all detections, or every rule of the detection's content pack.
+- **On the Detections page**: **Exceptions** lists them; admins add one with its
+  scope and match, or remove one with its bin icon.
+
+They are kept like a built-in detection's state, in
+`detections/state/scoped-exceptions.yaml` (or the cluster's shared settings), so
+`scoped-exceptions` cannot be a detection's ID:
+
+```yaml
+exceptions:
+  - id: ex-7c1d0e9a4b22
+    scope: all                           # all, pack:<name> or tag:<tag>
+    match: {dest: sccm01}
+    comment: SCCM server runs PowerShell everywhere
+    by: admin
+    added: 2026-10-20T09:00:00Z
+```
+
 ## Antivirus detections
 
 Ten built-in detections read the Malware data model (see
@@ -1643,7 +1679,10 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `DELETE /api/detections/content` | Remove the update and use the rules built into Signalith (admin) |
 | `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
-| `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
+| `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin); with `"scope": "all"` (or `pack:<name>`, `tag:<tag>`) the exception is one for many detections |
+| `GET /api/detections/exceptions` | The [exceptions for many detections](#exceptions-for-many-detections) and their `etag` |
+| `POST /api/detections/exceptions` | Add one: `{"scope": "all", "match": {"user": "svc-ansible"}, "for": "30d", "from", "until", "comment"}`; `If-Match` with the `etag` refuses it when someone changed them since (admin) |
+| `DELETE /api/detections/exceptions/{exception}` | Remove one (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
 | `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |

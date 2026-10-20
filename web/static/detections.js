@@ -923,6 +923,7 @@ function renderFindingDetail(box, data, opts = {}) {
     can('analyst') ? { icon: 'sparkles', label: 'Investigate with AI…', run: () => openInvestigate(f) } : null,
     d && can('admin') ? 'sep' : null,
     d && can('admin') ? { icon: 'bell-off', label: 'Don’t alert on this again…', run: () => suppressFinding(f, d) } : null,
+    d && can('admin') ? { icon: 'bell-off', label: 'Except this host/user from all rules…', run: () => suppressFinding(f, d, 'all') } : null,
   ]);
 
   const sev = sevBadge(u);
@@ -1765,7 +1766,7 @@ function suppressFields(f) {
 
 // suppressFinding is "Don't alert on this again": an exception on the
 // finding's detection for the values picked, closing the finding too.
-function suppressFinding(f, d) {
+function suppressFinding(f, d, initialScope) {
   const dlg = tuneDialog();
   const fields = suppressFields(f);
   const boxes = fields.map((x, i) => {
@@ -1780,6 +1781,13 @@ function suppressFinding(f, d) {
   more.append(...otherRows);
   const dur = select('sf-for', SUPPRESS_FOR, '7d');
   dur.className = 'select select--block';
+  // Where the exception applies: this detection, or every detection (or
+  // every rule of its content pack), such as for the SCCM server.
+  const scopes = [['', 'This detection'], ['all', 'All detections']];
+  const packName = d.origin && d.origin.pack ? d.origin.pack_title || d.origin.pack : '';
+  if (packName) scopes.push(['pack:' + d.origin.pack, 'Every rule in ' + packName]);
+  const scope = select('sf-scope', scopes, initialScope || '');
+  scope.className = 'select select--block';
   const note = el('textarea', { class: 'textarea', id: 'sf-comment', rows: 2, placeholder: 'Why: a scanner, a known admin script, a test host…' });
   const close = el('input', { type: 'checkbox', id: 'sf-close' });
   close.checked = f.status !== 'closed';
@@ -1793,22 +1801,25 @@ function suppressFinding(f, d) {
   const update = () => {
     const p = picked();
     ok.disabled = !p.length;
+    const who = scope.value === '' ? 'This detection raises' : scope.value === 'all' ? 'No detection raises' : `No rule in ${packName} raises`;
     preview.textContent = p.length
-      ? `This detection raises no findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
+      ? `${who} findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
       : 'Pick at least one field.';
   };
   for (const b of boxes) b.addEventListener('change', update);
   dur.addEventListener('change', update);
+  scope.addEventListener('change', update);
   ok.addEventListener('click', async () => {
     ok.disabled = true;
     fill(errBox);
     try {
       const body = { fields: picked().map((x) => x.field), for: dur.value, comment: note.value.trim() };
+      if (scope.value) body.scope = scope.value;
       if (close.checked) body.update = { status: 'closed', disposition: disp.value };
       const res = await api('api/findings/' + encodeURIComponent(f.id) + '/suppress', body);
       dlg.close();
       dxNotify(res.warning ? 'Exception saved, but the finding was not updated.' : close.checked ? 'Exception saved and the finding closed.' : 'Exception saved.',
-        { label: 'Undo', run: () => removeException(f.detection_id, res.exception.id) });
+        { label: 'Undo', run: () => (res.exception.scope ? removeScopedException(res.exception.id) : removeException(f.detection_id, res.exception.id)) });
       await loadFindings({ quiet: true });
       if (openFinding === f.id) showFinding(f.id, { focus: false });
       if (typeof loadDetections === 'function' && detections.length) loadDetections();
@@ -1820,13 +1831,14 @@ function suppressFinding(f, d) {
   fill(dlg,
     el('div', { class: 'modal__head' }, el('div', {},
       el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Don’t alert on this again'),
-      el('p', { class: 'modal__desc' }, 'Adds an exception to the detection. Matching results raise no finding and add no risk; other results still alert.'))),
+      el('p', { class: 'modal__desc' }, 'Adds an exception to the detection, or to every detection for this host or user. Matching results raise no finding and add no risk; other results still alert.'))),
     el('div', { class: 'modal__body' },
       errBox,
       fields.length ? el('fieldset', { class: 'dx-sf-fields' }, el('legend', { class: 'label' }, 'Match these values'),
         ...entityRows, otherRows.length ? (entityRows.length ? more : el('div', {}, ...otherRows)) : null)
         : dxAlert('warning', 'This finding has no values to match on.', 'Turn the detection off, or edit its query, instead.'),
-      el('div', { class: 'form-grid' }, dxField('How long', dur), dxField('Close as', disp)),
+      el('div', { class: 'form-grid' }, dxField('Except from', scope, 'All detections suits a server or account, such as SCCM or Ansible, that trips many rules.'), dxField('How long', dur)),
+      dxField('Close as', disp),
       el('label', { class: 'check' }, close, 'Close this finding'),
       dxField('Comment', note),
       preview),
@@ -1922,6 +1934,121 @@ function addException(d) {
   dlg.onclose = null;
   dlg.showModal();
   match.focus();
+}
+
+// ---- exceptions for many detections ----
+// They hold back what they match from every detection, a content pack's
+// rules or the detections with a tag, before each detection's own.
+function scopeLabel(s) {
+  if (s === 'all') return 'All detections';
+  if (s.startsWith('pack:')) {
+    const p = (det.packs || []).find((x) => x.name === s.slice(5));
+    return 'Every rule in ' + (p && p.title ? p.title : s.slice(5));
+  }
+  if (s.startsWith('tag:')) return 'Tagged ' + s.slice(4);
+  return s;
+}
+
+async function removeScopedException(exID, after) {
+  try {
+    await api('api/detections/exceptions/' + encodeURIComponent(exID), undefined, 'DELETE');
+    dxNotify('Exception removed.');
+    if (after) await after();
+  } catch (e) { dxNotify('Couldn’t remove the exception: ' + e.message, null, { tone: 'danger' }); }
+}
+
+// scopedExceptionsDialog lists the exceptions for many detections;
+// admins add one or remove one.
+function scopedExceptionsDialog() {
+  const dlg = tuneDialog();
+  const admin = can('admin');
+  const list = el('div', { 'aria-live': 'polite' }, el('p', { class: 'muted' }, 'Loading…'));
+  const errBox = el('div', {});
+  let etag = '';
+  const render = (es) => {
+    if (!es.length) {
+      fill(list, el('p', { class: 'muted' }, 'None. Use Don’t alert on this again on a finding, and choose All detections, to stop every rule alerting on a host or user.'));
+      return;
+    }
+    fill(list, el('ul', { class: 'dx-exlist' }, ...es.map((e) => {
+      const ended = e.until && new Date(e.until).getTime() <= Date.now();
+      const what = e.match && Object.keys(e.match).length
+        ? Object.entries(e.match).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => el('span', { class: 'badge badge--outline badge--mono', title: `${k} = ${v}` }, `${k}=${v}`))
+        : [el('span', { class: 'badge' }, 'Every result')];
+      return el('li', { class: 'dx-ex' + (ended ? ' dx-ex--ended' : '') },
+        el('div', { class: 'dx-ex__what' }, el('span', { class: 'badge badge--accent' }, scopeLabel(e.scope)), ...what),
+        el('div', { class: 'dx-ex__meta' }, ...dxDots(el('span', {}, exceptionWhen(e)), e.by ? el('span', {}, 'by ' + e.by) : null,
+          e.added ? el('span', { title: fmtTime(e.added) }, 'added ' + ago(e.added)) : null)),
+        e.comment ? el('p', { class: 'dx-ex__note' }, e.comment) : null,
+        admin ? dxBtn('ghost', '', () => removeScopedException(e.id, load), { sm: true, icon: 'trash-2', title: 'Remove this exception', cls: 'dx-ex__del' }) : null);
+    })));
+  };
+  const load = async () => {
+    try {
+      const res = await api('api/detections/exceptions');
+      etag = res.etag || '';
+      render(res.exceptions || []);
+    } catch (e) { fill(list, dxAlert('danger', 'Couldn’t load the exceptions.', e.message)); }
+  };
+  const kids = [errBox, list];
+  let ok = null;
+  if (admin) {
+    const kinds = [['all', 'All detections'], ['tag', 'Detections with a tag']];
+    if ((det.packs || []).length) kinds.splice(1, 0, ['pack', 'Every rule in a content pack']);
+    const kind = select('se-kind', kinds, 'all');
+    kind.className = 'select select--block';
+    const pack = select('se-pack', (det.packs || []).map((p) => [p.name, p.title || p.name]), '');
+    pack.className = 'select select--block';
+    const tag = el('input', { class: 'input', id: 'se-tag', type: 'text', spellcheck: 'false', placeholder: 'powershell' });
+    const packField = dxField('Pack', pack);
+    const tagField = dxField('Tag', tag);
+    const match = el('textarea', { class: 'textarea mono', id: 'se-match', rows: 3, spellcheck: 'false', placeholder: 'host=sccm01\nuser=svc-ansible' });
+    const fromIn = el('input', { class: 'input', id: 'se-from', type: 'datetime-local' });
+    const dur = select('se-for', [['1h', '1 hour'], ['4h', '4 hours'], ...SUPPRESS_FOR], '30d');
+    dur.className = 'select select--block';
+    const note = el('textarea', { class: 'textarea', id: 'se-comment', rows: 2, placeholder: 'Why: the SCCM server, the Ansible account…' });
+    const shown = () => { packField.hidden = kind.value !== 'pack'; tagField.hidden = kind.value !== 'tag'; };
+    kind.addEventListener('change', shown);
+    shown();
+    ok = dxBtn('primary', 'Add exception', null, { icon: 'plus' });
+    ok.addEventListener('click', async () => {
+      fill(errBox);
+      const m = {};
+      for (const line of match.value.split('\n').map((s) => s.trim()).filter(Boolean)) {
+        const i = line.indexOf('=');
+        if (i < 1) { fill(errBox, dxAlert('danger', 'Write each value as field=value.', line)); return; }
+        m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      }
+      const scope = kind.value === 'pack' ? 'pack:' + pack.value : kind.value === 'tag' ? 'tag:' + tag.value.trim() : 'all';
+      const body = { scope, match: m, for: dur.value, comment: note.value.trim() };
+      if (fromIn.value) body.from = new Date(fromIn.value).toISOString();
+      ok.disabled = true;
+      try {
+        await api('api/detections/exceptions', body, 'POST', libraryIfMatch(etag));
+        dxNotify('Exception added.');
+        match.value = '';
+        note.value = '';
+        await load();
+      } catch (e) {
+        fill(errBox, dxAlert('danger', e.status === 412 ? 'Someone changed these exceptions; the list is reloaded.' : 'Couldn’t add the exception.', e.problems ? e.problems.join(' ') : e.message));
+        if (e.status === 412) await load();
+      } finally { ok.disabled = false; }
+    });
+    kids.push(el('fieldset', { class: 'dx-sf-fields' }, el('legend', { class: 'label' }, 'Add an exception'),
+      el('div', { class: 'form-grid' }, dxField('Applies to', kind), packField, tagField),
+      dxField('Match', match, 'One field=value per line, such as host or user; * and ? are wildcards and case is ignored. Empty matches every result, which needs an end.'),
+      el('div', { class: 'form-grid' }, dxField('Starting', fromIn, 'Empty starts now.'), dxField('How long', dur)),
+      dxField('Comment', note)));
+  }
+  fill(dlg,
+    el('div', { class: 'modal__head' }, el('div', {},
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Exceptions for many detections'),
+      el('p', { class: 'modal__desc' }, 'Results that match raise no finding and add no risk in every detection in scope. They are checked before each detection’s own exceptions.'))),
+    el('div', { class: 'modal__body' }, ...kids),
+    el('div', { class: 'modal__foot' }, dxBtn('ghost', 'Close', () => dlg.close()), ok));
+  dlg.onclose = null;
+  dlg.showModal();
+  load();
 }
 
 // ---- detection editor ----
@@ -2175,6 +2302,7 @@ function backtestResult(bt, win, lookback) {
 }
 
 $('d-new').addEventListener('click', () => editDetection(blankDetection()));
+$('d-scoped').addEventListener('click', scopedExceptionsDialog);
 
 // "Describe a detection": a plain-English description becomes a draft in
 // the editor, turned off and backtested.

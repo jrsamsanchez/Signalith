@@ -100,10 +100,83 @@ func (s *Server) handleDeleteException(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"detection": d})
 }
 
+// scopedExceptionsBody is the exceptions for many detections and their
+// version, for If-Match on the next change.
+func (s *Server) scopedExceptionsBody(es []detect.Exception) map[string]any {
+	if es == nil {
+		es = []detect.Exception{}
+	}
+	return map[string]any{"exceptions": es, "etag": s.Detections.ScopedETag()}
+}
+
+func (s *Server) handleListScopedExceptions(w http.ResponseWriter, r *http.Request) {
+	if !s.detectionsReady(w) {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.scopedExceptionsBody(s.Detections.ScopedExceptions()))
+}
+
+// handleAddScopedException adds an exception for many detections: a
+// detection's exception with a scope, all, pack:<name> or tag:<tag>.
+func (s *Server) handleAddScopedException(w http.ResponseWriter, r *http.Request) {
+	if !s.detectionsReady(w) {
+		return
+	}
+	var req struct {
+		exceptionRequest
+		Scope string `json:"scope"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	e, err := req.exception(userOf(r), "", time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	e.Scope = strings.TrimSpace(req.Scope)
+	es, err := s.Detections.UpdateScopedExceptionsIf(r.Context(), userOf(r), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
+		return append(es, e), nil
+	})
+	if err != nil {
+		writeDetectionError(w, err)
+		return
+	}
+	s.Log.Info("scoped detection exception added", "scope", e.Scope, "exception", e.ID, "match", e.Describe(), "by", userOf(r))
+	body := s.scopedExceptionsBody(es)
+	body["exception"] = e
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) handleDeleteScopedException(w http.ResponseWriter, r *http.Request) {
+	if !s.detectionsReady(w) {
+		return
+	}
+	exID := r.PathValue("exception")
+	var scope string
+	es, err := s.Detections.UpdateScopedExceptionsIf(r.Context(), userOf(r), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
+		i := slices.IndexFunc(es, func(e detect.Exception) bool { return e.ID == exID })
+		if i < 0 {
+			return nil, fmt.Errorf("%w: no exception %s", detect.ErrNotFound, exID)
+		}
+		scope = es[i].Scope
+		return slices.Delete(es, i, i+1), nil
+	})
+	if err != nil {
+		writeDetectionError(w, err)
+		return
+	}
+	s.Log.Info("scoped detection exception removed", "scope", scope, "exception", exID, "by", userOf(r))
+	writeJSON(w, http.StatusOK, s.scopedExceptionsBody(es))
+}
+
 // handleSuppressFinding is "don't alert on this again": it adds an
 // exception to the finding's detection for the finding's values of the
 // fields asked for (such as host or user), and can update the finding in
-// the same step, for example closing it as a false positive.
+// the same step, for example closing it as a false positive. With a
+// scope (all, pack:<name> or tag:<tag>) the exception is one for many
+// detections instead, such as every rule for this host.
 func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 	if !s.detectionsReady(w) {
 		return
@@ -112,6 +185,7 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		Fields  []string         `json:"fields"`
 		For     string           `json:"for,omitempty"`
 		Comment string           `json:"comment,omitempty"`
+		Scope   string           `json:"scope,omitempty"`
 		Update  *findings.Update `json:"update,omitempty"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -152,20 +226,36 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), f.DetectionID, "", func(es []detect.Exception) ([]detect.Exception, error) {
-		return append(es, e), nil
-	})
-	if err != nil {
-		writeDetectionError(w, err)
-		return
+	var d *detect.Detection
+	note := "Stopped alerting on " + e.Describe()
+	if scope := strings.TrimSpace(req.Scope); scope != "" {
+		e.Scope = scope
+		if _, err := s.Detections.UpdateScopedExceptionsIf(r.Context(), userOf(r), "", func(es []detect.Exception) ([]detect.Exception, error) {
+			return append(es, e), nil
+		}); err != nil {
+			writeDetectionError(w, err)
+			return
+		}
+		s.Log.Info("scoped detection exception added from a finding", "scope", e.Scope, "exception", e.ID, "finding", f.ID,
+			"match", e.Describe(), "by", userOf(r))
+		note += " in " + scopeText(e.Scope)
+		// The finding's detection as it is now, with the new exception.
+		d, _ = s.Detections.Get(f.DetectionID)
+	} else {
+		d, err = s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), f.DetectionID, "", func(es []detect.Exception) ([]detect.Exception, error) {
+			return append(es, e), nil
+		})
+		if err != nil {
+			writeDetectionError(w, err)
+			return
+		}
+		s.Log.Info("detection exception added from a finding", "detection", d.ID, "exception", e.ID, "finding", f.ID,
+			"match", e.Describe(), "by", userOf(r))
 	}
-	s.Log.Info("detection exception added from a finding", "detection", d.ID, "exception", e.ID, "finding", f.ID,
-		"match", e.Describe(), "by", userOf(r))
 	u := findings.Update{}
 	if req.Update != nil {
 		u = *req.Update
 	}
-	note := "Stopped alerting on " + e.Describe()
 	if e.Until != nil {
 		note += " until " + e.Until.Format("2006-01-02 15:04 MST")
 	}
@@ -183,6 +273,17 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"detection": d, "exception": e, "finding": updated})
+}
+
+// scopeText says which detections a scope covers, for a finding's note.
+func scopeText(scope string) string {
+	if name, ok := strings.CutPrefix(scope, "pack:"); ok {
+		return "every detection of the " + name + " pack"
+	}
+	if tag, ok := strings.CutPrefix(scope, "tag:"); ok {
+		return "every detection tagged " + tag
+	}
+	return "every detection"
 }
 
 // findingValue is a finding's value for a field: from the result row

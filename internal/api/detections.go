@@ -50,6 +50,11 @@ func (s *Server) routeDetections(api *router) {
 	api.admin("POST /api/detections/{id}/exceptions", s.handleAddException)
 	api.admin("DELETE /api/detections/{id}/exceptions/{exception}", s.handleDeleteException)
 	api.admin("POST /api/findings/{id}/suppress", s.handleSuppressFinding)
+	// Exceptions for many detections: every rule, a pack's or a tag's,
+	// checked before each detection's own.
+	api.viewer("GET /api/detections/exceptions", s.handleListScopedExceptions)
+	api.admin("POST /api/detections/exceptions", s.handleAddScopedException)
+	api.admin("DELETE /api/detections/exceptions/{exception}", s.handleDeleteScopedException)
 
 	api.viewer("GET /api/findings", s.handleListFindings)
 	api.viewer("GET /api/findings/summary", s.handleFindingsSummary)

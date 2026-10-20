@@ -1093,7 +1093,7 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
-`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
+`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/detections/exceptions`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
 `GET /api/cases/{id}`, `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/storyline` (the [attack storyline](storyline.md)), `GET /api/intel`, `GET /api/intel/feeds`,
@@ -1149,7 +1149,7 @@ Signalith Agents of an install line collect; see
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/detections/exceptions`, `DELETE /api/detections/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
