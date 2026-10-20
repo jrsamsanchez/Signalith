@@ -1434,7 +1434,7 @@ func TestAccount(t *testing.T) {
 		{name: "root", set: func(f *Facts) { f.Process.Root, f.Process.UID = true, 0 }, state: Attention,
 			line: "Signalith runs as root, so a flaw in it could reach the whole computer.",
 			fix: func(t *testing.T, c *Check) {
-				if !strings.Contains(c.Fix.Commands["linux"], "useradd --system") || c.Fix.Docs.File != "README.md" {
+				if !strings.Contains(c.Fix.Commands["linux"], "useradd --system") || c.Fix.Docs.File != "getting-started.md" {
 					t.Errorf("%+v", c.Fix)
 				}
 			}},
