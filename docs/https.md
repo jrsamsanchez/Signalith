@@ -301,9 +301,10 @@ Then:
 - a name added for agents on one server is covered by every server's certificate within
   seconds, instead of being kept in `tls/names.txt`;
 - the steps below are refused (`409`): they change one server's CA, and the cluster's
-  is changed for every server at once. A server that leaves the cluster, or a backup of
-  any server's state folder, may still hold the cluster's CA key; see
-  [When a server leaves](servers.md#when-a-server-leaves) and
+  is replaced for every server at once, in the same steps, from the Servers page (see
+  [Replacing the cluster's CA](servers.md#replacing-the-clusters-ca)). A server that
+  leaves the cluster, or a backup of any server's state folder, may still hold the
+  cluster's CA key; see [When a server leaves](servers.md#when-a-server-leaves) and
   [Backing up the cluster's CA](servers.md#backing-up-the-clusters-ca).
 
 ## Switching to a new certificate authority

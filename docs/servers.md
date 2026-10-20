@@ -556,8 +556,8 @@ choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#t
 Only that server can, only while it runs (a CA whose servers are all offline is marked
 so, and can't be kept until one is started), and only while its CA is still the one you
 chose. The request is signed with the cluster key, so only a server of the cluster can
-ask for it. Once one is shared, choosing another is refused: changing the cluster's CA
-comes in a later version.
+ask for it. Once one is shared, choosing another is refused: replace it instead
+([Replacing the cluster's CA](#replacing-the-clusters-ca)).
 
 **Retired CAs.** A server that takes the cluster's CA keeps a copy of its old `ca.pem`
 in `tls/retired/<date>-<fingerprint>/` and deletes its old `ca.key`, so the old CA never
@@ -604,11 +604,61 @@ Rotating the cluster key stops an old copy of the cluster key from opening anyth
 no revocation list, and agents trust the CA itself. So whoever holds that key can make
 certificates that agents, browsers and syslog devices trust, for any name the CA may
 vouch for, until the cluster's CA is replaced. `signalith cluster remove` and `leave`
-print this.
+print this. After you remove a server you no longer trust, replace the CA
+([Replacing the cluster's CA](#replacing-the-clusters-ca)).
 
 A server that leaves keeps its HTTPS certificate and can't renew it. `leave` prints
 the date it expires. To use the server on its own after that, delete its `tls` folder
 before it starts, so it makes a CA of its own, and give its agents a new configuration.
+
+### Replacing the cluster's CA
+
+Replace the cluster's CA when its key may have leaked, when a server you removed may
+still hold it, or when its 10 years are nearly up. It takes three steps, like a change
+of a server's own CA on its Security page, but for every server at once. Each step is on
+the **Certificate authority** card of the Servers page, and in
+`signalith cluster tls rotate-ca prepare|switch|retire` (see
+[cluster-cli.md](cluster-cli.md#tls)). The card and `signalith cluster tls` show which
+step the cluster is at, with its date, and what each step waits for.
+
+1. **Prepare** (**Replace it**). The server that runs the background jobs makes a new CA
+   with the same limits as the one in use: the same name constraints, server
+   authentication only, 10 years. Its key is encrypted with the cluster key and bound
+   to its fingerprint, like the other's. Every server then hands out both CAs, and the
+   one in use stays: in the CA file of Add data and `GET /api/tls/ca.pem?which=both`,
+   in the install lines' pins, and in the configuration managed agents fetch. Managed
+   agents keep the new file by themselves, over the connection they already trust, and
+   only when it still vouches for the server they talk to. Give other agents, browsers
+   and syslog devices the file with both CAs.
+2. **Switch** (**Switch to it**). Refused until every running server hands out the new
+   CA. Then each server issues itself a certificate from the new CA within seconds. The
+   old CA is still handed out, and its key kept, so nothing that trusts either one
+   breaks. The old one is listed as retired, so agents whose configuration trusts only
+   it are marked **Needs a new configuration**.
+3. **Retire** (**Retire the old one**). Refused until every running server serves a
+   certificate from the new CA. The old CA is no longer handed out, and its key is
+   deleted from the shared settings.
+
+A server that is stopped or offline isn't waited for: it takes the new CA when it
+starts. Servers with your own certificate files, or that don't serve HTTPS themselves,
+never use the cluster's CA. A server on a version that doesn't report its certificate
+holds both steps up: upgrade it, or stop it. Each step asked again does nothing more,
+and each is written to the audit log. A key rotation encrypts the new CA's key again
+too.
+
+An agent that was offline through the whole change, and trusts only the old CA, can't
+reach the servers afterwards: give it a new configuration from Add data. Once the old
+CA is retired, a copy of its key elsewhere (a backup, a removed server) no longer makes
+certificates that agents trusting only the new CA accept. Make a new offline copy of the
+CA afterwards (below).
+
+From a script, as an admin: `POST /api/cluster/tls/rotate-ca` with
+`{"step": "prepare"}`, `"switch"` or `"retire"` asks the server that runs the background
+jobs to take that step, and answers `202` with a `request_id` that
+`GET /api/requests/{id}` follows; `409` when the step doesn't fit the state, or a server
+isn't ready (the error names it); `503` when the shared settings can't be changed now.
+`GET /api/cluster/tls` has the state in `rotation`: `state` (`none`, `prepared` or
+`switched`), `next` or `previous` with its fingerprint and date, and `blockers`.
 
 ### Backing up the cluster's CA
 
@@ -629,7 +679,8 @@ After a `reset-key`, give the key back with
 `signalith cluster tls import <folder>/tls/ca.key` (see
 [cluster-cli.md](cluster-cli.md#tls)). Every server renews from it again within
 seconds. A founder's old `tls/ca.key`, from a backup made before the cluster kept it,
-works too.
+works too. With no copy of the key at all, replace the CA instead: the steps above
+don't need the old key, and every agent then needs the new CA file.
 
 ## Each server's own OpenSearch certificate
 
