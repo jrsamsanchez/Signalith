@@ -53,9 +53,17 @@ func guardQuery(q *query.Query, m *Masker) error {
 				return err
 			}
 			counted = map[string]bool{}
+			seen := map[string]bool{}
 			for _, a := range c.Aggs {
+				col := strings.ToLower(a.Column())
+				// Two results under one name: which one the column holds
+				// is up to the engine, so a count could stand for text.
+				if seen[col] {
+					return fmt.Errorf("stats names the column %s twice; give each result its own name", a.Column())
+				}
+				seen[col] = true
 				if slices.Contains(countOnly, strings.ToLower(a.Func)) {
-					counted[strings.ToLower(a.Column())] = true
+					counted[col] = true
 				}
 			}
 			uncount(counted, c.By)
