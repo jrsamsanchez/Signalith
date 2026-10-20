@@ -44,6 +44,11 @@ type Host struct {
 	Systemd, Service bool
 	// Account is the account the server runs as.
 	Account Account
+	// Builtin reads the built-in admin's password hash in use and when it
+	// was last set, on a server whose users are the cluster's: a change
+	// on the page goes there and not to this server's files. ok is false
+	// when there is none to read, as on a server that keeps its own.
+	Builtin func() (hash string, set time.Time, ok bool)
 }
 
 func (h Host) getenv(name string) string {
@@ -396,23 +401,69 @@ func fileFacts(h Host) (FileFacts, bool) {
 func adminFacts(h Host) AdminFacts {
 	c := h.Config
 	changed := c.AdminPasswordChanged() != ""
-	a := AdminFacts{Public: c.PublicAdminPassword()}
+	hash, shared := c.Auth.AdminPasswordHash, false
+	var setAt *time.Time
+	if changed {
+		if st, err := os.Stat(c.AdminHashFile()); err == nil {
+			t := st.ModTime()
+			setAt = &t
+		}
+	}
+	if h.Builtin != nil {
+		if live, set, ok := h.Builtin(); ok && live != "" {
+			hash, shared = live, true
+			if !changed && !configuredInUse(h, live) {
+				changed = true
+				if !set.IsZero() {
+					setAt = &set
+				}
+			}
+		}
+	}
+	// Where the password in use cannot be read here (the CLI, or shared
+	// settings out of reach), the state folder's note that the first
+	// password Signalith made was replaced still tells.
+	if file := h.getenv("SIGNALITH_ADMIN_PASSWORD_FILE"); !changed && !shared && file != "" && h.getenv("SIGNALITH_ADMIN_PASSWORD") == "" {
+		if at := c.FirstPasswordChanged(); filepath.Base(file) == config.InitialPasswordFileName && !at.IsZero() {
+			changed, setAt = true, &at
+		}
+	}
+	a := AdminFacts{Public: c.PublicAdminPassword() && !changed, Shared: shared}
 	a.FromEnv = !changed && h.getenv("SIGNALITH_ADMIN_PASSWORD") != ""
 	fromFile := !changed && h.getenv("SIGNALITH_ADMIN_PASSWORD_FILE") != "" && h.getenv("SIGNALITH_ADMIN_PASSWORD") == ""
 	a.DockerFirst = fromFile && h.Docker
 	a.FromFile = fromFile && !h.Docker
-	if hash := c.Auth.AdminPasswordHash; hash != "" {
-		if cost, err := bcrypt.Cost([]byte(hash)); err == nil && cost < bcrypt.DefaultCost {
-			a.WeakHash = true
-		}
+	if cost, err := bcrypt.Cost([]byte(hash)); hash != "" && err == nil && cost < bcrypt.DefaultCost {
+		a.WeakHash = true
 	}
 	if changed {
-		if st, err := os.Stat(c.AdminHashFile()); err == nil {
-			t := st.ModTime()
-			a.SetAt = &t
-		}
+		a.SetAt = setAt
 	}
 	return a
+}
+
+// configuredInUse reports whether hash, the built-in admin's password in
+// use, is still the password this server's configuration gives:
+// signalith.yaml's hash, or SIGNALITH_ADMIN_PASSWORD(_FILE), which each
+// start hashes again with a new salt and so is compared as a password.
+// A password that cannot be read counts as still in use, so the check
+// never calls a password changed that may not be.
+func configuredInUse(h Host, hash string) bool {
+	if hash == h.Config.Auth.AdminPasswordHash {
+		return true
+	}
+	pw := h.getenv("SIGNALITH_ADMIN_PASSWORD")
+	if file := h.getenv("SIGNALITH_ADMIN_PASSWORD_FILE"); pw == "" && file != "" {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return true
+		}
+		pw = strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r")
+	}
+	if pw == "" {
+		return false
+	}
+	return users.ComparePassword(hash, pw)
 }
 
 // UserFactsFrom reads who signs in from the users store.

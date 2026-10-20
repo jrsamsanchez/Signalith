@@ -209,6 +209,11 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	if builtin && p.MustChangePassword {
 		s.firstPasswordChanged()
 	}
+	if builtin && s.security().Report() != nil {
+		// The Security page shows the new password's check at once,
+		// not after the next hourly run.
+		go s.security().run(context.WithoutCancel(r.Context()), s.gatherSecurity, true)
+	}
 	np.Method = p.Method
 	s.noteMFA(np)
 	writeJSON(w, http.StatusOK, meView(np))

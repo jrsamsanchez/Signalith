@@ -354,6 +354,10 @@ type AdminFacts struct {
 	FromFile    bool // SIGNALITH_ADMIN_PASSWORD_FILE elsewhere, not changed since
 	WeakHash    bool // bcrypt cost below the default
 	SetAt       *time.Time
+	// Shared is true when the password is the cluster's: changed on the
+	// page or with signalith passwd, it is in use at once on every
+	// server, with no restart.
+	Shared bool
 }
 
 // ProcessFacts is about the running process.

@@ -7,8 +7,11 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 )
@@ -150,5 +153,93 @@ func TestMarkOwn(t *testing.T) {
 		if n.Own != want[n.Name] {
 			t.Errorf("%s: own %v", n.Name, n.Own)
 		}
+	}
+}
+
+// SEC-01: on a server whose users are the cluster's, a change on the
+// page goes to the shared user document and never to this server's
+// files; the check reads the password in use there.
+func TestAdminFactsSharedPassword(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "admin-password")
+	if err := os.WriteFile(file, []byte("first-docker-pass\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := func(k string) string {
+		if k == "SIGNALITH_ADMIN_PASSWORD_FILE" {
+			return file
+		}
+		return ""
+	}
+	c := loadConfig(t, "")
+	first, err := config.HashPassword("first-docker-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := time.Date(2026, 10, 20, 15, 50, 0, 0, time.UTC)
+	live := func(h string) func() (string, time.Time, bool) {
+		return func() (string, time.Time, bool) { return h, set, true }
+	}
+	// Still the first password: hashed with another salt than this
+	// process's, as at every start.
+	a := adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env, Builtin: live(first)})
+	if !a.DockerFirst || !a.Shared || a.SetAt != nil {
+		t.Errorf("first password: %+v", a)
+	}
+	changed, err := config.HashPassword("a-password-of-its-own")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a = adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env, Builtin: live(changed)})
+	if a.DockerFirst || a.FromFile || a.FromEnv || a.Public || !a.Shared || a.SetAt == nil || !a.SetAt.Equal(set) {
+		t.Errorf("changed on the page: %+v", a)
+	}
+	f := &Facts{Config: c, Admin: a, Users: UserFacts{BuiltinName: "signalithadmin"}}
+	if ch := checkBuiltinPassword(f); ch.State != Good {
+		t.Errorf("check after the change: %+v", ch)
+	}
+	// Not read yet (the shared settings cannot be used): as before.
+	none := func() (string, time.Time, bool) { return "", time.Time{}, false }
+	if a := adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env, Builtin: none}); !a.DockerFirst || a.Shared {
+		t.Errorf("unread: %+v", a)
+	}
+	// The fix for the first password points at the page, with no restart.
+	f.Admin = adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env, Builtin: live(first)})
+	ch := checkBuiltinPassword(f)
+	if ch.State != Attention || ch.Fix == nil || ch.Fix.Page == nil || ch.Fix.Page.ID != "change-password" {
+		t.Fatalf("fix: %+v", ch)
+	}
+	for k, cmd := range ch.Fix.Commands {
+		if strings.Contains(strings.ToLower(cmd), "restart") {
+			t.Errorf("%s command restarts: %q", k, cmd)
+		}
+	}
+}
+
+// Where the shared password cannot be read (the CLI), the state
+// folder's note that the Docker first password was replaced tells.
+func TestAdminFactsFirstPasswordNoted(t *testing.T) {
+	file := "/run/signalith/" + config.InitialPasswordFileName
+	env := func(k string) string {
+		if k == "SIGNALITH_ADMIN_PASSWORD_FILE" {
+			return file
+		}
+		return ""
+	}
+	c := loadConfig(t, "")
+	if a := adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env}); !a.DockerFirst {
+		t.Fatalf("before: %+v", a)
+	}
+	at := time.Date(2026, 10, 20, 15, 50, 0, 0, time.UTC)
+	if err := config.NoteFirstPasswordChanged(c.StateDir(), at); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(c.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := adminFacts(Host{Config: c, Docker: true, InContainer: true, Getenv: env})
+	if a.DockerFirst || a.FromFile || a.SetAt == nil || !a.SetAt.Equal(at) {
+		t.Errorf("after: %+v", a)
 	}
 }
