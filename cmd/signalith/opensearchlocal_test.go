@@ -282,6 +282,14 @@ func TestAdoptOpenSearch(t *testing.T) {
 	if !load().CheckPassword("signalithadmin", "first-password") {
 		t.Fatal("the rest of the config changed")
 	}
+	// A stopped OpenSearch of the user's can still start on 9200, and the
+	// config as it was is kept to go back to.
+	if st.Port == oslocal.FirstPort {
+		t.Fatalf("took port %d", st.Port)
+	}
+	if before, err := config.Load(path + ".before-opensearch"); err != nil || before.OpenSearch.URL != "http://127.0.0.1:9200" {
+		t.Fatalf("the config before: %v", err)
+	}
 
 	// Again (a repair): nothing more to do.
 	out.Reset()

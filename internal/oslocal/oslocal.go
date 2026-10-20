@@ -348,17 +348,17 @@ func extractFile(f *zip.File, target string) error {
 	return w.Close()
 }
 
-// FreePort returns the first port from FirstPort that nothing listens on
-// at 127.0.0.1.
-func FreePort() (int, error) {
-	for p := FirstPort; p < FirstPort+10; p++ {
+// FreePort returns the first port from first that nothing listens on at
+// 127.0.0.1.
+func FreePort(first int) (int, error) {
+	for p := first; p < first+10; p++ {
 		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
 		if err == nil {
 			l.Close()
 			return p, nil
 		}
 	}
-	return 0, fmt.Errorf("ports %d to %d are all in use on this computer, so OpenSearch has none to listen on", FirstPort, FirstPort+9)
+	return 0, fmt.Errorf("ports %d to %d are all in use on this computer, so OpenSearch has none to listen on", first, first+9)
 }
 
 // HeapMB is OpenSearch's Java heap for a computer with total MB of memory:

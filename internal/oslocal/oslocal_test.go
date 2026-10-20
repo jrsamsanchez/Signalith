@@ -192,7 +192,7 @@ func TestHeapMB(t *testing.T) {
 }
 
 func TestFreePort(t *testing.T) {
-	p, err := FreePort()
+	p, err := FreePort(FirstPort)
 	if err != nil {
 		t.Skip(err)
 	}

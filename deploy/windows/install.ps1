@@ -297,7 +297,7 @@ if ($managed) {
   $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
   Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
-} elseif (-not $Join -and -not $OpenSearchUrl -and -not (Get-Service | Where-Object { $_.Name -like "*opensearch*" })) {
+} elseif (-not $Join -and -not $OpenSearchUrl -and -not (Get-Service | Where-Object { $_.Name -like "*opensearch*" -or $_.Name -like "*elastic*" })) {
   # An upgrade of an install made before the installer set up OpenSearch:
   # when signalith.yaml still has the address it wrote by default and
   # nothing answers there, Signalith never reached an OpenSearch, so it

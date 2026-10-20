@@ -22,6 +22,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/oslocal"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
 const opensearchUsage = `usage:
@@ -106,6 +107,12 @@ func cmdOpenSearch(args []string) error {
 // before to the pinned version, and waits until it answers with its
 // security settings loaded. Its config, data and certificates are kept.
 func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string) error {
+	return installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort)
+}
+
+// installOpenSearchFrom is installOpenSearch with a new install taking
+// the first free port from firstPort.
+func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, firstPort int) error {
 	st, err := oslocal.LoadState(l)
 	if err != nil {
 		return err
@@ -120,7 +127,7 @@ func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, 
 		if err := sys.prepare(l, ""); err != nil {
 			return err
 		}
-		port, err := oslocal.FreePort()
+		port, err := oslocal.FreePort(firstPort)
 		if err != nil {
 			return err
 		}
@@ -225,18 +232,30 @@ func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l 
 		return nil
 	}
 	fmt.Fprintf(out, "Nothing answers at http://%s, the OpenSearch address in %s, so Signalith installs OpenSearch on this computer.\n", oldDefaultOpenSearch, path)
-	if err := installOpenSearch(ctx, out, sys, l, zip); err != nil {
+	// From the next port, so an OpenSearch of the user's that is only
+	// stopped now can still start on 9200 later.
+	if err := installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort+1); err != nil {
 		return err
 	}
 	st, err := oslocal.LoadState(l)
 	if err != nil {
 		return err
 	}
+	// The config as it was, to go back to.
+	before := path + ".before-opensearch"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := securefile.WriteFile(before, data); err != nil {
+		return err
+	}
 	ca, cert, key := l.ClientFiles()
 	if err := config.SetOpenSearch(path, st.URL(), ca, cert, key); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Signalith now uses OpenSearch at %s.\n", st.URL())
+	fmt.Fprintf(out, "Signalith now uses OpenSearch at %s. The config as it was, with http://%s, is in %s: "+
+		"if you run an OpenSearch of your own there, copy that file back over %s and restart the Signalith service.\n", st.URL(), oldDefaultOpenSearch, before, path)
 	return nil
 }
 
