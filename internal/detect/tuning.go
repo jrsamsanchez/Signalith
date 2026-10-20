@@ -6,6 +6,7 @@ package detect
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -28,6 +29,9 @@ type Exception struct {
 	Added   time.Time         `yaml:"added" json:"added"`
 	// Finding is the finding the exception was made from, if any.
 	Finding string `yaml:"finding,omitempty" json:"finding,omitempty"`
+	// ProposedBy is the analyst who asked for the exception, when an admin
+	// (By) approved their request.
+	ProposedBy string `yaml:"proposed_by,omitempty" json:"proposed_by,omitempty"`
 }
 
 // Limits on a detection's exceptions.
@@ -120,6 +124,15 @@ func wildcard(pattern, s string) bool {
 		pi++
 	}
 	return pi == len(p)
+}
+
+// Validate checks one exception on its own, as a detection's checks
+// would.
+func (e *Exception) Validate() error {
+	if p := e.problems(); len(p) > 0 {
+		return errors.New(strings.Join(p, "; "))
+	}
+	return nil
 }
 
 func (e *Exception) problems() []string {

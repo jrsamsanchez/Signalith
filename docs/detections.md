@@ -185,6 +185,18 @@ window.
   where `*` and `?` are wildcards and case is ignored. Leave the values empty, with a
   start time and how long, to silence every result for a maintenance window.
 
+### Proposing an exception
+
+Analysts know which findings are noise, but exceptions change what a detection
+raises, so an admin adds them. From a finding, an analyst chooses **More actions** (⋯)
+> **Propose an exception**, ticks the values, picks how long and says why. The
+finding can be closed in the same step. The request waits on the **Approvals** page,
+where an admin approves or declines it with an optional note; only an approval adds
+the exception, and its time starts then. The decision is noted on the finding, the
+exception records who proposed and who approved it, and the audit log records the
+proposal and the decision. A request nobody decides in 14 days expires. Up to 200
+requests can wait at once, 50 of them from one person.
+
 Each run counts the results exceptions matched; **Last run** on the Detections page
 shows them. An exception that has ended stays listed, greyed out, until it is
 removed. A detection can have up to 500 exceptions, each matching up to 8 fields.
@@ -1631,6 +1643,9 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `DELETE /api/detections/content` | Remove the update and use the rules built into Signalith (admin) |
 | `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
+| `POST /api/findings/{id}/propose-exception` | Propose an exception for an admin to approve: the same body as suppress, with a `comment` saying why (analyst) |
+| `GET /api/exception-requests` | Proposed exceptions, newest first, with `pending` (analyst) |
+| `POST /api/exception-requests/{id}/approve`, `/decline` | Decide a proposal, with an optional `{"note"}`; approving adds the exception (admin) |
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |

@@ -118,7 +118,7 @@ func TestDemoVisitorOnlyReads(t *testing.T) {
 	}
 	for _, p := range []string{
 		"POST /api/me/password", "POST /api/me/mfa/setup", "POST /api/me/passkeys/options", "POST /api/api-tokens",
-		"PUT /api/me/setup", "PUT /api/me/finding-views", "POST /api/chat/link", "POST /api/cases", "PATCH /api/findings/x", "POST /api/sample/load",
+		"PUT /api/me/setup", "PUT /api/me/finding-views", "POST /api/chat/link", "POST /api/cases", "PATCH /api/findings/x", "POST /api/findings/x/propose-exception", "POST /api/exception-requests/x/approve", "POST /api/sample/load",
 		"PUT /api/settings", "POST /api/users", "POST /api/agent-tokens", "POST /api/tenants/switch",
 		"GET /api/settings", "GET /api/users", "GET /api/audit", "POST /api/vulns/networks/x/scan", "POST /api/notebooks",
 	} {

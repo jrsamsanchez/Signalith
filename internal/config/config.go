@@ -1594,11 +1594,11 @@ func (c *Config) StaleAfter() time.Duration {
 	return 2 * time.Hour
 }
 
-// DetectionsCatchUp returns detections.catch_up as a duration: 6h when it
-// is unset or invalid (Validate reports invalid values), 0 when off.
 // RequireDispositionOn reports whether resolving a finding from the
 // queue needs a disposition: on unless turned off.
-func (d Detections) RequireDispositionOn() bool { return d.RequireDisposition == nil || *d.RequireDisposition }
+func (d Detections) RequireDispositionOn() bool {
+	return d.RequireDisposition == nil || *d.RequireDisposition
+}
 
 // FindingSLA is the targets for findings: per urgency, how soon a person
 // should first pick one up and how soon it should be resolved, such as
@@ -1659,6 +1659,8 @@ func (c *Config) FindingSLA() findings.SLA {
 	return out
 }
 
+// DetectionsCatchUp returns detections.catch_up as a duration: 6h when it
+// is unset or invalid (Validate reports invalid values), 0 when off.
 func (c *Config) DetectionsCatchUp() time.Duration {
 	v := strings.TrimSpace(c.Detections.CatchUp)
 	if v == "0" {

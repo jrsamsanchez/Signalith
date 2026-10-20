@@ -1230,8 +1230,9 @@ function renderFindingDetail(box, data, opts = {}) {
     d ? { icon: 'list-filter', label: 'Findings from this detection', run: () => { fnd.detection = f.detection_id; fnd.urgency.clear(); loadFindings(); } } : null,
     can('analyst') ? { icon: 'zap', label: 'Respond…', run: () => { const b = box.querySelector('[data-action="respond"]'); if (b) b.click(); } } : null,
     can('analyst') ? { icon: 'sparkles', label: 'Investigate with AI…', run: () => openInvestigate(f) } : null,
-    d && can('admin') ? 'sep' : null,
+    d && can('analyst') ? 'sep' : null,
     d && can('admin') ? { icon: 'bell-off', label: 'Don’t alert on this again…', run: () => suppressFinding(f, d) } : null,
+    d && can('analyst') && !can('admin') ? { icon: 'bell-off', label: 'Propose an exception…', run: () => suppressFinding(f, d, true) } : null,
   ]);
 
   const sev = sevBadge(u);
@@ -2074,7 +2075,9 @@ function suppressFields(f) {
 
 // suppressFinding is "Don't alert on this again": an exception on the
 // finding's detection for the values picked, closing the finding too.
-function suppressFinding(f, d) {
+// With propose, an analyst asks for the exception and an admin approves
+// it on the Approvals page.
+function suppressFinding(f, d, propose) {
   const dlg = tuneDialog();
   const fields = suppressFields(f);
   const boxes = fields.map((x, i) => {
@@ -2096,40 +2099,44 @@ function suppressFinding(f, d) {
   disp.className = 'select select--block';
   const errBox = el('div', {});
   const cancel = dxBtn('ghost', 'Cancel', () => dlg.close());
-  const ok = dxBtn('primary', 'Stop alerting', null, { icon: 'bell-off' });
+  const ok = dxBtn('primary', propose ? 'Send for approval' : 'Stop alerting', null, { icon: propose ? 'send' : 'bell-off' });
   const preview = el('p', { class: 'dx-hint', 'aria-live': 'polite' });
   const picked = () => fields.filter((_, i) => boxes[i].checked);
   const update = () => {
     const p = picked();
-    ok.disabled = !p.length;
-    preview.textContent = p.length
-      ? `This detection raises no findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
+    ok.disabled = !p.length || (propose && !note.value.trim());
+    preview.textContent = propose && p.length && !note.value.trim() ? 'Say why, so the admin who approves it knows.' : p.length
+      ? `${propose ? 'Once an admin approves, this' : 'This'} detection raises no findings where ${p.map((x) => `${x.field} is ${x.value}`).join(' and ')}${dur.value ? ', ' + dur.selectedOptions[0].textContent.toLowerCase() : ''}.`
       : 'Pick at least one field.';
   };
   for (const b of boxes) b.addEventListener('change', update);
   dur.addEventListener('change', update);
+  note.addEventListener('input', update);
   ok.addEventListener('click', async () => {
     ok.disabled = true;
     fill(errBox);
     try {
       const body = { fields: picked().map((x) => x.field), for: dur.value, comment: note.value.trim() };
       if (close.checked) body.update = { status: 'closed', disposition: disp.value };
-      const res = await api('api/findings/' + encodeURIComponent(f.id) + '/suppress', body);
+      const res = await api('api/findings/' + encodeURIComponent(f.id) + (propose ? '/propose-exception' : '/suppress'), body);
       dlg.close();
-      dxNotify(res.warning ? 'Exception saved, but the finding was not updated.' : close.checked ? 'Exception saved and the finding closed.' : 'Exception saved.',
+      if (propose) dxNotify(res.warning ? 'Sent for approval, but the finding was not updated.' : 'Sent to an admin for approval. The Approvals page shows it.');
+      else dxNotify(res.warning ? 'Exception saved, but the finding was not updated.' : close.checked ? 'Exception saved and the finding closed.' : 'Exception saved.',
         { label: 'Undo', run: () => removeException(f.detection_id, res.exception.id) });
       await loadFindings({ quiet: true });
       if (openFinding === f.id) showFinding(f.id, { focus: false });
       if (typeof loadDetections === 'function' && detections.length) loadDetections();
     } catch (e) {
-      fill(errBox, dxAlert('danger', 'Couldn’t save the exception.', e.message));
+      fill(errBox, dxAlert('danger', propose ? 'Couldn’t send the request.' : 'Couldn’t save the exception.', e.message));
       ok.disabled = false;
     }
   });
   fill(dlg,
     el('div', { class: 'modal__head' }, el('div', {},
-      el('h2', { class: 'modal__title', id: 'd-tune-title' }, 'Don’t alert on this again'),
-      el('p', { class: 'modal__desc' }, 'Adds an exception to the detection. Matching results raise no finding and add no risk; other results still alert.'))),
+      el('h2', { class: 'modal__title', id: 'd-tune-title' }, propose ? 'Propose an exception' : 'Don’t alert on this again'),
+      el('p', { class: 'modal__desc' }, propose
+        ? 'Asks an admin to add an exception to the detection. Once approved, matching results raise no finding and add no risk; other results still alert.'
+        : 'Adds an exception to the detection. Matching results raise no finding and add no risk; other results still alert.'))),
     el('div', { class: 'modal__body' },
       errBox,
       fields.length ? el('fieldset', { class: 'dx-sf-fields' }, el('legend', { class: 'label' }, 'Match these values'),
@@ -2137,7 +2144,7 @@ function suppressFinding(f, d) {
         : dxAlert('warning', 'This finding has no values to match on.', 'Turn the detection off, or edit its query, instead.'),
       el('div', { class: 'form-grid' }, dxField('How long', dur), dxField('Close as', disp)),
       el('label', { class: 'check' }, close, 'Close this finding'),
-      dxField('Comment', note),
+      dxField(propose ? 'Why (required)' : 'Comment', note),
       preview),
     el('div', { class: 'modal__foot' }, cancel, ok));
   close.addEventListener('change', () => { disp.disabled = !close.checked; });
