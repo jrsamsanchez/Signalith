@@ -404,6 +404,13 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	if same {
 		return nil
 	}
+	if cfg.FluentBit != nil {
+		// Checked before anything is written, so a configuration that
+		// is refused leaves the one in use running.
+		if err := checkFluentBit(cfg.FluentBit.Config, a.Settings.Server, a.Paths.fluentBitStates(), runtime.GOOS); err != nil {
+			return fmt.Errorf("refused the Fluent Bit configuration the server handed out, and kept the one in use: %w", err)
+		}
+	}
 	if cfg.CA != "" {
 		if err := a.writeCA(cfg.CA, conn); err != nil {
 			return err

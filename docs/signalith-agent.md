@@ -104,6 +104,13 @@ that folder and prints the commands instead of running them.
   done. On the computer it is in a file only root (Linux) or SYSTEM and Administrators
   (Windows) can read; Fluent Bit's configuration does not hold it (Fluent Bit reads it
   from its environment).
+- **The agent checks what Fluent Bit is told to do.** Fluent Bit runs as root (SYSTEM
+  on Windows), so the agent runs only a configuration that reads logs (files, the systemd
+  journal, Windows event logs) and sends them to the Signalith server it was installed
+  for, over TLS that checks the certificate. It refuses one that would run a program,
+  load a plugin, open a port, read a file that holds secrets (the agent's own token,
+  password and key stores) or send anywhere else, keeps the configuration in use, and
+  shows why on the Endpoints page.
 - **Packages come from their publishers.** On Linux, Fluent Bit comes from Fluent Bit's
   own signed package repository; the script refuses its signing key unless its
   fingerprint is the one pinned in the script. On Windows, the script downloads the

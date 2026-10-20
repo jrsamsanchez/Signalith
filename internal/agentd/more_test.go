@@ -170,7 +170,7 @@ func TestSyncFailures(t *testing.T) {
 	if err := a.sync(ctx); err == nil || !strings.Contains(err.Error(), "not valid JSON") {
 		t.Errorf("bad JSON = %v", err)
 	}
-	body = `{"revision":"r1","fluentbit":{"config":"[INPUT]\n"}}`
+	body = `{"revision":"r1","fluentbit":{"config":` + testFluentBitJSON("r1") + `}}`
 	blockPath(t, a.Paths.fluentBitConf())
 	if err := a.sync(ctx); err == nil || !strings.Contains(err.Error(), "Fluent Bit's configuration") {
 		t.Errorf("fluent bit = %v", err)

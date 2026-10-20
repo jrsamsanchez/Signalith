@@ -181,7 +181,7 @@ func TestAgentRunsFluentBitAndReports(t *testing.T) {
 	p := testPaths(t)
 	out := filepath.Join(t.TempDir(), "seen")
 	t.Setenv("AGENTD_FAKE_OUT", out)
-	fs := &fakeServer{cfg: agentproto.Config{PollSeconds: 300, FluentBit: &agentproto.FluentBit{Config: "[SERVICE]\n    flush 1\n"}}}
+	fs := &fakeServer{cfg: agentproto.Config{PollSeconds: 300, FluentBit: &agentproto.FluentBit{Config: testFluentBit("flush 1")}}}
 	srv := httptest.NewTLSServer(fs)
 	defer srv.Close()
 	a := newAgent(t, srv, p)
@@ -205,7 +205,7 @@ func TestAgentRunsFluentBitAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "token=sgl_test host=web-01 conf=[SERVICE]\n    flush 1\n"; string(seen) != want {
+	if want := "token=sgl_test host=web-01 conf=" + testFluentBit("flush 1"); string(seen) != want {
 		t.Errorf("Fluent Bit saw %q, want %q", seen, want)
 	}
 	if fi, err := os.Stat(p.fluentBitConf()); err != nil || (fi.Mode().Perm()&0o077 != 0 && runtime.GOOS != "windows") {
@@ -240,12 +240,12 @@ func TestAgentRunsFluentBitAndReports(t *testing.T) {
 func TestAgentKeepsLastConfigWhenServerIsDown(t *testing.T) {
 	t.Setenv("AGENTD_FAKE_FLUENTBIT", "run")
 	p := testPaths(t)
-	cfg := agentproto.Config{Revision: "abc", FluentBit: &agentproto.FluentBit{Config: "old"}}
+	cfg := agentproto.Config{Revision: "abc", FluentBit: &agentproto.FluentBit{Config: testFluentBit("old")}}
 	b, _ := json.Marshal(cfg)
 	if err := os.WriteFile(p.configFile(), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p.fluentBitConf(), []byte("old"), 0o600); err != nil {
+	if err := os.WriteFile(p.fluentBitConf(), []byte(testFluentBit("old")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewTLSServer(http.NotFoundHandler())
@@ -272,13 +272,13 @@ func TestAgentStopsCollectorsWhileTokenIsRefused(t *testing.T) {
 	p := testPaths(t)
 	p.Osqueryd = osquerydExe(t)
 	flags := &agentproto.Osquery{Flags: "--tls_hostname=siem.example.com:7779\n--config_plugin=tls\n"}
-	fs := &fakeServer{revoked: true, cfg: agentproto.Config{FluentBit: &agentproto.FluentBit{Config: "new"}, Osquery: flags}}
-	cfg := agentproto.Config{Revision: "abc", FluentBit: &agentproto.FluentBit{Config: "old"}, Osquery: flags}
+	fs := &fakeServer{revoked: true, cfg: agentproto.Config{FluentBit: &agentproto.FluentBit{Config: testFluentBit("new")}, Osquery: flags}}
+	cfg := agentproto.Config{Revision: "abc", FluentBit: &agentproto.FluentBit{Config: testFluentBit("old")}, Osquery: flags}
 	b, _ := json.Marshal(cfg)
 	if err := os.WriteFile(p.configFile(), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p.fluentBitConf(), []byte("old"), 0o600); err != nil {
+	if err := os.WriteFile(p.fluentBitConf(), []byte(testFluentBit("old")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewTLSServer(fs)
@@ -320,7 +320,7 @@ func TestAgentStopsCollectorsWhileTokenIsRefused(t *testing.T) {
 	waitFor(t, "Fluent Bit running again with the new configuration", func() bool {
 		h, _ := os.ReadFile(p.HealthFile())
 		c, _ := os.ReadFile(p.fluentBitConf())
-		return string(h) == "config=ok\nfluentbit=running\nosquery=running\nreported=yes\n" && string(c) == "new"
+		return string(h) == "config=ok\nfluentbit=running\nosquery=running\nreported=yes\n" && string(c) == testFluentBit("new")
 	})
 	if _, err := os.Stat(p.osqueryFlags()); err != nil {
 		t.Errorf("osquery's flags: %v", err)

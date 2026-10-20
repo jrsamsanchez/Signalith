@@ -107,7 +107,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 | --- | --- |
 | A fake server collecting tokens | The install line pins the server's CA by SHA-256 before any token is sent ([How it stays safe](signalith-agent.md#how-it-stays-safe)) |
 | A broken-into server pushing code to agents | Agents update only to a newer program listed in a manifest signed with the release key built into them; package sources and their keys are fixed in the install script, not sent by the server ([Updates](signalith-agent.md#updates)) |
-| A broken-into server reading more of the computer | On Linux the agent's service may only read files and writes only its own folders; osquery gets only checked settings with extensions off. The server still decides which logs are read, as root: guard admin accounts as you would any tool that manages your computers |
+| A broken-into server reading more of the computer | On Linux the agent's service may only read files and writes only its own folders; osquery gets only checked settings with extensions off, and Fluent Bit only a configuration that reads logs and sends them to that server: no programs, plugins, secret files or other destinations ([How it stays safe](signalith-agent.md#how-it-stays-safe)). The server still decides which logs are read, as root: guard admin accounts as you would any tool that manages your computers |
 
 ### Several servers, the cluster key and the certificate authority
 
