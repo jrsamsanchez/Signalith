@@ -4,6 +4,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -378,17 +379,25 @@ func (s *Server) handleAcceptLegacy(w http.ResponseWriter, r *http.Request) {
 }
 
 // tokenRate limits token creation: 10 a minute per user, 200 an hour on
-// this server.
+// this server. Each, Per, All and AllPer change those numbers when set;
+// the demo's visitor sign-ins use them (see demoRate).
 type tokenRate struct {
+	// Each is how many one key may take within Per, and All how many
+	// every key together may take within AllPer.
+	Each, All   int
+	Per, AllPer time.Duration
+
 	mu     sync.Mutex
 	byUser map[string][]time.Time
 	all    []time.Time
 }
 
 // take counts one creation by user at now, or returns how long to wait.
+// An empty user counts only toward the whole server's limit.
 func (t *tokenRate) take(user string, now time.Time) time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	each, per, all, allPer := cmp.Or(t.Each, 10), cmp.Or(t.Per, time.Minute), cmp.Or(t.All, 200), cmp.Or(t.AllPer, time.Hour)
 	if t.byUser == nil {
 		t.byUser = map[string][]time.Time{}
 	}
@@ -401,17 +410,31 @@ func (t *tokenRate) take(user string, now time.Time) time.Duration {
 		}
 		return out
 	}
-	mine := keep(t.byUser[user], time.Minute)
-	t.all = keep(t.all, time.Hour)
+	if len(t.byUser) > 2*all {
+		// Keys not seen for a while go, so many keys never pile up.
+		for k, ts := range t.byUser {
+			if kept := keep(ts, per); len(kept) == 0 {
+				delete(t.byUser, k)
+			} else {
+				t.byUser[k] = kept
+			}
+		}
+	}
+	mine := keep(t.byUser[user], per)
+	t.all = keep(t.all, allPer)
 	if len(mine) == 0 {
 		delete(t.byUser, user)
 	}
 	switch {
-	case len(mine) >= 10:
+	case user != "" && len(mine) >= each:
 		t.byUser[user] = mine
-		return time.Minute - now.Sub(mine[0])
-	case len(t.all) >= 200:
-		return time.Hour - now.Sub(t.all[0])
+		return per - now.Sub(mine[0])
+	case len(t.all) >= all:
+		return allPer - now.Sub(t.all[0])
+	}
+	if user == "" {
+		t.all = append(t.all, now)
+		return 0
 	}
 	t.byUser[user] = append(mine, now)
 	t.all = append(t.all, now)

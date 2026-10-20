@@ -661,6 +661,8 @@ var Excluded = map[string]Exclusion{
 	"vulns.openvas_username":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
 	"vulns.openvas_password":     {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check. The password can be kept encrypted with signalith secrets set vulns.openvas_password."},
 	"vulns.openvas_ca_file":      {ScopeServer, "OpenVAS runs on the scanning server itself, so it is set there: signalith.yaml or SIGNALITH_OPENVAS_*. Settings > Scanners shows each server’s OpenVAS check."},
+	"demo.enabled":               {ScopeServer, "Demo mode turns off sign-in with passwords, event intake and everything that reaches other systems, so only signalith.yaml or SIGNALITH_DEMO can turn it on or off, never a page. See docs/demo.md."},
+	"demo.admin_networks":        {ScopeServer, "It decides where password sign-in works in demo mode, so only signalith.yaml or SIGNALITH_DEMO_ADMIN_NETWORKS can set it, never a page. See docs/demo.md."},
 	"cluster.node_name":          {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
 }
 
@@ -1233,8 +1235,11 @@ var (
 )
 
 // M365On reports whether Microsoft 365's audit log is read: the tenant,
-// the app and its secret are set.
+// the app and its secret are set, and the server is not a public demo.
 func (c *Config) M365On() bool {
+	if c.DemoOn() {
+		return false
+	}
 	return c.M365.TenantID != "" && c.M365.ClientID != "" && c.M365.ClientSecret != ""
 }
 
@@ -1263,8 +1268,12 @@ func (c *Config) M365TokenURL() string {
 func (c *Config) M365APIURL() string { return c.m365Cloud()[1] }
 
 // OktaOn reports whether Okta's System Log is read: the domain, and the
-// app and its key or an API token, are set.
+// app and its key or an API token, are set, and the server is not a
+// public demo.
 func (c *Config) OktaOn() bool {
+	if c.DemoOn() {
+		return false
+	}
 	return c.OktaDomain() != "" && (c.Okta.ClientID != "" && c.Okta.PrivateKey != "" || c.Okta.APIToken != "")
 }
 

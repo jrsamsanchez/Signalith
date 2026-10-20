@@ -35,10 +35,14 @@ type agentServer struct {
 
 // listenAgents makes the agent port match c: it listens on c's agent
 // address, keeps the open one when that is the same, and closes it when
-// agents send to the web port. certs is the HTTPS certificate of the
-// instance that starts.
+// agents send to the web port or the server is a public demo. certs is
+// the HTTPS certificate of the instance that starts.
 func (r *runner) listenAgents(c *config.Config, certs *tlsauto.Manager) error {
 	addr, https := c.Server.AgentAddr(), c.Server.HTTPS() && certs != nil
+	if c.DemoOn() {
+		// A public demo takes no events in: no agent port.
+		addr = ""
+	}
 	r.agentMu.Lock()
 	defer r.agentMu.Unlock()
 	if a := r.agentSrv; a != nil {

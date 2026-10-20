@@ -27,8 +27,9 @@ const (
 )
 
 // publicRoutes work without signing in. Ingest checks its own token; the
-// CA certificate is public.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, agentManagedRoutes, hecRoutes, ssoPublicRoutes, samlPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes)
+// CA certificate is public. Signing in to the public demo needs nothing
+// (demoRoute), and demo mode keeps only demoPublicRoutes of the rest.
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem", demoRoute}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, agentManagedRoutes, hecRoutes, ssoPublicRoutes, samlPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -37,6 +38,7 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 	// settings, as a signed-in answer does.
 	mux.Handle("POST /api/login", s.configToken(true, http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	mux.HandleFunc(demoRoute, s.handleDemoLogin)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	s.routeJoinPublic(mux)
 	s.routePasskeyLogin(mux)
@@ -175,6 +177,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("cross-site request refused"))
 		return
 	}
+	if s.demo() && !s.demoAdminClient(r) {
+		// Nobody can try passwords on a public demo; its visitors use
+		// demoRoute.
+		demoSignInRefused(w)
+		return
+	}
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -240,6 +248,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			s.Log.Info("signed out", append([]any{"audit", true, "user", ss.User}, s.client(r).logAttrs()...)...)
 		}
 		s.sessions().Delete(r.Context(), c.Value)
+		s.demoSessions().Delete(c.Value)
 	}
 	for _, name := range []string{s.cookieName(r), s.recheckCookieName(r)} {
 		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
@@ -252,7 +261,14 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // to the app. A user who must choose a new password or set up two-step
 // sign-in stays here, where the page asks for it.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(s.cookieName(r)); err == nil {
+	if s.demo() && s.demoVisitor(r) != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// In demo mode a user's session works only from demo.admin_networks
+	// (see authenticate): elsewhere this page stays, rather than send the
+	// browser back and forth.
+	if c, err := r.Cookie(s.cookieName(r)); err == nil && (!s.demo() || s.demoAdminClient(r)) {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
 			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword && !p.MustSetupMFA {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -289,6 +305,10 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		page = bytes.Replace(page, []byte(`href="api/auth/saml/start" hidden`), []byte(`href="api/auth/saml/start"`), 1)
 		page = bytes.Replace(page, []byte(`<span id="saml-label">Sign in with SAML single sign-on</span>`),
 			[]byte(`<span id="saml-label">`+html.EscapeString(c.SAMLSettings().ButtonLabel)+`</span>`), 1)
+	}
+	if c.DemoOn() {
+		// The public demo's one-click sign-in, hidden otherwise.
+		page = bytes.Replace(page, []byte(`id="demo" hidden`), []byte(`id="demo"`), 1)
 	}
 	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

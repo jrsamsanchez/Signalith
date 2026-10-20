@@ -53,8 +53,8 @@ type SAML struct {
 // MaxSAMLMetadataXML is the most metadata that can be pasted.
 const MaxSAMLMetadataXML = 256 << 10
 
-// SAMLOn reports whether SAML single sign-on is on.
-func (c *Config) SAMLOn() bool { return c.Auth.SAML.Enabled }
+// SAMLOn reports whether SAML single sign-on is on: never in demo mode.
+func (c *Config) SAMLOn() bool { return c.Auth.SAML.Enabled && !c.DemoOn() }
 
 // SAMLSettings is the SAML setting with every empty value filled in from
 // the provider's preset.

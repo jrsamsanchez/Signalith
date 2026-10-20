@@ -193,6 +193,7 @@
     not_in_group: ['Your account can’t use Signalith yet.', 'It isn’t in a directory group that Signalith lets in. Ask a Signalith admin to add you to one.'],
     password_expired: ['Your directory password has expired.', 'Change it the way you usually do, for example by signing in to Windows, then sign in here again.'],
     directory_unavailable: ['Signalith can’t reach your directory right now.', 'Try again in a minute. If it keeps happening, tell a Signalith admin.'],
+    demo_password_off: ['Signing in with a password is off on this demo.', 'Use Explore the demo to look around.'],
   };
 
   form.addEventListener('submit', async (ev) => {
@@ -245,6 +246,46 @@
     else submit.focus();
   });
 
+  // ---- Public demo ---------------------------------------------------------
+  // On a public demo (docs/demo.md) visitors sign in with one click as a
+  // read-only viewer, with no password.
+  const demoBox = $('demo');
+  const demoBtn = $('demo-btn');
+  demoBtn.addEventListener('click', async () => {
+    if (demoBtn.disabled) return;
+    demoBtn.disabled = true;
+    $('demo-label').textContent = 'Opening the demo…';
+    const done = () => { demoBtn.disabled = false; $('demo-label').textContent = 'Explore the demo'; };
+    setView('');
+    let resp;
+    try {
+      resp = await send('api/demo', { method: 'POST' });
+    } catch (_) {
+      done();
+      showError('Could not reach the Signalith server.', 'Check your connection and try again.');
+      return;
+    }
+    const data = await resp.json().catch(() => ({}));
+    done();
+    if (resp.ok) { signedIn(data, ''); return; }
+    if (resp.status === 429) { locked(data.error, resp.headers.get('Retry-After')); return; }
+    showError('The demo could not be opened.', sentence(data.error) || 'Try again.');
+  });
+  // Visitors need only the button: the admin's password form waits behind
+  // a link, and passkeys don't sign in on a demo.
+  if (!demoBox.hidden) {
+    const adminParts = [...form.querySelectorAll('.field, .check, #login-submit')];
+    adminParts.forEach((el) => el.classList.add('hidden'));
+    // "Welcome back" is for the demo's admin; the box below says what the demo is.
+    form.querySelector('.sub')?.classList.add('hidden');
+    $('demo-admin').addEventListener('click', (ev) => {
+      adminParts.forEach((el) => el.classList.remove('hidden'));
+      ev.currentTarget.setAttribute('aria-expanded', 'true');
+      ev.currentTarget.hidden = true;
+      user.focus();
+    });
+  }
+
   // ---- Passkeys -----------------------------------------------------------
   // A passkey signs local users in on its own (the server says who may),
   // and is the second step after the password for anyone who added one.
@@ -259,7 +300,7 @@
     disabled: REFUSED_DISABLED,
   };
   const pkBtn = $('passkey-btn');
-  $('passkey-signin').hidden = !pkOK;
+  $('passkey-signin').hidden = !pkOK || !demoBox.hidden;
   pkBtn.addEventListener('click', async () => {
     if (pkBtn.disabled) return;
     pkBtn.disabled = true;
@@ -808,5 +849,6 @@
     .then((me) => { if (me && me.must_setup_mfa && !me.must_change_password && mfaForm.hidden) showSetup(me); })
     .catch(() => { /* not signed in */ });
 
-  (user.value ? pass : user).focus();
+  if (!demoBox.hidden) demoBtn.focus();
+  else (user.value ? pass : user).focus();
 }());

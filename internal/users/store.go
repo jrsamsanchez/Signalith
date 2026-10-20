@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 	"unicode"
 
@@ -229,8 +230,25 @@ func HashPassword(pw string) (string, error) {
 	if err := checkLength(pw); err != nil {
 		return "", err
 	}
-	h, err := bcrypt.GenerateFromPassword(bcryptInput(pw), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword(bcryptInput(pw), hashCost)
 	return string(h), err
+}
+
+// hashCost is the bcrypt cost of new password hashes: always
+// bcrypt.DefaultCost, except in a test binary that asks for
+// UseFastHashesInTests.
+var hashCost = bcrypt.DefaultCost
+
+// UseFastHashesInTests makes new password hashes (and the dummy hash
+// WasteTime checks against) use bcrypt.MinCost, so a package whose tests
+// create many users finishes in time under the race detector. Call it
+// from TestMain, before m.Run. It panics outside a test binary, so a
+// production binary always hashes at bcrypt.DefaultCost.
+func UseFastHashesInTests() {
+	if !testing.Testing() {
+		panic("users: UseFastHashesInTests called outside a test binary")
+	}
+	hashCost = bcrypt.MinCost
 }
 
 // ComparePassword reports whether pw is the password hash was made from by
@@ -288,7 +306,7 @@ func bcryptInput(pw string) []byte {
 // dummyHash is compared against when a user does not exist, so a wrong
 // username takes as long to refuse as a wrong password.
 var dummyHash = sync.OnceValue(func() []byte {
-	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), bcrypt.DefaultCost)
+	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), hashCost)
 	return h
 })
 

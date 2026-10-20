@@ -82,6 +82,8 @@ func meView(p *principal) map[string]any {
 		// users) and the one they work in now.
 		"tenant":        p.Tenant,
 		"active_tenant": cmp.Or(p.Active, tenants.Default),
+		// The public demo's visitor, who only reads (see docs/demo.md).
+		"demo": p.Source == sourceDemo,
 	}
 }
 
