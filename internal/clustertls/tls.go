@@ -113,7 +113,9 @@ func validate(b *Body) error {
 	if !SameFingerprint(tlsauto.Fingerprint(c.Raw), b.CASHA256) {
 		return errors.New("the tls document's fingerprint does not match its certificate")
 	}
-	if !secrets.IsSealed(b.CAKey) {
+	// An empty key is the one reset-key could not open again: the
+	// certificate authority stays known, and tls import gives it back.
+	if b.CAKey != "" && !secrets.IsSealed(b.CAKey) {
 		return errors.New("the tls document's key is not sealed")
 	}
 	if len(b.Names) > MaxNames {
@@ -285,6 +287,9 @@ func (t *TLS) open(b *Body) (*x509.Certificate, crypto.Signer, error) {
 	t.mu.Unlock()
 	if h == nil {
 		return nil, nil, errors.New("the shared settings are not open")
+	}
+	if b.CAKey == "" {
+		return nil, nil, ErrKeyNotSealed
 	}
 	// The field names the fingerprint the document says, so a key sealed
 	// for another certificate does not open.

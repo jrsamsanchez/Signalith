@@ -76,6 +76,9 @@ func (x *clusterCLI) tlsStatus(ctx context.Context, asJSON bool) error {
 	if ca := st.CA; ca != nil {
 		fmt.Fprintf(w, "Certificate authority:\tthe cluster's, published by %s on %s\n", ca.PublishedBy, ca.PublishedAt.Format(time.DateOnly))
 		fmt.Fprintf(w, "Fingerprint:\t%s\n", ca.CASHA256)
+		if ca.KeyLost {
+			fmt.Fprintf(w, "Key:\tlost with the cluster key: no server can renew its certificate until signalith cluster tls import <ca.key> gives it back\n")
+		}
 		fmt.Fprintf(w, "Names:\t%s\n", cmp.Or(strings.Join(ca.Names, ", "), "(none added)"))
 		for i, old := range st.Retired {
 			label := ""
@@ -188,15 +191,19 @@ func (x *clusterCLI) tlsChoose(ctx context.Context, what string, yes bool) error
 var cliRequestWait = time.Minute
 
 // errTLSUsage is the usage of signalith cluster tls.
-var errTLSUsage = errors.New("usage: signalith cluster tls [-c file] [-json]\n       signalith cluster tls choose [-c file] [-yes] <server or fingerprint>")
+var errTLSUsage = errors.New("usage: signalith cluster tls [-c file] [-json]\n" +
+	"       signalith cluster tls choose [-c file] [-yes] <server or fingerprint>\n" +
+	"       signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>")
 
 // tlsCommand runs signalith cluster tls with its arguments.
-func (x *clusterCLI) tlsCommand(ctx context.Context, pos []string, asJSON, yes bool) error {
+func (x *clusterCLI) tlsCommand(ctx context.Context, pos []string, certFile string, asJSON, yes bool) error {
 	switch {
 	case len(pos) == 0:
 		return x.tlsStatus(ctx, asJSON)
 	case len(pos) == 2 && pos[0] == "choose":
 		return x.tlsChoose(ctx, pos[1], yes)
+	case len(pos) == 2 && pos[0] == "import":
+		return x.tlsImport(ctx, pos[1], certFile, yes)
 	}
 	return errTLSUsage
 }

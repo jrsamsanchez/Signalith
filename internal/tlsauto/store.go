@@ -525,3 +525,17 @@ func LocalFiles(dir string) (*x509.Certificate, crypto.Signer, []string) {
 	}
 	return ca, key, s.Names()
 }
+
+// LeafExpiry returns when the HTTPS certificate in dir (server.pem)
+// expires, for a server that left the cluster and can no longer renew it.
+func LeafExpiry(dir string) (time.Time, error) {
+	b, err := os.ReadFile(filepath.Join(dir, certFile))
+	if err != nil {
+		return time.Time{}, err
+	}
+	c, err := parseCert(b)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return c.NotAfter.UTC(), nil
+}

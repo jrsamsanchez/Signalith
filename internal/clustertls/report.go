@@ -50,6 +50,9 @@ type CAView struct {
 	Names       []string  `json:"names"`
 	PublishedBy string    `json:"published_by"`
 	PublishedAt time.Time `json:"published_at"`
+	// KeyLost is true when the cluster lost the key with the cluster key
+	// (reset-key): no server can renew until tls import gives it back.
+	KeyLost bool `json:"key_lost,omitempty"`
 }
 
 // RetiredView is a certificate authority a server used before the
@@ -112,7 +115,8 @@ func BuildReport(in ReportInput) *Report {
 	var clusterFP string
 	if b := in.Body; b != nil && b.CASHA256 != "" {
 		r.Published, clusterFP = true, b.CASHA256
-		v := &CAView{CASHA256: b.CASHA256, Names: append([]string{}, b.Names...), PublishedBy: b.PublishedBy, PublishedAt: b.PublishedAt}
+		v := &CAView{CASHA256: b.CASHA256, Names: append([]string{}, b.Names...), PublishedBy: b.PublishedBy, PublishedAt: b.PublishedAt,
+			KeyLost: b.KeyLost()}
 		if ca, err := b.Cert(); err == nil {
 			v.Subject, v.NotBefore, v.NotAfter = ca.Subject.CommonName, ca.NotBefore.UTC(), ca.NotAfter.UTC()
 			if info := tlsauto.InfoOf(ca); info != nil {

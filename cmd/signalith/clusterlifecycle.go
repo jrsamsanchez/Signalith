@@ -21,6 +21,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
 // Draining, moving the background jobs, removing servers and rotating the
@@ -477,6 +478,7 @@ func (x *clusterCLI) removeCLI(ctx context.Context, which string, noRotate, yes 
 	}
 	x.audit("cluster.remove: removed a server from the cluster", "server", rec.Name, "node_id", id, "warnings", warnings)
 	fmt.Fprintf(x.out, "Removed %s from the cluster.\n", rec.Name)
+	x.caKeptNote(rec.Name)
 	rotErr := x.rotateAfterRemove(ctx, rt, []string{id}, rec.Name, noRotate)
 	return errors.Join(removeWarnings(warnings), rotErr)
 }
@@ -531,13 +533,48 @@ func (x *clusterCLI) leave(ctx context.Context, noRotate, yes bool) error {
 			return fmt.Errorf("this server left the cluster, but its copy of the cluster key could not all be deleted: %w", err)
 		}
 		fmt.Fprintf(x.out, "%s left the cluster and deleted its copy of the cluster key. Uninstall it, or give it a new identity (signalith cluster new-identity) before you add it again.\n", rec.Name)
+		x.leafNote()
+		x.caKeptNote(rec.Name)
 		return rotErr
 	})
 }
 
+// leafNote says, on a server that left the cluster, until when its HTTPS
+// certificate works: it can no longer renew it.
+func (x *clusterCLI) leafNote() {
+	o, ok := certOptions(x.c)
+	if !ok || o.CertFile != "" || o.Dir == "" {
+		return
+	}
+	exp, err := tlsauto.LeafExpiry(o.Dir)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(x.out, "Its HTTPS certificate works until %s, and it can't renew it: the cluster's certificate authority stays with the cluster. "+
+		"To use this server on its own after that, delete its tls folder (%s) before it starts, so it makes a certificate authority of its own; agents then need a new configuration.\n",
+		exp.Format(time.DateOnly), o.Dir)
+}
+
+// caKeptNote says that the server name, removed, may still hold the
+// cluster's certificate authority key: in memory, in a backup of its
+// state folder, or in a copy of its shared settings.
+func (x *clusterCLI) caKeptNote(name string) {
+	if x.tls == nil {
+		return
+	}
+	b, ok := x.tls.tls.Get()
+	if !ok || b.CASHA256 == "" {
+		return
+	}
+	fmt.Fprintf(x.out, "%s may still hold the cluster's HTTPS certificate authority key (%s), in a backup of its state folder or a copy of its shared settings, "+
+		"and with it could make certificates that agents, browsers and syslog devices trust. "+
+		"That stays true until the cluster's certificate authority is replaced (docs/servers.md, When a server leaves).\n", name, b.CASHA256)
+}
+
 // forgetCluster deletes, in the state folder dir, the cluster key's
 // copies and the copy of the shared settings. The HTTPS certificate is
-// kept: it still comes from the cluster's certificate authority.
+// kept: it still comes from the cluster's certificate authority, and
+// works until it expires (leafNote).
 func forgetCluster(dir string) error {
 	var errs []error
 	paths := append(shared.ClusterKeyFiles(dir), shared.CachePath(dir))
