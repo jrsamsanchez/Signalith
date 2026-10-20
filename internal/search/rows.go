@@ -107,20 +107,25 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			if i%checkEvery == 0 && ctx.Err() != nil {
 				return ctx.Err()
 			}
-			k, ok := groupKey(r, keys)
+			ks, vals, ok, err := groupCombos(r, keys)
+			if err != nil {
+				return err
+			}
 			if !ok {
 				continue
 			}
-			g, exists := groups[k]
-			if !exists {
-				g = Row{topCount: int64(0)}
-				for _, f := range keys {
-					g[f] = r[f]
+			for gi, k := range ks {
+				g, exists := groups[k]
+				if !exists {
+					g = Row{topCount: int64(0)}
+					for _, f := range keys {
+						g[f] = vals[gi][f]
+					}
+					groups[k] = g
+					counted = append(counted, g)
 				}
-				groups[k] = g
-				counted = append(counted, g)
+				g[topCount] = g[topCount].(int64) + 1
 			}
-			g[topCount] = g[topCount].(int64) + 1
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
@@ -350,8 +355,58 @@ func groupKey(r Row, fields []string) (string, bool) {
 	return b.String(), true
 }
 
+// maxGroupCombos bounds the groups one row counts in when it has several
+// values in its by fields.
+const maxGroupCombos = 10000
+
+// groupCombos returns the groups row r counts in for fields, as keys (see
+// groupKey) and their values: a row with several values in a by field
+// counts once for each, and with several such fields once for each
+// combination, as in Splunk. ok is false when a field has no value.
+func groupCombos(r Row, fields []string) (keys []string, vals []Row, ok bool, err error) {
+	if !slices.ContainsFunc(fields, func(f string) bool { _, multi := r[f].([]any); return multi }) {
+		k, ok := groupKey(r, fields)
+		return []string{k}, []Row{r}, ok, nil
+	}
+	keys, vals = []string{""}, []Row{{}}
+	for _, f := range fields {
+		v, has := r[f]
+		if !has || v == nil {
+			return nil, nil, false, nil
+		}
+		list := valueList(v)
+		if len(list) == 0 {
+			return nil, nil, false, nil
+		}
+		if len(keys)*len(list) > maxGroupCombos {
+			return nil, nil, false, &QueryError{Msg: fmt.Sprintf("a row's multivalue by fields make more than %d groups; use mvexpand or fewer by fields", maxGroupCombos)}
+		}
+		var nk []string
+		var nv []Row
+		for i, k := range keys {
+			for _, x := range list {
+				row := Row{f: x}
+				for kf, kv := range vals[i] {
+					row[kf] = kv
+				}
+				nk = append(nk, k+fmt.Sprint(x)+"\x00")
+				nv = append(nv, row)
+			}
+		}
+		keys, vals = nk, nv
+	}
+	return keys, vals, true, nil
+}
+
 // goStats aggregates rows in memory, for stats after another transform.
+// A row with several values in a by field counts in the group of each.
 func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string, error) {
+	return goStatsBy(ctx, rows, st, true)
+}
+
+// goStatsBy is goStats; with expand false a multivalue by field groups by
+// its whole list, as eventstats looks its groups up.
+func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool) ([]Row, []string, error) {
 	type group struct {
 		keys   Row
 		states []*aggState
@@ -362,33 +417,48 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 		if i%checkEvery == 0 && ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		k, ok := groupKey(r, st.By)
-		if !ok {
-			continue
-		}
-		g, exists := groups[k]
-		if !exists {
-			g = &group{keys: Row{}}
-			for _, f := range st.By {
-				g.keys[f] = r[f]
-			}
-			for range st.Aggs {
-				g.states = append(g.states, newAggState())
-			}
-			groups[k] = g
-			order = append(order, k)
-		}
-		for i, a := range st.Aggs {
-			s := g.states[i]
-			if a.Field == "" {
-				s.count++
+		var keys []string
+		var vals []Row
+		if expand {
+			var ok bool
+			var err error
+			if keys, vals, ok, err = groupCombos(r, st.By); err != nil {
+				return nil, nil, err
+			} else if !ok {
 				continue
 			}
-			v, ok := r[a.Field]
-			if !ok || v == nil {
+		} else {
+			k, ok := groupKey(r, st.By)
+			if !ok {
 				continue
 			}
-			s.add(a, v, r)
+			keys, vals = []string{k}, []Row{r}
+		}
+		for gi, k := range keys {
+			g, exists := groups[k]
+			if !exists {
+				g = &group{keys: Row{}}
+				for _, f := range st.By {
+					g.keys[f] = vals[gi][f]
+				}
+				for range st.Aggs {
+					g.states = append(g.states, newAggState())
+				}
+				groups[k] = g
+				order = append(order, k)
+			}
+			for i, a := range st.Aggs {
+				s := g.states[i]
+				if a.Field == "" {
+					s.count++
+					continue
+				}
+				v, ok := r[a.Field]
+				if !ok || v == nil {
+					continue
+				}
+				s.add(a, v, r)
+			}
 		}
 	}
 	sort.Strings(order)

@@ -85,7 +85,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 
 | Command | Example | Notes |
 | --- | --- | --- |
-| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions) |
+| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions). A row with several values in a by field counts in the group of each value, as in Splunk (`top` too) |
 | `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
 | `streamstats` | `streamstats current=f window=5 avg(bytes) as prev_avg by src` | Adds running results to each row, over the rows before it in result order (events come newest first; `sort` first for oldest first). Takes `count`, `dc`, `sum`, `avg`, `min`, `max`, `range`, `first` and `last`. `current=f` leaves the row itself out; `window=N` (up to 10,000) looks back over the last N rows of each group |
 | `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted. A split shows the 10 largest series; `limit=N` changes that, up to 100, and `limit=0` shows up to 100 |

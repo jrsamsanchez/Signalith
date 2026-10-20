@@ -82,3 +82,23 @@ func TestWhereMatchesAnyValue(t *testing.T) {
 		}
 	}
 }
+
+// stats and top by a multivalue field count each row once for each of
+// its values, as in Splunk (SL-08).
+func TestStatsByMultivalueCountsEachValue(t *testing.T) {
+	base := `| makeresults count=3 | eval mv=split("a,b", ",")`
+	for src, want := range map[string]string{
+		base + ` | stats count by mv`:                    "[map[count:3 mv:a] map[count:3 mv:b]]",
+		base + ` | eval h="x" | stats count by h, mv`:    "[map[count:3 h:x mv:a] map[count:3 h:x mv:b]]",
+		base + ` | top mv | table mv, count`:             "[map[count:3 mv:a] map[count:3 mv:b]]",
+		base + ` | eventstats count by mv | table count`: "[map[count:3] map[count:3] map[count:3]]",
+	} {
+		res, err := (&Engine{}).Run(context.Background(), src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if got := fmt.Sprint(res.Rows); got != want {
+			t.Errorf("%s = %s, want %s", src, got, want)
+		}
+	}
+}
