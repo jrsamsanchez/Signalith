@@ -55,8 +55,10 @@ type DetState struct {
 	LastDuplicates int       `json:"last_duplicates"`
 	LastSuppressed int       `json:"last_suppressed"`
 	LastError      string    `json:"last_error"`
-	// ErrorKind is "query" (the rule itself is wrong), "timeout" or
-	// "transient" (OpenSearch did not answer; the slot is retried).
+	// ErrorKind is "query" (the rule itself is wrong), "setup" (the
+	// server lacks something the rule needs, such as a GeoIP database),
+	// "timeout" or "transient" (OpenSearch did not answer; the slot is
+	// retried).
 	ErrorKind string `json:"error_kind"`
 	TimedOut  bool   `json:"timed_out"`
 	Capped    bool   `json:"capped"`

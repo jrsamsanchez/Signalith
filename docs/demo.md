@@ -29,6 +29,9 @@ and run searches, dashboards and notebooks. The visitor cannot change anything:
 - the visitor has no password to change, cannot set up two-step sign-in or
   passkeys, and cannot make API tokens.
 
+A visitor's searches are written to the server's log, but not kept as audit
+records, so the Audit page and its indices don't grow with every visitor.
+
 Visitors' sessions are kept in the server's memory only, apart from the users'
 sessions. One ends after 30 minutes without use and 2 hours after it started,
 and when the browser closes. A visitor's address can start 10 sessions a minute,
