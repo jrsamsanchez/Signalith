@@ -654,6 +654,10 @@ func TestOpenSearchTransit(t *testing.T) {
 			f.Config.OpenSearch.URL = "http://opensearch:9200"
 			f.InContainer, f.OpenSearch.SameNetwork = true, true
 		}, state: Attention, line: "Events cross to OpenSearch at opensearch unencrypted. It's on the same Docker network, so they likely stay on this computer."},
+		{name: "same network in Kubernetes", set: func(f *Facts) {
+			f.Config.OpenSearch.URL = "http://opensearch:9200"
+			f.InContainer, f.Kubernetes, f.OpenSearch.SameNetwork = true, true, true
+		}, state: Risk, line: "Events and the OpenSearch password cross the network to opensearch unencrypted."},
 		{name: "http remote", set: func(f *Facts) { f.Config.OpenSearch.URL = "http://10.0.0.20:9200" }, state: Risk,
 			line: "Events and the OpenSearch password cross the network to 10.0.0.20 unencrypted."},
 		{name: "http remote, no password", set: func(f *Facts) {

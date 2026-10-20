@@ -568,7 +568,10 @@ func checkOpenSearchTransit(f *Facts) *Check {
 			return &Check{State: Attention, Line: "Signalith doesn't check OpenSearch's certificate. OpenSearch runs on this computer, so only a program here could pose as it.", Fix: fix}
 		}
 		return &Check{State: Risk, Line: "Signalith doesn't check OpenSearch's certificate, so someone on the network could pose as OpenSearch and read events and its password.", Fix: fix}
-	case scheme != "https" && !local && f.InContainer && f.OpenSearch.SameNetwork:
+	// A Kubernetes pod's network spans nodes (a VPC CNI puts pods on
+	// other nodes in the same subnet), so there "same network" doesn't
+	// mean this computer.
+	case scheme != "https" && !local && f.InContainer && !f.Kubernetes && f.OpenSearch.SameNetwork:
 		return &Check{State: Attention, Line: "Events cross to OpenSearch at " + host + " unencrypted. It's on the same Docker network, so they likely stay on this computer.", Fix: httpFix}
 	case scheme != "https" && !local:
 		what := "Events"
