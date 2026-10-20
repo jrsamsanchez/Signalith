@@ -3,13 +3,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Smoke test of the load balancer lab (docker-compose.cluster.yml), run
 # weekly by .github/workflows/cluster-smoke.yml: agents and syslog through
-# HAProxy reach both servers, each client is seen by its own address, and
-# the other server carries on when one stops. Run it after
+# HAProxy reach both servers and can be searched, each client is seen by
+# its own address, and the other server carries on when one stops. Run it after
 #   docker compose -f deploy/docker/docker-compose.cluster.yml up -d
 # from the folder Signalith is cloned into. Set COMPOSE to add -f files.
 set -eu
 COMPOSE=${COMPOSE:-docker compose -f deploy/docker/docker-compose.cluster.yml}
 LB=https://localhost:8443
+# Agents send to their own port, which HAProxy passes on too; the web
+# port turns them away.
+AGENTS=https://localhost:7779
+# This run's own host name in every event, with today's time: events older
+# than the store keeps are refused.
+HOST=smoke$(date +%s)
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # until <seconds> <what> <command...>: retry the command every 3 seconds.
@@ -38,7 +44,7 @@ until_ok 60 "the new password works on both servers" sh -c "$change; for i in 1 
 
 batch() {
   curl -sfk -o /dev/null -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \
-    "$LB/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$1 port 22 ssh2\"}]"
+    "$AGENTS/api/ingest?tag=linux_secure" -d "[{\"log\":\"$(date -u '+%b %e %H:%M:%S') $HOST sshd[1]: Failed password for bob from 10.9.9.$1 port 22 ssh2\"}]"
 }
 # Syslog over TLS (port 6514), which the lab turns on; plain syslog is off.
 # The servers' own CA is not checked: this only tests the way through HAProxy.
@@ -49,8 +55,15 @@ c = ssl.create_default_context()
 c.check_hostname = False
 c.verify_mode = ssl.CERT_NONE
 s = c.wrap_socket(socket.create_connection(("localhost", 6514), 10))
-s.sendall(("<13>Oct 14 12:00:00 smokefw app: smoke %s\n" % sys.argv[1]).encode())
-s.close()' "$1"
+s.sendall(("<13>%s smokefw app: smoke %s\n" % (sys.argv[2], sys.argv[1])).encode())
+# Wait briefly before closing: closing at once leaves the TLS 1.3 session
+# tickets unread, the close turns into a reset and the server can lose the line.
+s.settimeout(0.5)
+try:
+    s.recv(1)
+except (socket.timeout, ssl.SSLError, OSError):
+    pass
+s.close()' "$1" "$(date -u '+%b %e %H:%M:%S')"
 }
 
 # Agent batches and syslog spread over both servers, by HAProxy's leastconn.
@@ -69,6 +82,14 @@ ok = len(rows) == 2 and all(b > 0 for b in batches) and c["totals"]["ingest"]["b
 sys.exit(0 if ok else 1)'
 }
 until_ok 60 "both servers got agent batches, and Health totals them" check_totals
+# found <count>: a search for this run's host finds at least that many of
+# its agent events, so they were written to OpenSearch and read back.
+found() {
+  python3 -c 'import json, sys; print(json.dumps({"query": "host=" + sys.argv[1], "earliest": "-1h", "latest": "now"}))' "$HOST" |
+    curl -sfk -u "signalithadmin:$PW" -H "Origin: $LB" -H 'Content-Type: application/json' --data-binary @- "$LB/api/search" |
+    python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin).get("matched", 0) >= int(sys.argv[1]) else 1)' "$1"
+}
+until_ok 120 "a search finds the agent events" found 20
 
 # Syslog senders are the device (this host, through Docker's gateway), never
 # HAProxy itself (172.30.11.10): the PROXY header named the client.
@@ -86,5 +107,6 @@ until_ok 60 "HAProxy answers with one server" sh -c "curl -sfk $LB/readyz | grep
 i=0
 while [ $i -lt 10 ]; do batch $i || fail "agent batch $i after failover"; i=$((i + 1)); done
 echo "ok: agents get through with one server"
+until_ok 120 "a search through the remaining server finds every agent event" found 30
 $COMPOSE start signalith-b
 echo "cluster smoke test passed"

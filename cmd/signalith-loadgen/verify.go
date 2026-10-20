@@ -233,8 +233,19 @@ func (r *osReader) opsTotal(ctx context.Context) (int64, error) {
 }
 
 // opsByIndex is opsTotal for each index, hidden ones included, so a
-// report can say which indices an idle cost goes to.
+// report can say which indices an idle cost goes to. A certificate
+// allowed only Signalith's indices (as the quick start's is) cannot read
+// the statistics of OpenSearch's own, so then only Signalith's are listed.
 func (r *osReader) opsByIndex(ctx context.Context) (map[string]int64, error) {
+	out, err := r.opsOfIndices(ctx, "")
+	if err != nil {
+		out, err = r.opsOfIndices(ctx, "/signalith*")
+	}
+	return out, err
+}
+
+// opsOfIndices is opsByIndex for the indices pattern names (all with "").
+func (r *osReader) opsOfIndices(ctx context.Context, pattern string) (map[string]int64, error) {
 	type ops struct {
 		Indexing struct {
 			IndexTotal  int64 `json:"index_total"`
@@ -252,7 +263,7 @@ func (r *osReader) opsByIndex(ctx context.Context) (map[string]int64, error) {
 			Total ops `json:"total"`
 		} `json:"indices"`
 	}
-	if err := r.do(ctx, http.MethodGet, "/_stats/indexing,search,get?level=indices&expand_wildcards=all", nil, &resp); err != nil {
+	if err := r.do(ctx, http.MethodGet, pattern+"/_stats/indexing,search,get?level=indices&expand_wildcards=all", nil, &resp); err != nil {
 		return nil, err
 	}
 	out := make(map[string]int64, len(resp.Indices))
