@@ -36,19 +36,12 @@ const openSearchAccount = `NT SERVICE\` + oslocal.ServiceName
 func (windowsOpenSearch) prepare(l oslocal.Layout, home string) error {
 	// Administrators only, not Signalith's account: it holds the CA key
 	// and the admin certificate. Made again on each run, so an install
-	// whose folder still gave Signalith access loses it.
-	if err := securefile.MkdirAdminOnly(l.Data); err != nil {
-		return err
-	}
-	// Any user may make folders in ProgramData: one made before Signalith
-	// is given to Administrators, so its maker cannot change its access
+	// whose folder still gave Signalith access loses it. Any user may make
+	// folders in ProgramData: MkdirAdminOnly gives one made before
+	// Signalith to Administrators, so its maker cannot change its access
 	// list back.
-	admins, err := windows.StringToSid("S-1-5-32-544")
-	if err != nil {
-		return err
-	}
-	if err := windows.SetNamedSecurityInfo(l.Data, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, admins, nil, nil, nil); err != nil {
-		return fmt.Errorf("could not make Administrators the owner of %s: %w", l.Data, err)
+	if err := securefile.MkdirAdminOnly(l.Data); err != nil {
+		return fmt.Errorf("could not make %s private to Administrators: %w", l.Data, err)
 	}
 	if home == "" {
 		return nil

@@ -257,9 +257,21 @@ func newFeedClientWith(allowLoopback bool, protected []string, proxy func(*http.
 		ResponseHeaderTimeout: 2 * time.Minute,
 		ExpectContinueTimeout: time.Second,
 	}
-	return &http.Client{Transport: tr, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &http.Client{Transport: trackDials{tr}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return checkRedirect(req, via, allowLoopback, protected)
 	}}
+}
+
+// trackDials gives each request a dialTrack when its caller did not, so
+// a proxy on this machine works for every caller of the client, not only
+// feed downloads.
+type trackDials struct{ *http.Transport }
+
+func (t trackDials) RoundTrip(req *http.Request) (*http.Response, error) {
+	if _, ok := req.Context().Value(dialTrackKey{}).(*dialTrack); !ok {
+		req = req.WithContext(context.WithValue(req.Context(), dialTrackKey{}, &dialTrack{}))
+	}
+	return t.Transport.RoundTrip(req)
 }
 
 // checkRedirect limits redirects and checks the new address. It never

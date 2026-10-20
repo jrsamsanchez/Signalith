@@ -7,6 +7,7 @@ package securefile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -133,6 +134,15 @@ func privateDir(dir, _ string, _ bool) error { return protect(dir, true) }
 // adminDir gives a folder an access list, inherited by everything inside
 // it, of SYSTEM and Administrators only: not Signalith's service account.
 func adminDir(dir, _ string, _ bool) error {
+	// Administrators own it first: an owner may always change the access
+	// list, so a folder another account made would otherwise stay its.
+	admins, err := windows.StringToSid(sidAdmins)
+	if err != nil {
+		return err
+	}
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, admins, nil, nil, nil); err != nil {
+		return fmt.Errorf("could not make Administrators the owner: %w", err)
+	}
 	return protectFor(dir, true, []string{sidSystem, sidAdmins})
 }
 

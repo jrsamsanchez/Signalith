@@ -170,9 +170,7 @@ func Verify(ctx context.Context, c Searcher, prefix string, q VerifyQuery, keys 
 	}
 	r := Check(hits, q, keys)
 	r.Limited = limited
-	if len(hits) == 0 {
-		noneLeft(r, q, verifyNow(), noIndex)
-	}
+	noneLeft(r, q, hits, verifyNow(), noIndex)
 	return r, nil
 }
 
@@ -185,13 +183,15 @@ var verifyNow = time.Now
 // hour.
 const quietLimit = 2 * time.Hour
 
-// noneLeft reports, for a check that read no record at all, records that
-// must be there: those of the servers the cluster document says sign
-// their records (q.SignedSince), in the part of the range that is both
-// after they started and in the current month, which retention never
-// deletes. Removing every audit index, or every record in them, would
-// otherwise look like a clean report.
-func noneLeft(r *Report, q VerifyQuery, now time.Time, noIndex bool) {
+// noneLeft reports records that must be there and are not: those of the
+// servers the cluster document says sign their records (q.SignedSince),
+// in the part of the range that is both after they started and in the
+// current month, which retention never deletes. Removing every audit
+// index, or every record in them, would otherwise look like a clean
+// report; so would putting one record of another server in their place.
+// Records of those servers that are not theirs (unsigned, or signed with
+// another key) are already counted as stripped.
+func noneLeft(r *Report, q VerifyQuery, hits []Hit, now time.Time, noIndex bool) {
 	end := now
 	if !q.To.IsZero() && q.To.Before(end) {
 		end = q.To
@@ -220,8 +220,14 @@ func noneLeft(r *Report, q VerifyQuery, now time.Time, noIndex bool) {
 	if end.Sub(start) < quietLimit {
 		return
 	}
+	for i := range hits {
+		h := &hits[i]
+		if _, ok := q.SignedSince[h.NodeID]; ok && !h.Time.Before(start) && h.Time.Before(end) {
+			return
+		}
+	}
 	sort.Strings(nodes)
-	what := "No audit record is dated"
+	what := "No audit record of a server that signs its records is dated"
 	if noIndex {
 		what = "There is no audit index in OpenSearch, so no audit record is dated"
 	}

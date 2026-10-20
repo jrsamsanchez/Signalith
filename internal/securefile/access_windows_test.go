@@ -119,6 +119,9 @@ func TestPrivateAccessList(t *testing.T) {
 // when it was a private folder before (an install made by an older
 // version).
 func TestAdminOnlyAccessList(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("giving a folder to Administrators needs an elevated test")
+	}
 	dir := filepath.Join(t.TempDir(), "SignalithOpenSearch")
 	if err := MkdirPrivate(dir); err != nil {
 		t.Fatal(err)

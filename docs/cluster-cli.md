@@ -446,12 +446,12 @@ signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprin
 A server started with the cluster's OpenSearch settings but without the cluster key
 waits to join and shows a fingerprint, such as `4F2A-91C0-…`, on its sign-in page
 and in its log. Without an argument, `approve` lists the servers that wait, with
-their fingerprints. With a fingerprint (dashes and case do not matter), it approves
+the first group of each fingerprint. With a fingerprint (dashes and case do not matter), it approves
 that server. What is approved is always a fingerprint you read on the new server,
 never the name the waiting server gives itself, which anyone who can write to
 OpenSearch could copy: with a name or node id, give the fingerprint with
-`-fingerprint`, or compare the one shown and answer yes at a terminal (`-yes` does not
-do that comparison for you, so with a name it needs `-fingerprint`). The server then
+`-fingerprint`, or type it when asked at a terminal (`-yes` cannot do that for you, so
+with a name it needs `-fingerprint`). The server then
 gets the cluster key, encrypted so only it can read it, and joins within a minute. A
 fingerprint that does not match is refused, as is any approval while OpenSearch is not
 secured or while the cluster key is being rotated, and a server that would take the

@@ -199,6 +199,12 @@ func TestVerifyNoRecordsLeft(t *testing.T) {
 	gone := stubSearcher{err: &store.Error{Status: 404, Body: `{"error":{"type":"index_not_found_exception"}}`}}
 	empty := stubSearcher{res: map[string]any{"hits": map[string]any{"hits": []any{}}}}
 	signed := map[string]time.Time{"n1": now.Add(-30 * 24 * time.Hour)}
+	// Everything deleted, and one record of a made-up server put in.
+	other := stubSearcher{res: map[string]any{"hits": map[string]any{"hits": []any{map[string]any{
+		"_index": testPrefix + "_audit-2026.10", "_id": "x1", "sort": []any{1},
+		"_source": map[string]any{"@timestamp": now.Add(-time.Hour).Format(time.RFC3339Nano), "node_id": "x", "server": "x",
+			"chain": "c", "seq": 1, "action": "user.login", "message": "hello"},
+	}}}}}
 	for _, tc := range []struct {
 		name     string
 		c        Searcher
@@ -207,6 +213,7 @@ func TestVerifyNoRecordsLeft(t *testing.T) {
 	}{
 		{"indices deleted", gone, VerifyQuery{SignedSince: signed}, true},
 		{"records deleted", empty, VerifyQuery{SignedSince: signed, From: now.Add(-24 * time.Hour)}, true},
+		{"another server's record left", other, VerifyQuery{SignedSince: signed}, true},
 		{"nobody signs yet", gone, VerifyQuery{}, false},
 		{"started signing an hour ago", empty, VerifyQuery{SignedSince: map[string]time.Time{"n1": now.Add(-time.Hour)}}, false},
 		{"range before signing", empty, VerifyQuery{SignedSince: signed, To: now.Add(-40 * 24 * time.Hour)}, false},
@@ -218,10 +225,13 @@ func TestVerifyNoRecordsLeft(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
+		if tc.name == "another server's record left" && r.Records != 1 {
+			t.Errorf("%s: read %d records, want the one put in", tc.name, r.Records)
+		}
 		if r.Tampered() != tc.tampered {
 			t.Errorf("%s: tampered = %v, want %v: %+v", tc.name, r.Tampered(), tc.tampered, r.Problems)
 		}
-		if tc.tampered && (len(r.Problems) != 1 || r.Problems[0].Kind != ProblemTruncated || !strings.Contains(r.Problems[0].Detail, "removed")) {
+		if tc.tampered && (r.Truncated != 1 || r.Problems[len(r.Problems)-1].Kind != ProblemTruncated || !strings.Contains(r.Problems[len(r.Problems)-1].Detail, "removed")) {
 			t.Errorf("%s: problems = %+v", tc.name, r.Problems)
 		}
 	}
