@@ -4,11 +4,13 @@
 package syslog
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,11 +29,15 @@ type flaky struct {
 	mu   sync.Mutex
 	down error
 	busy bool
-	docs []store.IndexedDoc
-	ids  map[string]bool
+	// storeThenFail stores the next writes this many times, then answers
+	// with an error, as when a connection resets after OpenSearch took a
+	// batch.
+	storeThenFail int
+	docs          []store.IndexedDoc
+	ids           map[string]bool
 }
 
-func (f *flaky) Bulk(ctx context.Context, docs []store.IndexedDoc) ([]store.BulkItemError, error) {
+func (f *flaky) Bulk(ctx context.Context, docs []store.IndexedDoc) (errs []store.BulkItemError, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.down != nil {
@@ -40,7 +46,12 @@ func (f *flaky) Bulk(ctx context.Context, docs []store.IndexedDoc) ([]store.Bulk
 	if f.ids == nil {
 		f.ids = map[string]bool{}
 	}
-	var errs []store.BulkItemError
+	defer func() {
+		if f.storeThenFail > 0 {
+			f.storeThenFail--
+			errs, err = nil, errors.New("read tcp 127.0.0.1:9200: connection reset by peer")
+		}
+	}()
 	for i, d := range docs {
 		switch {
 		case strings.Contains(fmt.Sprint(d.Doc["message"]), "unmappable"):
@@ -305,5 +316,93 @@ func TestSpoolRecords(t *testing.T) {
 	}
 	if _, bad := decode([]byte("not json\n{}\n")); bad != 2 {
 		t.Errorf("bad lines: %d", bad)
+	}
+}
+
+// TestNoDuplicatesAfterAnAmbiguousFailure: OpenSearch stores a batch but
+// answers with an error; the batch is spooled and written again, and
+// each event is stored once, the second write counting as duplicates.
+func TestNoDuplicatesAfterAnAmbiguousFailure(t *testing.T) {
+	fo := &flaky{storeThenFail: 1}
+	r, _ := startSpooled(t, t.TempDir(), fo, Config{BatchSize: 10})
+	handleAll(r, messages("once", 10))
+	waitFor(t, "the batch spooled", func() bool { return r.Stats().Spooled == 10 })
+	waitFor(t, "the spool empty", func() bool { s := r.Stats(); return s.SpoolEvents == 0 && s.Replayed == 10 })
+	if got := fo.stored(); len(got) != 10 {
+		t.Errorf("%d stored, want 10", len(got))
+	}
+	fo.mu.Lock()
+	for _, d := range fo.docs {
+		if d.ID == "" {
+			t.Errorf("written without an ID: %v", d.Doc)
+		}
+	}
+	fo.mu.Unlock()
+	if s := r.Stats(); s.WriteFailed != 0 {
+		t.Errorf("stats %+v", s)
+	}
+}
+
+// TestSpoolStartTrustsNoFile: on start, only regular files with a batch
+// name are taken, counted from their lines, and no larger than a batch
+// may be; others are left alone and counted.
+func TestSpoolStartTrustsNoFile(t *testing.T) {
+	dir := t.TempDir()
+	good, _ := encode([]ingest.Event{{Time: time.Now().Add(-time.Hour), Model: "Other", Fields: map[string]any{"message": "a"}},
+		{Time: time.Now().Add(-time.Hour), Model: "Other", Fields: map[string]any{"message": "b"}}})
+	write := func(name string, data []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(spoolName(1), good)
+	// The count an older name carried, an overflowing number, one past
+	// the bound, and a name that is not a batch's are not read.
+	write("batch-00000000000000000002-999999999999.ndjson", good)
+	write("batch-99999999999999999999999.ndjson", good)
+	write(fmt.Sprintf("batch-%020d.ndjson", uint64(1)<<63), good)
+	write("notes.txt", good)
+	// Too large for the spool.
+	write(spoolName(3), bytes.Repeat([]byte("x"), 5000))
+	if err := os.Mkdir(filepath.Join(dir, spoolName(4)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	skipped := 6
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, spoolName(5))); err == nil {
+		skipped++
+	} else if runtime.GOOS != "windows" {
+		t.Fatal(err)
+	}
+	skipped += makeFIFO(t, filepath.Join(dir, spoolName(6)))
+
+	sp, err := openSpool(dir, 4000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := sp.stats()
+	if st.events != 2 || st.skipped != int64(skipped) || len(sp.files) != 1 || sp.files[0].name != spoolName(1) {
+		t.Fatalf("stats %+v, files %+v, want %d skipped", st, sp.files, skipped)
+	}
+	// New batches are numbered after the one taken.
+	if _, err := sp.add([]ingest.Event{{Time: time.Now(), Model: "Other", Fields: map[string]any{"message": "c"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if sp.files[1].seq != 2 {
+		t.Errorf("next number %d", sp.files[1].seq)
+	}
+	// A file swapped for a link after start is not followed.
+	if runtime.GOOS != "windows" {
+		os.Remove(filepath.Join(dir, spoolName(1)))
+		if err := os.Symlink(outside, filepath.Join(dir, spoolName(1))); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := sp.read(sp.files[0]); err == nil {
+			t.Error("read through a link")
+		}
 	}
 }

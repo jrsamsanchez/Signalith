@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -52,12 +53,16 @@ type spool struct {
 	// busy is the file being replayed, which the cap leaves alone.
 	busy                       string
 	spooled, replayed, dropped int64
+	// skipped counts the files found on start that are not batches the
+	// spool can read: links, pipes, folders, other names, too large.
+	skipped int64
 
 	// kick wakes the replay when a batch is added.
 	kick chan struct{}
 }
 
-// spoolFile is one batch in the spool: batch-<number>-<events>.ndjson.
+// spoolFile is one batch in the spool: batch-<number>.ndjson, the number
+// 20 digits.
 type spoolFile struct {
 	name   string
 	seq    uint64
@@ -65,30 +70,39 @@ type spoolFile struct {
 	events int
 }
 
-func spoolName(seq uint64, events int) string {
-	return fmt.Sprintf("batch-%020d-%d.ndjson", seq, events)
-}
+// maxSpoolSeq bounds the batch numbers taken from file names, so a name
+// cannot make the next number wrap around and sort first.
+const maxSpoolSeq = 1 << 62
 
-func parseSpoolName(name string) (seq uint64, events int, ok bool) {
+// maxSpoolFile is the most a batch file may hold: far more than a batch
+// of the largest messages takes. The spool's own cap bounds it too.
+const maxSpoolFile = 256 << 20
+
+func spoolName(seq uint64) string { return fmt.Sprintf("batch-%020d.ndjson", seq) }
+
+func parseSpoolName(name string) (uint64, bool) {
 	rest, found := strings.CutPrefix(name, "batch-")
 	if !found {
-		return 0, 0, false
+		return 0, false
 	}
 	rest, found = strings.CutSuffix(rest, ".ndjson")
-	if !found {
-		return 0, 0, false
+	if !found || len(rest) != 20 {
+		return 0, false
 	}
-	a, b, found := strings.Cut(rest, "-")
-	if !found {
-		return 0, 0, false
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
 	}
-	seq, err1 := strconv.ParseUint(a, 10, 64)
-	n, err2 := strconv.Atoi(b)
-	return seq, n, err1 == nil && err2 == nil && n >= 0
+	seq, err := strconv.ParseUint(rest, 10, 64)
+	return seq, err == nil && seq > 0 && seq < maxSpoolSeq
 }
 
 // openSpool makes dir private (making it when missing) and picks up the
-// batches an earlier run left there.
+// batches an earlier run left there. Only regular files with a batch
+// name are read, each up to its size limit, and their events are
+// counted from their lines; anything else (a link, a pipe, a device, a
+// folder, a file too large) is left alone and counted in skipped.
 func openSpool(dir string, maxBytes int64) (*spool, error) {
 	if maxBytes <= 0 {
 		maxBytes = DefaultSpoolBytes
@@ -103,29 +117,79 @@ func openSpool(dir string, maxBytes int64) (*spool, error) {
 	s := &spool{dir: dir, max: maxBytes, kick: make(chan struct{}, 1)}
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() {
+		path := filepath.Join(dir, name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			s.skipped++
 			continue
 		}
 		if strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp") {
 			// Half written when the server stopped.
-			os.Remove(filepath.Join(dir, name))
+			os.Remove(path)
 			continue
 		}
-		seq, n, ok := parseSpoolName(name)
+		seq, ok := parseSpoolName(name)
 		if !ok {
+			s.skipped++
 			continue
 		}
-		info, err := e.Info()
+		data, err := s.readFile(name)
 		if err != nil {
+			s.skipped++
 			continue
 		}
-		s.files = append(s.files, spoolFile{name: name, seq: seq, size: info.Size(), events: n})
-		s.total += info.Size()
+		n := countLines(data)
+		s.files = append(s.files, spoolFile{name: name, seq: seq, size: int64(len(data)), events: n})
+		s.total += int64(len(data))
 		s.events += int64(n)
 		s.counter = max(s.counter, seq)
 	}
 	sort.Slice(s.files, func(i, j int) bool { return s.files[i].seq < s.files[j].seq })
 	return s, nil
+}
+
+// readFile reads one batch file of the spool: a regular file only, never
+// following a link or waiting on a pipe, and no larger than a batch may
+// be.
+func (s *spool) readFile(name string) ([]byte, error) {
+	limit := min(s.max, maxSpoolFile)
+	f, err := openNoFollow(filepath.Join(s.dir, name))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", name)
+	}
+	if info.Size() > limit {
+		return nil, fmt.Errorf("%s is larger than a batch may be (%d bytes)", name, limit)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s is larger than a batch may be (%d bytes)", name, limit)
+	}
+	return data, nil
+}
+
+// countLines counts a batch's events: its lines that are not empty.
+func countLines(data []byte) int {
+	n := 0
+	for line := range bytes.SplitSeq(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // spooledEvent is how an event is kept in the spool.
@@ -240,7 +304,7 @@ func (s *spool) add(events []ingest.Event) (dropped int, err error) {
 		return dropped + n, nil
 	}
 	s.counter++
-	f := spoolFile{name: spoolName(s.counter, n), seq: s.counter, size: size, events: n}
+	f := spoolFile{name: spoolName(s.counter), seq: s.counter, size: size, events: n}
 	if err := securefile.Replace(filepath.Join(s.dir, f.name), data); err != nil {
 		return dropped, err
 	}
@@ -282,7 +346,7 @@ func (s *spool) next() (spoolFile, bool) {
 // read returns a batch's events, and how many lines of it could not be
 // read.
 func (s *spool) read(f spoolFile) ([]ingest.Event, int, error) {
-	data, err := os.ReadFile(filepath.Join(s.dir, f.name))
+	data, err := s.readFile(f.name)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -317,21 +381,12 @@ func (s *spool) done(f spoolFile, replayed int, rest []ingest.Event) error {
 	}
 	var err error
 	if n > 0 {
-		// The same number, so it stays the oldest.
-		nf := spoolFile{name: spoolName(f.seq, n), seq: f.seq, size: int64(len(data)), events: n}
-		if nf.name == f.name {
-			err = securefile.Replace(filepath.Join(s.dir, nf.name), data)
-			if err == nil {
-				s.total += nf.size - f.size
-				s.events += int64(n - f.events)
-				s.files[i] = nf
-				return nil
-			}
-		} else if err = securefile.Replace(filepath.Join(s.dir, nf.name), data); err == nil {
-			s.removeLocked(f)
+		// In its place, so it stays the oldest.
+		if err = securefile.Replace(filepath.Join(s.dir, f.name), data); err == nil {
+			nf := spoolFile{name: f.name, seq: f.seq, size: int64(len(data)), events: n}
+			s.total += nf.size - f.size
+			s.events += int64(n - f.events)
 			s.files[i] = nf
-			s.total += nf.size
-			s.events += int64(n)
 			return nil
 		}
 	}
@@ -358,7 +413,7 @@ func (s *spool) empty() bool {
 
 // spoolStats is what the spool holds and has done, for Stats.
 type spoolStats struct {
-	spooled, replayed, dropped, events, bytes, max int64
+	spooled, replayed, dropped, events, bytes, max, skipped int64
 }
 
 func (s *spool) stats() spoolStats {
@@ -367,5 +422,5 @@ func (s *spool) stats() spoolStats {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return spoolStats{spooled: s.spooled, replayed: s.replayed, dropped: s.dropped, events: s.events, bytes: s.total, max: s.max}
+	return spoolStats{spooled: s.spooled, replayed: s.replayed, dropped: s.dropped, events: s.events, bytes: s.total, max: s.max, skipped: s.skipped}
 }

@@ -275,9 +275,13 @@ first, as soon as OpenSearch takes writes, trying again after a second and then 
 longer each time, up to a minute. While OpenSearch refuses them, new batches go straight
 to the spool, so the receiver never waits for OpenSearch and keeps reading from devices.
 The spool survives a restart: a server that starts with batches in it writes them once
-OpenSearch is ready. Each event gets its own ID in the spool, so a batch written again is
-stored once; a batch that may have reached OpenSearch before its write failed can still
-be stored twice.
+OpenSearch is ready. Each event gets its own document ID before its first write and keeps
+it in the spool, so a batch written again is stored once, even one OpenSearch stored but
+answered with a timeout or a reset connection: the copy is refused as a duplicate.
+
+Only batch files Signalith wrote are read back: on start, anything else in the folder
+(links, pipes, folders, other names, or files larger than a batch may be) is left alone
+and counted as `spool_skipped`.
 
 An event OpenSearch refuses for good, such as one with a value its mapping cannot take,
 is not spooled: it is counted as not written, as before.

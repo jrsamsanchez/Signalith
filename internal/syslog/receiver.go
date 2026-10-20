@@ -5,6 +5,7 @@ package syslog
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -266,15 +267,18 @@ type Stats struct {
 	// since, and SpoolDropped those the spool dropped because it was
 	// full. SpoolEvents and SpoolBytes are what it holds now, and
 	// SpoolMaxBytes its cap; zero when there is no spool.
-	Spooled       int64      `json:"spooled"`
-	Replayed      int64      `json:"replayed"`
-	SpoolDropped  int64      `json:"spool_dropped"`
-	SpoolEvents   int64      `json:"spool_events"`
-	SpoolBytes    int64      `json:"spool_bytes"`
-	SpoolMaxBytes int64      `json:"spool_max_bytes"`
-	Rejected      int64      `json:"rejected"`
-	RejectedBy    Rejections `json:"rejected_by"`
-	Queued        int        `json:"queued"`
+	Spooled       int64 `json:"spooled"`
+	Replayed      int64 `json:"replayed"`
+	SpoolDropped  int64 `json:"spool_dropped"`
+	SpoolEvents   int64 `json:"spool_events"`
+	SpoolBytes    int64 `json:"spool_bytes"`
+	SpoolMaxBytes int64 `json:"spool_max_bytes"`
+	// SpoolSkipped counts the files in the spool's folder at start that
+	// were not batches it could read, and were left alone.
+	SpoolSkipped int64      `json:"spool_skipped,omitempty"`
+	Rejected     int64      `json:"rejected"`
+	RejectedBy   Rejections `json:"rejected_by"`
+	Queued       int        `json:"queued"`
 	// Connections is the number of open TCP and TLS connections.
 	Connections int       `json:"connections"`
 	LastMessage time.Time `json:"last_message,omitzero"`
@@ -348,6 +352,9 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 			log.Error("syslog spool: cannot open its folder, so syslog events OpenSearch refuses for now are lost", "dir", cfg.SpoolDir, "err", err)
 		} else {
 			r.spool = sp
+			if sp.skipped > 0 {
+				log.Warn("syslog spool: left alone files in its folder that are not batches it can read (links, pipes, folders, other names, or too large)", "dir", cfg.SpoolDir, "files", sp.skipped)
+			}
 		}
 	}
 	return r
@@ -952,8 +959,20 @@ func (r *Receiver) send(batch []ingest.Event) {
 		}
 		return
 	}
-	if r.spool != nil && r.blocked.Load() && r.keep(batch) {
-		return
+	if r.spool != nil {
+		// Each event has its document ID from the first write on, the
+		// same when it is spooled and written again, so a write that
+		// OpenSearch stored but answered with an error (a timeout, a
+		// reset connection) is not stored twice: the second write is
+		// refused as a conflict and counted as a duplicate.
+		for i := range batch {
+			if batch[i].ID == "" {
+				batch[i].ID = rand.Text()
+			}
+		}
+		if r.blocked.Load() && r.keep(batch) {
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.drain, writeTimeout)
 	defer cancel()
@@ -1172,7 +1191,7 @@ func (r *Receiver) Stats() Stats {
 	}
 	sp := r.spool.stats()
 	s.Spooled, s.Replayed, s.SpoolDropped = sp.spooled, sp.replayed, sp.dropped
-	s.SpoolEvents, s.SpoolBytes, s.SpoolMaxBytes = sp.events, sp.bytes, sp.max
+	s.SpoolEvents, s.SpoolBytes, s.SpoolMaxBytes, s.SpoolSkipped = sp.events, sp.bytes, sp.max, sp.skipped
 	for _, p := range r.cfg.Allow {
 		if p.IsSingleIP() {
 			s.Allow = append(s.Allow, p.Addr().String())
