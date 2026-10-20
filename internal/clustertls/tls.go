@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -165,6 +166,16 @@ func validate(b *Body) error {
 		if !SameFingerprint(tlsauto.Fingerprint(oc.Raw), o.CASHA256) {
 			return errors.New("the tls document's other certificate authority does not match its fingerprint")
 		}
+		// Every server trusts it as it trusts the one in use: it must be
+		// a certificate authority with the same limits. A next one is
+		// always made with no intermediate below it; an old one may come
+		// from a version that didn't say so.
+		if !oc.IsCA || (o == b.Next && !oc.MaxPathLenZero) {
+			return errors.New("the tls document's other certificate is not a certificate authority that signs only server certificates")
+		}
+		if !sameConstraints(oc, c) {
+			return errors.New("the tls document's other certificate authority may vouch for other names than the one in use")
+		}
 		if SameFingerprint(o.CASHA256, b.CASHA256) {
 			return errors.New("the tls document names the certificate authority in use twice")
 		}
@@ -173,6 +184,21 @@ func validate(b *Body) error {
 		}
 	}
 	return nil
+}
+
+// sameConstraints reports whether a and b may vouch for the same names
+// and addresses.
+func sameConstraints(a, b *x509.Certificate) bool {
+	nets := func(ns []*net.IPNet) []string {
+		out := make([]string, len(ns))
+		for i, n := range ns {
+			out[i] = n.String()
+		}
+		return out
+	}
+	return a.PermittedDNSDomainsCritical == b.PermittedDNSDomainsCritical &&
+		slices.Equal(a.PermittedDNSDomains, b.PermittedDNSDomains) && slices.Equal(a.ExcludedDNSDomains, b.ExcludedDNSDomains) &&
+		slices.Equal(nets(a.PermittedIPRanges), nets(b.PermittedIPRanges)) && slices.Equal(nets(a.ExcludedIPRanges), nets(b.ExcludedIPRanges))
 }
 
 // SameFingerprint compares two SHA-256 fingerprints written with or

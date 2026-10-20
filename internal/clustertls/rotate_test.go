@@ -5,11 +5,17 @@ package clustertls
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -456,4 +462,72 @@ func TestRotationCountsAgents(t *testing.T) {
 	if a := BuildReport(ReportInput{Body: &Body{CASHA256: cur, Next: &OtherCA{CASHA256: next}}}).Rotation.Agents; a != nil {
 		t.Errorf("agents unread: %+v", a)
 	}
+}
+
+// A next or previous certificate authority must be one with the same
+// limits as the one in use: a next one also with no intermediate below
+// it.
+func TestValidateOtherCA(t *testing.T) {
+	now := time.Now()
+	cur := makeCA(t, "cur", now.Add(-time.Hour), "siem.example.com")
+	body := func(o *OtherCA, next bool) *Body {
+		b := &Body{CACertPEM: string(cur.pem), CASHA256: cur.fp}
+		if next {
+			b.Next = o
+		} else {
+			b.Previous = o
+		}
+		return b
+	}
+	other := func(c *x509.Certificate) *OtherCA {
+		return &OtherCA{CACertPEM: string(pemOf(c)), CASHA256: tlsauto.Fingerprint(c.Raw)}
+	}
+	like, _, err := tlsauto.NewCALike(cur.cert, "next", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validate(body(other(like), true)); err != nil {
+		t.Errorf("a next CA like the one in use: %v", err)
+	}
+	// makeCA's has no MaxPathLenZero: fine as a previous one only.
+	same := makeCA(t, "old", now.Add(-time.Hour), "siem.example.com")
+	if err := validate(body(other(same.cert), false)); err != nil {
+		t.Errorf("an old CA with the same limits: %v", err)
+	}
+	if err := validate(body(other(same.cert), true)); err == nil {
+		t.Error("a next CA that may have intermediates")
+	}
+	wider := makeCA(t, "wide", now.Add(-time.Hour))
+	if err := validate(body(other(wider.cert), false)); err == nil || !strings.Contains(err.Error(), "other names") {
+		t.Errorf("a CA with no name constraints: %v", err)
+	}
+	elsewhere := makeCA(t, "else", now.Add(-time.Hour), "evil.example.com")
+	if err := validate(body(other(elsewhere.cert), false)); err == nil {
+		t.Error("a CA for other names")
+	}
+	if err := validate(body(other(leafOf(t, cur)), false)); err == nil {
+		t.Error("a certificate that is not a CA")
+	}
+}
+
+func pemOf(c *x509.Certificate) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})
+}
+
+// leafOf is a server certificate ca issued.
+func leafOf(t *testing.T, ca testCA) *x509.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "siem.example.com"}, DNSNames: []string{"siem.example.com"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), BasicConstraintsValid: true,
+		PermittedDNSDomains: ca.cert.PermittedDNSDomains, PermittedIPRanges: ca.cert.PermittedIPRanges, PermittedDNSDomainsCritical: true}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, key.Public(), ca.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := x509.ParseCertificate(der)
+	return c
 }
