@@ -396,7 +396,7 @@ func TestScanNow(t *testing.T) {
 		}
 	}
 	if cve["cve"] != "CVE-2021-41773" || cve["known_exploited"] != "true" || cve["dest"] != "web-01.corp.example" || cve["dest_ip"] != "192.0.2.10" ||
-		cve["dest_port"] != 443 || cve["host"] != "siem-a" || cve["cvss"] != 7.5 || cve["url"] != "https://nvd.nist.gov/vuln/detail/CVE-2021-41773" {
+		cve["dest_port"] != 443 || cve["host"] != "siem-a" || cve["cvss"] != 7.5 || cve["vuln_confidence"] != nil || cve["url"] != "https://nvd.nist.gov/vuln/detail/CVE-2021-41773" {
 		t.Errorf("cve event = %v", cve)
 	}
 	// The products were looked up once each and kept: a second scan asks

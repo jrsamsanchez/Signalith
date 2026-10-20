@@ -87,6 +87,12 @@ func Events(sc *Scan, scanner string, hosts []*Host, at time.Time) []ingest.Even
 				if v.CPE != "" {
 					f["cpe"] = v.CPE
 				}
+				if v.Distro != "" {
+					// Matched by version only, on a build the
+					// distribution may have fixed (ASI-02).
+					f["vuln_confidence"] = ConfidenceVersionOnly
+					f["vuln_distro"] = v.Distro
+				}
 				if v.Source == SourceOpenVAS {
 					f["vendor_product"] = "Signalith OpenVAS scan"
 					f["vuln_source"] = SourceOpenVAS
