@@ -406,7 +406,10 @@ jobs:
           }
           build "$RUNNER_TEMP/first"
           copy="$RUNNER_TEMP/elsewhere/signalith"
-          git worktree add --detach "$copy" HEAD
+          # A clone, not a worktree: Go records the commit only in a
+          # checkout with a .git folder.
+          git clone -q --no-checkout . "$copy"
+          git -C "$copy" checkout -q --detach "$(git rev-parse HEAD)"
           go clean -cache
           (cd "$copy" && build "$RUNNER_TEMP/second")
           (cd "$RUNNER_TEMP/first" && sha256sum *) | tee first.sha256
