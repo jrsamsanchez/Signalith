@@ -245,9 +245,11 @@ syslog (including the usual variations, such as Cisco IOS, IOS XR, NX-OS and ASA
 land in Authentication and Change like agent data, so the built-in detections apply.
 Events have `sourcetype=syslog` (or `cef`), `host` from the message, `dvc` set to the
 sender's address, and `facility` and `severity`. A message time without a zone (RFC 3164's
-`Oct 11 09:15:02`, or an ISO 8601 time without an offset) is not used, since the device's
-clock may be in another zone than the server: the event takes the time Signalith received
-it, and the device's time is kept in `device_clock`. Set the device to send RFC 5424 or
+`Oct 11 09:15:02`, or an ISO 8601 time without an offset, in the header or in a CEF `rt`,
+`end` or `start` or a LEEF `devTime`) is not used, since the device's clock may be in another
+zone than the server: the event takes the time Signalith received it, and the device's time
+is kept in `device_clock`. A CEF or LEEF time with a zone name other than UTC or GMT (`CST`
+is three different zones) is not used either. Set the device to send RFC 5424 or
 to write its timestamps in UTC with the zone shown
 to keep its own times. Otherwise the event time is the one in the message,
 unless it is older than `ingest.max_event_age` (a week by default, or the shortest time any

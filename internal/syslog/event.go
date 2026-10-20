@@ -66,12 +66,16 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 		clock, t = t, time.Time{}
 	}
 	// structured is a CEF or LEEF record, mapped by its own keys.
-	structured := func(f map[string]any, ct time.Time, rec avRecord) {
+	structured := func(f map[string]any, ct, cclock time.Time, rec avRecord) {
 		// The record's own time (CEF rt, end or start, LEEF devTime) is
 		// more precise than the syslog header, but an implausible one does
-		// not replace a good header.
+		// not replace a good header. One without a zone is, like a header
+		// without one, only kept as the device's clock.
 		if !ct.IsZero() && (plausible(ct, received, maxAge) || !plausible(t, received, maxAge)) {
 			t = ct
+		}
+		if !cclock.IsZero() {
+			clock = cclock
 		}
 		if host == "" {
 			host, _ = f["dvc_host"].(string)
@@ -90,10 +94,12 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	switch {
 	case m.CEF != nil:
 		f := map[string]any{"app": app}
-		structured(f, cefFieldsFor(m.CEF, f, &extra, received), avFromCEF(m.CEF))
+		ct, cclock := cefFieldsFor(m.CEF, f, &extra, received)
+		structured(f, ct, cclock, avFromCEF(m.CEF))
 	case m.LEEF != nil:
 		f := map[string]any{"app": app}
-		structured(f, leefFieldsFor(m.LEEF, f, &extra, received), avFromLEEF(m.LEEF))
+		ct, cclock := leefFieldsFor(m.LEEF, f, &extra, received)
+		structured(f, ct, cclock, avFromLEEF(m.LEEF))
 	case isWazuh(m.Text, &wazuh, &ev):
 		// A Wazuh manager's syslog output (format json): the alert names
 		// the host it is about, and has its own time and severity.
@@ -104,10 +110,10 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 			host = truncate(agent, maxHostLen)
 		}
 	case esetThreat(m.Text, &rec):
-		structured(map[string]any{"app": app, "sourcetype": "eset:protect"}, time.Time{}, rec)
+		structured(map[string]any{"app": app, "sourcetype": "eset:protect"}, time.Time{}, time.Time{}, rec)
 	case kasperskyThreat(m, &rec, kf):
 		kf["app"], kf["sourcetype"] = app, "kaspersky:syslog"
-		structured(kf, time.Time{}, rec)
+		structured(kf, time.Time{}, time.Time{}, rec)
 	case isSuricata(m.Text, &suricata, &ev):
 		// Suricata's EVE output over syslog (pfSense, OPNsense, any box
 		// that can only send syslog): the event has its own time, and

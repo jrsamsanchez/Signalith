@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -259,6 +260,33 @@ func TestCEF(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			check(t, c.line, doc(c.line), c.want)
 		})
+	}
+}
+
+// A CEF or LEEF time without a zone could be in any zone: the event takes
+// the receive time and keeps the stated one in device_clock. One with a
+// zone name Signalith can't tell apart is not used at all.
+func TestCEFTimeZones(t *testing.T) {
+	recv := time.Now().UTC().Truncate(time.Second)
+	stated := recv.Add(-time.Hour)
+	text := stated.Format("Jan 02 2006 15:04:05")
+	clock := stated.Format("2006-01-02T15:04:05")
+	cases := []struct {
+		name, line, time string
+		clock            any
+	}{
+		{"no zone", "CEF:0|V|P|1|1|N|3|rt=" + text + " src=10.0.0.1", recv.Format(time.RFC3339Nano), clock},
+		{"ISO 8601 without a zone", "CEF:0|V|P|1|1|N|3|rt=" + stated.Format("2006-01-02T15:04:05") + " src=10.0.0.1", recv.Format(time.RFC3339Nano), clock},
+		{"UTC", "CEF:0|V|P|1|1|N|3|rt=" + text + " UTC src=10.0.0.1", stated.Format(time.RFC3339Nano), nil},
+		{"unknown zone name", "CEF:0|V|P|1|1|N|3|rt=" + text + " XYZ src=10.0.0.1", recv.Format(time.RFC3339Nano), nil},
+		{"a later time with a zone", "CEF:0|V|P|1|1|N|3|rt=" + text + " end=" + strconv.FormatInt(stated.UnixMilli(), 10) + " src=10.0.0.1", stated.Format(time.RFC3339Nano), nil},
+		{"LEEF devTime without a zone", "LEEF:1.0|V|P|1|E|devTime=" + text + "\tsrc=10.0.0.1", recv.Format(time.RFC3339Nano), clock},
+		{"LEEF devTime with a zone", "LEEF:1.0|V|P|1|E|devTime=" + text + " +0000\tsrc=10.0.0.1", stated.Format(time.RFC3339Nano), nil},
+	}
+	for _, c := range cases {
+		m := Parse([]byte(c.line), recv)
+		d := m.Event(sender, recv, 0).Document()
+		check(t, c.name, d, map[string]any{"@timestamp": c.time, "device_clock": c.clock, "device_time": nil})
 	}
 }
 
