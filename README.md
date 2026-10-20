@@ -61,7 +61,7 @@ The website's source is in [`site/`](site/) and the documentation is built from
 [`docs/`](docs/). The server is a single Go binary with the web UI embedded. It runs as
 a Windows service or a systemd unit.
 
-> Status: the first four phases are complete, and work on hardening for 1.0 has started. See the [roadmap](#roadmap).
+> Status: working toward 1.0. Until then the work goes into correctness, upkeep and proof rather than new features; the [roadmap](https://signalith.io/docs/roadmap/) has the 1.0 checklist.
 
 ## Quick start
 
@@ -1487,12 +1487,10 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 
 ## Roadmap
 
-1. **Search foundation**: agents, parsing, data models, query language, builder, installers.
-2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
-3. **Context and risk**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
-4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
-
-What is done, what is being built now and what comes next is on the
+Signalith is working toward 1.0. Version 1.0 comes when a checklist of trust, proof,
+upkeep and ease-of-use criteria is met, and until then new compliance frameworks, cloud
+log sources and query commands are on hold. The checklist, what is being built now and
+what is not planned are on the
 [public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
