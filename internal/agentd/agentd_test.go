@@ -102,12 +102,26 @@ type fakeServer struct {
 	statuses []agentproto.Status
 	asks     []*http.Request
 	notMod   int
+	// revoked answers every request as for a revoked token, and down
+	// (when set) answers 503 instead, as a server that is starting.
+	revoked bool
+	down    bool
 }
 
 func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.asks = append(f.asks, r)
+	if f.down {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, `{"error":"starting"}`)
+		return
+	}
+	if f.revoked {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":"This token was revoked.","code":"token_revoked"}`)
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer sgl_test" {
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprint(w, `{"error":"bad token"}`)
@@ -247,6 +261,74 @@ func TestAgentKeepsLastConfigWhenServerIsDown(t *testing.T) {
 	})
 	cancel()
 	<-done
+}
+
+// A revoked token stops the collectors after a few refusals, rather than
+// have Fluent Bit read and drop every event (ASI-01), and they start
+// again once the token is accepted. A server that cannot be reached
+// leaves them running (TestAgentKeepsLastConfigWhenServerIsDown).
+func TestAgentStopsCollectorsWhileTokenIsRefused(t *testing.T) {
+	t.Setenv("AGENTD_FAKE_FLUENTBIT", "run")
+	p := testPaths(t)
+	p.Osqueryd = osquerydExe(t)
+	flags := &agentproto.Osquery{Flags: "--tls_hostname=siem.example.com:7779\n--config_plugin=tls\n"}
+	fs := &fakeServer{revoked: true, cfg: agentproto.Config{FluentBit: &agentproto.FluentBit{Config: "new"}, Osquery: flags}}
+	cfg := agentproto.Config{Revision: "abc", FluentBit: &agentproto.FluentBit{Config: "old"}, Osquery: flags}
+	b, _ := json.Marshal(cfg)
+	if err := os.WriteFile(p.configFile(), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.fluentBitConf(), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewTLSServer(fs)
+	defer srv.Close()
+	a := newAgent(t, srv, p)
+	a.Facts = nil
+	a.Settings.Osquery = true
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	waitFor(t, "the collectors stopped for the refused token", func() bool {
+		h, _ := os.ReadFile(p.HealthFile())
+		s := string(h)
+		return strings.Contains(s, "token was revoked") && strings.Contains(s, "collectors stopped") &&
+			strings.Contains(s, "fluentbit=off") && strings.Contains(s, "osquery=off")
+	})
+	// Without its flags file, osquery's own service (Linux) does not run.
+	if _, err := os.Stat(p.osqueryFlags()); !os.IsNotExist(err) {
+		t.Errorf("osquery's flags are still there: %v", err)
+	}
+	// A server that cannot answer is not an accepted token: the
+	// collectors stay stopped.
+	fs.mu.Lock()
+	fs.down = true
+	asked := len(fs.asks)
+	fs.mu.Unlock()
+	waitFor(t, "the agent to meet the 503s", func() bool {
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		return len(fs.asks) >= asked+4
+	})
+	if h, _ := os.ReadFile(p.HealthFile()); !strings.Contains(string(h), "fluentbit=off") || !strings.Contains(string(h), "osquery=off") {
+		t.Errorf("a 503 started the collectors again: %q", h)
+	}
+	fs.mu.Lock()
+	fs.down = false
+	fs.revoked = false
+	fs.mu.Unlock()
+	waitFor(t, "Fluent Bit running again with the new configuration", func() bool {
+		h, _ := os.ReadFile(p.HealthFile())
+		c, _ := os.ReadFile(p.fluentBitConf())
+		return string(h) == "config=ok\nfluentbit=running\nosquery=running\nreported=yes\n" && string(c) == "new"
+	})
+	if _, err := os.Stat(p.osqueryFlags()); err != nil {
+		t.Errorf("osquery's flags: %v", err)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCollectorRestartsWhenItStops(t *testing.T) {

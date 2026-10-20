@@ -802,6 +802,30 @@ server:
   sending.
 - Sign-ins, sign-outs and every change to users and settings go to the audit log.
 
+## Other protections
+
+These are built in too, and are not part of the report:
+
+- **Connections**: clients get 10 seconds to send request headers and a minute to send a
+  request body (after their token or sign-in is checked, agent batches get 2 minutes, more
+  while they keep arriving, and signed-in uploads 10 minutes); idle kept-alive connections
+  close after 2 minutes, and headers are limited to 64 KB. Open connections are capped
+  (`server.max_connections`), and one client may hold a tenth of them; a client is one IPv4
+  address or one IPv6 /64 network, since an IPv6 host can pick any address in its /64. Over
+  HTTPS (HTTP/2) each request in progress counts too, at most 32 per connection, so one
+  connection cannot carry hundreds. Agent batches are also limited (see
+  [Ingest limits](sending-data.md#ingest-limits)).
+- **Browser cache**: API replies are never stored in the browser cache, and signing out
+  clears this site's cache and the last query; display preferences such as the theme stay.
+- **Disguised text**: invisible and text-reordering Unicode characters in event data are
+  shown as a marked `⟨U+202E⟩`. U+202E, for example, would otherwise make `invoice`,
+  U+202E, `fdp.exe` look like `invoiceexe.pdf`. The stored events are unchanged; finding
+  titles, which copy values from events and become the titles of new cases, are stored with
+  the marker.
+- **Logs**: values in log lines are cut to a sensible length, and the Windows service log
+  (`C:\ProgramData\Signalith\signalith.log`) rotates at 10 MB, keeping 5 old files. The Docker
+  quick start caps container logs the same way; under systemd, journald limits the log.
+
 ## Not checked here
 
 Signalith can't see these, so it says so once rather than showing **Can't tell** for
