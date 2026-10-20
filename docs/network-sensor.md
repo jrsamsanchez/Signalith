@@ -317,8 +317,10 @@ script (see [Signing keys](#signing-keys)); the key is trusted for that reposito
 
 With `--ot`, the sensor also gets `git`, `cmake`, `make` and `g++` from the system's own
 repositories, and CISA's ICSNPP analyzers from their GitHub repositories
-(`github.com/cisagov/icsnpp-*`), each checked out at a commit pinned in the script and built
-on the sensor by Zeek's package manager (`zkg`), as root, before Zeek starts.
+(`github.com/cisagov/icsnpp-*`), each checked out at a commit pinned in the script (its git
+commit ID, which the script checks after the install) and built on the sensor by Zeek's
+package manager (`zkg`). The build runs their C++ and Spicy code as root, before Zeek starts:
+choose `--ot` only if you accept that, as you would for any package built from source.
 
 Signalith does not include or pass on any of them, nor any rules: your machine downloads
 them from their publishers.

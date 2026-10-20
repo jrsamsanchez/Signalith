@@ -78,6 +78,8 @@ ZEEK_PACKAGE='zeek-8.0'
 # name, then the commit zkg checks out (each was at least two weeks old
 # when chosen). Modbus and DNP3 are Zeek scripts; the others are built on
 # the sensor, which needs a C++ compiler and Zeek's development files.
+# When moving a pin, check its zkg.meta still has no depends, and that the
+# build fetches nothing: zkg would install that unpinned.
 ICSNPP_REPO=https://github.com/cisagov
 ICSNPP='modbus 27f22b41fd9839c0bad1b98df9c6289e578fd02a
 dnp3 b31dbadeceb1cbcda16aef89c650559cd177dd7e
@@ -1295,6 +1297,14 @@ EOF
     info "Zeek: building CISA's ICSNPP analyzer for $n"
     zkg install --force --skip-tests --version "$c" "$ICSNPP_REPO/$p" ||
       fail "Installing CISA's ICSNPP analyzer for $n failed (see above)." "Check that this machine reaches github.com and has 2 GB of disk free, then run the line again; or run it without --ot."
+    # The commit zkg checked out is the pinned one, whatever zkg does.
+    if [ -z "$dryrun" ]; then
+      got=$(git -C /var/lib/signalith-sensor/zkg/clones/package/"$p" rev-parse HEAD 2>/dev/null) || got=''
+      if [ "$got" != "$c" ]; then
+        zkg remove --force "$p" || true
+        fail "Zeek's package manager installed ICSNPP $n at commit ${got:-unknown}, not the pinned $c, so the script removed it." "Run the line without --ot, and report this to Signalith."
+      fi
+    fi
     manifest_add "zkg $p $c $zv"
     printf 'zeek\n' >>"$tmp/changed"
     ok "Zeek: ICSNPP $n"
