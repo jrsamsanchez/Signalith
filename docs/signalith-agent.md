@@ -280,6 +280,7 @@ configuration, within 5 minutes; nothing needs to be done on the computers.
 | **Linux sign-ins** | Where sign-ins are read from: where the computer writes them (the default), `auth.log` or `secure`, or the systemd journal |
 | **Automatic updates** | Off keeps the line's computers on the version they run (see [Updates](#updates)) |
 | **Update first** | The share of the line's computers a new version goes to: 1 in 10, a quarter, half or all (the default) |
+| **Alert when silent** | How long one of the line's computers may send nothing before the detection *Signalith Agent silent* fires: 1 hour (the default), 4 hours, 1 day, or off |
 
 Turning a log off hides what happens on those computers, so saving asks for your
 password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
@@ -289,7 +290,16 @@ analysts see it in the token list. The osquery part of the same window (watched 
 checks and how often they run) applies to every osquery host. The API is
 `PUT /api/agent-tokens/{id}/collect` with `{"osquery": "off", "linux_log": "journal"}`
 (any choice left out is on, or `auto` for `linux_log`; `update_share` is `10`, `25`, `50`
-or `100`, the default).
+or `100`, the default; `silent_alert` is `1h`, the default, `4h`, `24h` or `off`).
+
+An agent sends its status every 5 minutes even when the computer has nothing new to
+log, so a computer that sends nothing for longer than **Alert when silent** is off, cut
+off from Signalith, or its agent stopped. The server that runs the background jobs then
+writes a *Signalith Agent silent* event (sourcetype `agent:health`), and the built-in
+detection `agent-silent` raises a finding for it, at most once a day for each computer
+and for three days at most, so a computer you switched off for good stops alerting.
+Agents whose token was revoked are not reported. Lines for laptops or lab machines
+that are often off can wait a day, or have the alert off.
 
 ## osquery
 

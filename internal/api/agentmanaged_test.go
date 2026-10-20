@@ -574,6 +574,13 @@ func TestManagedAgentUpdate(t *testing.T) {
 	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"update_share":"100"}`, "admin", adminPass, nil); code != 200 {
 		t.Fatalf("share 100: %d %s", code, raw)
 	}
+	// The silent-agent alert (ASI-14) is a choice of the same window.
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"silent_alert":"24h"}`, "admin", adminPass, nil); code != 200 || !strings.Contains(raw, `"silent_alert":"24h"`) {
+		t.Errorf("silent alert: %d %s", code, raw)
+	}
+	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"silent_alert":"2h"}`, "admin", adminPass, nil); code != 400 || !strings.Contains(raw, "silent_alert") {
+		t.Errorf("silent alert 2h: %d %s", code, raw)
+	}
 
 	// A program that is not the one signed is never offered.
 	if err := os.WriteFile(filepath.Join(dir, agentproto.ProgramName("linux", "amd64")), []byte("something else, and longer"), 0o755); err != nil {

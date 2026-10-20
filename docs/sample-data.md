@@ -135,6 +135,7 @@ counts toward the risk findings below. The table keeps them apart.
 | **A controller answers the internet** | A port forward left `plc-02`'s Modbus port open to the internet, and `203.0.113.88` reads its coils and switches one at night. | ot-command-from-outside | |
 | **Clear-text sign-ins and a blind spot** | An admin signs in to `jump-01` over Telnet, a user opens a printer's admin page with HTTP basic authentication and `file-01` uploads a report to a partner over FTP, all sending passwords in clear text (the parser never stores them). During the nightly backup the sensor misses 7.8% of the traffic. A test service on `web-01` answers the internet on port 8443. | network-cleartext-credentials, network-sensor-packet-loss | |
 | **Network sensors need attention** | The mirror port of the network sensor `nsm-01` goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; and the branch office's sensor `nsm-02` stops sending, which Signalith notices itself (a *Sensor silent* event). [Settings > Network sensors](network-sensor.md#settings-network-sensors) shows real sensors only, not these. | network-sensor-unhealthy, once for each problem | |
+| **A computer stops sending** | The Signalith Agent on `file-01` stops sending overnight, and Signalith notices itself an hour later (a *Signalith Agent silent* event). [Endpoints](endpoints.md) shows real agents only, not this one. | agent-silent | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
 
 The risk that builds up then raises two more findings on its own:
@@ -142,7 +143,7 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 54 of the 59 built-in detections fire from the sample, all of them on.
+So 55 of the 60 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 

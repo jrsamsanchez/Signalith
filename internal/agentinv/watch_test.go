@@ -107,3 +107,73 @@ func TestSensorWatch(t *testing.T) {
 		t.Errorf("not leader or no list: %v %d", err, len(out.events))
 	}
 }
+
+// TestSensorWatchHostAgents: a Signalith Agent on a host that stops
+// sending gets an agent:health event after its line's threshold, one a
+// day for three days, and none for a line with the alert off (ASI-14).
+func TestSensorWatchHostAgents(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	managed := func(token string) *ManagedStatus { return &ManagedStatus{Token: token} }
+	list := &listOf{agents: []Agent{
+		{Key: "h1", Name: "db-01", LastSeen: now.Add(-61 * time.Minute), Managed: managed("tok1")},
+		{Key: "h2", Name: "web-01", LastSeen: now.Add(-30 * time.Minute), Managed: managed("tok1")},
+		{Key: "h3", Name: "lab-01", LastSeen: now.Add(-5 * time.Hour), Managed: managed("quiet")},
+		{Key: "h4", Name: "old-01", LastSeen: now.Add(-5 * time.Hour), Managed: managed("tok4")},
+		// No status from the Signalith Agent: another agent, not watched.
+		{Key: "h5", Name: "fb-01", LastSeen: now.Add(-5 * time.Hour)},
+	}}
+	out := &written{}
+	w := &SensorWatch{Agents: list, Events: out, Now: func() time.Time { return now },
+		HostSilentAfter: func(token string) time.Duration {
+			switch token {
+			case "quiet":
+				return 0
+			case "tok4":
+				return 24 * time.Hour
+			}
+			return time.Hour
+		}}
+	if err := w.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.events) != 1 {
+		t.Fatalf("events: %+v", out.events)
+	}
+	ev := out.events[0]
+	if f := ev.Fields; f["sourcetype"] != "agent:health" || f["host"] != "db-01" || f["signature"] != "Signalith Agent silent" ||
+		!strings.Contains(f["message"].(string), "The Signalith Agent on db-01 has sent nothing for 1 hour (last heard 2026-10-15 10:59 UTC)") ||
+		!strings.HasPrefix(ev.ID, "agent-health-") {
+		t.Errorf("event: %+v", ev)
+	}
+	if out.origins[0].Intake != ingest.IntakeSignalith {
+		t.Errorf("origin: %+v", out.origins[0])
+	}
+
+	// Daily for three days, then no more.
+	for day := 1; day <= 5; day++ {
+		now = now.Add(24 * time.Hour)
+		list.agents[1].LastSeen, list.agents[2].LastSeen = now, now
+		list.agents[3].LastSeen = now
+		_ = w.Check(ctx)
+	}
+	var db int
+	for _, e := range out.events {
+		if e.Fields["host"] == "db-01" {
+			db++
+		}
+	}
+	if db != 3 || len(out.events) != 3 {
+		t.Fatalf("db-01 events %d of %d, want 3", db, len(out.events))
+	}
+
+	// Heard again, then silent again: a new silence alerts again.
+	list.agents[0].LastSeen = now
+	_ = w.Check(ctx)
+	now = now.Add(2 * time.Hour)
+	list.agents[1].LastSeen = now
+	_ = w.Check(ctx)
+	if len(out.events) != 4 {
+		t.Fatalf("new silence: %d events", len(out.events))
+	}
+}

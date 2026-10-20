@@ -4,7 +4,7 @@ A detection is a Signalith query that runs on a schedule. Every row the query
 returns becomes a finding, unless the throttle says the same thing was already
 raised recently.
 
-Signalith ships 59 built-in detections mapped to MITRE ATT&CK: brute force, password
+Signalith ships 60 built-in detections mapped to MITRE ATT&CK: brute force, password
 spray, encoded PowerShell, Office spawning shells, shadow copy deletion, credential
 dumping, privileged group changes, malware and more, plus two risk incident rules. 54
 are on by default. With both [content packs](#content-packs) on, rules are tagged with

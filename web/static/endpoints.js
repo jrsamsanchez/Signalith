@@ -851,6 +851,9 @@ window.sensorText = (function () {
         })),
         el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Linux sign-ins'),
           seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')),
+        el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Alert when silent'),
+          seg([['', 'After 1 hour'], ['4h', '4 hours'], ['24h', '1 day'], ['off', 'Off']], c.silent_alert || '', (v) => change('silent_alert', v), 'Alert when silent'),
+          el('span', { class: 'hint' }, 'The detection Signalith Agent silent fires when one of these computers sends nothing for this long.')),
         updatesSwitch(c, change));
     };
     pick.addEventListener('change', () => { cur = pick.value; draw(); });

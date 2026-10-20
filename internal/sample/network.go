@@ -529,3 +529,21 @@ func (g *gen) sensorUpkeep() {
 		Detections: []string{"network-sensor-unhealthy"},
 	}, silent.Add(time.Minute), "nsm-01", "nsm-02")
 }
+
+// agentSilent: the Signalith Agent on the file server file-01 stops sending
+// overnight, which Signalith notices itself (ASI-14).
+func (g *gen) agentSilent() {
+	silent := g.day(2, 1, 10)
+	g.b.signalith(silent, "agent:health", map[string]any{
+		"vendor_product": "Signalith Agent", "signature": "Signalith Agent silent", "host": "file-01", "dvc": "file-01",
+		"message": "The Signalith Agent on file-01 has sent nothing for 1 hour (last heard " + silent.Add(-time.Hour).Format("2006-01-02 15:04") +
+			" UTC): the computer is off, the agent stopped, or its token was refused",
+	})
+	g.story(Story{
+		ID:    "agent-silent",
+		Title: "A computer stops sending",
+		Summary: "The Signalith Agent on the file server file-01 stops sending overnight, and Signalith notices itself after an hour. " +
+			"The Endpoints page shows when it last sent.",
+		Detections: []string{"agent-silent"},
+	}, silent.Add(time.Minute), "file-01")
+}
