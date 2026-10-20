@@ -221,8 +221,9 @@ func applyStreamStats(ctx context.Context, res *Result, c *query.StreamStats) er
 	return nil
 }
 
-// weekStart puts week buckets on Mondays: Unix time 0 is a Thursday.
-const weekStart = 4 * 86400
+// weekStart puts week buckets on Sundays, where @w snaps to, as in
+// Splunk: Unix time 0 is a Thursday.
+const weekStart = 3 * 86400
 
 // applyBin rounds a field's values down to the start of their span. A
 // time span works on times, written back as they came (epoch seconds or

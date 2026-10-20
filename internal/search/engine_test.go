@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -107,16 +109,30 @@ func TestToDateMath(t *testing.T) {
 	cases := map[string]string{
 		"-24h":                 "now-24h",
 		"-7d@d":                "now-7d/d",
-		"@w":                   "now/w",
 		"now":                  "now",
 		"-1mon":                "now-1M",
 		"-15minutes":           "now-15m",
 		"2026-10-01T00:00:00Z": "2026-10-01T00:00:00Z",
 		"1700000000000":        "1700000000000",
+		"1700000000":           "1700000000000", // epoch seconds (SL-06)
+		"10/01/2026:08:00:00":  "1790841600000",
 	}
 	for in, want := range cases {
 		if got := toDateMath(in); got != want {
 			t.Errorf("toDateMath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// OpenSearch's weeks start on Monday, so Signalith works out @w
+	// (Sunday, SL-05), and chained modifiers and quarters, itself.
+	for _, in := range []string{"@w", "-1w@w1", "@d-1h", "-1d@d+8h", "-1q@q"} {
+		got := toDateMath(in)
+		ms, err := strconv.ParseInt(got, 10, 64)
+		if err != nil {
+			t.Errorf("toDateMath(%q) = %q, want epoch milliseconds", in, got)
+			continue
+		}
+		if in == "@w" && time.UnixMilli(ms).UTC().Weekday() != time.Sunday {
+			t.Errorf("@w = %v, want a Sunday", time.UnixMilli(ms).UTC())
 		}
 	}
 }

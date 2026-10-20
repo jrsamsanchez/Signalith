@@ -58,8 +58,13 @@ add `-explain` to see the compiled request. `signalith ask "failed logins from
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
 | `earliest=-7d@d latest=now` | Time range; overrides the UI time picker |
 
-Relative times: `-30s`, `-15m`, `-4h`, `-7d`, `-2w`, `-1mon`, `-1y`, optionally snapped
-with `@d`, `@h`, `@w`. Absolute times are ISO 8601 (`2026-10-01T00:00:00Z`).
+Relative times: `-30s`, `-15m`, `-4h`, `-7d`, `-2w`, `-1mon`, `-1q`, `-1y`, optionally
+snapped with `@d`, `@h`, `@w`, `@mon`, `@q` or `@y`, and chained as in Splunk (`@d-1h`,
+`-1d@d+8h`). Weeks start on Sunday (`@w` or `@w0`); `@w1` to `@w6` snap to Monday through
+Saturday. The same week start holds for `bin` and `timechart span=1w`. Absolute times are
+ISO 8601 (`2026-10-01T00:00:00Z`, UTC when no zone is given), epoch seconds (`1767225600`;
+13 digits read as milliseconds) or `10/01/2026:08:00:00`. A time Signalith cannot read is
+an error rather than an empty result.
 A search reads only the daily indices of the days in its time range (UTC, an hour
 either side), including the extra parts of busy days, so a short range stays fast
 however many days are kept. All time, or a range that names too many days to list,
@@ -94,7 +99,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `append` | `append [search datamodel=Change \| stats count by user]` | Adds a subsearch's rows after the results. The subsearch works as in `join` and counts toward the same limits |
 | `union` | `union [search datamodel=Authentication] [search datamodel=Change]` | Adds the rows of each subsearch, in order, after the results. Each subsearch works as in `append` and counts toward the same limits |
 | `appendpipe` | `appendpipe [stats sum(count) as count \| eval user="TOTAL"]` | Runs the commands in `[ ]` over a copy of the results so far and adds the rows they give after them, for totals and summary rows. `inputlookup`, `makeresults`, `timechart` and `threatmatch` cannot run inside |
-| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
+| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Sunday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
 | `fromjson` | `fromjson body prefix=b_` | Extracts each top-level key of the JSON object in a field as a field of the same name, or `prefix=` and the name. Arrays of plain values come out as multivalue fields; objects and other arrays as JSON text. Up to 500 keys per event |

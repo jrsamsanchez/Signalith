@@ -315,6 +315,7 @@ var unitMap = map[string]string{
 	"d": "d", "day": "d", "days": "d",
 	"w": "w", "week": "w", "weeks": "w",
 	"mon": "M", "month": "M", "months": "M",
+	"q": "q", "qtr": "q", "qtrs": "q", "quarter": "q", "quarters": "q",
 	"y": "y", "yr": "y", "year": "y", "years": "y",
 }
 
@@ -351,8 +352,17 @@ func toDateMath(v string) string {
 		return v
 	}
 	m := relTime.FindStringSubmatch(v)
-	if m == nil || (m[1] == "" && m[4] == "") {
-		return v // absolute: ISO 8601 or epoch millis
+	if m == nil || (m[1] == "" && m[4] == "") || strings.EqualFold(m[4], "w") || strings.HasPrefix(strings.ToLower(m[4]), "q") || strings.HasPrefix(strings.ToLower(m[3]), "q") {
+		// OpenSearch reads ISO 8601 as it is; anything else Signalith
+		// works out: epoch seconds, chained modifiers (@d-1h), weeks
+		// from Sunday (OpenSearch's start on Monday), quarters.
+		if isoDateMath(v) {
+			return v
+		}
+		if t, ok := query.ResolveTime(v, time.Now()); ok {
+			return strconv.FormatInt(t.UnixMilli(), 10)
+		}
+		return v
 	}
 	out := "now"
 	if m[3] != "" || m[2] != "" {
@@ -380,6 +390,12 @@ func toDateMath(v string) string {
 	return out
 }
 
+// isoDateMath reports whether OpenSearch reads v as it is: an ISO 8601
+// date or date and time.
+func isoDateMath(v string) bool {
+	return len(v) >= 10 && v[4] == '-' && v[7] == '-' && !strings.ContainsAny(v, "/@")
+}
+
 // relativeDuration estimates how far back a relative time reaches, for
 // choosing a timechart span. ok is false for absolute times.
 func relativeDuration(v string) (time.Duration, bool) {
@@ -393,7 +409,7 @@ func relativeDuration(v string) (time.Duration, bool) {
 	}
 	unit := map[string]time.Duration{
 		"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour,
-		"w": 7 * 24 * time.Hour, "M": 30 * 24 * time.Hour, "y": 365 * 24 * time.Hour,
+		"w": 7 * 24 * time.Hour, "M": 30 * 24 * time.Hour, "q": 91 * 24 * time.Hour, "y": 365 * 24 * time.Hour,
 	}[unitMap[strings.ToLower(m[3])]]
 	if unit == 0 {
 		return 0, false
@@ -432,12 +448,14 @@ func spanInterval(span string) (map[string]any, error) {
 	n, _ := strconv.Atoi(m[1])
 	switch unit {
 	case "w":
-		return map[string]any{"fixed_interval": strconv.Itoa(n*7) + "d"}, nil
-	case "M", "y":
+		// Weeks start on Sunday, as @w and bin's do; OpenSearch counts
+		// fixed intervals from Unix time 0, a Thursday.
+		return map[string]any{"fixed_interval": strconv.Itoa(n*7) + "d", "offset": "+3d"}, nil
+	case "M", "y", "q":
 		if n != 1 {
-			return nil, fmt.Errorf("span %q: months and years support a span of 1 only", span)
+			return nil, fmt.Errorf("span %q: months, quarters and years support a span of 1 only", span)
 		}
-		return map[string]any{"calendar_interval": map[string]string{"M": "month", "y": "year"}[unit]}, nil
+		return map[string]any{"calendar_interval": map[string]string{"M": "month", "q": "quarter", "y": "year"}[unit]}, nil
 	}
 	return map[string]any{"fixed_interval": strconv.Itoa(n) + unit}, nil
 }

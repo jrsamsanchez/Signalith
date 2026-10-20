@@ -4,6 +4,7 @@
 package query
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -196,10 +197,15 @@ func (p *parser) parseSearch(q *Query) error {
 						return &Error{Pos: at, Msg: err.Error()}
 					}
 					q.Index = v
-				case "earliest":
-					q.Earliest = v
-				case "latest":
-					q.Latest = v
+				case "earliest", "latest":
+					if !CheckTime(v) {
+						return &Error{Pos: at, Msg: fmt.Sprintf("%s=%s is not a time; use one like -24h, -7d@d, @w1, an epoch time in seconds or 2026-10-01T08:00:00Z", strings.ToLower(t.text), v)}
+					}
+					if strings.EqualFold(t.text, "earliest") {
+						q.Earliest = v
+					} else {
+						q.Latest = v
+					}
 				}
 				continue
 			}
