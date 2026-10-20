@@ -63,6 +63,13 @@ func TestZeekICSNPPMore(t *testing.T) {
 	if strings.Contains(dc["message"].(string), "Sup3rSecret") {
 		t.Error("the device password was stored")
 	}
+	for _, k := range []string{"user_password", "Passwd", "client_secret", "identity.password"} {
+		r := map[string]any{"ts": 1.0, "uid": "C1", k: "Sup3rSecret", "keep": "x"}
+		ev := ParseZeek("opcua_binary_activate_session", r, "")
+		if strings.Contains(ev.Fields["message"].(string), "Sup3rSecret") || ev.Fields["zeek_keep"] != "x" {
+			t.Errorf("%s: %v", k, ev.Fields)
+		}
+	}
 	md := zeekDocs(t, "modbus_detailed")[0]
 	expect(t, md, map[string]any{"ot_function": "DIAGNOSTICS", "category": "diagnostic", "type": "request", "ot_unit": "1",
 		"object": "0", "reason": nil, "zeek_request_subfunction_code": "FORCE_LISTEN_ONLY_MODE"})

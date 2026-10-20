@@ -889,7 +889,7 @@ Air-gapped networks can load rules from a file: `suricata-update --local /path/t
 - **A sensor is not a server.** It is an agent, not a member of Signalith's servers: it holds
   no OpenSearch password, no CA key and no settings, only its token and the CA certificate,
   which is public.
-- **Never stored.** Signalith never stores fields named `password` (Zeek logs HTTP and FTP
+- **Never stored.** Signalith never stores fields whose names contain `password`, `passwd` or `secret` (Zeek logs HTTP and FTP
   passwords if someone turns that on), the password of an FTP `PASS` command in Suricata's
   ftp events (it becomes `(hidden)`), the challenge and response of a VNC sign-in in its rfb
   events (from which a password can be cracked), nor Suricata's `payload` and `packet`
