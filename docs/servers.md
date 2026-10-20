@@ -590,6 +590,47 @@ holding that CA to share it and answers `202` with a `request_id` that
 no server seen in the last day uses that CA, `503` when the shared settings can't be
 changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
 
+### When a server leaves
+
+Every server of the cluster can open the CA's key: it needs it to renew its own
+certificate. A server you remove, or that leaves, may keep it:
+
+- in its memory, while it still runs;
+- in its copy of the shared settings (`cluster/cache.enc`) together with its copy of the
+  cluster key, and in any backup of its state folder.
+
+Rotating the cluster key stops an old copy of the cluster key from opening anything
+**new**, but the CA's key it could open before stays the same. HTTPS certificates have
+no revocation list, and agents trust the CA itself. So whoever holds that key can make
+certificates that agents, browsers and syslog devices trust, for any name the CA may
+vouch for, until the cluster's CA is replaced. `signalith cluster remove` and `leave`
+print this.
+
+A server that leaves keeps its HTTPS certificate and can't renew it. `leave` prints
+the date it expires. To use the server on its own after that, delete its `tls` folder
+before it starts, so it makes a CA of its own, and give its agents a new configuration.
+
+### Backing up the cluster's CA
+
+The CA's key lives only in the shared settings and each server's `cluster/cache.enc`,
+both sealed with the cluster key. If every copy of the cluster key is lost,
+`signalith cluster reset-key` can't open it and empties it. Servers then keep their
+certificates until they expire, and can't renew them.
+
+Keep an offline copy of the CA, as a key you keep apart from everything else:
+
+1. On one server, run `signalith cluster export --to-files <new folder>` (see
+   [export --to-files](cluster-cli.md#export-to-files)). The `tls` folder in it has
+   `ca.pem` and `ca.key`.
+2. Copy that `tls` folder somewhere offline (a vault or an encrypted drive), and delete
+   the export folder.
+
+After a `reset-key`, give the key back with
+`signalith cluster tls import <folder>/tls/ca.key` (see
+[cluster-cli.md](cluster-cli.md#tls)). Every server renews from it again within
+seconds. A founder's old `tls/ca.key`, from a backup made before the cluster kept it,
+works too.
+
 ## Each server's own OpenSearch certificate
 
 When Signalith made OpenSearch's certificates (the Docker quick start, or `signalith

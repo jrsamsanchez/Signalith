@@ -211,7 +211,10 @@ confirm (`-yes` skips the question), makes a new key and signs the documents wit
 it. A document whose signature fails under a key this server has was changed outside
 Signalith: it is not signed again, so every server keeps ignoring it. Passwords and
 API keys stored with the old key cannot be read and are emptied; the command lists
-them, so you can enter them again on the Threat intel page. Then give the other
+them, so you can enter them again on the Threat intel page. The cluster's HTTPS
+certificate authority key is among them: servers keep their certificates until they
+expire, and can't renew them until `tls import` gives the key back (see
+[tls](#tls)). Then give the other
 servers the new key. Settings in a server's signalith.yaml that it already applied
 are not applied again because of the new key: each server records them afresh at
 its next start.
@@ -252,8 +255,15 @@ signalith cluster leave  [-c file] [-yes] [-no-rotate]
 of servers. The server must be drained (on the Servers page), stopped, or offline for
 10 minutes. `leave` does it for this server: stop Signalith first. It also deletes this
 server's copy of the cluster key and of the shared settings, and keeps its HTTPS
-certificate. Uninstall the server afterwards, or run `new-identity` on it before you
-add it again.
+certificate. That certificate can't be renewed once the server is out: `leave` prints
+the date it expires. To use the server on its own after that, delete its `tls` folder
+before it starts, and give its agents a new configuration. Uninstall the server
+afterwards, or run `new-identity` on it before you add it again.
+
+Both print that the removed server may still hold the cluster's HTTPS certificate
+authority key, in a backup of its state folder or its copy of the shared settings. It
+could make certificates agents trust until the cluster's certificate authority is
+replaced (see [When a server leaves](servers.md#when-a-server-leaves)).
 
 Both then rotate the cluster key, so the removed server's copy opens nothing new;
 `-no-rotate` skips that, and `rotate-key` does it later. A removed server that starts
@@ -329,6 +339,7 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 ```
 signalith cluster tls        [-c file] [-json]
 signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
+signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>
 ```
 
 Once every server runs a version that shares one, the servers of a cluster share one certificate
@@ -352,6 +363,19 @@ counts may be short, so it refuses unless you add `-yes`. The other servers take
 seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
 up with an old one are marked as needing a new configuration. The choice is made once:
 changing the cluster's certificate authority comes in a later version.
+
+`tls import` gives the cluster its certificate authority's key again, after `reset-key`
+emptied it. `tls` then says the key was lost with the cluster key, and no server can
+renew its certificate. Give it the `tls/ca.key` of an `export --to-files` folder, or a
+founder's old `tls/ca.key` from a backup. It reads only a plain file (not a link) of at
+most 64 KB, and never prints the key. When `ca.pem` is next to the key, or you name a
+certificate with `-cert`, its fingerprint must be the cluster's. The key must belong to
+the cluster's certificate authority: any other key is refused, and nothing changes. The
+key is sealed with the cluster key, bound to the fingerprint, as when the certificate
+authority was first shared. Every server renews from it within seconds. It asks first
+unless you add `-yes`, and is written to the audit log. Keep the key file offline
+afterwards, or delete it (see
+[Backing up the cluster's CA](servers.md#backing-up-the-clusters-ca)).
 
 ## upgrade-check
 
