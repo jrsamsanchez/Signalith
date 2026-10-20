@@ -136,6 +136,7 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
   page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
+- [Backup and restore](backup.md) of a server's files and OpenSearch data.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
