@@ -1276,7 +1276,9 @@ sensor_icsnpp() {
     site=$(/opt/zeek/bin/zeek-config --site_dir)
     plugins=$(/opt/zeek/bin/zeek-config --plugin_dir)
   fi
-  folder /var/lib/signalith-sensor/zkg 0700 root:root
+  # Readable by all: a built plugin's scripts are a link back into its
+  # clone here, which Zeek (as zeek) reads. Only root writes it.
+  folder /var/lib/signalith-sensor/zkg 0755 root:root
   put "$zkg_conf" 0600 root:root zeek <<EOF
 # Written by the Signalith sensor install script: Zeek's package manager's
 # settings for the ICSNPP analyzers (--ot). No package sources: each
