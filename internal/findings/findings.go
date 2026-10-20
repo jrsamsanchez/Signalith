@@ -95,12 +95,14 @@ type Change struct {
 
 // Filter selects findings.
 type Filter struct {
-	Status      []string `json:"status,omitempty"`
-	Severity    []string `json:"severity,omitempty"`
-	Urgency     []string `json:"urgency,omitempty"`
-	Owner       string   `json:"owner,omitempty"`
-	DetectionID string   `json:"detection_id,omitempty"`
-	Text        string   `json:"text,omitempty"`
+	Status   []string `json:"status,omitempty"`
+	Severity []string `json:"severity,omitempty"`
+	Urgency  []string `json:"urgency,omitempty"`
+	Owner    string   `json:"owner,omitempty"`
+	// Unowned keeps findings nobody owns.
+	Unowned     bool   `json:"unowned,omitempty"`
+	DetectionID string `json:"detection_id,omitempty"`
+	Text        string `json:"text,omitempty"`
 	// Sample, when set, keeps only findings with this sample-load marker.
 	// A marker is never empty, so a set but empty one matches no finding:
 	// it never means "every finding".
@@ -113,6 +115,10 @@ type Filter struct {
 	// dashboards see old findings closed recently.
 	UpdatedSince time.Time
 	Limit        int
+	// Order is one of Orders; empty is newest first.
+	Order string
+	// After continues the order after this finding's place in it.
+	After *Cursor
 }
 
 // Update is a triage change. Nil fields stay as they are.

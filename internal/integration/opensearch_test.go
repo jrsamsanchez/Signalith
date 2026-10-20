@@ -528,6 +528,47 @@ tags: [attack.t1059.001]
 	if err != nil || len(list) != 1 || list[0].ID != "legacy" {
 		t.Errorf("legacy urgency = %v %v", list, err)
 	}
+
+	// Each order pages through every finding once, and by urgency the
+	// most urgent come first (the legacy one by its severity).
+	for _, o := range findings.Orders {
+		all, total, err := fs.Search(ctx, findings.Filter{Order: o})
+		if err != nil || total != len(all) || total < 3 {
+			t.Fatalf("%s: %d of %d, %v", o, len(all), total, err)
+		}
+		var after *findings.Cursor
+		for i := range all {
+			page, _, err := fs.Search(ctx, findings.Filter{Order: o, Limit: 1, After: after})
+			if err != nil || len(page) != 1 || page[0].ID != all[i].ID {
+				t.Fatalf("%s: page %d = %v %v, want %s", o, i, page, err, all[i].ID)
+			}
+			c := findings.CursorOf(page[0])
+			after = &c
+		}
+		if o == findings.OrderUrgency {
+			for i := 1; i < len(all); i++ {
+				if findings.UrgencyRank(all[i].EffectiveUrgency()) > findings.UrgencyRank(all[i-1].EffectiveUrgency()) {
+					t.Errorf("by urgency: %s before %s", all[i-1].EffectiveUrgency(), all[i].EffectiveUrgency())
+				}
+			}
+		}
+	}
+	every, total, _ := fs.Search(ctx, findings.Filter{})
+	owned := 0
+	for _, f := range every {
+		if f.Owner != "" {
+			owned++
+		}
+	}
+	if list, n, err := fs.Search(ctx, findings.Filter{Unowned: true}); err != nil || n != total-owned || owned == 0 {
+		t.Errorf("unowned: %d of %d (%d owned) %v", n, total, owned, err)
+	} else {
+		for _, f := range list {
+			if f.Owner != "" {
+				t.Errorf("unowned search found %s owned by %s", f.ID, f.Owner)
+			}
+		}
+	}
 }
 
 func mustGet(t *testing.T, lib *detect.Library, id, lookback string) *detect.Detection {

@@ -111,6 +111,8 @@ func TestDetectionsAndFindingsErrors(t *testing.T) {
 		{"POST", "/api/detections/nope/run", "", 404, ""},
 		{"GET", "/api/findings?since=forever", "", 400, "since: "},
 		{"GET", "/api/findings?limit=5000", "", 400, "limit must be 1-1000"},
+		{"GET", "/api/findings?sort=owner", "", 400, "sort must be one of"},
+		{"GET", "/api/findings?after=%7B%7D", "", 400, "page cursor is not valid"},
 		{"GET", "/api/findings/nope", "", 404, ""},
 		{"POST", "/api/findings", `{`, 400, ""},
 		{"POST", "/api/findings", `{"title":" "}`, 400, "title is required"},

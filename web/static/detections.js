@@ -16,7 +16,10 @@ function onPageShown(name) {
   // A page switch closes any slide-over inspector; the page that owns one
   // opens it again.
   appEl.removeAttribute('data-inspect');
-  if (name === 'findings') loadFindings();
+  if (name === 'findings') {
+    if (pageQuery) { readFindingsHash(pageQuery); pageQuery = ''; }
+    loadFindings();
+  }
   if (name === 'detections') loadDetections();
   if (name === 'coverage') loadCoverage();
   pageHooks.forEach((h) => h(name));
@@ -314,12 +317,15 @@ let findingsList = []; // the rows on screen, in display order
 const selected = new Set();
 let openFinding = null;
 
+// FND_PAGE findings load at a time; a background refresh reloads up to
+// FND_LIMIT of those on screen.
+const FND_PAGE = 200;
 const FND_LIMIT = 1000;
 const URG_RANK = { critical: 4, high: 3, medium: 2, low: 1, informational: 0 };
 const urgencyOf = (f) => f.urgency || f.severity;
 const fnd = {
   urgency: new Set(), since: '7d', detection: '', sort: { key: 'urgency', dir: 'desc' },
-  counts: {}, all: 0, total: 0, loaded: false, loadedAt: 0, stale: null, sig: '',
+  counts: {}, all: 0, total: 0, next: '', loaded: false, loadedAt: 0, stale: null, sig: '',
   closed: false, tab: 'overview', owners: new Set(), seq: 0, detailSeq: 0,
 };
 const FND_DEFAULT_STATUS = 'new,in_progress,pending';
@@ -338,22 +344,20 @@ async function refreshOpenCount() {
   } catch (_) { return null; }
 }
 
-// loadFindings reads the toolbar and pills, then redraws the queue.
+// loadFindings reads the toolbar and pills, then redraws the queue. The
+// server filters, sorts and pages; the address keeps the filters, so a
+// link or a reload opens the same queue.
 // opts.quiet refreshes in the background (no skeleton; no redraw if
-// nothing changed).
+// nothing changed) and keeps the pages already loaded.
 async function loadFindings(opts = {}) {
   const seq = ++fnd.seq;
   refreshOpenCount();
   syncFindingFilters();
-  const owner = $('f-owner').value;
-  const p = new URLSearchParams();
-  if ($('f-status').value) p.set('status', $('f-status').value);
-  if (owner === '__me') { if (currentUser) p.set('owner', currentUser); } else if (owner && owner !== '__none') p.set('owner', owner);
-  const q = $('f-text').value.trim();
-  if (q) p.set('q', q);
-  if (fnd.since) p.set('since', fnd.since);
-  if (fnd.detection) p.set('detection', fnd.detection);
-  p.set('limit', String(FND_LIMIT));
+  writeFindingsHash();
+  const p = findingsQuery();
+  const want = opts.quiet ? Math.min(FND_LIMIT, Math.max(FND_PAGE, findingsList.length)) : FND_PAGE;
+  p.set('limit', String(want));
+  p.set('counts', 'urgency');
   let skel = null;
   if (!opts.quiet) {
     if (!fnd.loaded) renderFindingsSkeleton();
@@ -361,31 +365,18 @@ async function loadFindings(opts = {}) {
   }
   try {
     const res = await api('api/findings?' + p);
-    const unassigned = owner === '__none';
-    let base = res.findings;
-    if (unassigned) base = base.filter((f) => !f.owner);
-    const truncated = res.total > res.findings.length;
-    let rows = fnd.urgency.size ? base.filter((f) => fnd.urgency.has(urgencyOf(f))) : base;
-    let total = unassigned ? base.length : res.total;
-    if (truncated && fnd.urgency.size) {
-      // The newest page does not hold them all: ask the server for this urgency.
-      p.set('urgency', [...fnd.urgency].join(','));
-      const r2 = await api('api/findings?' + p);
-      rows = unassigned ? r2.findings.filter((f) => !f.owner) : r2.findings;
-      total = unassigned ? rows.length : r2.total;
-    } else if (fnd.urgency.size) total = rows.length;
     if (seq !== fnd.seq) return;
     clearTimeout(skel);
-    const counts = {};
-    base.forEach((f) => { const u = urgencyOf(f); counts[u] = (counts[u] || 0) + 1; });
-    base.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
-    rows = sortFindings(rows);
-    const sig = JSON.stringify([counts, total, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
+    const rows = res.findings;
+    const counts = res.by_urgency || {};
+    rows.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
+    const sig = JSON.stringify([counts, res.total, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
     fnd.loadedAt = Date.now();
     fnd.stale = null;
     fnd.counts = counts;
-    fnd.all = unassigned ? base.length : res.total;
-    fnd.total = total;
+    fnd.all = Object.values(counts).reduce((a, b) => a + b, 0);
+    fnd.total = res.total;
+    fnd.next = res.next || '';
     syncOwnerOptions();
     if (opts.quiet && fnd.loaded && sig === fnd.sig) { renderFindingsFoot(); return; }
     fnd.sig = sig;
@@ -400,6 +391,7 @@ async function loadFindings(opts = {}) {
     if (opts.quiet && fnd.loaded) { fnd.stale = e; renderFindingsFoot(); return; }
     fnd.loaded = false;
     fnd.sig = '';
+    fnd.next = '';
     findingsList = [];
     updateBulk();
     $('f-foot').classList.add('hidden');
@@ -410,21 +402,92 @@ async function loadFindings(opts = {}) {
     closeFindingInspector({ keepState: true });
   }
 }
-function filterSeverity(sv) { fnd.urgency = new Set(sv ? [sv] : []); loadFindings(); }
 
-function sortFindings(rows) {
-  const { key, dir } = fnd.sort;
-  const sign = dir === 'desc' ? -1 : 1;
-  const t = (f) => new Date(f.created).getTime();
-  return [...rows].sort((a, b) => {
-    if (key === 'urgency') {
-      const d = URG_RANK[urgencyOf(a)] - URG_RANK[urgencyOf(b)];
-      if (d) return sign * d;
-      return t(b) - t(a);
-    }
-    return sign * (t(a) - t(b));
-  });
+// loadMoreFindings adds the next page to the bottom of the queue.
+async function loadMoreFindings(btn) {
+  if (!fnd.next) return;
+  const seq = fnd.seq;
+  const p = findingsQuery();
+  p.set('limit', String(FND_PAGE));
+  p.set('after', fnd.next);
+  btn.disabled = true;
+  try {
+    const res = await api('api/findings?' + p);
+    if (seq !== fnd.seq) return;
+    const have = new Set(findingsList.map((f) => f.id));
+    res.findings.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
+    findingsList = findingsList.concat(res.findings.filter((f) => !have.has(f.id)));
+    fnd.total = res.total;
+    fnd.next = res.next || '';
+    fnd.sig = '';
+    syncOwnerOptions();
+    renderFindings();
+    if (openFinding) syncFindingBar();
+  } catch (e) {
+    toast('Couldn’t load more findings: ' + e.message, null, { tone: 'danger' });
+    btn.disabled = false;
+  }
 }
+
+// FND_ORDER is the server's order for each column sort.
+const FND_ORDER = { 'urgency:desc': 'urgency', 'urgency:asc': 'urgency_asc', 'age:desc': 'newest', 'age:asc': 'oldest' };
+
+// findingsQuery is the API query of the toolbar, pills and sort.
+function findingsQuery() {
+  const owner = $('f-owner').value;
+  const p = new URLSearchParams();
+  if ($('f-status').value) p.set('status', $('f-status').value);
+  if (owner === '__me') { if (currentUser) p.set('owner', currentUser); } else if (owner === '__none') p.set('unowned', 'true'); else if (owner) p.set('owner', owner);
+  const q = $('f-text').value.trim();
+  if (q) p.set('q', q);
+  if (fnd.since) p.set('since', fnd.since);
+  if (fnd.detection) p.set('detection', fnd.detection);
+  if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
+  p.set('sort', FND_ORDER[fnd.sort.key + ':' + fnd.sort.dir] || 'urgency');
+  return p;
+}
+
+// writeFindingsHash puts the filters that differ from the defaults in
+// the address (#findings?owner=__none&urgency=critical), without adding
+// a history entry.
+function writeFindingsHash() {
+  if (currentPage !== 'findings') return;
+  const p = new URLSearchParams();
+  if ($('f-status').value !== FND_DEFAULT_STATUS) p.set('status', $('f-status').value || 'any');
+  if ($('f-owner').value) p.set('owner', $('f-owner').value);
+  const q = $('f-text').value.trim();
+  if (q) p.set('q', q);
+  if (fnd.since !== '7d') p.set('since', fnd.since || 'all');
+  if (fnd.detection) p.set('detection', fnd.detection);
+  if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
+  if (fnd.sort.key !== 'urgency' || fnd.sort.dir !== 'desc') p.set('sort', fnd.sort.key + ':' + fnd.sort.dir);
+  const hash = '#findings' + (p.size ? '?' + p : '');
+  if (location.hash !== hash) {
+    try { history.replaceState(null, '', hash); } catch (_) { /* sandboxed */ }
+  }
+}
+
+// readFindingsHash sets the filters from an address writeFindingsHash
+// wrote. Values the page does not offer are left at their defaults.
+function readFindingsHash(query) {
+  const p = new URLSearchParams(query);
+  const status = p.get('status');
+  const st = $('f-status');
+  st.value = status === 'any' ? '' : status || FND_DEFAULT_STATUS;
+  if (st.selectedIndex < 0) st.value = FND_DEFAULT_STATUS;
+  const owner = (p.get('owner') || '').slice(0, 200);
+  const sel = $('f-owner');
+  if (owner && ![...sel.options].some((o) => o.value === owner)) sel.append(el('option', { value: owner }, owner));
+  sel.value = owner;
+  $('f-text').value = (p.get('q') || '').slice(0, 500);
+  const since = p.get('since');
+  fnd.since = since === 'all' ? '' : ['24h', '7d', '30d'].includes(since) ? since : '7d';
+  fnd.detection = (p.get('detection') || '').slice(0, 200);
+  fnd.urgency = new Set((p.get('urgency') || '').split(',').filter((u) => SEVERITIES.includes(u)));
+  const [key, dir] = (p.get('sort') || '').split(':');
+  fnd.sort = FND_ORDER[key + ':' + dir] ? { key, dir } : { key: 'urgency', dir: 'desc' };
+}
+function filterSeverity(sv) { fnd.urgency = new Set(sv ? [sv] : []); loadFindings(); }
 
 function syncOwnerOptions() {
   const sel = $('f-owner');
@@ -498,9 +561,7 @@ function findingsHead(all) {
         on ? icon(fnd.sort.dir === 'desc' ? 'arrow-down' : 'arrow-up') : null);
       b.addEventListener('click', () => {
         fnd.sort = on ? { key, dir: fnd.sort.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' };
-        findingsList = sortFindings(findingsList);
-        renderFindings();
-        syncFindingBar();
+        loadFindings();
       });
       th.append(b);
       return th;
@@ -607,10 +668,17 @@ function renderFindingsFoot() {
   const live = fnd.stale
     ? el('span', { class: 'live', title: fnd.stale.message }, el('span', { class: 'pulse', 'data-state': 'warn' }), 'Couldn’t refresh · updated ' + ago(fnd.loadedAt))
     : el('span', { class: 'live' }, el('span', { class: 'pulse' }), 'Live · updated ' + ago(fnd.loadedAt));
-  const more = fnd.total > findingsList.length
-    ? el('span', {}, `Showing the newest ${findingsList.length} of ${fnd.total}. Narrow the filters to see the rest.`) : null;
+  let more = null;
+  if (fnd.total > findingsList.length) {
+    const left = fnd.total - findingsList.length;
+    const btn = fnd.next ? dxBtn('ghost', `Load ${Math.min(FND_PAGE, left)} more`, null, { sm: true, title: `${left} more match these filters` }) : null;
+    if (btn) btn.addEventListener('click', () => loadMoreFindings(btn));
+    more = el('span', { class: 'row' }, el('span', {}, `Showing ${findingsList.length} of ${fnd.total}`), btn);
+  }
+  const keys = [el('kbd', {}, 'J'), el('kbd', {}, 'K'), el('span', {}, 'move')];
+  if (can('analyst')) keys.push(el('kbd', {}, 'X'), el('span', {}, 'select'), el('kbd', {}, 'A'), el('span', {}, 'assign to me'), el('kbd', {}, 'R'), el('span', {}, 'resolve'));
   fill(foot, live, more, el('span', { class: 'spacer' }),
-    findingsList.length ? el('span', { class: 'shortcuts hide-sm', 'aria-hidden': 'true' }, el('kbd', {}, 'J'), el('kbd', {}, 'K'), el('span', {}, 'move'), ...(can('analyst') ? [el('kbd', {}, 'X'), el('span', {}, 'select')] : [])) : null);
+    findingsList.length ? el('span', { class: 'shortcuts hide-sm', 'aria-hidden': 'true' }, ...keys) : null);
 }
 
 function updateBulk() {
@@ -2411,6 +2479,19 @@ document.addEventListener('keydown', (ev) => {
       const cb = $('f-list').querySelector(`tr[data-id="${CSS.escape(openFinding)}"] input[type=checkbox]`);
       if (cb) cb.checked = selected.has(openFinding);
       updateBulk();
+    }
+    // A assigns the open finding to you; R picks Resolved in its form and
+    // goes to the disposition, for Ctrl+Enter to save.
+    if ((k === 'a' || k === 'r') && can('analyst') && openFinding) {
+      const box = $('f-detail');
+      if (k === 'a') {
+        const b = box.querySelector('[data-action="assign"]');
+        if (b && !b.disabled) { ev.preventDefault(); b.click(); }
+      } else if ($('fd-status') && $('fd-disposition')) {
+        ev.preventDefault();
+        $('fd-status').value = 'resolved';
+        $('fd-disposition').focus();
+      }
     }
   } else if (currentPage === 'detections' && (k === 'j' || k === 'k')) {
     ev.preventDefault();

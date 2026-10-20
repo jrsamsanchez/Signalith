@@ -359,6 +359,22 @@ an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positiv
 `undetermined`), comments, and a history of every change. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
 
+### The findings queue
+
+The **Findings** page lists findings most urgent first. Click **Urgency** or **Age** to
+sort the other way or by time; the server sorts, so the order covers every finding that
+matches, not only those on screen. The queue loads 200 at a time; **Load more** at the
+bottom adds the next 200. The urgency pills count every finding the other filters let
+through. **Unassigned** shows findings nobody owns.
+
+The filters are kept in the address, such as `#findings?owner=__none&urgency=critical`
+for unassigned critical findings, so a bookmark or a link to a colleague opens the same
+queue.
+
+Keys: **J** and **K** move through the list, **X** selects the open finding, **A**
+assigns it to you (and moves a new one to In progress), **R** picks Resolved in its form
+and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search box.
+
 ## Content packs
 
 Content packs are rule sets from other open source projects, shipped unchanged
@@ -1587,7 +1603,7 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
-| `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |
+| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&q=&since=7d&limit=&sort=&after=&counts=urgency` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |
 | `POST /api/findings` | Raise a finding by hand |

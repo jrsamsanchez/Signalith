@@ -129,6 +129,9 @@ func Matches(f *Finding, flt Filter) bool {
 	if flt.Owner != "" && f.Owner != flt.Owner {
 		return false
 	}
+	if flt.Unowned && f.Owner != "" {
+		return false
+	}
 	if flt.DetectionID != "" && f.DetectionID != flt.DetectionID {
 		return false
 	}
@@ -167,13 +170,16 @@ func (m *Memory) Search(_ context.Context, flt Filter) ([]*Finding, int, error) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*Finding
+	total := 0
 	for _, f := range m.byID {
 		if Matches(f, flt) {
-			out = append(out, clone(f))
+			total++
+			if flt.After == nil || before(flt.Order, *flt.After, CursorOf(f)) {
+				out = append(out, clone(f))
+			}
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
-	total := len(out)
+	sort.Slice(out, func(i, j int) bool { return before(flt.Order, CursorOf(out[i]), CursorOf(out[j])) })
 	if flt.Limit > 0 && len(out) > flt.Limit {
 		out = out[:flt.Limit]
 	}
@@ -204,4 +210,16 @@ func (m *Memory) Summary(_ context.Context) (*Summary, error) {
 		}
 	}
 	return s, nil
+}
+
+func (m *Memory) UrgencyCounts(_ context.Context, flt Filter) (map[string]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]int{}
+	for _, f := range m.byID {
+		if Matches(f, flt) {
+			out[f.EffectiveUrgency()]++
+		}
+	}
+	return out, nil
 }

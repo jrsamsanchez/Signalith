@@ -447,6 +447,20 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 		Owner:       v.Get("owner"),
 		DetectionID: v.Get("detection"),
 		Text:        v.Get("q"),
+		Unowned:     v.Get("unowned") == "true",
+		Order:       v.Get("sort"),
+	}
+	if !findings.ValidOrder(flt.Order) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("sort must be one of %s", strings.Join(findings.Orders, ", ")))
+		return
+	}
+	if a := v.Get("after"); a != "" {
+		c, err := findings.DecodeCursor(a)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		flt.After = c
 	}
 	if since := v.Get("since"); since != "" {
 		dur, err := detect.ParseDuration(strings.TrimPrefix(since, "-"))
@@ -476,7 +490,27 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	for _, f := range list {
 		f.History = nil
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"findings": list, "total": total})
+	resp := map[string]any{"findings": list, "total": total}
+	if uc, ok := s.Findings.(findings.UrgencyCounter); ok && v.Get("counts") == "urgency" {
+		// The pills count every urgency the other filters let through.
+		cf := flt
+		cf.Urgency, cf.After = nil, nil
+		counts, err := uc.UrgencyCounts(r.Context(), cf)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["by_urgency"] = counts
+	}
+	limit := flt.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if len(list) == limit {
+		// There may be more: next continues after the last one.
+		resp["next"] = findings.CursorOf(list[len(list)-1]).Encode()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {

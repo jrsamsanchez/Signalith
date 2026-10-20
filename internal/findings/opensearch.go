@@ -259,6 +259,12 @@ func filterQuery(flt Filter) map[string]any {
 	if flt.Owner != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"owner": flt.Owner}})
 	}
+	if flt.Unowned {
+		fs = append(fs, map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
+			map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "owner"}}}}},
+			map[string]any{"term": map[string]any{"owner": ""}},
+		}}})
+	}
 	if flt.DetectionID != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"detection_id": flt.DetectionID}})
 	}
@@ -312,11 +318,15 @@ func (s *OpenSearch) Search(ctx context.Context, flt Filter) ([]*Finding, int, e
 	}
 	// OpenSearch returns at most 10000 hits per request by default.
 	limit = min(limit, 10000)
+	sortBy, after := osSort(flt.Order, flt.After)
 	body := map[string]any{
 		"query":            filterQuery(flt),
 		"size":             limit,
-		"sort":             []any{map[string]any{"created": "desc"}},
+		"sort":             sortBy,
 		"track_total_hits": true,
+	}
+	if after != nil {
+		body["search_after"] = after
 	}
 	var out searchResp
 	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
@@ -399,4 +409,30 @@ func (s *OpenSearch) Summary(ctx context.Context) (*Summary, error) {
 		sm.ByUrgency[b.Key] = b.Count
 	}
 	return sm, nil
+}
+
+func (s *OpenSearch) UrgencyCounts(ctx context.Context, flt Filter) (map[string]int, error) {
+	body := map[string]any{
+		"size":  0,
+		"query": filterQuery(flt),
+		"aggs":  map[string]any{"urgency": map[string]any{"terms": map[string]any{"field": "urgency", "size": 20}}},
+	}
+	var out struct {
+		Aggregations struct {
+			Urgency struct {
+				Buckets []struct {
+					Key   string `json:"key"`
+					Count int    `json:"doc_count"`
+				} `json:"buckets"`
+			} `json:"urgency"`
+		} `json:"aggregations"`
+	}
+	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
+		return nil, err
+	}
+	res := map[string]int{}
+	for _, b := range out.Aggregations.Urgency.Buckets {
+		res[b.Key] = b.Count
+	}
+	return res, nil
 }
