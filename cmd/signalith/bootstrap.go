@@ -84,6 +84,7 @@ func cmdBootstrapDocker(args []string) error {
 	fs.StringVar(&o.StateDir, "state-dir", os.Getenv("SIGNALITH_SETUP_STATE_DIR"), "Signalith's state folder, where -export-ca-key hands the CA over")
 	fs.StringVar(&o.LoadedDir, "loaded-dir", os.Getenv("SIGNALITH_SETUP_LOADED_DIR"), "the folder where OpenSearch's security settings loader notes what it loaded, for -apply-security")
 	fs.StringVar(&o.CRLDir, "crl-dir", os.Getenv("SIGNALITH_SETUP_CRL_DIR"), "folder for the revocation list OpenSearch checks client certificates against, which Signalith keeps up to date")
+	snapDir := fs.String("snapshots-dir", os.Getenv("SIGNALITH_SETUP_SNAPSHOTS_DIR"), "folder OpenSearch writes snapshots to (path.repo); it is given to OpenSearch")
 	fs.IntVar(&o.OSUID, "opensearch-uid", 1000, "user ID OpenSearch runs as; its files are given to it when this runs as root")
 	fs.IntVar(&o.SigUID, "signalith-uid", 65532, "user ID Signalith runs as; its files are given to it when this runs as root")
 	var names listFlag
@@ -95,10 +96,31 @@ func cmdBootstrapDocker(args []string) error {
 	fs.Parse(args)
 	o.Names = names
 	if o.OSDir == "" || o.SigDir == "" {
-		return errors.New("usage: signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR [-ca-dir DIR] [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca]")
+		return errors.New("usage: signalith bootstrap-docker -opensearch-dir DIR -signalith-dir DIR [-ca-dir DIR] [-opensearch-name NAME] [-nodes N] [-export-ca-key] [-apply-security] [-new-ca] [-snapshots-dir DIR]")
 	}
 	o.Now = time.Now()
-	return bootstrapDocker(os.Stdout, o)
+	if err := bootstrapDocker(os.Stdout, o); err != nil {
+		return err
+	}
+	if *snapDir != "" {
+		return snapshotsDir(*snapDir, o.OSUID)
+	}
+	return nil
+}
+
+// snapshotsDir makes the folder OpenSearch writes snapshots to and gives
+// it to OpenSearch's user: Docker makes a new volume's folder for root.
+// What OpenSearch wrote in it already stays as it is.
+func snapshotsDir(dir string, uid int) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+	if os.Geteuid() == 0 {
+		if err := os.Chown(dir, uid, uid); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(dir, 0o750)
 }
 
 // bootstrapDocker makes what the Docker quick start needs and nothing a

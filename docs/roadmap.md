@@ -1,23 +1,130 @@
 ---
 hide:
   - navigation
-description: What Signalith does today, what is being built now, and what comes next.
+description: Where Signalith stands, what 1.0 means, what is not being added before then, and what it does today.
 ---
 
 # Roadmap
 
 Signalith aims to be a complete, general-purpose open-source SIEM: collect events from
-the systems you run, find the attacks in them, and help you respond. This page says
-where it stands. It has no dates: Signalith is a personal project built in the open,
-and things ship when they are ready and tested. **Next** and **Later** together cover
-what is planned for the coming year.
+the systems you run, find the attacks in them, and help you respond. It is a personal
+project built in the open, so this page has no dates.
+
+**Where we are.** Signalith already does a lot (see [Done](#done)), but it is young: no
+install outside the maintainer's lab has run it for long, and one person reviews every
+change. Until 1.0, the work goes into making what exists correct, easy to keep running
+and proven, not into adding more. Version 1.0 comes when every line of the
+[1.0 checklist](#next) is ticked.
 
 Ideas and requests are welcome as
 [feature requests](https://github.com/jrsamsanchez/Signalith/issues/new/choose) on GitHub.
 
+## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
+
+**The next release**
+:   Finished and waiting for the next release: the [Signalith Agent](signalith-agent.md),
+    which updates itself from signed releases and rolls back if an update fails; the
+    Windows installer setting up [OpenSearch on the same computer](install-packages.md#opensearch-on-windows);
+    [detections spread over several servers](servers.md#the-background-jobs) by default;
+    and syslog over TLS on port 6514 only for new installs, with
+    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) one click away.
+
+**Correct answers**
+:   Search results that say when they were sampled or cut short, compliance scores that
+    count only real evidence, behavior baselines that know the time of day, and fixes for
+    the findings of an internal review.
+
+**Easy to keep running**
+:   Backup and restore, OpenSearch shard limits checked before they bite, syslog that
+    keeps events through an OpenSearch restart, and safer upgrades on Windows.
+
+**Proof**
+:   A seven-day lab run with real Windows and Sysmon events, with the bytes, cores and
+    shards it took published on the [performance](performance.md) page.
+
+**The first hour**
+:   A measured starter set of rules in place of turning on every rule at once, and a
+    Windows install that turns on the auditing those rules need.
+
+## Next: the 1.0 checklist <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next: 1.0" }
+
+Version 1.0 means every line below is ticked. Each one can be checked by a link or a
+command.
+
+**Trust**
+
+- [ ] An outside security review of the main attack surface, its report published, and
+  every high and critical finding fixed and retested.
+- [x] The [OpenSSF Best Practices](https://www.bestpractices.dev/projects/15694) silver
+  badge.
+- [ ] A code-signed Windows installer and agent (see the
+  [code signing policy](code-signing.md)).
+- [ ] A second person who reviews and merges changes, at least to detection content.
+
+**Proof**
+
+- [ ] A seven-day lab run, at small-team size and with three servers, that loses no
+  accepted event, raises no late detection, and keeps disk and memory flat.
+- [ ] Five installs outside the lab running for 30 days, two of them with real Windows
+  computers, listed by name with their permission.
+- [ ] A published false-positive rate for the starter rule set on one real network, low
+  enough for one analyst to work through.
+
+**Easy to keep running**
+
+- [ ] Backup and restore for Docker, Linux and Windows, with a wipe-and-restore test in CI.
+- [ ] Upgrades from every release of the past 90 days tested in CI.
+- [ ] A written promise of what settings, API and query language keep working after 1.0.
+
+**Easy to use**
+
+- [ ] Five people other than the maintainer get their first finding from their own
+  Windows computer within 30 minutes of opening [Getting started](getting-started.md).
+- [ ] A README that fits on two screens, with upgrade notes in these docs.
+
+**Releases**
+
+- [ ] Two releases in a row on a fixed two-week schedule, with no emergency patch.
+
+## Not being added before 1.0 { #freeze }
+
+To keep the work on the checklist, these stay as they are until 1.0. Bug fixes still
+land, and community contributions in these areas are welcome.
+
+- **New compliance frameworks.** The eight already mapped stay; the evidence behind them
+  gets fixed first.
+- **New cloud log sources.** Anything else can still come in through
+  [OpenTelemetry](opentelemetry.md), [syslog](sending-data.md#syslog) or a
+  [custom parser](custom-logs.md).
+- **New query commands**, beyond what tested detection content needs.
+
+## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
+
+**After 1.0**
+:   Mutual TLS for senders, per-tenant quotas and tenant removal, permissions on saved
+    objects, an allow-list for outbound connections, OCSF export, and filtering events
+    before they are stored.
+
+**Managed service providers**
+:   A console for running Signalith for several customers, once several single-team
+    installs are running well.
+
+## Not planned { #not-planned }
+
+These are outside what Signalith is for:
+
+- **An EDR.** Signalith collects and analyses endpoint events; it does not block or
+  quarantine on its own.
+- **Packet capture.** The [network sensor](network-sensor.md) keeps Zeek and Suricata
+  logs, not packets.
+- **Its own storage engine.** Events stay in OpenSearch.
+- **Matching every SPL command.** The query language reads like SPL so it feels
+  familiar, and grows where detections need it, not toward full parity.
+- **Paid features.** Everything is in the open-source release under Apache 2.0.
+
 ## Done <span class="sg-pill sg-pill--done">Available</span> { #done data-toc-label="Done" }
 
-The first four phases are complete, and work on hardening for 1.0 has started.
+Everything below is in Signalith now. A few items, named under **Now**, arrive with the next release.
 
 **Search foundation**
 
@@ -57,6 +164,8 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A security posture dashboard and [dashboards](dashboards.md) of your own, where any
   number or row opens the events behind it.
 - [Sample data](sample-data.md) with attacks hidden in it, to try everything out.
+- A [public demo](https://demo.signalith.io) that runs read-only with the sample data,
+  and the [demo mode](demo.md) behind it for running your own.
 
 **Respond and scale**
 
@@ -136,33 +245,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
   page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
+- [Backup and restore](backup.md) of a server's files and OpenSearch data.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1,
   ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
-
-## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
-
-**A public demo**
-:   [demo.signalith.io](https://demo.signalith.io) runs Signalith read-only with the
-    sample data, so anyone can try it in a browser. You can [run one too](demo.md).
-
-**In the next release**
-:   These are finished and arrive with the next release. The Windows installer sets up
-    [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
-    Windows needs no separate install step. Signalith Agents update themselves from
-    signed releases and roll back if an update fails. With several servers,
-    [detections are spread over them](servers.md#the-background-jobs) by default. New
-    installs take syslog over TLS on port 6514 only, and
-    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) is one click away.
-
-## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
-
-**A signed Windows installer**
-:   A code-signed `.msi` (see the [code signing policy](code-signing.md)).
-
-## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
-
-**Hardening and 1.0**
-:   An outside security review, and then version 1.0.
