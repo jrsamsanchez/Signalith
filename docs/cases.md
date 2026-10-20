@@ -78,17 +78,18 @@ ticket, hand to an auditor or keep with legal records:
 Linked findings are listed without their raw event; pin an event to the timeline to
 include it. Findings that retention has already removed are listed by ID.
 
-Each report carries its own **SHA-256**, taken over its data. To check a report you
-were sent, on any computer with Signalith installed (no server needed):
+Each report carries its own **SHA-256**, taken over its data. To check that a report
+you were sent is intact, on any computer with Signalith installed (no server needed):
 
 ```
 signalith report verify signalith-case-20261020-3fa9c1d27b40e865.html
 ```
 
-It prints `Unchanged` and exits 0, or says what changed (the report's data, a piece
-of evidence, or the page itself) and exits 2. Every export is in the
-[audit log](audit.md) with the report's SHA-256, so you can also match a report to
-the export that made it.
+It prints `Intact` and exits 0, or says what changed (the report's data, a piece of
+evidence, or the page itself) and exits 2. This catches accidental or careless edits;
+it does not prove who made the report, since anyone who edits one can work its hashes
+out again. Every export is in the [audit log](audit.md) with the report's SHA-256, so
+you can match a report to the export that made it.
 
 The API is `GET /api/cases/{id}/report?format=html` or `format=json`.
 

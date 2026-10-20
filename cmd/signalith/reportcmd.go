@@ -15,11 +15,13 @@ const reportUsage = `Usage:
   signalith report verify file
 
 verify checks a case report exported from a case's page, the .json or the
-.html file: that its SHA-256 matches, that each piece of evidence matches
-the SHA-256 taken when it was pinned, and, for the page, that nothing on it
-was edited. It needs no server.
+.html file, is intact: that its SHA-256 matches, that each piece of
+evidence matches the SHA-256 taken when it was pinned, and, for the page,
+that nothing on it was edited. It needs no server. It catches accidental
+or careless edits; it does not prove who made the report, since anyone
+who edits one can work its hashes out again.
 
-It exits 0 when the report is unchanged, 2 when it was changed, and 1 when
+It exits 0 when the report is intact, 2 when it was changed, and 1 when
 the file cannot be read.`
 
 // errReportChanged is verify finding a changed report; main exits 2.
@@ -41,6 +43,6 @@ func cmdReport(args []string) error {
 		fmt.Println("CHANGED:", err)
 		return errReportChanged
 	}
-	fmt.Printf("Unchanged: case %s, made %s by %s\nSHA-256 %s\n", r.Case.ID, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy, r.SHA256)
+	fmt.Printf("Intact: case %s, made %s by %s\nSHA-256 %s\nThis checks the report is intact; it does not prove who made it.\n", r.Case.ID, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy, r.SHA256)
 	return nil
 }

@@ -95,7 +95,7 @@ footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
 
 <section class="raw">
 <h2>Report data</h2>
-<p class="meta">The report as JSON. Its SHA-256 is taken over this JSON without the sha256 field; <code>signalith report verify</code> checks it.</p>
+<p class="meta">The report as JSON. Its SHA-256 is taken over this JSON without the sha256 field; <code>signalith report verify</code> checks the report is intact; it does not prove who made it.</p>
 <pre id="report-data">{{json .}}</pre>
 </section>
 
