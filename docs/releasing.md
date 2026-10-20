@@ -46,11 +46,7 @@ version would get.
 ## Making a release
 
 1. Make sure CI is green on `main`, and `.github/releases/<version>.md` says what's new
-   and what to do before upgrading. In the same change, set the Docker quick start's
-   version (`${SIGNALITH_VERSION:-<version>}` in `deploy/docker/docker-compose.yml` and
-   `docker-compose.server.yml`) to the new one, so the tagged code runs its own image and
-   `git pull` moves quick-start users to it. Until then the quick start runs the previous
-   release, so a change to those files that needs a newer image waits for the release.
+   and what to do before upgrading.
 2. Tag and push:
 
     ```sh
@@ -61,6 +57,13 @@ version would get.
 
 3. Watch Actions > Release. When it is green, the release is on the Releases page and
    the image on GHCR.
+4. Move the Docker quick start to it: set the version in `${SIGNALITH_VERSION:-<version>}`
+   in `deploy/docker/docker-compose.yml`, `docker-compose.server.yml` and
+   `docker-compose.cluster.yml` to the new one and merge that, so `git pull` moves
+   quick-start users to the release. It waits for the release because the image must
+   exist first (CI starts the quick start from it). Until then the quick start runs the
+   previous release, so a change to those files that needs a newer image waits for this
+   step. The release's own `signalith-<version>-docker.tar.gz` always runs its own image.
 
 The first time an image is pushed, check that the package is public: the repository's
 **Packages** list > **signalith** > **Package settings** > **Change visibility** >
