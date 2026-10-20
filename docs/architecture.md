@@ -48,10 +48,23 @@ The server is one process made of packages under `internal/`. The main groups:
 | Search | `query`, `search`, `nlq`, `lookuptables` | Parses the pipe-style [query language](query-language.md), runs what it can inside OpenSearch and the rest in the server, with time and size limits. `nlq` turns plain-English questions into queries |
 | Detections | `detect`, `sigmacheck`, `splcheck`, `content`, `ruledraft` | Runs detections on a schedule, converts Sigma and other rule formats into Signalith queries, loads signed content updates |
 | Findings and response | `findings`, `risk`, `cases`, `storyline`, `investigate`, `respond`, `playbooks`, `notify`, `ticketing`, `chatops` | Groups detection hits into findings with risk scores, tracks cases, runs response playbooks (with approval), and sends notifications and tickets |
+| Context | `assets`, `intel` | Asset and identity lists (CSV parsing, matching, priority), and threat intel indicators: feed parsing (lines, CSV, STIX, format detection), the feed catalog, TAXII 2.1, guarded downloads and feeds managed on the page |
+| Dashboards | `dashboards` | Security posture metrics, custom dashboard files, and a runner that runs panels in parallel |
 | AI | `assistant`, `investigate`, `mcp` | Optional AI features using a model you choose; the MCP server is read-only |
-| Settings and secrets | `config`, `secrets`, `securefile`, `audit` | Settings with validation, secrets encrypted at rest with the master key, and a signed, chained audit log |
+| Settings and secrets | `config`, `secrets`, `securefile`, `safelog`, `audit` | Settings with validation, secrets encrypted at rest with the master key, whole-or-nothing writes of files with secrets, length limits for log values and the rotating log file, and a signed, chained audit log |
 | Cluster | `cluster`, `clusterauth`, `clusterjoin`, `clusterpki`, `clustertls`, `clustercfg`, `ospki`, `tlsauto` | Lets several servers share one OpenSearch: membership, the cluster key, the certificate authority, shared settings and the choice of which server runs background jobs |
 | Tenants | `tenants` | Keeps each tenant's data, users and settings apart in multi-tenant mode |
+
+Outside `internal/`:
+
+| Path | What it holds |
+| --- | --- |
+| `cmd/signalith` | The command line and the server's entry point, and the Windows service |
+| `web/static` | The web interface: plain JavaScript, no build step |
+| `deploy/` | Install files, among them Docker Compose, the systemd unit and the Windows installer script |
+
+To build and test Signalith, see
+[Contributing](https://github.com/jrsamsanchez/Signalith/blob/main/CONTRIBUTING.md).
 
 ## How an event becomes a finding
 
@@ -85,5 +98,5 @@ its work. See
 
 ## Built with
 
-Go (standard library crypto, no cgo of its own), OpenSearch 2.17 or 3.x, Fluent Bit,
+Go (standard library crypto, no cgo of its own), OpenSearch 2.17 or newer (3.x included), Fluent Bit,
 osquery, and plain HTML, CSS and JavaScript for the web interface with no build step.
