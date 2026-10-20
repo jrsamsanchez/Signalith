@@ -37,6 +37,8 @@ SHA-256 hash of each (see [agent-tokens.md](agent-tokens.md#how-tokens-work)).
 | `settings.yaml` (lookups folder, or `SIGNALITH_SETTINGS_FILE`) | The OpenSearch password, the AI model's API key, and the other passwords and keys (such as Okta's private key) saved on the **Settings** page | The server, and `signalith settings reset` |
 | `directory.json` (lookups folder) | The service account password of directory sign-in set up on the **Users** page | The server |
 | `intel_feeds.yaml` (lookups folder) | Passwords and header values (API keys) of feeds added on the **Threat intel** page | The server |
+| `notifications.yaml` (lookups folder) | Webhook URLs, header values, signing secrets and mail passwords of channels set on the **Notifications** page (see [notifications.md](notifications.md#where-the-settings-live)) | The server |
+| `tickets.yaml` (lookups folder) | API tokens, passwords and client secrets of connections set on the **Ticketing** page (see [ticketing.md](ticketing.md#where-the-settings-live)) | The server |
 
 An encrypted value looks like this:
 
@@ -320,7 +322,7 @@ terminal).
 A password not pasted yet needs none of this: enter the OpenSearch password and the AI
 model's API key on the **Settings** page, which keeps them encrypted in the volume, or
 give a secret to the container in a file with a `SIGNALITH_*_FILE` variable (see
-[Configuration](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#configuration)).
+[Environment variables](configuration.md#environment-variables)).
 
 ### Backing up the key
 

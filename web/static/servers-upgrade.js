@@ -13,7 +13,7 @@
 
 (function () {
   const REFRESH_MS = 15000;
-  const README = 'https://github.com/jrsamsanchez/Signalith/blob/main/README.md#linux';
+  const GUIDE = 'https://signalith.io/docs/getting-started/#linux';
   const S = { v: null, off: false, at: 0, busy: false, seq: 0, ticker: null, failed: null, first: {}, open: null, acting: {} };
 
   pageHooks.push((name) => {
@@ -96,7 +96,7 @@
   function commands(dep) {
     const linux = el('li', {}, 'Linux: ', el('code', {}, 'sudo apt update && sudo apt install --only-upgrade signalith'), ' or ', el('code', {}, 'sudo dnf upgrade signalith'),
       ', or replace the program as the ',
-      el('a', { href: README, target: '_blank', rel: 'noopener noreferrer' }, 'README says', icon('arrow-up-right', 'icon--xs'),
+      el('a', { href: GUIDE, target: '_blank', rel: 'noopener noreferrer' }, 'install guide says', icon('arrow-up-right', 'icon--xs'),
         el('span', { class: 'sr-only' }, ' (opens in a new tab)')), '.');
     const win = el('li', {}, 'Windows: run the new release’s MSI, or ', el('code', {}, 'install.ps1'), ' from the new release’s folder.');
     const docker = el('li', {}, 'Docker, in the Signalith folder: ', el('code', {}, 'git pull && docker compose -f deploy/docker/docker-compose.yml up -d'),
