@@ -187,7 +187,7 @@ type Programs struct {
 	Dir string
 	// Revocations is the server's kept revocation list, whose revoked
 	// keys the manifest may not be signed with; nil uses the built-in
-	// list alone.
+	// list alone. A kept list that cannot be read refuses the manifest.
 	Revocations *keytrust.Store
 
 	mu   sync.Mutex
@@ -344,9 +344,11 @@ func (p *Programs) Manifest() (data, sig []byte, m *agentproto.Manifest, err err
 	}
 	var list *keytrust.List
 	if p.Revocations != nil {
-		// A kept list that cannot be read is no reason to stop handing
-		// out programs: the built-in list still applies.
-		list, _, _, _ = p.Revocations.Load()
+		// A kept list that cannot be read could revoke the key the
+		// manifest is signed with, so no update is offered until it can.
+		if list, _, _, err = p.Revocations.Load(); err != nil {
+			return nil, nil, nil, fmt.Errorf("agent updates are refused until the kept signing key revocation list can be read: %w", err)
+		}
 	}
 	m, err = agentproto.VerifyManifest(agentproto.TrustedKeys(list), data, sig)
 	if errors.Is(err, agentproto.ErrNoReleaseKey) {

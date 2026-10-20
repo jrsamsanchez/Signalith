@@ -16,6 +16,7 @@
 package keytrust
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	_ "embed"
@@ -40,7 +41,7 @@ var rootKeys string
 //go:embed revoked.keys
 var revokedKeys string
 
-// Files a revocation list is published and kept as.
+// Files a revocation list and its signature are published as.
 const (
 	ListFile      = "signalith-revoked.json"
 	SignatureFile = ListFile + ".sig"
@@ -181,6 +182,12 @@ func Verify(roots []ed25519.PublicKey, data, sig []byte) (*List, error) {
 	return &l, nil
 }
 
+// keptFile is the file a Store keeps its list in: the signature line,
+// which ends in a newline, then the list. One file renamed into place, so
+// a crash or two writers at once never leave a list with another's
+// signature.
+const keptFile = "kept-revocations"
+
 // Store keeps the newest revocation list seen in a folder.
 type Store struct {
 	// Dir is the folder; it is made when a list is first kept.
@@ -189,6 +196,14 @@ type Store struct {
 	Roots []ed25519.PublicKey
 
 	mu sync.Mutex
+	// good is the newest list this Store has read or kept, so a file that
+	// goes bad later does not take a revocation back.
+	good *kept
+}
+
+type kept struct {
+	list      *List
+	data, sig []byte
 }
 
 func (s *Store) roots() []ed25519.PublicKey {
@@ -199,30 +214,59 @@ func (s *Store) roots() []ed25519.PublicKey {
 }
 
 // Load returns the list kept, checked again, with its file and signature;
-// nil and no error when none is kept.
+// nil and no error when none is kept. Once a list has been read, a file
+// that cannot be read or checked any more leaves that list in use. Before
+// that, it is an error: callers then trust no key rather than forget a
+// revocation.
 func (s *Store) Load() (*List, []byte, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.load()
+	k, err := s.load()
+	if err != nil || k == nil {
+		return nil, nil, nil, err
+	}
+	return k.list, k.data, k.sig, nil
 }
 
-func (s *Store) load() (*List, []byte, []byte, error) {
-	data, err := readMax(filepath.Join(s.Dir, ListFile), MaxList)
+func (s *Store) load() (*kept, error) {
+	if len(s.roots()) == 0 {
+		// A build with no root key takes no list, so one kept by an
+		// earlier build changes nothing.
+		return nil, nil
+	}
+	path := filepath.Join(s.Dir, keptFile)
+	b, err := readMax(path, MaxList+1024)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil, nil
+		return s.good, nil
+	}
+	var k *kept
+	if err == nil {
+		k, err = s.parse(b)
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		if s.good != nil {
+			return s.good, nil
+		}
+		return nil, fmt.Errorf("the kept revocation list %s cannot be used: %w; check that %s and its files belong to the user Signalith runs as", path, err, s.Dir)
 	}
-	sig, err := readMax(filepath.Join(s.Dir, SignatureFile), 1024)
-	if err != nil {
-		return nil, nil, nil, err
+	if s.good == nil || k.list.Issued.After(s.good.list.Issued) {
+		s.good = k
 	}
+	return s.good, nil
+}
+
+// parse reads a kept file: the signature line, then the list.
+func (s *Store) parse(b []byte) (*kept, error) {
+	i := bytes.IndexByte(b, '\n')
+	if i < 0 {
+		return nil, errors.New("the file has no signature line")
+	}
+	sig, data := b[:i+1], b[i+1:]
 	l, err := Verify(s.roots(), data, sig)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("the kept revocation list %s: %w", filepath.Join(s.Dir, ListFile), err)
+		return nil, err
 	}
-	return l, data, sig, nil
+	return &kept{list: l, data: data, sig: sig}, nil
 }
 
 // Offer checks a revocation list and keeps it when it is newer than the
@@ -233,24 +277,27 @@ func (s *Store) Offer(data, sig []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Kept as one line, whatever spacing it came with.
+	f := strings.Fields(string(sig))
+	sig = []byte(f[0] + " " + f[1] + "\n")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cur, _, _, err := s.load()
-	if err == nil && cur != nil && !l.Issued.After(cur.Issued) {
+	// A kept file that cannot be read, and no list read before it, is
+	// replaced by any good list.
+	cur, err := s.load()
+	if err == nil && cur != nil && !l.Issued.After(cur.list.Issued) {
 		return false, nil
 	}
-	// A kept list that cannot be read any more is replaced by a good one.
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return false, err
 	}
-	// The signature first: a list is only read with a signature that
-	// matches it, so a crash between the two leaves the old list or none.
-	if err := writeAtomic(filepath.Join(s.Dir, SignatureFile), sig); err != nil {
+	if err := ownLike(filepath.Dir(s.Dir), s.Dir); err != nil {
 		return false, err
 	}
-	if err := writeAtomic(filepath.Join(s.Dir, ListFile), data); err != nil {
+	if err := writeAtomic(filepath.Join(s.Dir, keptFile), slices.Concat(sig, data)); err != nil {
 		return false, err
 	}
+	s.good = &kept{list: l, data: slices.Clone(data), sig: sig}
 	return true, nil
 }
 
@@ -345,6 +392,11 @@ func writeAtomic(path string, data []byte) error {
 		}
 	}()
 	if err := tmp.Chmod(0o600); err != nil {
+		return err
+	}
+	// Run as root (sudo signalith content import-revocations), the file
+	// still belongs to the service, as the folder above Dir does.
+	if err := ownLike(filepath.Dir(filepath.Dir(path)), tmp.Name()); err != nil {
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {

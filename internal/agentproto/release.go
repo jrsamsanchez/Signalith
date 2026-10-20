@@ -44,7 +44,11 @@ const ManifestFormat = 1
 // Limits on what is read, so a broken or hostile server cannot fill memory.
 const (
 	MaxManifestBytes = 16 << 10
-	MaxProgramBytes  = 256 << 20
+	// MaxManifestAnswer is the largest ManifestAnswer read: the manifest
+	// and a revocation list, with their signatures, as JSON strings, in
+	// which a byte can take six (\u003c).
+	MaxManifestAnswer = 6*(MaxManifestBytes+keytrust.MaxList+2*1024) + 4096
+	MaxProgramBytes   = 256 << 20
 )
 
 // Manifest is a release's agent programs.

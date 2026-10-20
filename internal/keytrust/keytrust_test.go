@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -127,11 +128,74 @@ func TestStoreKeepsNewestList(t *testing.T) {
 		t.Fatal("bad signature accepted")
 	}
 	// A kept list changed on disk is not used.
-	if err := os.WriteFile(filepath.Join(s.Dir, ListFile), d1, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.Dir, keptFile), slices.Concat(s2, d1), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := s.Load(); err == nil {
+	if _, _, _, err := (&Store{Dir: s.Dir}).Load(); err == nil {
 		t.Fatal("changed kept list used")
+	}
+}
+
+// A kept list that cannot be read is an error, never no list, unless this
+// Store has read a good one before, which it keeps using.
+func TestKeptListUnreadableFailsClosed(t *testing.T) {
+	_, rootPriv := useRoot(t)
+	a, _ := newKey(t)
+	dir := filepath.Join(t.TempDir(), "keytrust")
+	s := &Store{Dir: dir}
+	d1, s1 := signedList(t, rootPriv, time.Now().UTC(), KeyID(a))
+	if kept, err := s.Offer(d1, s1); !kept || err != nil {
+		t.Fatalf("offer: %v %v", kept, err)
+	}
+	path := filepath.Join(dir, keptFile)
+	for name, b := range map[string][]byte{
+		"truncated":   slices.Concat(s1, d1)[:len(s1)+10],
+		"no newline":  []byte("garbage"),
+		"empty":       nil,
+		"other's sig": slices.Concat(Sign(rootPriv, []byte("x")), d1),
+	} {
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if l, _, _, err := (&Store{Dir: dir}).Load(); err == nil || l != nil || !strings.Contains(err.Error(), "belong to the user") {
+			t.Errorf("%s, new store: %+v %v, want an error", name, l, err)
+		}
+		if l, _, _, err := s.Load(); err != nil || !RevokedIDs(l)[KeyID(a)] {
+			t.Errorf("%s, store that read it: %+v %v, want the list read before", name, l, err)
+		}
+	}
+	// A list no newer than the one read before does not replace the bad
+	// file; a newer one does.
+	d0, s0 := signedList(t, rootPriv, time.Now().Add(-time.Hour))
+	if kept, err := s.Offer(d0, s0); kept || err != nil {
+		t.Fatalf("older list: %v %v", kept, err)
+	}
+	// With nothing read before, any good list replaces a bad file.
+	if kept, err := (&Store{Dir: dir}).Offer(d0, s0); !kept || err != nil {
+		t.Fatalf("new store, older list: %v %v", kept, err)
+	}
+	// The store that saw the newer list keeps it, whatever the file says.
+	if l, _, _, err := s.Load(); err != nil || !RevokedIDs(l)[KeyID(a)] {
+		t.Fatalf("after an older list was written: %+v %v", l, err)
+	}
+	// A build with no root key takes no list, so a bad file does not stop
+	// it.
+	if err := os.WriteFile(path, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	Roots = nil
+	if l, _, _, err := (&Store{Dir: dir}).Load(); l != nil || err != nil {
+		t.Errorf("no root key: %+v %v", l, err)
+	}
+	Roots = []ed25519.PublicKey{rootPriv.Public().(ed25519.PublicKey)}
+	// A file that cannot be opened is an error too.
+	if os.Geteuid() != 0 {
+		if err := os.Chmod(path, 0); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := (&Store{Dir: dir}).Load(); err == nil {
+			t.Error("unreadable file: no error")
+		}
 	}
 }
 

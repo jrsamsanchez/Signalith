@@ -75,6 +75,19 @@ to the content bundle. This is how the list reaches servers and agents:
 - Each release also lists the revoked key IDs in `internal/keytrust/revoked.keys`. A
   new install refuses those keys before it has seen any list.
 
+Lists only take effect in a build that has a root key in `internal/keytrust/root.keys`.
+A build without one cannot check a list, so only `revoked.keys` applies to it.
+
+If you set your own **Content update address**, the mirror must also serve
+`signalith-revoked.json` and `signalith-revoked.json.sig` next to the bundle. Otherwise
+your servers never see a new list.
+
+A server that has a kept list but cannot read it refuses all content updates and agent
+updates until it can. Forgetting a revocation would be worse. Its log and the
+Detections page say so. The usual cause is a `keytrust/` folder, or a file in it, that
+does not belong to the user Signalith runs as. Fix the owner, for example with
+`sudo chown -R signalith: /var/lib/signalith/keytrust`, or import the list again.
+
 To see which keys a server refuses:
 
 ```sh
@@ -144,6 +157,9 @@ key and can change the repository's secrets.
    ```sh
    sudo signalith content import-revocations signalith-revoked.json
    ```
+
+   Run as root, the command gives the files it keeps to the owner of the state folder,
+   so the service can still read them.
 
 5. **Make a new key.** Put it in the secret, and add its public key to the trusted
    file. Until a release trusts the new key, sign the next bundle or agent release

@@ -71,23 +71,23 @@ type Status struct {
 // content in use.
 var ErrNotNewer = errors.New("the content in use is as new or newer")
 
-func (u *Updater) keys() []ed25519.PublicKey {
+// keys are the keys an update may be signed with, and the key IDs
+// revoked, built in and by the kept list. A kept list that cannot be read
+// is an error: no key is trusted rather than a revoked one.
+func (u *Updater) keys() ([]ed25519.PublicKey, map[string]bool, error) {
+	var list *keytrust.List
+	if u.Revocations != nil {
+		var err error
+		if list, _, _, err = u.Revocations.Load(); err != nil {
+			return nil, nil, fmt.Errorf("content updates are refused until the kept signing key revocation list can be read: %w", err)
+		}
+	}
 	base := u.Keys
 	if base == nil {
 		base = TrustedKeys()
 	}
-	return keytrust.Trusted(base, u.revoked())
-}
-
-// revoked are the key IDs revoked, built in and by the kept list.
-func (u *Updater) revoked() map[string]bool {
-	var list *keytrust.List
-	if u.Revocations != nil {
-		// A kept list that cannot be read leaves the built-in list; Start
-		// logs it.
-		list, _, _, _ = u.Revocations.Load()
-	}
-	return keytrust.RevokedIDs(list)
+	revoked := keytrust.RevokedIDs(list)
+	return keytrust.Trusted(base, revoked), revoked, nil
 }
 
 func (u *Updater) log() *slog.Logger {
@@ -104,7 +104,11 @@ func (u *Updater) Status() Status {
 	st := u.status
 	st.Version, st.Updated = detect.ContentVersion()
 	st.Builtin = detect.BuiltinContentVersion()
-	st.Ready = len(u.keys()) > 0
+	keys, _, err := u.keys()
+	st.Ready = len(keys) > 0
+	if err != nil && st.LastError == "" {
+		st.LastError = err.Error()
+	}
 	return st
 }
 
@@ -112,12 +116,15 @@ func (u *Updater) Status() Status {
 // newer than the packs built into Signalith. A problem with it is logged
 // and the built-in packs are used.
 func (u *Updater) Start() {
-	if u.Revocations != nil {
-		if _, _, _, err := u.Revocations.Load(); err != nil {
-			u.log().Error("the kept signing key revocation list cannot be read; only the keys this build revokes are refused until a good one is downloaded", "err", err)
-		}
+	keys, _, err := u.keys()
+	if err != nil {
+		u.log().Error("the installed content update is not used and no update is taken; using the rules built into Signalith", "err", err)
+		u.mu.Lock()
+		u.status.LastError = err.Error()
+		u.mu.Unlock()
+		return
 	}
-	b, err := Installed(u.Dir, u.keys())
+	b, err := Installed(u.Dir, keys)
 	if err != nil {
 		u.log().Error("the installed content update cannot be used; using the rules built into Signalith", "dir", u.Dir, "err", err)
 		u.mu.Lock()
@@ -180,8 +187,12 @@ func (u *Updater) Install(data, sig []byte) (Status, error) {
 }
 
 func (u *Updater) install(data, sig []byte) error {
-	b, err := Read(u.keys(), data, sig)
-	err = keytrust.Explain(err, sig, u.revoked())
+	keys, revoked, err := u.keys()
+	if err != nil {
+		return err
+	}
+	b, err := Read(keys, data, sig)
+	err = keytrust.Explain(err, sig, revoked)
 	if err != nil {
 		return err
 	}
@@ -238,7 +249,11 @@ func (u *Updater) check(ctx context.Context, url string) error {
 		// in use; it is no reason to skip the update.
 		u.log().Warn("the revocation list could not be checked", "err", err)
 	}
-	if len(u.keys()) == 0 {
+	keys, _, err := u.keys()
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
 		return ErrNoKeys
 	}
 	sig, err := u.get(ctx, url+".sig", 4096)
@@ -335,7 +350,11 @@ func (u *Updater) checkRevocations(ctx context.Context, bundleURL string) error 
 		}
 	}
 	u.log().Warn("a new signing key revocation list is in use", "revoked", strings.Join(ids, ","))
-	if _, err := Installed(u.Dir, u.keys()); err != nil {
+	keys, _, err := u.keys()
+	if err != nil {
+		return err
+	}
+	if _, err := Installed(u.Dir, keys); err != nil {
 		u.log().Error("the installed content update is no longer trusted; using the rules built into Signalith", "err", err)
 		if _, err := u.Remove(); err != nil {
 			return err

@@ -318,3 +318,46 @@ func TestRevokedKeyIsRefused(t *testing.T) {
 		t.Fatal("installed after a restart")
 	}
 }
+
+// A kept revocation list that cannot be read refuses every update, rather
+// than forget the keys it revokes.
+func TestUnreadableRevocationListRefusesUpdates(t *testing.T) {
+	t.Cleanup(func() { detect.UsePacks(nil, nil, "") })
+	rootPub, rootPriv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRoots := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = oldRoots })
+
+	priv, keys := testKey(t)
+	data, sig := bundle(t, priv, time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC))
+	list, err := json.Marshal(keytrust.List{Format: keytrust.Format, Issued: time.Now(),
+		Revoked: []keytrust.RevokedKey{{ID: KeyID(keys[0]), Note: "leaked"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := filepath.Join(t.TempDir(), "keytrust")
+	if kept, err := (&keytrust.Store{Dir: trust}).Offer(list, keytrust.Sign(rootPriv, list)); !kept || err != nil {
+		t.Fatalf("offer: %v %v", kept, err)
+	}
+	entries, err := os.ReadDir(trust)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("kept files: %v %v", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(trust, entries[0].Name()), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u := &Updater{Dir: filepath.Join(t.TempDir(), "content"), Keys: keys, Revocations: &keytrust.Store{Dir: trust}}
+	u.Start()
+	if _, err := u.Install(data, sig); err == nil || !strings.Contains(err.Error(), "revocation list") {
+		t.Fatalf("install = %v, want refused for the unreadable list", err)
+	}
+	if st := u.Status(); st.Ready || !strings.Contains(st.LastError, "revocation list") {
+		t.Fatalf("status = %+v", st)
+	}
+	if _, updated := detect.ContentVersion(); updated {
+		t.Fatal("an update is in use")
+	}
+}

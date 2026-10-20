@@ -80,7 +80,7 @@ func TestContentRevoke(t *testing.T) {
 	if err := runContent([]string{"revocations", "-c", path}, &out); err != nil || !strings.Contains(out.String(), "0123456789ab") {
 		t.Fatalf("revocations: %v\n%s", err, out.String())
 	}
-	if _, err := os.Stat(filepath.Join(state, "keytrust", keytrust.ListFile)); err != nil {
-		t.Fatal(err)
+	if l, _, _, err := (&keytrust.Store{Dir: filepath.Join(state, "keytrust")}).Load(); err != nil || l == nil {
+		t.Fatalf("kept list: %+v %v", l, err)
 	}
 }

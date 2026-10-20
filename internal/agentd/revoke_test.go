@@ -115,7 +115,7 @@ func TestUpdaterRefusesRevokedKey(t *testing.T) {
 	}
 	// The updater keeps its own copy where the agent cannot write, so the
 	// agent dropping the list does not undo it.
-	if b, _ := os.ReadFile(filepath.Join(p.rootTrustDir(), keytrust.ListFile)); !bytes.Equal(b, list) {
+	if _, b, _, _ := (&keytrust.Store{Dir: p.rootTrustDir()}).Load(); !bytes.Equal(b, list) {
 		t.Fatal("the updater did not keep the list")
 	}
 	for _, f := range []string{keytrust.ListFile, keytrust.SignatureFile} {
@@ -126,5 +126,70 @@ func TestUpdaterRefusesRevokedKey(t *testing.T) {
 	}
 	if err := c.u.Install(context.Background()); err == nil || !strings.Contains(err.Error(), "revoked") {
 		t.Fatalf("without the staged list: err = %v, want revoked", err)
+	}
+}
+
+// breakKeptList keeps a list in dir and then breaks the file it is kept in.
+func breakKeptList(t *testing.T, root ed25519.PrivateKey, dir string) {
+	t.Helper()
+	list, sig := revocationList(t, root, time.Now())
+	if _, err := (&keytrust.Store{Dir: dir}).Offer(list, sig); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("kept files: %v %v", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, entries[0].Name()), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A kept revocation list that cannot be read refuses updates rather than
+// forget a revoked key.
+func TestAgentRefusesUpdatesWithUnreadableList(t *testing.T) {
+	root := rootKey(t)
+	priv := releaseKey(t)
+	t.Setenv("AGENTD_FAKE_AGENT_VERSION", "2.0.0")
+	prog, sum := fakeProgram(t, "2.0.0")
+	data, sig := signedManifest(t, priv, "2.0.0", sum)
+	c := newStageCase(t, agentproto.Update{Version: "2.0.0", SHA256: sum}, prog, data, sig)
+	breakKeptList(t, root, c.agent.Paths.trustDir())
+	c.agent.checkUpdate(context.Background())
+	if comp := c.component(); comp == nil || comp.State != agentproto.StateFailed || !strings.Contains(comp.Error, "revocation list") {
+		t.Fatalf("component = %+v, want failed for the unreadable list", comp)
+	}
+	if c.started != 0 || c.srv.gets != 0 {
+		t.Fatal("an update was fetched or handed to the updater")
+	}
+}
+
+func TestUpdaterRefusesWithUnreadableList(t *testing.T) {
+	root := rootKey(t)
+	priv := releaseKey(t)
+	c := newUpdaterCase(t, priv, "2.0.0")
+	breakKeptList(t, root, c.u.Paths.rootTrustDir())
+	if err := c.u.Install(context.Background()); err == nil || !strings.Contains(err.Error(), "revocation list") {
+		t.Fatalf("err = %v, want refused for the unreadable list", err)
+	}
+	if !bytes.Equal(c.installed(t), c.old) {
+		t.Fatal("the program was replaced")
+	}
+}
+
+// The largest answer a server can send fits what the agent reads.
+func TestManifestAnswerFits(t *testing.T) {
+	ans := agentproto.ManifestAnswer{
+		Manifest:            strings.Repeat("<", agentproto.MaxManifestBytes),
+		Signature:           strings.Repeat("<", 1024),
+		Revocation:          strings.Repeat("<", keytrust.MaxList),
+		RevocationSignature: strings.Repeat("<", 1024),
+	}
+	b, err := json.Marshal(ans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > agentproto.MaxManifestAnswer {
+		t.Fatalf("answer is %d bytes, the agent reads %d", len(b), agentproto.MaxManifestAnswer)
 	}
 }

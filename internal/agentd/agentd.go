@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 // Agent is one run of the agent.
@@ -70,6 +71,8 @@ type Agent struct {
 	updateTried map[string]time.Time
 	// runUpdater starts the updater; nil is startUpdater. Tests replace it.
 	runUpdater func() error
+	// trust keeps the revocation list; see trustStore.
+	trust *keytrust.Store
 
 	mu        sync.Mutex
 	update    *agentproto.Component
