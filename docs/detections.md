@@ -69,6 +69,9 @@ Rules of thumb:
 - Make `lookback` at least as long as `schedule`, or events between runs are missed.
   A little overlap is fine; throttling keeps overlapping runs from raising duplicates.
 - Without `throttle.fields`, the whole result row is the throttle key.
+- Without `throttle.window`, a rule whose `lookback` is longer than its `schedule`
+  holds each row back for `lookback`, so a row that overlapping runs both see raises
+  one finding.
 - Views that count a detection across many findings, such as **Top detections firing**
   on the posture dashboard, show `name`. Without one, they show `title` with each
   `$field$` and the word that leads to it left out ("Brute force against $dest$ from
