@@ -96,6 +96,17 @@ sudo dnf install ./signalith-0.3.0-1.x86_64.rpm
 
 ## Windows
 
+!!! note "Before you start"
+    - Windows Server 2019 or later, or Windows 10/11, 64-bit; 8 GB of memory or more is best
+      (OpenSearch takes a quarter of it, from 1 to 8 GB).
+    - About 3.5 GB free on the system drive for the install, plus room for your data.
+    - The installer downloads OpenSearch from `https://artifacts.opensearch.org` (port 443).
+      It uses the computer's proxy setting (`netsh winhttp show proxy`); to name one, add
+      `OPENSEARCHPROXY=proxy.example.com:3128`. A proxy that needs a password is not supported:
+      use `OPENSEARCHZIP` instead (below).
+    - No internet access at all: download the OpenSearch `.zip` on another computer and
+      install with `OPENSEARCHZIP` (below).
+
 Double-click the `.msi` and follow the steps (it asks for administrator rights). From
 0.3.1 on, it installs OpenSearch as well, which it downloads (about 1 GB), so the first
 install takes a few minutes. With 0.3.0, install OpenSearch first and give its address
@@ -186,6 +197,15 @@ over, and install with:
 ```powershell
 msiexec /i signalith-<version>-x64.msi OPENSEARCHZIP=C:\Downloads\opensearch-3.9.0-windows-x64.zip
 ```
+
+Behind a proxy that the computer's own setting (`netsh winhttp show proxy`) does not name:
+
+```powershell
+msiexec /i signalith-0.1.0-x64.msi OPENSEARCHPROXY=proxy.example.com:3128
+```
+
+The installer first checks there is room for the download and the program, and stops
+before changing anything when there is not.
 
 `signalith opensearch status`, in PowerShell as Administrator, shows what is installed.
 OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
