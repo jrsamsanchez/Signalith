@@ -85,6 +85,8 @@ func TestOTelWindows(t *testing.T) {
 	m := otelConfig(t, a)
 	if dig(m, "receivers", "windowseventlog/security", "channel") != "Security" ||
 		dig(m, "receivers", "windowseventlog/system", "channel") != "System" ||
+		dig(m, "receivers", "windowseventlog/defender", "channel") != "Microsoft-Windows-Windows Defender/Operational" ||
+		dig(m, "receivers", "windowseventlog/defender", "ignore_channel_errors") != true ||
 		dig(m, "receivers", "windowseventlog/application", "channel") != "Application" ||
 		dig(m, "receivers", "windowseventlog/codeintegrity", "channel") != "Microsoft-Windows-CodeIntegrity/Operational" ||
 		dig(m, "receivers", "windowseventlog/firewall", "channel") != "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall" ||
@@ -107,6 +109,9 @@ func TestOTelWindows(t *testing.T) {
 	}
 	if dig(m, "extensions", "file_storage/signalith", "directory") != otelWindowsState {
 		t.Errorf("storage = %v", dig(m, "extensions"))
+	}
+	if !strings.Contains(strings.Join(a.Steps, " "), ".msi, 0.129 or later") {
+		t.Errorf("Windows Collector older than 0.129 stops without Defender: %q", a.Steps)
 	}
 	if !strings.Contains(strings.Join(a.Steps, " "), "EnableScriptBlockLogging") {
 		t.Errorf("no script block logging step: %q", a.Steps)
