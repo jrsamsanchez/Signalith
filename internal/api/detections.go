@@ -697,6 +697,8 @@ func (s *Server) handleCreateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.audit(r, "finding.create: finding raised by hand", "target", f.ID, "title", f.Title, "severity", f.Severity,
+		"query", safelog.Cut(f.Query, 500))
 	writeJSON(w, http.StatusCreated, f)
 }
 

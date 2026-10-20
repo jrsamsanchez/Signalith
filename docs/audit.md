@@ -57,6 +57,7 @@ action and what its line holds:
 
 | Action | When | Holds |
 | --- | --- | --- |
+| `finding.create` | A finding raised by hand | the finding (`target`), its `title`, `severity` and `query` (up to 500 characters) |
 | `finding.update` | A finding's status, owner, severity or disposition changed, or a comment was added | the finding (`target`), its detection, `changes` (such as `status: new -> closed`), `commented` |
 | `finding.bulk_update` | Several findings changed at once | one line for the request: the `update`, how many were `updated` and `failed`, and the first 50 `findings` |
 | `finding.suppress` | **Don't alert on this again** from a finding | the detection (`target`), the exception, the `finding`, its `match`, `until` and `comment`; the finding's own change is a `finding.update` line |
@@ -66,6 +67,7 @@ action and what its line holds:
 | `case.close_findings` | A case closed with its findings | the case, the `status` and `disposition` set, how many were `closed` and `failed`, and the first 50 |
 | `case.finding_add`, `case.finding_remove` | Findings linked to or taken out of a case | the case and the findings |
 | `case.entry_add`, `case.entry_remove` | A note, search or event added to or removed from a case's timeline | the case, the `entry` and its `kind`; on removal also who added it and when (`added_by`, `added`) and its text or query (up to 500 characters each) |
+| `case.ticket_open` | A ticket opened for a case in a ticketing system (or queued for the server that opens them) | the case (`target`), the `connection`, its `system`, the `ticket` key, and whether it was `queued` |
 | `case.entity_add` | An entity added to a case | the case and the `entity` |
 | `intel.indicator_add`, `intel.indicator_delete` | An indicator added by hand or deleted | the value (`target`), its `type`, `source`, `weight`, `expires`, `tags` and `indicator` ID |
 | `intel.indicator_upload` | Indicators uploaded from a file | how many, how many of each type, and the first 20 values |

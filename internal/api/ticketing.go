@@ -464,6 +464,8 @@ func (s *Server) handleCaseTicketCreate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.audit(r, "case.ticket_open: ticket opened for an investigation", "target", caseID, "connection", l.ConnectionName,
+		"connection_id", l.Connection, "system", l.System, "ticket", l.Key, "queued", !here)
 	if !here {
 		writeJSON(w, http.StatusAccepted, map[string]any{"ticket": linkView(*l), "queued": true})
 		return

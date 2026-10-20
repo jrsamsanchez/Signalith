@@ -47,6 +47,11 @@ func TestTriageAndCaseChangesAreAudited(t *testing.T) {
 		}
 	}
 
+	if code, out := do(t, ts, "POST", "/api/findings", `{"title":"Odd logon","severity":"low","query":"user=bob"}`, true); code != 201 {
+		t.Fatalf("manual finding = %d %v", code, out)
+	}
+	wantAudit(t, &logs, "finding.create:", `title="Odd logon"`, "severity=low", `query="user=bob"`)
+
 	if code, out := do(t, ts, "PATCH", "/api/findings/f-1", `{"status":"closed","disposition":"false_positive","comment":"lab"}`, true); code != 200 {
 		t.Fatalf("patch = %d %v", code, out)
 	}
