@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -42,9 +43,32 @@ import (
 // back. When a folder is changed in the settings, what the new one holds
 // is a starting point too, as the record names files by ID and not by
 // folder.
+//
+// With Mirror, one pass that would remove many shared items at once (see
+// massDelete) is refused, as a folder found empty (a volume made again,
+// an rsync --delete from an empty folder) would otherwise delete the
+// whole library on every server: the removals are not pushed and the
+// files are written back. An AllowDeleteFile in the folder allows it
+// once.
 
 // SeenFileName is the inbox's record of the files, in the state folder.
 const SeenFileName = "library-seen.json"
+
+// AllowDeleteFile, in the detections or the dashboards folder, allows
+// the next pass of Mirror to remove many shared items at once. It is
+// removed once used.
+const AllowDeleteFile = "allow-mass-delete"
+
+// massDelete reports whether removing gone of the total files the record
+// holds is too many for one pass: all of them, or more than 20 and more
+// than half, once there are 3 or more.
+func massDelete(gone, total int) bool {
+	return gone >= 3 && (gone == total || gone > 20 && 2*gone > total)
+}
+
+// refusedFor is how long a refused mass removal stays a problem of this
+// server, for the Servers page.
+const refusedFor = 24 * time.Hour
 
 // Inbox keeps one server's folders and the shared library in step.
 type Inbox struct {
@@ -65,6 +89,23 @@ type Inbox struct {
 	seen   *seenFile
 	kick   chan struct{}
 	kickMu sync.Mutex
+	// refused is the last mass removal refused, for Problems.
+	refused atomic.Pointer[refusal]
+}
+
+type refusal struct {
+	at   time.Time
+	text string
+}
+
+// Problems says what the Servers page should show about the folders:
+// a mass removal refused in the last day.
+func (in *Inbox) Problems() []string {
+	r := in.refused.Load()
+	if r == nil || in.Files.now().Sub(r.at) > refusedFor {
+		return nil
+	}
+	return []string{r.text}
 }
 
 type seenFile struct {
@@ -330,6 +371,7 @@ func (in *Inbox) push(ctx context.Context, seen *seenFile, files map[string]*fil
 		}
 	}
 	mirror := in.Mirror != nil && in.Mirror()
+	var gone []string
 	for name := range seen.Files {
 		if _, ok := files[name]; ok {
 			continue
@@ -338,6 +380,29 @@ func (in *Inbox) push(ctx context.Context, seen *seenFile, files map[string]*fil
 			delete(seen.Files, name)
 			continue
 		}
+		gone = append(gone, name)
+	}
+	log := in.Files.log()
+	// allowed is the AllowDeleteFiles used, removed once the removal is
+	// shared.
+	var allowed []string
+	if massDelete(len(gone), len(seen.Files)) {
+		if allowed = in.allowFiles(); len(allowed) > 0 {
+			log.Warn("removing many detections and dashboards from the shared library, as their files are gone from this server's folders and a file allowed it",
+				"audit", true, "by", "file on "+in.Files.Node, "files", len(gone), "of", len(seen.Files), "allowed_by", allowed[0])
+			in.refused.Store(nil)
+		} else {
+			text := fmt.Sprintf("Refused to remove %d of the %d shared detection and dashboard files at once. Their files are gone from this server's folders "+
+				"(%s), which looks like an empty or replaced folder rather than a change, so nothing was removed from the shared library and the files were written back. "+
+				"To remove them on purpose, put a file named %s in the detections folder and remove the files again.",
+				len(gone), len(seen.Files), in.folders(), AllowDeleteFile)
+			log.Warn("refused to remove many detections and dashboards from the shared library: their files are gone from this server's folders; nothing was removed",
+				"audit", true, "by", "file on "+in.Files.Node, "files", len(gone), "of", len(seen.Files), "folders", in.folders(), "allow_file", AllowDeleteFile)
+			in.refused.Store(&refusal{at: in.Files.now(), text: text})
+			gone = nil
+		}
+	}
+	for _, name := range gone {
 		kind, id := kindOf(name)
 		if kind == DashboardKind {
 			boards[id] = append(boards[id], change{name, nil})
@@ -345,7 +410,6 @@ func (in *Inbox) push(ctx context.Context, seen *seenFile, files map[string]*fil
 			dets[id] = append(dets[id], change{name, nil})
 		}
 	}
-	log := in.Files.log()
 	by := "file on " + in.Files.Node
 	from := stamp(FromFile, in.Files.Node, in.Files.now())
 	// done records what was pushed, or could not be (a file that is not
@@ -445,7 +509,40 @@ func (in *Inbox) push(ctx context.Context, seen *seenFile, files map[string]*fil
 			log.Info("pushed dashboard files changed in the folder to the shared library", "count", len(ids))
 		}
 	}
+	if len(errs) == 0 {
+		for _, p := range allowed {
+			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				log.Warn("could not remove the file that allowed removing many detections and dashboards; remove it by hand", "file", p, "err", err)
+			}
+		}
+	}
 	return errors.Join(errs...)
+}
+
+// allowFiles lists the AllowDeleteFiles in the folders.
+func (in *Inbox) allowFiles() []string {
+	var out []string
+	for _, dir := range []string{dirOf(in.Files.DetectionsDir), dirOf(in.Files.DashboardsDir)} {
+		if dir == "" {
+			continue
+		}
+		p := filepath.Join(dir, AllowDeleteFile)
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// folders names the detections and dashboards folders, for messages.
+func (in *Inbox) folders() string {
+	var out []string
+	for _, dir := range []string{dirOf(in.Files.DetectionsDir), dirOf(in.Files.DashboardsDir)} {
+		if dir != "" && !slices.Contains(out, dir) {
+			out = append(out, dir)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 // sameDetection reports whether two bodies hold the same detection and

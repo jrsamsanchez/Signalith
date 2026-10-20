@@ -451,7 +451,8 @@ var Registry = []Setting{
 	{Key: "detections.sync", Scope: ScopeServer, Section: "detections", Label: "Detection and dashboard folders", Type: TypeChoice, SharedOnly: true,
 		Help: "The servers of a cluster share one set of detections and dashboards; this server's folders are an inbox for them. " +
 			"Inbox: a file added or changed in a folder, such as by a git pull, is shared with every server, and removing a file changes nothing. " +
-			"Mirror: removing a file also removes that detection or dashboard from every server.",
+			"Mirror: removing a file also removes that detection or dashboard from every server. " +
+			"Removing all files or many at once (an emptied folder) is refused until a file named allow-mass-delete is put in the folder.",
 		Choices: []Choice{{SyncInbox, "Inbox"}, {SyncMirror, "Mirror"}}, EmptyMeans: SyncInbox},
 	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",

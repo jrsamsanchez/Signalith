@@ -817,6 +817,16 @@ are an **inbox**:
   **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
   have a file removed from its folders remove that detection or dashboard from every
   server.
+- **Mirror never empties the library by accident.** A folder that is missing is not taken
+  for an empty one. And when one look at the folders would remove many shared files at
+  once (all of them, once there are 3 or more, or more than 20 that are over half of
+  them), as an empty volume or an `rsync --delete` from an empty folder would, the
+  server removes nothing, writes the files back, and says so in its log (an audit
+  record) and on the Servers page for a day. Removing a few files at a time works as
+  usual. To remove many on purpose, put an empty file named `allow-mass-delete` in the
+  server's detections (or dashboards) folder and remove the files: the next look
+  removes them from every server and deletes `allow-mass-delete`, so it allows one
+  removal only.
 
 Each server records what it last saw of its files in `library-seen.json` in its state
 folder. Content pack updates stay per server (`detections.content_updates`), so give

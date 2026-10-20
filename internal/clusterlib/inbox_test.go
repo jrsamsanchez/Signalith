@@ -4,10 +4,12 @@
 package clusterlib
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
@@ -314,5 +316,148 @@ func TestItemNamesStayInTheFolders(t *testing.T) {
 	}
 	if p, err := in.pathOf("detections/state/my-rule.yaml"); err != nil || p != filepath.Join(a.detDir, detect.StateDir, "my-rule.yaml") {
 		t.Fatalf("pathOf: %q %v", p, err)
+	}
+}
+
+// libraryOf shares n custom rules and a dashboard from A, and returns B's
+// mirror inbox once it wrote them into B's folders.
+func libraryOf(t *testing.T, n int) (a, b *server, in *Inbox) {
+	t.Helper()
+	_, a, b = pair(t)
+	for i := range n {
+		if err := a.lib.PutIf(ctx, "alice", custom(fmt.Sprintf("rule-%d", i), "Shared"), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.boards.PutIf(ctx, "alice", board("ops", "Ops"), ""); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	in = b.inbox(true)
+	for range 2 {
+		if err := in.Sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(in.Problems()) != 0 {
+		t.Fatalf("problems before anything was removed: %q", in.Problems())
+	}
+	return a, b, in
+}
+
+// emptyFolders removes every file from s's folders, leaving the folders.
+func emptyFolders(t *testing.T, s *server) {
+	t.Helper()
+	for _, dir := range []string{s.detDir, s.dbDir} {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMirrorRefusesToEmptyTheLibrary(t *testing.T) {
+	a, b, in := libraryOf(t, 5)
+	// A volume made again: the folders are there, and empty.
+	emptyFolders(t, b)
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if n := len(a.docs.Detections().List()); n != 5 {
+		t.Fatalf("%d detections left of 5", n)
+	}
+	if !a.boards.Exists("ops") {
+		t.Fatal("an empty folder removed the shared dashboard")
+	}
+	p := in.Problems()
+	if len(p) != 1 || !strings.Contains(p[0], "Refused to remove 6 of the 6") || !strings.Contains(p[0], AllowDeleteFile) {
+		t.Fatalf("problems %q", p)
+	}
+	// The files were written back, and the next pass removes nothing.
+	if _, err := os.Stat(filepath.Join(b.detDir, "rule-0.yaml")); err != nil {
+		t.Fatalf("the files were not written back: %v", err)
+	}
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if n := len(a.docs.Detections().List()); n != 5 {
+		t.Fatalf("%d detections left of 5", n)
+	}
+	// The problem stays for a day.
+	in.Files.Now = func() time.Time { return time.Now().Add(refusedFor + time.Hour) }
+	if p := in.Problems(); len(p) != 0 {
+		t.Fatalf("problems a day later: %q", p)
+	}
+}
+
+func TestMirrorRemovesAFewFiles(t *testing.T) {
+	a, b, in := libraryOf(t, 5)
+	for _, id := range []string{"rule-0", "rule-1"} {
+		if err := os.Remove(filepath.Join(b.detDir, id+".yaml")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if n := len(a.docs.Detections().List()); n != 3 {
+		t.Fatalf("%d detections left, want 3", n)
+	}
+	if p := in.Problems(); len(p) != 0 {
+		t.Fatalf("problems %q", p)
+	}
+}
+
+func TestMirrorAllowFileRemovesAllOnce(t *testing.T) {
+	a, b, in := libraryOf(t, 5)
+	emptyFolders(t, b)
+	allow := filepath.Join(b.detDir, AllowDeleteFile)
+	writeFile(t, allow, nil)
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if n := len(a.docs.Detections().List()); n != 0 {
+		t.Fatalf("%d detections left with the allow file", n)
+	}
+	if a.boards.Exists("ops") {
+		t.Fatal("the dashboard was kept with the allow file")
+	}
+	if _, err := os.Stat(allow); !os.IsNotExist(err) {
+		t.Fatalf("the allow file was not removed once used: %v", err)
+	}
+	// Once only: the next mass removal is refused again.
+	for i := range 4 {
+		if err := a.lib.PutIf(ctx, "alice", custom(fmt.Sprintf("again-%d", i), "Shared"), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.cycle()
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	emptyFolders(t, b)
+	if err := in.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if n := len(a.docs.Detections().List()); n != 4 {
+		t.Fatalf("%d detections left of 4 after the allow file was used", n)
+	}
+}
+
+func TestMassDelete(t *testing.T) {
+	for _, c := range []struct {
+		gone, total int
+		want        bool
+	}{{0, 0, false}, {2, 2, false}, {3, 3, true}, {3, 100, false}, {20, 30, false}, {21, 40, true}, {21, 42, false}, {50, 60, true}} {
+		if got := massDelete(c.gone, c.total); got != c.want {
+			t.Errorf("massDelete(%d, %d) = %v", c.gone, c.total, got)
+		}
 	}
 }
