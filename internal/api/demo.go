@@ -93,6 +93,9 @@ var demoOffRoutes = []demoOffRoute{
 	{path: "intel/feeds", writes: true}, {path: "intel/catalog", writes: true}, {path: "intel/taxii"},
 	{path: "auth/oidc"}, {path: "auth/saml"}, {path: "auth/scim"}, {path: "auth/directory", writes: true},
 	{path: "settings/test"}, {path: "tenants", writes: true},
+	// Agents send nothing to a demo; their tokens name who made them and
+	// where they were used from.
+	{path: "agents"}, {path: "agent-tokens"},
 }
 
 var errDemoOff = errors.New("This is turned off in the public demo.")

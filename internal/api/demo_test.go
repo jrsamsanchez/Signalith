@@ -341,3 +341,32 @@ func TestSearchUserPerDemoSession(t *testing.T) {
 		t.Errorf("user's search user = %q, want alice", got)
 	}
 }
+
+// A visitor may run a notebook shared for editing, but the run is not
+// kept in it, and the page offers no editing or copying.
+func TestDemoVisitorRunsAreNotSaved(t *testing.T) {
+	ts, _ := newDemoServer(t, "127.0.0.0/8", "::1/128")
+	code, body, _, _ := nb(t, ts, "admin", "POST", "/api/notebooks", `{"from":"starter-powershell"}`, "")
+	if code != 201 {
+		t.Fatalf("copy starter = %d %v", code, body)
+	}
+	n := notebookOf(t, body)
+	path := "/api/notebooks/" + n.ID
+	if code, body, _, _ = nb(t, ts, "admin", "PUT", path, putBody(n, func(m map[string]any) { m["sharing"] = "edit" }), ""); code != 200 {
+		t.Fatalf("share = %d %v", code, body)
+	}
+	c := demoVisit(t, ts)
+	code, body, _ = call(t, ts, "GET", path, "", "", "", c)
+	if can, _ := body["can"].(map[string]any); code != 200 || can["edit"] != false || can["copy"] != false || can["manage"] != false {
+		t.Errorf("visitor sees %d %v", code, body)
+	}
+	if code, body, _ = call(t, ts, "POST", path+"/run", "", "", "", c); code != 200 || body["saved"] != false {
+		t.Errorf("visitor run = %d %v", code, body)
+	}
+	_, body, _, _ = nb(t, ts, "admin", "GET", path, "", "")
+	for _, cell := range notebookOf(t, body).Cells {
+		if cell.Result != nil {
+			t.Errorf("the visitor's run was kept in cell %s: %+v", cell.ID, cell.Result)
+		}
+	}
+}

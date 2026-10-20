@@ -48,7 +48,7 @@ Whatever the other settings say, a demo:
 
 | Off | How |
 | --- | --- |
-| Agents, HEC, OTLP, osquery and network sensors | The agent port is not opened, and these routes answer `403` (`demo_off`) on the web port too. |
+| Agents and their tokens, HEC, OTLP, osquery and network sensors | The agent port is not opened, and these routes answer `403` (`demo_off`) on the web port too. |
 | Syslog | No syslog port is opened. |
 | Microsoft 365 and Okta | Their logs are not read. |
 | The AI assistant | No AI model is ever used: Ask answers offline, and Investigate with AI is off. |
