@@ -452,3 +452,25 @@ func TestFluentBitLinuxInstallStep(t *testing.T) {
 		}
 	}
 }
+
+// Every host configuration caps the buffer Fluent Bit keeps on disk while
+// Signalith cannot be reached (ASI-01): without it, a long outage or a
+// server that moved fills the computer's disk.
+func TestFluentBitHostBufferIsCapped(t *testing.T) {
+	for _, o := range []Options{
+		{OS: "linux", LinuxSource: "file"},
+		{OS: "linux", LinuxSource: "journal"},
+		{OS: "linux", LinuxSource: "file", Managed: true},
+		{OS: "windows"},
+		{OS: "windows", Managed: true},
+	} {
+		o.ServerURL, o.Token, o.OwnCA = "https://siem.example.com:7779", "tok-0123456789abcdef", true
+		a, err := Generate(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(a.Config, "[OUTPUT]"); n == 0 || strings.Count(a.Config, line("storage.total_limit_size", "1G")) != n {
+			t.Errorf("%s %s managed=%v: not every output caps its buffer at 1G:\n%s", o.OS, o.LinuxSource, o.Managed, a.Config)
+		}
+	}
+}

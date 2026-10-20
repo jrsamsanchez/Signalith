@@ -65,9 +65,9 @@ var (
 	docUsersLocal      = DocLink{File: "users.md", Anchor: "managing-local-users"}
 	docUsersDirectory  = DocLink{File: "users.md", Anchor: "set-it-up"}
 	docUsersMFA        = DocLink{File: "users.md", Anchor: "two-step-sign-in"}
-	docReadmeLinux     = DocLink{File: "README.md", Anchor: "linux"}
-	docReadmeWindows   = DocLink{File: "README.md", Anchor: "windows"}
-	docReadmeDocker    = DocLink{File: "README.md", Anchor: "docker-evaluation"}
+	docStartLinux      = DocLink{File: "getting-started.md", Anchor: "linux"}
+	docStartWindows    = DocLink{File: "getting-started.md", Anchor: "windows"}
+	docDockerStart     = DocLink{File: "docker.md", Anchor: "start-it"}
 	docServersIdentity = DocLink{File: "servers.md", Anchor: "identity"}
 	docServersCRL      = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
 	docSecSyslog       = DocLink{File: "security.md", Anchor: "syslog"}
@@ -86,8 +86,8 @@ func AllDocs() []DocLink {
 	return []DocLink{docHTTPSUpgrade, docHTTPSProxy, docHTTPSOwn, docHTTPSNames, docHTTPSSwitch, docHTTPSReach,
 		docHTTPSAgents, docHTTPSTrust, docHTTPSOldToken, docClusterResetKey, docOSPoint, docOSLinux, docOSCerts, docOSDocker, docOSNotLoaded, docOSRoles, docEncDocker,
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
-		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
-		docReadmeWindows, docReadmeDocker, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
+		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docStartLinux,
+		docStartWindows, docDockerStart, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
 		docAPITokens, docSecNotChecked}
 }
 
