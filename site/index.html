@@ -506,8 +506,8 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 
       <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/">OpenSearch 2.x for Windows</a>, then download <code>signalith-&lt;version&gt;-x64.msi</code> from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>.</p></li>
-          <li><p>Double-click it and follow the steps. It installs and starts the <b>Signalith</b> service under its own account.</p></li>
+          <li><p>Download <code>signalith-&lt;version&gt;-x64.msi</code> from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>. There is nothing to install first.</p></li>
+          <li><p>Double-click it and follow the steps. It downloads and sets up OpenSearch 3.9 on this computer, then installs and starts the <b>Signalith</b> and <b>SignalithOpenSearch</b> services, each under its own account. The first install downloads about 1 GB.</p></li>
           <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
