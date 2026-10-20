@@ -1135,3 +1135,6 @@ virtual IP (keepalived, see the sample) or straight to one server. Never send on
 device to two servers at once: each message would be stored twice. When a server
 stops, devices on TCP reconnect through the balancer to another; a few messages sent
 just before may be stored twice or lost, as with any syslog server that restarts.
+While OpenSearch is down, each server keeps the syslog it received in a spool on its
+own disk and writes it once OpenSearch is back (see
+[Agents and syslog](sending-data.md#when-opensearch-is-down)).

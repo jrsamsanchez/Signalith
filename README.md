@@ -602,6 +602,11 @@ listens on 5514 and sets it to 514). The **Health** page (and `/api/health`, und
 listeners, how many messages were received, dropped, not written and rejected, and the
 most recent senders.
 
+While OpenSearch is down, too busy or blocks writes, syslog events wait in a spool on
+the server's disk (`syslog-spool` in the state folder, at most `syslog.spool_mb`, 1 GB
+by default, oldest dropped first) and are written once it takes them again; see
+[docs/sending-data.md](docs/sending-data.md#when-opensearch-is-down).
+
 ### Sign in and users
 
 The web UI has its own sign-in page. Sessions end after `auth.session_timeout` without
@@ -788,6 +793,7 @@ are counted for each person's own address, not the proxy's. See
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Address for syslog over TLS, such as `0.0.0.0:6514`; uses the web UI's certificate |
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |
+| `syslog.spool_mb` | `1024` | Most disk space, in MB, for syslog events kept while OpenSearch refuses them for now; when full, the oldest are dropped. See [docs/sending-data.md](docs/sending-data.md#when-opensearch-is-down) |
 | `detections.dir` | `detections` | Folder for custom and edited detections, relative to the config file |
 | `detections.scheduler` | `true` | The older name of `cluster.leader_eligible`, which wins when both are set |
 | `cluster.leader_eligible` | `true` | Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them (**May run background jobs** on the Settings page, or `SIGNALITH_LEADER_ELIGIBLE`). See [More than one server](#more-than-one-server) |

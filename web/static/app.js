@@ -4814,7 +4814,7 @@ function healthSyslogCard(sl) {
     stat('Received', sl.received),
     stat('Dropped', sl.dropped, 'warning', 'Lost because OpenSearch could not keep up, or while stopping'),
     stat('Rejected', sl.rejected, 'warning', 'Turned away: senders outside syslog.allow, messages too large, or too many connections'),
-    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch did not store them'));
+    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch refused them for good, or it was down and they could not be spooled'));
 
   let body;
   const rejected = healthSyslogRejected(sl);
@@ -4852,7 +4852,7 @@ function healthSyslogCard(sl) {
   return el('div', { class: 'card hp-syslog' },
     el('div', { class: 'card__head' }, el('div', {}, title, el('p', { class: 'card__sub' }, last ? 'Last message ' + ago(last) : `Nothing ${sl.rejected ? 'accepted' : 'received'} since the server started`)),
       el('span', { class: 'hp-state' }, pulse, state[1])),
-    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected),
+    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected, healthSyslogSpool(sl)),
     body);
 }
 
@@ -4879,6 +4879,34 @@ function healthSyslogRejected(sl) {
     el('b', {}, `${healthPageNum(sl.rejected)} ${sl.rejected === 1 ? 'message was' : 'messages were'} turned away since the server started.`),
     one ? el('p', {}, ...line(why[0])) : el('ul', { role: 'list' }, ...why.map((w) => el('li', {}, ...line(w))))));
 }
+// healthSyslogSpool says what the spool on disk did while OpenSearch
+// refused syslog events for now: a warning when it dropped events because
+// it was full or is more than half full, a note while it holds events,
+// and null otherwise.
+function healthSyslogSpool(sl) {
+  const max = sl.spool_max_bytes || 0;
+  if (!max || !(sl.spooled || sl.spool_events || sl.spool_dropped)) return null;
+  const size = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.max(b ? 1 : 0, Math.round(b / 1048576)).toLocaleString() + ' MB');
+  const events = (n) => `${healthPageNum(n)} ${n === 1 ? 'event' : 'events'}`;
+  const pct = Math.round((100 * (sl.spool_bytes || 0)) / max);
+  const holds = `The spool holds ${events(sl.spool_events || 0)} (${size(sl.spool_bytes || 0)} of ${size(max)}, ${pct}%).`;
+  const counts = `Since the server started, ${events(sl.spooled || 0)} went to the spool and ${events(sl.replayed || 0)} were written from it.`;
+  const where = can('admin') ? ['Its size is ', el('button', { type: 'button', class: 'link-btn', onclick: () => openSetting('syslog.spool_mb') }, 'Spool size (MB)'), ' on the Settings page, under Syslog.']
+    : ['Its size is Spool size (MB) on the Settings page, under Syslog.'];
+  if (sl.spool_dropped || pct > 50) {
+    const head = sl.spool_dropped
+      ? `${events(sl.spool_dropped)} ${sl.spool_dropped === 1 ? 'was' : 'were'} dropped because the syslog spool was full.`
+      : `The syslog spool is ${pct}% full.`;
+    return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, head),
+      el('p', {}, 'OpenSearch refused syslog events for now, so they wait on this server’s disk until it takes them again; when the spool is full, the oldest are dropped. ', holds, ' ', counts, ' ', ...where)));
+  }
+  if (!sl.spool_events) return null;
+  return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'info' }, icon('info'), el('div', {},
+    el('b', {}, `${events(sl.spool_events)} ${sl.spool_events === 1 ? 'waits' : 'wait'} in the syslog spool.`),
+    el('p', {}, 'OpenSearch refused them for now; they are written once it takes them again. ', holds, ' ', counts)));
+}
+
 // syslogAllowWhere says where a sender is added to the allowed ones: a
 // link to the Settings page for admins, who can open it.
 function syslogAllowWhere() {

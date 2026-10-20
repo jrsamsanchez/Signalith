@@ -414,6 +414,10 @@ var Registry = []Setting{
 	{Key: "syslog.public_port", Scope: ScopeCluster, Section: "syslog", Label: "Port devices send to", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(65535),
 		Help:       "When Docker or a firewall forwards another port to the one Signalith listens on, the port devices send to. Add data shows it.",
 		EmptyMeans: "the listen port"},
+	{Key: "syslog.spool_mb", Scope: ScopeServer, Section: "syslog", Label: "Spool size (MB)", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxSyslogSpoolMB),
+		Help: "While OpenSearch is down, too busy or blocks writes, this server keeps the syslog events it cannot write in a folder on its own disk and writes them once OpenSearch takes them again. " +
+			"This is the most disk space that folder may use; when it is full, the oldest events in it are dropped and counted on the Health page.",
+		Placeholder: "1024", EmptyMeans: "1024 (1 GB)"},
 
 	{Key: "detections.scheduler", Scope: ScopeServer, Section: "detections", Label: "Run detections on schedule", Type: TypeBool, Restart: true, LegacyOnly: true,
 		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
