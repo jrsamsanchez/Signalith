@@ -42,6 +42,7 @@ services:
   # Runs before the others on every "up", then stops. It makes the
   # certificates OpenSearch and Signalith use with each other, the first
   # admin password and the agents' ingest token, and keeps them after that.
+  # It also gives the snapshots volume to OpenSearch.
   # The CA those certificates come from keeps its key in a volume of its
   # own, opensearch-ca, which no other service mounts. Run by hand, it also
   # hands that CA to Signalith or reloads OpenSearch's security settings
@@ -71,6 +72,9 @@ services:
       - SIGNALITH_SETUP_STATE_DIR=/signalith-data
       - SIGNALITH_SETUP_LOADED_DIR=/opensearch-security-loaded
       - SIGNALITH_SETUP_CRL_DIR=/opensearch-crl
+      # Read from the environment only, so an older image, which has no
+      # such flag, still starts with this file.
+      - SIGNALITH_SETUP_SNAPSHOTS_DIR=/opensearch-snapshots
     volumes:
       - opensearch-certs:/opensearch-certs
       - signalith-secrets:/signalith-secrets
@@ -79,6 +83,7 @@ services:
       - signalith-data:/signalith-data
       - opensearch-security-loaded:/opensearch-security-loaded
       - opensearch-crl:/opensearch-crl
+      - opensearch-snapshots:/opensearch-snapshots
     restart: "no"
 
   opensearch:
@@ -109,6 +114,10 @@ services:
     # and signed in with its own certificate.
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+      # Where OpenSearch writes snapshots, and the script that takes and
+      # restores them (docs/backup.md).
+      - opensearch-snapshots:/usr/share/opensearch/snapshots
+      - ./opensearch/snapshot.sh:/usr/share/opensearch/snapshot.sh:ro
       - opensearch-certs:/usr/share/opensearch/config/certs:ro
       - opensearch-crl:/usr/share/opensearch/config/crl:ro
       - ./opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
@@ -318,6 +327,8 @@ services:
 volumes:
   # Events, findings and investigations. Kept from earlier versions.
   opensearch-data:
+  # OpenSearch snapshots, the backups of opensearch-data (docs/backup.md).
+  opensearch-snapshots:
   # OpenSearch's certificates, made by the setup service.
   opensearch-certs:
   # The OpenSearch CA's certificate and key, which the setup service makes

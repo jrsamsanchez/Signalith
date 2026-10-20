@@ -58,6 +58,10 @@ threat intel feeds, dashboards, investigation cases, response actions and playbo
 The server is a single Go binary with the web UI embedded. It runs as a Windows service,
 a systemd unit or a container.
 
+> Status: working toward 1.0. Until then the work goes into correctness, upkeep and proof
+> rather than new features; the [roadmap](https://signalith.io/docs/roadmap/) has the 1.0
+> checklist.
+
 ## Quick start
 
 It needs Docker Compose 2.20 or newer (Docker Desktop has it). Get the code and start it:
@@ -86,7 +90,7 @@ release and upgrading an older quick start.
 | Detect and respond | [Detections](https://signalith.io/docs/detections/) · [Cases](https://signalith.io/docs/cases/) · [Investigate with AI](https://signalith.io/docs/investigate/) · [Response actions](https://signalith.io/docs/response-actions/) · [Playbooks](https://signalith.io/docs/playbooks/) |
 | Search | [Query language](https://signalith.io/docs/query-language/) · [Dashboards](https://signalith.io/docs/dashboards/) · [Hunting notebooks](https://signalith.io/docs/hunting-notebooks/) |
 | Run it safely | [Security checks](https://signalith.io/docs/security/) · [HTTPS](https://signalith.io/docs/https/) · [Users and roles](https://signalith.io/docs/users/) · [Encryption](https://signalith.io/docs/encryption/) · [Threat model](https://signalith.io/docs/threat-model/) · [Outbound connections](https://signalith.io/docs/outbound/) · [Where your data goes](https://signalith.io/docs/data-residency/) |
-| Settings | [Configuration file](https://signalith.io/docs/configuration/) · [Settings page](https://signalith.io/docs/settings/) · [Data retention](https://signalith.io/docs/retention/) |
+| Run it day to day | [Configuration file](https://signalith.io/docs/configuration/) · [Settings page](https://signalith.io/docs/settings/) · [Data retention](https://signalith.io/docs/retention/) · [Backup and restore](https://signalith.io/docs/backup/) |
 
 ## Building
 

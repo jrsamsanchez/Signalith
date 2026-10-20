@@ -32,9 +32,15 @@ GOOS=windows GOARCH=amd64 go build -o signalith.exe ./cmd/signalith    # Windows
 ```
 
 To try a change end to end, run the [Docker quick start](https://signalith.io/docs/docker/)
-with the build override, which builds Signalith from your working copy:
-`docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d`.
-Without the override, the quick start runs the image GitHub builds from `main`.
+with the build file added, so it builds Signalith from your working copy instead of
+pulling the published image:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml up -d --build
+```
+
+[Sample data](docs/sample-data.md) gives it a week of events to look at:
+`docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load`.
 
 ## Test
 
@@ -70,7 +76,9 @@ and stop them with `kill -9` and `SIGSTOP`, so they run on Linux only; without
 
 Tests must pass on Windows too. Git on Windows may check text files out with CRLF line
 endings, so a test that reads a file from the repository (such as a doc) should not
-compare it byte for byte.
+compare it byte for byte. Use `path/filepath` (not `path`) for file paths, and
+`filepath.IsAbs`, which knows `C:\`; and don't test exact file modes, which Windows
+does not keep.
 
 ### Fuzz tests
 
@@ -126,6 +134,16 @@ rule is often quickest: import it with **Import Sigma rule** on the Detections p
   under the Detection Rule License, which asks for credit);
 - come with sample data that makes it fire, if it is on by default (see above).
 
+Rules from other projects ship as **content packs** in
+[`internal/detect/packs`](internal/detect/packs) (SigmaHQ and Splunk Security Content),
+unchanged and off by default. They are generated, so do not edit them by hand: change
+the generator (`internal/detect/packgen`, `internal/detect/splunkgen`) or the parser or
+field mappings, and regenerate as
+[docs/detections.md](docs/detections.md#content-packs) shows. Every pack rule is tested
+against its own events (`TestPackRulesFireOnTheirTests`), so a change that breaks one
+fails CI. Files under `internal/detect/packs` are hashed and signed byte for byte, so
+keep their line endings as they are.
+
 ## Docs
 
 The documentation in [`docs/`](docs) is published at
@@ -178,6 +196,8 @@ taking it. See [GOVERNANCE.md](GOVERNANCE.md) for who decides what.
 - Say in the pull request what you changed, why, and how you tested it; include a
   screenshot for UI changes. The pull request template has a place for each.
 - CI must be green before a merge. Pull requests are usually squash-merged.
+- In [ci.yml](.github/workflows/ci.yml), add new jobs rather than renaming existing
+  ones: `main` requires its checks by name.
 - Never commit passwords, tokens, keys or real log data, even in tests; use made-up
   values such as `example.com` addresses and the documentation IP ranges.
 
