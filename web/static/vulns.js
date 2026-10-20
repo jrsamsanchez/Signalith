@@ -209,7 +209,8 @@
     netCount.textContent = d.targets.length;
     netCount.classList.toggle('hidden', !d.targets.length);
     $('vs-add').classList.toggle('hidden', !can('admin') || !d.targets.length);
-    if (!d.targets.length) {
+    // The sample data's hosts show with no network set up.
+    if (!d.targets.length && (S.tab !== 'hosts' || !d.hosts.length)) {
       panels[S.tab].replaceChildren(gettingStarted());
       return;
     }

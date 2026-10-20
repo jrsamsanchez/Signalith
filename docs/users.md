@@ -1038,7 +1038,8 @@ level=WARN msg="sign-in failed" audit=true user=admin client=203.0.113.9 peer=10
 ## API
 
 All routes need a signed-in user (session cookie or HTTP Basic auth) except
-`POST /api/login`, `POST /api/logout`, `GET /api/tls/ca.pem`, `POST /api/ingest` and
+`POST /api/login`, `POST /api/logout`, `POST /api/demo` (the one-click sign-in of a
+[public demo](demo.md), which answers `404` on any other server), `GET /api/tls/ca.pem`, `POST /api/ingest` and
 `POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
@@ -1220,6 +1221,10 @@ router: any `/api/` route there other than the public ones (sign-in, sign-out, a
 ingest, the CA certificate, `GET /api/tls/ca.pem`, the two join routes, the three install
 downloads, the two single sign-on routes and the two routes Slack and Teams post button clicks
 to, which check the chat app's signature instead) is admin-only.
+
+On a [public demo](demo.md) the demo's visitor may use only the Viewer and Analyst
+routes that read (and running a search, dashboard or notebook, and Ask), and some routes are refused to
+every role: see [What demo mode turns off](demo.md#what-demo-mode-turns-off).
 
 A refused request:
 

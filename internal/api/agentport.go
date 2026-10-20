@@ -39,6 +39,10 @@ func (s *Server) routeAgentIntake(mux *http.ServeMux) {
 // Signalith Agent, which their pasted lines fetch from the address they
 // send to.
 func (s *Server) AgentHandler() http.Handler {
+	if s.demo() {
+		// A public demo takes no events in, and hands out no installs.
+		return limitBodies(s.securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { writeDemoOff(w) })))
+	}
 	s.tokens()
 	mux := http.NewServeMux()
 	s.routeAgentIntake(mux)

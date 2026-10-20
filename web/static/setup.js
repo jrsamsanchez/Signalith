@@ -366,7 +366,8 @@
   }, true);
 
   meReady.then(async (m) => {
-    if (!m || m.must_change_password || m.must_setup_mfa || m.auth === 'token') return;
+    // The public demo's visitor only looks around (docs/demo.md).
+    if (!m || m.must_change_password || m.must_setup_mfa || m.auth === 'token' || m.demo) return;
     await load();
     let skippedNow = false;
     try { skippedNow = sessionStorage.getItem(SKIP_KEY) === '1'; } catch (_) { /* ignore */ }

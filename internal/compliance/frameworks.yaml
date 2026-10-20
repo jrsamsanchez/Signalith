@@ -12,8 +12,10 @@
 # frameworks only the control and requirement numbers are used; every title
 # here is Signalith's own short summary, not the standard's text. The
 # mapping itself is Signalith's own work, under the project's Apache 2.0
-# licence. It shows where Signalith gives evidence; it is not legal advice
-# and does not make anyone compliant.
+# licence. NIS2 and the GDPR are EU law, whose texts may be reused
+# (Commission Decision 2011/833/EU); they are cited by article number with
+# Signalith's own short titles. The mapping shows where Signalith gives
+# evidence; it is not legal advice and does not make anyone compliant.
 
 frameworks:
   - id: nist-800-53
@@ -30,13 +32,13 @@ frameworks:
       - {id: AU-3, group: Audit and Accountability, title: Content of Audit Records, caps: [record-content], nist: [AU-3]}
       - {id: AU-4, group: Audit and Accountability, title: Audit Log Storage Capacity, caps: [storage-guard], nist: [AU-4]}
       - {id: AU-5, group: Audit and Accountability, title: Response to Audit Logging Process Failures, caps: [source-health, notify], nist: [AU-5]}
-      - {id: AU-6, group: Audit and Accountability, title: Audit Record Review, Analysis, and Reporting, caps: [detect-any, triage], nist: [AU-6]}
+      - {id: AU-6, group: Audit and Accountability, title: "Audit Record Review, Analysis, and Reporting", caps: [detect-any, triage], nist: [AU-6]}
       - {id: AU-7, group: Audit and Accountability, title: Audit Record Reduction and Report Generation, caps: [search], nist: [AU-7]}
       - {id: AU-8, group: Audit and Accountability, title: Time Stamps, caps: [timestamps], nist: [AU-8]}
       - {id: AU-9, group: Audit and Accountability, title: Protection of Audit Information, caps: [siem-access, siem-tls, siem-secrets], nist: [AU-9]}
       - {id: AU-11, group: Audit and Accountability, title: Audit Record Retention, caps: [retention-1y], nist: [AU-11]}
       - {id: AU-12, group: Audit and Accountability, title: Audit Record Generation, caps: [data-any, config-checks], nist: [AU-12]}
-      - {id: CA-7, group: Assessment, Authorization, and Monitoring, title: Continuous Monitoring, caps: [detect-any, config-checks, vuln-scan], nist: [CA-7, CM-6]}
+      - {id: CA-7, group: "Assessment, Authorization, and Monitoring", title: Continuous Monitoring, caps: [detect-any, config-checks, vuln-scan], nist: [CA-7, CM-6]}
       - {id: CM-6, group: Configuration Management, title: Configuration Settings, caps: [config-checks], nist: [CM-6]}
       - {id: CM-7, group: Configuration Management, title: Least Functionality, caps: [config-checks], nist: [CM-7]}
       - {id: CM-8, group: Configuration Management, title: System Component Inventory, caps: [assets, data-inventory], nist: [CM-8]}
@@ -51,8 +53,8 @@ frameworks:
       - {id: SI-2, group: System and Information Integrity, title: Flaw Remediation, caps: [vuln-scan, config-checks], nist: [SI-2]}
       - {id: SI-3, group: System and Information Integrity, title: Malicious Code Protection, caps: [data-malware, detect-malware], nist: [SI-3]}
       - {id: SI-4, group: System and Information Integrity, title: System Monitoring, caps: [detect-any, data-process, data-network, notify], nist: [SI-4]}
-      - {id: SI-5, group: System and Information Integrity, title: Security Alerts, Advisories, and Directives, caps: [intel], nist: [SI-5]}
-      - {id: SI-7, group: System and Information Integrity, title: Software, Firmware, and Information Integrity, caps: [data-files], nist: [SI-7]}
+      - {id: SI-5, group: System and Information Integrity, title: "Security Alerts, Advisories, and Directives", caps: [intel], nist: [SI-5]}
+      - {id: SI-7, group: System and Information Integrity, title: "Software, Firmware, and Information Integrity", caps: [data-files], nist: [SI-7]}
 
   - id: cis-v8
     name: CIS Controls
@@ -107,7 +109,7 @@ frameworks:
       - {id: "10.4.1", group: "10: Logging and monitoring", title: Security events are reviewed at least daily, caps: [detect-any, triage], nist: [AU-6]}
       - {id: "10.4.1.1", group: "10: Logging and monitoring", title: Log reviews are automated, caps: [detect-any], nist: []}
       - {id: "10.4.3", group: "10: Logging and monitoring", title: Exceptions and anomalies are followed up, caps: [triage, cases], nist: [IR-5]}
-      - {id: "10.5.1", group: "10: Logging and monitoring", title: Logs are kept 12 months, with 3 months at hand, caps: [retention-90, retention-1y], nist: [AU-11]}
+      - {id: "10.5.1", group: "10: Logging and monitoring", title: "Logs are kept 12 months, with 3 months at hand", caps: [retention-90, retention-1y], nist: [AU-11]}
       - {id: "10.6.1", group: "10: Logging and monitoring", title: System clocks use synchronized time, caps: [timestamps], nist: [AU-8]}
       - {id: "10.7.2", group: "10: Logging and monitoring", title: Failures of security controls are detected and alerted, caps: [source-health, notify], nist: [AU-5]}
       - {id: "11.3.1", group: "11: Testing security", title: Internal vulnerability scans run at least every three months, caps: [vuln-scan], nist: [RA-5]}
@@ -134,7 +136,7 @@ frameworks:
       - {id: A.8.7, group: Technological controls, title: Protect against malware, caps: [data-malware, detect-malware], nist: [SI-3]}
       - {id: A.8.8, group: Technological controls, title: Manage technical vulnerabilities, caps: [vuln-scan], nist: [RA-5, SI-2]}
       - {id: A.8.9, group: Technological controls, title: Manage secure configurations, caps: [config-checks], nist: [CM-6]}
-      - {id: A.8.15, group: Technological controls, title: Produce, keep and protect logs, caps: [data-any, retention-1y, siem-access], nist: [AU-2, AU-12]}
+      - {id: A.8.15, group: Technological controls, title: "Produce, keep and protect logs", caps: [data-any, retention-1y, siem-access], nist: [AU-2, AU-12]}
       - {id: A.8.16, group: Technological controls, title: Monitor for unusual behaviour, caps: [detect-any, data-network, notify], nist: [SI-4]}
       - {id: A.8.17, group: Technological controls, title: Synchronize clocks, caps: [timestamps], nist: [AU-8]}
 
@@ -167,3 +169,46 @@ frameworks:
       - {id: CC7.2, group: System operations, title: System components are monitored for anomalies, caps: [data-any, detect-any, notify], nist: [SI-4]}
       - {id: CC7.3, group: System operations, title: Security events are evaluated, caps: [triage, cases], nist: [IR-5]}
       - {id: CC7.4, group: System operations, title: Security incidents are responded to, caps: [cases, response], nist: [IR-4]}
+
+  - id: nis2
+    name: NIS2 Directive
+    version: (EU) 2022/2555
+    publisher: European Union
+    url: https://eur-lex.europa.eu/eli/dir/2022/2555/oj
+    notice: Article numbers refer to Directive (EU) 2022/2555 and the Annex to Commission Implementing Regulation (EU) 2024/2690. Titles here are Signalith's own summaries; read the official texts on EUR-Lex, and your country's law that transposes the directive, for the requirements.
+    scope: NIS2 asks for risk-management measures and incident reporting. Signalith gives evidence for the technical parts (monitoring, detection, incident handling, vulnerability and configuration checks, encryption and access control) and the records you need to report a significant incident on time. Governance, training, business continuity, supply chain security and the reports themselves are your organization's to run, so they are not listed.
+    controls:
+      - {id: 21(2)(a), group: "Art. 21: Risk-management measures", title: Risk analysis and information system security, caps: [vuln-scan, config-checks], nist: [RA-5, CM-6]}
+      - {id: 21(2)(b), group: "Art. 21: Risk-management measures", title: Incident handling, caps: [detect-any, triage, cases, response], nist: [IR-4, IR-5]}
+      - {id: 21(2)(e), group: "Art. 21: Risk-management measures", title: Vulnerability handling in maintaining systems, caps: [vuln-scan, config-checks], nist: [RA-5, SI-2]}
+      - {id: 21(2)(f), group: "Art. 21: Risk-management measures", title: Assess whether the security measures work, caps: [config-checks, vuln-scan, detect-any], nist: [CA-7, CM-6]}
+      - {id: 21(2)(g), group: "Art. 21: Risk-management measures", title: Basic cyber hygiene, caps: [config-checks, data-malware, detect-malware], nist: [CM-6, SI-3]}
+      - {id: 21(2)(h), group: "Art. 21: Risk-management measures", title: Cryptography and encryption, caps: [config-checks, siem-tls, siem-secrets], nist: [SC-8, SC-28]}
+      - {id: 21(2)(i), group: "Art. 21: Risk-management measures", title: Access control and asset management, caps: [assets, data-inventory, data-change, detect-change], nist: [AC-2, CM-8]}
+      - {id: 21(2)(j), group: "Art. 21: Risk-management measures", title: Multi-factor authentication, caps: [siem-mfa, data-auth, detect-auth], nist: [IA-2]}
+      - {id: 23(1), group: "Art. 23: Reporting obligations", title: Significant incidents are found and reported without undue delay, caps: [detect-any, notify, triage], nist: [IR-6, SI-4]}
+      - {id: 23(4)(a), group: "Art. 23: Reporting obligations", title: Early warning within 24 hours, caps: [notify, triage, cases], nist: [IR-6]}
+      - {id: 23(4)(b), group: "Art. 23: Reporting obligations", title: "Incident notification within 72 hours, with severity, impact and indicators", caps: [cases, record-content, intel], nist: [IR-6]}
+      - {id: 23(4)(d), group: "Art. 23: Reporting obligations", title: "Final report within one month, with root cause and measures taken", caps: [cases, search, retention-90], nist: [IR-4]}
+      - {id: IR 3.2, group: "Implementing Regulation 2024/2690 (digital providers)", title: Monitoring and logging, caps: [data-any, data-auth, data-network, detect-any, timestamps, siem-access, retention-90], nist: [AU-2, AU-6, AU-12, SI-4]}
+      - {id: IR 3.5, group: "Implementing Regulation 2024/2690 (digital providers)", title: Incident response, caps: [cases, response, notify], nist: [IR-4]}
+
+  - id: gdpr
+    name: GDPR
+    version: (EU) 2016/679
+    publisher: European Union
+    url: https://eur-lex.europa.eu/eli/reg/2016/679/oj
+    notice: Article numbers refer to Regulation (EU) 2016/679, the General Data Protection Regulation. Titles here are Signalith's own summaries; read the official text on EUR-Lex for the requirements.
+    scope: The GDPR is about how personal data is used, and logs hold personal data too (user names, addresses, hosts). Signalith gives evidence for two things. First, how it treats the personal data in your logs itself (limited access, two-step sign-in, encryption, an audit trail, deletion after a set time). Second, security of processing and breach notification for your other systems. Lawful basis, records of processing, data subject rights and the notifications themselves are your organization's, and your data protection officer decides what is enough.
+    controls:
+      - {id: 5(1)(e), group: Personal data in your logs, title: Logs are kept no longer than needed, caps: [retention-limit], nist: []}
+      - {id: 5(1)(f), group: Personal data in your logs, title: Logs are protected from unauthorized access and change, caps: [siem-access, siem-tls, siem-secrets], nist: []}
+      - {id: 5(2), group: Personal data in your logs, title: Who did what in Signalith is recorded, caps: [siem-audit, siem-access], nist: []}
+      - {id: "25", group: Personal data in your logs, title: Data protection by default in the SIEM, caps: [siem-access, siem-mfa, retention-limit], nist: []}
+      - {id: 32(1)(a), group: "Art. 32: Security of processing", title: Encryption of personal data, caps: [config-checks, siem-tls, siem-secrets], nist: [SC-8, SC-28]}
+      - {id: 32(1)(b), group: "Art. 32: Security of processing", title: "Ongoing confidentiality, integrity and availability", caps: [data-auth, detect-any, source-health, storage-guard], nist: [SI-4, AU-5]}
+      - {id: 32(1)(d), group: "Art. 32: Security of processing", title: Security measures are tested and assessed regularly, caps: [config-checks, vuln-scan], nist: [CA-7, CM-6, RA-5]}
+      - {id: 33(1), group: "Art. 33-34: Personal data breaches", title: Breaches are noticed in time to notify within 72 hours, caps: [detect-any, detect-network, notify, triage], nist: [IR-6, SI-4]}
+      - {id: 33(3), group: "Art. 33-34: Personal data breaches", title: The notification can describe the breach and its likely consequences, caps: [cases, search, record-content], nist: [IR-4]}
+      - {id: 33(5), group: "Art. 33-34: Personal data breaches", title: "Every breach is documented, with its facts, effects and remedial action", caps: [cases, retention-1y], nist: [IR-5]}
+      - {id: "34", group: "Art. 33-34: Personal data breaches", title: The people affected can be found and told, caps: [cases, search, assets], nist: [IR-6]}

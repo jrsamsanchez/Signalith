@@ -351,6 +351,11 @@ type Server struct {
 	sensorCache sensorHealthCache // the Health page's network sensor counts
 	chatOnce    sync.Once
 	chatSvc     *chatops.Service
+	// demoSess keeps the public demo's visitor sessions, and demoLimits
+	// how often they start (demo.go).
+	demoOnce   sync.Once
+	demoSess   *auth.Sessions
+	demoLimits tokenRate
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -379,6 +384,10 @@ func (s *Server) Running() *config.Config { return s.conf() }
 
 // model returns the AI assistant in use, or nil when it is off.
 func (s *Server) model() *assistant.Client {
+	if s.demo() {
+		// A public demo never sends anything to an AI model.
+		return nil
+	}
 	if m := s.liveAI.Load(); m != nil {
 		return m.c
 	}
@@ -483,10 +492,19 @@ func (s *Server) Handler() http.Handler {
 
 // guardAPI makes sure no /api/ route escapes sign-in: a route registered
 // straight on the outer mux, rather than with a role on the router, is
-// admin-only unless it is one of publicRoutes.
+// admin-only unless it is one of publicRoutes. In demo mode most of
+// publicRoutes are off too.
 func (s *Server) guardAPI(mux *http.ServeMux) http.Handler {
 	guarded := s.requireUser(s.configToken(false, s.allow(route{Pattern: "(outer mux)", Role: users.Admin, Unclassified: true}, mux)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.demo() {
+			// A public demo keeps only signing in and out of the routes
+			// that work without signing in (demo.go).
+			if _, pattern := mux.Handler(r); demoPublicOff(pattern) {
+				writeDemoOff(w)
+				return
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if _, pattern := mux.Handler(r); pattern != "" && pattern != "/" && !slices.Contains(publicRoutes, pattern) {
 				guarded.ServeHTTP(w, r)
@@ -916,7 +934,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if req.WriteLookups && mayWriteLookups(principalOf(r)) {
 		ctx = search.WithLookupWriter(ctx, searchLookupWriter{s, r})
 	}
+	start := time.Now()
 	res, err := s.Engine.Execute(ctx, q)
+	s.auditSearch(r, "search.run: ran a search", s.searchAuditAttrs(req.Query, q, res, err, time.Since(start))...)
 	if err != nil {
 		writeSearchError(w, err)
 		return
@@ -1047,7 +1067,9 @@ func (s *Server) handleFieldValues(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	start := time.Now()
 	res, err := s.Engine.Execute(ctx, q)
+	s.auditSearch(r, "search.values: listed a field's top values", s.searchAuditAttrs(q.String(), q, res, err, time.Since(start))...)
 	if err != nil {
 		writeSearchError(w, err)
 		return

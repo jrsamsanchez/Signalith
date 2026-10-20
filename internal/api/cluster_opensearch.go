@@ -69,9 +69,12 @@ type osCard struct {
 	PrimariesTogether []string `json:"primaries_together"`
 	// PreferPrimary is cluster.routing.allocation.balance.prefer_primary,
 	// nil when not known.
-	PreferPrimary *bool        `json:"prefer_primary"`
-	Endpoints     []osEndpoint `json:"endpoints"`
-	Warnings      []string     `json:"warnings"`
+	PreferPrimary *bool `json:"prefer_primary"`
+	// RebalancePrimary is cluster.routing.allocation.rebalance.primary.enable,
+	// nil when not known (OpenSearch before 2.12).
+	RebalancePrimary *bool        `json:"rebalance_primary"`
+	Endpoints        []osEndpoint `json:"endpoints"`
+	Warnings         []string     `json:"warnings"`
 }
 
 // handleClusterOpenSearch says how safe the OpenSearch cluster is from
@@ -137,6 +140,7 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 			out.Disk[i].Low, out.Disk[i].High, out.Disk[i].Flood = low, high, flood
 		}
 		out.PreferPrimary = clusterBool(settings, "cluster.routing.allocation.balance.prefer_primary")
+		out.RebalancePrimary = clusterBool(settings, "cluster.routing.allocation.rebalance.primary.enable")
 	}
 	prefix := conf.OpenSearch.IndexPrefix
 	var indices []struct {
@@ -206,6 +210,9 @@ func osWarnings(c osCard) []string {
 			n, plural(n, "event indices is", "event indices are"), plural(n, "its", "their"))
 		if c.PreferPrimary == nil || !*c.PreferPrimary {
 			text += " Set cluster.routing.allocation.balance.prefer_primary to true, so OpenSearch spreads primary shards over the nodes."
+		}
+		if c.RebalancePrimary != nil && !*c.RebalancePrimary {
+			text += " Set cluster.routing.allocation.rebalance.primary.enable to true, so OpenSearch moves primaries back after a node restarts."
 		}
 		w = append(w, text)
 	}

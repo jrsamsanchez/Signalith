@@ -88,8 +88,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A load test with [sizing numbers](performance.md), including a
   [lab run](performance.md#lab-sizes) of about 21,500 events a second (about 1 TB a day)
   on one 2-core Signalith server and two OpenSearch nodes, in two 4-hour runs on
-  consecutive days with no late detections, and a three-server lab run in which
-  detections stayed evenly shared through a restart and a crash.
+  consecutive days with no late detections; a 4-hour run on three Signalith servers that
+  stored all 25,000 events a second (about 1 TB a day) with 1,520 detections and none
+  late; and a three-server run in which detections stayed evenly shared through a
+  restart and a crash.
 
 **More data**
 
@@ -137,17 +139,23 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
-  ISO/IEC 27001, HIPAA and SOC 2, with evidence reports for auditors.
+  ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
 
 ## Being built now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Being built now" }
+
+**A public demo**
+:   [demo.signalith.io](https://demo.signalith.io) runs Signalith read-only with the
+    sample data, so anyone can try it in a browser. You can [run one too](demo.md).
 
 **In the next release**
 :   These are finished and arrive with the next release. The Windows installer sets up
     [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
     Windows needs no separate install step. Signalith Agents update themselves from
     signed releases and roll back if an update fails. With several servers,
-    [detections are spread over them](servers.md#the-background-jobs) by default.
+    [detections are spread over them](servers.md#the-background-jobs) by default. New
+    installs take syslog over TLS on port 6514 only, and
+    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) is one click away.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
@@ -157,4 +165,4 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 ## Later <span class="sg-pill sg-pill--later">Exploring</span> { #later data-toc-label="Later" }
 
 **Hardening and 1.0**
-:   An outside security review, a public demo, and then version 1.0.
+:   An outside security review, and then version 1.0.

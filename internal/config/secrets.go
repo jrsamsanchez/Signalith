@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/redact"
@@ -73,6 +74,8 @@ const systemConfigDir = "/etc/"
 // last, where a folder this account may not open is that install's and
 // not an error (see secrets.Keyring.LookAlsoIn).
 func (c *Config) Keyring() *secrets.Keyring {
+	keyringMu.Lock()
+	defer keyringMu.Unlock()
 	if c.keys == nil {
 		dirs := []string{c.StateDir()}
 		if c.path != "" {
@@ -90,6 +93,11 @@ func (c *Config) Keyring() *secrets.Keyring {
 	}
 	return c.keys
 }
+
+// keyringMu makes Keyring safe to call from several goroutines at once,
+// such as the Security page's checks. It is not a field of Config, which
+// is copied by value.
+var keyringMu sync.Mutex
 
 func absPath(p string) string {
 	if a, err := filepath.Abs(p); err == nil {

@@ -90,6 +90,9 @@ type Server struct {
 	blocked     bool
 	fault       func(method, path string) *Fault
 	refreshWait time.Duration
+	// unrefreshed are document ids searches do not see yet (see
+	// SetUnrefreshed).
+	unrefreshed map[string]bool
 	requests    []string
 	autoID      int
 	// uuids counts the indices made, for their uuids.
@@ -225,6 +228,18 @@ func (s *Server) SetRefreshWait(d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refreshWait = d
+}
+
+// SetUnrefreshed makes searches leave out the documents with these ids,
+// as OpenSearch does until its next refresh after a write without one; a
+// get still finds them. No ids makes every document searchable again.
+func (s *Server) SetUnrefreshed(ids ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unrefreshed = map[string]bool{}
+	for _, id := range ids {
+		s.unrefreshed[id] = true
+	}
 }
 
 // SetFault sets a function that may answer a request with a Fault; nil
@@ -917,7 +932,7 @@ func (s *Server) search(w http.ResponseWriter, pattern string, body []byte) {
 	var hits []hit
 	for _, ix := range s.match(pattern) {
 		for id, d := range ix.docs {
-			if matches(req.Query, id, d.source) {
+			if !s.unrefreshed[id] && matches(req.Query, id, d.source) {
 				hits = append(hits, hit{ix, id, d})
 			}
 		}

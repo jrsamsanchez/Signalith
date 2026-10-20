@@ -214,6 +214,10 @@ func (c *Collection[T]) restore(d store.Doc, uuid string) {
 	}
 }
 
+// reasonRemoved is the problem of an item gone from OpenSearch without a
+// tombstone.
+const reasonRemoved = "it was removed in OpenSearch outside Signalith"
+
 // reload lists the collection and reads the items that changed. It
 // reports false when an item changed here while it was read, so the
 // listing must be done again.
@@ -234,16 +238,28 @@ func (c *Collection[T]) reload(ctx context.Context) (bool, error) {
 	}
 	present := map[string]bool{}
 	var fetch []store.Ref
+	var clear []func()
 	c.mu.Lock()
 	for _, d := range listed {
 		if !c.owns(d.ID) {
 			continue
 		}
 		present[d.ID] = true
-		if cur := c.items[d.ID]; cur == nil || !cur.same(uuid, d.Version) {
+		cur := c.items[d.ID]
+		if cur == nil || !cur.same(uuid, d.Version) {
 			fetch = append(fetch, store.Ref{Index: index, ID: d.ID})
+		} else if p := c.h.problemOf(d.ID); p != nil && p.Reason == reasonRemoved {
+			// Reported missing by an earlier listing, but there after all.
+			if f := c.h.fine(d.ID, cur.env.Rev); f != nil {
+				clear = append(clear, f)
+			}
 		}
 	}
+	// A search sees a write only after OpenSearch refreshes the index, and
+	// batches write without a refresh: an item missing from the listing is
+	// looked up directly, which sees every write, before it counts as
+	// removed.
+	var missing []store.Ref
 	for id, e := range c.items {
 		if present[id] || gens[id] != c.gens[id] {
 			continue
@@ -254,9 +270,32 @@ func (c *Collection[T]) reload(ctx context.Context) (bool, error) {
 			c.gens[id]++
 			continue
 		}
-		c.h.report(id, &Problem{Kind: ProblemTamper, Reason: "it was removed in OpenSearch outside Signalith"}, store.Version{})
+		missing = append(missing, store.Ref{Index: index, ID: id})
 	}
 	c.mu.Unlock()
+	for _, f := range clear {
+		f()
+	}
+	if len(missing) > 0 {
+		got, err := cl.MGet(ctx, missing)
+		if err != nil {
+			return false, err
+		}
+		c.mu.Lock()
+		for _, d := range got {
+			if d.Found {
+				present[d.ID] = true
+				if cur := c.items[d.ID]; cur == nil || !cur.same(uuid, d.Version) {
+					fetch = append(fetch, d.Ref)
+				}
+				continue
+			}
+			if gens[d.ID] == c.gens[d.ID] && c.items[d.ID] != nil {
+				c.h.report(d.ID, &Problem{Kind: ProblemTamper, Reason: reasonRemoved}, store.Version{})
+			}
+		}
+		c.mu.Unlock()
+	}
 	docs, err := cl.MGet(ctx, fetch)
 	if err != nil {
 		return false, err

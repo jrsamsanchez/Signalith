@@ -97,13 +97,19 @@ each day into a new daily index, with OpenSearch 3.9.0 and automatic shards.
 | Events/s stored | Per day | Signalith servers | OpenSearch nodes | Result |
 | --- | --- | --- | --- | --- |
 | about 21,500 (median), 24,000 (p95) | about 1.86 billion events, about 1 TB | 1, with 2 vCPU and 4 GB | 2, with 8 vCPU and 16 GB each, on network volumes | Steady in both runs; 99% of batches answered within 1.8 s; searches under 0.8 s (p95); no detection ran late |
+| all 25,000 offered (672 million in 4 hours, none dropped) | about 2.16 billion events, about 1 TB | 3, with 2 vCPU each | 2, with 4 vCPU each, on network volumes | 1,520 detections spread over the servers, none late; events searchable 2 s after sending (median), 9 s (p95); searches under 1.7 s (p95) |
 
 The one Signalith server's 2 cores were the limit (about 70% busy on average), so it
 stored about 21,500 of the 25,000 events a second offered. To reach 25,000, give the server more cores or add a
 [second server](multi-server.md). OpenSearch was about 27% busy and refused no writes.
-In a lab run with three Signalith servers, [spread detections](servers.md#the-background-jobs)
-stayed evenly shared (25, 21 and 18 of 64 groups) with no late runs, through a restart and
-a crash.
+With three Signalith servers (one 4-hour run, October 2026), all 25,000 events a second
+were stored with 1,520 detections turned on and
+[spread over the servers](servers.md#the-background-jobs) (25, 21 and 18 of 64 groups).
+The Signalith servers averaged under 50% CPU. This time OpenSearch was the limit: both
+4-core nodes peaked at 99-100% CPU and their data volumes were 95-99% busy, so for more
+headroom give OpenSearch more cores, faster local disks or a third node. In an earlier
+three-server run, spread detections stayed evenly shared with no late runs through a
+restart and a crash.
 
 ## Known limits
 

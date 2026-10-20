@@ -141,7 +141,8 @@ func toStrings(v any) []string {
 }
 
 // With prefer_primary on, the warning about primaries on one node does
-// not suggest it again.
+// not suggest it again; it suggests rebalance.primary.enable when that is
+// off.
 func TestPrimariesTogetherWarning(t *testing.T) {
 	on := true
 	c := osCard{PrimariesTogether: []string{"a", "b"}, PreferPrimary: &on}
@@ -149,8 +150,13 @@ func TestPrimariesTogetherWarning(t *testing.T) {
 	if !strings.Contains(w, "2 of today's event indices are on one OpenSearch node") || strings.Contains(w, "prefer_primary") {
 		t.Errorf("warnings: %s", w)
 	}
-	off := map[string]map[string]any{"persistent": {"cluster.routing.allocation.balance.prefer_primary": "false"}, "defaults": {"cluster.routing.allocation.balance.prefer_primary": "true"}}
-	if b := clusterBool(off, "cluster.routing.allocation.balance.prefer_primary"); b == nil || *b {
+	off := false
+	c.RebalancePrimary = &off
+	if w := strings.Join(osWarnings(c), "\n"); !strings.Contains(w, "rebalance.primary.enable to true") {
+		t.Errorf("rebalance off, warnings: %s", w)
+	}
+	layers := map[string]map[string]any{"persistent": {"cluster.routing.allocation.balance.prefer_primary": "false"}, "defaults": {"cluster.routing.allocation.balance.prefer_primary": "true"}}
+	if b := clusterBool(layers, "cluster.routing.allocation.balance.prefer_primary"); b == nil || *b {
 		t.Errorf("persistent false over default true: %v", b)
 	}
 }

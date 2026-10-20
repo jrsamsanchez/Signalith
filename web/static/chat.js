@@ -20,8 +20,9 @@
   });
   meReady.then((m) => {
     if (!m) return;
-    // An API token is not a person who clicks buttons.
-    item.classList.toggle('hidden', m.auth === 'token');
+    // An API token is not a person who clicks buttons, and the public
+    // demo's visitor links no chat account.
+    item.classList.toggle('hidden', m.auth === 'token' || !!m.demo);
     if (pending) confirmLink(takePending());
   });
   window.addEventListener('hashchange', () => {

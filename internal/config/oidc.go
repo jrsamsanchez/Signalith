@@ -55,8 +55,9 @@ type OIDC struct {
 	ButtonLabel string `yaml:"button_label,omitempty"`
 }
 
-// OIDCOn reports whether single sign-on is set up and on.
-func (c *Config) OIDCOn() bool { return c.Auth.OIDC.Enabled }
+// OIDCOn reports whether single sign-on is set up and on: never in demo
+// mode.
+func (c *Config) OIDCOn() bool { return c.Auth.OIDC.Enabled && !c.DemoOn() }
 
 // OIDCIssuer returns the issuer in use: the one set, or Google's.
 func (c *Config) OIDCIssuer() string {
