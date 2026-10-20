@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -571,5 +572,46 @@ func TestAgentRecomputesRevision(t *testing.T) {
 	}
 	if st := a.Status().Clean(); len(st.CAs) != 1 {
 		t.Errorf("Clean dropped the CAs: %v", st.CAs)
+	}
+}
+
+// Copies of one certificate authority can't push another out of the
+// report, a bundle of more than MaxCAs distinct ones is refused with
+// ca.pem kept, and a ca.pem written by someone else with more says so.
+func TestCABundleLimits(t *testing.T) {
+	a := syncAgent(t, "http://127.0.0.1:1")
+	pemOf := func(der []byte) string {
+		return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	}
+	fpOf := func(der []byte) string { sum := sha256.Sum256(der); return hex.EncodeToString(sum[:]) }
+	known, stranger := selfSigned(t), selfSigned(t)
+	bundle := strings.Repeat(pemOf(known), agentproto.MaxCAs) + pemOf(stranger)
+	if err := a.writeCA(bundle, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st := a.Status(); !slices.Equal(st.CAs, []string{fpOf(known), fpOf(stranger)}) {
+		t.Errorf("CAs %v", st.CAs)
+	}
+
+	var many string
+	for range agentproto.MaxCAs + 1 {
+		many += pemOf(selfSigned(t))
+	}
+	if err := a.writeCA(many, nil); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Fatalf("%d distinct CAs: %v", agentproto.MaxCAs+1, err)
+	}
+	if b, _ := os.ReadFile(a.Paths.caFile()); string(b) != bundle {
+		t.Error("ca.pem changed")
+	}
+
+	if err := os.WriteFile(a.Paths.caFile(), []byte(many), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := a.Status()
+	if len(st.CAs) != agentproto.MaxCAs || st.CAs[agentproto.MaxCAs-1] != agentproto.TooManyCAs {
+		t.Errorf("too many: %v", st.CAs)
+	}
+	if c := st.Clean(); len(c.CAs) != agentproto.MaxCAs || c.CAs[agentproto.MaxCAs-1] != agentproto.TooManyCAs {
+		t.Errorf("Clean dropped the marker: %v", c.CAs)
 	}
 }

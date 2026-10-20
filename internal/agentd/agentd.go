@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -468,6 +469,7 @@ func (a *Agent) writeCA(ca string, conn *tls.ConnectionState) error {
 	pool := x509.NewCertPool()
 	rest := []byte(ca)
 	n := 0
+	distinct := map[[sha256.Size]byte]bool{}
 	for {
 		var blk *pem.Block
 		blk, rest = pem.Decode(rest)
@@ -482,10 +484,17 @@ func (a *Agent) writeCA(ca string, conn *tls.ConnectionState) error {
 			return fmt.Errorf("the certificate authority the server handed out is not valid: %w", err)
 		}
 		pool.AddCert(c)
+		distinct[sha256.Sum256(blk.Bytes)] = true
 		n++
 	}
 	if n == 0 {
 		return errors.New("the certificate authority the server handed out holds no certificate")
+	}
+	// The agent reports at most MaxCAs of them (caFingerprints): one more
+	// could hide behind the others.
+	if len(distinct) > agentproto.MaxCAs {
+		a.Log.Warn("the server handed out more certificate authorities than an agent keeps; ca.pem is kept as it was", "count", len(distinct), "max", agentproto.MaxCAs)
+		return fmt.Errorf("the server handed out %d certificate authorities, more than the %d an agent keeps, so ca.pem was kept as it was", len(distinct), agentproto.MaxCAs)
 	}
 	if conn != nil && len(conn.PeerCertificates) > 0 {
 		inter := x509.NewCertPool()
@@ -599,8 +608,10 @@ func (a *Agent) caFingerprints() []string {
 	if err != nil {
 		return nil
 	}
+	// Each once, before the cap, so copies of one can't push another out
+	// of the report.
 	var out []string
-	for len(out) < agentproto.MaxCAs {
+	for {
 		var blk *pem.Block
 		blk, b = pem.Decode(b)
 		if blk == nil {
@@ -610,7 +621,16 @@ func (a *Agent) caFingerprints() []string {
 			continue
 		}
 		sum := sha256.Sum256(blk.Bytes)
-		out = append(out, hex.EncodeToString(sum[:]))
+		if fp := hex.EncodeToString(sum[:]); !slices.Contains(out, fp) {
+			out = append(out, fp)
+		}
+	}
+	if len(out) > agentproto.MaxCAs {
+		// writeCA never keeps that many: someone else wrote this file.
+		// The last slot says so with a fingerprint no certificate has,
+		// which the server never knows, so the agent is flagged.
+		a.Log.Warn("ca.pem holds more certificate authorities than the agent reports", "count", len(out), "max", agentproto.MaxCAs)
+		out = append(out[:agentproto.MaxCAs-1], agentproto.TooManyCAs)
 	}
 	return out
 }

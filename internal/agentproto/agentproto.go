@@ -154,6 +154,11 @@ type Status struct {
 	CAs []string `json:"ca_sha256,omitempty"`
 }
 
+// TooManyCAs stands, last in Status.CAs, for the certificate
+// authorities past MaxCAs in an agent's ca.pem: no certificate has this
+// fingerprint, so the server never knows it.
+var TooManyCAs = strings.Repeat("0", 64)
+
 // Component states.
 const (
 	StateRunning  = "running"
