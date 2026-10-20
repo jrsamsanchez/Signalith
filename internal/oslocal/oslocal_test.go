@@ -313,3 +313,43 @@ func TestStateAndConfig(t *testing.T) {
 		t.Errorf("heap.options: %s", heap)
 	}
 }
+
+// Signalith's config folder deleted before installing again: its client
+// certificate is made again from the kept CA, and OpenSearch's stay.
+func TestMakeCertsRemakesClient(t *testing.T) {
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := Layout{Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
+	if err := MakeCerts(l, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	node, _ := os.ReadFile(filepath.Join(l.Certs(), ospki.NodeCertFile))
+	os.RemoveAll(filepath.Dir(l.Client))
+	if err := MakeCerts(l, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(filepath.Join(l.Certs(), ospki.NodeCertFile)); !bytes.Equal(again, node) {
+		t.Fatal("OpenSearch's certificate changed")
+	}
+	ca, err := ospki.LoadCA(l.CA())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, certFile, keyFile := l.ClientFiles()
+	client, err := ospki.ReadPair(l.Client, filepath.Base(certFile), filepath.Base(keyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.Cert.CheckSignatureFrom(ca.Cert) != nil || client.Cert.Subject.CommonName != ospki.ClientName {
+		t.Fatalf("client certificate %v is not Signalith's from the kept CA", client.Cert.Subject)
+	}
+
+	// Without the CA's key, it says what is missing.
+	os.Remove(filepath.Join(l.CA(), ospki.RootCAKeyFile))
+	os.RemoveAll(l.Client)
+	if err := MakeCerts(l, time.Now()); err == nil || !strings.Contains(err.Error(), "cannot be made") {
+		t.Fatalf("got %v", err)
+	}
+}

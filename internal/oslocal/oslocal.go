@@ -372,10 +372,16 @@ func HeapMB(total uint64) int {
 
 // MakeCerts makes the CA, OpenSearch's node and admin certificates and
 // Signalith's client certificate, when there are none yet: on the first
-// install. They are kept on upgrades.
+// install. They are kept on upgrades. When only Signalith's are missing,
+// because its config folder was deleted before installing again, it gets
+// a new client certificate from the kept CA.
 func MakeCerts(l Layout, now time.Time) error {
 	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.NodeCertFile)); err == nil {
-		return nil
+		ca, cert, key := l.ClientFiles()
+		if haveAll(ca, cert, key) {
+			return nil
+		}
+		return remakeClient(l, now)
 	}
 	set, err := ospki.New(ospki.Options{Now: now})
 	if err != nil {
@@ -403,6 +409,38 @@ func MakeCerts(l Layout, now time.Time) error {
 			if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func haveAll(paths ...string) bool {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// remakeClient issues Signalith a new client certificate from the CA
+// kept in l.CA().
+func remakeClient(l Layout, now time.Time) error {
+	ca, err := ospki.LoadCA(l.CA())
+	if err != nil {
+		return fmt.Errorf("Signalith's certificate for OpenSearch is missing from %s, and a new one cannot be made: %w", l.Client, err)
+	}
+	client, err := ospki.IssueClient(ca, ospki.ClientName, now, ospki.Validity)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(l.Client, 0o700); err != nil {
+		return err
+	}
+	set := ospki.Set{CA: ca, Client: client}
+	for name, b := range set.SignalithFiles() {
+		if err := os.WriteFile(filepath.Join(l.Client, name), b, 0o600); err != nil {
+			return err
 		}
 	}
 	return nil
