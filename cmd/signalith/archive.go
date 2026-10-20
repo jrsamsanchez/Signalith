@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -98,7 +101,7 @@ func cmdArchive(args []string) error {
 			// not fix indices that already exist.
 			// One already there from this version or a later one, which a
 			// server may have saved, is left as it is.
-			_, herr = ingest.RestoreIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), nil)
+			_, herr = ingest.RestoreIndexTemplate(hctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.EventIndexSettings(), nil)
 			if herr != nil {
 				herr = fmt.Errorf("could not install the index template, so nothing was restored: %w", herr)
 			}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build unix
 
 package securefile
@@ -93,3 +96,6 @@ func otherLinks(path string) int {
 }
 
 func isBusy(err error) bool { return errors.Is(err, syscall.EBUSY) }
+
+// inUse is for Windows: here a file that is open can be replaced.
+func inUse(error) bool { return false }

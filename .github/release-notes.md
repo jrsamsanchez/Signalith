@@ -6,8 +6,9 @@
 | Red Hat, Rocky, Alma, Fedora, SUSE | `signalith-{VERSION}-1.x86_64.rpm` or `.aarch64.rpm`, then `sudo dnf install ./signalith-{VERSION}-1.x86_64.rpm` |
 | Windows | `signalith-{VERSION}-x64.msi`, double-click it |
 | Docker | `docker pull ghcr.io/jrsamsanchez/signalith:{VERSION}` |
+| Kubernetes | `helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version {VERSION} -n signalith --create-namespace`; see [Kubernetes](https://signalith.io/docs/kubernetes/) |
 
-Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x; see [Install from packages](https://signalith.io/docs/install-packages/).
+Then `sudo signalith initial-password` (on Windows, `signalith initial-password` in PowerShell as Administrator) shows the first admin password. Signalith needs OpenSearch 2.x or 3.x; see [Install from packages](https://signalith.io/docs/install-packages/).
 
 Adding a server to a cluster? Use **Add a server** on the Servers page: it gives one line to run on the new computer. `install.sh` and `signalith-{VERSION}-windows-amd64.zip` (the program and `install.ps1`) are the same install scripts, for automation; see [Adding servers](https://signalith.io/docs/multi-server/).
 

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package query
 
 import (
@@ -25,6 +28,7 @@ func TestBuilderRoundTrip(t *testing.T) {
 		{Datamodel: "Network_Traffic", Mode: "stats", AggFunc: "sum", AggField: "bytes", By: []string{"src", "dest"}, Sort: "-sum(bytes)", Limit: 5,
 			Filters: []Filter{{Field: "dest_port", Op: ">", Value: "1024"}}},
 		{Mode: "timechart", AggFunc: "count", Span: "1h", By: []string{"action"}},
+		{Datamodel: "Authentication", Mode: "latest", By: []string{"user", "dest"}, Fields: []string{"_time", "user", "src"}, Limit: 20},
 	}
 	for _, s := range specs {
 		text := Build(s).String()
@@ -63,6 +67,7 @@ func TestFromQueryRejectsComplexQueries(t *testing.T) {
 		`NOT a=1`,
 		`a=1 | where x > 1`,
 		`a=1 | stats count, dc(x)`,
+		`a=1 | dedup user sortby -_time`,
 	} {
 		q := mustParse(t, src)
 		if _, ok := FromQuery(q); ok {

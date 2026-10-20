@@ -1,0 +1,4 @@
+{"rule": "c1d147ae-a951-48e5-8b41-dcd0170c7213", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Add app role assignment to service principal"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{}}
+]}

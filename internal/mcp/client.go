@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package mcp
 
 import (
@@ -27,7 +30,7 @@ var readOnlyPosts = map[string]bool{
 // sends GET requests, and POST requests only to readOnlyPosts, so nothing
 // it does can change Signalith, whatever the user's role allows.
 type Client struct {
-	// BaseURL is the server's web address, such as https://siem:8080.
+	// BaseURL is the server's web address, such as https://siem:9000.
 	BaseURL  *url.URL
 	User     string
 	Password string
@@ -132,7 +135,7 @@ func apiError(status int, data []byte, token bool) error {
 	msg := e.Error
 	switch {
 	case status == http.StatusUnauthorized && token:
-		msg = "Signalith did not accept the API token set for the MCP server (SIGNALITH_TOKEN). It may have been revoked: make a new one on Settings > API tokens."
+		msg = "Signalith did not accept the API token set for the MCP server (SIGNALITH_TOKEN). It may have expired or been revoked: make a new one on Settings > API tokens."
 	case status == http.StatusUnauthorized:
 		msg = "Signalith did not accept the username and password set for the MCP server (SIGNALITH_USER and SIGNALITH_PASSWORD)."
 	case e.Code == "password_change_required":

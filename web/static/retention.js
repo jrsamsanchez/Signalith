@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Data retention: how long each kind of data is kept, the default policy
 // and disk guard, a preview of every change before it is saved, archived
 // days and restores, and what retention did lately. Every /api/retention
@@ -24,7 +26,7 @@ const RT_ICON = {
   inventory: 'list', configuration_check: 'list-checks', alerts: 'bell',
   other: 'box', risk: 'gauge', findings: 'shield-alert', cases: 'briefcase', intel: 'radar', audit: 'scroll-text',
 };
-const RT_FIELD_NAME = { keep_days: 'Keep', max_size_gb: 'Size cap', compact_after_days: 'Compact after', max_disk_percent: 'Max disk use', min_days: 'Min days' };
+const RT_FIELD_NAME = { keep_days: 'Keep', max_size_gb: 'Size cap', compact_after_days: 'Compact after', cold_after_days: 'Move to cold storage after', max_disk_percent: 'Max disk use', min_days: 'Min days' };
 
 // rtBytes prints a size the way OpenSearch counts it (1 GB = 1024³ bytes).
 function rtBytes(n) {
@@ -90,6 +92,7 @@ function rtPolicyText(p) {
     p.keep_days ? `Keep ${rtDays(p.keep_days)}` : 'Keep forever',
     p.max_size_gb ? `${rtGB(p.max_size_gb)} size cap` : 'no size cap',
     p.compact_after_days ? `compact after ${rtDays(p.compact_after_days)}` : 'no compaction',
+    ...(p.cold_after_days ? [`cold storage after ${rtDays(p.cold_after_days)}`] : []),
     p.archive ? 'archive before deleting' : 'no archive',
   ].join(' · ');
 }
@@ -284,7 +287,9 @@ function rtSummary(ov) {
   box.removeAttribute('aria-busy');
   const cats = ov.categories.length;
   const stored = rtStat('database', 'Stored', ov.error ? '–' : rtBytes(ov.total_bytes),
-    ov.error ? 'OpenSearch didn’t answer' : `In ${plural(cats, 'category', 'categories')}, replicas included`);
+    ov.error ? 'OpenSearch didn’t answer'
+      : ov.cold && ov.cold.days ? `Plus ${rtBytes(ov.cold.bytes)} in cold storage`
+        : `In ${plural(cats, 'category', 'categories')}, replicas included`);
 
   const g = ov.guard;
   let disk;
@@ -361,6 +366,13 @@ function rtAlerts(ov) {
   for (const n of ov.notes || []) {
     if (n !== st.message) out.push(riAlert('warning', rtSentence(n)));
   }
+  if (ov.cold && ov.cold.used && ov.cold.error) {
+    out.push(riAlert('warning', 'Couldn’t check cold storage.', p(rtFix(ov.cold.error)),
+      p('Days that are due stay on OpenSearch’s disks until it answers.')));
+  } else if (ov.cold && ov.cold.used && ov.cold.message && !(ov.notes || []).some((n) => n.includes('cold storage'))) {
+    out.push(riAlert('info', 'Cold storage isn’t ready yet.', p(rtSentence(ov.cold.message)),
+      p('Nothing is due to move yet, so nothing waits on it.')));
+  }
   const sch = ov.schedule;
   const servers = () => (can('admin') ? el('a', { href: '#servers', 'data-page': 'servers' }, 'Servers page') : 'Servers page');
   if (ov.hold) {
@@ -429,7 +441,8 @@ function rtRow(c, ov) {
     el('span', { class: 'rt-cat__icon' }, icon(RT_ICON[c.id] || 'database')),
     el('div', { class: 'rt-cat__text' }, el('div', { class: 'cell-title' }, c.name), el('span', { class: 'rt-sub', title: c.description }, c.description))));
   const size = el('td', { class: 'num rt-c-size' }, line(ov.error ? '–' : rtBytes(c.bytes)),
-    sub(pol.max_size_gb ? `Cap ${rtGB(pol.max_size_gb)}` : ov.error ? '' : rtNoun(c.id, c.docs)));
+    sub(pol.max_size_gb ? `Cap ${rtGB(pol.max_size_gb)}` : ov.error ? '' : rtNoun(c.id, c.docs)),
+    c.cold_bytes && !ov.error ? sub(`+ ${rtBytes(c.cold_bytes)} in cold storage`) : null);
 
   let oldest;
   if (!c.oldest_day) oldest = el('td', { class: 'rt-c-oldest hide-sm' }, rtDash());
@@ -439,6 +452,7 @@ function rtRow(c, ov) {
     else if (c.kind === 'events') {
       bits.push(rtDays(c.days));
       if (c.compacted_days) bits.push(`${c.compacted_days.toLocaleString()} compacted`);
+      if (c.cold_days) bits.push(`${c.cold_days.toLocaleString()} in cold storage`);
       if (c.restored_days) bits.push(`${c.restored_days.toLocaleString()} restored`);
     } else bits.push(c.id === 'findings' ? 'Oldest finding' : 'Oldest investigation');
     oldest = el('td', { class: 'rt-c-oldest hide-sm' }, line(rtDay(c.oldest_day)), sub(bits.join(' · ')));
@@ -452,6 +466,7 @@ function rtRow(c, ov) {
   if (pd.delete_days) due.push(`${rtDays(pd.delete_days)} due`);
   if (pd.delete_records) due.push(`${pd.delete_records.toLocaleString()} due`);
   if (pd.compact_days) due.push(`${pd.compact_days.toLocaleString()} to compact`);
+  if (pd.cold_days) due.push(`${pd.cold_days.toLocaleString()} to move to cold storage`);
   if (managed) keep = [line(el('span', { class: 'rt-desk' }, 'Per feed'), el('span', { class: 'rt-phone' }, 'Kept per feed')), sub('Each feed’s max_age')];
   else {
     const n = pol.keep_days;
@@ -462,13 +477,15 @@ function rtRow(c, ov) {
     const md = [];
     if (!records) {
       if (pol.compact_after_days) md.push(`Compact after ${rtDays(pol.compact_after_days)}`);
+      if (pol.cold_after_days) md.push(`Cold after ${rtDays(pol.cold_after_days)}`);
       if (pol.archive) md.push('Archive');
     }
     const variant = (cls, parts) => (parts.length ? el('span', { class: 'rt-sub ' + cls }, parts.join(' · ')) : null);
     keep = [line(el('span', { class: 'rt-desk' }, n ? rtDays(n) : 'Forever'), el('span', { class: 'rt-phone' }, phone)),
       variant('rt-show-wide', [...closing, ...due]), variant('rt-show-md', [...closing, ...md, ...due]), variant('rt-show-phone', [...md, ...due])];
   }
-  const compact = el('td', { class: 'rt-c-compact hide-md hide-sm' }, c.kind === 'events' && pol.compact_after_days ? `After ${rtDays(pol.compact_after_days)}` : rtDash());
+  const compact = el('td', { class: 'rt-c-compact hide-md hide-sm' }, c.kind === 'events' && pol.compact_after_days ? `After ${rtDays(pol.compact_after_days)}` : rtDash(),
+    c.kind === 'events' && pol.cold_after_days ? sub(`Cold storage after ${rtDays(pol.cold_after_days)}`) : null);
   const archive = el('td', { class: 'rt-c-archive hide-md hide-sm' }, (c.kind === 'events' || c.kind === 'monthly') && pol.archive ? el('span', { class: 'rt-yes' }, icon('check', 'icon--sm'), 'Yes') : rtDash());
 
   const can = rtCanEdit(c);
@@ -543,8 +560,10 @@ function rtDefaults(ov) {
 const RT_ACTION = {
   compact: ['layers', 'Compacted'], archive: ['archive', 'Archived'], delete: ['trash-2', 'Deleted'],
   delete_records: ['trash-2', 'Deleted'], restore: ['rotate-ccw', 'Restored'],
+  cold: ['cloud', 'Moved to cold storage'], mount: ['cloud-download', 'Mounted from cold storage'],
 };
-const RT_FAILED = { compact: 'Compaction failed', archive: 'Archive failed', delete: 'Delete failed', delete_records: 'Delete failed', restore: 'Restore failed' };
+const RT_FAILED = { compact: 'Compaction failed', archive: 'Archive failed', delete: 'Delete failed', delete_records: 'Delete failed', restore: 'Restore failed',
+  cold: 'Move to cold storage failed', mount: 'Mount failed' };
 
 // rtGroupActions folds the actions of one run that share a kind, category
 // and reason into one row: "Compacted 60 days". Actions closer than ten
@@ -593,6 +612,8 @@ function rtActivity(ov) {
     stat(run.archived, run.archived === 1 ? 'day archived' : 'days archived');
     stat(run.deleted, run.deleted === 1 ? 'day deleted' : 'days deleted');
     stat(run.compacted, run.compacted === 1 ? 'day compacted' : 'days compacted');
+    stat(run.cold, run.cold === 1 ? 'day moved to cold storage' : 'days moved to cold storage');
+    stat(run.mounted, run.mounted === 1 ? 'day mounted from cold storage' : 'days mounted from cold storage');
     stat(run.deleted_records, run.deleted_records === 1 ? 'closed record deleted' : 'closed records deleted');
     stat(run.skipped, run.skipped === 1 ? 'step skipped: settings changed' : 'steps skipped: settings changed');
 
@@ -728,6 +749,7 @@ function rtPreviewView(p, guard) {
   const out = [];
   const removes = p.steps.filter((d) => d.action === 'archive' || d.action === 'delete');
   const compacts = p.steps.filter((d) => d.action === 'compact');
+  const colds = p.steps.filter((d) => d.action === 'cold');
   const dueSteps = p.due_steps || [];
   const dueRemoves = dueSteps.filter((d) => d.action === 'archive' || d.action === 'delete');
   const dueCompacts = dueSteps.filter((d) => d.action === 'compact');
@@ -748,6 +770,10 @@ function rtPreviewView(p, guard) {
     out.push(rtPreviewLine('', 'layers', `Saving compacts ${rtDays(s.compact_days)} (${rtBytes(s.compact_bytes)}).`,
       `${rtRange(compacts.map((d) => d.day))} · read-only and merged, so they take less space. Events that arrive later for these days are refused and lost.`));
   }
+  if (colds.length) {
+    out.push(rtPreviewLine('', 'cloud', `Saving moves ${rtDays(s.cold_days)} to cold storage (${rtBytes(s.cold_bytes)}).`,
+      `${rtRange(colds.map((d) => d.day))} · they leave OpenSearch’s disks and stay searchable from the cold storage repository, more slowly. Events that arrive later for these days are refused and lost.`));
+  }
   for (const r of p.records || []) {
     const what = r.category === 'findings' ? (r.count === 1 ? 'finding' : 'findings') : (r.count === 1 ? 'investigation' : 'investigations');
     out.push(rtPreviewLine('warning', 'trash-2', `Saving deletes ${r.count.toLocaleString()} resolved or closed ${what}.`,
@@ -759,12 +785,13 @@ function rtPreviewView(p, guard) {
   const dueBits = [];
   if (due.delete_days) dueBits.push(`${due.archive_days === due.delete_days ? 'archives and deletes' : 'deletes'} ${rtDays(due.delete_days)} (${rtBytes(due.delete_bytes)})`);
   if (due.compact_days) dueBits.push(`compacts ${rtDays(due.compact_days)}`);
+  if (due.cold_days) dueBits.push(`moves ${rtDays(due.cold_days)} to cold storage`);
   const dueRecs = dueRecords.reduce((n, r) => n + r.count, 0);
   if (dueRecs) dueBits.push(`deletes ${plural(dueRecs, 'closed record')}`);
   if (dueBits.length) {
     const days = [...dueRemoves, ...dueCompacts].map((d) => d.day);
     out.push(rtPreviewLine(due.delete_days || dueRecs ? 'warning' : '', due.delete_days || dueRecs ? 'trash-2' : 'layers',
-      `${out.length ? 'Saving also' : 'Saving'} ${rtJoin(dueBits)} that ${due.delete_days + due.compact_days + dueRecs === 1 ? 'is' : 'are'} already due.`,
+      `${out.length ? 'Saving also' : 'Saving'} ${rtJoin(dueBits)} that ${due.delete_days + due.compact_days + (due.cold_days || 0) + dueRecs === 1 ? 'is' : 'are'} already due.`,
       `${days.length ? rtRange(days) + ' · ' : ''}Due under the current settings; the run that saving starts does it now.`));
   }
   if (!out.length) {
@@ -936,6 +963,10 @@ function rtFillForm(p, kind, c) {
   $('rt-forever').checked = !p.keep_days;
   $('rt-cap').value = p.max_size_gb || '';
   $('rt-compact').value = p.compact_after_days || '';
+  $('rt-cold').value = p.cold_after_days || '';
+  const cs = ov.cold || {};
+  $('rt-cold-hint').textContent = 'Older days move to the cold storage repository, such as an S3 bucket, and leave OpenSearch’s disks. They stay searchable, more slowly. Late events for them are refused and lost.' +
+    (cs.registered && cs.mountable ? '' : ' Cold storage must be set up in OpenSearch first; until then days stay where they are (see Cold storage in the docs).');
   $('rt-archive').checked = !!p.archive;
   if (kind === 'records') {
     $('rt-keep-label').textContent = 'Delete after';
@@ -1001,6 +1032,7 @@ $('rt-mode').querySelectorAll('[data-mode]').forEach((b) => {
       $('rt-forever').checked = !d.keep_days;
       $('rt-cap').value = d.max_size_gb || '';
       $('rt-compact').value = d.compact_after_days || '';
+      $('rt-cold').value = d.cold_after_days || '';
       $('rt-archive').checked = !!d.archive;
     }
     rtSetMode(b.dataset.mode);
@@ -1051,6 +1083,7 @@ function rtFormBody() {
     keep_days: keep,
     max_size_gb: rtNum($('rt-cap'), true) || 0,
     compact_after_days: rtNum($('rt-compact')) || 0,
+    cold_after_days: rtNum($('rt-cold')) || 0,
     archive: $('rt-archive').checked,
   };
 }
@@ -1076,6 +1109,9 @@ function rtCheckPolicy() {
     const comp = rtNum($('rt-compact'));
     if (comp !== null && (isNaN(comp) || comp < 0)) bad($('rt-compact'), 'Use a whole number of days, or leave it empty.');
     else if (comp && !forever && keep && comp >= keep) bad($('rt-compact'), `Use fewer days than Keep (${keep}), or days are deleted before they are compacted.`);
+    const cold = rtNum($('rt-cold'));
+    if (cold !== null && (isNaN(cold) || cold < 0)) bad($('rt-cold'), 'Use a whole number of days, or leave it empty.');
+    else if (cold && !forever && keep && cold >= keep) bad($('rt-cold'), `Use fewer days than Keep (${keep}), or days are deleted before they move to cold storage.`);
   }
   return ok;
 }
@@ -1117,7 +1153,7 @@ function rtEditChanged(now) {
   if (now === true) go(); else rtEditTimer = setTimeout(go, 300);
 }
 function rtMarkProblems(problems, form) {
-  const inputs = { keep_days: 'rt-keep', max_size_gb: 'rt-cap', compact_after_days: 'rt-compact', max_disk_percent: 'rt-pct', min_days: 'rt-min' };
+  const inputs = { keep_days: 'rt-keep', max_size_gb: 'rt-cap', compact_after_days: 'rt-compact', cold_after_days: 'rt-cold', max_disk_percent: 'rt-pct', min_days: 'rt-min' };
   for (const p of problems || []) {
     const f = String(p).split(' ')[0];
     const input = inputs[f] && $(inputs[f]);
@@ -1125,7 +1161,7 @@ function rtMarkProblems(problems, form) {
   }
 }
 
-['rt-keep', 'rt-cap', 'rt-compact'].forEach((id) => $(id).addEventListener('input', () => rtEditChanged()));
+['rt-keep', 'rt-cap', 'rt-compact', 'rt-cold'].forEach((id) => $(id).addEventListener('input', () => rtEditChanged()));
 $('rt-archive').addEventListener('change', () => rtEditChanged());
 $('rt-forever').addEventListener('change', () => {
   rtSyncForever();

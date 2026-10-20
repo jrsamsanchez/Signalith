@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Risk analysis and the asset and identity lists.
 'use strict';
 
@@ -308,7 +310,9 @@ async function showRiskObject(object, type) {
   } }, icon('shield-alert'), 'Related findings');
   const searchBtn = el('button', { class: 'btn btn--ghost', type: 'button' }, icon('search'), 'Open in Search');
   searchBtn.disabled = true;
-  const foot = el('div', { class: 'inspector__foot' }, findingsBtn, searchBtn);
+  const storyBtn = type === 'other' ? null : storylineButton({ type: type === 'system' && looksLikeIP(object) ? 'ip' : type, object, since: since === '24h' ? '24h' : since },
+    { kind: 'secondary', label: 'Storyline', title: 'See what added this risk as one attack story, in ATT&CK order' });
+  const foot = el('div', { class: 'inspector__foot' }, findingsBtn, storyBtn, searchBtn);
   box.replaceChildren(bar, head, body, foot);
   const wasOpen = !box.classList.contains('hidden');
   riShowPanel(box);
@@ -354,7 +358,10 @@ async function showRiskObject(object, type) {
       el('span', { class: 'timeline__dot' }, icon('crosshair')),
       el('span', { class: 'timeline__text' }, el('b', { class: 'num' }, '+' + riNum(e.risk_score)), ' ', e.risk_message || '',
         el('span', { class: 'r-ev__meta' }, el('span', { class: 'mono' }, e.detection_id || ''),
-          e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null)),
+          e.risk_priority ? el('span', {}, `${PRIORITY_LABEL[e.risk_priority] || e.risk_priority} priority, base ${riNum(e.risk_base_score)}`) : null,
+          // A behavior baseline's event: admins can mark it as normal.
+          /^baseline-/.test(e.detection_id || '') && can('admin') && window.blMarkNormal
+            ? el('button', { type: 'button', class: 'link-btn r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null)),
       el('span', { class: 'timeline__time', title: fmtTime(e._time) }, ago(e._time)))))
       : el('p', { class: 'muted' }, 'No risk events in this period.')));
   body.removeAttribute('aria-busy');
@@ -443,6 +450,12 @@ function riBreakable(text) {
 
 function listCell(col, v) {
   if (col === 'priority') return prioBadge(v, true);
+  // A host or identity opens its attack storyline.
+  if ((col === 'host' || col === 'identity') && typeof v === 'string' && v && !/[*?]/.test(v)) {
+    const b = el('button', { type: 'button', class: 'l-story mono', title: `Attack storyline for ${v}` }, ...riBreakable(v));
+    b.addEventListener('click', () => openStoryline({ type: col === 'host' ? 'system' : 'user', object: v, since: '7d' }));
+    return b;
+  }
   if (col === 'watchlist') return v === true ? riWatchBadge() : null;
   const text = Array.isArray(v) ? v.join(', ') : v == null ? '' : String(v);
   if (!text) return null;
@@ -509,8 +522,9 @@ function renderList() {
   else parts.push(`${total.toLocaleString()} ${total === 1 ? info.noun : info.nouns}`);
   // Rows the sample data adds while it is loaded: not part of the list.
   if (!q && res.sample) parts.push(`${res.sample.toLocaleString()} from the sample data, which go when it is removed`);
-  // osquery hosts the list does not have yet.
-  if (!q && res.found) parts.push(`${res.found.toLocaleString()} found on the Endpoints page`);
+  // Hosts Signalith found itself (osquery, scans, the network sensor)
+  // that the list does not have yet.
+  if (!q && res.found) parts.push(`${res.found.toLocaleString()} found by Signalith (Endpoints, scans, network sensor)`);
   if (shown.length < matches.length) parts.push(`showing the first ${shown.length}`);
   if (!q && items.length < total) parts.push(`the server returns the first ${items.length.toLocaleString()}`);
   fill(foot, el('span', {}, parts.join(' · ')), el('span', { class: 'spacer' }),

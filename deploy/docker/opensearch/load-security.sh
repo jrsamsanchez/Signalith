@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Loads OpenSearch's security settings for Signalith's Docker quick start:
 # who may sign in (only certificates from Signalith's own OpenSearch CA)
 # and what each may do (the files in security/). docker-compose.yml runs
@@ -23,12 +25,14 @@ cd /usr/share/opensearch || exit 1
 
 # How long to keep trying, in seconds.
 limit=${SECURITY_LOAD_SECONDS:-600}
-host=opensearch
+# The OpenSearch node to load them into: the opensearch service, or
+# localhost in the Helm chart, where this runs next to each node.
+host=${OPENSEARCH_HOST:-opensearch}
 certs=config/certs
 dir=config/opensearch-security
 tool=plugins/opensearch-security/tools/securityadmin.sh
 # A fingerprint of the files this last loaded, in this service's volume.
-state=data/loaded-files.sha256
+state=${SECURITY_STATE_FILE:-data/loaded-files.sha256}
 # Each kind of setting securityadmin.sh loads, and its file. The four in
 # deploy/docker/opensearch/security are Signalith's; the image has the
 # others.

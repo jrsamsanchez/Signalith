@@ -1,0 +1,4 @@
+Time,User Name,Source IP,Result,Auth Method
+2026-10-16 14:05:09,bob,203.0.113.50,FAILED,password
+2026-10-16 14:06:09,bob,203.0.113.50,SUCCESS,password
+2026-10-16 14:07:09,carol,198.51.100.4,FAILED,mfa

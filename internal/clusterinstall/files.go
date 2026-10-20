@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterinstall hands a new server what it needs to install
 // Signalith and join a cluster: the install scripts (deploy/linux/install.sh
 // and deploy/windows/install.ps1), this server's own program for a machine
@@ -19,20 +22,31 @@ import (
 	"github.com/jrsamsanchez/signalith/deploy"
 )
 
-// The scripts' names in GET /api/cluster/join/<name>.
+// The scripts' names in GET /api/cluster/join/<name>, the network
+// sensor's (GET /api/sensor/install.sh) and the Signalith Agent's (GET
+// /api/agent/install.sh and install.ps1).
 const (
-	ScriptSH  = "install.sh"
-	ScriptPS1 = "install.ps1"
+	ScriptSH       = "install.sh"
+	ScriptPS1      = "install.ps1"
+	ScriptSensor   = "sensor-install.sh"
+	ScriptAgent    = "agent-install.sh"
+	ScriptAgentPS1 = "agent-install.ps1"
+	ScriptAgentMac = "agent-install-macos.sh"
 )
 
 // ScriptSHA is the SHA-256 of each install script, in hex, which the
 // pasted lines check before they run one.
 type ScriptSHA struct {
-	SH  string `json:"sh"`
-	PS1 string `json:"ps1"`
+	SH       string `json:"sh"`
+	PS1      string `json:"ps1"`
+	Sensor   string `json:"sensor"`
+	Agent    string `json:"agent"`
+	AgentPS1 string `json:"agent_ps1"`
+	AgentMac string `json:"agent_macos"`
 }
 
-var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1)}
+var scriptSHA = ScriptSHA{SH: hexSHA(deploy.InstallSH), PS1: hexSHA(deploy.InstallPS1), Sensor: hexSHA(deploy.SensorInstallSH),
+	Agent: hexSHA(deploy.AgentInstallSH), AgentPS1: hexSHA(deploy.AgentInstallPS1), AgentMac: hexSHA(deploy.AgentInstallMacOS)}
 
 // ScriptSHA256 returns the scripts' SHA-256.
 func ScriptSHA256() ScriptSHA { return scriptSHA }
@@ -45,6 +59,14 @@ func Script(name string) ([]byte, string, bool) {
 		return deploy.InstallSH, scriptSHA.SH, true
 	case ScriptPS1:
 		return deploy.InstallPS1, scriptSHA.PS1, true
+	case ScriptSensor:
+		return deploy.SensorInstallSH, scriptSHA.Sensor, true
+	case ScriptAgent:
+		return deploy.AgentInstallSH, scriptSHA.Agent, true
+	case ScriptAgentPS1:
+		return deploy.AgentInstallPS1, scriptSHA.AgentPS1, true
+	case ScriptAgentMac:
+		return deploy.AgentInstallMacOS, scriptSHA.AgentMac, true
 	}
 	return nil, "", false
 }

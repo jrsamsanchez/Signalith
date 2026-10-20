@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -47,11 +51,14 @@ func TestOTelLinux(t *testing.T) {
 	if got := dig(m, exp, "otlphttp/signalith", "tls", "ca_file"); got != OTelLinuxCAPath || a.CAPath != OTelLinuxCAPath || a.CAStep == 0 {
 		t.Errorf("ca_file = %v, CAPath %q, CAStep %d", got, a.CAPath, a.CAStep)
 	}
+	if dig(m, "receivers", "filelog/web", "include_file_path") != true || len(dig(m, "receivers", "filelog/web", "include").([]any)) != len(WebAccessLogs) {
+		t.Errorf("web receiver = %v", dig(m, "receivers", "filelog/web"))
+	}
 	if dig(m, "receivers", "filelog/auth") == nil || dig(m, "receivers", "otlp") == nil {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any)
-	if len(recv) != 2 || recv[0] != "filelog/auth" {
+	if len(recv) != 3 || recv[0] != "filelog/auth" || recv[1] != "filelog/web" {
 		t.Errorf("pipeline receivers = %v", recv)
 	}
 	if a.ConfigPath != OTelLinuxConfig || a.ConfigStep == 0 || !strings.Contains(a.Steps[a.ConfigStep-1], "config.yaml") {
@@ -93,7 +100,8 @@ func TestOTelWindows(t *testing.T) {
 		dig(m, "receivers", "windowseventlog/certificates", "channel") != "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational" ||
 		dig(m, "receivers", "windowseventlog/openssh") != nil ||
 		dig(m, "receivers", "windowseventlog/sysmon", "channel") != "Microsoft-Windows-Sysmon/Operational" ||
-		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" {
+		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" ||
+		dig(m, "receivers", "windowseventlog/powershell_classic", "channel") != "Windows PowerShell" {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	if dig(m, "exporters", "otlphttp/signalith", "tls", "ca_file") != OTelWindowsCAPath {
@@ -101,6 +109,9 @@ func TestOTelWindows(t *testing.T) {
 	}
 	if dig(m, "extensions", "file_storage/signalith", "directory") != otelWindowsState {
 		t.Errorf("storage = %v", dig(m, "extensions"))
+	}
+	if !strings.Contains(strings.Join(a.Steps, " "), ".msi, 0.129 or later") {
+		t.Errorf("Windows Collector older than 0.129 stops without Defender: %q", a.Steps)
 	}
 	if !strings.Contains(strings.Join(a.Steps, " "), "EnableScriptBlockLogging") {
 		t.Errorf("no script block logging step: %q", a.Steps)
@@ -117,5 +128,80 @@ func TestOTelWindows(t *testing.T) {
 	}
 	if _, err := Generate(Options{OS: "otel", ServerURL: "https://siem:8080\nx: 1", Token: "t"}); err == nil {
 		t.Error("an address that breaks the YAML was accepted")
+	}
+}
+
+func TestOTelCloudTrail(t *testing.T) {
+	a, err := Generate(Options{OS: "aws", ServerURL: "https://siem:8080", Token: "t", CA: "x",
+		AWSBucket: "corp-trail", AWSQueueURL: "https://sqs.eu-west-1.amazonaws.com/111122223333/trail-files"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := otelConfig(t, a)
+	r := "receivers"
+	if dig(m, r, "aws_s3/cloudtrail", "s3downloader", "s3_bucket") != "corp-trail" ||
+		dig(m, r, "aws_s3/cloudtrail", "s3downloader", "region") != "eu-west-1" ||
+		dig(m, r, "aws_s3/cloudtrail", "sqs", "queue_url") != "https://sqs.eu-west-1.amazonaws.com/111122223333/trail-files" ||
+		dig(m, "extensions", "aws_logs_encoding/cloudtrail", "format") != "cloudtrail" {
+		t.Errorf("config:\n%s", a.Config)
+	}
+	// Only CloudTrail: no host logs, and no OTLP listener.
+	if recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any); len(recv) != 1 || recv[0] != "aws_s3/cloudtrail" {
+		t.Errorf("pipeline receivers = %v", recv)
+	}
+	if ext, _ := dig(m, "service", "extensions").([]any); len(ext) != 2 {
+		t.Errorf("extensions = %v", ext)
+	}
+	steps := strings.Join(a.Steps, "\n")
+	if !strings.Contains(steps, `"arn:aws:sqs:eu-west-1:111122223333:trail-files"`) || !strings.Contains(steps, `"arn:aws:s3:::corp-trail/*"`) ||
+		!strings.Contains(steps, "0.153 or later") || strings.Contains(steps, "Enter your CloudTrail") || strings.Contains(steps, "usermod") {
+		t.Errorf("steps = %s", steps)
+	}
+
+	// Until the page has them, examples stand in, and a step says so.
+	a, err = Generate(Options{OS: "aws", CollectorOS: "windows", ServerURL: "https://siem:8080", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.Config, cloudTrailBucketExample) || !strings.HasPrefix(a.Steps[0], "Enter your CloudTrail bucket and queue URL above. Until") ||
+		!strings.Contains(strings.Join(a.Steps, "\n"), "HKLM:") || strings.Contains(a.Config, "windowseventlog") {
+		t.Errorf("windows, no bucket:\n%s\n%q", a.Config, a.Steps)
+	}
+	for _, o := range []Options{{AWSBucket: "Not_A_Bucket"}, {AWSBucket: "a..b"}, {AWSQueueURL: "https://example.com/q"}, {AWSQueueURL: cloudTrailQueueExample + "\nx: 1"}} {
+		o.OS, o.ServerURL, o.Token = "aws", "https://siem:8080", "t"
+		var fe *FieldError
+		if _, err := Generate(o); !errors.As(err, &fe) {
+			t.Errorf("%+v: %v", o, err)
+		}
+	}
+}
+
+func TestOTelAzure(t *testing.T) {
+	a, err := Generate(Options{OS: "azure", ServerURL: "https://siem:8080", Token: "t", CA: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := otelConfig(t, a)
+	r := "receivers"
+	if dig(m, r, "azure_event_hub/signalith", "connection") != "${env:SIGNALITH_EVENT_HUB}" ||
+		dig(m, r, "azure_event_hub/signalith", "format") != "raw" ||
+		dig(m, r, "azure_event_hub/signalith", "storage") != "file_storage/signalith" {
+		t.Errorf("config:\n%s", a.Config)
+	}
+	// Only the event hub: no host logs, and no OTLP listener.
+	if recv, _ := dig(m, "service", "pipelines", "logs/signalith", "receivers").([]any); len(recv) != 1 || recv[0] != "azure_event_hub/signalith" {
+		t.Errorf("pipeline receivers = %v", recv)
+	}
+	steps := strings.Join(a.Steps, "\n")
+	if !strings.Contains(steps, "Diagnostic settings") || !strings.Contains(steps, "0.145 or later") ||
+		!strings.Contains(steps, "SIGNALITH_EVENT_HUB=Endpoint=sb://") || strings.Contains(steps, "usermod") {
+		t.Errorf("steps = %s", steps)
+	}
+	a, err = Generate(Options{OS: "azure", CollectorOS: "windows", ServerURL: "https://siem:8080", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(a.Steps, "\n"), "'SIGNALITH_EVENT_HUB=...'") || strings.Contains(a.Config, "windowseventlog") {
+		t.Errorf("windows:\n%s\n%q", a.Config, a.Steps)
 	}
 }

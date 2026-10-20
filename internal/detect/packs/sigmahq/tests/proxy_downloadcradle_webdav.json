@@ -1,0 +1,5 @@
+{"rule": "e09aed7a-09e0-4c9a-90dd-f0d52507347e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Microsoft-WebDAV-MiniRedir/","cs-method":"GET"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"cs-method":"GET"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Microsoft-WebDAV-MiniRedir/"}}
+]}

@@ -1,0 +1,5 @@
+{"rule": "9494bff8-959f-4440-bbce-fb87a208d517", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"ActivityDisplayName":"Set device registration policies","Category":"Policy"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Category":"Policy"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"ActivityDisplayName":"Set device registration policies"}}
+]}

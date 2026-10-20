@@ -1,0 +1,15 @@
+{"rule": "f56936c0-ae6f-4eeb-91ff-ecc1448c6105", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"202","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /template/aui/text-inline.vm y"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"202","url":"x /template/aui/text-inline.vm y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"202"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"202","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"202","url":"x /template/aui/text-inline.vm x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"203","url":"x /template/aui/text-inline.vm x"}}
+]}

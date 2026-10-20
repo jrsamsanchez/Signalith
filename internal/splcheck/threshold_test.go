@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package splcheck
 
 import (
@@ -30,6 +33,17 @@ func TestParseThreshold(t *testing.T) {
 			"`sysmon` EventCode IN (\"23\",\"26\") TargetFilename=\"*.doc\" | stats count min(_time) as firstTime, max(_time) as lastTime by action dest dvc signature signature_id user user_id vendor_product | where count >=100",
 			Threshold{By: []string{"action", "dest", "signature_id", "user"}, Aggs: []Agg{{"count", "count", ""}}, Limits: []Limit{{"count", ">=", 100}}},
 		},
+		{
+			// A bucket before a count not by _time only rounds the events'
+			// times: the count is over the whole search, as without it.
+			"`sysmon` EventCode IN (\"23\",\"26\") TargetFilename=\"*.doc\" | bin _time span=2m | stats count min(_time) as firstTime, max(_time) as lastTime by action dest dvc signature signature_id user user_id vendor_product | where count >=100",
+			Threshold{By: []string{"action", "dest", "signature_id", "user"}, Aggs: []Agg{{"count", "count", ""}}, Limits: []Limit{{"count", ">=", 100}}},
+		},
+		{
+			// A count by another name, and the subject of a failed logon.
+			"`wineventlog_security` EventCode=4625 | bucket span=5m _time | stats count as failures dc(TargetUserName) AS n BY _time, SubjectUserName | where failures >= 5 and n > 2",
+			Threshold{Span: 5 * time.Minute, By: []string{"src_user"}, Aggs: []Agg{{"failures", "count", ""}, {"n", "dc", "user"}}, Limits: []Limit{{"failures", ">=", 5}, {"n", ">", 2}}},
+		},
 	} {
 		r, err := Parse(rule(c.search), nil)
 		if err != nil {
@@ -43,13 +57,10 @@ func TestParseThreshold(t *testing.T) {
 	for search, want := range map[string]string{
 		// A count by _time needs a span, and a bucket a count.
 		"`wineventlog_security` EventCode=4768 | stats dc(TargetUserName) AS n BY _time, IpAddress | where n > 30": "span",
-		"`wineventlog_security` EventCode=4768 | bucket span=5m _time":                                             "bucket",
 		// The limit must read a count of the search.
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=\"a.exe\" by Processes.dest | where other >= 3": "reads no count",
 		// Fields Signalith does not keep cannot be grouped by.
 		"| tstats count from datamodel=Endpoint.Processes where Processes.process_name=\"a.exe\" by Processes.vendor_product | where count >= 3": "no Signalith mapping",
-		// Counts against an average (eventstats) are not thresholds.
-		"`wineventlog_security` EventCode=4768 | bucket span=2m _time | stats dc(TargetUserName) AS n BY _time, IpAddress | eventstats avg(n) as a BY IpAddress": "eventstats",
 	} {
 		if _, err := Parse(rule(search), nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: got %v, want an error about %s", search, err, want)

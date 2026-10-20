@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"bytes"
 	"errors"
+	"html"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -23,8 +27,9 @@ const (
 )
 
 // publicRoutes work without signing in. Ingest checks its own token; the
-// CA certificate is public.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem"}, osqueryRoutes, joinPublicRoutes, installRoutes)
+// CA certificate is public. Signing in to the public demo needs nothing
+// (demoRoute), and demo mode keeps only demoPublicRoutes of the rest.
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem", demoRoute}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, agentManagedRoutes, hecRoutes, ssoPublicRoutes, samlPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
@@ -33,8 +38,15 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 	// settings, as a signed-in answer does.
 	mux.Handle("POST /api/login", s.configToken(true, http.HandlerFunc(s.handleLogin)))
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	mux.HandleFunc(demoRoute, s.handleDemoLogin)
 	mux.HandleFunc("GET /api/tls/ca.pem", s.handleCAPEM)
 	s.routeJoinPublic(mux)
+	s.routePasskeyLogin(mux)
+	mux.HandleFunc(ssoStartRoute, s.handleSSOStart)
+	mux.HandleFunc(ssoCallbackRoute, s.handleSSOCallback)
+	mux.HandleFunc(samlStartRoute, s.handleSAMLStart)
+	mux.HandleFunc(samlACSRoute, s.handleSAMLACS)
+	mux.HandleFunc(samlMetadataRoute, s.handleSAMLMetadata)
 	if s.UI != nil {
 		mux.HandleFunc("GET /login", s.handleLoginPage)
 		// Stylesheets, fonts, the logo and the sign-in script are public so
@@ -61,6 +73,7 @@ func (s *Server) sessions() SessionStore {
 		if s.SessionStore == nil {
 			if s.Sessions == nil {
 				s.Sessions = auth.NewSessions(s.conf().SessionIdle())
+				s.Sessions.MaxAge = s.conf().SessionMaxAge()
 			}
 			s.SessionStore = MemorySessions(s.Sessions)
 		}
@@ -164,16 +177,30 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("cross-site request refused"))
 		return
 	}
+	if s.demo() && !s.demoAdminClient(r) {
+		// Nobody can try passwords on a public demo; its visitors use
+		// demoRoute.
+		demoSignInRefused(w)
+		return
+	}
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		Remember bool   `json:"remember"`
+		// Code is the two-step code, or Passkey a passkey's answer, sent
+		// with the password again once the first answer asked for it.
+		Code     string         `json:"code"`
+		Passkey  *passkeyAnswer `json:"passkey"`
+		Remember bool           `json:"remember"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	p, err := s.signIn(r, req.Username, req.Password, "session")
+	p, err := s.signIn(r, req.Username, req.Password, secondFactor{Code: req.Code, Passkey: req.Passkey}, "session")
+	if errors.Is(err, errMFANeeded) && p != nil {
+		writeJSON(w, errMFANeeded.status, s.stepNeeded(r, p))
+		return
+	}
 	if err != nil {
 		writeSignInError(w, err)
 		return
@@ -188,7 +215,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// someone elsewhere is guessing its password.
 	s.rememberBrowser(w, r, req.Username, p.Username)
 	p.Method = "session"
-	writeJSON(w, http.StatusOK, meView(p))
+	s.noteMFA(p)
+	me := meView(p)
+	if p.codeUsed != nil && p.codeUsed.Kind == users.CodeRecovery {
+		// The page says how many are left.
+		me["recovery_codes_left"] = p.codeUsed.Left
+	}
+	writeJSON(w, http.StatusOK, me)
 }
 
 // startSession starts a session for p, signing in from r: with shared
@@ -215,19 +248,29 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 			s.Log.Info("signed out", append([]any{"audit", true, "user", ss.User}, s.client(r).logAttrs()...)...)
 		}
 		s.sessions().Delete(r.Context(), c.Value)
+		s.demoSessions().Delete(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	for _, name := range []string{s.cookieName(r), s.recheckCookieName(r)} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, Secure: s.secureCookie(r)})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // handleLoginPage serves the sign-in page, or sends a signed-in browser
-// to the app. A user who must choose a new password stays here, where the
-// page asks for it.
+// to the app. A user who must choose a new password or set up two-step
+// sign-in stays here, where the page asks for it.
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(s.cookieName(r)); err == nil {
+	if s.demo() && s.demoVisitor(r) != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// In demo mode a user's session works only from demo.admin_networks
+	// (see authenticate): elsewhere this page stays, rather than send the
+	// browser back and forth.
+	if c, err := r.Cookie(s.cookieName(r)); err == nil && (!s.demo() || s.demoAdminClient(r)) {
 		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, true); ok {
-			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword {
+			if p := s.principalFor(ss.User); p != nil && !p.MustChangePassword && !p.MustSetupMFA {
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return
 			}
@@ -247,6 +290,25 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// Signalith is switching certificate authority: the line that
 		// offers the new one, hidden otherwise.
 		page = bytes.Replace(page, []byte(`id="ca-next" hidden`), []byte(`id="ca-next"`), 1)
+	}
+	c := s.conf()
+	if c.OIDCOn() || c.SAMLOn() {
+		// The single sign-on buttons, with their labels, hidden otherwise.
+		page = bytes.Replace(page, []byte(`id="sso" hidden`), []byte(`id="sso"`), 1)
+	}
+	if c.OIDCOn() {
+		page = bytes.Replace(page, []byte(`href="api/auth/oidc/start" hidden`), []byte(`href="api/auth/oidc/start"`), 1)
+		page = bytes.Replace(page, []byte(`<span id="sso-label">Sign in with single sign-on</span>`),
+			[]byte(`<span id="sso-label">`+html.EscapeString(c.OIDCSettings().ButtonLabel)+`</span>`), 1)
+	}
+	if c.SAMLOn() {
+		page = bytes.Replace(page, []byte(`href="api/auth/saml/start" hidden`), []byte(`href="api/auth/saml/start"`), 1)
+		page = bytes.Replace(page, []byte(`<span id="saml-label">Sign in with SAML single sign-on</span>`),
+			[]byte(`<span id="saml-label">`+html.EscapeString(c.SAMLSettings().ButtonLabel)+`</span>`), 1)
+	}
+	if c.DemoOn() {
+		// The public demo's one-click sign-in, hidden otherwise.
+		page = bytes.Replace(page, []byte(`id="demo" hidden`), []byte(`id="demo"`), 1)
 	}
 	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

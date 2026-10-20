@@ -1,0 +1,12 @@
+{"rule": "61884b02-0dcf-44c5-9094-db33bac09fa6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"LogMeIn/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x splashtop x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"RemotePC  x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x x  DesktopCentral Agent"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"NetSupport Manager/ x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"NetSupport Gateway/ x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":"null"}}
+]}

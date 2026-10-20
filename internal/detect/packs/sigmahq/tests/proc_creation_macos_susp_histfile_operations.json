@@ -1,0 +1,4 @@
+{"rule": "508a9374-ad52-4789-b568-fc358def2c65", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":".zhistory","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","path":"/usr/local/bin/helper"}}
+]}

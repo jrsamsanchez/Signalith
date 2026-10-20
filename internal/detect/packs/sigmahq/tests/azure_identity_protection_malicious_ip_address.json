@@ -1,0 +1,4 @@
+{"rule": "a3f55ebd-0c01-4ed6-adc0-8fb76d8cd3cd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"maliciousIPAddress"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

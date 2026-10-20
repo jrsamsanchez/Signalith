@@ -1,0 +1,7 @@
+{"rule": "21083dcb-276d-4ef9-8f7e-2113ca5e8094", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.update","reason":"User initiated pause"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.updatf","reason":"User initiated pause"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"reason":"User initiated pause"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.update","reason":"User initiated pausf"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"audit_log_streaming.update"}}
+]}

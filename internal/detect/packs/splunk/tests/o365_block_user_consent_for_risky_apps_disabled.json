@@ -1,0 +1,9 @@
+{"rule": "12a23592-e3da-4344-8545-205d3290647c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"Name\":\"AllowUserConsentForRiskyApps\",\"NewValue\":\"x true x\"}]","Operation":"Update authorization policy.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"Name\":\"AllowUserConsentForRiskyApps\",\"NewValue\":\"x true y\"}]","Operation":"Update authorization policy.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update authorization policy.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Update authorization policy.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update authorization policz.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"Name\":\"AllowUserConsentForRiskyAppt\",\"NewValue\":\"x true x\"}]","Operation":"Update authorization policy.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

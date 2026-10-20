@@ -1,0 +1,6 @@
+{"rule": "78a34b67-3c39-4886-8fb4-61c46dc18ecd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Unusual volume of file deletion","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Unusual volume of file deletion","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Unusual volume of file deletion","eventSource":"SecurityComplianceCenter"}}
+]}

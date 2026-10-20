@@ -1,0 +1,4 @@
+{"rule": "f3c89218-8c3d-4ba9-9974-f1d8e6a1b4a6", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"\u0026\u0026SET{0}{0}\\\" -Fx\u0026\u0026xCMD/C"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command packgen builds the SigmaHQ content pack from a checkout of
 // https://github.com/SigmaHQ/sigma. It converts every Windows rule of the
 // log sources Signalith parses, makes test events for each one (and uses
@@ -59,6 +62,12 @@ var categories = map[string]string{
 	"process_access":       "rules/windows/process_access",
 	"create_remote_thread": "rules/windows/create_remote_thread",
 	"ps_script":            "rules/windows/powershell/powershell_script",
+	"ps_module":            "rules/windows/powershell/powershell_module",
+	// The Windows PowerShell log's rules: its engine starting (category
+	// ps_classic_start), its providers starting
+	// (ps_classic_provider_start), or any of its events (service:
+	// powershell-classic).
+	"powershell_classic": "rules/windows/powershell/powershell_classic",
 	// Not a Sigma category: Windows System log rules (service: system),
 	// in folders by provider.
 	"system": "rules/windows/builtin/system",
@@ -111,6 +120,72 @@ var linuxCategories = map[string]string{
 	"auditd": "rules/linux/auditd",
 }
 
+// macosCategories are the macOS log source categories Signalith reads,
+// and the folders their rules live in: program starts, which osquery
+// reads from EndpointSecurity (sigmacheck.MacOSCases).
+var macosCategories = map[string]string{
+	"process_creation": "rules/macos/process_creation",
+}
+
+// webCategories are the log source categories of web servers' logs, which
+// name no product, and the folders their rules live in.
+var webCategories = map[string]string{
+	"webserver": "rules/web/webserver_generic",
+}
+
+// cloudCategories are the log sources of cloud services, by product, and
+// the folders their rules live in. Not Sigma categories: each is a
+// product's service (product: aws, service: cloudtrail).
+var cloudCategories = map[string][2]string{
+	"cloudtrail":    {"aws", "rules/cloud/aws/cloudtrail"},
+	"signinlogs":    {"azure", "rules/cloud/azure/signin_logs"},
+	"auditlogs":     {"azure", "rules/cloud/azure/audit_logs"},
+	"activitylogs":  {"azure", "rules/cloud/azure/activity_logs"},
+	"riskdetection": {"azure", "rules/cloud/azure/identity_protection"},
+	"pim":           {"azure", "rules/cloud/azure/privileged_identity_management"},
+	// Microsoft 365's rules are in a folder per service, all of them one
+	// audit log.
+	"m365": {"m365", "rules/cloud/m365"},
+	// Google Cloud's audit logs, and Google Workspace's, as Google Cloud
+	// has them when an organization shares them.
+	"gcp.audit":              {"gcp", "rules/cloud/gcp/audit"},
+	"google_workspace.admin": {"gcp", "rules/cloud/gcp/gworkspace/admin"},
+	"google_workspace.login": {"gcp", "rules/cloud/gcp/gworkspace/login"},
+	// Okta's System Log (product: okta, service: okta).
+	ingest.OktaService: {ingest.OktaService, "rules/identity/okta"},
+	// Kubernetes audit events (product: kubernetes, service: audit).
+	ingest.KubernetesService: {ingest.KubernetesService, "rules/application/kubernetes/audit"},
+	// GitHub's audit log (product: github, service: audit).
+	ingest.GitHubService: {ingest.GitHubProduct, "rules/application/github/audit"},
+}
+
+// networkCategories are the network log sources, and the folders their
+// rules live in: Zeek's own logs (product: zeek, one category per
+// service, zeek_dns), and the generic dns, firewall and proxy categories,
+// whose events a network sensor's Zeek logs carry. Their test events are
+// Zeek log lines (sigmacheck.NetworkCases).
+var networkCategories = map[string]string{
+	"zeek":     "rules/network/zeek",
+	"dns":      "rules/network/dns",
+	"firewall": "rules/network/firewall",
+	"proxy":    "rules/web/proxy_generic",
+}
+
+// networkCategory is the category a network rule's test events are made
+// for, or "" when its log source is not the plain one of its folder.
+func networkCategory(ls map[string]string, cat string) string {
+	if cat == "zeek" {
+		if ls["product"] != "zeek" || ls["category"] != "" || ls["service"] == "" {
+			return ""
+		}
+		return sigmacheck.ZeekCategoryPrefix + strings.ToLower(ls["service"])
+	}
+	if ls["category"] != cat || ls["service"] != "" || (ls["product"] != "" && ls["product"] != "zeek") {
+		return ""
+	}
+	return cat
+}
+
 // maxWildcardTerms keeps a rule's searches under
 // OpenSearch's default limit of 1,024 clauses in one search (see
 // search.WildcardFieldTerms and search.Clauses).
@@ -144,7 +219,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), and Linux rules for Sysmon for Linux and the Linux audit log, from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -174,6 +249,18 @@ func main() {
 	for c, dir := range linuxCategories {
 		sources = append(sources, source{"linux", c, dir})
 	}
+	for c, dir := range macosCategories {
+		sources = append(sources, source{"macos", c, dir})
+	}
+	for c, dir := range webCategories {
+		sources = append(sources, source{"", c, dir})
+	}
+	for c, pd := range cloudCategories {
+		sources = append(sources, source{pd[0], c, pd[1]})
+	}
+	for c, dir := range networkCategories {
+		sources = append(sources, source{"network", c, dir})
+	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].dir < sources[j].dir })
 	for _, src := range sources {
 		cat, product := src.cat, src.product
@@ -181,11 +268,14 @@ func main() {
 		if product == "linux" {
 			bases, cases = sigmacheck.LinuxBases[cat], sigmacheck.LinuxCases
 		}
+		if product == "macos" {
+			bases, cases = sigmacheck.MacOSBases[cat], sigmacheck.MacOSCases
+		}
 		if cat == "auditd" {
 			cases = sigmacheck.AuditdCases
 		}
 		files, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*.yml"))
-		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" {
+		if cat == "security" || cat == "auditd" || cat == "system" || cat == "application" || cat == "m365" {
 			more, _ := filepath.Glob(filepath.Join(*sigmaDir, src.dir, "*", "*.yml"))
 			files = append(files, more...)
 		}
@@ -216,28 +306,62 @@ func main() {
 			if cat == "system" || cat == "security" || cat == "auditd" || cat == "windefend" || cat == "application" {
 				want["category"], want["service"] = "", cat
 			}
+			if _, ok := cloudCategories[cat]; ok {
+				want["category"], want["service"] = "", cat
+			}
+			if cat == ingest.KubernetesService {
+				// Some of these rules also name the generic category
+				// application.
+				want["category"], want["service"] = "", "audit"
+				if rule.Logsource["category"] == "application" {
+					want["category"] = "application"
+				}
+			}
+			if cat == "m365" {
+				want["service"] = rule.Logsource["service"]
+			}
+			if cat == ingest.GitHubService {
+				want["service"] = "audit"
+			}
 			if cat == "code_integrity" {
 				want["category"], want["service"] = "", "codeintegrity-operational"
 			}
 			if cat == "sysmon_service" {
 				want["category"], want["service"] = "", "sysmon"
 			}
+			if cat == "powershell_classic" {
+				want["category"], want["service"] = "", "powershell-classic"
+				if c := rule.Logsource["category"]; c == "ps_classic_start" || c == "ps_classic_provider_start" {
+					want["category"], want["service"] = c, ""
+				}
+			}
 			for service := range ingest.NamedChannelServices {
 				if cat == ingest.NamedChannelCategory(service) {
 					want["category"], want["service"] = "", service
 				}
 			}
-			if rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"] {
+			if product != "network" && (rule.Logsource["product"] != want["product"] || rule.Logsource["category"] != want["category"] || rule.Logsource["service"] != want["service"]) {
 				skip("log source is not plain "+product+" "+cat, rel)
 				continue
 			}
 			rcat, rbases := cat, bases
+			if product == "network" {
+				if rcat = networkCategory(rule.Logsource, cat); rcat == "" {
+					skip("log source is not plain "+cat, rel)
+					continue
+				}
+				rbases = sigmacheck.NetworkBase(rcat)
+			}
 			if cat == "system" {
 				rcat = sigmacheck.SystemCategory(rule.EventIDs()...)
 				rbases = sigmacheck.Bases[rcat]
 			}
 			if cat == "sysmon_service" {
 				rcat = sigmacheck.SysmonServiceCategory(rule.EventIDs()...)
+				rbases = sigmacheck.Bases[rcat]
+			}
+			if cat == "powershell_classic" && want["category"] != "" {
+				rcat = want["category"]
 				rbases = sigmacheck.Bases[rcat]
 			}
 			if cat == "security" {
@@ -283,7 +407,35 @@ func main() {
 				skip("no test events: "+short(err), rel)
 				continue
 			}
-			tf := &sigmacheck.TestFile{Rule: rule.ID, Cases: cases(rcat, syn, rule.Fields())}
+			tf := &sigmacheck.TestFile{Rule: rule.ID}
+			if product == "network" {
+				tf.Cases = sigmacheck.NetworkCases(rule, rcat, syn)
+				if !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
+					skip("no test event the rule matches as a sensor logs it", rel)
+					continue
+				}
+			} else {
+				tf.Cases = cases(rcat, syn, rule.Fields())
+			}
+			if product == "macos" {
+				// An osquery program start always has its command line,
+				// which the synthesized event may have left out: the rule
+				// says again whether it matches.
+				ok := true
+				for i, c := range tf.Cases {
+					view, _ := c.SigmaView()
+					m, err := rule.Match(view)
+					if err != nil {
+						ok = false
+						break
+					}
+					tf.Cases[i].Expect = m
+				}
+				if !ok || !slices.ContainsFunc(tf.Cases, func(c sigmacheck.Case) bool { return c.Expect }) {
+					skip("no test event the rule matches as osquery reports a program start", rel)
+					continue
+				}
+			}
 			if product == "windows" {
 				tf.Cases = append(tf.Cases, regression(*sigmaDir, rel, rule, rcat)...)
 			}
@@ -357,6 +509,10 @@ var prefixes = []struct{ from, to string }{
 	{"proc_access_win_", "sigma-access-"},
 	{"create_remote_thread_win_", "sigma-thread-"},
 	{"posh_ps_", "sigma-ps-"},
+	{"zeek_", "sigma-zeek-"},
+	{"net_dns_", "sigma-net-dns-"},
+	{"net_firewall_", "sigma-firewall-"},
+	{"proxy_", "sigma-proxy-"},
 }
 
 var nonID = regexp.MustCompile(`[^a-z0-9]+`)
@@ -466,7 +622,7 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 		n += len(v)
 	}
 	fmt.Fprintf(&b, "# SigmaHQ pack report\n\nGenerated by `go run ./internal/detect/packgen` from SigmaHQ commit `%s` on %s.\n\n", p.Version, p.Date)
-	fmt.Fprintf(&b, "%d rules shipped. %d Windows and Linux rules for these log sources were left out:\n\n", len(p.Rules), n)
+	fmt.Fprintf(&b, "%d rules shipped. %d Windows, Linux, macOS and network rules for these log sources were left out:\n\n", len(p.Rules), n)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)
@@ -488,10 +644,24 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 			fmt.Fprintf(&b, "- %s\n", strings.ReplaceAll(f, "|", `\|`))
 		}
 	}
+	b.WriteString(networkReportNote)
 	if err := os.WriteFile(filepath.Join(*outDir, "REPORT.md"), []byte(b.String()), 0o644); err != nil {
 		log.Fatal(err)
 	}
 }
+
+// networkReportNote is about network rules that ship but are unlikely
+// to match what Zeek writes.
+const networkReportNote = `
+## Shipped network rules unlikely to match real Zeek data
+
+These convert faithfully and pass their test events, but Sigma's values are not the
+ones Zeek writes, so they seldom fire on a real sensor's logs (all pack rules are off
+until turned on):
+
+- rules/network/zeek/zeek_smb_converted_win_atsvc_task.yml: the share is the literal ` + "`\\\\*\\IPC$`" + `, while Zeek logs the server's own name.
+- rules/network/zeek/zeek_smb_converted_win_transferring_files_with_credential_data.yml: whole names such as ` + "`\\sam`" + ` and ` + "`\\ntds.dit`" + `, while Zeek's name is the file's path in the share (` + "`Windows\\System32\\config\\SAM`" + `).
+`
 
 // clauseNote is a report line for a rule over the clause limit.
 func clauseNote(rel string, n int, err error) string {

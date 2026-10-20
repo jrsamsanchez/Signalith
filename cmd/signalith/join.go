@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -26,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +100,9 @@ type joinEnv struct {
 	serviceActive func() bool
 	// startService enables and (re)starts the service.
 	startService func() error
+	// serviceStaysUp watches the service for a while after it started and
+	// says why not when it stops or restarts; nil watches nothing.
+	serviceStaysUp func() error
 	// systemctl runs systemctl.
 	systemctl func(args ...string) error
 	// dropInDir is where the unit's drop-in files go; "" for none.
@@ -156,6 +163,7 @@ func defaultJoinEnv() *joinEnv {
 			}
 			return e.systemctl("restart", "signalith")
 		}
+		e.serviceStaysUp = func() error { return watchUnit(systemdState, time.Sleep, serviceWatch) }
 		// Only where the signalith unit is installed: the packages' or
 		// install.sh's.
 		for _, unit := range []string{"/usr/lib/systemd/system/signalith.service", "/lib/systemd/system/signalith.service", "/etc/systemd/system/signalith.service"} {
@@ -187,6 +195,7 @@ func runJoinCommand(args []string) int {
 // joinOptions are signalith join's flags.
 type joinOptions struct {
 	token, config, name, listen, nodeURL       string
+	agentListen                                string
 	copySyslog, noStart, merge, yes, allowSkew bool
 }
 
@@ -197,6 +206,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.StringVar(&o.config, "c", defaultConfigPath(), "config file")
 	fs.StringVar(&o.name, "name", "", "this server's name (default: SIGNALITH_NODE_NAME, else the one it has, else this computer's name)")
 	fs.StringVar(&o.listen, "listen", "", "address the web page and API listen on (default: SIGNALITH_LISTEN, else the answering server's)")
+	fs.StringVar(&o.agentListen, "agent-listen", "", "address agents send to (server.agent_listen; default: SIGNALITH_AGENT_LISTEN, else the answering server's)")
 	fs.StringVar(&o.nodeURL, "node-url", "", "address the other servers reach this one at (server.node_url; default: SIGNALITH_NODE_URL)")
 	fs.BoolVar(&o.copySyslog, "copy-syslog", false, "receive syslog on the same addresses as the answering server")
 	fs.BoolVar(&o.noStart, "no-start", false, "write everything, but do not start the service")
@@ -204,7 +214,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.BoolVar(&o.yes, "yes", false, "do not ask before joining")
 	fs.BoolVar(&o.allowSkew, "allow-version-skew", false, "join a cluster whose servers run another version")
 	fs.Usage = func() {
-		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
+		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--agent-listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
 		fmt.Fprintln(errOut, "The token may be - to read it from the standard input, or left out to be asked for it without showing it.")
 		fs.PrintDefaults()
 	}
@@ -219,6 +229,9 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	}
 	if o.nodeURL == "" {
 		o.nodeURL = strings.TrimSpace(getenv("SIGNALITH_NODE_URL"))
+	}
+	if o.agentListen == "" {
+		o.agentListen = strings.TrimSpace(getenv("SIGNALITH_AGENT_LISTEN"))
 	}
 	switch {
 	case len(pos) == 1:
@@ -281,6 +294,8 @@ type joiner struct {
 	bundle *clusterjoin.Bundle
 	key    *shared.ClusterKey
 	listen string
+	// agentListen is server.agent_listen to write, "" for none.
+	agentListen string
 	// name is the name this server joins with, "" for the one it has or
 	// this computer's.
 	name string
@@ -515,7 +530,9 @@ func (j *joiner) makeLocal() error {
 		j.made = append(j.made, state)
 	}
 	local, err := cluster.OpenLocal(state, cluster.LocalOptions{Name: j.name, InContainer: cluster.InContainer()})
-	j.made = append(j.made, filepath.Join(state, "cluster"))
+	// node.id sits in the state folder itself, which the packages make:
+	// giving the folder would not give it.
+	j.made = append(j.made, filepath.Join(state, "cluster"), cluster.IdentityPath(state))
 	if err == nil {
 		j.id = local.Identity
 		local.Close()
@@ -685,7 +702,14 @@ func (j *joiner) join(ctx context.Context) error {
 	if j.key, err = shared.ClusterKeyFrom(b.ClusterKey); err != nil || j.key.ID() != b.KID {
 		return failf(joinExitFailed, "The cluster key the server at %s sent is damaged.", j.tok.URL)
 	}
+	if !config.ValidRole(b.Role) {
+		return failf(joinExitFailed, "The server at %s asks this server to join as a %q, which Signalith %s does not know: install the cluster's version first.", j.tok.URL, b.Role, version)
+	}
+	if b.Role == config.RoleScanner {
+		j.printf("This server joins as a scanner: it scans the networks picked for it and never runs the background jobs.\n")
+	}
 	j.listen = firstSet(j.o.listen, b.Listen, j.c.Server.Listen)
+	j.agentListen = firstSet(j.o.agentListen, b.AgentListen)
 	return nil
 }
 
@@ -938,7 +962,14 @@ func (j *joiner) mergeAfterWrite(ctx context.Context) error {
 // admin password to show: the cluster's users sign in.
 func (j *joiner) writeConfig(path string) error {
 	c := config.Default()
+	c.Auth.AdminUser = config.DefaultAdminUser
 	c.Server.Listen = firstSet(j.listen, c.Server.Listen)
+	c.Server.AgentListen = j.agentListen
+	if c.Server.AgentListen == "" {
+		// Set, as signalith init does, so the web port takes no agent
+		// traffic; on the web page's host.
+		c.Server.AgentListen = config.DefaultAgentListen(c.Server.Listen)
+	}
 	c.Server.TLS = &config.ServerTLS{Mode: config.TLSAuto, PlaintextIngest: "deny"}
 	c.Syslog.UDP, c.Syslog.TCP, c.Syslog.TLS = "", "", ""
 	// No built-in admin password: a joined server's users are the
@@ -1002,8 +1033,18 @@ func (j *joiner) writeSettings(path string, files osFiles, now time.Time) error 
 			return err
 		}
 	}
+	if j.agentListen != "" {
+		if err := set("server.agent_listen", j.agentListen); err != nil {
+			return err
+		}
+	}
 	if j.o.nodeURL != "" {
 		if err := set("server.node_url", j.o.nodeURL); err != nil {
+			return err
+		}
+	}
+	if r := j.bundle.Role; r != config.RoleServer {
+		if err := set("cluster.role", r); err != nil {
 			return err
 		}
 	}
@@ -1091,7 +1132,7 @@ func (j *joiner) start() error {
 		host := j.id.Name
 		_, port, err := net.SplitHostPort(j.listen)
 		if err != nil || port == "" {
-			port = "8080"
+			port = "9000"
 		}
 		where = "https://" + net.JoinHostPort(host, port)
 	}
@@ -1107,6 +1148,11 @@ func (j *joiner) start() error {
 	}
 	if err := j.env.startService(); err != nil {
 		return failf(joinExitStart, "Everything is written, but the service did not start: %v. See its log (journalctl -u signalith), fix what it says, and start it again.", err)
+	}
+	if f := j.env.serviceStaysUp; f != nil {
+		if err := f(); err != nil {
+			return failf(joinExitStart, "Everything is written and the service started, but %v. See its log (journalctl -u signalith), fix what it says, and start it again.", err)
+		}
 	}
 	j.printf("%s joined %s. Add it to your load balancer: %s\n", j.id.Name, j.clusterName(), where)
 	return nil
@@ -1298,5 +1344,54 @@ func runOpenSearchCheck(ctx context.Context, args []string, out io.Writer, geten
 		return errChecksFailed
 	}
 	fmt.Fprintln(out, "OpenSearch is ready for several servers.")
+	return nil
+}
+
+// serviceWatch is how long join watches the service after starting it:
+// longer than the unit's RestartSec (5s), so a server that stops at once
+// is seen restarting.
+const serviceWatch = 15 * time.Second
+
+// systemdState reads the signalith unit's state and how often systemd
+// restarted it.
+func systemdState() (active string, restarts int, err error) {
+	out, err := exec.Command("systemctl", "show", "signalith", "-p", "ActiveState", "-p", "NRestarts").Output()
+	if err != nil {
+		return "", 0, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		k, v, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch k {
+		case "ActiveState":
+			active = v
+		case "NRestarts":
+			restarts, _ = strconv.Atoi(v)
+		}
+	}
+	return active, restarts, nil
+}
+
+// watchUnit watches the service for d after it started, through state,
+// and says why it does not stay up: it failed, stopped, or systemd
+// restarted it. When its state cannot be read it says nothing.
+func watchUnit(state func() (string, int, error), sleep func(time.Duration), d time.Duration) error {
+	_, first, err := state()
+	if err != nil {
+		return nil
+	}
+	const step = time.Second
+	for waited := time.Duration(0); waited < d; waited += step {
+		sleep(step)
+		active, n, err := state()
+		if err != nil {
+			return nil
+		}
+		switch {
+		case n > first:
+			return fmt.Errorf("it keeps stopping (systemd restarted it %d times)", n-first)
+		case active == "failed" || active == "inactive":
+			return fmt.Errorf("it stopped (%s)", active)
+		}
+	}
 	return nil
 }

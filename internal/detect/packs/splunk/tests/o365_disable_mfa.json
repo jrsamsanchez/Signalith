@@ -1,0 +1,5 @@
+{"rule": "c783dd98-c703-4252-9e8a-f19d9f5c949e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Disable Strong Authentication.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Disable Strong Authenticatioo.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

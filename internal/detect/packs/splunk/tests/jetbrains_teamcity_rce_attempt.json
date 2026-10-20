@@ -1,0 +1,9 @@
+{"rule": "89a58e5f-1365-4793-b45c-770abbb32b6c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /app/rest/users/id:1/tokens/RPC2 x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /app/rest/users/id:1/tokens/RPC2 y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /app/rest/users/id:1/tokens/RPC2 x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x /app/rest/users/id:1/tokens/RPC2 x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /app/rest/users/id:1/tokens/RPC2 x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /app/rest/users/id:1/tokens/RPC2 x"}}
+]}

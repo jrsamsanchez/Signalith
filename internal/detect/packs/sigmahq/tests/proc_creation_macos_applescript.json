@@ -1,0 +1,6 @@
+{"rule": "1bc2e6c5-0885-472b-bed6-be5ea8eace55", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":".scpt","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"set fileRef set imageData to the clipboard .scpt osascript  -e x","parent_cmdline":"opencode","parent_path":"opencode","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/osascript","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":".scpt","path":"/usr/local/bin/helper"}}
+]}

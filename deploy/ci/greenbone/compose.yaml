@@ -1,0 +1,296 @@
+# Greenbone Community Edition for the OpenVAS check in
+# .github/workflows/greenbone.yml: the upstream compose file
+# (github.com/greenbone/docs, src/_static/compose.yaml) without the web
+# interface, with gvmd's socket on the host and two vulnerable targets.
+name: signalith-greenbone
+
+services:
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - vt_data_vol:/mnt
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - notus_data_vol:/mnt
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - scap_data_vol:/mnt
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - cert_data_vol:/mnt
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - cert_data_vol:/mnt
+    depends_on:
+      cert-bund-data:
+        condition: service_healthy
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - data_objects_vol:/mnt
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - data_objects_vol:/mnt
+    depends_on:
+      data-objects:
+        condition: service_healthy
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data
+    volumes:
+      - gpg_data_vol:/mnt
+
+  redis-server:
+    image: registry.community.greenbone.net/community/redis-server
+    deploy:
+      restart_policy:
+        condition: any
+    volumes:
+      - redis_socket_vol:/run/redis/
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable
+    deploy:
+      restart_policy:
+        condition: any
+    volumes:
+      - psql_data_vol:/var/lib/postgresql
+      - psql_socket_vol:/var/run/postgresql
+    depends_on:
+      pg-gvm-migrator:
+        condition: service_completed_successfully
+
+  pg-gvm-migrator:
+    image: registry.community.greenbone.net/community/pg-gvm-migrator:stable
+    deploy:
+      restart_policy:
+        condition: none
+    volumes:
+      - psql_data_vol:/var/lib/postgresql
+      - psql_socket_vol:/var/run/postgresql
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable
+    deploy:
+      restart_policy:
+        condition: any
+    volumes:
+      - gvmd_data_vol:/var/lib/gvm
+      - scap_data_vol:/var/lib/gvm/scap-data/
+      - cert_data_vol:/var/lib/gvm/cert-data
+      - data_objects_vol:/var/lib/gvm/data-objects/gvmd
+      - vt_data_vol:/var/lib/openvas/plugins
+      - psql_data_vol:/var/lib/postgresql
+      - ${GVMD_SOCKET_DIR:-/tmp/gvmd}:/run/gvmd
+      - ospd_openvas_socket_vol:/run/ospd
+      - psql_socket_vol:/var/run/postgresql
+    depends_on:
+      pg-gvm:
+        condition: service_started
+      scap-data:
+        condition: service_healthy
+      cert-bund-data:
+        condition: service_healthy
+      dfn-cert-data:
+        condition: service_healthy
+      data-objects:
+        condition: service_healthy
+      report-formats:
+        condition: service_healthy
+
+  # Sets log level of openvas to the set LOG_LEVEL within the env
+  # and changes log output to /var/log/openvas instead /var/log/gvm
+  # to reduce likelihood of unwanted log interferences
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - openvas_data_vol:/mnt
+      - openvas_log_data_vol:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf
+        chmod 644 /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+
+  openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    volumes:
+      - openvas_data_vol:/etc/openvas
+      - openvas_log_data_vol:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat /etc/openvas/openvas.conf
+        tail -f /var/log/openvas/openvas.log
+    depends_on:
+      configure-openvas:
+        condition: service_completed_successfully
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable
+    deploy:
+      restart_policy:
+        condition: any
+    environment:
+      # `service_notus` is set to disable everything but notus,
+      # if you want to utilize openvasd directly, remove `OPENVASD_MODE`
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - openvas_data_vol:/etc/openvas
+      - openvas_log_data_vol:/var/log/openvas
+      - gpg_data_vol:/etc/openvas/gnupg
+      - notus_data_vol:/var/lib/notus
+    # enable port forwarding when you want to use the http api from your host machine
+    # ports:
+    #   - 127.0.0.1:3000:80
+    depends_on:
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+      configure-openvas:
+        condition: service_completed_successfully
+      gpg-data:
+        condition: service_completed_successfully
+    networks:
+      default:
+        aliases:
+          - openvasd
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable
+    deploy:
+      restart_policy:
+        condition: any
+    hostname: ospd-openvas.local
+    cap_add:
+      - NET_ADMIN # for capturing packages in promiscuous mode
+      - NET_RAW # for raw sockets e.g. used for the boreas alive detection
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      [
+        "ospd-openvas",
+        "-f",
+        "--config",
+        "/etc/gvm/ospd-openvas.conf",
+        "--notus-feed-dir",
+        "/var/lib/notus/advisories",
+        "-m",
+        "666",
+      ]
+    volumes:
+      - gpg_data_vol:/etc/openvas/gnupg
+      - vt_data_vol:/var/lib/openvas/plugins
+      - notus_data_vol:/var/lib/notus
+      - ospd_openvas_socket_vol:/run/ospd
+      - redis_socket_vol:/run/redis/
+      - openvas_data_vol:/etc/openvas/
+      - openvas_log_data_vol:/var/log/openvas
+    depends_on:
+      redis-server:
+        condition: service_started
+      gpg-data:
+        condition: service_completed_successfully
+      configure-openvas:
+        condition: service_completed_successfully
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+
+  # Deliberately vulnerable targets for the scan, at fixed addresses.
+  # Apache 2.4.49 has a known path traversal (CVE-2021-41773); Redis with
+  # no password is a weakness OpenVAS reports.
+  target-httpd:
+    image: httpd:2.4.49
+    networks:
+      default:
+        ipv4_address: 172.29.0.50
+
+  target-redis:
+    image: redis:6.0.5
+    command: ["redis-server", "--protected-mode", "no"]
+    networks:
+      default:
+        ipv4_address: 172.29.0.51
+
+  # For the signed-in scan: Debian 12.0 (2023) with an SSH server and a
+  # plain scan user, signalith-scan, who signs in with the key the
+  # workflow makes in ./keys. Its old packages are what OpenVAS's
+  # signed-in checks report.
+  target-ssh:
+    image: debian:bookworm-20230612
+    command:
+      - sh
+      - -c
+      - >-
+        apt-get update && apt-get install -y --no-install-recommends openssh-server &&
+        useradd --create-home --shell /bin/sh signalith-scan &&
+        install -d -m 755 /run/sshd &&
+        install -d -m 700 -o signalith-scan -g signalith-scan /home/signalith-scan/.ssh &&
+        install -m 600 -o signalith-scan -g signalith-scan /keys/scan.pub /home/signalith-scan/.ssh/authorized_keys &&
+        exec /usr/sbin/sshd -D -e
+    volumes:
+      - ./keys:/keys:ro
+    networks:
+      default:
+        ipv4_address: 172.29.0.52
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  gpg_data_vol:
+  scap_data_vol:
+  cert_data_vol:
+  data_objects_vol:
+  gvmd_data_vol:
+  psql_data_vol:
+  vt_data_vol:
+  notus_data_vol:
+  psql_socket_vol:
+  ospd_openvas_socket_vol:
+  redis_socket_vol:
+  openvas_data_vol:
+  openvas_log_data_vol:

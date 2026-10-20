@@ -1,0 +1,4 @@
+{"rule": "459a2970-bb84-4e6a-a32e-ff0fbd99448d", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.KEYVAULT/VAULTS/WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

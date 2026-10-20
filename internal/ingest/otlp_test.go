@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -304,6 +307,19 @@ func TestOTLPFilelogAuthLine(t *testing.T) {
 	})
 }
 
+func TestOTLPFilelogAccessLine(t *testing.T) {
+	docs := otlpDocs(t, tRes{attrs: host, recs: []tRec{{
+		observed: uint64(now.UnixNano()),
+		body:     `203.0.113.7 - - [11/Oct/2026:11:58:01 +0000] "POST /wp-login.php HTTP/1.1" 200 512 "-" "curl/8.5"`,
+		attrs:    []tKV{{"log.file.name", "access.log"}, {"log.file.path", "/var/log/nginx/access.log"}},
+	}}})
+	expect(t, docs[0], map[string]any{
+		"datamodel": "Web", "sourcetype": "nginx:access", "src": "203.0.113.7", "http_method": "POST",
+		"url": "/wp-login.php", "status": "200", "http_user_agent": "curl/8.5", "host": "web1",
+		"@timestamp": "2026-10-11T11:58:01Z",
+	})
+}
+
 func TestOTLPSyslogReceiver(t *testing.T) {
 	ts := uint64(now.Add(-time.Hour).UnixNano())
 	docs := otlpDocs(t, tRes{recs: []tRec{{
@@ -546,23 +562,19 @@ func TestOTLPRefusesBadRequests(t *testing.T) {
 	for range MaxDepth + 1 {
 		deep = []any{deep}
 	}
-	big := strings.Repeat("x", MaxRecordBytes)
 	cases := []struct {
 		name   string
 		body   []byte
 		isJSON bool
 		status int
 	}{
+		// Too deep in the resource, which every record shares.
+		{"too deep resource", encodeProto(tRes{attrs: []tKV{{"k", deep}}, recs: []tRec{{body: "ok"}}}), false, http.StatusBadRequest},
+		{"too deep resource JSON", encodeJSON(tRes{attrs: []tKV{{"k", deep}}, recs: []tRec{{body: "ok"}}}), true, http.StatusBadRequest},
 		{"truncated protobuf", encodeProto(tRes{recs: []tRec{{body: "hello"}}})[:12], false, http.StatusBadRequest},
 		{"group wire type", []byte{0x0b}, false, http.StatusBadRequest},
-		{"too deep protobuf", encodeProto(tRes{recs: []tRec{{body: deep}}}), false, http.StatusBadRequest},
-		{"too deep JSON", encodeJSON(tRes{recs: []tRec{{body: deep}}}), true, http.StatusBadRequest},
-		{"record too large", encodeProto(tRes{recs: []tRec{{body: big}}}), false, http.StatusRequestEntityTooLarge},
-		{"record too large JSON", encodeJSON(tRes{recs: []tRec{{body: big}}}), true, http.StatusRequestEntityTooLarge},
+
 		{"not JSON", []byte("[1,2"), true, http.StatusBadRequest},
-		{"wrong JSON types", []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"intValue":"x"}}]}]}]}`), true, http.StatusBadRequest},
-		// The second record is bad: nothing at all is written.
-		{"bad record after good", []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"ok"}},{"attributes":7}]}]}]}`), true, http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		b := &countingBulk{}
@@ -587,6 +599,67 @@ func TestOTLPBatchesLargeRequests(t *testing.T) {
 	p := &Pipeline{Store: b, Now: func() time.Time { return now }}
 	res, err := p.IngestOTLP(context.Background(), encodeProto(tRes{recs: recs}), false)
 	if err != nil || res.Indexed != len(recs) {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if len(b.calls) != 2 || b.calls[0] != batchEvents {
+		t.Errorf("bulk calls = %v", b.calls)
+	}
+}
+
+// A record that is too large, too deep or doesn't decode is rejected on its
+// own; the rest of the request is written.
+func TestOTLPRejectsBadRecordsAlone(t *testing.T) {
+	deep := any("x")
+	for range MaxDepth + 1 {
+		deep = []any{deep}
+	}
+	big := strings.Repeat("x", MaxRecordBytes)
+	good := tRec{body: "fine"}
+	cases := []struct {
+		name   string
+		body   []byte
+		isJSON bool
+		reason string
+	}{
+		{"too deep protobuf", encodeProto(tRes{recs: []tRec{good, {body: deep}, good}}), false, "log record 2: a log record nests values more than 32 levels deep"},
+		{"too deep JSON", encodeJSON(tRes{recs: []tRec{good, {body: deep}, good}}), true, "log record 2: a log record nests values more than 32 levels deep"},
+		{"record too large", encodeProto(tRes{recs: []tRec{good, {body: big}, good}}), false, "log record 2 is "},
+		{"record too large JSON", encodeJSON(tRes{recs: []tRec{good, {body: big}, good}}), true, "log record 2 is "},
+		{"wrong JSON types", []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"ok"}},{"body":{"intValue":"x"}},{"body":{"stringValue":"ok"}}]}]}]}`), true, "log record 2: invalid intValue"},
+		{"bad record after good", []byte(`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"ok"}},{"attributes":7},{"body":{"stringValue":"ok"}}]}]}]}`), true, "invalid log record 2"},
+	}
+	for _, tc := range cases {
+		b := &countingBulk{keep: true}
+		p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+		res, err := p.IngestOTLP(context.Background(), tc.body, tc.isJSON)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if res.Received != 3 || res.Indexed != 2 || res.Rejected != 1 || len(b.docs) != 2 {
+			t.Errorf("%s: %+v, %d documents", tc.name, res, len(b.docs))
+		}
+		if len(res.Errors) != 1 || !strings.HasPrefix(res.Errors[0].Reason, tc.reason) {
+			t.Errorf("%s: errors %+v, want %q", tc.name, res.Errors, tc.reason)
+		}
+		if st := p.Stats(); st.Received != 3 || st.Failed != 1 {
+			t.Errorf("%s: stats %+v", tc.name, st)
+		}
+	}
+}
+
+// An Event Hub message split into more records than a batch holds is
+// written in batches of the usual size.
+func TestOTLPBatchesSplitMessages(t *testing.T) {
+	recs := make([]string, batchEvents+10)
+	for i := range recs {
+		recs[i] = `{"time":"2026-10-11T11:58:01Z","category":"Administrative","operationName":"x","tenantId":"t"}`
+	}
+	msg := `{"records": [` + strings.Join(recs, ",") + `]}`
+	b := &countingBulk{}
+	p := &Pipeline{Store: b, Now: func() time.Time { return now }}
+	res, err := p.IngestOTLP(context.Background(), encodeProto(tRes{recs: []tRec{{body: msg}}}), false)
+	if err != nil || res.Received != len(recs) || res.Indexed != len(recs) {
 		t.Fatalf("%+v %v", res, err)
 	}
 	if len(b.calls) != 2 || b.calls[0] != batchEvents {

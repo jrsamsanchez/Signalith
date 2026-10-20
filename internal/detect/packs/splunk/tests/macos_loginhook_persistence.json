@@ -1,0 +1,5 @@
+{"rule": "a04832e7-9d1d-49b1-a684-e31bcd775c77", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x defaults  x x write x x loginwindow x x loginhook x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x defaults  x x write x x loginwindow x x loginhook y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}}
+]}

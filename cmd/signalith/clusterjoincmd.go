@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -33,8 +36,8 @@ var joinSecured = func(c *config.Config) error { return clusterjoin.ViewOf(c).Se
 
 // tokenOptions are signalith cluster token's flags.
 type tokenOptions struct {
-	platform, note, nodeURL, url string
-	ttl                          time.Duration
+	platform, note, nodeURL, url, role string
+	ttl                                time.Duration
 	// revoke is the id of a token to cancel instead.
 	revoke string
 }
@@ -104,16 +107,16 @@ func (x *clusterCLI) token(ctx context.Context, o tokenOptions, asJSON bool) err
 		// reaches.
 		u, err = (&joinAPI{c: x.c}).tokenURL("")
 		if p, perr := url.Parse(u); err != nil || perr != nil || tokenHostLocal(p.Hostname()) {
-			return errors.New("a join token needs this server's https address that the new server reaches: give it with -url https://siem-a.example.com:8080, or set server.node_url (or server.public_url) on the Settings page")
+			return errors.New("a join token needs this server's https address that the new server reaches: give it with -url https://siem-a.example.com:9000, or set server.node_url (or server.public_url) on the Settings page")
 		}
 	}
 	is, err := x.join.Issue(ctx, clusterjoin.IssueArgs{By: x.by, Node: x.self.Name, URL: u, CADER: ca, TTL: o.ttl,
-		Platform: o.platform, Note: o.note, NodeURL: o.nodeURL})
+		Platform: o.platform, Note: o.note, NodeURL: o.nodeURL, Role: o.role})
 	if err != nil {
 		return err
 	}
 	defer is.Token.Clear()
-	x.audit("join token made", "token", is.Token.ID, "platform", o.platform, "expires_at", is.ExpiresAt, "note", o.note)
+	x.audit("join token made", "token", is.Token.ID, "platform", o.platform, "role", o.role, "expires_at", is.ExpiresAt, "note", o.note)
 	text := is.Token.String()
 	linux, windows, docker := api.JoinLines(text)
 	commands := map[string]string{"linux": linux, "windows": windows, "docker": docker}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build integration && linux
 
 package main
@@ -77,6 +80,8 @@ type itCluster struct {
 	servers []*itServer
 	// fake is the in-memory OpenSearch, nil with a real one.
 	fake *ostest.Server
+	// bin is the server binary, itBinary's when empty.
+	bin string
 }
 
 type itServer struct {
@@ -89,7 +94,13 @@ type itServer struct {
 
 func newITCluster(t *testing.T, names ...string) *itCluster {
 	t.Helper()
-	c := &itCluster{t: t, root: t.TempDir(), prefix: "signalithlg" + strings.ToLower(newRunID()[:6])}
+	return newITClusterBin(t, "", names...)
+}
+
+// newITClusterBin starts the servers from bin (itBinary's when empty).
+func newITClusterBin(t *testing.T, bin string, names ...string) *itCluster {
+	t.Helper()
+	c := &itCluster{t: t, root: t.TempDir(), prefix: "signalithlg" + strings.ToLower(newRunID()[:6]), bin: bin}
 	c.osURL = os.Getenv("SIGNALITH_TEST_OPENSEARCH")
 	if c.osURL == "" {
 		if os.Getenv("CI") != "" {
@@ -156,6 +167,13 @@ func (c *itCluster) start(name string) *itServer {
 	must(t, os.MkdirAll(filepath.Join(s.dir, "lookups"), 0o755))
 	cfg := fmt.Sprintf("server:\n  listen: 127.0.0.1:%d\nopensearch:\n  url: %q\n  index_prefix: %s\ncluster:\n  node_name: %s\n",
 		s.port, c.osURL, c.prefix, name)
+	if urls := itNodeURLs(); len(urls) > 0 {
+		quoted := make([]string, len(urls))
+		for i, u := range urls {
+			quoted[i] = strconv.Quote(u)
+		}
+		cfg = strings.Replace(cfg, "opensearch:\n", "opensearch:\n  urls: ["+strings.Join(quoted, ", ")+"]\n", 1)
+	}
 	for _, f := range []struct{ key, env string }{{"ca_file", "SIGNALITH_TEST_OPENSEARCH_CA"}, {"cert_file", "SIGNALITH_TEST_OPENSEARCH_CERT"}, {"key_file", "SIGNALITH_TEST_OPENSEARCH_KEY"}} {
 		if v := os.Getenv(f.env); v != "" {
 			cfg = strings.Replace(cfg, "opensearch:\n", fmt.Sprintf("opensearch:\n  %s: %q\n", f.key, v), 1)
@@ -164,9 +182,12 @@ func (c *itCluster) start(name string) *itServer {
 	must(t, os.WriteFile(filepath.Join(s.dir, "signalith.yaml"), []byte(cfg), 0o600))
 	logf, err := os.OpenFile(filepath.Join(s.dir, "signalith.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	must(t, err)
-	cmd := exec.Command(itBinary(t), "serve", "-c", filepath.Join(s.dir, "signalith.yaml"))
-	cmd.Env = append(os.Environ(), "SIGNALITH_ADMIN_PASSWORD="+itPassword, "SIGNALITH_STATE_DIR="+s.dir,
-		"SIGNALITH_CLUSTER_KEY_FILE="+c.keyFile, "SIGNALITH_INGEST_TOKEN="+itToken)
+	bin := c.bin
+	if bin == "" {
+		bin = itBinary(t)
+	}
+	cmd := exec.Command(bin, "serve", "-c", filepath.Join(s.dir, "signalith.yaml"))
+	cmd.Env = append(os.Environ(), c.env(s)...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	must(t, cmd.Start())
 	s.cmd, s.done = cmd, make(chan struct{})
@@ -210,6 +231,18 @@ func (c *itCluster) start(name string) *itServer {
 	return s
 }
 
+// env is what a server needs in its environment besides the test's own.
+func (c *itCluster) env(s *itServer) []string {
+	return []string{"SIGNALITH_ADMIN_PASSWORD=" + itPassword, "SIGNALITH_STATE_DIR=" + s.dir,
+		"SIGNALITH_CLUSTER_KEY_FILE=" + c.keyFile, "SIGNALITH_INGEST_TOKEN=" + itToken}
+}
+
+// itNodeURLs are the other nodes of the test OpenSearch, from
+// SIGNALITH_TEST_OPENSEARCH_URLS (comma separated), when it has several.
+func itNodeURLs() []string {
+	return splitComma(os.Getenv("SIGNALITH_TEST_OPENSEARCH_URLS"))
+}
+
 // scenario loads a file from loadtest/ and points it at this cluster.
 func (c *itCluster) scenario(file string) *Scenario {
 	t := c.t
@@ -222,7 +255,7 @@ func (c *itCluster) scenario(file string) *Scenario {
 		s.CAFiles = append(s.CAFiles, filepath.Join(sv.dir, "tls", "ca.pem"))
 	}
 	s.Credentials = Credentials{AdminFile: filepath.Join(c.root, "admin.txt"), TokenFile: filepath.Join(c.root, "token.txt")}
-	s.OpenSearch = OpenSearch{URL: c.osURL, CA: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CA"),
+	s.OpenSearch = OpenSearch{URL: c.osURL, URLs: itNodeURLs(), CA: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CA"),
 		Cert: os.Getenv("SIGNALITH_TEST_OPENSEARCH_CERT"), Key: os.Getenv("SIGNALITH_TEST_OPENSEARCH_KEY"), Prefix: c.prefix}
 	for i := range s.Faults {
 		f := &s.Faults[i]
@@ -330,6 +363,121 @@ func TestLoadgenLeaderKilled(t *testing.T) {
 func TestLoadgenBrowsers(t *testing.T) {
 	c := newITCluster(t, "a", "b")
 	requirePass(t, c.run(c.scenario("s2-browsers-small.yaml")))
+}
+
+// versionedBinary builds the server with the clustertest tag as version
+// v, as internal/integration's rolling-upgrade test does.
+func versionedBinary(t *testing.T, v string) string {
+	t.Helper()
+	bin := filepath.Join(filepath.Dir(itBinary(t)), "signalith-"+v)
+	if _, err := os.Stat(bin); err == nil {
+		return bin
+	}
+	cmd := exec.Command("go", "build", "-tags", "clustertest", "-ldflags", "-X main.version="+v, "-o", bin, "../signalith")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build %s: %v\n%s", v, err, out)
+	}
+	return bin
+}
+
+// upgradeCmd writes, for each server, a script that upgrades it to bin as
+// a package upgrade does: stop the server (SIGTERM, as systemd stops it)
+// and start bin on the same files and port. It returns the fault's
+// command, and kills the new processes when the test ends.
+func (c *itCluster) upgradeCmd(bin string) string {
+	t := c.t
+	t.Helper()
+	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	for _, sv := range c.servers {
+		pidFile := filepath.Join(c.root, sv.name+".pid")
+		var env strings.Builder
+		for _, kv := range c.env(sv) {
+			k, v, _ := strings.Cut(kv, "=")
+			fmt.Fprintf(&env, "%s=%s ", k, q(v))
+		}
+		script := fmt.Sprintf(`set -e
+pid=$(cat %[1]s)
+kill -TERM "$pid"
+i=0
+while kill -0 "$pid" 2>/dev/null; do
+  i=$((i+1))
+  if [ "$i" -gt 600 ]; then kill -KILL "$pid"; fi
+  sleep 0.1
+done
+%[2]s nohup %[3]s serve -c %[4]s >>%[5]s 2>&1 </dev/null &
+echo $! >%[1]s
+`, q(pidFile), env.String(), q(bin), q(filepath.Join(sv.dir, "signalith.yaml")), q(filepath.Join(sv.dir, "signalith.log")))
+		must(t, os.WriteFile(filepath.Join(c.root, "upgrade-"+sv.name+".sh"), []byte(script), 0o700))
+		first := sv.cmd.Process.Pid
+		t.Cleanup(func() {
+			b, err := os.ReadFile(pidFile)
+			pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+			if err != nil || pid == first || pid <= 0 {
+				return
+			}
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			for range 100 {
+				if syscall.Kill(pid, 0) != nil {
+					return
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		})
+	}
+	return "sh " + filepath.Join(c.root, "upgrade-{server}.sh")
+}
+
+// TestLoadgenRollingUpgrade is S7 at CI size: two servers that run 9.9.0
+// are upgraded to 9.9.1 one at a time while agents send and analysts keep
+// their pages open. The jobs move once, to the upgraded server, and
+// nothing is lost.
+func TestLoadgenRollingUpgrade(t *testing.T) {
+	// The upgraded server takes the jobs 5 s after it is ready, not a
+	// minute, so the run stays short.
+	t.Setenv("SIGNALITH_TEST_YIELD_SETTLE", "5s")
+	older, newer := versionedBinary(t, "9.9.0"), versionedBinary(t, "9.9.1")
+	c := newITClusterBin(t, older, "a", "b")
+	s := c.scenario("s7-small.yaml")
+	for i := range s.Faults {
+		if s.Faults[i].Kind == "upgrade" {
+			s.Faults[i].Cmd = c.upgradeCmd(newer)
+		}
+	}
+	rep := c.run(s)
+	requirePass(t, rep)
+	var steps []UpgradeStep
+	for _, f := range rep.Faults {
+		steps = append(steps, f.Upgrades...)
+	}
+	if len(steps) != 2 {
+		t.Fatalf("upgrades %+v", steps)
+	}
+	for _, st := range steps {
+		if st.From != "9.9.0" || st.To != "9.9.1" || !st.Drained {
+			t.Errorf("%+v", st)
+		}
+	}
+}
+
+// TestLoadgenOpenSearchNodeLoss is S9 at CI size: two servers that list
+// all three nodes of the test OpenSearch carry on while the second node is
+// stopped (loadtest/s9-small.yaml stops its container). It needs an
+// OpenSearch of three nodes: SIGNALITH_TEST_OPENSEARCH and
+// SIGNALITH_TEST_OPENSEARCH_URLS, as the nightly job's opensearch-node-loss
+// step sets them.
+func TestLoadgenOpenSearchNodeLoss(t *testing.T) {
+	if len(itNodeURLs()) == 0 || os.Getenv("SIGNALITH_TEST_OPENSEARCH") == "" {
+		t.Skip("needs an OpenSearch of several nodes: set SIGNALITH_TEST_OPENSEARCH and SIGNALITH_TEST_OPENSEARCH_URLS")
+	}
+	c := newITCluster(t, "a", "b")
+	rep := c.run(c.scenario("s9-small.yaml"))
+	requirePass(t, rep)
+	if rep.Skipped != "" {
+		t.Fatalf("skipped: %s", rep.Skipped)
+	}
+	if len(rep.Faults) != 1 || rep.Faults[0].Error != "" || rep.Faults[0].Undone == nil {
+		t.Errorf("the node was not stopped and started again: %+v", rep.Faults)
+	}
 }
 
 func TestLoadgenBrute(t *testing.T) {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -49,6 +52,9 @@ type JoinTokenRequest struct {
 	TTLMinutes int    `json:"ttl_minutes"`
 	Note       string `json:"note"`
 	NodeURL    string `json:"node_url"`
+	// Role is the role the new server takes: "" a cluster server, or
+	// "scanner".
+	Role string `json:"role"`
 	// Origin is the https address the admin's browser reached this server
 	// at, used when the server has no node_url or public_url; CADER is
 	// the certificate authority the new server finds at GET
@@ -72,10 +78,10 @@ func (s *Server) routeJoinPublic(mux *http.ServeMux) {
 func (s *Server) routeClusterJoin(api *router) {
 	// Who may join the cluster is the admin's to decide.
 	api.admin("GET /api/cluster/join/tokens", s.handleJoinTokens)
-	api.admin("POST /api/cluster/tokens", s.handleJoinTokenNew)
+	api.sensitive("POST /api/cluster/tokens", s.handleJoinTokenNew)
 	api.admin("DELETE /api/cluster/tokens/{id}", s.handleJoinTokenRevoke)
 	api.admin("GET /api/cluster/pending", s.handleJoinPending)
-	api.admin("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
+	api.sensitive("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
 }
 
 var errNoJoin = errors.New("this server cannot add servers to a cluster: it does not keep shared settings")
@@ -278,7 +284,7 @@ func (s *Server) handleJoinTokenNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer is.Token.Clear()
-	s.audit(r, "join token made", "token", is.Token.ID, "platform", req.Platform, "expires_at", is.ExpiresAt, "note", req.Note)
+	s.audit(r, "join token made", "token", is.Token.ID, "platform", req.Platform, "role", req.Role, "expires_at", is.ExpiresAt, "note", req.Note)
 	text := is.Token.String()
 	out := joinTokenAnswer{ID: is.Token.ID, Token: text, ExpiresAt: is.ExpiresAt, Commands: commandsFor(text), InstallSHA256: map[string]string{}}
 	if c, sums, err := s.Install.lines(is.Token.URL, text, s.Version); err == nil {

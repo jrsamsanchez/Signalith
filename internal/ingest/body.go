@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -64,6 +67,13 @@ func badBody(format string, args ...any) *BodyError {
 // to), records already stored count as duplicates instead of being
 // stored twice.
 func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Result, error) {
+	if isKubernetesTag(tag) || bytes.Contains(body[:min(len(body), 256)], []byte(`"EventList"`)) {
+		// A Kubernetes API server's audit webhook posts its events as one
+		// EventList: they are its records.
+		if items, ok := kubeEventListItems(body); ok {
+			body = items
+		}
+	}
 	n, err := checkBody(body)
 	if err != nil {
 		return nil, err
@@ -108,7 +118,11 @@ func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Re
 			p.stats.Failed.Add(int64(n - done))
 			return nil, err
 		}
-		batch = append(batch, Normalize(tag, rec, p.now()))
+		ev, drop := p.normalize(tag, rec, p.now())
+		if drop {
+			continue
+		}
+		batch = append(batch, ev)
 		total.noteHost(&batch[len(batch)-1])
 		size += len(raw)
 		if len(batch) >= batchEvents || size >= batchBytes {
@@ -136,13 +150,15 @@ func bodySeed(tag string, body []byte) [sha256.Size]byte {
 
 // recordID is the document ID of the record at pos in the request seed
 // identifies: the same in every send of that request, and different for
-// identical records within it.
+// identical records within it. The records of one request share the
+// seed's first bytes, so OpenSearch's check that an ID is new reads one
+// spot of the index for the whole request instead of a random spot per
+// record, which on a large index is what limits how fast it can store.
 func recordID(seed [sha256.Size]byte, pos int) string {
-	var b [sha256.Size + 8]byte
-	copy(b[:], seed[:])
-	binary.BigEndian.PutUint64(b[sha256.Size:], uint64(pos))
-	sum := sha256.Sum256(b[:])
-	return base64.RawURLEncoding.EncodeToString(sum[:18])
+	var b [18]byte
+	copy(b[:14], seed[:14])
+	binary.BigEndian.PutUint32(b[14:], uint32(pos))
+	return base64.RawURLEncoding.EncodeToString(b[:])
 }
 
 // checkBody reads a body without keeping what it decodes and returns how

@@ -1,0 +1,6 @@
+{"rule": "1012f107-b8f1-4271-af30-5aed2de89b39", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x","ParentCommandLine":"\\svchost.exetermsvcs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":":\\Windows\\System32\\wininit.exe","ParentCommandLine":"\\svchost.exe termsvcs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"ParentCommandLine":"\\svchost.exetermsvcs"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"x"}}
+]}

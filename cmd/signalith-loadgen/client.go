@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -70,7 +73,8 @@ func readSecret(path string) (string, error) {
 	return line, nil
 }
 
-// readLogin reads "user:password", or a password for admin.
+// readLogin reads "user:password", or a password for the built-in admin
+// of a new install, signalithadmin.
 func readLogin(path string) (user, password string, err error) {
 	s, err := readSecret(path)
 	if err != nil {
@@ -79,7 +83,7 @@ func readLogin(path string) (user, password string, err error) {
 	if u, p, ok := strings.Cut(s, ":"); ok && u != "" && !strings.ContainsAny(u, " \t") {
 		return u, p, nil
 	}
-	return "admin", s, nil
+	return "signalithadmin", s, nil
 }
 
 // readUsers reads a CSV of username,password.
@@ -135,6 +139,8 @@ type Session struct {
 	client   *http.Client
 	mu       sync.Mutex
 	signedIn bool
+	// version is the X-Signalith-Version of the last answer.
+	version string
 }
 
 func newSession(base string, tr http.RoundTripper, user, password string) *Session {
@@ -189,6 +195,14 @@ func (s *Session) Do(ctx context.Context, method, path string, in, out any) erro
 	return err
 }
 
+// Version is the version of the server that answered last, "" before
+// any answer.
+func (s *Session) Version() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.version
+}
+
 func (s *Session) raw(ctx context.Context, method, path string, body []byte, out any) error {
 	var rd io.Reader
 	if body != nil {
@@ -210,6 +224,11 @@ func (s *Session) raw(ctx context.Context, method, path string, body []byte, out
 		return err
 	}
 	defer resp.Body.Close()
+	if v := resp.Header.Get("X-Signalith-Version"); v != "" {
+		s.mu.Lock()
+		s.version = v
+		s.mu.Unlock()
+	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return &apiError{Status: resp.StatusCode, Body: truncate(string(b), 300)}
@@ -244,6 +263,8 @@ type clusterView struct {
 		Jobs    string `json:"jobs"`
 		NodeURL string `json:"node_url"`
 		OS      string `json:"os"`
+		Version string `json:"version"`
+		NodeID  string `json:"node_id"`
 	} `json:"servers"`
 }
 

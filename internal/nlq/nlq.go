@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package nlq turns plain-English questions into Signalith queries, such
 // as "failed logins from 203.0.113.9 in the last 24 hours" or "top 10 users
 // with failed logins". It works offline with a vocabulary of security
@@ -323,7 +326,7 @@ type translator struct {
 	earliest  string
 	latest    string
 
-	mode      string // "", stats, timechart, top
+	mode      string // "", stats, timechart, top, latest
 	agg       query.Agg
 	by        []string
 	pending   []string // nouns that may be a group-by
@@ -357,6 +360,7 @@ type translator struct {
 	vulnCategory string // category=: vulnerability or open_port
 	vulnSeverity string // severity=
 	vulnKEV      bool   // known_exploited=true
+	vulnLikely   bool   // known_exploited=false epss>=0.1
 }
 
 func (t *translator) low(k int) string {
@@ -396,7 +400,7 @@ func (t *translator) setModel(m string) {
 // the matching rule consumed.
 func (t *translator) step() int {
 	for _, rule := range []func() int{
-		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleTop, t.ruleAgg, t.ruleGroup,
+		t.ruleQuoted, t.ruleTime, t.ruleThreshold, t.ruleMalware, t.ruleVulns, t.ruleNegation, t.ruleLatest, t.ruleTop, t.ruleAgg, t.ruleGroup,
 		t.ruleShowFields, t.ruleContains, t.rulePreposition, t.ruleNoun, t.ruleWords, t.ruleValue,
 	} {
 		if n := rule(); n > 0 {
@@ -567,6 +571,24 @@ func (t *translator) ruleNegation() int {
 	return 0
 }
 
+// ruleLatest handles "latest login per user", "most recent process on
+// each host": the newest event for each value, which dedup keeps since
+// events come newest first.
+func (t *translator) ruleLatest() int {
+	k := 0
+	switch {
+	case t.low(0) == "latest" || t.low(0) == "newest":
+		k = 1
+	case t.low(0) == "most" && t.low(1) == "recent":
+		k = 2
+	}
+	if k == 0 || t.mode != "" {
+		return 0
+	}
+	t.mode = "latest"
+	return t.note(k, "only the newest event")
+}
+
 func (t *translator) ruleTop() int {
 	w := t.low(0)
 	k := 0
@@ -637,11 +659,17 @@ func (t *translator) ruleAgg() int {
 		return t.distinctAfter(0)
 	}
 	fn := map[string]string{"total": "sum", "sum": "sum", "average": "avg", "avg": "avg", "mean": "avg",
-		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min"}[w]
+		"maximum": "max", "max": "max", "minimum": "min", "min": "min", "smallest": "min", "median": "median"}[w]
+	k := 1
+	// "95th percentile", "standard deviation of"
+	if n, ok := percentileWord(w); ok && (t.low(1) == "percentile" || t.low(1) == "pct") {
+		fn, k = "perc"+strconv.Itoa(n), 2
+	} else if w == "standard" && t.low(1) == "deviation" {
+		fn, k = "stdev", 2
+	}
 	if fn == "" {
 		return 0
 	}
-	k := 1
 	if t.low(k) == "of" {
 		k++
 	}
@@ -649,18 +677,48 @@ func (t *translator) ruleAgg() int {
 	if nk == 0 || !nn.numeric {
 		return 0
 	}
-	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min"}[fn] + "_" + nn.field}
+	prefix := map[string]string{"sum": "total", "avg": "avg", "max": "max", "min": "min", "median": "median", "stdev": "stdev"}[fn]
+	name := map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum", "median": "median", "stdev": "standard deviation"}[fn]
+	if prefix == "" { // a percentile
+		prefix = "p" + strings.TrimPrefix(fn, "perc")
+		name = ordinalWord(query.Percentile(fn)) + " percentile"
+	}
+	t.agg = query.Agg{Func: fn, Field: nn.field, Alias: prefix + "_" + nn.field}
 	if t.mode == "" {
 		t.mode = "stats"
 	}
 	t.hintModel(nn)
-	return t.note(k+nk, "%s of %s", map[string]string{"sum": "total", "avg": "average", "max": "maximum", "min": "minimum"}[fn], nn.name)
+	return t.note(k+nk, "%s of %s", name, nn.name)
 }
 
 func (t *translator) countMode() {
 	if t.mode == "" {
 		t.mode = "stats"
 	}
+}
+
+// percentileWord reads "95th" or "99th" as a percentile.
+func percentileWord(w string) (int, bool) {
+	for _, suf := range []string{"th", "st", "nd", "rd"} {
+		if d, ok := strings.CutSuffix(w, suf); ok {
+			n, err := strconv.Atoi(d)
+			return n, err == nil && n >= 1 && n <= 99
+		}
+	}
+	return 0, false
+}
+
+func ordinalWord(n int) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+	case n%10 == 1:
+		return strconv.Itoa(n) + "st"
+	case n%10 == 2:
+		return strconv.Itoa(n) + "nd"
+	case n%10 == 3:
+		return strconv.Itoa(n) + "rd"
+	}
+	return strconv.Itoa(n) + "th"
 }
 
 // distinctAfter handles "distinct users" starting at offset k.
@@ -681,11 +739,21 @@ func (t *translator) distinctAfter(k int) int {
 	return t.note(k+1+nk, "count distinct %ss", nn.name)
 }
 
+// sameWords before a noun ask for one row per value of it, as in "from
+// the same source" or "by a single user".
+var sameWords = set("same", "single")
+
 func (t *translator) ruleGroup() int {
 	w := t.low(0)
 	k := 0
 	switch {
 	case w == "by" || w == "per" || w == "across":
+		k = 1
+	case sameWords[w]:
+		// "from the same source", "a single user": one row per source.
+		if _, nk := t.nounAt(1); nk == 0 {
+			return 0
+		}
 		k = 1
 	case (w == "for" && (t.low(1) == "each" || t.low(1) == "every")) || ((w == "grouped" || w == "split" || w == "broken") && t.low(1) == "by"):
 		k = 2
@@ -736,6 +804,9 @@ func (t *translator) ruleGroup() int {
 	}
 	if t.mode == "" {
 		t.mode = "stats"
+	}
+	if t.mode == "latest" {
+		return t.note(k, "for each %s", strings.Join(names, " and "))
 	}
 	return t.note(k, "one row per %s", strings.Join(names, " and "))
 }
@@ -822,8 +893,12 @@ func (t *translator) rulePreposition() int {
 		return 0
 	}
 	k := 1
-	if t.low(k) == "the" {
+	if t.low(k) == "the" || (t.low(k) == "a" && sameWords[t.low(k+1)]) {
 		k++
+	}
+	if sameWords[t.low(k)] {
+		// "from the same source" groups; ruleGroup takes "same source".
+		return k
 	}
 	nt, ok := t.tok(k)
 	if !ok || !t.looksLikeValue(nt) || nouns[nt.low].field != "" || modelWords[nt.low] != "" {
@@ -1317,7 +1392,10 @@ func (t *translator) finish() *query.Query {
 		mode = "stats"
 		t.steps[t.chartStep].Meaning = "not applied: counts cover the whole time range, not each interval"
 	}
-	needEntity := mode == "top" || t.threshold != nil
+	if mode == "latest" && t.threshold != nil {
+		mode = "stats"
+	}
+	needEntity := mode == "top" || mode == "latest" || t.threshold != nil
 	if len(by) == 0 && needEntity {
 		if len(t.pending) > 0 {
 			by = []string{resolve(t.pending[0])}
@@ -1340,8 +1418,8 @@ func (t *translator) finish() *query.Query {
 		if n == 0 {
 			n = 10
 		}
-		if agg.Func == "count" && !t.ascending && t.threshold == nil {
-			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n})
+		if agg.Func == "count" && t.threshold == nil {
+			q.Commands = append(q.Commands, &query.Top{Fields: by, Limit: n, Rare: t.ascending})
 			break
 		}
 		q.Commands = append(q.Commands, &query.Stats{Aggs: []query.Agg{agg}, By: by})
@@ -1356,6 +1434,11 @@ func (t *translator) finish() *query.Query {
 		}
 		if len(by) > 0 {
 			q.Commands = append(q.Commands, &query.Sort{Keys: []query.SortKey{{Field: col, Desc: !t.ascending}}})
+		}
+	case "latest":
+		q.Commands = append(q.Commands, &query.Dedup{N: 1, Fields: by})
+		if len(t.fields) > 0 {
+			q.Commands = append(q.Commands, &query.Table{Fields: append([]string{"_time"}, dedupe(mapStrings(t.fields, resolve))...)})
 		}
 	default:
 		if len(t.fields) > 0 {
@@ -1586,6 +1669,10 @@ func (t *translator) ruleVulns() int {
 		t.setModel("Vulnerabilities")
 		t.vulnCategory, t.vulnKEV = "vulnerability", true
 		return t.note(2, "vulnerabilities attackers are known to use (CISA KEV)")
+	case "likely exploited":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory, t.vulnLikely = "vulnerability", true
+		return t.note(2, "vulnerabilities not yet known exploited with an EPSS of 10%% or more")
 	case "open port", "open ports":
 		t.setModel("Vulnerabilities")
 		if t.vulnCategory == "" {
@@ -1625,7 +1712,7 @@ func (t *translator) ruleVulns() int {
 }
 
 // vulnTerms returns the vulnerability filters, in a fixed order:
-// category, severity, known_exploited.
+// category, severity, known_exploited, epss.
 func (t *translator) vulnTerms() []query.Expr {
 	var out []query.Expr
 	if t.vulnCategory != "" {
@@ -1636,6 +1723,10 @@ func (t *translator) vulnTerms() []query.Expr {
 	}
 	if t.vulnKEV {
 		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "true"})
+	}
+	if t.vulnLikely && !t.vulnKEV {
+		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "false"},
+			&query.Compare{Field: "epss", Op: ">=", Value: "0.1"})
 	}
 	return out
 }

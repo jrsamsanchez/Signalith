@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -237,5 +240,45 @@ func TestOpenSearchCollectors(t *testing.T) {
 	Gather(context.Background(), f, 5*time.Second, OpenSearchCollectors(c, false, t.TempDir()))
 	if o := f.OpenSearch; len(o.DataPaths) != 1 || o.DataPaths[0].Path != here || len(o.DataMissing) != 0 {
 		t.Errorf("data %+v %q", o.DataPaths, o.DataMissing)
+	}
+}
+
+// The probe presents no client certificate, not even the one the cluster
+// issued this server: OpenSearch lets that one read.
+func TestAnonymousProbeNoClientCertificate(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			w.Write([]byte(`{"count":1}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	srv.TLS = &tls.Config{ClientAuth: tls.RequestClientCert}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "node"}, NotBefore: time.Now().Add(-time.Hour),
+		NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	certFile, keyFile := filepath.Join(dir, "client.pem"), filepath.Join(dir, "client.key")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := conn(srv.URL)
+	c.CAFile, c.ManagedCertFile, c.ManagedKeyFile = caFile, certFile, keyFile
+	if r := probeAnonymous(context.Background(), c, "signalith"); r.state != "closed" {
+		t.Errorf("with the cluster's client certificate configured: %+v", r)
 	}
 }

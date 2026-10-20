@@ -1,9 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"net/http"
-
-	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 func (s *Server) routeClusterFeatures(api *router) {
@@ -41,7 +42,7 @@ func (s *Server) handleClusterFeatures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	admin := false
-	if p := principalOf(r); p != nil && p.Role.AtLeast(users.Admin) {
+	if principalOf(r).runsServer() {
 		admin = true
 	}
 	states := s.Features()

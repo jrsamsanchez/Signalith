@@ -28,8 +28,8 @@ prints a report and, with `-json`, saves it.
   as how fast another server takes over the background jobs) are skipped, not failed.
   One server is the baseline the other results are compared with.
 
-A nightly GitHub job runs the short scenarios (S1, S2, S3, S4 and S6 at CI size) on two
-servers sharing the Docker quick start's OpenSearch and keeps each report. A second job
+A nightly GitHub job runs the short scenarios (S1, S2, S3, S4, S6, S7 and S9 at CI size) on two
+servers sharing the Docker quick start's OpenSearch (three nodes of it for S9) and keeps each report. A second job
 in it measures the sizing table below.
 
 ## Scenarios
@@ -42,9 +42,9 @@ in it measures the sizing table below.
 | S4 | The server that runs the background jobs is stalled, then killed (in the lab also cut off from OpenSearch, its clock moved and OpenSearch's disk filled) | Another server takes over within 45 s; never two at once; nothing lost |
 | S5 | A large configuration: thousands of users, detections and indicators | Pages within 2 s and searches within 3 s for 95% of requests, agents answered within 2 s, as without it; how long each part took to make is recorded |
 | S6 | Wrong passwords against many accounts from many addresses, spread over every server | Each account gets only a few real password checks in total, whichever server is asked, and the guessing is refused |
-| S7 | A rolling upgrade under load | Skipped until rolling upgrades are supported |
+| S7 | Every server upgraded in turn under load, as [Rolling upgrade](servers.md#rolling-upgrade-one-server-at-a-time) says: wait for the upgrade check, drain, install, resume | Every server reaches the new version; the jobs move once, to an upgraded server, and never run on two at once; nothing lost; nobody signed out; each open page reloads at most once |
 | S8 | A Windows server joined to a Linux one (lab) | It takes at least half its even share of agents' events, runs the background jobs after a takeover within 45 s, and writes to the archive share as its computer account |
-| S9 | One of three OpenSearch nodes stopped under load (lab) | Signalith's own indices never lose their last copy (yellow, not red); fewer than 1% of batches refused and none lost; nobody signed out. Skipped on versions without `opensearch.urls` |
+| S9 | One of three OpenSearch nodes stopped under load, as in [OpenSearch failover](opensearch-failover.md) | Signalith's own indices never lose their last copy (yellow, not red); fewer than 1% of batches refused and none lost; nobody signed out. Skipped on versions without `opensearch.urls` |
 
 ## Sizing
 
@@ -88,14 +88,28 @@ The latest numbers are in each night's `sizing-reports` artifact, as `sizing.md`
 
 ### Lab sizes
 
-Lab measurements on separate machines (3 Linux servers with 4 vCPU and 8 GB each, and a
-3-node OpenSearch cluster) will fill this table, using S1 at full size as the
-[lab runbook](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/README.md)
-describes.
+Measured in a cloud lab on separate machines with
+[loadtest/tb-day.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/tb-day.yaml):
+200 agents sending 25,000 events a second of about 500 bytes for 4 hours, 5 analysts
+searching, and the built-in detections on. It ran for 4 hours on each of two days in a row (October 2026),
+each day into a new daily index, with OpenSearch 3.9.0 and automatic shards.
 
-| Events/s | Servers | OpenSearch nodes | CPU per server | Memory per server |
+| Events/s stored | Per day | Signalith servers | OpenSearch nodes | Result |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| about 21,500 (median), 24,000 (p95) | about 1.86 billion events, about 1 TB | 1, with 2 vCPU and 4 GB | 2, with 8 vCPU and 16 GB each, on network volumes | Steady in both runs; 99% of batches answered within 1.8 s; searches under 0.8 s (p95); no detection ran late |
+| all 25,000 offered (672 million in 4 hours, none dropped) | about 2.16 billion events, about 1 TB | 3, with 2 vCPU each | 2, with 4 vCPU each, on network volumes | 1,520 detections spread over the servers, none late; events searchable 2 s after sending (median), 9 s (p95); searches under 1.7 s (p95) |
+
+The one Signalith server's 2 cores were the limit (about 70% busy on average), so it
+stored about 21,500 of the 25,000 events a second offered. To reach 25,000, give the server more cores or add a
+[second server](multi-server.md). OpenSearch was about 27% busy and refused no writes.
+With three Signalith servers (one 4-hour run, October 2026), all 25,000 events a second
+were stored with 1,520 detections turned on and
+[spread over the servers](servers.md#the-background-jobs) (25, 21 and 18 of 64 groups).
+The Signalith servers averaged under 50% CPU. This time OpenSearch was the limit: both
+4-core nodes peaked at 99-100% CPU and their data volumes were 95-99% busy, so for more
+headroom give OpenSearch more cores, faster local disks or a third node. In an earlier
+three-server run, spread detections stayed evenly shared with no late runs through a
+restart and a crash.
 
 ## Known limits
 
@@ -103,11 +117,11 @@ describes.
   before it answers, the agent sends the batch again to whichever server it reaches. A
   batch resent unchanged to any server is recognised and not stored again; the load test
   counts any duplicate that still gets through.
-- **Notes on one case are written one at a time.** Each server adds notes and
-  comments to a case in turn and waits until each can be searched, so when many people
-  write in the same case at once their notes queue: with 10 analysts each adding a note
-  every 2 s to one case, a note took about 5 s to save in the nightly run. Different
-  cases do not wait for each other.
+- **The cases list can lag a note by a second.** A note, pinned event or saved search
+  is saved without waiting for OpenSearch to make it searchable, so many people can
+  write in one case at once (10 analysts on two servers: notes save in well under a
+  second). The case itself shows the note at once; only the list's order by last update
+  can be a second behind.
 - **Agents do not move by themselves.** An agent sends to one address. With several
   servers, put a load balancer in front of them; DNS round robin alone leaves an agent
   sending to a server that is down until its DNS answer changes.

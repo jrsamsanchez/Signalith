@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -28,6 +31,10 @@ type FaultResult struct {
 	// the fault hit the server that ran them.
 	TakeoverSeconds *float64 `json:"takeover_seconds,omitempty"`
 	NewLeader       string   `json:"new_leader,omitempty"`
+	// ToUpgrade are the servers an upgrade set out to upgrade, and
+	// Upgrades what it did to each, in order.
+	ToUpgrade []string      `json:"to_upgrade,omitempty"`
+	Upgrades  []UpgradeStep `json:"upgrades,omitempty"`
 }
 
 // takeoverLimit is how long a takeover is waited for before it counts as
@@ -59,6 +66,10 @@ func (r *runner) fault(ctx context.Context, f Fault, start time.Time) FaultResul
 	res := FaultResult{Kind: f.Kind, Target: f.Target, At: time.Since(start).Seconds()}
 	if signalFaults[f.Kind] && runtime.GOOS == "windows" {
 		res.Skipped = "this fault stops processes with signals, which needs Linux"
+		return res
+	}
+	if f.Kind == "upgrade" {
+		r.upgradeAll(ctx, f, &res)
 		return res
 	}
 	leader := ""
@@ -136,9 +147,16 @@ func (r *runner) faultAction(ctx context.Context, f Fault, cmd, server string, u
 	return nil
 }
 
-// runShell runs a command line with the system's shell.
+// runShell runs a command line with the system's shell, for at most two
+// minutes.
 func runShell(ctx context.Context, line string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	return runShellFor(ctx, line, 2*time.Minute)
+}
+
+// runShellFor runs a command line with the system's shell, for at most
+// limit.
+func runShellFor(ctx context.Context, line string, limit time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	var c *exec.Cmd
 	if runtime.GOOS == "windows" {
@@ -251,15 +269,19 @@ func (r *runner) waitTakeover(ctx context.Context, old string) (time.Duration, s
 }
 
 // sampleLeaders asks every target, once a second, whether it runs the
-// jobs, and records the most that said so at the same moment.
+// jobs, and records the most that said so at the same moment, and how
+// often the jobs moved to another server.
 func (r *runner) sampleLeaders(ctx context.Context) {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	last := time.Now()
+	var moves leaseMoves
 	for {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		n, windows := 0, false
+		var epoch int64
+		holder := ""
 		for _, s := range r.admin {
 			wg.Add(1)
 			go func() {
@@ -267,11 +289,17 @@ func (r *runner) sampleLeaders(ctx context.Context) {
 				var v clusterView
 				c, cancel := context.WithTimeout(ctx, 2*time.Second)
 				defer cancel()
-				if s.Do(c, http.MethodGet, "/api/cluster", nil, &v) == nil && v.Lease.Mine {
-					mu.Lock()
+				if s.Do(c, http.MethodGet, "/api/cluster", nil, &v) != nil {
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				if v.Lease.Epoch > epoch {
+					epoch, holder = v.Lease.Epoch, v.Lease.HolderName
+				}
+				if v.Lease.Mine {
 					n++
 					windows = windows || v.isWindows(v.selfName())
-					mu.Unlock()
 				}
 			}()
 		}
@@ -282,6 +310,9 @@ func (r *runner) sampleLeaders(ctx context.Context) {
 		now := time.Now()
 		r.m.Add("leader_samples", 1)
 		r.m.Set("", "leaders_at_once", float64(n))
+		if moves.seen(epoch, holder) {
+			r.m.Add("jobs_moves", 1)
+		}
 		if windows {
 			// The time since the last sample counts as led by Windows.
 			r.m.Add("windows_led_ms", now.Sub(last).Milliseconds())
@@ -293,4 +324,24 @@ func (r *runner) sampleLeaders(ctx context.Context) {
 		case <-tick.C:
 		}
 	}
+}
+
+// leaseMoves follows the job lease through samples: the newest epoch any
+// server reported, and who held it.
+type leaseMoves struct {
+	epoch  int64
+	holder string
+}
+
+// seen notes a sample's newest lease and says whether the jobs moved to
+// another server since the last one. A lease without a holder (released,
+// not taken yet) is no move.
+func (l *leaseMoves) seen(epoch int64, holder string) bool {
+	if epoch <= l.epoch || holder == "" {
+		return false
+	}
+	l.epoch = epoch
+	moved := l.holder != "" && holder != l.holder
+	l.holder = holder
+	return moved
 }

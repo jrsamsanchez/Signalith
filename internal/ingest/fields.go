@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -35,7 +38,7 @@ const (
 	// beyond the known fields, for all servers together: each server that
 	// stored events in the last 10 minutes gets an equal share, and at
 	// least minNamesPerServer (see Pipeline.Servers). With the known
-	// fields it stays well under the template's limit of 2000, which
+	// fields it stays well under the template's limit (totalFieldsLimit), which
 	// leaves room for names added before a restart.
 	maxNewNamesPerIndex = 1000
 	// minNamesPerServer is the smallest share of maxNewNamesPerIndex one
@@ -72,7 +75,7 @@ var knownFields = func() map[string]string {
 
 		// Where each event came from (origin.go): mapped up front so they
 		// survive the known-fields-only retry.
-		IntakeField: kw, TokenField: kw, TokenIDField: kw, SenderField: kw,
+		IntakeField: kw, TokenField: kw, TokenIDField: kw, SenderField: kw, TokenPurposeField: kw,
 
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,
@@ -273,6 +276,87 @@ var knownFields = func() map[string]string {
 		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
 		// long would cut to 9 in sorts, charts and stats.
 		"cvss": double,
+		// An EPSS score and percentile are fractions (0.944).
+		"epss": double, "epss_percentile": double,
+		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
+		// be 0 as a long.
+		"duration": double,
+
+		// Network sensors (zeek.go, suricata.go): the fixed extras each
+		// log type keeps besides its data model fields, so sensor data
+		// never uses a day's field budget.
+		"zeek_history": kw, "zeek_missed_bytes": long, "zeek_local_orig": kw, "zeek_local_resp": kw,
+		"zeek_trans_depth": long, "zeek_note": kw, "zeek_sub": kw, "zeek_fuid": kw, "zeek_source": kw,
+		"zeek_analyzers": kw, "zeek_rejected": kw, "zeek_qclass_name": kw, "zeek_rtt": double,
+		"zeek_established": kw, "zeek_resumed": kw, "zeek_curve": kw, "zeek_next_protocol": kw,
+		"zeek_cert_chain_fps": kw, "zeek_is_orig": kw, "zeek_seen_bytes": long, "zeek_missing_bytes": long,
+		"zeek_peer":    kw,
+		"suricata_gid": long, "suricata_rev": long, "suricata_flow_state": kw, "suricata_flow_reason": kw,
+		"suricata_alerted": kw, "suricata_in_iface": kw, "suricata_tx_id": long, "suricata_app_proto": kw,
+		"suricata_file_state": kw, "suricata_file_stored": kw, "suricata_payload_printable": "text",
+		"suricata_event_type": kw, "suricata_anomaly_type": kw, "suricata_anomaly_event": kw,
+		// A Suricata event type no mapping knows: its own object as JSON
+		// text, one field however many keys it has.
+		"suricata_detail": "text",
+		// Sensor health: Zeek capture_loss and stats, Suricata stats.
+		"capture_loss_percent": double, "packets_received": long, "packets_dropped": long,
+		"drop_percent": double, "uptime_seconds": long, "sensor_interface": kw,
+		// The status line of a sensor the install script built
+		// (sensorstatus.go). rules_updated stays text, like device_time:
+		// it is the sensor's word, not a time Signalith checked.
+		"sensor_role": kw, "sensor_version": kw, "zeek_version": kw, "suricata_version": kw,
+		"fluentbit_version": kw, "sensor_zeek_running": kw, "sensor_suricata_running": kw,
+		"sensor_link": kw, "rules_updated": kw, "rules_count": long, "rules_update": kw,
+		"disk_free_percent": double, "disk_free_bytes": long, "sensor_disk_encrypted": kw,
+		"sensor_time_synced": kw, "sensor_warnings": kw,
+
+		// AWS CloudTrail (cloudtrail.go): the caller's name as Splunk's AWS
+		// add-on names it, and a call's whole parameters and response as
+		// JSON text, which rules search for words inside.
+		"user_name": kw, "request_parameters": "wildcard", "response_elements": "wildcard",
+	}
+	// And the record's own fields, by CloudTrail's names.
+	for _, k := range cloudTrailMapped {
+		m[k] = kw
+	}
+	// Azure records (azure.go): the record's own fields, and the
+	// resources an Entra ID audit record changed, as JSON text.
+	for _, k := range azureMapped {
+		m[k] = kw
+	}
+	m["properties.targetResources"] = "wildcard"
+	// Whether a user or an app made an Entra ID change, as Splunk's add-on
+	// names it.
+	m["src_user_type"] = kw
+	// Microsoft 365 audit records (o365.go): the record's own fields, and
+	// its record type by name.
+	for _, k := range o365Mapped {
+		m[k] = kw
+	}
+	// Google Cloud log entries (gcp.go): the entry's own fields.
+	for _, k := range gcpMapped {
+		m[k] = kw
+	}
+	// Okta System Log events (okta.go): the event's own fields.
+	for _, k := range oktaMapped {
+		m[k] = kw
+	}
+	// GitHub audit log events (github.go): the event's own fields.
+	for _, k := range githubMapped {
+		m[k] = kw
+	}
+	// Kubernetes audit events (kubernetes.go): the event's own fields,
+	// some deeper than a sender's names may go.
+	for _, k := range kubernetesMapped {
+		m[k] = kw
+	}
+	// The fields the shipped cloud rules read (rulefields.go).
+	for _, k := range cloudRuleFields {
+		m[k] = kw
+	}
+	// And the lists of objects they read inside, as JSON text.
+	for _, k := range cloudTrailLists {
+		m[k] = "wildcard"
 	}
 	add := func(fs []datamodel.Field) {
 		for _, f := range fs {
@@ -303,6 +387,31 @@ var knownFields = func() map[string]string {
 // (see the sample package). Its value is the load's ID.
 const SampleField = datamodel.SampleField
 
+// knownObjects are the objects the known fields' dotted names make
+// (properties, properties.status), which no value may take the name of.
+var knownObjects = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range knownFields {
+		for i := range len(k) {
+			if k[i] == '.' {
+				m[k[:i]] = true
+			}
+		}
+	}
+	return m
+}()
+
+// knownPrefix reports whether a dotted name's parts start with a known
+// field, which would become an object.
+func knownPrefix(parts []string) bool {
+	for i := 1; i < len(parts); i++ {
+		if KnownField(strings.Join(parts[:i], ".")) {
+			return true
+		}
+	}
+	return false
+}
+
 // KnownField reports whether Signalith's own parsers produce a field name,
 // so the index template maps it and events always keep it.
 func KnownField(name string) bool {
@@ -313,15 +422,25 @@ func KnownField(name string) bool {
 // validFieldName reports whether a sender-chosen name can become a field:
 // at most maxFieldNameLen bytes of letters, digits and _ - @ : /, parts
 // separated by single dots, at most maxFieldDepth parts, and not starting
-// with _ (OpenSearch reserves those names) or another symbol.
+// with _ (OpenSearch reserves those names) or another symbol. A part may
+// end in {}, as Splunk names the values in a list (targetResources{}.type).
 func validFieldName(name string) bool {
 	if name == "" || len(name) > maxFieldNameLen || !utf8.ValidString(name) {
 		return false
 	}
 	depth := 1
 	partStart := true
-	for _, r := range name {
+	for i, r := range name {
 		switch {
+		case r == '{':
+			// {} after a part's name, then the part's end or another {}.
+			if partStart || !strings.HasPrefix(name[i:], "{}") || i+2 < len(name) && name[i+2] != '.' && name[i+2] != '{' {
+				return false
+			}
+		case r == '}':
+			if i == 0 || name[i-1] != '{' {
+				return false
+			}
 		case r == '.':
 			if partStart {
 				return false // leading dot or two in a row
@@ -435,8 +554,12 @@ func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budge
 			continue
 		}
 		parts := strings.Split(k, ".")
-		if KnownField(parts[0]) && len(parts) > 1 {
+		if knownPrefix(parts) {
 			drop(k) // "user.name" would turn the known field user into an object
+			continue
+		}
+		if knownObjects[k] {
+			drop(k) // a value "properties.status" where properties.status.errorCode is mapped
 			continue
 		}
 		added, clash := 1, false
@@ -476,3 +599,11 @@ func onlyKnown(f map[string]any) int {
 
 // dayOf is the index day of a time.
 func dayOf(t time.Time) string { return t.UTC().Format("2006.01.02") }
+
+// FieldType returns the OpenSearch type the index template maps a field
+// Signalith produces to (keyword, long, double, ip, date, text or
+// wildcard), and false for a name it leaves to dynamic mapping.
+func FieldType(name string) (string, bool) {
+	t, ok := knownFields[name]
+	return t, ok
+}

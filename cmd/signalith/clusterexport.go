@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -53,6 +56,10 @@ func sharedExporters(d sharedDocs, f clustercfg.Files) []shared.Exporter {
 		[]shared.Exporter{tlsExporter(d, f)},
 		// The detections, dashboards and the asset and identity lists.
 		clusterlib.Exporters(d.lib, libraryFiles(f)),
+		// The notes on compliance controls (sharedcompliance.go).
+		[]shared.Exporter{complianceExporter(d.comp, f)},
+		// The custom parsers (sharedparsers.go).
+		[]shared.Exporter{parsersExporter(d.parsers, f)},
 		// Append a new shared feature's exporter here.
 	)
 }

@@ -5,8 +5,8 @@ detections and dashboards, take turns running the background jobs, and keep work
 one of them stops. [Servers](servers.md) explains how they work together. This page is about
 adding one.
 
-The short version: on the Servers page, click **Add a server**, pick where the new server
-runs, and run the line it gives you on the new computer. The dialog checks first that
+The short version: on the Servers page, click **Add a server**, pick what you are adding
+and where it runs, and run the line it gives you on the new computer. The dialog checks first that
 OpenSearch is ready for a second server, and says what to change if it isn't.
 
 ## What a new server needs
@@ -17,9 +17,10 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
   certificate), because a second server is never added to an OpenSearch anyone on the
   network could read. [Prepare OpenSearch](#prepare-opensearch) below makes it so.
 - **Ports.** The new server reaches OpenSearch (TCP 9200 by default). The other servers
-  reach the new one on its web port (TCP 8080 by default), to check it is ready and to hand
-  it work. Agents and devices send to it on its web port and syslog ports (514, and 6514
-  for syslog over TLS).
+  reach the new one on its web port (TCP 9000 by default), to check it is ready and to hand
+  it work. Agents send to it on its agent port (TCP 7779 by default, see
+  [The agent port](sending-data.md#the-agent-port)), and devices on its syslog ports (6514 for syslog over TLS,
+  and 514 when plain syslog is turned on).
 - **The same version.** Every server runs the same version of Signalith. The line installs
   that version, or checks the one already installed.
 - **Linux** with systemd (Debian, Ubuntu, RHEL, Rocky, Alma, Fedora, SUSE), **Windows**
@@ -28,7 +29,12 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
 
 ## Add a server
 
-1. On the **Servers** page (Settings > Servers), click **Add a server**.
+1. On the **Servers** page (Settings > Servers), click **Add a server**, and pick what you
+   are adding (see [Cluster servers and scanners](#cluster-servers-and-scanners)):
+   - **Cluster server**: shares the work of the other servers.
+   - **Vulnerability scanner**: a server inside a network zone that only scans it.
+   - **Network sensor**: Zeek and Suricata on a mirror port. It isn't a Signalith server, so
+     the dialog takes you to its setup on Add data ([Network sensor](network-sensor.md)).
 2. The dialog checks what a new server needs from this one. If OpenSearch isn't ready, do
    the steps under **Prepare OpenSearch** first and save the **Address for new servers**.
 3. Pick where the new server runs, **Linux**, **Windows** or **Docker**, and click **Make
@@ -36,6 +42,25 @@ OpenSearch is ready for a second server, and says what to change if it isn't.
 4. Run the line on the new computer (below). The dialog follows it live: the token used,
    the server started, and this server reaching it. When it says the server **joined and is
    ready**, it is in the list of servers.
+
+### Cluster servers and scanners
+
+Both join the same way, with the same line, and both share this OpenSearch, the settings and
+the users. What they are for differs, and the Servers page shows a **Scanner** badge on each
+scanner:
+
+- A **cluster server** takes events from agents and devices, answers searches, and may run
+  the background jobs (detections, threat intel downloads, notifications, playbooks and
+  retention), taking them over when another server stops. Put it behind your load balancer.
+- A **scanner** scans the networks picked for it on the Vulnerabilities page, from inside
+  their zone (see [Vulnerabilities](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
+  and never runs the background jobs. Agents and devices don't send to it, so only its web
+  port must be open, for the other servers to check it.
+
+The join token carries the choice, and the new server keeps it as its **Server role**
+(`cluster.role: scanner` in its settings). Change it later on that server's settings, under
+Detections; it applies after a restart. If only scanners are left running, no server runs
+the background jobs.
 
 The line holds a **join token** that works **once, for 60 minutes**. Anyone who has it can
 add a server to your cluster, so don't post it anywhere. Your shell may keep the line in its
@@ -47,9 +72,9 @@ the line is gone from the page; a new one takes a click.
 In a terminal on the new computer. It asks for your sudo password:
 
 ```sh
-f=$(mktemp) && curl -fsSk --proto '=https' https://siem-a:8080/api/cluster/join/install.sh -o "$f" \
+f=$(mktemp) && curl -fsSk --proto '=https' https://siem-a:9000/api/cluster/join/install.sh -o "$f" \
   && echo "<script's SHA-256>  $f" | sha256sum -c --quiet \
-  && echo 'SJ1....' | sudo sh "$f" --from https://siem-a:8080 --version 1.5.0 --sha256 <program's SHA-256> --join -
+  && echo 'SJ1....' | sudo sh "$f" --from https://siem-a:9000 --version 1.5.0 --sha256 <program's SHA-256> --join -
 ```
 
 The line downloads the install script from your server and checks its SHA-256 before running
@@ -79,7 +104,7 @@ Windows PowerShell 5.1 and PowerShell 7. It downloads
 from your server, checks its SHA-256, and runs it with `-Join`: it installs the program
 (downloaded from a Windows server of the cluster, or the one the .msi installed), sets up
 the service and its folder permissions, runs `signalith join`, opens the firewall for the
-web and syslog ports, and starts the service.
+web, agent and syslog ports, and starts the service.
 
 When your server runs Linux, install the [.msi](install-packages.md) of the same version on
 the new computer first, then run the line, or run it from the .msi's folder yourself:
@@ -95,7 +120,7 @@ On the new computer, with Docker and a copy of the Signalith folder
 (`git clone https://github.com/jrsamsanchez/Signalith`):
 
 1. Save the lines the dialog gives as `deploy/docker/join.env`. Set `SIGNALITH_NODE_URL` to
-   this computer's address, such as `https://192.168.1.21:8080`, so the other servers can
+   this computer's address, such as `https://192.168.1.21:9000` (its web port), so the other servers can
    reach it (a container can't know it), and `SIGNALITH_NODE_NAME` to a name of your choice.
 2. Start it:
 
@@ -200,9 +225,9 @@ For servers set up by a script or image, without the dialog:
 - `signalith cluster token` makes a token and prints the same lines (see
   [signalith cluster](cluster-cli.md)).
 - The install scripts take the token and the other values as options:
-  `sudo sh install.sh --join - [--name siem-c] [--node-url https://10.0.0.7:8080] < token.txt`
+  `sudo sh install.sh --join - [--name siem-c] [--node-url https://10.0.0.7:9000] < token.txt`
   (`--join -` reads the token from the standard input) and
-  `.\install.ps1 -Join 'SJ1....' [-Name siem-c] [-NodeUrl https://10.0.0.7:8080]`.
+  `.\install.ps1 -Join 'SJ1....' [-Name siem-c] [-NodeUrl https://10.0.0.7:9000]`.
   Each release also carries `install.sh` and a Windows zip with `signalith.exe` and
   `install.ps1`, covered by its checksums.
 - A cluster key file still works too: see [Adding a server by hand](servers.md#adding-a-server-by-hand).
@@ -234,7 +259,7 @@ an environment variable still overrides them. Every file belongs to the service'
 
 In the dialog, after the join:
 
-- **is running, but this server can't reach it**: open the new server's web port (TCP 8080
+- **is running, but this server can't reach it**: open the new server's web port (TCP 9000
   by default) to the other servers, in its firewall and any in between.
 - **joined, but the other servers can't check it**: give it its address for the other
   servers (**Address for other servers** on its Settings page, `server.node_url`).

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -11,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
@@ -126,6 +130,12 @@ func (s *Server) handleOsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 	from := clientaddr.Parse(r.RemoteAddr)
 	if err := readSmall(w, r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"node_invalid": true, "error": "the enrollment request is not valid JSON"})
+		return
+	}
+	if id, res := s.tokens().Check(strings.TrimSpace(req.Secret)); res == agenttokens.Valid && id.Purpose == agenttokens.PurposeSensor {
+		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
+		s.Log.Warn("osquery enrollment refused: a network sensor's token", "client", from.String(), "token", id.Name)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"node_invalid": true, "error": "the enroll secret is a network sensor's token, which cannot enroll osquery hosts; make a token for osquery on Add data"})
 		return
 	}
 	tokenID, ok := s.enrollToken(req.Secret)
@@ -251,7 +261,7 @@ func (s *Server) handleOsqueryLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(b.Events) > 0 {
-		slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+		slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "osquery:"+n.ID)
 		if err != nil {
 			w.Header().Set("Retry-After", "5")
 			writeError(w, http.StatusServiceUnavailable, err)

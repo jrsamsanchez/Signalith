@@ -1,0 +1,7 @@
+{"rule": "dd857d3e-0c6e-457b-9b48-e82ae7f86bd7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"/system.webServer/modules/add","NewValue":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"/system.webServer/modules/add","NewValue":"HttpCacheModule"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"/system.webServer/modules/add","NewValue":""}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"NewValue":"x"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-IIS-Configuration/Operational","event_id":"29","data":{"Configuration":"/system.webServer/modules/add"}}
+]}

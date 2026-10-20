@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -323,7 +326,7 @@ func fileFacts(h Host) (FileFacts, bool) {
 			items = append(items, item{p, "key"})
 		}
 	}
-	for _, p := range []string{c.AdminHashFile(), config.AdminLocalHashFileIn(state), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.PlaybooksFile(), SavedDisksFile(state)} {
+	for _, p := range []string{c.AdminHashFile(), config.AdminLocalHashFileIn(state), c.UsersFile(), c.DirectoryFile(), c.SettingsFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.PlaybooksFile(), c.TicketingFile(), SavedDisksFile(state)} {
 		items = append(items, item{p, "private"})
 	}
 	// Whoever can put a program in the scripts folder decides what

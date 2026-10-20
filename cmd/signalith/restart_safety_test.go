@@ -1,11 +1,16 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
 	"errors"
+	"math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -209,31 +214,23 @@ func TestSamePortOnAnotherAddressIsRefused(t *testing.T) {
 // this one.
 func TestSyslogPortHeldWithTheOtherProtocol(t *testing.T) {
 	rs := startRunner(t, nil, nil)
-	// A port free for UDP, for syslog.udp. Another program (on Windows,
-	// often the system itself) can take a port between the check and the
-	// restart, so a refused port is tried again with another one.
+	// A port free for UDP, for syslog.udp, that another program holds
+	// with TCP. Another program (on Windows, often the system itself) can
+	// take the UDP port between the check and the restart, so a refused
+	// port is tried again with another one.
 	var addr string
+	var held net.Listener
 	for try := 0; ; try++ {
-		for range 20 {
-			addr = freeAddr(t)
-			if pc, err := net.ListenPacket("udp", addr); err == nil {
-				pc.Close()
-				break
-			}
-		}
+		addr, held = heldTCPFreeUDP(t)
 		rs.save(`{"syslog.udp":"` + addr + `"}`)
 		_, res := rs.restart()
 		if res.OK {
 			break
 		}
+		held.Close()
 		if try == 4 || !slices.Contains(res.Refused, "syslog.udp") {
 			t.Fatalf("syslog.udp %+v\n%s", res, rs.logs.String())
 		}
-	}
-	// Another program takes the same port over TCP.
-	held, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Skipf("the port was taken meanwhile: %v", err)
 	}
 	defer held.Close()
 	before := rs.starts()
@@ -246,6 +243,34 @@ func TestSyslogPortHeldWithTheOtherProtocol(t *testing.T) {
 	if rs.starts() != before || !rs.signedIn("") {
 		t.Errorf("components replaced (%s -> %s) or the server stopped", before, rs.starts())
 	}
+}
+
+// heldTCPFreeUDP returns a loopback address whose port this test holds
+// with TCP and that was free for UDP. The port is picked below the
+// dynamic ranges of Windows (49152 and up) and Linux (32768 and up), so
+// that no program is handed it for an outgoing socket while it is free;
+// a port the system has reserved (on Windows, excluded port ranges
+// refuse binding with an access error) fails one of the checks and
+// another is picked.
+func heldTCPFreeUDP(t *testing.T) (string, net.Listener) {
+	t.Helper()
+	var err error
+	for range 200 {
+		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(20000+rand.IntN(12000)))
+		var ln net.Listener
+		if ln, err = net.Listen("tcp", addr); err != nil {
+			continue
+		}
+		var pc net.PacketConn
+		if pc, err = net.ListenPacket("udp", addr); err != nil {
+			ln.Close()
+			continue
+		}
+		pc.Close()
+		return addr, ln
+	}
+	t.Fatalf("no port free for both TCP and UDP: %v", err)
+	return "", nil
 }
 
 // At startup, an OpenSearch connection saved on the page and never

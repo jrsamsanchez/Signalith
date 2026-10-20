@@ -1,14 +1,32 @@
 # Dashboards
 
-The **Dashboards** tab has two built-in dashboards, **Security posture** and
-**Malware**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
+The **Dashboards** tab has four built-in dashboards, **Security posture**,
+**Malware**, **Network** and **Vulnerabilities**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
 range, and optionally turn on auto-refresh (every minute, 5 or 15 minutes; it pauses
 while the browser tab is hidden).
 
+## Click a number to see its events
+
+Every number on a dashboard opens **Search** on the events behind it, in one click
+or tap: a single value, a count in a table, a bar, a column (or one colour within
+it), a point on a line chart, or a series in the legend. The search is the panel's
+query up to its `stats`, `top` or `timechart`, plus that row's values (for example
+`dest=web-01`) and the panel's time range; a column or a point narrows it to that
+time bucket. Numbers you can click show a pointer and turn the accent colour on
+hover. A row of a table of events (such as **Malware not removed**) opens that
+event in Search: its values at its exact time.
+
+A filter goes into the search itself when it can, so it runs in OpenSearch. When
+the query makes or changes fields before it summarises them (`eval`, `rex`,
+`dedup`, `head` and so on), the filter is added at the end as `| where`. Columns
+that `eval` or a second `stats` made after the summary don't name event values, so
+those only keep the time range. On **Security posture**, **Events ingested**, the
+**Events by data model** columns, source types and ATT&CK tactics open Search (a
+tactic opens its risk events); the findings numbers open the findings queue.
+
 ## Security posture
 
-The built-in dashboard, like the Splunk ES Security Posture and executive summary
-dashboards. Every key number is compared with the previous period of the same
+The built-in summary dashboard for analysts and managers. Every key number is compared with the previous period of the same
 length, so "Last 24 hours" compares today with the 24 hours before.
 
 | Panel | What it shows |
@@ -35,6 +53,20 @@ dashboards:
   stale_after: 6h
 ```
 
+The built-in detection **Data source stopped sending** (`data-source-stopped`)
+raises a finding when a source that sent steadily goes quiet for that long, so
+you hear about it without opening the dashboard. Steady means it sent something
+in each six-hour block of the day before, so a workstation that is off at night
+or a weekly scan never fires it. Signalith checks every 15 minutes, on the server
+that runs the background jobs, and writes one `sourcetype=source:health` event per
+silence for the detection to read (`stopped_sourcetype` names the source type that
+stopped). The detection believes only events Signalith wrote itself
+(`signalith_intake=signalith`), so a sender cannot raise it for hosts it names.
+Sample data, Signalith's own events and its vulnerability scans are left out of
+the check. A broken agent, a full disk, a firewall change and an attacker who turned
+logging off all look the same from here, so the finding's guidance says where to
+look first.
+
 Each section loads on its own: if one part fails (for example, OpenSearch rejects a
 query), that card shows the error and the rest of the dashboard still works. Cards
 with an **Open in Search** link show the exact query behind them.
@@ -47,6 +79,17 @@ and antivirus health problems, across Microsoft Defender, ClamAV and antivirus
 consoles. It opens on the last 7 days. Until antivirus events arrive it shows a
 **Set up antivirus logs** button (for admins) that opens Add data. See
 [antivirus.md](antivirus.md#the-malware-dashboard) for each panel.
+
+## Network
+
+A built-in panel dashboard for a [network sensor](network-sensor.md) (Zeek,
+Suricata): IDS alerts and the hosts with high ones, connections and data sent to the
+internet, alerts over time by severity, the top signatures, talkers and external
+destinations, DNS lookups and failed lookups, web requests by status and user agent,
+files by type, self-signed certificates, the commonest and rarest TLS client fingerprints
+(JA4, JA3; click one to search every event with it), sign-ins seen on the network, files
+changed on shares, and the sensor's packet loss. It opens on the last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
+(for admins) that opens Add data.
 
 ## Vulnerabilities
 
@@ -68,7 +111,7 @@ are on). It saves *Malware (copy)* as a custom dashboard with the same panels an
 opens it, ready to edit. **Add to dashboard** on the Search page lists custom
 dashboards only.
 
-The ids `posture`, `malware` and `vulnerabilities` belong to the built-in dashboards. A file
+The ids `posture`, `malware`, `network` and `vulnerabilities` belong to the built-in dashboards. A file
 `malware.yaml` in `dashboards.dir` is ignored and listed as a problem: rename the
 file and change its `id` to keep it.
 
@@ -161,7 +204,7 @@ panels:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `id` | from the title | File name without `.yaml`. `posture`, `malware` and `vulnerabilities` are reserved for the built-in dashboards |
+| `id` | from the title | File name without `.yaml`. `posture`, `malware`, `network` and `vulnerabilities` are reserved for the built-in dashboards |
 | `title` | required | Shown in the dashboard list |
 | `description` | none | Shown under the title |
 | `time_range` | `24h` | Default time range for panels |
@@ -184,14 +227,14 @@ Every endpoint needs the admin sign-in, like the rest of the API.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/posture?range=24h` | The security posture report (range 1m to 90d) |
-| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
+| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, network and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
 | `POST /api/dashboards` | Create; without `id`, one is made from the title. 409 if the id exists or belongs to a built-in dashboard |
 | `GET /api/dashboards/{id}` | One dashboard as JSON |
 | `GET /api/dashboards/{id}/yaml` | Download its YAML file |
 | `PUT /api/dashboards/{id}` | Replace a dashboard (save edits, reorder panels) |
 | `DELETE /api/dashboards/{id}` | Delete its file |
 | `POST /api/dashboards/{id}/panels` | Append one panel (`{"title", "query", "viz", ...}`) |
-| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, or `error` |
+| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, `drill` (how to find the events behind its numbers), or `error` |
 | `POST /api/panels/run` | Run an unsaved panel: `{"range": "24h", "panel": {...}}` |
 
 Validation errors return 400 with a `problems` list naming each field to fix.

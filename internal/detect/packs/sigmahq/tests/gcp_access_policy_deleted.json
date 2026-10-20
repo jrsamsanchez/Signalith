@@ -1,0 +1,6 @@
+{"rule": "32438676-1dba-4ac7-bf69-b86cba995e05", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.authorizationInfo.granted":"true","data.protoPayload.authorizationInfo.permission":"accesscontextmanager.accessPolicies.accessLevels.delete","data.protoPayload.serviceName":"accesscontextmanager.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.authorizationInfo.permission":"accesscontextmanager.accessPolicies.accessLevels.delete","data.protoPayload.serviceName":"accesscontextmanager.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.authorizationInfo.granted":"true","data.protoPayload.serviceName":"accesscontextmanager.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"data.protoPayload.authorizationInfo.granted":"true","data.protoPayload.authorizationInfo.permission":"accesscontextmanager.accessPolicies.accessLevels.delete"}}
+]}

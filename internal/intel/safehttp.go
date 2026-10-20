@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package intel
 
 import (
@@ -220,6 +223,13 @@ func (d *safeDialer) DialContext(ctx context.Context, network, addr string) (net
 // protected addresses at connect time, and follows at most MaxRedirects
 // redirects. Timeouts come from each request's context.
 func newFeedClient(allowLoopback bool, protected []string) *http.Client {
+	return newFeedClientWith(allowLoopback, protected, http.ProxyFromEnvironment)
+}
+
+// NewDownloadClient returns an HTTP client with the rules of feed
+// downloads, for other files Signalith downloads from an address an
+// admin can set, such as the behavior baselines' IP database.
+func NewDownloadClient(allowLoopback bool, protected []string) *http.Client {
 	return newFeedClientWith(allowLoopback, protected, http.ProxyFromEnvironment)
 }
 

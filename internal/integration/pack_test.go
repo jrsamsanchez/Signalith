@@ -1,9 +1,13 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build integration
 
 package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,8 +21,11 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/sigmacheck"
+	"github.com/jrsamsanchez/signalith/internal/splcheck"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // TestPackRulesAgainstOpenSearch repeats the content pack check against a
@@ -31,10 +38,22 @@ import (
 func TestPackRulesAgainstOpenSearch(t *testing.T) {
 	cl, eng, prefix := setup(t)
 	ctx := context.Background()
-	_, dets, err := detect.Packs()
+	packs, dets, err := detect.Packs()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The splunk pack's lookup stages read the tables it ships, which
+	// every lookup store has.
+	var lookups map[string]*splcheck.Lookup
+	for _, p := range packs {
+		if p.Name == "splunk" {
+			lookups = p.Lookups()
+		}
+	}
+	eng.Lookups, _ = lookuptables.Open("")
+	// The splunk pack's iplocation rules read the GeoIP database their
+	// test events were made with.
+	eng.GeoIP = splcheck.TestGeoIP()
 	byID := map[string]*detect.Detection{}
 	for _, d := range dets {
 		byID[d.ID] = d
@@ -46,10 +65,16 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		det       *detect.Detection
 		hosts     []string
 		positives map[string]bool
+		// later is set for a Splunk rule whose later stages run after
+		// its filter: its whole query runs for each event's host.
+		later bool
 	}
 	var rules []ruleCases
 	records := map[string][]map[string]any{}
-	at := time.Now().Add(-5 * time.Minute)
+	var osqueryEvents []ingest.Event
+	// On a 10-minute boundary, so a repeated case's events fall in one
+	// bucket of any span a rule counts over (bucket span=2m _time).
+	at := time.Now().Add(-15 * time.Minute).Truncate(10 * time.Minute)
 	i := 0
 	for _, name := range []string{"sigmahq", "splunk"} {
 		dir := filepath.Join("..", "detect", "packs", name)
@@ -61,11 +86,36 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 		if err := yaml.Unmarshal(data, &manifest); err != nil {
 			t.Fatal(err)
 		}
+		macros := map[string]*splcheck.Macro{}
+		files, _ := filepath.Glob(filepath.Join(dir, "macros", "*.yml"))
+		for _, f := range files {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, err := splcheck.ParseMacro(src)
+			if err != nil {
+				t.Fatalf("%s: %v", f, err)
+			}
+			macros[m.Name] = m
+		}
 		for _, r := range manifest.Rules {
 			i++
 			d := byID[r.ID]
 			if d == nil {
 				t.Fatalf("%s is in the manifest but not loaded", r.ID)
+			}
+			later := false
+			if name == "splunk" {
+				src, err := os.ReadFile(filepath.Join(dir, "rules", r.File))
+				if err != nil {
+					t.Fatal(err)
+				}
+				rule, err := splcheck.ParseWith(src, macros, splcheck.ParseOptions{Network: detect.SplunkNetworkRule(r.Path), Lookups: lookups})
+				if err != nil {
+					t.Fatalf("%s: %v", r.ID, err)
+				}
+				later = rule.Post != ""
 			}
 			raw, err := os.ReadFile(filepath.Join(dir, "tests", strings.TrimSuffix(r.File, ".yml")+".json"))
 			if err != nil {
@@ -75,15 +125,54 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rc := ruleCases{det: d, positives: map[string]bool{}}
+			rc := ruleCases{det: d, positives: map[string]bool{}, later: later}
 			for j, c := range tf.Cases {
 				host := fmt.Sprintf("case-%d-%d", i, j)
 				rc.hosts = append(rc.hosts, host)
 				if c.Expect {
 					rc.positives[host] = true
 				}
-				tag, rec := c.Record(host, at)
-				records[tag] = append(records[tag], rec)
+				copies, offsets := c.Copies()
+				for k, cp := range copies {
+					if cp.Channel == sigmacheck.MacOSChannel {
+						// osquery's results come through its remote API,
+						// parsed as the API parses them.
+						osqueryEvents = append(osqueryEvents, cp.Stored(host, at.Add(offsets[k])))
+						continue
+					}
+					tag, rec := cp.Record(host, at.Add(offsets[k]))
+					records[tag] = append(records[tag], rec)
+				}
+				// The events a join's subsearch reads, on the same host.
+				for _, w := range c.With {
+					tag, rec := w.Record(host, at)
+					records[tag] = append(records[tag], rec)
+				}
+				// Other groups' events at the same time, the baseline an
+				// outlier rule compares the case's count with.
+				for _, b := range c.Baseline {
+					copies, offsets := b.Copies()
+					for k, cp := range copies {
+						tag, rec := cp.Record(host, at.Add(offsets[k]))
+						records[tag] = append(records[tag], rec)
+					}
+				}
+				// The events that follow the case: a transaction's end,
+				// after its start.
+				for _, th := range c.Then {
+					tag, rec := th.Record(host, at.Add(time.Duration(th.Later)*time.Second))
+					records[tag] = append(records[tag], rec)
+				}
+				// A Linux program start, as auditd records it too.
+				// (Not for a case with events a join reads, which are
+				// Sysmon's.)
+				if recs, ok := c.AuditdProcessRecords(host+"-auditd", at); ok && c.Repeat <= 1 && len(c.With) == 0 && len(c.Baseline) == 0 && len(c.Then) == 0 {
+					rc.hosts = append(rc.hosts, host+"-auditd")
+					if c.Expect {
+						rc.positives[host+"-auditd"] = true
+					}
+					records["linux.audit"] = append(records["linux.audit"], recs...)
+				}
 			}
 			rules = append(rules, rc)
 		}
@@ -100,6 +189,13 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			}
 		}
 	}
+	if len(osqueryEvents) > 0 {
+		total += len(osqueryEvents)
+		res, err := p.IngestEvents(ctx, osqueryEvents)
+		if err != nil || len(res.Errors) > 0 {
+			t.Fatalf("ingest osquery events: %v %+v", err, res)
+		}
+	}
 	if err := cl.Do(ctx, http.MethodPost, "/"+prefix+"-*/_refresh", nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +203,61 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 
 	failed := 0
 	for _, rc := range rules {
+		if rc.later {
+			var wrong []string
+			for _, h := range rc.hosts {
+				q, err := query.Parse(rc.det.Query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				q.Search = &query.And{Children: []query.Expr{q.Search, &query.Compare{Field: "host", Op: "=", Value: h}}}
+				for _, c := range q.Commands {
+					// A join's subsearch reads the case's own events, not
+					// another case's that share its values.
+					if j, ok := c.(*query.Join); ok {
+						j.Sub.Search = &query.And{Children: []query.Expr{j.Sub.Search, &query.Compare{Field: "host", Op: "=", Value: h}}}
+					}
+				}
+				q.Earliest = "-1h"
+				res, err := eng.Execute(ctx, q)
+				if err != nil {
+					wrong = append(wrong, fmt.Sprintf("%s (%v)", h, err))
+					continue
+				}
+				if got := len(res.Rows) > 0; got != rc.positives[h] {
+					wrong = append(wrong, fmt.Sprintf("%s (want %v)", h, rc.positives[h]))
+				}
+			}
+			if len(wrong) > 0 {
+				t.Errorf("%s: OpenSearch disagrees on %s\nquery: %s", rc.det.ID, strings.Join(wrong, ", "), rc.det.Query)
+				failed++
+			}
+			continue
+		}
 		q, err := query.Parse(rc.det.Query)
 		if err != nil {
 			t.Fatal(err)
 		}
 		q.Search = &query.And{Children: []query.Expr{q.Search, &query.In{Field: "host", Values: rc.hosts}}}
 		q.Earliest = "-1h"
-		q.Commands = []query.Command{&query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}}}
+		// The regex stages a detection runs right after its filter (a
+		// Splunk regular expression with word boundaries) stay.
+		var cmds []query.Command
+		for _, c := range q.Commands {
+			if _, ok := c.(*query.Regex); !ok {
+				break
+			}
+			cmds = append(cmds, c)
+		}
+		q.Commands = append(cmds, &query.Stats{Aggs: []query.Agg{{Func: "count"}}, By: []string{"host"}})
 		res, err := eng.Execute(ctx, q)
+		// A 1 GB test node can trip OpenSearch's parent circuit breaker
+		// (429) while it collects garbage after the bulk loads; that is
+		// the node, not the rule, so give it a moment and ask again.
+		for wait := 2 * time.Second; tooBusy(err) && wait <= 8*time.Second; wait *= 2 {
+			time.Sleep(wait)
+			res, err = eng.Execute(ctx, q)
+		}
 		if err != nil {
 			t.Errorf("%s: %v", rc.det.ID, err)
 			failed++
@@ -139,4 +282,11 @@ func TestPackRulesAgainstOpenSearch(t *testing.T) {
 			t.Fatal("too many failures")
 		}
 	}
+}
+
+// tooBusy says whether OpenSearch refused a search for lack of memory (a
+// circuit breaker's 429) rather than for anything in the search.
+func tooBusy(err error) bool {
+	var se *store.Error
+	return errors.As(err, &se) && se.Status == http.StatusTooManyRequests
 }

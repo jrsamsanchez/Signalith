@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package endpoint
 
 import (
@@ -197,6 +200,9 @@ func toEvent(name, action string, cols map[string]any, host string, n *Node, at 
 	if name == qFIM {
 		return fimEvent(ev, n.Platform, cols)
 	}
+	if name == qProcess {
+		return processEvent(ev, n.Platform, action, cols)
+	}
 	ev.Model = "Inventory"
 	switch action {
 	case "added", "removed":
@@ -347,4 +353,80 @@ func baseName(p string) string {
 		return p[i+1:]
 	}
 	return path.Base(p)
+}
+
+// ProcessStartQuery is the name of the scheduled query whose results are
+// macOS program starts, and ProcessStartSourcetype the sourcetype of their
+// events.
+const (
+	ProcessStartQuery      = QueryPrefix + qProcess
+	ProcessStartSourcetype = "osquery:" + qProcess
+)
+
+// maxCommandBytes caps a command line kept from a process event: macOS
+// lets a program's arguments run to a megabyte.
+const maxCommandBytes = 32 << 10
+
+// processEvent maps an es_process_events row (processStartSQL) onto
+// Endpoint, as Sysmon's process creation is. Only a macOS host's rows
+// are read, since only macOS hosts are asked for them. The account is the
+// one osquery names for the process's user ID, never a name read from the
+// command line, which the program chose.
+func processEvent(ev ingest.Event, platform, action string, cols map[string]any) (ingest.Event, bool) {
+	f := ev.Fields
+	ev.Model = "Endpoint"
+	// An event table's rows are always new: osquery reports them as
+	// added.
+	if platform != Darwin || action != "added" {
+		return ev, false
+	}
+	p := str(cols, "path")
+	if p == "" {
+		return ev, false
+	}
+	if sec, ok := num(cols, "time"); ok && sec > 0 {
+		ev.Time = time.Unix(sec, 0).UTC()
+	}
+	f["action"] = "allowed"
+	f["signature"] = "Process started"
+	f["signature_id"] = ProcessStartSourcetype
+	f["process_path"] = p
+	f["process_name"] = path.Base(p)
+	f["process"] = p
+	if c := commandLine(str(cols, "cmdline")); c != "" {
+		f["process"] = c
+	}
+	if pid, ok := num(cols, "pid"); ok {
+		f["process_id"] = pid
+	}
+	if ppid, ok := num(cols, "parent"); ok {
+		f["parent_process_id"] = ppid
+	}
+	if pp := str(cols, "parent_path"); pp != "" {
+		f["parent_process_path"] = pp
+		f["parent_process_name"] = path.Base(pp)
+		f["parent_process"] = pp
+		if c := commandLine(str(cols, "parent_cmdline")); c != "" {
+			f["parent_process"] = c
+		}
+	}
+	if cwd := str(cols, "cwd"); cwd != "" {
+		f["process_current_directory"] = cwd
+	}
+	if u := str(cols, "username"); u != "" {
+		f["user"] = u
+	}
+	if uid := str(cols, "uid"); uid != "" {
+		f["user_id"] = uid
+	}
+	return ev, true
+}
+
+// commandLine is a process's arguments as osquery joins them, cut to
+// maxCommandBytes on a character boundary.
+func commandLine(s string) string {
+	if len(s) > maxCommandBytes {
+		s = strings.ToValidUTF8(s[:maxCommandBytes], "")
+	}
+	return s
 }

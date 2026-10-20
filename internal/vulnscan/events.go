@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package vulnscan
 
 import (
@@ -48,23 +51,50 @@ func Events(sc *Scan, scanner string, hosts []*Host, at time.Time) []ingest.Even
 			if len(svc.CPEs) > 0 {
 				base["cpe"] = svc.CPEs[0]
 			}
-			port := copyFields(base)
-			port["category"] = CategoryOpenPort
-			port["severity"] = "informational"
-			port["signature"] = openPortSignature(svc.Service)
-			port["signature_id"] = svc.Transport + "/" + strconv.Itoa(svc.Port)
-			out = append(out, ingest.Event{Time: at, Model: Model, Fields: port})
+			if svc.Port > 0 {
+				port := copyFields(base)
+				port["category"] = CategoryOpenPort
+				port["severity"] = "informational"
+				port["signature"] = openPortSignature(svc.Service)
+				port["signature_id"] = svc.Transport + "/" + strconv.Itoa(svc.Port)
+				out = append(out, ingest.Event{Time: at, Model: Model, Fields: port})
+			} else {
+				// A weakness of the host itself, not of one port.
+				delete(base, "dest_port")
+			}
 			for _, v := range svc.Vulns {
 				f := copyFields(base)
 				f["category"] = CategoryVulnerability
-				f["cve"] = v.CVE
-				f["signature_id"] = v.CVE
+				f["signature_id"] = v.Key()
 				f["signature"] = vulnSignature(v)
 				f["severity"] = v.Severity
 				f["cvss"] = v.CVSS
 				f["known_exploited"] = strconv.FormatBool(v.KEV)
-				f["cpe"] = v.CPE
-				f["url"] = "https://nvd.nist.gov/vuln/detail/" + v.CVE
+				if v.KEV {
+					f["known_ransomware"] = strconv.FormatBool(v.Ransomware)
+					if v.KEVDue != "" {
+						f["kev_due"] = v.KEVDue
+					}
+				}
+				if v.EPSS > 0 || v.EPSSPercentile > 0 {
+					f["epss"] = v.EPSS
+					f["epss_percentile"] = v.EPSSPercentile
+				}
+				if v.CVE != "" {
+					f["cve"] = v.CVE
+					f["url"] = "https://nvd.nist.gov/vuln/detail/" + v.CVE
+				}
+				if v.CPE != "" {
+					f["cpe"] = v.CPE
+				}
+				if v.Source == SourceOpenVAS {
+					f["vendor_product"] = "Signalith OpenVAS scan"
+					f["vuln_source"] = SourceOpenVAS
+					f["openvas_oid"] = v.OID
+					if v.Solution != "" {
+						f["solution"] = truncate(v.Solution, 500)
+					}
+				}
 				out = append(out, ingest.Event{Time: at, Model: Model, Fields: f})
 			}
 		}
@@ -84,6 +114,12 @@ func openPortSignature(svc Service) string {
 }
 
 func vulnSignature(v Vuln) string {
+	if v.Source == SourceOpenVAS && v.Name != "" {
+		if v.CVE != "" {
+			return truncate(v.CVE+": "+v.Name, 200)
+		}
+		return truncate(v.Name, 200)
+	}
 	d := v.Description
 	// The first sentence: a period inside a version number (2.4.49) does
 	// not end it.

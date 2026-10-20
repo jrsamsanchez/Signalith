@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -14,6 +17,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
 	"math/big"
@@ -346,6 +350,41 @@ func TestJoinWritesEverything(t *testing.T) {
 	}
 }
 
+// A scanner's token makes the new server a scanner, which never runs the
+// background jobs.
+func TestJoinAsScanner(t *testing.T) {
+	f := newJoinFixture(t)
+	f.edit = func(b *clusterjoin.Bundle) { b.Role = clusterjoin.RoleScanner }
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok, "--listen", freeAddr(t)); code != joinExitOK {
+		t.Fatalf("exit %d:\n%s", code, m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "joins as a scanner") {
+		t.Errorf("output %q", m.out.String())
+	}
+	c, err := config.Load(m.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Cluster.Role != config.RoleScanner || !c.Scanner() || c.LeaderEligible() {
+		t.Errorf("role %q, scanner %v, eligible %v", c.Cluster.Role, c.Scanner(), c.LeaderEligible())
+	}
+}
+
+// A role this version does not know stops the join before anything is
+// written.
+func TestJoinUnknownRole(t *testing.T) {
+	f := newJoinFixture(t)
+	f.edit = func(b *clusterjoin.Bundle) { b.Role = "sensor" }
+	m := newJoinMachine(t)
+	if code := m.join(t, f.tok); code != joinExitFailed || !strings.Contains(m.out.String(), `"sensor"`) {
+		t.Errorf("exit %d: %s", code, m.out.String())
+	}
+	if _, err := os.Stat(m.config); err == nil {
+		t.Error("signalith.yaml was written")
+	}
+}
+
 func TestJoinPinMismatch(t *testing.T) {
 	f := newJoinFixture(t)
 	m := newJoinMachine(t)
@@ -619,6 +658,36 @@ func TestJoinStoppedEarlyGivesItsKeys(t *testing.T) {
 	}
 }
 
+// With the state folder a package made (the service's already), every
+// file join writes in it is still given to the service's account:
+// node.id among them, or the service cannot start.
+func TestJoinIntoThePackagesStateFolderGivesEveryFile(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("owners are given on Linux")
+	}
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	if err := os.MkdirAll(m.state, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if code := m.join(t, f.tok, "--listen", freeAddr(t), "--no-start"); code != joinExitOK {
+		t.Fatalf("exit %d:\n%s", code, m.out.String())
+	}
+	var missed []string
+	_ = filepath.WalkDir(m.state, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && p != m.state && d.Type()&fs.ModeSymlink == 0 && m.chowned[p] != [2]int{4242, 4343} {
+			missed = append(missed, p)
+		}
+		return nil
+	})
+	if len(missed) > 0 {
+		t.Errorf("not given to the service's account: %v", missed)
+	}
+	if _, ok := m.chowned[m.state]; ok {
+		t.Error("the package's state folder itself changed owner")
+	}
+}
+
 func TestJoinRefusalsSayTheTokenIsUnused(t *testing.T) {
 	f := newJoinFixture(t)
 	m := newJoinMachine(t)
@@ -705,6 +774,55 @@ func TestJoinServiceDoesNotStart(t *testing.T) {
 	}
 	if len(shared.ClusterKeyFiles(m.state)) != 1 {
 		t.Error("what was written was undone")
+	}
+}
+
+// A service that starts and then keeps stopping is not a joined server.
+func TestJoinServiceKeepsStopping(t *testing.T) {
+	f := newJoinFixture(t)
+	m := newJoinMachine(t)
+	m.env.serviceStaysUp = func() error { return errors.New("it keeps stopping (systemd restarted it 2 times)") }
+	if code := m.join(t, f.tok); code != joinExitStart {
+		t.Fatalf("exit %d: %s", code, m.out.String())
+	}
+	if out := m.out.String(); !strings.Contains(out, "keeps stopping") || strings.Contains(out, "Add it to your load balancer") {
+		t.Errorf("output: %s", out)
+	}
+}
+
+func TestWatchUnit(t *testing.T) {
+	type st struct {
+		active   string
+		restarts int
+	}
+	for _, c := range []struct {
+		name   string
+		states []st
+		want   string
+	}{
+		{"stays up", []st{{"active", 3}}, ""},
+		{"restarted", []st{{"active", 3}, {"active", 3}, {"activating", 4}}, "restarted it 1 times"},
+		{"failed", []st{{"active", 0}, {"failed", 0}}, "it stopped (failed)"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			i := 0
+			state := func() (string, int, error) {
+				s := c.states[min(i, len(c.states)-1)]
+				i++
+				return s.active, s.restarts, nil
+			}
+			slept := time.Duration(0)
+			err := watchUnit(state, func(d time.Duration) { slept += d }, 15*time.Second)
+			if got := fmt.Sprint(err); (c.want == "" && err != nil) || (c.want != "" && !strings.Contains(got, c.want)) {
+				t.Errorf("err %v, want %q", err, c.want)
+			}
+			if c.want == "" && slept != 15*time.Second {
+				t.Errorf("watched %s", slept)
+			}
+		})
+	}
+	if err := watchUnit(func() (string, int, error) { return "", 0, errors.New("no systemd") }, func(time.Duration) { t.Error("waited") }, time.Second); err != nil {
+		t.Errorf("unreadable state: %v", err)
 	}
 }
 

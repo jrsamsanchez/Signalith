@@ -1,0 +1,7 @@
+{"rule": "a5f5fe52-8e50-4fb0-ad1b-780be6c0d857", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x showmount  x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x smbutil  x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x showmount  y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x smbutil  y","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}}
+]}

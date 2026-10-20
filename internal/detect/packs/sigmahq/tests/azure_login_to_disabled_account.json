@@ -1,0 +1,5 @@
+{"rule": "908655e0-25cf-4ae1-b775-1c8ce9cf43d8", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"User account is disabled. The account has been disabled by an administrator.","ResultType":"50057"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultType":"50057"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"ResultDescription":"User account is disabled. The account has been disabled by an administrator."}}
+]}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -134,12 +137,15 @@ type collection interface {
 // cluster keys, follows the documents and collections made on it, refuses
 // copies that fail their checks, and says how far it has read (Token).
 //
-// Every 2 seconds one _mget without sources reads the versions of the
-// tracked documents and of the watch documents (watch:<name>, unsigned
-// counters each collection write bumps). A version that differs from the
-// last one seen (never "is greater", so an index made again still
-// reloads) is read in full and checked; a changed watch document makes
-// its collections list their items again. A server's own writes are
+// Every 2 seconds one search reads the config index's mark: its highest
+// _seq_no and how many documents it holds. While the mark is the one the
+// last complete cycle read, nothing in the index changed and the cycle
+// ends there. Otherwise one _mget without sources reads the versions of
+// the tracked documents and of the watch documents (watch:<name>,
+// unsigned counters each collection write bumps). A version that differs
+// from the last one seen (never "is greater", so an index made again
+// still reloads) is read in full and checked; a changed watch document
+// makes its collections list their items again. A server's own writes are
 // applied at once.
 type Hub struct {
 	opts  Options
@@ -175,6 +181,10 @@ type Hub struct {
 	singles  map[string]tracked
 	colls    []collection
 	resyncAt time.Duration
+	// mark is the config index's mark as the last complete cycle read it
+	// (see Poll); markOK says it may be used.
+	mark   indexMark
+	markOK bool
 	// changed is called after anything new was applied (cache.enc).
 	changed func()
 	// confirmed is when a cycle last read everything it found, on the
@@ -541,7 +551,7 @@ func (h *Hub) bump(ctx context.Context, id string, fields map[string]any) (int64
 func (h *Hub) Start(ctx context.Context) {
 	go func() {
 		for {
-			if err := h.Cycle(ctx); err != nil && ctx.Err() == nil {
+			if err := h.Poll(ctx); err != nil && ctx.Err() == nil {
 				h.log.Debug("could not read the shared settings", "err", err)
 			}
 			select {
@@ -556,12 +566,62 @@ func (h *Hub) Start(ctx context.Context) {
 // Kick runs one watch cycle now, for a request that waits for a change.
 func (h *Hub) Kick(ctx context.Context) error { return h.Cycle(ctx) }
 
+// indexMark is what changes in the config index whenever a document is
+// written or deleted: the uuid, the highest _seq_no of the documents in
+// it, and how many there are. Every write gets a _seq_no above all
+// before it, so a write moves the highest one, and a delete lowers the
+// count; a mark comes back only when the documents are again the ones it
+// was read with.
+type indexMark struct {
+	uuid  string
+	seq   int64
+	count int64
+}
+
+// readMark reads the config index's mark with one search, which counts
+// as one operation (the index has one shard). It sees writes once the
+// index refreshes, within a second.
+func readMark(ctx context.Context, c Doer, index, uuid string) (indexMark, error) {
+	var out struct {
+		Hits struct {
+			Total struct {
+				Value int64 `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				SeqNo int64 `json:"_seq_no"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	body := map[string]any{"size": 1, "_source": false, "track_total_hits": true, "seq_no_primary_term": true,
+		"sort": []any{map[string]any{"_seq_no": "desc"}}}
+	if err := c.Do(ctx, http.MethodPost, "/"+url.PathEscape(index)+"/_search", body, &out); err != nil {
+		return indexMark{}, err
+	}
+	m := indexMark{uuid: uuid, seq: -1, count: out.Hits.Total.Value}
+	if len(out.Hits.Hits) > 0 {
+		m.seq = out.Hits.Hits[0].SeqNo
+	}
+	return m, nil
+}
+
+// Poll is the watcher's regular cycle: Cycle, except that when the
+// config index's mark is the one the last complete cycle read, and every
+// tracked document was read since the hub last forgot what it had seen,
+// nothing changed, so it reads no more. An idle server then costs
+// OpenSearch one search per Poll interval, not one get per tracked
+// document. The mark sees a write only once the index refreshes, so a
+// request that names a newer configuration than this server has uses
+// Kick, which always reads the versions.
+func (h *Hub) Poll(ctx context.Context) error { return h.cycle(ctx, true) }
+
 // Cycle reads the versions of everything tracked and applies what
 // changed; every Resync it reads every document and lists every
 // collection again too. Once a cycle has applied or refused every change
 // it found, applied moves to the highest _seq_no it read: the config
 // index has one shard, so every write up to that one is reflected.
-func (h *Hub) Cycle(ctx context.Context) error {
+func (h *Hub) Cycle(ctx context.Context) error { return h.cycle(ctx, false) }
+
+func (h *Hub) cycle(ctx context.Context, quick bool) error {
 	select {
 	case h.cycling <- struct{}{}:
 	case <-ctx.Done():
@@ -610,6 +670,26 @@ func (h *Hub) Cycle(ctx context.Context) error {
 		h.uuid, h.applied, h.seen = uuid, -1, map[string]store.Version{}
 	}
 	h.mu.Unlock()
+	// The mark is read before the versions, so it is never newer than
+	// what this cycle applies.
+	var mark indexMark
+	markOK := false
+	if uuid != "" {
+		if mark, err = readMark(ctx, c, index, uuid); err == nil {
+			markOK = true
+		} else if quick {
+			return err
+		}
+	}
+	if quick && markOK && !full && h.unchanged(mark, refs) {
+		h.mu.Lock()
+		h.confirmed = h.clock.Now()
+		h.mu.Unlock()
+		return nil
+	}
+	h.mu.Lock()
+	h.markOK = false
+	h.mu.Unlock()
 	vers, err := c.MGetVersions(ctx, refs)
 	if err != nil {
 		return err
@@ -648,6 +728,7 @@ func (h *Hub) Cycle(ctx context.Context) error {
 
 	// Collections: list again those whose watch document changed.
 	var errs []error
+	allDone := true
 	for wid, cols := range watches {
 		r := store.Ref{Index: index, ID: wid}
 		h.mu.Lock()
@@ -673,6 +754,7 @@ func (h *Hub) Cycle(ctx context.Context) error {
 			}
 		}
 		if !done {
+			allDone = false
 			continue
 		}
 		h.mu.Lock()
@@ -695,7 +777,29 @@ func (h *Hub) Cycle(ctx context.Context) error {
 		h.confirmed = h.clock.Now()
 		h.mu.Unlock()
 	}
+	h.mu.Lock()
+	// Only a cycle that read everything it found may let the next ones
+	// stop at the same mark.
+	h.mark, h.markOK = mark, markOK && complete && allDone && len(errs) == 0 && h.uuid == uuid
+	h.mu.Unlock()
 	return errors.Join(errs...)
+}
+
+// unchanged says the mark is the one the last complete cycle read, and
+// every document of refs was read since the hub last forgot what it had
+// seen (new keys, a new index, a document tracked since).
+func (h *Hub) unchanged(m indexMark, refs []store.Ref) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.markOK || h.mark != m {
+		return false
+	}
+	for _, r := range refs {
+		if _, ok := h.seen[r.ID]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // Snapshot returns what cache.enc keeps: every document applied, with
@@ -721,6 +825,17 @@ func (h *Hub) Snapshot() CacheData {
 	}
 	sort.Slice(d.Docs, func(i, j int) bool { return d.Docs[i].ID < d.Docs[j].ID })
 	return d
+}
+
+// KeepFloors records revs, by document id, as applied, so an older
+// revision is refused from now on: the revisions of a cache.enc too old
+// to use.
+func (h *Hub) KeepFloors(revs map[string]int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, r := range revs {
+		h.floors[id] = max(h.floors[id], r)
+	}
 }
 
 // Restore applies the documents of a cache.enc, checked as if read from

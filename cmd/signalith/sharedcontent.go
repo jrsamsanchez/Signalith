@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -268,6 +271,42 @@ func sharedFingerprints(fp cluster.Fingerprints, rt *shared.Runtime, on bool) cl
 		for _, put := range sharedPrints {
 			put(&fp, rt, cluster.SharedFingerprint(id))
 		}
+	}
+	return fp
+}
+
+// holderFingerprints puts the shared sentinel in place of the parts of
+// the fingerprints fp of the job holder that it moved into the shared
+// settings itself, as this server compares them with its own when it
+// takes those parts from the shared settings too. The founder runs the
+// jobs from its own files for a moment after its importers moved them,
+// until a restart in place switches it to the shared settings; were it to
+// stop in that moment, its lease would name its own files to the end, and
+// no member would take the jobs over. Its files are what it moved: saves
+// to them were refused meanwhile (importhold.go).
+func holderFingerprints(fp cluster.Fingerprints, holder string, rt *shared.Runtime, on bool) cluster.Fingerprints {
+	if !on || rt == nil || holder == "" || rt.Cluster() == nil {
+		return fp
+	}
+	b, ok := rt.Cluster().Get()
+	id := rt.Status().ClusterID
+	if !ok || id == "" || b.Import.By != holder {
+		return fp
+	}
+	s := cluster.SharedFingerprint(id)
+	mine := sharedFingerprints(cluster.Fingerprints{}, rt, on)
+	moved := func(name string) bool {
+		_, done := b.Import.Done[name]
+		return done
+	}
+	if mine.Retention == s && moved(clustercfg.ImportRetention) {
+		fp.Retention = s
+	}
+	if mine.Feeds == s && moved(clustercfg.ImportFeeds) {
+		fp.Feeds = s
+	}
+	if mine.Detections == s && moved(shared.ImportDetections) {
+		fp.Detections = s
 	}
 	return fp
 }

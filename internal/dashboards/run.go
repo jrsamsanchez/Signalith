@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package dashboards
 
 import (
@@ -47,6 +50,8 @@ type PanelResult struct {
 	CompareNote string `json:"compare_note,omitempty"`
 	// Earliest is the time range the panel searched, for Open in Search.
 	Earliest string `json:"earliest,omitempty"`
+	// Drill finds the events behind a number the panel shows.
+	Drill *query.Drill `json:"drill,omitempty"`
 }
 
 // Run runs panels in parallel over a time range such as "24h" (empty or
@@ -90,6 +95,7 @@ func (r *Runner) RunPanel(ctx context.Context, p Panel, timeRange string) (res P
 		q.Earliest = earliest
 	}
 	res.Earliest = earliest
+	res.Drill = q.Drilldown()
 	timeout := r.Timeout
 	if timeout <= 0 {
 		timeout = time.Minute

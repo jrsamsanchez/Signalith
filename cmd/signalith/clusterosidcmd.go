@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -85,6 +88,7 @@ func (x *clusterCLI) osCARevoke(ctx context.Context, server string, yes bool) er
 	}
 	fmt.Fprintf(x.out, "Revoked %d OpenSearch %s of %s.\n", len(revoked), map[bool]string{true: "certificate", false: "certificates"}[len(revoked) == 1], name)
 	fmt.Fprintln(x.out, "Each server with opensearch.crl_file set writes the new revocation list within a minute; OpenSearch nodes without one need a copy: signalith cluster opensearch-ca crl -o crl.pem.")
+	fmt.Fprintln(x.out, "If the server was compromised or stolen, its disk can still open OpenSearch's CA key: make a new OpenSearch CA too (docs/servers.md, Ending a server's OpenSearch access at once).")
 	return nil
 }
 

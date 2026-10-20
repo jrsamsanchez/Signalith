@@ -1,0 +1,16 @@
+# Caddy in front of a public Signalith demo (docker-compose.demo.yml,
+# docs/demo.md). It gets a Let's Encrypt certificate for SIGNALITH_DEMO_HOST
+# on port 443 and passes requests on to Signalith. It sets
+# X-Forwarded-For to the visitor's address itself, never passing on one a
+# visitor sent, so Signalith's sign-in limits count each visitor.
+{
+	# Port 80 is not published: no redirect from it.
+	auto_https disable_redirects
+}
+
+{$SIGNALITH_DEMO_HOST} {
+	reverse_proxy signalith:9000
+	log {
+		output stdout
+	}
+}

@@ -1,0 +1,4 @@
+{"rule": "af6925b0-8826-47f1-9324-337507a0babd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{"operationName":"MICROSOFT.NETWORK/DNSZONES /WRITE"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"activitylogs","data":{}}
+]}

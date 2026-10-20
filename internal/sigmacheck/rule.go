@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sigmacheck evaluates Sigma rules directly, by the Sigma
 // specification, and makes test events for them. It is a second,
 // independent reading of a rule: the detection content checks make
@@ -22,6 +25,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"gopkg.in/yaml.v3"
 )
 
@@ -98,7 +102,52 @@ func Parse(src []byte) (*Rule, error) {
 	if r.Logsource["service"] == "security" {
 		r.dropLegacyEventIDs()
 	}
+	if r.Logsource["category"] == "webserver" {
+		r.webKeywords()
+	}
+	if r.Logsource["product"] == "gcp" && r.Logsource["service"] == ingest.GCPService {
+		r.gcpKeywords()
+	}
 	return r, nil
+}
+
+// WebKeywordFields are where a web server log rule's keywords are
+// searched: the parts of a request the client chose (its target, user
+// agent and referrer), which is what the rules look for in a log line.
+var WebKeywordFields = []string{"cs-uri-query", "cs-user-agent", "cs-referer"}
+
+// webKeywords turns a web server log rule's keywords into searches of the
+// fields WebKeywordFields lists.
+func (r *Rule) webKeywords() {
+	for _, s := range r.sels {
+		if len(s.keywords) == 0 {
+			continue
+		}
+		var values []*string
+		for _, kw := range s.keywords {
+			values = append(values, &kw)
+		}
+		for _, f := range WebKeywordFields {
+			s.alts = append(s.alts, []*fieldCond{{field: f, mods: []string{"contains"}, values: values}})
+		}
+		s.keywords = nil
+	}
+}
+
+// gcpKeywords turns a Google Cloud rule's keywords into searches of the
+// call's request (ingest.GCPKeywordField), as the converted rule does.
+func (r *Rule) gcpKeywords() {
+	for _, s := range r.sels {
+		if len(s.keywords) == 0 {
+			continue
+		}
+		var values []*string
+		for _, kw := range s.keywords {
+			values = append(values, &kw)
+		}
+		s.alts = append(s.alts, []*fieldCond{{field: ingest.GCPKeywordField, mods: []string{"contains"}, values: values}})
+		s.keywords = nil
+	}
 }
 
 // dropLegacyEventIDs leaves the Windows 2000 and XP event IDs (below

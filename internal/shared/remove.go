@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -25,6 +28,10 @@ type RemovedServer struct {
 	// Rotated is true once a key rotation followed its removal: its copy
 	// of the cluster key opens nothing new.
 	Rotated bool `json:"rotated,omitempty"`
+	// During is the id of the key a rotation in progress when it was
+	// removed moved to, when that rotation had made it a copy: it may have
+	// picked that key up, so only a later rotation rotates it away.
+	During string `json:"during,omitempty"`
 }
 
 // removedKept bounds the removed list.
@@ -42,6 +49,7 @@ func (rt *Runtime) RemoveMember(ctx context.Context, nodeID, name, by string) (R
 	}
 	rec := RemovedServer{NodeID: nodeID, Name: name, At: rt.clock.Now().UTC(), By: by}
 	_, err := rt.Keyring().Mutate(ctx, "signalith", func(b *KeyringBody) error {
+		rec.During = ""
 		m, ok := b.Members[nodeID]
 		if ok {
 			if len(b.Members) == 1 {
@@ -51,7 +59,11 @@ func (rt *Runtime) RemoveMember(ctx context.Context, nodeID, name, by string) (R
 			delete(b.Members, nodeID)
 		}
 		if n, err := b.Rotation(); err == nil && n != nil {
-			// A rotation in progress hands it no copy.
+			// A rotation in progress hands it no copy, but it may have
+			// picked up the one it had.
+			if _, had := n.Copies[nodeID]; had {
+				rec.During = n.KID
+			}
 			delete(n.Copies, nodeID)
 			if err := b.setRotation(n); err != nil {
 				return err
@@ -86,25 +98,34 @@ func (rt *Runtime) RemoveMember(ctx context.Context, nodeID, name, by string) (R
 	return rec, nil
 }
 
-// MarkRotated records that a key rotation followed the removal of the
-// servers nodeIDs.
-func (rt *Runtime) MarkRotated(ctx context.Context, nodeIDs ...string) error {
+// MarkRotated records that the key rotation to the key kid followed the
+// removal of the servers nodeIDs. A server removed while that rotation
+// was in progress, with a copy of kid, is not marked: it returns those,
+// which need another rotation.
+func (rt *Runtime) MarkRotated(ctx context.Context, kid string, nodeIDs ...string) ([]string, error) {
+	var left []string
 	_, err := rt.Cluster().Mutate(ctx, "signalith", func(b *ClusterBody) error {
+		left = nil
 		for i := range b.Removed {
 			for _, id := range nodeIDs {
-				if b.Removed[i].NodeID == id {
+				switch {
+				case b.Removed[i].NodeID != id:
+				case b.Removed[i].During == kid:
+					left = append(left, id)
+				default:
 					b.Removed[i].Rotated = true
 				}
 			}
 		}
 		return nil
 	})
-	return err
+	return left, err
 }
 
-// MarkAllRotated records that a key rotation followed every removal so
-// far.
-func (rt *Runtime) MarkAllRotated(ctx context.Context) error {
+// MarkAllRotated records that the key rotation to the key kid followed
+// every removal so far, but those made while it was in progress (see
+// MarkRotated).
+func (rt *Runtime) MarkAllRotated(ctx context.Context, kid string) error {
 	b, ok := rt.Cluster().Get()
 	if !ok {
 		return nil
@@ -118,7 +139,8 @@ func (rt *Runtime) MarkAllRotated(ctx context.Context) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return rt.MarkRotated(ctx, ids...)
+	_, err := rt.MarkRotated(ctx, kid, ids...)
+	return err
 }
 
 // Removed lists the servers removed from the cluster, newest last.

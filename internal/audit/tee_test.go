@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package audit
 
 import (
@@ -86,14 +89,14 @@ func TestHandlerPassesRecordsAndSpoolsAuditOnes(t *testing.T) {
 	want := Event{Server: "srv-a", NodeID: "node-1", User: "alice", Action: "users.create", Target: "bob",
 		Message: "users.create: added bob", SourceIP: "10.0.0.1", Level: "INFO", Epoch: 7}
 	got := ev
-	got.Time, got.Fields, got.Seq = time.Time{}, nil, 0
+	got.Time, got.Fields, got.Seq, got.Chain, got.ChainStart = time.Time{}, nil, 0, "", false
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("event = %+v\nwant    %+v", got, want)
 	}
 	if len(ev.Fields) != 2 || ev.Fields["role"] != "admin" || ev.Fields["g.x"] != "1" {
 		t.Errorf("fields = %v", ev.Fields)
 	}
-	if ev.Seq != 1 || ev.Time.IsZero() || ev.Time.Location() != time.UTC {
+	if ev.Seq != 1 || !ev.ChainStart || ev.Chain == "" || ev.Prev != "" || ev.Time.IsZero() || ev.Time.Location() != time.UTC {
 		t.Errorf("seq %d, time %v", ev.Seq, ev.Time)
 	}
 	if id := ev.ID(); len(id) != 24 || id != ev.ID() {

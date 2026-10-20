@@ -1,6 +1,5 @@
 {"rule": "95165985-ace5-4d42-9c42-93a89a5af901", "cases": [
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobe"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobe"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"modprobe"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"modprobf"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},

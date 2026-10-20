@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package content
 
 import (
@@ -69,7 +72,7 @@ func TestBuildSignRead(t *testing.T) {
 		t.Errorf("version %s", b.Manifest.Version)
 	}
 	// Licences ship; test events and reports do not.
-	for _, want := range []string{"packs/sigmahq/pack.yaml", "packs/splunk/LICENSE", "packs/splunk/macros"} {
+	for _, want := range []string{"packs/sigmahq/pack.yaml", "packs/splunk/LICENSE", "packs/splunk/macros", "packs/splunk/lookups"} {
 		if _, err := fs.Stat(b.FS, want); err != nil {
 			t.Errorf("%s: %v", want, err)
 		}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -59,9 +62,12 @@ func TestJoinTokenURL(t *testing.T) {
 func TestJoinThroughTheServer(t *testing.T) {
 	t.Setenv(clusterKeyFileEnv, "")
 	a := startRunnerWith(t, runOptions{scheduler: true, name: "siem-a"})
-	eventually(t, "A founds the cluster", func() bool {
+	// Founding restarts the components in place, with the shared
+	// sessions: a sign-in before that restart is over is lost.
+	eventually(t, "A founds the cluster and takes its content from it", func() bool {
 		m, _ := a.r.shared.Mode()
-		return m == shared.ModeMember
+		ct := a.r.sharedContent
+		return m == shared.ModeMember && ct.on.Load() && ct.users.on.Load() == a.r.shared.SharedUsers() && !a.r.RestartStatus().InProgress
 	})
 	ca := a.ownCA()
 
@@ -222,7 +228,7 @@ func TestRejoinAfterRemoveGetsACertificate(t *testing.T) {
 	}
 	join("first join")
 
-	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+	if _, _, err := removeServer(ctx, a.r.shared, removeHooks(a.r.shared, j.osca), "n_siem-c", "siem-c", "admin", false); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := j.osca.Get(); b.RevokedNodes["n_siem-c"].IsZero() {
@@ -241,7 +247,7 @@ func TestRejoinAfterRemoveGetsACertificate(t *testing.T) {
 	}
 
 	// Approval readmits too.
-	if _, err := removeServer(ctx, a.r.shared, j.osca, "n_siem-c", "siem-c", "admin", false); err != nil {
+	if _, _, err := removeServer(ctx, a.r.shared, removeHooks(a.r.shared, j.osca), "n_siem-c", "siem-c", "admin", false); err != nil {
 		t.Fatal(err)
 	}
 	ap := j.approver()

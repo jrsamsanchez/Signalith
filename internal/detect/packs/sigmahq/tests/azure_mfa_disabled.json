@@ -1,0 +1,5 @@
+{"rule": "7ea78478-a4f9-42a6-9dcd-f861816122bf", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Disable Strong Authentication","properties.result":"success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.result":"success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Disable Strong Authentication"}}
+]}

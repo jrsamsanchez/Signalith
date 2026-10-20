@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -9,8 +12,10 @@ import (
 // every event it receives; a sender can never set them (see reserved).
 const (
 	// IntakeField is how the event arrived: agent (an agent's POST to
-	// /api/ingest), otlp, osquery, syslog or scanner (Signalith's own
-	// vulnerability scans).
+	// /api/ingest), otlp, hec (a sender built for Splunk's HTTP Event
+	// Collector), osquery, syslog, scanner (Signalith's own
+	// vulnerability scans) or signalith (what Signalith notices itself,
+	// such as a network sensor gone silent).
 	IntakeField = "signalith_intake"
 	// TokenField is the name of the agent token the event came with, as
 	// it was then (never the token itself). Renaming the token later
@@ -21,15 +26,25 @@ const (
 	// SenderField is the address that sent the event, without a port:
 	// the client behind a trusted reverse proxy, not the proxy.
 	SenderField = "signalith_sender"
+	// TokenPurposeField is what that agent token was made for (linux,
+	// windows, otel, osquery, sensor), when it was made for one. What
+	// only a network sensor may say (the hosts of the asset list it
+	// discovered) is believed only with purpose sensor, so another
+	// agent's token cannot claim to be a sensor by naming a Zeek log.
+	TokenPurposeField = "signalith_token_purpose"
 )
 
 // Intakes, the values of IntakeField.
 const (
 	IntakeAgent   = "agent"
 	IntakeOTLP    = "otlp"
+	IntakeHEC     = "hec"
 	IntakeOsquery = "osquery"
 	IntakeSyslog  = "syslog"
 	IntakeScanner = "scanner"
+	// IntakeSignalith is what Signalith writes about itself, such as a
+	// silent network sensor's event.
+	IntakeSignalith = "signalith"
 )
 
 // Origin is where events came from: how they arrived, the agent token
@@ -40,6 +55,8 @@ type Origin struct {
 	TokenID   string
 	TokenName string
 	Sender    string
+	// Purpose is the agent token's purpose; empty for a shared token.
+	Purpose string
 }
 
 // IsZero reports whether o says nothing.
@@ -62,7 +79,7 @@ func OriginFrom(ctx context.Context) Origin {
 
 // stamp writes o into an event's fields.
 func (o Origin) stamp(f map[string]any) {
-	for k, v := range map[string]string{IntakeField: o.Intake, TokenField: o.TokenName, TokenIDField: o.TokenID, SenderField: o.Sender} {
+	for k, v := range map[string]string{IntakeField: o.Intake, TokenField: o.TokenName, TokenIDField: o.TokenID, SenderField: o.Sender, TokenPurposeField: o.Purpose} {
 		if v != "" {
 			f[k] = v
 		}

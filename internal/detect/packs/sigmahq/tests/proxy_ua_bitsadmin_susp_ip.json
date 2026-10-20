@@ -1,0 +1,5 @@
+{"rule": "8ccd35a2-1c7c-468b-b568-ac6cdf80eec3", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Microsoft BITS/","cs-host":"3"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"cs-host":"3"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-useragent":"Microsoft BITS/"}}
+]}

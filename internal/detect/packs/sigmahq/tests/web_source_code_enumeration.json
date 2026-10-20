@@ -1,0 +1,4 @@
+{"rule": "953d460b-f810-420a-97a2-cfca4c98e602", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_user_agent":".git/"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{}}
+]}

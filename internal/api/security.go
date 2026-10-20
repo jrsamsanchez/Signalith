@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -240,6 +243,7 @@ func (s *Server) gatherSecurity(ctx context.Context) *security.Report {
 	}
 	f.Runtime = s.runtimeFacts(now, h.InContainer)
 	f.AgentTokens = TokenFacts(ctx, s.tokens())
+	f.APITokens = s.apiTokenFacts(now)
 	f.Users = security.UserFactsFrom(s.userStore(), c.Auth.AdminUser, now)
 	if d := s.dir().Settings(); d.IsEnabled() {
 		f.Directory = &d

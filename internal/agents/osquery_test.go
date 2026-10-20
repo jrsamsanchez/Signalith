@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
@@ -66,6 +69,10 @@ func TestOsqueryWindowsAndMac(t *testing.T) {
 		!strings.Contains(strings.Join(m.Steps, "\n"), "Full Disk Access") {
 		t.Errorf("mac script:\n%s\n%v", m.Config, m.Steps)
 	}
+	// Program starts come from EndpointSecurity, which only macOS has.
+	if !strings.Contains(m.Config, "--disable_endpointsecurity=false") || strings.Contains(a.Config, "endpointsecurity") {
+		t.Errorf("EndpointSecurity flag: mac %v, other %v", strings.Contains(m.Config, "endpointsecurity"), strings.Contains(a.Config, "endpointsecurity"))
+	}
 }
 
 func TestOsqueryRefuses(t *testing.T) {
@@ -88,5 +95,32 @@ func TestOsqueryRefuses(t *testing.T) {
 	}
 	if _, err := Generate(Options{OS: "osquery", ServerURL: "https://192.0.2.10:8080", Token: "t", CA: testCA, OwnCA: true}); err != nil {
 		t.Errorf("ip with Signalith's CA: %v", err)
+	}
+}
+
+func TestManagedOsqueryFlags(t *testing.T) {
+	flags, err := ManagedOsqueryFlags("windows", Options{ServerURL: "https://siem.example.com:7779"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"--tls_hostname=siem.example.com:7779\n", "--enroll_tls_endpoint=/api/osquery/enroll\n", "--enable_ntfs_event_publisher=true\n"} {
+		if !strings.Contains(flags, want) {
+			t.Errorf("flags have no %q:\n%s", want, flags)
+		}
+	}
+	// The agent names the files.
+	for _, not := range []string{"enroll_secret_path", "tls_server_certs"} {
+		if strings.Contains(flags, not) {
+			t.Errorf("flags have %q:\n%s", not, flags)
+		}
+	}
+	if _, err := ManagedOsqueryFlags("linux", Options{ServerURL: "https://10.0.0.5:7779"}); !errors.Is(err, ErrNoNameToCheck) {
+		t.Errorf("IP address without Signalith's CA: %v", err)
+	}
+	if flags, err := ManagedOsqueryFlags("linux", Options{ServerURL: "https://[fd00::5]:7779", OwnCA: true}); err != nil || !strings.Contains(flags, "--tls_hostname=[fd00::5]:7779\n") {
+		t.Errorf("IPv6 with Signalith's CA: %v\n%s", err, flags)
+	}
+	if _, err := ManagedOsqueryFlags("linux", Options{ServerURL: "http://siem:7779"}); err == nil {
+		t.Error("plain http accepted")
 	}
 }

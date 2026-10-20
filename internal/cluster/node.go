@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,9 +40,14 @@ type Settings struct {
 	// Eligible is detections.scheduler: this server may run the
 	// background jobs.
 	Eligible bool
-	NodeURL  string
-	Listen   string
-	Syslog   Syslog
+	// Role is cluster.role: "" for a cluster server, or "scanner".
+	Role    string
+	NodeURL string
+	Listen  string
+	// AgentListen is server.agent_listen, "" when agents send to the web
+	// port.
+	AgentListen string
+	Syslog      Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
 	// Indexed returns the last time this server stored an event (zero
@@ -50,6 +59,13 @@ type Settings struct {
 	// heartbeat, and why it may not run the background jobs because of
 	// it; nil has none. It must not call the node.
 	Shared func() SharedStatus
+	// HolderFingerprints, when set, returns the fingerprints fp of the
+	// files of the job holder (or the server that released the jobs) as
+	// this server compares them with its own for the fingerprint guard:
+	// it may put the shared sentinel in place of the parts the holder
+	// moved into the shared settings itself but still reads from its own
+	// files until it switches to them. It must not call the node.
+	HolderFingerprints func(holder string, fp Fingerprints) Fingerprints
 	// Housekeep runs with the node's housekeeping, every 10 minutes on
 	// the server that runs the background jobs (old tombstones and
 	// finished requests); nil for none.
@@ -61,6 +77,11 @@ type Settings struct {
 	// and the shared settings it could not use, for its heartbeat; nil has
 	// none. It must not call the node.
 	Pending func() (restart, refused []string)
+	// Traffic counts what this server received from agents and syslog,
+	// for its heartbeat, so the Health page can total the servers and
+	// tell when one gets no agent traffic; nil has none. It must not call
+	// the node.
+	Traffic func() Traffic
 	// TLS says which certificate authority this server's HTTPS
 	// certificate comes from, for its heartbeat; nil has none. It must not
 	// call the node.
@@ -68,6 +89,14 @@ type Settings struct {
 	// OSIdentity says who this server signs in to OpenSearch as, for its
 	// heartbeat; nil has none. It must not call the node.
 	OSIdentity func() *OSIdentityStatus
+	// DetTenants returns, per tenant this server runs, the fingerprint of
+	// the files its detections use, for its heartbeat; nil has none. It
+	// must not call the node.
+	DetTenants func() map[string]string
+	// DetReleased returns, per tenant, the detection buckets this server
+	// released (see Heartbeat.DetReleased); nil has none. It must not
+	// call the node.
+	DetReleased func() map[string]map[int]int64
 	// Busy names a step of the background jobs that must not be cut
 	// short, such as "retention run", while one runs, for the hand-over
 	// of the jobs to a newer version and for upgrade-check; nil is never
@@ -208,6 +237,10 @@ type heartbeatState struct {
 	checked bool
 	ver     store.Version
 	next    time.Duration
+	// good is when the last heartbeat that was written was sent, on the
+	// monotonic clock, and goodState the state it said.
+	good      time.Duration
+	goodState string
 }
 
 // member is another server's heartbeat as this one last saw it.
@@ -250,6 +283,7 @@ func New(o Options) *Node {
 		Target:        n.leaseTarget,
 		Eligible:      n.mayTake,
 		Fingerprints:  n.fingerprints,
+		Holder:        n.holderPrints,
 		Defer:         n.leaveJobs,
 		WritesRefused: n.refusingWrites,
 		OnChange:      n.poke,
@@ -735,7 +769,7 @@ func (n *Node) firstHeartbeat(ctx context.Context, c *store.Client, prefix strin
 		n.mu.Lock()
 		// The next heartbeat, at once, says it is ready, and the other
 		// servers are read with it.
-		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono()}
+		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono(), good: sent, goodState: StateStarting}
 		n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
 		n.lastRead = n.clock.Mono()
 		if probation {
@@ -843,6 +877,17 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 			restart = &r
 		}
 	}
+	n.mu.Lock()
+	trafficFn, detFn, relFn := n.settings.Traffic, n.settings.DetTenants, n.settings.DetReleased
+	n.mu.Unlock()
+	var detTenants map[string]string
+	if detFn != nil {
+		detTenants = detFn()
+	}
+	var detReleased map[string]map[int]int64
+	if relFn != nil {
+		detReleased = relFn()
+	}
 	var restartNeeded, refused []string
 	if pendingFn != nil {
 		restartNeeded, refused = pendingFn()
@@ -852,10 +897,10 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	hb := Heartbeat{Kind: "node", NodeID: n.ID(), Name: n.Name(), BootID: n.local.BootID, PrevBoot: n.local.LastBoot, State: state,
 		Version: n.opts.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Deployment: n.opts.Deployment,
 		StartedAt: n.started, HeartbeatAt: n.clock.Now().UTC(), NodeURL: n.settings.NodeURL, Listen: n.settings.Listen,
-		Syslog: n.settings.Syslog, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
+		AgentListen: n.settings.AgentListen, Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
-		Features:   features}
+		Features:   features, DetTenants: detTenants, DetReleased: detReleased}
 	if n.lastErr != "" {
 		hb.OpenSearch.Problem = store.Problem(n.lastErrRaw)
 	}
@@ -889,6 +934,10 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		hb.KeyIDs = sh.KeyIDs
 	}
 	hb.Restart, hb.RestartNeeded, hb.SettingsRefused = restart, restartNeeded, refused
+	if trafficFn != nil {
+		t := trafficFn()
+		hb.Traffic = &t
+	}
 	hb.Upgrade = n.upgradeStatusLocked(busy)
 	if f := n.settings.TLS; f != nil {
 		hb.TLS = f()
@@ -929,6 +978,7 @@ func (n *Node) writeHeartbeat(ctx context.Context, state string) {
 	switch {
 	case err == nil:
 		n.hb.ver, n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = nv, true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
+		n.hb.good, n.hb.goodState = sent, state
 		n.errLogged = ""
 	case store.IsClusterBlock(err):
 		// OpenSearch answers, but its disk is full.
@@ -1129,6 +1179,8 @@ func (n *Node) eligibleLocked() (bool, string) {
 		return false, n.paused
 	case n.drained != "":
 		return false, "it is drained"
+	case n.settings.Role == RoleScanner:
+		return false, "it is a scanner"
 	case !n.settings.Eligible:
 		return false, "detections.scheduler is off on this server"
 	case shared != "":
@@ -1246,6 +1298,28 @@ func refusal(oe *store.Error, index string) string {
 		out += " " + body.Error.Type
 	}
 	return out + " on " + index
+}
+
+// holderPrints returns the lease document doc with the fingerprints of
+// its holder as this server compares them with its own
+// (Settings.HolderFingerprints).
+func (n *Node) holderPrints(doc LeaseDoc) LeaseDoc {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.holderPrintsLocked(doc)
+}
+
+// holderPrintsLocked is holderPrints; the caller holds n.mu.
+func (n *Node) holderPrintsLocked(doc LeaseDoc) LeaseDoc {
+	f := n.settings.HolderFingerprints
+	if f == nil || doc.Fingerprint == "" || doc.Fingerprints == (Fingerprints{}) {
+		return doc
+	}
+	fp := f(cmp.Or(doc.Holder, doc.ReleasedBy), doc.Fingerprints)
+	if fp != doc.Fingerprints {
+		doc.Fingerprints, doc.Fingerprint = fp, fp.Combined()
+	}
+	return doc
 }
 
 // mayTake is eligible, for the lease: a process on probation also waits.
@@ -1715,7 +1789,7 @@ func (n *Node) Status() Status {
 		// guard, its files differing from those of the server that ran
 		// them last. Every server's page shows it: the others' are read
 		// from their heartbeats.
-		d := view.Doc
+		d := n.holderPrintsLocked(view.Doc)
 		guarded := view.Found && d.Fingerprint != "" && s.NodeID != d.Holder && !(d.Holder == "" && s.NodeID == d.ReleasedBy)
 		switch {
 		case s.Self && view.CannotTake != "":

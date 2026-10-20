@@ -1,0 +1,5 @@
+{"rule": "c2496b41-16a9-4016-a776-b23f8910dc58", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"Authentication Methods Policy Update","TargetResources.modifiedProperties":"AuthenticationMethodsPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"TargetResources.modifiedProperties":"AuthenticationMethodsPolicy"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"OperationName":"Authentication Methods Policy Update"}}
+]}

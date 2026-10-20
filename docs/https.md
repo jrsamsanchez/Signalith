@@ -73,8 +73,10 @@ level=INFO msg="HTTPS certificate from Signalith's own certificate authority; ..
 
 ### One port for HTTPS and plain HTTP
 
-Signalith keeps one port (8080 by default) and looks at the first byte each client sends
-to tell HTTPS from plain HTTP, so old `http://` bookmarks and agents still reach it:
+Signalith serves HTTPS and plain HTTP on each of its ports: the web port (9000 by
+default) and the [agent port](sending-data.md#the-agent-port) (7779 by default), which
+uses the same certificate. It looks at the first byte each client sends to tell HTTPS from
+plain HTTP, so old `http://` bookmarks and agents still reach it:
 
 - A browser asking for a page over `http://` is sent to the same address over `https://`.
 - Signing in, HTTP Basic credentials and session cookies are refused over plain HTTP
@@ -99,7 +101,8 @@ nothing to do again when the server certificate is renewed.
 
 - On the sign-in page, click **Download the server certificate**. It saves Signalith's CA
   certificate as `signalith-ca.crt` in your Downloads folder.
-- Download `https://<server>:8080/api/tls/ca.pem`; it needs no sign-in.
+- Download `https://<server>:9000/api/tls/ca.pem`; it needs no sign-in. The agent port
+  serves it too, at `https://<server>:7779/api/tls/ca.pem`.
 - Copy `ca.pem` from the server's `tls` folder (see above).
 
 **2. Check it is the right one.** The browser warning means the download itself could
@@ -170,7 +173,7 @@ Certificates > Authorities > Import**, choose the file and tick **Trust this CA 
 websites**.
 
 Command-line tools take the file directly, for example
-`curl --cacert signalith-ca.crt -u admin https://siem.example.com:8080/api/health`.
+`curl --cacert signalith-ca.crt -u signalithadmin https://siem.example.com:9000/api/health`.
 
 Signalith's CA only ever signs certificates for this one server. It is limited to
 websites (its extended key usage is server authentication only), and to this server's
@@ -330,12 +333,12 @@ you switch.
 
 - The sign-in page shows **Download the new server certificate** while a new CA
   waits. It saves `signalith-ca-new.crt`. Without signing in,
-  `https://<server>:8080/api/tls/ca.pem?which=next` gives the same file.
+  `https://<server>:9000/api/tls/ca.pem?which=next` gives the same file.
 - On Linux, copy it as `signalith-ca-new.crt`, so it doesn't replace the old file.
   For Chrome's own list, give it another name: `-n "Signalith Local CA (new)"`.
 - Agent configurations from **Add data** now carry both CAs, so give agents a new
   configuration. For devices and agents you set up by hand,
-  `https://<server>:8080/api/tls/ca.pem?which=both` gives both in one file.
+  `https://<server>:9000/api/tls/ca.pem?which=both` gives both in one file.
 - Check the fingerprint as in [Trust the certificate](#trust-the-certificate),
   against the `ca_sha256` logged when it was made, or
   `openssl x509 -in /var/lib/signalith/tls/next/ca.pem -noout -fingerprint -sha256` on
@@ -358,14 +361,14 @@ use HTTPS only for its name, so a browser that doesn't trust the new CA can't op
 Security page at that name, and offers no way past the warning. To switch back
 without it, either:
 
-- open the page by the server's IP address, such as `https://192.168.1.20:8080`, where
+- open the page by the server's IP address, such as `https://192.168.1.20:9000`, where
   the browser lets you continue past the warning; or
 - run this on the server, which trusts the new CA from the state folder and asks for
-  the admin's password (use your port if it isn't 8080):
+  the admin's password (use your port if it isn't 9000):
 
   ```sh
-  curl --cacert /var/lib/signalith/tls/ca.pem -u admin -H 'Content-Type: application/json' \
-    -d '{"action":"rollback"}' https://localhost:8080/api/security/ca
+  curl --cacert /var/lib/signalith/tls/ca.pem -u signalithadmin -H 'Content-Type: application/json' \
+    -d '{"action":"rollback"}' https://localhost:9000/api/security/ca
   ```
 
   On Windows, in PowerShell, use `curl.exe` and
@@ -508,13 +511,18 @@ private to the proxy:
 
 ```yaml
 server:
-  listen: 127.0.0.1:8080              # only the proxy on this machine reaches it
+  listen: 127.0.0.1:9000              # only the proxy on this machine reaches it
+  agent_listen: 127.0.0.1:7779        # agents, through the proxy as well
   public_url: https://siem.example.com
   tls:
     mode: off
   trusted_proxies: [127.0.0.1]
   client_header: x-forwarded-for      # only if the proxy sets it, see below
 ```
+
+Agents send to the agent port, so have the proxy forward a second port to
+`server.agent_listen` too, or set `server.agent_listen: off` to have agents send through
+the same port as the web page (see [The agent port](sending-data.md#the-agent-port)).
 
 The proxy must send `X-Forwarded-Proto: https`. Signalith believes that header only from
 the addresses in `server.trusted_proxies`; from anyone else it is ignored, since any
@@ -531,7 +539,7 @@ counts as one shared address, so nobody can pause sign-ins for the others. For n
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://127.0.0.1:9000;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

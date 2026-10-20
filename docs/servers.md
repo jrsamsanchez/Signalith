@@ -77,6 +77,16 @@ it from the Signalith folder with
 | **OpenSearch not ready** | OpenSearch is starting, or its nodes can't find each other | Wait a few minutes. If it lasts, OpenSearch's log says why |
 | **OpenSearch answers with an error** | Any other error, such as a closed `<prefix>_runtime` index. The alert quotes it | OpenSearch's log may say more |
 
+## OpenSearch with several nodes
+
+With one OpenSearch node, losing it stops every server. Run three nodes, give each
+server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
+keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+indices without a copy on another node, and which of this server's addresses are being
+skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
+per-node certificates and snapshots.
+
 ## The background jobs
 
 These run on one server only:
@@ -122,7 +132,61 @@ their settings it is called **May run background jobs** (`cluster.leader_eligibl
 or `SIGNALITH_LEADER_ELIGIBLE`), one of each server's own settings. Leave it on: the
 servers take turns by themselves. Turn it off only on a server that should never
 run the jobs, for example one that only receives data. A change applies at the
-server's next restart.
+server's next restart. A server added as a **scanner** (its **Server role**,
+`cluster.role: scanner`) never runs them, whatever this setting says; see
+[Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners).
+
+**Spreading detections over the servers.** With many rules, one server can be too
+few to run them all. So with two or more servers that may run the jobs, each runs
+a share of each tenant's rules: the rules are split into 64 groups, and the server
+running the jobs gives each group to one server, moving as few as it can when a
+server joins or leaves. A server that stops has its groups moved to the others,
+even when only one is left. This is **Spread detections over servers**
+(`detections.spread`, on the Settings page under Detections), on unless you turn
+it off; turned off, the server running the jobs runs every rule. It applies within
+seconds, and only once every running server is on a version that supports it and
+the cluster's features are up to date; until then, one server runs every rule as
+before. A server
+does not get a share while its detection or lookup files differ from those of the
+server running the jobs, while its clock is more than 2 seconds off OpenSearch's,
+or while it cannot write its heartbeat for 20 seconds (it then stops its share by
+itself). While they are spread, the Servers page says under **Background jobs** how many of the
+groups each server runs, and how many it is handing over to another.
+
+Spread or not, the Servers page also shows, under **Background jobs**, how each server keeps up
+with the rules it ran last in the past day: how many rules, how long their last runs took (the
+median and the 95th percentile), how long after its time slot ended each run started, how many
+rules started more than one schedule interval late in the last hour, how many slots were skipped
+for being older than the catch-up limit (`detections.catch_up`), and how many runs timed out. A
+server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
+rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
+look at the slowest rules on the Detections page, or spread detections over more servers.
+
+When a group moves, its new server takes over from where the last run of each rule
+ended, so no time is skipped or searched twice. A server that is still running hands
+its groups over first: it starts no new run of them, finishes the runs it has going,
+and says so in its heartbeat, and only then does the new server start them (or after
+6 minutes, longer than any run may take, if it never says so). A server that stopped
+or lost contact gives its groups up at once. A server that just started gets groups
+only once it has been running for a minute, so one that restarts quickly does not
+move them back and forth. Each group also carries a number that grows with every
+move, and OpenSearch refuses run state written under an older one, so two servers
+never both record a run of the same rule.
+
+Every server's detection searches go to the same OpenSearch, so adding servers adds
+room to run rules, not room to search. While detections are spread, all servers
+together run at most **Detection searches at once** (`detections.search_budget`)
+searches; each server runs the share that matches its groups, at least one, for all
+tenants together, taking turns between tenants so a busy one cannot hold more than
+half of a server's searches while another waits. Left empty, it is half the
+searches OpenSearch's data nodes can run at once. When a tenant's searches are
+refused as too busy, do not answer in time, or take twice as long as over the 15
+minutes before, that tenant alone runs fewer at once for a while, so one tenant's
+heavy rules do not slow the others. When most of the tenants a server runs (at
+least two) show it within two minutes, or it runs a single tenant, OpenSearch is
+taken to be slow for everyone: the server halves how many it runs and gets one back a minute; the
+current runs go first, and missed runs are made up one at a time until it is back
+to its share.
 
 **Changing retention and feeds.** Once the servers are a cluster (see
 [Shared feeds and retention policies](#shared-feeds-and-retention-policies)), the Data retention
@@ -311,8 +375,8 @@ By hand:
    [Server settings](settings.md#using-the-page)), OpenSearch keeps a copy of each
    new day's events on a second node as soon as there is one, and a copy of
    findings, investigations and threat intel too. Days stored before then keep the
-   copies they had. Set Replicas the same on every server: the servers share one
-   index template, and the setting of the server that started last is used.
+   copies they had. Set Replicas, and Shards, the same on every server: the servers
+   share one index template, and the setting of the server that started last is used.
 
 When it starts, it appears on the Servers page of every server.
 
@@ -587,6 +651,8 @@ change. It is signed with OpenSearch's CA and valid until the CA expires.
 
 - **Docker:** set up already. The `setup` service makes an empty list in the
   `opensearch-crl` volume, OpenSearch checks it once it is there, and Signalith keeps it.
+  From then on OpenSearch does not start without the list: if it is deleted, OpenSearch
+  waits, restarting, until Signalith or `docker compose ... up -d` writes it again.
   OpenSearch warns at start that the list can be read by others: it holds no secret, and
   Signalith writes it while OpenSearch reads it.
 - **Without Docker:** on each OpenSearch node, put the list where OpenSearch can read it
@@ -612,6 +678,20 @@ when it can, and says so loudly when it can't: a red banner on every page, the
 [OpenSearch's revocation list](security.md#opensearchs-revocation-list) check on the
 Security page. In Docker, `docker compose -f deploy/docker/docker-compose.yml up -d`
 makes it again too.
+
+**A revocation ends the access of a server that follows the cluster, not of its disk.**
+A removed server's state folder still holds the cluster key and its copy of the shared
+settings (`cluster/cache.enc`), and together they open OpenSearch's CA key: whoever has
+that disk can still sign new certificates OpenSearch trusts. For a server that was
+compromised or stolen, also make a new OpenSearch CA. In Docker, run
+`bootstrap-docker -new-ca`, then `bootstrap-docker -export-ca-key` again, so the cluster
+keeps the new CA in place of the old (see
+[Replacing the CA](opensearch-security.md#replacing-the-ca)); without Docker, make
+OpenSearch's certificates again under a new CA. A revocation does not touch the shared
+`CN=signalith` certificate or a user name and password either: whoever holds those keeps
+OpenSearch access until `roles_mapping.yml` no longer gives them the `signalith_server`
+role (see [Each server's own OpenSearch certificate](#each-servers-own-opensearch-certificate)),
+or the password is changed.
 
 ## Shared feeds and retention policies
 
@@ -759,10 +839,16 @@ rows the sample data adds stay on the server that loaded it, and lists of up to
 1,000,000 rows are kept in parts, so a server reading a list while it is replaced gets
 the old list or the new one, never a mix.
 
+**Notes on compliance controls.** The notes admins add on the
+[Compliance](compliance.md#controls-handled-elsewhere) page are kept in the shared
+settings too, so every server shows them and puts them in its reports. The server that
+founds the cluster brings the notes in its `compliance-notes.json`. While a server cannot
+use the shared settings, saving a note there answers `503`.
+
 ## Field names when several servers receive events
 
-Each day's events go to one index per data model, and OpenSearch allows at most 2,000
-fields in one index. Signalith's own fields always fit; the names senders choose (JSON
+Each day's events go to one index per data model, and Signalith lets one index hold at
+most 2,400 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 
@@ -771,7 +857,7 @@ keys, syslog structured data, CEF extensions) share what is left (see
   at least 100 for each. Each server's heartbeat says when it last stored an event, so
   the shares follow servers as they start and stop.
 - Before adding new names to an index, a server also looks at how many fields the index
-  really has (checked at most every 30 seconds) and adds none once it has 1,600.
+  really has (checked at most every 30 seconds) and adds none once it has 2,000.
 
 Fields over the limit are not lost: their values stay in the event's raw message
 (`_raw`), and the event says how many were left out in `dropped_fields`. Fields
@@ -932,9 +1018,24 @@ backend signalith
     balance source
     option httpchk GET /readyz
     http-check expect status 200
-    server siem-a 10.0.0.11:8080 check
-    server siem-b 10.0.0.12:8080 check
+    server siem-a 10.0.0.11:9000 check
+    server siem-b 10.0.0.12:9000 check
 ```
+
+Agents send to the [agent port](sending-data.md#the-agent-port) (7779 by default), so
+balance it the same way, with a backend of its own whose `server` lines use port 7779.
+The agent port answers `/readyz` and `/livez` too.
+
+**Seeing who really connected.** A load balancer that passes connections through
+(TCP mode, the usual choice, so HTTPS and syslog over TLS end at Signalith) hides the
+client's address: every browser, agent and device seems to be the balancer. Have it
+add a PROXY protocol v2 header (`send-proxy-v2` in HAProxy, plus `check-send-proxy`
+for its checks) and turn on **PROXY protocol from load balancers** for the web port
+and for syslog, with the balancer under **Trusted reverse proxies**. Sign-in limits,
+the audit log, agent limits, `syslog.allow` and each syslog event's host then see the
+real client. Samples for HAProxy, nginx and keepalived are in
+[deploy/loadbalancer](https://github.com/jrsamsanchez/Signalith/tree/main/deploy/loadbalancer),
+and [Load balancers](load-balancers.md) walks through them.
 
 Both addresses answer over HTTPS and also over plain `http://` on the same port
 (everything else on plain HTTP is sent to HTTPS), so the plain `check` above works
@@ -945,9 +1046,9 @@ Kubernetes container:
 
 ```yaml
 readinessProbe:
-  httpGet: { path: /readyz, port: 8080, scheme: HTTPS }
+  httpGet: { path: /readyz, port: 9000, scheme: HTTPS }
 livenessProbe:
-  httpGet: { path: /livez, port: 8080, scheme: HTTPS }
+  httpGet: { path: /livez, port: 9000, scheme: HTTPS }
 ```
 
 Kubernetes does not check the certificate of a probe, and without `scheme: HTTPS`
@@ -1004,3 +1105,26 @@ another version in `X-Signalith-Version` reloads once to get that version's page
 if a server of the other version answers again within 2 minutes, the page says that
 Signalith is being upgraded instead of reloading again. The plain
 paths (`/app.js` and so on) keep working, for pages of earlier versions.
+
+**Where agents send.** With several servers, Add data asks **Where do agents send?**:
+the shared address (the public address, which should be the load balancer's or a DNS
+name over every server) or one server's own address, each on its agent port (each server reports its own; see
+[The agent port](sending-data.md#the-agent-port)). It looks the shared address up
+and says which servers it reaches, and warns when it is just one server's address:
+agents sent there wait while that server is down. Agents keep their events while they
+wait, and send them once a server answers. Configurations made while several servers
+share the work also have each agent open a new connection every 100 batches
+(`net.keepalive_max_recycle`), so a server that comes back gets its share again.
+A DNS name over several servers (round robin) works without a load balancer, but an
+agent keeps trying the address it picked while that server is down, and some
+resolvers keep a down server's address for minutes; a load balancer with health
+checks moves agents at once. With neither, agents sent to one server's address are the
+fallback, and the Health page and the Servers page say when a running server gets no
+agent traffic while another does.
+
+**Syslog behind a load balancer.** Syslog over TCP and TLS goes through the balancer
+like the web port, with a PROXY protocol header. UDP has no such header: send it to a
+virtual IP (keepalived, see the sample) or straight to one server. Never send one
+device to two servers at once: each message would be stored twice. When a server
+stops, devices on TCP reconnect through the balancer to another; a few messages sent
+just before may be stored twice or lost, as with any syslog server that restarts.

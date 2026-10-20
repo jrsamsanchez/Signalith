@@ -1,0 +1,4 @@
+{"rule": "ccd55945-badd-4bae-936b-823a735d37dd", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"business_secret_scanning_custom_pattern_push_protection.disabled"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

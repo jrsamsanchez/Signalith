@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -39,6 +42,10 @@ type Runtime struct {
 
 	// stepMu lets one evaluation or watch cycle run at a time.
 	stepMu sync.Mutex
+	// polled says the step running came from the Poll timer rather than
+	// a Kick, so its watch cycle may stop at an unchanged mark (Hub.Poll).
+	// Guarded by stepMu.
+	polled bool
 	// running counts the loop and the cache writer, for Wait.
 	running sync.WaitGroup
 
@@ -92,6 +99,10 @@ type Runtime struct {
 	boot          string
 	started       bool
 	keyFileWarned bool
+	// newerKID is the newer cluster key afterCycle last looked for the
+	// cluster with, so a cluster document that does not verify with it
+	// is looked at once, not on every cycle.
+	newerKID string
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
 	// approval is a waiting server's request to join (approval.go).
@@ -621,13 +632,16 @@ func (rt *Runtime) Start(ctx context.Context) {
 	}
 	rt.log.Info("shared settings watcher started")
 	rt.running.Go(func() {
+		polled := false
 		for {
-			rt.step(ctx)
+			rt.step(ctx, polled)
 			select {
 			case <-ctx.Done():
 				return
 			case <-rt.wake:
+				polled = false
 			case <-rt.clock.After(rt.opts.Timing.Poll):
+				polled = true
 			}
 		}
 	})
@@ -637,9 +651,11 @@ func (rt *Runtime) Start(ctx context.Context) {
 // writer of cache.enc to end; the writer saves what changed last first.
 func (rt *Runtime) Wait() { rt.running.Wait() }
 
-func (rt *Runtime) step(ctx context.Context) {
+func (rt *Runtime) step(ctx context.Context, polled bool) {
 	rt.stepMu.Lock()
 	defer rt.stepMu.Unlock()
+	rt.polled = polled
+	defer func() { rt.polled = false }()
 	rt.stepLocked(ctx, true)
 }
 
@@ -780,12 +796,8 @@ func (rt *Runtime) restoreCache() {
 	ks := rt.keyStore()
 	cache := Cache{Path: path, Master: ks.Master, ClusterID: id, Prefix: prefix}
 	d, err := cache.Read(rt.clock.Now())
-	if errors.Is(err, ErrCacheOld) {
-		rt.log.Warn("the copy of the shared settings is older than 30 days, so it was removed", "path", path)
-		_ = cache.Remove()
-		return
-	}
-	if err != nil {
+	old := errors.Is(err, ErrCacheOld)
+	if err != nil && !old {
 		rt.log.Warn("the copy of the shared settings cannot be used", "path", path, "err", err)
 		return
 	}
@@ -797,6 +809,15 @@ func (rt *Runtime) restoreCache() {
 		}
 	}
 	if active == nil {
+		return
+	}
+	if old {
+		// Its documents are not used, but the revisions it applied still
+		// refuse an older copy written back into OpenSearch: revisions
+		// only go up. The file is kept for them until the writer
+		// replaces it.
+		rt.log.Warn("the copy of the shared settings is older than 30 days, so only the revisions it applied are used", "path", path)
+		rt.Hub().KeepFloors(d.Floors)
 		return
 	}
 	rt.mu.Lock()
@@ -844,6 +865,39 @@ func (rt *Runtime) markContact() {
 // holds the job lease, and otherwise works out which legacy mode it is
 // in.
 func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
+	rt.look(ctx, mayFound, nil)
+}
+
+// newerKey is the cluster key kid when this server keeps it in its state
+// folder and kept it after the key the hub signs with.
+func (rt *Runtime) newerKey(kid string) *ClusterKey {
+	active := rt.Hub().Keys().Active()
+	if active == nil {
+		return nil
+	}
+	keys, err := rt.readKeys()
+	if err != nil {
+		return nil
+	}
+	k := keys.get(kid)
+	if k == nil || slices.IndexFunc(keys.stored, func(s *ClusterKey) bool { return s.ID() == kid }) < 0 {
+		return nil
+	}
+	ks := rt.keyStore()
+	added, err := ks.ClusterKeyCreated(kid)
+	if err != nil {
+		return nil
+	}
+	was, err := ks.ClusterKeyCreated(active.ID())
+	if err != nil || !added.After(was) {
+		return nil
+	}
+	return k
+}
+
+// look is evaluate, verifying the cluster document with only the key
+// when one is given.
+func (rt *Runtime) look(ctx context.Context, mayFound bool, only *ClusterKey) {
 	c, prefix := rt.target()
 	keys, kerr := rt.readKeys()
 	if kerr != nil {
@@ -889,12 +943,20 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		rt.notMember(ctx)
 		return
 	}
+	candidates := keys.all
+	if only != nil {
+		candidates = []*ClusterKey{only}
+	}
 	var active *ClusterKey
-	for _, k := range keys.all {
+	for _, k := range candidates {
 		if Verify(NewKeySet(k), ClusterDocID, &e) == nil && e.ID == ClusterDocID {
 			active = k
 			break
 		}
+	}
+	if active == nil && only != nil {
+		rt.setMode(ModeKeyMissing, "the cluster document does not verify with cluster key "+only.ID())
+		return
 	}
 	if active == nil {
 		err := Verify(NewKeySet(keys.all[0], keys.all[1:]...), ClusterDocID, &e)
@@ -910,6 +972,14 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 				if rt.catchUp(ctx) {
 					rt.Kick()
 				}
+				return
+			}
+			if keys.storedOther() {
+				// A server that keeps the key of a cluster it was a member
+				// of does not take a cluster it cannot verify for one it
+				// is not part of, which would put it back on its own
+				// files: the cluster document may have been replaced.
+				rt.setMode(ModeKeyMissing, err.Error())
 				return
 			}
 			rt.notMember(ctx)
@@ -1113,7 +1183,11 @@ func (rt *Runtime) cycle(ctx context.Context) {
 	h := rt.hub
 	rt.mu.Unlock()
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	err := h.Cycle(cctx)
+	read := h.Cycle
+	if rt.polled {
+		read = h.Poll
+	}
+	err := read(cctx)
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -1142,6 +1216,21 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	if cdoc.Missing() {
 		rt.setMode(ModeGone, "")
 		return
+	}
+	// A copy of the shared settings (cache.enc) written before this
+	// server kept a new cluster key gives the hub only the key it was
+	// signed with: with the cluster document signed with a newer key this
+	// server keeps, it joins with that key. An older one, such as a key a
+	// rotation retired, never takes the cluster back.
+	if p := h.problemOf(ClusterDocID); p != nil && p.unknownKID != "" && h.Keys().Get(p.unknownKID) == nil {
+		rt.mu.Lock()
+		tried := rt.newerKID == p.unknownKID
+		rt.newerKID = p.unknownKID
+		rt.mu.Unlock()
+		if k := rt.newerKey(p.unknownKID); k != nil && !tried {
+			rt.look(ctx, false, k)
+			return
+		}
 	}
 	body, ok := cdoc.Get()
 	if !ok {

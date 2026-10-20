@@ -1,0 +1,4 @@
+{"rule": "adf9f4d2-559e-4f5c-95be-c28dff0b1476", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"newCountry"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

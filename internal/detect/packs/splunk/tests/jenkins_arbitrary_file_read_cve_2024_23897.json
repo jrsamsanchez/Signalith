@@ -1,0 +1,9 @@
+{"rule": "c641260d-2b48-4eb1-b1e8-2cc5b8b99ab1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /cli?remoting=false x"}},
+  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200","url":"x /cli?remoting=false y"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"200"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","status":"201","url":"x /cli?remoting=false x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POST","url":"x /cli?remoting=false x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"POSU","status":"200","url":"x /cli?remoting=false x"}},
+  {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"200","url":"x /cli?remoting=false x"}}
+]}

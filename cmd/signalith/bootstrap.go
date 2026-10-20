@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -483,6 +486,10 @@ func exportCAKey(out io.Writer, o bootstrapOptions, chown bool) error {
 	return nil
 }
 
+// crlRequiredFile, next to the revocation list, tells OpenSearch's
+// entrypoint not to start without the list.
+const crlRequiredFile = "crl-required"
+
 // bootstrapCRL makes sure the revocation list OpenSearch checks client
 // certificates against is there, signed by the CA and in force: an empty
 // one when it is missing or is not (after -new-ca, say), since OpenSearch
@@ -514,15 +521,24 @@ func bootstrapCRL(out io.Writer, o bootstrapOptions, chown bool) error {
 		}
 		fmt.Fprintln(out, "Made OpenSearch's revocation list, which names no certificate yet.")
 	}
-	for _, f := range []string{p, o.CRLDir} {
+	// From now on OpenSearch does not start without the list
+	// (docker-compose.yml): one that started without it would check no
+	// certificate until it restarts.
+	req := filepath.Join(o.CRLDir, crlRequiredFile)
+	if err := writeFile(req, []byte("OpenSearch starts only with crl.pem here, which Signalith keeps.\n"), 0o644); err != nil {
+		return err
+	}
+	for _, f := range []string{p, req, o.CRLDir} {
 		if chown {
 			if err := os.Chown(f, o.SigUID, o.SigUID); err != nil {
 				return err
 			}
 		}
 	}
-	if err := os.Chmod(p, 0o644); err != nil {
-		return err
+	for _, f := range []string{p, req} {
+		if err := os.Chmod(f, 0o644); err != nil {
+			return err
+		}
 	}
 	return os.Chmod(o.CRLDir, 0o755)
 }
@@ -591,26 +607,45 @@ func writeFile(path string, data []byte, perm fs.FileMode) error {
 func cmdInitialPassword(args []string) error {
 	fs := flag.NewFlagSet("initial-password", flag.ExitOnError)
 	path := configFlag(fs)
+	note := fs.Bool("note", false, "print nothing, but note next to the config file that the built-in admin still has the first password, "+
+		"for a server that cannot read the file that keeps it (the Linux packages and unit run this as root)")
 	fs.Parse(args)
+	if *note {
+		return noteFirstPassword(*path)
+	}
 	return printInitialPassword(os.Stdout, *path)
 }
 
 func printInitialPassword(out io.Writer, path string) error {
+	// Once the first password was changed (on the page, or with signalith
+	// passwd), it no longer works, and it is no longer shown.
+	stateDir := config.StateDirFor(path)
+	fp, _ := config.ReadFirstPassword(stateDir)
+	changed := fp.Changed
+	if fi, err := os.Stat(config.AdminHashFileIn(stateDir)); err == nil && changed.IsZero() {
+		changed = fi.ModTime()
+	}
+	changedErr := func() error {
+		return fmt.Errorf("the first admin password was changed on %s, so it no longer works and is no longer shown. "+
+			"To set a new one, run signalith passwd and restart Signalith. With the Docker quick start, from the Signalith folder: "+
+			"docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd, then docker compose -f deploy/docker/docker-compose.yml restart signalith",
+			changed.Local().Format("2006-01-02 15:04"))
+	}
 	file := os.Getenv("SIGNALITH_ADMIN_PASSWORD_FILE")
 	if file == "" {
 		// The .deb, .rpm and .msi packages run signalith init
 		// -save-password, which keeps it next to the config file.
 		file = filepath.Join(filepath.Dir(path), initialPasswordFile)
 		if _, err := os.Stat(file); err != nil {
+			if !changed.IsZero() {
+				return changedErr()
+			}
 			return errors.New("this server has no generated first password (the Docker quick start and the packages keep one; " +
 				"other installs got theirs from signalith init or install.ps1). To set a new one, run: signalith passwd")
 		}
 	}
-	if fi, err := os.Stat(config.AdminHashFileIn(config.StateDirFor(path))); err == nil {
-		return fmt.Errorf("the first admin password no longer works: it was changed with signalith passwd on %s. "+
-			"To set a new one, run signalith passwd and restart Signalith. With the Docker quick start, from the Signalith folder: "+
-			"docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd, then docker compose -f deploy/docker/docker-compose.yml restart signalith",
-			fi.ModTime().Format("2006-01-02 15:04"))
+	if !changed.IsZero() {
+		return changedErr()
 	}
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -622,6 +657,79 @@ func printInitialPassword(out io.Writer, path string) error {
 	}
 	fmt.Fprintln(out, pw)
 	return nil
+}
+
+// noteFirstPassword notes the built-in admin's password hash while
+// signalith.yaml still gives it the first password, so the server, which
+// cannot read the file that keeps that password (the Linux packages keep
+// it root's), asks for a new one at the next sign-in with it (see
+// config.FirstPassword). signalith init notes it in the state folder for a
+// new install. For an install made before, the packages run this at every
+// upgrade and the Linux unit at every start, as root: it notes it next to
+// the config file, never in the folder the service owns. Where the
+// environment gives the password, the server reads the file itself, and
+// nothing is noted.
+func noteFirstPassword(path string) error {
+	if os.Getenv("SIGNALITH_ADMIN_PASSWORD_FILE") != "" || os.Getenv("SIGNALITH_ADMIN_PASSWORD") != "" {
+		return nil
+	}
+	file, _ := config.InitialPasswordFile(path)
+	b, err := os.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	pw := strings.TrimSpace(string(b))
+	if pw == "" {
+		return nil
+	}
+	// Root reads nothing from the service's state folder, whose files the
+	// service could point anywhere: a password saved there on the page
+	// is seen from the file being there at all.
+	c, err := config.LoadFileOnly(path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(c.AdminHashFile()); err == nil {
+		// A note left from before the change no longer applies.
+		_ = os.Remove(config.FirstPasswordFileIn(filepath.Dir(path)))
+		return nil
+	}
+	if !c.CheckPassword(c.Auth.AdminUser, pw) {
+		return nil
+	}
+	return config.RecordFirstPasswordNextTo(path, c.Auth.AdminPasswordHash)
+}
+
+// firstPasswordReplaced follows signalith passwd's replacing the built-in
+// admin's password: when it was the first one Signalith made, the change
+// is noted in the state folder dir, so signalith initial-password no
+// longer shows it, and the file next to the config file that kept it is
+// removed. The Docker quick start's, which the environment names, stays:
+// the server reads it at every start, and its volume is read-only there.
+func firstPasswordReplaced(out io.Writer, path, dir string) {
+	file, own := config.InitialPasswordFile(path)
+	fp, _ := config.ReadFirstPassword(dir)
+	statErr := errors.New("no file")
+	if file != "" {
+		_, statErr = os.Stat(file)
+	}
+	if fp.Hash == "" && statErr != nil {
+		return
+	}
+	if err := config.NoteFirstPasswordChanged(dir, time.Now()); err != nil {
+		fmt.Fprintf(out, "Note: could not note in %s that the first password was changed: %v\n", config.FirstPasswordFileIn(dir), err)
+	}
+	if !own || statErr != nil {
+		return
+	}
+	if err := os.Remove(file); err != nil {
+		fmt.Fprintf(out, "Note: %s keeps the first password, which no longer works, and could not be removed (%v). Delete it.\n", file, err)
+		return
+	}
+	fmt.Fprintf(out, "Removed %s, which kept the first password.\n", file)
 }
 
 // writeAdminHash keeps the built-in admin's new password hash in the

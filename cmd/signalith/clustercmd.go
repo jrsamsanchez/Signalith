@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -48,7 +51,7 @@ const clusterUsage = `usage:
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
-  signalith cluster token          [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+  signalith cluster token          [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
                                    a join token, which adds a server with signalith join
   signalith cluster token          [-c file] -revoke <id>   cancel a join token
   signalith cluster approve        [-c file] [-fingerprint fp] [-yes] [<server|fingerprint>]   approve a server waiting to join (none: list them)
@@ -122,6 +125,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	file := flags.String("f", "", "the file of settings to apply")
 	var tok tokenOptions
 	flags.StringVar(&tok.platform, "platform", "", "token: the new server's platform, linux, windows or docker")
+	flags.StringVar(&tok.role, "role", "", "token: scanner adds a server that only scans its network zone and never runs the background jobs; empty adds a cluster server")
 	flags.DurationVar(&tok.ttl, "ttl", clusterjoin.DefaultTTL, "token: how long the token works (at most 24h)")
 	flags.StringVar(&tok.note, "note", "", "token: a note shown with the token on the Servers page")
 	flags.StringVar(&tok.nodeURL, "node-url", "", "token: the address the other servers will reach the new server at")
@@ -199,7 +203,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
 	case "token":
 		if len(pos) != 0 {
-			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json], or signalith cluster token -revoke <id>")
+			return errors.New("usage: signalith cluster token [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json], or signalith cluster token -revoke <id>")
 		}
 		if tok.revoke != "" {
 			return x.revokeToken(ctx, tok.revoke)
@@ -274,6 +278,7 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
+	x.auth.Tenants = rt.Tenants
 	rt.Use(x.cl, x.prefix(), x.c.Keyring())
 	return rt
 }

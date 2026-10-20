@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterinstall
 
 import (
@@ -10,7 +13,7 @@ import (
 
 // Line is what the pasted lines are made from.
 type Line struct {
-	// URL is the address the token names (https://siem-a:8080): the new
+	// URL is the address the token names (https://siem-a:9000): the new
 	// server downloads the script and the program from it.
 	URL string
 	// Token is the join token, SJ1.….
@@ -48,15 +51,25 @@ var (
 // an image and downloads on GitHub (not a development build).
 func Released(v string) bool { return releaseText.MatchString(v) }
 
-// check refuses anything that would need quoting in a shell or
-// PowerShell, since it is pasted into one.
-func (l Line) check() error {
-	u, err := url.Parse(l.URL)
+// checkURL refuses a server address that is not https://host:port, or
+// that holds anything that would need quoting in a shell or PowerShell,
+// since it is pasted into one.
+func checkURL(raw string) error {
+	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("the server's address must be https://host:port")
 	}
-	if strings.ContainsAny(l.URL, "'\"` $;&|<>\\") {
+	if strings.ContainsAny(raw, "'\"` $;&|<>\\") {
 		return errors.New("the server's address has characters a pasted line cannot carry")
+	}
+	return nil
+}
+
+// check refuses anything that would need quoting in a shell or
+// PowerShell, since it is pasted into one.
+func (l Line) check() error {
+	if err := checkURL(l.URL); err != nil {
+		return err
 	}
 	if !tokenText.MatchString(l.Token) {
 		return errors.New("not a join token")
@@ -132,7 +145,7 @@ func Lines(l Line) (Commands, error) {
 		"# This server's name on the Servers page.",
 		"SIGNALITH_NODE_NAME=signalith-2",
 		"# The address the other servers reach this one at.",
-		"SIGNALITH_NODE_URL=https://<this computer's address>:8080",
+		"SIGNALITH_NODE_URL=https://<this computer's address>:9000",
 		"",
 	}, "\n")
 	c.DockerRun = "docker compose -f deploy/docker/docker-compose.server.yml --env-file deploy/docker/join.env up -d"

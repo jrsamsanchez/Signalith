@@ -1,0 +1,4 @@
+{"rule": "53acd925-2003-440d-a1f3-71a5253fe237", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{"riskEventType":"anonymizedIPAddress"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"riskdetection","data":{}}
+]}

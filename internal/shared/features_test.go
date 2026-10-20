@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -89,7 +92,7 @@ func TestFeatureStates(t *testing.T) {
 				b.Import.Done = map[string]string{}
 			}
 			for _, name := range []string{ImportUsers, ImportDirectory, ImportSettings, ImportRetentionHistory, ImportArchives, ImportTLS,
-				ImportDetections, ImportDashboards, ImportLookups} {
+				ImportDetections, ImportDashboards, ImportLookups, ImportTenants} {
 				b.Import.Done[name] = "none"
 			}
 			return nil

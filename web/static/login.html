@@ -10,6 +10,7 @@
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/app.css">
 <script src="assets/theme.js"></script>
+<script src="assets/passkey.js" defer></script>
 <script src="assets/login.js" defer></script>
 </head>
 <body>
@@ -18,17 +19,24 @@
 <symbol id="logo-lockup" viewBox="6 2 156.53 28"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path style="fill:var(--brand-signal)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/><g transform="translate(42.196 23.594) scale(0.014493)"><path fill="currentColor" d="M673 23Q500 23 372 -31Q245 -85 173 -188Q101 -291 95 -438H358Q365 -360 407 -308Q449 -256 518 -231Q587 -205 671 -205Q759 -205 826 -232Q894 -259 932 -308Q970 -356 970 -420Q970 -478 937 -516Q903 -554 842 -581Q782 -607 701 -627L532 -671Q345 -719 241 -816Q136 -913 136 -1071Q136 -1203 207 -1302Q278 -1401 401 -1455Q524 -1510 680 -1510Q839 -1510 959 -1455Q1079 -1400 1146 -1303Q1214 -1206 1217 -1082H958Q948 -1178 872 -1230Q797 -1283 676 -1283Q592 -1283 532 -1258Q471 -1232 438 -1188Q406 -1144 406 -1087Q406 -1025 444 -985Q483 -945 541 -921Q600 -897 660 -882L799 -846Q882 -826 960 -793Q1038 -760 1101 -709Q1163 -659 1200 -587Q1237 -515 1237 -418Q1237 -287 1170 -188Q1103 -88 977 -32Q851 23 673 23Z M1429 0V-1118H1689V0Z M2406 442Q2272 442 2172 408Q2073 374 2010 315Q1946 257 1918 183L2139 104Q2156 135 2187 168Q2219 201 2272 223Q2324 244 2405 244Q2526 244 2599 188Q2672 131 2672 11V-200H2650Q2631 -160 2594 -117Q2557 -75 2494 -46Q2432 -17 2335 -17Q2207 -17 2102 -77Q1998 -138 1936 -259Q1875 -380 1875 -562Q1875 -746 1937 -873Q1999 -1000 2104 -1066Q2208 -1132 2337 -1132Q2436 -1132 2500 -1099Q2564 -1066 2602 -1019Q2640 -973 2660 -933H2674V-1118H2929V3Q2929 152 2861 250Q2793 347 2675 395Q2557 442 2406 442ZM2408 -222Q2493 -222 2552 -263Q2611 -303 2642 -380Q2673 -457 2673 -564Q2673 -670 2643 -750Q2612 -829 2553 -874Q2494 -918 2408 -918Q2320 -918 2261 -872Q2201 -825 2171 -746Q2141 -666 2141 -564Q2141 -461 2172 -384Q2202 -307 2261 -264Q2321 -222 2408 -222Z M3424 -655V0H3164V-1118H3410L3414 -842H3394Q3440 -987 3531 -1059Q3622 -1132 3759 -1132Q3874 -1132 3960 -1083Q4046 -1034 4094 -940Q4141 -846 4141 -711V0H3882V-671Q3882 -783 3823 -847Q3765 -911 3663 -911Q3594 -911 3540 -881Q3486 -851 3455 -794Q3424 -736 3424 -655Z M4689 23Q4582 23 4497 -15Q4412 -54 4363 -129Q4314 -204 4314 -314Q4314 -409 4349 -471Q4385 -533 4446 -570Q4506 -607 4582 -626Q4659 -645 4740 -653Q4838 -664 4898 -672Q4959 -680 4988 -698Q5016 -716 5016 -754V-759Q5016 -814 4994 -852Q4972 -891 4929 -911Q4885 -932 4821 -932Q4756 -932 4709 -912Q4661 -892 4631 -860Q4601 -828 4587 -791L4346 -840Q4379 -939 4448 -1004Q4517 -1068 4613 -1100Q4709 -1132 4820 -1132Q4899 -1132 4979 -1113Q5060 -1095 5127 -1051Q5194 -1007 5235 -933Q5276 -859 5276 -747V0H5028V-154H5017Q4993 -107 4949 -66Q4905 -26 4840 -1Q4776 23 4689 23ZM4755 -170Q4836 -170 4895 -202Q4953 -234 4986 -286Q5018 -339 5018 -401V-533Q5005 -523 4975 -514Q4945 -505 4907 -498Q4869 -491 4833 -486Q4797 -481 4771 -478Q4713 -470 4666 -452Q4619 -434 4592 -401Q4566 -369 4566 -317Q4566 -269 4590 -236Q4615 -204 4658 -187Q4700 -170 4755 -170Z M5771 -1490V0H5511V-1490Z M6006 0V-1118H6266V0Z M7018 -1118V-914H6383V-1118ZM6542 -1384H6802V-315Q6802 -254 6828 -226Q6854 -197 6914 -197Q6931 -197 6960 -202Q6990 -206 7008 -210L7049 -9Q7006 4 6961 10Q6917 15 6875 15Q6714 15 6628 -65Q6542 -145 6542 -293Z M7447 -655V0H7187V-1490H7443V-842H7417Q7463 -987 7554 -1059Q7646 -1132 7782 -1132Q7898 -1132 7984 -1083Q8070 -1034 8118 -940Q8165 -846 8165 -711V0H7905V-671Q7905 -783 7846 -847Q7788 -911 7686 -911Q7617 -911 7563 -881Q7509 -851 7478 -794Q7447 -736 7447 -655Z M1559 -1276Q1497 -1276 1452 -1318Q1408 -1360 1408 -1418Q1408 -1478 1452 -1520Q1497 -1561 1559 -1561Q1622 -1561 1666 -1520Q1711 -1478 1711 -1419Q1711 -1360 1666 -1318Q1622 -1276 1559 -1276Z"/><path style="fill:var(--brand-cyan)" d="M6136 -1276Q6074 -1276 6030 -1318Q5985 -1360 5985 -1418Q5985 -1478 6030 -1520Q6074 -1561 6136 -1561Q6199 -1561 6244 -1520Q6288 -1478 6288 -1419Q6288 -1360 6244 -1318Q6199 -1276 6136 -1276Z"/></g></symbol>
 <symbol id="logo-mark" viewBox="6 2 20 28"><path fill="currentColor" d="M6 4.5A2.5 2.5 0 0 1 8.5 2H22A4 4 0 0 1 26 6V6H16A6 6 0 0 0 10 12A6 6 0 0 0 16 18A2 2 0 0 1 18 20A2 2 0 0 1 16 22H6Z"/><path style="fill:var(--brand-signal)" d="M26 27.5A2.5 2.5 0 0 1 23.5 30H10A4 4 0 0 1 6 26V26H16A6 6 0 0 0 22 20A6 6 0 0 0 16 14A2 2 0 0 1 14 12A2 2 0 0 1 16 10H26Z"/></symbol>
 <symbol id="i-arrow-big-up-dash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h3.293a.707.707 0 0 0 .5-1.207l-6.939-6.939a1.207 1.207 0 0 0-1.708 0l-6.94 6.94a.707.707 0 0 0 .5 1.206H8a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1z"/><path d="M9 20h6"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
 <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
+<symbol id="i-building-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
 <symbol id="i-circle-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
 <symbol id="i-circle-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
 <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></symbol>
+<symbol id="i-fingerprint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></symbol>
 <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
 <symbol id="i-key-round" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
 <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+<symbol id="i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
 <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
 <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
 </svg>
@@ -77,9 +85,21 @@
           <h1>Sign in</h1>
           <p class="sub">Welcome back. Use your Signalith account.</p>
         </div>
+        <div class="auth__demo" id="demo" hidden>
+          <div class="callout"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p>This is a public demo of Signalith with made-up sample data. Look around read-only, with no account.</p></div>
+          <button class="btn btn--primary btn--block auth__submit" type="button" id="demo-btn"><span id="demo-label">Explore the demo</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+          <button class="link-btn auth__help" type="button" id="demo-admin" aria-expanded="false">Sign in as the demo’s admin</button>
+        </div>
         <div class="alert" data-tone="danger" data-state="error" id="login-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="login-error-title">That username and password don’t match.</b><p id="login-error-text">After 10 failed attempts, sign-in pauses for 15 minutes.</p></div></div>
         <div class="alert" data-tone="warning" data-state="locked" id="login-locked" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><div><b>Sign-in is paused.</b><p id="login-locked-text">Too many failed sign-ins from this address.</p></div></div>
         <div class="alert" data-tone="success" data-state="signedout" id="login-signedout" role="status"><svg class="icon" aria-hidden="true"><use href="#i-circle-check"/></svg><div><b>You’re signed out.</b><p>Sign in again to continue.</p></div></div>
+        <div class="auth__sso" id="sso" hidden>
+          <div class="auth__sso-btns">
+            <a class="btn btn--secondary btn--block auth__sso-btn" id="sso-link" href="api/auth/oidc/start" hidden><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span id="sso-label">Sign in with single sign-on</span></a>
+            <a class="btn btn--secondary btn--block auth__sso-btn" id="saml-link" href="api/auth/saml/start" hidden><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span id="saml-label">Sign in with SAML single sign-on</span></a>
+          </div>
+          <div class="auth__or" role="separator"><span>or use a Signalith account</span></div>
+        </div>
         <div class="field">
           <label class="label" for="username">Username</label>
           <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg><input class="input input--lg" id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></div>
@@ -91,8 +111,12 @@
           <div class="hint caps" id="caps-hint" aria-live="polite"><svg class="icon" aria-hidden="true"><use href="#i-arrow-big-up-dash"/></svg>Caps Lock is on</div>
           <div class="callout auth__note" id="forgot-note" hidden><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p>Ask a Signalith admin to reset it. If you sign in with your company account, reset it the way you usually do. If you are the built-in admin, run <code>signalith passwd</code> on the server.</p></div>
         </div>
-        <label class="check"><input type="checkbox" id="remember" name="remember">Keep me signed in for 7 days</label>
+        <label class="check"><input type="checkbox" id="remember" name="remember">Keep me signed in</label>
         <button class="btn btn--primary btn--block auth__submit" type="submit" id="login-submit"><span id="login-submit-label">Sign in</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <div class="auth__passkey" id="passkey-signin" hidden>
+          <div class="auth__or" role="separator"><span>or</span></div>
+          <button class="btn btn--secondary btn--block" type="button" id="passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="passkey-label">Sign in with a passkey</span></button>
+        </div>
         <p class="auth__help auth__ca" id="ca-help" hidden><a href="api/tls/ca.pem" download="signalith-ca.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the server certificate</a><span>Trust it once to stop the browser warning. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#trust-the-certificate" target="_blank" rel="noopener">How</a></span></p>
         <p class="auth__help auth__ca" id="ca-next" hidden><a href="api/tls/ca.pem?which=next" download="signalith-ca-new.crt"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-download"/></svg>Download the new server certificate</a><span>A new server certificate is coming. Trust it too, and nothing changes for you when the server switches. <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/https.md#switching-to-a-new-certificate-authority" target="_blank" rel="noopener">How</a></span></p>
         <p class="auth__help" id="join-wait" hidden></p>
@@ -118,6 +142,73 @@
         </div>
         <button class="btn btn--primary btn--block auth__submit" type="submit" id="change-submit"><span id="change-submit-label">Save and continue</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
         <p class="auth__help">Not you? <button class="link-btn" type="button" id="change-signout">Sign out</button></p>
+      </form>
+      <form class="auth__form" id="code-form" novalidate hidden>
+        <div>
+          <span class="mfa-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use id="code-mark" href="#i-smartphone"/></svg></span>
+          <h1>Two-step sign-in</h1>
+          <p class="sub" id="code-sub">Enter the 6-digit code from your authenticator app.</p>
+        </div>
+        <div class="alert" data-tone="danger" id="code-error" role="alert" hidden><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="code-error-title"></b><p id="code-error-text"></p></div></div>
+        <div class="mfa-passkey" id="code-passkey" hidden>
+          <button class="btn btn--primary btn--block auth__submit" type="button" id="code-passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="code-passkey-label">Use your passkey</span></button>
+          <div class="auth__or" role="separator" id="code-or"><span>or enter a code</span></div>
+        </div>
+        <div class="mfa-entry" id="code-entry">
+          <div class="field">
+            <label class="label" for="code" id="code-label">Code</label>
+            <input class="input input--lg mfa-code" id="code" name="code" autocomplete="one-time-code" inputmode="numeric" autocapitalize="none" spellcheck="false" maxlength="6" placeholder="123456" aria-describedby="code-hint">
+            <div class="hint" id="code-hint">The code changes every 30 seconds.</div>
+          </div>
+          <button class="btn btn--primary btn--block auth__submit" type="submit" id="code-submit"><span id="code-submit-label">Verify</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        </div>
+        <div class="mfa-alt">
+          <button class="link-btn" type="button" id="code-recovery">Use a recovery code instead</button>
+          <button class="link-btn" type="button" id="code-lost" aria-expanded="false" aria-controls="code-lost-note">Lost your phone?</button>
+        </div>
+        <div class="callout auth__note" id="code-lost-note" hidden><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p id="code-lost-text">Sign in with one of the recovery codes you saved when you set up two-step sign-in. Each works once. No codes left? Ask a Signalith admin to reset two-step sign-in for your account.</p></div>
+        <p class="auth__help"><button class="link-btn" type="button" id="code-back"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-left"/></svg>Sign in as someone else</button></p>
+      </form>
+      <form class="auth__form" id="mfa-form" novalidate hidden>
+        <div>
+          <span class="mfa-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-shield-check"/></svg></span>
+          <h1>Set up two-step sign-in</h1>
+          <p class="sub" id="mfa-sub">Your Signalith admin asks for a code from an authenticator app each time you sign in.</p>
+        </div>
+        <div class="alert" data-tone="danger" id="mfa-error" role="alert" hidden><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="mfa-error-title"></b><p id="mfa-error-text"></p></div></div>
+        <ol class="mfa-steps">
+          <li><b>Scan the QR code</b> with an authenticator app, such as Microsoft Authenticator, Google Authenticator or 1Password.
+            <div class="mfa-qr"><img id="mfa-qr" alt="QR code for your authenticator app" width="176" height="176" hidden><span class="mfa-qr__wait" id="mfa-qr-wait">Making a QR code…</span></div>
+            <details class="mfa-manual"><summary>Can’t scan it? Type this key instead</summary>
+              <div class="mfa-key"><code id="mfa-key"></code><button class="btn btn--ghost btn--icon btn--sm" type="button" id="mfa-key-copy" aria-label="Copy the key" title="Copy the key"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+              <p class="hint">Choose a time-based key. The app shows Signalith with your username.</p>
+            </details>
+          </li>
+          <li><b>Enter the 6-digit code</b> the app shows.
+            <input class="input input--lg mfa-code" id="mfa-code" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="123456" aria-label="Code from the app">
+          </li>
+        </ol>
+        <button class="btn btn--primary btn--block auth__submit" type="submit" id="mfa-submit"><span id="mfa-submit-label">Turn on two-step sign-in</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
+        <div class="auth__passkey" id="mfa-passkey" hidden>
+          <div class="auth__or" role="separator"><span>or</span></div>
+          <button class="btn btn--secondary btn--block" type="button" id="mfa-passkey-btn"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span id="mfa-passkey-label">Use a passkey instead</span></button>
+          <p class="hint">Your fingerprint, face or device PIN, instead of an app.</p>
+        </div>
+        <p class="auth__help">Not you? <button class="link-btn" type="button" id="mfa-signout">Sign out</button></p>
+      </form>
+      <form class="auth__form" id="codes-form" novalidate hidden>
+        <div>
+          <span class="mfa-mark" data-tone="success" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span>
+          <h1>Save your recovery codes</h1>
+          <p class="sub">Two-step sign-in is on. If you lose your phone or passkey, each of these codes signs you in once. Keep them somewhere safe, such as a password manager.</p>
+        </div>
+        <ul class="mfa-codes" id="codes-list" aria-label="Recovery codes"></ul>
+        <div class="mfa-codes__actions">
+          <button class="btn btn--secondary" type="button" id="codes-copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span></button>
+          <button class="btn btn--secondary" type="button" id="codes-download"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Download</span></button>
+        </div>
+        <label class="check"><input type="checkbox" id="codes-saved">I saved my recovery codes</label>
+        <button class="btn btn--primary btn--block auth__submit" type="submit" id="codes-submit" disabled><span>Continue to Signalith</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>
       </form>
     </div>
     <div class="auth__foot"><span>© 2026 The Signalith authors</span><a class="row" href="https://github.com/jrsamsanchez/signalith#readme" target="_blank" rel="noopener"><svg class="icon icon--sm" aria-hidden="true"><use href="#i-book-open"/></svg>Documentation</a></div>

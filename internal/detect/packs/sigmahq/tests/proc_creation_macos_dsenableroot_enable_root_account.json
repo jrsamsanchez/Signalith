@@ -1,0 +1,5 @@
+{"rule": "821bcf4d-46c7-4b87-bc57-9509d3ba7c11", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/dsenableroot","path":"/dsenableroot"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -d x","path":"/dsenableroot"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/local/bin/helper","path":"/usr/local/bin/helper"}}
+]}

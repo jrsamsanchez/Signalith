@@ -1,0 +1,7 @@
+{"rule": "db014773-7375-4f4e-b83b-133337c0ffee", "cases": [
+  {"expect":true,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutUserPolicy","eventSource":"iam.amazonaws.com","requestParameters":"\"arn:aws:s3:::\u003cYOUR-BUCKET-NAME\u003e/\" \"s3:GetObject\" \"Allow\"","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventSource":"iam.amazonaws.com","requestParameters":"\"arn:aws:s3:::\u003cYOUR-BUCKET-NAME\u003e/\" \"s3:GetObject\" \"Allow\"","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutUserPolicy","requestParameters":"\"arn:aws:s3:::\u003cYOUR-BUCKET-NAME\u003e/\" \"s3:GetObject\" \"Allow\"","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutUserPolicy","eventSource":"iam.amazonaws.com","userAgent":"S3 Browser"}},
+  {"expect":false,"source":"synthesized","channel":"aws:cloudtrail","event_id":"AwsApiCall","data":{"eventName":"PutUserPolicy","eventSource":"iam.amazonaws.com","requestParameters":"\"arn:aws:s3:::\u003cYOUR-BUCKET-NAME\u003e/\" \"s3:GetObject\" \"Allow\""}}
+]}

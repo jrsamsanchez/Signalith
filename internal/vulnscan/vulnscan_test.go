@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package vulnscan
 
 import (
@@ -60,6 +63,16 @@ func TestValidateTarget(t *testing.T) {
 	set := Settings{Targets: []Target{target("192.0.2.1"), target("192.0.2.2")}}
 	if err := set.Validate(); err == nil {
 		t.Error("two networks with one ID")
+	}
+	// OpenVAS's traffic is what gentle mode spares fragile devices from.
+	tg = target("192.0.2.1")
+	tg.Gentle, tg.OpenVAS = true, true
+	if err := tg.Validate(); err == nil || !strings.Contains(err.Error(), "gentle mode") {
+		t.Errorf("OpenVAS on a gentle network: %v", err)
+	}
+	tg.Gentle = false
+	if err := tg.Validate(); err != nil {
+		t.Errorf("OpenVAS: %v", err)
 	}
 }
 
@@ -534,14 +547,16 @@ func TestSettingsConflict(t *testing.T) {
 func TestChecks(t *testing.T) {
 	ctx := context.Background()
 	c := &Checker{FindNmap: func() string { return "" }, GOOS: "windows"}
-	checks, path := c.Run(ctx, DefaultSettings())
+	checks, path := c.Run(ctx, DefaultSettings(), nil)
 	if path != "" || Ready(checks) || checks[0].State != CheckFail || !strings.Contains(strings.Join(checks[0].Fix, " "), "nmap.org") {
 		t.Errorf("no nmap: %+v", checks)
 	}
 	c = &Checker{FindNmap: func() string { return "/usr/bin/nmap" }, GOOS: "linux",
 		Version:  func(context.Context, string) (string, error) { return "7.94", nil },
 		SelfTest: func(context.Context, string) error { return nil }}
-	checks, path = c.Run(ctx, Settings{CVELookup: false, Targets: []Target{target("192.0.2.1")}})
+	c.Reach = func(_ context.Context, e string) Route { return Route{Entry: e, Direct: true, Iface: "eth0"} }
+	set := Settings{CVELookup: false, Targets: []Target{target("192.0.2.1")}}
+	checks, path = c.Run(ctx, set, set.Targets)
 	if path != "/usr/bin/nmap" || !Ready(checks) {
 		t.Errorf("ready: %+v", checks)
 	}
@@ -549,12 +564,13 @@ func TestChecks(t *testing.T) {
 	for _, ch := range checks {
 		byID[ch.ID] = ch
 	}
-	if byID["nmap"].Detail != "Nmap 7.94 at /usr/bin/nmap." || byID["cve"].State != CheckInfo || byID["networks"].State != CheckOK {
+	if byID["nmap"].Detail != "Nmap 7.94 at /usr/bin/nmap." || byID["cve"].State != CheckInfo || byID["networks"].State != CheckOK ||
+		byID["reach:"+set.Targets[0].ID].State != CheckOK {
 		t.Errorf("checks: %+v", byID)
 	}
 	c.Version = func(context.Context, string) (string, error) { return "7.60", nil }
 	c.SelfTest = func(context.Context, string) error { return fmt.Errorf("dnet: Failed to open device") }
-	checks, _ = c.Run(ctx, DefaultSettings())
+	checks, _ = c.Run(ctx, DefaultSettings(), nil)
 	if Ready(checks) || checks[0].State != CheckWarn || checks[1].State != CheckFail {
 		t.Errorf("old and broken: %+v", checks)
 	}

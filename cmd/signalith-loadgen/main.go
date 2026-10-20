@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Command signalith-loadgen puts load on Signalith servers and checks how
 // they hold up: simulated agents, syslog devices, people using the pages,
 // password guessing and settings changes, against one server or several
@@ -250,7 +253,7 @@ func runCommand(ctx context.Context, cmd string, args []string, stdout, stderr i
 	}
 	if cmd == "syslog" && len(s.Targets) == 0 {
 		// Syslog alone needs no web address.
-		s.Targets = []string{"https://localhost:8080"}
+		s.Targets = []string{"https://localhost:9000"}
 	}
 	opts := runOptions{RunID: c.runID, Keep: c.keep, Log: stderr}
 	if c.quiet {

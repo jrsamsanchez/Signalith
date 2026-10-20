@@ -1,0 +1,5 @@
+{"rule": "fa84aaf5-8142-43cd-9ec2-78cfebf878ce", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Admin registered temporary access pass method for user","properties.message":"Admin registered security info"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.message":"Admin registered security info"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"Status":"Admin registered temporary access pass method for user"}}
+]}

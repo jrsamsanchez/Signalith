@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: who each server signs in to OpenSearch as. Once the
 // cluster keeps OpenSearch's certificate authority, each server signs in
 // with a certificate of its own (CN=signalith-server-<name>) that it

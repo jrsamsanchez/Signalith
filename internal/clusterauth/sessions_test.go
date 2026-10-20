@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterauth
 
 import (
@@ -5,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +16,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -172,6 +177,32 @@ func TestStaleSessionsWhileDegraded(t *testing.T) {
 	}
 }
 
+// auth.session_max_age ends every shared session that long after
+// sign-in, remembered or kept in use, on every server that has it.
+func TestSharedSessionsMaxAge(t *testing.T) {
+	_, a, b, clk := pair(t)
+	a.addUser("jlee", users.Viewer)
+	b.cycle()
+	if a.sessions.MaxAge() != DefaultMaxAge || DefaultMaxAge != 24*time.Hour {
+		t.Fatalf("default max age %v", a.sessions.MaxAge())
+	}
+	for _, s := range []*server{a, b} {
+		s.sessions.SetMaxAge(3 * time.Hour)
+	}
+	keep := a.signIn("jlee", true)
+	used := a.signIn("jlee", false)
+	for range 5 {
+		clk.Advance(30 * time.Minute)
+		if !a.valid(used) || !b.valid(keep) {
+			t.Fatal("a session ended before the maximum age")
+		}
+	}
+	clk.Advance(30 * time.Minute)
+	if a.valid(used) || b.valid(keep) || a.valid(keep) {
+		t.Error("a session outlived the maximum age")
+	}
+}
+
 // Idle sessions end unless remembered; a peek does not count as use; the
 // stored last_seen is written at most once a minute.
 func TestIdleAndLastSeen(t *testing.T) {
@@ -206,9 +237,9 @@ func TestIdleAndLastSeen(t *testing.T) {
 	if !a.valid(keep) {
 		t.Error("a remembered session ended for being idle")
 	}
-	clk.Advance(MaxAge)
+	clk.Advance(DefaultMaxAge)
 	if a.valid(keep) {
-		t.Error("a remembered session outlived MaxAge")
+		t.Error("a remembered session outlived the maximum age")
 	}
 }
 
@@ -434,4 +465,133 @@ type carryCase struct {
 	role users.Role
 	hash string
 	kept bool
+}
+
+// At shared.LevelTenants a provider user's session moves to a tenant on
+// one server and works there on every server; the tenant is in the MAC,
+// so moving a session to another tenant in OpenSearch ends it. Tenant
+// users are kept as tenant users.
+func TestTenantSessionsAcrossServers(t *testing.T) {
+	o, a, b, _ := pair(t)
+	ctx := context.Background()
+	if !a.docs.TenantsOn() {
+		t.Fatal("a new cluster is below the tenants' level")
+	}
+	a.addUser("pat", users.Analyst)
+	ada, err := a.store.Create(ctx, users.NewUser{Username: "ada", Role: users.Admin, Tenant: "acme", Password: "a-good-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if u, ok := b.store.Get("ada@acme"); !ok || u.Tenant != "acme" || ada.Tenant != "acme" {
+		t.Fatalf("ada on B: %+v %v", u, ok)
+	}
+	if err := a.sessions.SetTenant(ctx, a.signIn("ada@acme", false), "beta"); err == nil {
+		t.Error("a tenant user's session switched tenants")
+	}
+	cookie := a.signIn("pat", false)
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	for _, s := range []*server{a, b} {
+		if got, ok := s.sessions.Lookup(ctx, cookie, false); !ok || got.Tenant != "acme" {
+			t.Errorf("%s: session %+v %v, want tenant acme", s.name, got, ok)
+		}
+	}
+	if err := b.sessions.SetTenant(ctx, cookie, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if got, ok := a.sessions.Lookup(ctx, cookie, false); !ok || got.Tenant != "" {
+		t.Errorf("A after switching back on B: %+v %v", got, ok)
+	}
+	for _, bad := range []string{"ACME", "default", "a"} {
+		if err := a.sessions.SetTenant(ctx, cookie, bad); err == nil {
+			t.Errorf("switched to %q", bad)
+		}
+	}
+
+	// Moved to another tenant outside Signalith: refused and audited.
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	index := shared.SessionsIndex(testPrefix)
+	src := o.fake.Source(index, SessionID(cookie))
+	src["tenant"] = "beta"
+	o.fake.Put(index, SessionID(cookie), src)
+	b.cycle()
+	if b.valid(cookie) {
+		t.Fatal("a session moved to another tenant in OpenSearch is accepted")
+	}
+	if !strings.Contains(b.logs.String(), "session.tamper") {
+		t.Error("the moved session was not audited")
+	}
+}
+
+// Below shared.LevelTenants no server keeps a tenant user or a session's
+// tenant, and one found anyway is never read as the provider's.
+func TestNoTenantsBelowTheirLevel(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("pat", users.Analyst)
+	b.cycle()
+	cookie := a.signIn("pat", false)
+	if err := a.sessions.SetTenant(ctx, cookie, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	never := func() bool { return false }
+	a.docs.Tenants, b.docs.Tenants = never, never
+	if _, err := a.store.Create(ctx, users.NewUser{Username: "ada", Role: users.Admin, Tenant: "acme", Password: "a-good-password"}); !errors.Is(err, ErrTenantUsers) {
+		t.Errorf("tenant user below the level: %v", err)
+	}
+	if err := a.sessions.SetTenant(ctx, cookie, ""); !errors.Is(err, ErrTenantUsers) {
+		t.Errorf("switch below the level: %v", err)
+	}
+	b.cycle()
+	if b.valid(cookie) {
+		t.Error("a session with a tenant is read below the tenants' level")
+	}
+}
+
+// The tenants are the same on every server: a change on one is read on
+// the other; below the tenants' level, nothing writes them.
+func TestTenantListAcrossServers(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	la, lb := a.docs.TenantList(), b.docs.TenantList()
+	b.cycle()
+	if list, err := lb.List(); err != nil || len(list) != 0 {
+		t.Fatalf("a list before one was written: %v %v", list, err)
+	}
+	if err := a.docs.ImportTenants(ctx, "test", []tenants.Tenant{{ID: "acme", Name: "Acme"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := la.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+		l[0].Disabled = true
+		return l, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Importing again keeps acme turned off.
+	if err := a.docs.ImportTenants(ctx, "test", []tenants.Tenant{{ID: "acme", Name: "Acme"}, {ID: "contoso", Name: "Contoso"}}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	if list, err := lb.List(); err != nil || len(list) != 2 || list[0].ID != "acme" || !list[0].Disabled {
+		t.Errorf("B's list: %v %v", list, err)
+	}
+	if err := lb.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) {
+		return append(l, tenants.Tenant{ID: "acme"}), nil
+	}); err == nil {
+		t.Error("a list with acme twice was written")
+	}
+	never := func() bool { return false }
+	a.docs.Tenants = never
+	if la.On() {
+		t.Error("on below the tenants' level")
+	}
+	if err := la.Mutate(ctx, "test", func(l []tenants.Tenant) ([]tenants.Tenant, error) { return l, nil }); !errors.Is(err, tenants.ErrNotShared) {
+		t.Errorf("write below the tenants' level: %v", err)
+	}
 }

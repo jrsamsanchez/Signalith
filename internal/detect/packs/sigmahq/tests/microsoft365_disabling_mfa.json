@@ -1,0 +1,4 @@
+{"rule": "60de9b57-dc4d-48b9-a6a0-b39e0469f876", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"Operation":"Disable Strong Authentication."}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{}}
+]}

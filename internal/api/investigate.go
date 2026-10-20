@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -189,13 +192,21 @@ func (s *Server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		send(investigate.Event{Type: "error", Text: err.Error()})
 		return
 	}
-	searches := 0
+	searches, refused := 0, 0
 	for _, st := range res.Steps {
-		if st.By == "ai" {
-			searches++
+		if st.By != "ai" {
+			continue
+		}
+		searches++
+		if strings.HasPrefix(st.Error, investigate.RefusedPrefix) {
+			// A search that could reveal masked values: planted text may
+			// have asked for it, so it is worth a look.
+			refused++
+			s.Log.Warn("AI investigation search refused", "audit", true, "by", userOf(r), "finding", f.ID, "model", res.Model,
+				"query", st.Query, "reason", strings.TrimPrefix(st.Error, investigate.RefusedPrefix))
 		}
 	}
 	s.Log.Info("finding investigated with AI", "audit", true, "by", userOf(r), "finding", f.ID, "model", res.Model, "sent_to", sentTo,
-		"chars_sent", res.Sent, "ai_searches", searches, "verdict", res.Verdict)
+		"chars_sent", res.Sent, "ai_searches", searches, "ai_searches_refused", refused, "verdict", res.Verdict)
 	send(investigate.Event{Type: "result", Result: res})
 }

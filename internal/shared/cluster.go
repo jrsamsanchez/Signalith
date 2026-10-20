@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -41,7 +44,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = LevelAPITokens
+	LevelMax = LevelDetectionEpochs
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
@@ -150,7 +153,14 @@ type ClusterBody struct {
 	// that refuses to start can name the version to install. Versions
 	// before it keep it through Extra.
 	LevelVersions map[string]string `json:"level_versions,omitempty"`
-	Extra         `json:"-"`
+	// AuditSigned holds, per node id, when that server first signed its
+	// audit records (RFC 3339). It is kept here, out of the audit records
+	// anyone who can write to OpenSearch could change, so the integrity
+	// check knows a server's later records must be signed (see
+	// audit.VerifyQuery.SignedSince). Versions before it keep it through
+	// Extra.
+	AuditSigned map[string]string `json:"audit_signed,omitempty"`
+	Extra       `json:"-"`
 }
 
 // ErrClusterExists is a founding that found a cluster already there.
@@ -212,6 +222,12 @@ type Importer struct {
 	Source func() (string, error)
 	// Run imports it, by the user by.
 	Run func(ctx context.Context, by string) error
+	// Hold, when set, holds the source from before it is read until the
+	// import is recorded, and returns the release. A change of the source
+	// made meanwhile waits for it, and then finds the source moved; one
+	// made after the read would otherwise be lost, also when there was
+	// nothing to import and Run never ran.
+	Hold func() (release func())
 	// MinLevel is the cluster level the importer needs (0 for any): one
 	// whose content a server of a version that reads only lower levels
 	// would ignore waits until the level is raised, and then runs as a
@@ -250,6 +266,9 @@ func (rt *Runtime) importOne(ctx context.Context, by string, im Importer, check 
 	}
 	if im.MinLevel > body.Level {
 		return nil
+	}
+	if im.Hold != nil {
+		defer im.Hold()()
 	}
 	hash := importNone
 	if im.Source != nil {

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package securefile
 
 import (
@@ -8,6 +11,7 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestServiceSID(t *testing.T) {
@@ -262,5 +266,55 @@ func TestMkdirPrivateRefusesLinks(t *testing.T) {
 		if st, _ := os.Stat(victim); st.Mode().Perm() != 0o755 {
 			t.Errorf("the folder the link points to became %v", st.Mode().Perm())
 		}
+	}
+}
+
+// A rename that meets the file open elsewhere for a moment (Windows) is
+// tried again rather than failing the write.
+func TestCommitWaitsWhileTheFileIsInUse(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.enc")
+	os.WriteFile(p, []byte("old"), 0o600)
+	inUseErr := errors.New("in use")
+	tries := 0
+	defer func() { rename, fileInUse = os.Rename, inUse }()
+	fileInUse = func(err error) bool { return errors.Is(err, inUseErr) }
+	rename = func(oldpath, newpath string) error {
+		if tries++; tries < 3 {
+			return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: inUseErr}
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	if err := WriteFile(p, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "new" || tries != 3 {
+		t.Errorf("content %q after %d tries", b, tries)
+	}
+}
+
+// On Windows a reader that has the file open keeps it from being
+// replaced until it closes it; the write waits for that.
+func TestReplaceWhileAReaderHasItOpen(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "cache.enc")
+	if err := WriteFile(p, []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan struct{})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		f.Close()
+		close(closed)
+	}()
+	err = WriteFile(p, []byte("new"))
+	<-closed
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "new" {
+		t.Errorf("content %q", b)
 	}
 }

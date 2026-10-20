@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
@@ -312,12 +315,17 @@ func TestReleaseGivesUpAfterTheWait(t *testing.T) {
 	a.l.SetJobs([]Job{p.job("stuck", false)})
 	s.run(time.Second)
 	eventually(t, "the job", func() bool { _, r := p.state(); return r == 1 })
+	timers := s.clock.Waiting()
 	released := make(chan struct{})
 	go func() {
 		a.l.Release("the server is stopping")
 		close(released)
 	}()
-	eventually(t, "the release to start", func() bool { return a.l.View().State == "releasing" })
+	// The release says so before it starts its ReleaseWait timer: moving
+	// the clock in between would leave that timer a minute in the future.
+	eventually(t, "the release to wait", func() bool {
+		return a.l.View().State == "releasing" && s.clock.Waiting() > timers
+	})
 	s.run(61 * time.Second)
 	select {
 	case <-released:
@@ -746,5 +754,34 @@ func TestReleaseToAnAbsentServerFallsBack(t *testing.T) {
 	s.run(DefaultTiming.PreferWait + 3*time.Second)
 	if !b.l.Holding() {
 		t.Fatalf("nobody took the lease: %+v", s.lease())
+	}
+}
+
+// A holder whose lease still names its own files, which this server's
+// Holder hook counts as the shared ones (a founder stopped before it
+// switched to the shared settings it filled), is taken over; without the
+// hook it is not.
+func TestFingerprintGuardHolderHook(t *testing.T) {
+	shared := SharedFingerprint("c_1")
+	for _, hook := range []bool{false, true} {
+		s := newSim(t)
+		a, b := s.add("n_a", nil), s.add("n_b", nil)
+		a.setFP(Fingerprints{Retention: "sha256:r1", Feeds: "sha256:f1"})
+		b.setFP(Fingerprints{Retention: shared, Feeds: shared})
+		if hook {
+			b.l.Holder = func(doc LeaseDoc) LeaseDoc {
+				if doc.Holder == "n_a" {
+					doc.Fingerprints.Retention, doc.Fingerprints.Feeds = shared, shared
+					doc.Fingerprint = doc.Fingerprints.Combined()
+				}
+				return doc
+			}
+		}
+		s.run(5 * time.Second)
+		a.paused = true
+		s.run(time.Minute)
+		if b.l.Holding() != hook {
+			t.Errorf("hook %v: b holds the lease: %v (%q)", hook, b.l.Holding(), b.l.View().CannotTake)
+		}
 	}
 }

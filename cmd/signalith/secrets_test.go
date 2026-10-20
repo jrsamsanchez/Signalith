@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -36,6 +39,9 @@ func TestMain(m *testing.M) {
 		"STATE_DIRECTORY"} {
 		os.Unsetenv(k)
 	}
+	// Agents send to the web port, so servers started side by side do not
+	// share the default agent port; agentport_test.go turns it on.
+	os.Setenv("SIGNALITH_AGENT_LISTEN", "off")
 	os.Exit(m.Run())
 }
 
@@ -196,7 +202,7 @@ func TestSecretsStatusAndEncrypt(t *testing.T) {
 func TestSecretsSet(t *testing.T) {
 	path, _ := secretsSetup(t)
 	if _, err := runCmd(t, "", "set", "server.listen", "-c", path); err == nil ||
-		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, vulns.nvd_api_key, auth.ldap.bind_password, ingest.tokens") {
+		!strings.Contains(err.Error(), "opensearch.password, assistant.api_key, vulns.nvd_api_key, vulns.openvas_password, auth.ldap.bind_password, auth.oidc.client_secret, m365.client_secret, okta.private_key, okta.api_token, ingest.tokens") {
 		t.Errorf("unknown setting: %v", err)
 	}
 	if _, err := runCmd(t, "", "set", "-c", path); err == nil {
@@ -218,6 +224,15 @@ func TestSecretsSet(t *testing.T) {
 	if _, err := runCmd(t, "enc:v1:00000000:AAAA\n", "set", "assistant.api_key", "-c", path); err == nil || !strings.Contains(err.Error(), "how encrypted values look") {
 		t.Errorf("a value that looks encrypted: %v", err)
 	}
+	// An Okta private key is read whole from a pipe, line breaks and all.
+	oktaKey := "-----BEGIN PRIVATE KEY-----\nAAAA\nBBBB\n-----END PRIVATE KEY-----"
+	if _, err := runCmd(t, oktaKey+"\n", "set", "okta.private_key", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCmd(t, "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n", "set", "okta.private_key", "-c", path); err == nil ||
+		!strings.Contains(err.Error(), "public key") {
+		t.Errorf("a public key: %v", err)
+	}
 	data, _ := os.ReadFile(path)
 	if strings.Contains(string(data), "new OpenSearch pass") || strings.Contains(string(data), "another-token") ||
 		!strings.Contains(string(data), "# rotate every quarter") {
@@ -229,6 +244,9 @@ func TestSecretsSet(t *testing.T) {
 	}
 	if c.OpenSearch.Password != "new OpenSearch pass" || len(c.Ingest.Tokens) != 2 || c.Ingest.Tokens[1] != "another-token-0123456789" {
 		t.Errorf("loaded %q %q", c.OpenSearch.Password, c.Ingest.Tokens)
+	}
+	if c.Okta.PrivateKey != oktaKey || strings.Contains(string(data), "BBBB") {
+		t.Errorf("okta key %q", c.Okta.PrivateKey)
 	}
 
 	// A variable that replaces the saved value, here or in the service's
@@ -853,5 +871,40 @@ func TestSecretsSetNVDKey(t *testing.T) {
 	c, err := config.Load(path)
 	if err != nil || c.Vulns.NVDAPIKey != "nvd-key-0123" {
 		t.Errorf("loaded %v %q", err, c.Vulns.NVDAPIKey)
+	}
+}
+
+// The OpenVAS password can be stored encrypted, as the settings page
+// says, and a plain one is encrypted in place.
+func TestSecretsOpenVASPassword(t *testing.T) {
+	path, _ := secretsSetup(t)
+	if _, err := runCmd(t, "gvm-pass-0123\n", "set", "vulns.openvas_password", "-c", path); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "gvm-pass-0123") || !strings.Contains(string(data), "openvas_password: enc:v1:") {
+		t.Errorf("file after set:\n%s", data)
+	}
+	c, err := config.Load(path)
+	if err != nil || c.Vulns.OpenVASPassword != "gvm-pass-0123" {
+		t.Errorf("loaded %v %q", err, c.Vulns.OpenVASPassword)
+	}
+
+	path, _ = secretsSetup(t)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("vulns:\n  openvas_password: plain-gvm-pass\n")
+	f.Close()
+	if out, err := runCmd(t, "", "encrypt", "-c", path); err != nil {
+		t.Fatalf("encrypt (%v):\n%s", err, out)
+	}
+	data, _ = os.ReadFile(path)
+	if strings.Contains(string(data), "plain-gvm-pass") {
+		t.Errorf("file after encrypt:\n%s", data)
+	}
+	if c, err := config.Load(path); err != nil || c.Vulns.OpenVASPassword != "plain-gvm-pass" {
+		t.Errorf("loaded after encrypt %v", err)
 	}
 }

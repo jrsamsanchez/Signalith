@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package risk stores risk events in OpenSearch under the Risk data model,
 // in daily indices "<prefix>-risk-YYYY.MM.DD", so retention ages them out
 // like any other events and analysts can search them with datamodel=Risk.

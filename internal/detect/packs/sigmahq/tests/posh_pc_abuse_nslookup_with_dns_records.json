@@ -1,0 +1,4 @@
+{"rule": "999bff6d-dc15-44c9-9f5c-e1051bfc86e1", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"powershell [1] nslookup -querytype=txt http"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

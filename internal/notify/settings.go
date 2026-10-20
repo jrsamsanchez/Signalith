@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package notify sends a message to email, a webhook, Slack or Microsoft
 // Teams when a detection raises a finding that matters, so nobody has to
 // watch the Findings page to learn of it.
@@ -30,16 +33,19 @@ const (
 	TypeWebhook = "webhook"
 	TypeSlack   = "slack"
 	TypeTeams   = "teams"
+	// TypeTeamsApp posts through a Teams app (an Azure bot) that
+	// Signalith answers for, so its messages can carry buttons.
+	TypeTeamsApp = "teams_app"
 )
 
 // Types lists the channel types, in the order the page offers them.
-var Types = []string{TypeSlack, TypeTeams, TypeEmail, TypeWebhook}
+var Types = []string{TypeSlack, TypeTeams, TypeTeamsApp, TypeEmail, TypeWebhook}
 
 // typeLabel names each channel type for people.
-var typeLabel = map[string]string{TypeEmail: "Email", TypeWebhook: "Webhook", TypeSlack: "Slack", TypeTeams: "Teams"}
+var typeLabel = map[string]string{TypeEmail: "Email", TypeWebhook: "Webhook", TypeSlack: "Slack", TypeTeams: "Teams", TypeTeamsApp: "Teams app"}
 
-// TypeLabel names a channel type for people: Email, Webhook, Slack or
-// Teams.
+// TypeLabel names a channel type for people: Email, Webhook, Slack,
+// Teams or Teams app.
 func TypeLabel(t string) string {
 	if l, ok := typeLabel[t]; ok {
 		return l
@@ -79,8 +85,21 @@ type Channel struct {
 	Headers map[string]string `yaml:"headers,omitempty" json:"-"`
 	// SigningSecret, when set, signs each webhook body: the
 	// X-Signalith-Signature header is sha256= and the hex HMAC-SHA256 of
-	// the body with it.
+	// the body with it. On a Slack channel it is the Slack app's signing
+	// secret instead: Signalith checks the button clicks Slack sends with
+	// it, and its messages carry buttons only when it is set.
 	SigningSecret string `yaml:"signing_secret,omitempty" json:"-"`
+
+	// The Azure bot of a Teams app channel: its app (client) ID, the
+	// Microsoft Entra tenant it is registered in, and its client secret.
+	// The secret is kept encrypted, like the others.
+	AppID       string `yaml:"app_id,omitempty" json:"app_id,omitempty"`
+	TenantID    string `yaml:"tenant_id,omitempty" json:"tenant_id,omitempty"`
+	AppPassword string `yaml:"app_password,omitempty" json:"-"`
+	// ApproveInChat lets the Approve button of an interactive channel
+	// approve playbook steps. Reject and Acknowledge always work: they
+	// stop or record something, and change nothing elsewhere.
+	ApproveInChat bool `yaml:"approve_in_chat,omitempty" json:"approve_in_chat,omitempty"`
 
 	// The mail server of an email channel, and who the mail is from and
 	// to.
@@ -284,6 +303,19 @@ func (r Rule) Summary(s Settings) string {
 		return strings.Join(parts, " ") + " go nowhere yet: pick a channel."
 	}
 	return strings.Join(parts, " ") + " go to " + joinAnd(to) + "."
+}
+
+// Interactive reports whether the channel's messages carry buttons that
+// people can click to approve, reject or acknowledge: a Slack channel
+// with its app's signing secret, or a Teams app channel.
+func (c Channel) Interactive() bool {
+	switch c.Type {
+	case TypeSlack:
+		return c.SigningSecret != ""
+	case TypeTeamsApp:
+		return c.AppPassword != "" && c.AppID != ""
+	}
+	return false
 }
 
 // Label names a channel with its type, as in "Slack #soc", unless its

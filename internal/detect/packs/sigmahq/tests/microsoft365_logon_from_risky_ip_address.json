@@ -1,0 +1,6 @@
+{"rule": "c191e2fa-f9d6-4ccf-82af-4f2aba08359f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Log on from a risky IP address","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Log on from a risky IP address","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Log on from a risky IP address","eventSource":"SecurityComplianceCenter"}}
+]}

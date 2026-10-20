@@ -1,14 +1,21 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -235,7 +242,9 @@ func TestDockerCompose(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dockerDir, "opensearch", "load-security.sh")); err != nil {
 		t.Error(err)
 	}
-	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
+	// /tmp:exec: OpenSearch 3's securityadmin.sh loads a native library it
+	// unpacks there (Docker mounts a tmpfs noexec otherwise).
+	if l.User != "1000:1000" || l.Restart != "no" || !l.ReadOnly || !slices.Contains(l.Tmpfs, "/tmp:exec") || !slices.Equal(l.CapDrop, []string{"ALL"}) ||
 		len(l.CapAdd) != 0 || !slices.Contains(l.SecurityOpt, "no-new-privileges:true") || len(l.Ports) != 0 {
 		t.Errorf("opensearch-security: user %q restart %q read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ports %v",
 			l.User, l.Restart, l.ReadOnly, l.Tmpfs, l.CapDrop, l.CapAdd, l.SecurityOpt, l.Ports)
@@ -278,7 +287,7 @@ func TestDockerCompose(t *testing.T) {
 		t.Errorf("signalith hardening: read_only %v tmpfs %v cap_drop %v cap_add %v security_opt %v ulimits %v",
 			s.ReadOnly, s.Tmpfs, s.CapDrop, s.CapAdd, s.SecurityOpt, s.Ulimits)
 	}
-	for _, p := range []string{"8080:8080", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
+	for _, p := range []string{"9000:9000", "7779:7779", "514:5514/udp", "514:5514/tcp", "6514:6514"} {
 		if !slices.Contains(s.Ports, p) {
 			t.Errorf("signalith does not publish %s", p)
 		}
@@ -332,19 +341,24 @@ func TestDockerConfigLoads(t *testing.T) {
 	}
 	t.Setenv("SIGNALITH_STATE_DIR", data)
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	t.Setenv("SIGNALITH_AGENT_LISTEN", "")
 	c, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pw, _ := os.ReadFile(filepath.Join(sigDir, initialPasswordFile))
 	token, _ := os.ReadFile(filepath.Join(sigDir, ingestTokenFile))
-	if !c.CheckPassword("admin", strings.TrimSpace(string(pw))) || !slices.Equal(c.Ingest.Tokens, []string{strings.TrimSpace(string(token))}) {
+	if !c.CheckPassword("signalithadmin", strings.TrimSpace(string(pw))) || !slices.Equal(c.Ingest.Tokens, []string{strings.TrimSpace(string(token))}) {
 		t.Errorf("secrets not taken from the files: tokens %v", c.Ingest.Tokens)
 	}
 	// A new install refuses agents on plain HTTP: no plaintext_ingest is
 	// set, and nothing says it was upgraded.
-	if c.Server.TLSMode() != config.TLSAuto || c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:8080" {
+	if c.Server.TLSMode() != config.TLSAuto || c.Server.PlaintextIngest() || c.Server.PublicURL != "https://localhost:9000" {
 		t.Errorf("server: mode %s plaintext %v url %s", c.Server.TLSMode(), c.Server.PlaintextIngest(), c.Server.PublicURL)
+	}
+	// Agents send to a port of their own, and only there.
+	if c.Server.AgentListen != "0.0.0.0:7779" || c.AgentsOnWebPort() {
+		t.Errorf("agent_listen %q, agents on the web port %v", c.Server.AgentListen, c.AgentsOnWebPort())
 	}
 	if c.OpenSearch.URL != "https://opensearch:9200" || c.OpenSearch.Username != "" || c.Syslog.TLS != "0.0.0.0:6514" {
 		t.Errorf("opensearch %s user %q syslog.tls %q", c.OpenSearch.URL, c.OpenSearch.Username, c.Syslog.TLS)
@@ -380,12 +394,14 @@ func dockerOpenSearch(t *testing.T, made map[string]time.Time) *store.Client {
 	return store.New(store.Config{URL: ts.URL})
 }
 
-// dockerServer serves c as the Docker quick start's container does, over
-// plain HTTP and HTTPS on the same port, and posts a batch of one
-// Windows event with a token.
+// dockerServer serves c's agent port as the Docker quick start's
+// container does, over plain HTTP and HTTPS on the same port, and posts a
+// batch of one Windows event with a token.
 type dockerServer struct {
 	srv           *api.Server
 	plain, secure *httptest.Server
+	// web is the web port, over HTTPS.
+	web *httptest.Server
 }
 
 func newDockerServer(t *testing.T, c *config.Config) *dockerServer {
@@ -396,10 +412,13 @@ func newDockerServer(t *testing.T, c *config.Config) *dockerServer {
 		Log:      slog.New(slog.DiscardHandler),
 		Runtime:  &api.Runtime{OS: "linux", Container: true, Addresses: []string{}},
 	}}
-	d.plain = httptest.NewServer(d.srv.PlainHandler(d.srv.Handler()))
-	d.secure = httptest.NewTLSServer(d.srv.Handler())
+	agents := d.srv.AgentHandler()
+	d.plain = httptest.NewServer(d.srv.AgentPlainHandler(agents))
+	d.secure = httptest.NewTLSServer(agents)
+	d.web = httptest.NewTLSServer(d.srv.Handler())
 	t.Cleanup(d.plain.Close)
 	t.Cleanup(d.secure.Close)
+	t.Cleanup(d.web.Close)
 	return d
 }
 
@@ -550,9 +569,9 @@ func dockerUpgrade(t *testing.T, path string, setup time.Time) {
 	slices.Reverse(c.Ingest.Tokens)
 	h, _ := config.HashPassword("an admin password")
 	c.Auth.AdminPasswordHash = h
-	req, _ := http.NewRequest("GET", d.secure.URL+"/api/agents/config?os=windows", nil)
-	req.SetBasicAuth("admin", "an admin password")
-	resp, err := d.secure.Client().Do(req)
+	req, _ := http.NewRequest("GET", d.web.URL+"/api/agents/config?os=windows", nil)
+	req.SetBasicAuth(c.Auth.AdminUser, "an admin password")
+	resp, err := d.web.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,4 +635,125 @@ func anyStrings(v any) []string {
 		}
 	}
 	return out
+}
+
+// Every OpenSearch node of the three-node overlay checks client
+// certificates against the revocation list, as the quick start's single
+// node does: a node that skipped it would still let a revoked server in.
+func TestComposeEveryOpenSearchNodeChecksTheCRL(t *testing.T) {
+	type node struct {
+		Image      string   `yaml:"image"`
+		Entrypoint []string `yaml:"entrypoint"`
+		Volumes    []string `yaml:"volumes"`
+	}
+	read := func(name string) map[string]node {
+		raw, err := os.ReadFile(filepath.Join(dockerDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct {
+			Services map[string]node `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return f.Services
+	}
+	base := read("docker-compose.yml")
+	overlay := read("docker-compose.opensearch3.yml")
+	const mount = "opensearch-crl:/usr/share/opensearch/config/crl:ro"
+	want := base["opensearch"].Entrypoint
+	if !slices.Contains(base["opensearch"].Volumes, mount) || !strings.Contains(strings.Join(want, " "), "plugins.security.ssl.http.crl.validate=true") {
+		t.Fatalf("docker-compose.yml opensearch does not check the revocation list: %v %v", want, base["opensearch"].Volumes)
+	}
+	nodes := 0
+	for name, o := range overlay {
+		b := base[name]
+		image := cmp.Or(o.Image, b.Image)
+		if !strings.HasPrefix(image, "opensearchproject/opensearch:") {
+			continue
+		}
+		nodes++
+		e := o.Entrypoint
+		if e == nil {
+			e = b.Entrypoint
+		}
+		if !slices.Equal(e, want) {
+			t.Errorf("%s does not start with the revocation list check: %v", name, e)
+		}
+		if !slices.Contains(o.Volumes, mount) && !slices.Contains(b.Volumes, mount) {
+			t.Errorf("%s does not mount the revocation list (%s)", name, mount)
+		}
+	}
+	if nodes != 3 {
+		t.Errorf("docker-compose.opensearch3.yml has %d OpenSearch nodes, want 3", nodes)
+	}
+}
+
+// The OpenSearch entrypoint checks certificates against the revocation
+// list when there is one, and once setup has made one, does not start
+// without it.
+func TestComposeOpenSearchEntrypointNeedsTheCRL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the entrypoint with sh")
+	}
+	var ep struct {
+		Services map[string]struct {
+			Entrypoint []string `yaml:"entrypoint"`
+		} `yaml:"services"`
+	}
+	raw, err := os.ReadFile(filepath.Join(dockerDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal(raw, &ep); err != nil {
+		t.Fatal(err)
+	}
+	args := ep.Services["opensearch"].Entrypoint
+	if len(args) != 4 || args[0] != "sh" || args[1] != "-c" {
+		t.Fatalf("entrypoint %q", args)
+	}
+	// Compose turns $$ into $.
+	script := strings.ReplaceAll(args[2], "$$", "$")
+	run := func(t *testing.T, files map[string]string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "config", "crl"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(dir, "config", "crl", name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// awk, not sh, which drops variables with dots in their names.
+		stub := "#!/usr/bin/awk -f\nBEGIN { print \"started \" ARGV[1] \" validate=\" ENVIRON[\"plugins.security.ssl.http.crl.validate\"]; exit }\n"
+		if err := os.WriteFile(filepath.Join(dir, "opensearch-docker-entrypoint.sh"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", script, args[3], "opensearch")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	t.Run("with the list", func(t *testing.T) {
+		out, err := run(t, map[string]string{"crl.pem": "list", "crl-required": "x"})
+		if err != nil || !strings.Contains(out, "started opensearch validate=true") {
+			t.Errorf("%v: %s", err, out)
+		}
+	})
+	t.Run("before setup made one", func(t *testing.T) {
+		out, err := run(t, nil)
+		if err != nil || !strings.Contains(out, "started opensearch validate=\n") {
+			t.Errorf("%v: %q", err, out)
+		}
+	})
+	for _, files := range []map[string]string{{"crl-required": "x"}, {"crl-required": "x", "crl.pem": ""}} {
+		t.Run(fmt.Sprintf("list gone %v", files), func(t *testing.T) {
+			out, err := run(t, files)
+			if err == nil || strings.Contains(out, "started") || !strings.Contains(out, "does not start without its revocation list") {
+				t.Errorf("%v: %s", err, out)
+			}
+		})
+	}
 }

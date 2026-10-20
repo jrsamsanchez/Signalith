@@ -392,21 +392,28 @@ Server  Version  State  Jobs       Caught up
 siem-a  0.2.0    ready  runs them  yes
 siem-b  0.2.0    ready             yes
 
-Safe to upgrade the next server.
+Every server runs 0.2.0. Safe to start an upgrade.
 
-Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last.
+To upgrade, start with siem-b: it does not run the jobs. Upgrade siem-a, which runs them, last.
 ```
+
+Once a server runs the new version it says `Upgrade siem-a next` instead. It promises
+that the server running the jobs hands them to the first upgraded server only when that
+will happen: the server is not a scanner, and both versions are releases the old one can
+tell apart. Builds named by a commit, such as a lab's, keep the jobs where they are
+until that server is drained or upgraded.
 
 With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, `live`,
 `jobs`, `caught_up` as `yes`, `no` or `unknown`, and `level_max`), `versions`,
 `cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
-`text`) and `next`. A server that is the only one using its OpenSearch prints that
+`text`), `next`, and `current` when every server runs one version or `newest` while
+they run two. A server that is the only one using its OpenSearch prints that
 it can simply be stopped, upgraded and started, and exits 0.
 
 ## token
 
 ```
-signalith cluster token [-c file] [-platform linux|windows|docker] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
+signalith cluster token [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
 signalith cluster token [-c file] -revoke <id>
 ```
 
@@ -421,7 +428,9 @@ which the new server checks before it trusts the answer. Its secret is printed t
 once and kept in OpenSearch only encrypted with the cluster key, so a lost token
 cannot be shown again: make a new one. `-platform`, `-note` and `-node-url` (the
 address the other servers will reach the new server at) are shown with the token on
-the Servers page. `-revoke <id>` cancels a token that was not used yet (its id, such
+the Servers page. `-role scanner` adds a scanner, which only scans the networks picked for
+it and never runs the background jobs (see [Cluster servers and scanners](multi-server.md#cluster-servers-and-scanners));
+without it the token adds a cluster server. `-revoke <id>` cancels a token that was not used yet (its id, such
 as `jt_…`, is printed with it), for one pasted in the wrong place.
 
 It needs a member of the cluster, OpenSearch with security turned on, and an HTTPS
@@ -458,7 +467,7 @@ token made on **Servers → Add a server** of a server of the cluster. Run it as
 `.msi` or the Docker image:
 
 ```
-sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:8080
+sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:9000
 ```
 
 The token may also come from the standard input (`signalith join -`), or be left out

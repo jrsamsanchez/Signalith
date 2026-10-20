@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package syslog
 
 import (
@@ -49,7 +52,7 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 		app = m.Cisco.Facility
 	}
 	extra := 0
-	wazuh := false
+	wazuh, suricata := false, false
 	var ev ingest.Event
 	t := m.Time
 	// structured is a CEF or LEEF record, mapped by its own keys.
@@ -95,6 +98,16 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	case kasperskyThreat(m, &rec, kf):
 		kf["app"], kf["sourcetype"] = app, "kaspersky:syslog"
 		structured(kf, time.Time{}, rec)
+	case isSuricata(m.Text, &suricata, &ev):
+		// Suricata's EVE output over syslog (pfSense, OPNsense, any box
+		// that can only send syslog): the event has its own time, and
+		// names the sensor when Suricata's sensor-name is set.
+		if !ev.Time.IsZero() && (plausible(ev.Time, received, maxAge) || !plausible(t, received, maxAge)) {
+			t = ev.Time
+		}
+		if name, _ := ev.Fields["host"].(string); name != "" {
+			host = truncate(name, maxHostLen)
+		}
 	case isEPO(app, m.Text):
 		if host == "" {
 			host = senderIP
@@ -131,7 +144,7 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 	// CEF and LEEF carry their own severity, and an antivirus event's
 	// severity is the product's rating of the threat, never the syslog
 	// priority.
-	if m.CEF == nil && m.LEEF == nil && !wazuh && ev.Model != ingest.MalwareModel {
+	if m.CEF == nil && m.LEEF == nil && !wazuh && !suricata && ev.Model != ingest.MalwareModel {
 		switch {
 		case m.Priority >= 0:
 			f["severity"] = severityNames[m.Priority%8]
@@ -166,8 +179,8 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 			}
 		}
 	}
-	if !wazuh {
-		f["message"] = m.Raw // a Wazuh alert keeps its own JSON
+	if !wazuh && !suricata {
+		f["message"] = m.Raw // a Wazuh alert or EVE event keeps its own JSON
 	}
 	ev.Time = received.UTC()
 	if plausible(t, received, maxAge) {
@@ -222,6 +235,16 @@ func isWazuh(text string, wazuh *bool, ev *ingest.Event) bool {
 	w, ok := ingest.ParseWazuhText(text)
 	if ok {
 		*wazuh, *ev = true, w
+	}
+	return ok
+}
+
+// isSuricata reports whether text is a Suricata EVE event, and parses it
+// into ev.
+func isSuricata(text string, suricata *bool, ev *ingest.Event) bool {
+	e, ok := ingest.ParseSuricataText(text)
+	if ok {
+		*suricata, *ev = true, e
 	}
 	return ok
 }

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package security
 
 import (
@@ -60,6 +63,8 @@ func probeAnonymous(ctx context.Context, conn store.Config, prefix string) anony
 	base, _, _, _ := redact.Strip(conn.URL)
 	anon := conn
 	anon.URL, anon.Username, anon.Password, anon.CertFile, anon.KeyFile = base, "", secrets.Secret{}, "", ""
+	// The certificate the cluster issued this server signs in too.
+	anon.ManagedCertFile, anon.ManagedKeyFile = "", ""
 	tr, _ := store.Transport(anon)
 	var mu sync.Mutex
 	var demo bool

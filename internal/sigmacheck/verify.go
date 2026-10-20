@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sigmacheck
 
 import (
@@ -23,13 +26,45 @@ const (
 	ApplicationChannel   = ingest.ApplicationChannel
 	CodeIntegrityChannel = ingest.CodeIntegrityChannel
 	PowerShellChannel    = ingest.PowerShellChannel
-	DefenderChannel      = ingest.DefenderChannel
+	// WindowsPowerShellChannel is Windows PowerShell's classic log, whose
+	// events' data Sigma's rules search as a whole (Data).
+	WindowsPowerShellChannel = ingest.WindowsPowerShellChannel
+	DefenderChannel          = ingest.DefenderChannel
 	// LinuxSysmonChannel is Sysmon for Linux, whose events have Sysmon's
 	// event IDs and fields.
 	LinuxSysmonChannel = ingest.LinuxSysmonChannel
 	// AuditdChannel is Linux audit records, whose event ID is the record
 	// type (EXECVE) and whose data are its fields by auditd's names.
 	AuditdChannel = ingest.AuditdChannel
+	// WebChannel is web server access log lines, whose data are the
+	// request's Web data model fields (url, http_method, status).
+	WebChannel = ingest.WebChannel
+	// CloudTrailChannel is AWS CloudTrail records, whose data are the
+	// record's fields by their dotted names (userIdentity.type).
+	CloudTrailChannel = ingest.CloudTrailChannel
+	// AzureChannel is Entra ID and Azure records, whose data are the
+	// fields Sigma's rules name (ResultType), and whose event ID is the
+	// rule's service (signinlogs).
+	AzureChannel = ingest.AzureChannel
+	// O365Channel is Microsoft 365 audit records, whose data are the
+	// fields of the Sigma rule.
+	O365Channel = ingest.O365Channel
+	// GCPChannel is Google Cloud audit log entries, whose data are the
+	// fields of the Sigma rule (gcp.audit.method_name).
+	GCPChannel = ingest.GCPChannel
+	// WorkspaceChannel is Google Workspace audit log entries, as Google
+	// Cloud has them, whose data are the fields of the Sigma rule
+	// (eventName, new_value).
+	WorkspaceChannel = ingest.WorkspaceChannel
+	// OktaChannel is Okta System Log events, whose data are the fields
+	// of the Sigma rule (eventType, outcome.result).
+	OktaChannel = ingest.OktaChannel
+	// KubernetesChannel is Kubernetes audit events, whose data are the
+	// fields of the Sigma rule (verb, objectRef.resource).
+	KubernetesChannel = ingest.KubernetesChannel
+	// GitHubChannel is GitHub audit log events, whose data are the
+	// fields of the Sigma rule (action).
+	GitHubChannel = ingest.GitHubChannel
 )
 
 // TestFile holds a shipped rule's test events.
@@ -49,6 +84,63 @@ type Case struct {
 	Channel string            `json:"channel"`
 	EventID string            `json:"event_id"`
 	Data    map[string]string `json:"data"`
+	// Repeat is how many times the event happens, for a rule that counts
+	// events (0 for once), with each of the Vary fields different each
+	// time (Copies).
+	Repeat int      `json:"repeat,omitempty"`
+	Vary   []string `json:"vary,omitempty"`
+	// With are other events that happen on the same host at the same
+	// time, for a rule that joins events of two kinds (a program start
+	// and the file it writes): the case is the rule's first kind, and
+	// these the events its join's subsearch reads.
+	With []Case `json:"with,omitempty"`
+	// Baseline are events of other groups that happen on the same host
+	// at the same time (other source addresses or accounts), for a rule
+	// that keeps only a group whose count stands out from the others'
+	// (above their average by some standard deviations): the ordinary
+	// counts the case's own is compared with. Each repeats as a case
+	// does (Copies).
+	Baseline []Case `json:"baseline,omitempty"`
+	// Then are events that follow the case on the same host, each Later
+	// seconds after it, for a rule that joins a run of events into one
+	// transaction (an account enabled, then its password reset): the
+	// case is the run's first event.
+	Then  []Case `json:"then,omitempty"`
+	Later int    `json:"later,omitempty"`
+}
+
+// RepeatSpan is how far apart in time the first and last of a repeated
+// case's events are, at most.
+const RepeatSpan = 30 * time.Second
+
+// Copies are a case's events, each with the time offset it happens at:
+// the event itself, or each of its repeats, spread over RepeatSpan, the
+// Vary fields numbered (tester1, tester2..., or WS1$, WS2$...). The
+// events With it, its Baseline and the events Then are not among them.
+func (c Case) Copies() ([]Case, []time.Duration) {
+	c.With, c.Baseline, c.Then = nil, nil, nil
+	if c.Repeat <= 1 {
+		c.Repeat, c.Vary = 0, nil
+		return []Case{c}, []time.Duration{0}
+	}
+	out := make([]Case, c.Repeat)
+	at := make([]time.Duration, c.Repeat)
+	for i := range out {
+		cp := c
+		cp.Repeat, cp.Vary = 0, nil
+		cp.Data = maps.Clone(c.Data)
+		for _, f := range c.Vary {
+			// A computer account keeps its $ at the end (WS1$, WS2$).
+			v, dollar := strings.CutSuffix(cp.Data[f], "$")
+			cp.Data[f] = v + strconv.Itoa(i+1)
+			if dollar {
+				cp.Data[f] += "$"
+			}
+		}
+		out[i] = cp
+		at[i] = RepeatSpan * time.Duration(i) / time.Duration(c.Repeat)
+	}
+	return out, at
 }
 
 // Security 4688 data names and the Sigma process_creation fields they
@@ -63,6 +155,30 @@ var security4688 = map[string]string{
 // the event's channel has no Sigma view here.
 func (c Case) SigmaView() (map[string]string, bool) {
 	switch {
+	case strings.HasPrefix(c.Channel, ZeekChannelPrefix):
+		// A network event: Zeek's keys, or Sigma's taxonomy.
+		return maps.Clone(c.Data), true
+	case c.Channel == WebChannel:
+		// The request's fields by their W3C names; the path is the
+		// target's part before the query.
+		out := map[string]string{}
+		for w3c, f := range ingest.WebFields {
+			if v := c.Data[f]; v != "" {
+				out[w3c] = v
+			}
+		}
+		if u := c.Data["url"]; u != "" {
+			out["cs-uri-stem"], _, _ = strings.Cut(u, "?")
+		}
+		return out, true
+	case c.Channel == CloudTrailChannel, c.Channel == AzureChannel, c.Channel == O365Channel, c.Channel == GCPChannel,
+		c.Channel == WorkspaceChannel, c.Channel == OktaChannel, c.Channel == KubernetesChannel, c.Channel == GitHubChannel:
+		// Sigma's CloudTrail rules name the record's own fields, and its
+		// Azure rules the fields the record is built from.
+		return maps.Clone(c.Data), true
+	case c.Channel == MacOSChannel:
+		// An osquery program start's columns.
+		return macOSView(c.Data), true
 	case c.Channel == AuditdChannel:
 		// A recorded line's fields, or the fields a line is built from.
 		fields := c.Data
@@ -79,7 +195,7 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		}
 		return out, true
 	case strings.EqualFold(c.Channel, SysmonChannel), strings.EqualFold(c.Channel, LinuxSysmonChannel),
-		strings.EqualFold(c.Channel, PowerShellChannel) && c.EventID == "4104":
+		strings.EqualFold(c.Channel, PowerShellChannel) && (c.EventID == "4104" || c.EventID == "4103"):
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -93,10 +209,11 @@ func (c Case) SigmaView() (map[string]string, bool) {
 			out[k] = v
 		}
 		return out, true
-	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || ingest.IsNamedChannel(c.Channel):
-		// Application and Code Integrity log rules name the provider and
-		// the event's data values (Data); Firewall and BITS log rules
-		// their events' data by name.
+	case c.Channel == ApplicationChannel || c.Channel == CodeIntegrityChannel || c.Channel == WindowsPowerShellChannel ||
+		ingest.IsNamedChannel(c.Channel):
+		// Application, Code Integrity and Windows PowerShell log rules
+		// name the provider and the event's data values (Data); Firewall
+		// and BITS log rules their events' data by name.
 		out := map[string]string{"EventID": c.EventID}
 		for k, v := range c.Data {
 			out[k] = v
@@ -134,20 +251,79 @@ func (c Case) SigmaView() (map[string]string, bool) {
 	return nil, false
 }
 
+// cloudTags are the tags of the cloud channels whose recorded records a
+// case may hold as they were sent (_raw).
+var cloudTags = map[string]string{
+	CloudTrailChannel: ingest.CloudTrailTag, AzureChannel: ingest.AzureTag, O365Channel: ingest.O365Tag,
+	OktaChannel: ingest.OktaTag,
+}
+
 // Record is a case's event as the agent sends it, with its Fluent Bit tag:
-// a journal record for Sysmon for Linux, else a Windows event record.
+// a journal record for Sysmon for Linux, an audit or access log line, a
+// cloud record (as recorded, when the case holds it as _raw), else a
+// Windows event record.
 func (c Case) Record(host string, t time.Time) (string, map[string]any) {
+	if strings.HasPrefix(c.Channel, ZeekChannelPrefix) {
+		return c.zeekRecord(host, t)
+	}
 	if strings.EqualFold(c.Channel, LinuxSysmonChannel) {
 		return "linux.journal", ingest.LinuxSysmonRecord(c.EventID, host, t, c.Data)
 	}
+	if c.Channel == MacOSChannel {
+		var rec map[string]any
+		_ = json.Unmarshal(OsqueryLine(host, t, c.Data), &rec)
+		return OsqueryTag, rec
+	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
+	}
+	if raw, ok := c.Data["_raw"]; ok && cloudTags[c.Channel] != "" {
+		// A recorded cloud record (Splunk's attack_data), as it was
+		// sent.
+		d := json.NewDecoder(strings.NewReader(raw))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			r = map[string]any{"message": raw}
+		}
+		r["hostname"] = host
+		return cloudTags[c.Channel], r
+	}
+	if c.Channel == CloudTrailChannel {
+		return ingest.CloudTrailTag, ingest.CloudTrailRecord(host, t, c.Data)
+	}
+	if c.Channel == AzureChannel {
+		return ingest.AzureTag, ingest.AzureRecord(host, t, c.EventID, c.Data)
+	}
+	if c.Channel == O365Channel {
+		return ingest.O365Tag, ingest.O365SigmaRecord(host, t, c.Data)
+	}
+	if c.Channel == GCPChannel {
+		return ingest.GCPTag, ingest.GCPRecord(host, t, c.Data)
+	}
+	if c.Channel == WorkspaceChannel {
+		return ingest.GCPTag, ingest.WorkspaceRecord(host, t, c.Data)
+	}
+	if c.Channel == OktaChannel {
+		return ingest.OktaTag, ingest.OktaRecord(host, t, c.Data)
+	}
+	if c.Channel == KubernetesChannel {
+		return ingest.KubernetesTag, ingest.KubernetesRecord(host, t, c.Data)
+	}
+	if c.Channel == GitHubChannel {
+		return ingest.GitHubTag, ingest.GitHubRecord(host, t, c.Data)
+	}
+	if c.Channel == WebChannel {
+		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
 	}
 	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
 }
 
 // Stored is a case's event after the real parser.
 func (c Case) Stored(host string, t time.Time) ingest.Event {
+	if c.Channel == MacOSChannel {
+		return macOSStored(host, t, c.Data)
+	}
 	tag, rec := c.Record(host, t)
 	return ingest.Normalize(tag, rec, t)
 }
@@ -172,6 +348,13 @@ var sysmonEvents = map[string]string{
 	"dns_query":            "22",
 	"file_delete":          "26",
 	"ps_script":            "4104",
+	"ps_module":            "4103",
+	// The Windows PowerShell log: its engine and providers starting, or
+	// (service: powershell-classic) any of its events, a pipeline run
+	// first.
+	"ps_classic_start":          "400",
+	"ps_classic_provider_start": "600",
+	"powershell_classic":        "800",
 	// Windows System log rules (service: system) are about services
 	// installed, or name the other System events they are about (a
 	// service changing state, by default).
@@ -261,9 +444,44 @@ func init() {
 	Bases["system_event"] = map[string]string{}
 	Bases["application"] = map[string]string{}
 	Bases["code_integrity"] = map[string]string{}
+	// Windows PowerShell log rules search the event's data as a whole.
+	Bases["powershell_classic"] = map[string]string{}
+	Bases["ps_classic_start"] = map[string]string{}
+	Bases["ps_classic_provider_start"] = map[string]string{}
 	for service := range ingest.NamedChannelServices {
 		Bases[ingest.NamedChannelCategory(service)] = map[string]string{}
 	}
+	// A web request's fields are the rule's own.
+	Bases["webserver"] = map[string]string{}
+	sysmonEvents["webserver"] = "access"
+	// So are a CloudTrail record's.
+	Bases["cloudtrail"] = map[string]string{}
+	sysmonEvents["cloudtrail"] = "AwsApiCall"
+	// And an Azure record's, by its service.
+	for _, service := range ingest.AzureServices {
+		Bases[service] = map[string]string{}
+		sysmonEvents[service] = service
+	}
+	// And a Microsoft 365 record's.
+	Bases["m365"] = map[string]string{}
+	sysmonEvents["m365"] = "audit"
+	// And a Google Cloud audit log entry's.
+	Bases[ingest.GCPService] = map[string]string{}
+	sysmonEvents[ingest.GCPService] = "activity"
+	// And a Google Workspace one's.
+	for _, s := range ingest.WorkspaceServices {
+		Bases[s] = map[string]string{}
+		sysmonEvents[s] = "activity"
+	}
+	// And an Okta System Log event's.
+	Bases[ingest.OktaService] = map[string]string{}
+	sysmonEvents[ingest.OktaService] = "log"
+	// And a Kubernetes audit event's.
+	Bases[ingest.KubernetesService] = map[string]string{}
+	sysmonEvents[ingest.KubernetesService] = "audit"
+	// And a GitHub audit log event's.
+	Bases[ingest.GitHubService] = map[string]string{}
+	sysmonEvents[ingest.GitHubService] = "audit"
 	Bases["sysmon_event"] = map[string]string{}
 	Bases["security_named"] = map[string]string{}
 	Bases["sysmon_file_block"] = Bases["file_event"]
@@ -283,8 +501,10 @@ func init() {
 // from.
 func Channel(category string) string {
 	switch category {
-	case "ps_script":
+	case "ps_script", "ps_module":
 		return PowerShellChannel
+	case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+		return WindowsPowerShellChannel
 	case "system", "system_event":
 		return SystemChannel
 	case "application":
@@ -293,6 +513,26 @@ func Channel(category string) string {
 		return CodeIntegrityChannel
 	case "windefend":
 		return DefenderChannel
+	case "webserver":
+		return WebChannel
+	case "cloudtrail":
+		return CloudTrailChannel
+	case "m365":
+		return O365Channel
+	case ingest.GCPService:
+		return GCPChannel
+	case ingest.OktaService:
+		return OktaChannel
+	case ingest.KubernetesService:
+		return KubernetesChannel
+	case ingest.GitHubService:
+		return GitHubChannel
+	}
+	if slices.Contains(ingest.AzureServices, category) {
+		return AzureChannel
+	}
+	if slices.Contains(ingest.WorkspaceServices, category) {
+		return WorkspaceChannel
 	}
 	for service, channel := range ingest.NamedChannelServices {
 		if category == ingest.NamedChannelCategory(service) {
@@ -402,6 +642,14 @@ var Bases = map[string]map[string]string{
 		"ScriptBlockText": "Get-ChildItem -Path D:\\apps\\work | Select-Object Name",
 		"ScriptBlockId":   "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
 		"Path":            `D:\apps\scripts\report.ps1`,
+	},
+	"ps_module": {
+		"ContextInfo": "Severity = Informational\n        Host Name = ConsoleHost\n        Host Version = 5.1.19041.1\n" +
+			"        Host Application = D:\\apps\\launcher\\launcher.exe --run\n        Engine Version = 5.1.19041.1\n" +
+			"        Command Name = Get-ChildItem\n        Command Type = Cmdlet\n        Script Name = \n" +
+			"        User = CORP\\tester\n        Shell ID = Microsoft.PowerShell",
+		"UserData": "",
+		"Payload":  "CommandInvocation(Get-ChildItem): \"Get-ChildItem\"\nParameterBinding(Get-ChildItem): name=\"Path\"; value=\"D:\\apps\\work\"",
 	},
 	"security_4624": {
 		"SubjectUserSid": "S-1-5-18", "SubjectUserName": "WS1$", "SubjectDomainName": "CORP", "SubjectLogonId": "0x3e7",
@@ -643,6 +891,9 @@ func init() {
 var sysmonAlso = map[string][]string{
 	"registry_event": {"12", "14"},
 	"file_delete":    {"23"},
+	// A Windows PowerShell log rule (service: powershell-classic) is
+	// about any of its events.
+	"powershell_classic": {"400", "403", "600"},
 }
 
 // SysmonEventIDs returns every Sysmon event ID a log source category
@@ -760,6 +1011,10 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	var out []Case
 	add := func(expect bool, ev map[string]string) {
+		if channel == WebChannel {
+			out = append(out, Case{Expect: expect, Source: "synthesized", Channel: channel, EventID: id, Data: webData(ev)})
+			return
+		}
 		eid := id
 		if _, ok := ev["EventID"]; !ok && !expect && slices.Contains(fields, "EventID") {
 			// A near miss without the event ID: every event has one.
@@ -797,6 +1052,21 @@ func CasesOn(channel, category string, syn *Synthesis, fields []string) []Case {
 	}
 	for _, ev := range syn.Negative {
 		add(false, ev)
+	}
+	return out
+}
+
+// webData is a synthesized web request's fields (W3C names) as Web data
+// model fields. A path alone (cs-uri-stem) is the target.
+func webData(ev map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range ev {
+		if f, ok := ingest.WebFields[strings.ToLower(k)]; ok && f != "uri_path" {
+			out[f] = v
+		}
+	}
+	if p, ok := ev["cs-uri-stem"]; ok && out["url"] == "" {
+		out["url"] = p
 	}
 	return out
 }

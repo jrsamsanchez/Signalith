@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package datamodel defines Signalith's common field model. Field names
 // follow Splunk's CIM so ES analysts recognize them, and every parser maps
 // its source onto one of these models.
@@ -5,7 +8,9 @@ package datamodel
 
 import (
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // SampleField marks every event, risk event and finding the "Load sample
@@ -35,6 +40,7 @@ var Common = []Field{
 	{Name: "_time", Type: "time", Description: "When the event happened"},
 	{Name: "host", Type: "string", Description: "Host that reported the event"},
 	{Name: "sourcetype", Type: "string", Description: "Source format, for example WinEventLog:Security or linux:auth"},
+	{Name: "source", Type: "string", Description: "Where the event was read from: a log file, a Windows event log, journald, or how it arrived (syslog, otlp, osquery, agent)"},
 	{Name: "datamodel", Type: "string", Description: "Data model the event was mapped to"},
 	{Name: "vendor_product", Type: "string", Description: "Product that produced the event"},
 	{Name: "signature_id", Type: "string", Description: "Vendor event code, such as a Windows event ID"},
@@ -60,11 +66,17 @@ var Models = []Model{
 			{Name: "logon_type", Type: "number", Description: "Windows logon type (2 interactive, 3 network, 10 remote desktop)"},
 			{Name: "reason", Type: "string", Description: "Why a failure happened"},
 			{Name: "process", Type: "string", Description: "Command run through sudo"},
+			{Name: "dest_port", Type: "number", Description: "Port signed in to, for sign-ins a network sensor saw", Examples: []string{"22", "3389"}},
+			{Name: "dest_host", Type: "string", Description: "Name of the system signed in to, when the protocol carries it (NTLM)"},
+			{Name: "src_host", Type: "string", Description: "Name of the computer the sign-in came from, as its client sent it (RDP, NTLM)"},
+			{Name: "direction", Type: "string", Description: "Which way the sign-in went, seen from your network, for sign-ins a network sensor saw", Examples: []string{"inbound"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
 		},
 	},
 	{
 		Name:        "Endpoint",
-		Description: "Process launches on hosts (Windows 4688, Sysmon)",
+		Description: "Process launches on hosts (Windows 4688, Sysmon, Sysmon for Linux, Linux auditd, osquery on macOS)",
 		Fields: []Field{
 			{Name: "action", Type: "string", Description: "What happened", Examples: []string{"allowed"}},
 			{Name: "user", Type: "string", Description: "Account that started the process"},
@@ -106,9 +118,9 @@ var Models = []Model{
 	},
 	{
 		Name:        "Network_Traffic",
-		Description: "Network connections (Sysmon event 3, firewalls)",
+		Description: "Network connections (Sysmon event 3, firewalls, network sensors such as Zeek and Suricata)",
 		Fields: []Field{
-			{Name: "action", Type: "string", Description: "Outcome", Examples: []string{"allowed", "blocked"}},
+			{Name: "action", Type: "string", Description: "Outcome: allowed, blocked, or failed for a connection that was refused or never answered (network sensors cannot tell a firewall drop from a closed port)", Examples: []string{"allowed", "blocked", "failed"}},
 			{Name: "src", Type: "ip", Description: "Source address"},
 			{Name: "src_port", Type: "number", Description: "Source port"},
 			{Name: "dest", Type: "ip", Description: "Destination address"},
@@ -118,6 +130,19 @@ var Models = []Model{
 			{Name: "user", Type: "string", Description: "Account that owns the connection"},
 			{Name: "process_name", Type: "string", Description: "Process that made the connection"},
 			{Name: "bytes", Type: "number", Description: "Total bytes"},
+			{Name: "app", Type: "string", Description: "Service or application protocol the connection carried, as a network sensor recognized it", Examples: []string{"dns", "http", "ssl", "smb"}},
+			{Name: "bytes_in", Type: "number", Description: "Bytes the destination sent back to the source"},
+			{Name: "bytes_out", Type: "number", Description: "Bytes the source sent to the destination"},
+			{Name: "packets_in", Type: "number", Description: "Packets the destination sent back to the source"},
+			{Name: "packets_out", Type: "number", Description: "Packets the source sent to the destination"},
+			{Name: "duration", Type: "number", Description: "How long the connection lasted, in seconds (may have decimals)", Examples: []string{"0.42", "3600"}},
+			{Name: "direction", Type: "string", Description: "Which way the connection went, seen from your network: inbound (from outside in), outbound (from inside out), internal (inside to inside) or external (outside to outside)", Examples: []string{"inbound", "outbound", "internal", "external"}},
+			{Name: "conn_state", Type: "string", Description: "Connection state as the network sensor wrote it (Zeek: SF normal, S0 no answer, REJ rejected; Suricata: new, established, closed)", Examples: []string{"SF", "S0", "REJ", "established"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id); every event of one connection shares it", Examples: []string{"CHhAvVGS1DHFjwGM9"}},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow: the same value in Zeek and Suricata events of one connection", Examples: []string{"1:LQU9qZlK+B5F3KDmev6m5PMibrg="}},
+			{Name: "vlan", Type: "number", Description: "VLAN the traffic was seen on"},
+			{Name: "src_mac", Type: "string", Description: "Hardware (MAC) address of the source, when the sensor logs it"},
+			{Name: "dest_mac", Type: "string", Description: "Hardware (MAC) address of the destination, when the sensor logs it"},
 		},
 	},
 	{
@@ -129,6 +154,14 @@ var Models = []Model{
 			{Name: "object_category", Type: "string", Description: "Kind of object", Examples: []string{"user", "group"}},
 			{Name: "user", Type: "string", Description: "Account that made the change"},
 			{Name: "dest", Type: "string", Description: "System where the change happened"},
+			{Name: "src", Type: "string", Description: "Where the change was made from, for a cloud API call", Examples: []string{"203.0.113.7"}},
+			{Name: "status", Type: "string", Description: "Whether the change went through", Examples: []string{"success", "failure"}},
+			{Name: "command", Type: "string", Description: "Cloud API call that made the change", Examples: []string{"CreateUser", "PutBucketPolicy"}},
+			{Name: "change_type", Type: "string", Description: "Kind of change", Examples: []string{"AWS API Call"}},
+			{Name: "user_agent", Type: "string", Description: "Program the change was made with, for a cloud API call", Examples: []string{"aws-cli/2.15.0"}},
+			{Name: "vendor_account", Type: "string", Description: "Cloud account the change was made in", Examples: []string{"123456789012"}},
+			{Name: "vendor_region", Type: "string", Description: "Cloud region the change was made in", Examples: []string{"us-east-1"}},
+			{Name: "reason", Type: "string", Description: "Why a change failed"},
 		},
 	},
 	{
@@ -189,6 +222,13 @@ var Models = []Model{
 			{Name: "process_id", Type: "number", Description: "ID of that process"},
 			{Name: "user", Type: "string", Description: "Account that changed the file, when the source knows"},
 			{Name: "dest", Type: "string", Description: "Host the file is on"},
+			{Name: "src", Type: "ip", Description: "Client that used the file on a share, for SMB activity a network sensor saw"},
+			{Name: "app", Type: "string", Description: "Protocol the file was used over, for activity a network sensor saw", Examples: []string{"smb"}},
+			{Name: "share_name", Type: "string", Description: "Network share the file is in", Examples: []string{`\\FILE-01\Finance`}},
+			{Name: "share_target", Type: "string", Description: "Path of the file inside the share"},
+			{Name: "pipe_name", Type: "string", Description: "Named pipe opened on the share (IPC$), such as atsvc"},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
 		},
 	},
 	{
@@ -210,14 +250,131 @@ var Models = []Model{
 	},
 	{
 		Name:        "Network_Resolution",
-		Description: "DNS lookups made on hosts (Sysmon 22)",
+		Description: "DNS lookups made on hosts (Sysmon 22) or seen on the network (Zeek, Suricata)",
 		Fields: []Field{
 			{Name: "query", Type: "string", Description: "Name that was looked up", Examples: []string{"example.com"}},
-			{Name: "answer", Type: "string", Description: "What the lookup returned"},
+			{Name: "answer", Type: "string", Description: "What the lookup returned; a list when there were several answers"},
 			{Name: "reply_code", Type: "string", Description: "Result of the lookup", Examples: []string{"NoError", "NXDomain"}},
 			{Name: "process_name", Type: "string", Description: "Process that made the lookup"},
 			{Name: "process_path", Type: "string", Description: "Path of that process"},
-			{Name: "dest", Type: "string", Description: "Host the lookup was made on"},
+			{Name: "dest", Type: "string", Description: "Host the lookup was made on (host logs only; network sensors set src)"},
+			{Name: "src", Type: "ip", Description: "Host that asked, for network sensors", Examples: []string{"192.0.2.10"}},
+			{Name: "src_port", Type: "number", Description: "Port the question came from"},
+			{Name: "dest_ip", Type: "ip", Description: "DNS server that was asked", Examples: []string{"192.0.2.53"}},
+			{Name: "dest_port", Type: "number", Description: "Port of the DNS server", Examples: []string{"53"}},
+			{Name: "transport", Type: "string", Description: "Protocol of the lookup", Examples: []string{"udp", "tcp"}},
+			{Name: "query_type", Type: "string", Description: "Kind of record asked for", Examples: []string{"A", "AAAA", "TXT"}},
+			{Name: "reply_code_id", Type: "number", Description: "Result of the lookup as a number (0 NoError, 2 ServFail, 3 NXDomain)", Examples: []string{"0", "3"}},
+			{Name: "ttl", Type: "number", Description: "How long the first answer may be cached, in seconds"},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection the lookup was in (Zeek uid, Suricata flow_id)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
+		},
+	},
+	{
+		Name:        "Intrusion_Detection",
+		Description: "Alerts from network intrusion detection: Suricata rules such as Emerging Threats Open, and Zeek notices",
+		Fields: []Field{
+			{Name: "action", Type: "string", Description: "What the sensor did: allowed (it only raised the alert) or blocked (an inline sensor dropped the traffic)", Examples: []string{"allowed", "blocked"}},
+			{Name: "ids_type", Type: "string", Description: "Kind of intrusion detection", Examples: []string{"network"}},
+			{Name: "category", Type: "string", Description: "Rule category (Suricata classtype text) or Zeek notice", Examples: []string{"A Network Trojan was detected", "Zeek notice"}},
+			{Name: "severity", Type: "string", Description: "How serious: critical, high, medium, low or informational", Examples: []string{"high", "medium"}},
+			{Name: "severity_id", Type: "number", Description: "The tool's own severity number (Suricata: 1 high, 2 medium, 3 low)", Examples: []string{"1"}},
+			{Name: "src", Type: "ip", Description: "Source address of the traffic that raised the alert", Examples: []string{"203.0.113.45"}},
+			{Name: "src_port", Type: "number", Description: "Source port"},
+			{Name: "dest", Type: "ip", Description: "Destination address", Examples: []string{"192.0.2.10"}},
+			{Name: "dest_port", Type: "number", Description: "Destination port", Examples: []string{"443"}},
+			{Name: "local_host", Type: "ip", Description: "Your network's end of the traffic: src when it went out, dest when it came in, both when it stayed inside; unset when neither end is inside", Examples: []string{"192.0.2.10"}},
+			{Name: "dest_host", Type: "string", Description: "Host name in the traffic: web host, TLS server name or DNS name", Examples: []string{"updates.example.net"}},
+			{Name: "transport", Type: "string", Description: "Protocol", Examples: []string{"tcp", "udp"}},
+			{Name: "app", Type: "string", Description: "Application protocol of the traffic", Examples: []string{"http", "tls", "dns"}},
+			{Name: "url", Type: "string", Description: "Web address in the traffic, when it was a web request", Examples: []string{"http://files.example.net/invoice.exe"}},
+			{Name: "direction", Type: "string", Description: "Which way the traffic went, seen from your network: inbound, outbound, internal or external", Examples: []string{"outbound"}},
+			{Name: "mitre", Type: "string", Description: "ATT&CK techniques the rule is tagged with", Examples: []string{"T1105"}},
+			{Name: "reason", Type: "string", Description: "Why the alert was raised, from the tool's text", Examples: []string{"192.0.2.66 scanned at least 25 unique ports of host 192.0.2.10 in 0m3s"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow: search it to see the connection, DNS lookup, web request and files of the same flow"},
+		},
+	},
+	{
+		Name:        "Web",
+		Description: "Web requests: seen on the network (Zeek, Suricata) or logged by web servers (Apache, Nginx)",
+		Fields: []Field{
+			{Name: "http_method", Type: "string", Description: "Request method", Examples: []string{"GET", "POST"}},
+			{Name: "url", Type: "string", Description: "Full web address asked for", Examples: []string{"http://updates.example.net/v2/check?os=win"}},
+			{Name: "url_domain", Type: "string", Description: "Host name part of the address", Examples: []string{"updates.example.net"}},
+			{Name: "uri_path", Type: "string", Description: "Path part of the address", Examples: []string{"/v2/check"}},
+			{Name: "uri_query", Type: "string", Description: "Query part of the address, after the ?", Examples: []string{"os=win"}},
+			{Name: "status", Type: "string", Description: "HTTP status code the server answered with, as text", Examples: []string{"200", "404"}},
+			{Name: "http_user_agent", Type: "string", Description: "User agent the client sent", Examples: []string{"curl/8.5.0"}},
+			{Name: "http_referrer", Type: "string", Description: "Page the request came from (Referer header)"},
+			{Name: "http_redirect", Type: "string", Description: "Where the answer sent the client (Location header; Suricata)"},
+			{Name: "http_content_type", Type: "string", Description: "Type of what the server sent back", Examples: []string{"text/html", "application/x-dosexec"}},
+			{Name: "bytes_in", Type: "number", Description: "Bytes of the response body"},
+			{Name: "bytes_out", Type: "number", Description: "Bytes of the request body"},
+			{Name: "src", Type: "ip", Description: "Client address", Examples: []string{"192.0.2.10"}},
+			{Name: "src_port", Type: "number", Description: "Client port"},
+			{Name: "dest", Type: "ip", Description: "Server address", Examples: []string{"198.51.100.120"}},
+			{Name: "dest_port", Type: "number", Description: "Server port", Examples: []string{"80"}},
+			{Name: "dest_host", Type: "string", Description: "Host name the client asked for (Host header)", Examples: []string{"updates.example.net"}},
+			{Name: "user", Type: "string", Description: "User name of HTTP basic authentication, when there was one (never the password)"},
+			{Name: "direction", Type: "string", Description: "Which way the request went, seen from your network: inbound, outbound, internal or external", Examples: []string{"outbound"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
+			{Name: "url_length", Type: "number", Description: "Length of url"},
+			{Name: "http_version", Type: "string", Description: "HTTP version of the request, from a web server's log", Examples: []string{"1.1", "2.0"}},
+			{Name: "http_user_agent_length", Type: "number", Description: "Length of http_user_agent"},
+			{Name: "app", Type: "string", Description: "Web server software, for a web server's own log", Examples: []string{"apache", "nginx"}},
+		},
+	},
+	{
+		Name:        "Certificates",
+		Description: "TLS sessions and the certificates in them (Zeek ssl and x509, Suricata tls)",
+		Fields: []Field{
+			{Name: "ssl_version", Type: "string", Description: "TLS version of the session", Examples: []string{"TLSv13", "TLS 1.2"}},
+			{Name: "ssl_cipher", Type: "string", Description: "Cipher the session used", Examples: []string{"TLS_AES_128_GCM_SHA256"}},
+			{Name: "ssl_server_name", Type: "string", Description: "Server name the client asked for (SNI)", Examples: []string{"www.example.com"}},
+			{Name: "ssl_subject", Type: "string", Description: "Subject of the server's certificate", Examples: []string{"CN=www.example.com,O=Example Ltd,C=US"}},
+			{Name: "ssl_subject_common_name", Type: "string", Description: "Common name (CN) in the subject", Examples: []string{"www.example.com"}},
+			{Name: "ssl_issuer", Type: "string", Description: "Issuer of the server's certificate", Examples: []string{"CN=Example Issuing CA,O=Example Ltd,C=US"}},
+			{Name: "ssl_issuer_common_name", Type: "string", Description: "Common name (CN) in the issuer", Examples: []string{"Example Issuing CA"}},
+			{Name: "ssl_serial", Type: "string", Description: "Serial number of the certificate"},
+			{Name: "ssl_hash", Type: "string", Description: "Fingerprint of the certificate, lower case hex without colons"},
+			{Name: "ssl_start_time", Type: "string", Description: "When the certificate becomes valid (RFC 3339, UTC)", Examples: []string{"2026-01-01T00:00:00Z"}},
+			{Name: "ssl_end_time", Type: "string", Description: "When the certificate expires (RFC 3339, UTC)", Examples: []string{"2027-01-01T00:00:00Z"}},
+			{Name: "ssl_validation_status", Type: "string", Description: "Whether the sensor could check the certificate (Zeek)", Examples: []string{"ok", "self signed certificate"}},
+			{Name: "ssl_self_signed", Type: "string", Description: "true when the certificate signs itself (subject and issuer are the same)", Examples: []string{"true", "false"}},
+			{Name: "ja3", Type: "string", Description: "JA3 fingerprint of the client's TLS hello"},
+			{Name: "ja3s", Type: "string", Description: "JA3S fingerprint of the server's TLS hello"},
+			{Name: "ja4", Type: "string", Description: "JA4 fingerprint of the client's TLS hello"},
+			{Name: "ja4s", Type: "string", Description: "JA4S fingerprint of the server's TLS hello (Zeek's ja4 package)"},
+			{Name: "src", Type: "ip", Description: "Client address", Examples: []string{"192.0.2.10"}},
+			{Name: "src_port", Type: "number", Description: "Client port"},
+			{Name: "dest", Type: "ip", Description: "Server address", Examples: []string{"198.51.100.120"}},
+			{Name: "dest_port", Type: "number", Description: "Server port", Examples: []string{"443"}},
+			{Name: "dest_host", Type: "string", Description: "Server name, so threat intel matches the domain", Examples: []string{"www.example.com"}},
+			{Name: "direction", Type: "string", Description: "Which way the session went, seen from your network: inbound, outbound, internal or external", Examples: []string{"outbound"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
+		},
+	},
+	{
+		Name:        "File_Transfers",
+		Description: "Files seen crossing the network (Zeek files, Suricata fileinfo)",
+		Fields: []Field{
+			{Name: "file_name", Type: "string", Description: "File name, when the protocol carries one", Examples: []string{"invoice.exe"}},
+			{Name: "file_size", Type: "number", Description: "File size in bytes"},
+			{Name: "file_hash", Type: "string", Description: "SHA-256 of the file, lower case"},
+			{Name: "file_md5", Type: "string", Description: "MD5 of the file (lower case)"},
+			{Name: "file_sha1", Type: "string", Description: "SHA-1 of the file (lower case)"},
+			{Name: "file_sha256", Type: "string", Description: "SHA-256 of the file (lower case)"},
+			{Name: "mime_type", Type: "string", Description: "Kind of file, from its contents", Examples: []string{"application/x-dosexec", "application/pdf"}},
+			{Name: "app", Type: "string", Description: "Protocol that carried the file", Examples: []string{"HTTP", "SMB", "FTP", "SMTP"}},
+			{Name: "src", Type: "ip", Description: "Address that sent the file", Examples: []string{"198.51.100.120"}},
+			{Name: "dest", Type: "ip", Description: "Address that received the file", Examples: []string{"192.0.2.10"}},
+			{Name: "url", Type: "string", Description: "Web address the file came from, when it came over HTTP"},
+			{Name: "direction", Type: "string", Description: "Which way the file went, seen from your network: inbound, outbound, internal or external", Examples: []string{"inbound"}},
+			{Name: "session_id", Type: "string", Description: "The sensor's ID for the connection (Zeek uid, Suricata flow_id)"},
+			{Name: "community_id", Type: "string", Description: "Community ID of the flow, shared by Zeek and Suricata events of one connection"},
 		},
 	},
 	{
@@ -239,9 +396,10 @@ var Models = []Model{
 	},
 	{
 		Name:        "Script",
-		Description: "PowerShell script blocks run on Windows hosts (event 4104)",
+		Description: "PowerShell script blocks (event 4104) and pipelines (4103, module logging) run on Windows hosts",
 		Fields: []Field{
-			{Name: "script_block_text", Type: "text", Description: "The script text that ran"},
+			{Name: "script_block_text", Type: "text", Description: "The script text that ran; for a pipeline, its command and the values bound to its parameters"},
+			{Name: "event_data", Type: "text", Description: "For a pipeline, its context: host program, command and account, as Windows writes them"},
 			{Name: "script_path", Type: "string", Description: "File the script came from, when it came from one"},
 			{Name: "script_block_id", Type: "string", Description: "ID that ties together the parts of a long script"},
 			{Name: "user", Type: "string", Description: "Account that ran the script"},
@@ -318,6 +476,10 @@ var Models = []Model{
 			{Name: "cvss", Type: "number", Description: "CVSS base score, from 0 to 10", Examples: []string{"9.8"}},
 			{Name: "severity", Type: "string", Description: "Severity from the score: critical, high, medium, low, or informational for an open port", Examples: []string{"critical", "high"}},
 			{Name: "known_exploited", Type: "string", Description: "true when the CVE is in CISA's Known Exploited Vulnerabilities catalog: attackers are using it", Examples: []string{"true", "false"}},
+			{Name: "known_ransomware", Type: "string", Description: "For a known exploited CVE: true when CISA says ransomware gangs use it", Examples: []string{"true", "false"}},
+			{Name: "kev_due", Type: "string", Description: "For a known exploited CVE: the date CISA tells U.S. agencies to fix it by", Examples: []string{"2021-11-17"}},
+			{Name: "epss", Type: "number", Description: "EPSS score from FIRST: the probability, from 0 to 1, that the CVE is exploited in the next 30 days", Examples: []string{"0.944"}},
+			{Name: "epss_percentile", Type: "number", Description: "Share of all CVEs with a lower EPSS score, from 0 to 1", Examples: []string{"0.9997"}},
 			{Name: "url", Type: "string", Description: "Where to read about the vulnerability", Examples: []string{"https://nvd.nist.gov/vuln/detail/CVE-2023-38408"}},
 			{Name: "scan_id", Type: "string", Description: "Scan that found it"},
 			{Name: "scan_network", Type: "string", Description: "Network the scan covered, as named on the Vulnerabilities page", Examples: []string{"Office LAN"}},
@@ -343,6 +505,9 @@ var Models = []Model{
 		Description: "Events no parser recognized yet; still searchable by text",
 		Fields: []Field{
 			{Name: "app", Type: "string", Description: "Program that logged the event"},
+			{Name: "capture_loss_percent", Type: "number", Description: "Network sensor health (Zeek capture_loss): share of the traffic Zeek missed, in percent", Examples: []string{"0.12", "7.8"}},
+			{Name: "drop_percent", Type: "number", Description: "Network sensor health (Suricata stats): share of packets the capture dropped since Suricata started, in percent", Examples: []string{"0", "2.5"}},
+			{Name: "packets_received", Type: "number", Description: "Network sensor health (Suricata or Zeek stats): packets the capture received, since Suricata started or in Zeek's interval", Examples: []string{"18342211"}},
 		},
 	},
 }
@@ -397,4 +562,45 @@ const RiskModel = "Risk"
 // IndexName returns the daily index an event of a model goes to.
 func IndexName(prefix, model, day string) string {
 	return prefix + "-" + strings.ToLower(model) + "-" + day
+}
+
+// MaxPart is the most parts one day's index of a model may be split into
+// by rollover (see ingest.Rollover).
+const MaxPart = 999
+
+// PartName returns part n of a day's index: the index itself for 1, else
+// the index name with -n after the day, as in signalith-network-2026.10.17-2.
+func PartName(dayIndex string, n int) string {
+	if n <= 1 {
+		return dayIndex
+	}
+	return dayIndex + "-" + strconv.Itoa(n)
+}
+
+// SplitPart returns the day's index a part belongs to and the part's
+// number (1 for the day's index itself), or ok false for a name that does
+// not end in a day (YYYY.MM.DD) or a day and a part number from 2 to
+// MaxPart.
+func SplitPart(name string) (dayIndex string, n int, ok bool) {
+	dayIndex, n = name, 1
+	if i := strings.LastIndexByte(name, '-'); i > 0 && i+1 < len(name) && name[i+1] != '0' {
+		if v, err := strconv.Atoi(name[i+1:]); err == nil && v >= 2 && v <= MaxPart && endsInDay(name[:i]) {
+			dayIndex, n = name[:i], v
+		}
+	}
+	if !endsInDay(dayIndex) {
+		return "", 0, false
+	}
+	return dayIndex, n, true
+}
+
+// endsInDay reports whether name ends in -YYYY.MM.DD, a real date.
+func endsInDay(name string) bool {
+	const layout = "2006.01.02"
+	if len(name) < len(layout)+2 || name[len(name)-len(layout)-1] != '-' {
+		return false
+	}
+	ds := name[len(name)-len(layout):]
+	d, err := time.Parse(layout, ds)
+	return err == nil && d.Format(layout) == ds
 }

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ospki makes the certificates that secure OpenSearch for
 // Signalith, so no demo certificate or well-known password is ever used: a
 // certificate authority (CA) of its own, a certificate for the OpenSearch
@@ -380,7 +383,7 @@ plugins.security.ssl.transport.pemkey_filepath: certs/` + NodeKeyFile + `
 plugins.security.ssl.transport.pemtrustedcas_filepath: certs/` + RootCAFile + `
 # Nodes are recognized by their certificate's name (nodes_dn below), not
 # by their address, which can change.
-plugins.security.ssl.transport.enforce_hostname_verification: false
+transport.ssl.enforce_hostname_verification: false
 plugins.security.ssl.transport.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
 plugins.security.ssl.http.enabled: true
 plugins.security.ssl.http.pemcert_filepath: certs/` + NodeCertFile + `
@@ -395,8 +398,35 @@ plugins.security.nodes_dn: ["` + strings.Join(NodesDN(append([]string{node}, pee
 # folder (config.yml, roles.yml and the others). Existing indices stay.
 plugins.security.allow_default_init_securityindex: true
 plugins.security.allow_unsafe_democertificates: false
-# No audit log in OpenSearch: Signalith is its only user and keeps its own.
-# Without this OpenSearch logs an error that its audit log cannot work.
-plugins.security.audit.type: noop
+# OpenSearch's own audit log, kept in its log, where Signalith's
+# certificate cannot change it: failed sign-ins, refused requests, TLS
+# errors and changes to its security settings. Successful requests, which
+# are Signalith's own searches and writes, are left out.
+plugins.security.audit.type: log4j
+plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.log_request_body: false
+plugins.security.audit.config.exclude_sensitive_headers: true
+` + clusterBalance(peers)
+}
+
+// clusterBalance is, for a node of a cluster, the setting that spreads
+// each index's primary shards over the nodes. OpenSearch otherwise only
+// balances how many shards each node holds, and may put every primary of
+// a day's index on one node while the others hold its replicas, so that
+// one node does nearly all the indexing work. prefer_primary only places
+// new shards, so it also lets OpenSearch move primaries back: after a node
+// restarts, its primaries have been promoted on the others and would
+// otherwise stay there.
+func clusterBalance(peers []string) string {
+	if len(peers) == 0 {
+		return ""
+	}
+	return `# Spread each index's primary shards over the nodes, not only the
+# number of shards: the primaries do most of the indexing work.
+cluster.routing.allocation.balance.prefer_primary: true
+# Move primaries back over the nodes after one restarts: its primaries
+# were promoted on the others and would otherwise stay there.
+cluster.routing.allocation.rebalance.primary.enable: true
 `
 }

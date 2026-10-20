@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -37,6 +40,7 @@ func TestWindowsFailedLogon(t *testing.T) {
 	ins := make([]string, 21)
 	ins[5], ins[6], ins[7], ins[9], ins[10], ins[12], ins[13], ins[19], ins[20] =
 		"administrator", "CORP", "0xC000006D", "0xC000006A", "3", "NTLM", "KALI", "203.0.113.9", "51234"
+	ins[0], ins[1], ins[2] = "S-1-5-18", "DC01$", "CORP"
 	ins[4], ins[11], ins[18] = "S-1-0-0", "NtLmSsp ", `C:\Windows\System32\svchost.exe`
 	b, _ := json.Marshal(map[string]any{
 		"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4625,
@@ -50,6 +54,7 @@ func TestWindowsFailedLogon(t *testing.T) {
 		"action": "failure", "user": "administrator", "src": "203.0.113.9", "src_port": int64(51234),
 		"logon_type": int64(3), "logon_type_name": "network", "reason": "bad password",
 		"logon_process": "NtLmSsp", "user_sid": "S-1-0-0", "process_name": "svchost.exe",
+		"src_user": "DC01$", "src_user_sid": "S-1-5-18", "src_user_domain": "CORP",
 		"host": "DC01.corp.local", "signature_id": "4625", "sourcetype": "WinEventLog:Security",
 		"@timestamp": "2026-10-11T10:00:00Z", "datamodel": "Authentication",
 	})
@@ -368,7 +373,7 @@ func TestWindowsShareAccessAndDirectoryChange(t *testing.T) {
 		"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", "user", "sIDHistory", "2.5.5.17", "S-1-5-21-2-500", "%%14674"}
 	b, _ = json.Marshal(map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": "5136", "StringInserts": ins})
 	expect(t, Normalize("win.security", decode(t, string(b)), now).Document(), map[string]any{
-		"datamodel": "Change", "action": "modified", "object_category": "directory_object", "user": "eve",
+		"datamodel": "Change", "action": "modified", "object_category": "directory_object", "user": "eve", "user_sid": "S-1-5-21-1",
 		"object": "CN=bob,CN=Users,DC=corp,DC=example,DC=com", "ad_object_class": "user", "ad_attribute": "sIDHistory",
 		"ad_value": "S-1-5-21-2-500", "ad_operation": "%%14674", "ad_object_guid": "6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10",
 	})
@@ -521,14 +526,14 @@ func TestSysmonMultiLineCommandLine(t *testing.T) {
 }
 
 func TestSysmonNetwork(t *testing.T) {
-	msg := "Network connection detected:\r\nRuleName: -\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"
+	msg := "Network connection detected:\r\nRuleName: -\r\nProcessId: 6120\r\nImage: C:\\Tools\\nc.exe\r\nUser: CORP\\bob\r\nProtocol: tcp\r\nSourceIsIpv6: False\r\nSourceIp: 10.0.0.5\r\nSourcePort: 50000\r\nDestinationIp: 198.51.100.7\r\nDestinationHostname: -\r\nDestinationPort: 4444\r\nDestinationPortName: -"
 	b, _ := json.Marshal(map[string]any{"Channel": "Microsoft-Windows-Sysmon/Operational", "Computer": "WS1", "EventID": 3,
 		"ProviderName": "Microsoft-Windows-Sysmon", "Message": msg})
 	ev := Normalize("win.sysmon", decode(t, string(b)), now)
 	doc := ev.Document()
 	expect(t, doc, map[string]any{
 		"datamodel": "Network_Traffic", "dest": "198.51.100.7", "dest_port": int64(4444), "process_name": "nc.exe", "transport": "tcp",
-		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon",
+		"src_is_ipv6": "false", "provider": "Microsoft-Windows-Sysmon", "process_id": int64(6120),
 	})
 	if _, ok := doc["dest_port_name"]; ok {
 		t.Errorf("dest_port_name '-' should be dropped")
@@ -556,6 +561,18 @@ func TestLinuxAuthLines(t *testing.T) {
 			map[string]any{"datamodel": "Authentication", "action": "success", "src_user": "alice", "user": "root", "process": "/usr/bin/cat /etc/shadow"}},
 		{"Oct 11 09:16:30 web1 sudo:    alice : 3 incorrect password attempts ; TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash",
 			map[string]any{"action": "failure", "reason": "bad password"}},
+		// Without a terminal sudo leaves TTY out.
+		{"Oct 11 09:16:40 web1 sudo: e2e-tester : PWD=/home/e2e tester ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow",
+			map[string]any{"datamodel": "Authentication", "action": "success", "src_user": "e2e-tester", "user": "root", "process": "/usr/bin/cat /etc/shadow"}},
+		{"Oct 11 09:16:45 web1 sudo: e2e-tester : 3 incorrect password attempts ; PWD=/home/e2e-tester ; USER=root ; COMMAND=/usr/bin/true",
+			map[string]any{"action": "failure", "reason": "bad password", "src_user": "e2e-tester"}},
+		{"Oct 11 09:16:47 web1 sudo: e2e-tester : user NOT in sudoers ; PWD=/root ; USER=root ; COMMAND=/usr/bin/true",
+			map[string]any{"datamodel": "Authentication", "action": "failure", "reason": "user NOT in sudoers", "signature": "sudo refused", "src_user": "e2e-tester", "user": "root", "process": "/usr/bin/true"}},
+		// A command whose arguments look like more fields is read whole.
+		{"Oct 11 09:16:48 web1 sudo:    alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash -c id ; A=b ; COMMAND=/usr/bin/true",
+			map[string]any{"action": "success", "process": "/bin/bash -c id ; A=b ; COMMAND=/usr/bin/true"}},
+		{"Oct 11 09:16:50 web1 sudo:    alice : TTY=pts/1 ; PWD=/srv ; USER=root ; GROUP=adm ; COMMAND=/bin/ls",
+			map[string]any{"action": "success", "process": "/bin/ls"}},
 		{"Oct 11 09:17:00 web1 useradd[900]: new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash",
 			map[string]any{"datamodel": "Change", "action": "created", "object": "backdoor"}},
 		{"Oct 11 09:18:00 web1 su[901]: pam_unix(su:session): session opened for user root(uid=0) by alice(uid=1000)",
@@ -754,6 +771,19 @@ func TestWindowsSecurityNamedEvents(t *testing.T) {
 	expect(t, security("4727", subject(map[string]string{"TargetUserName": "ESX Admins", "TargetDomainName": "CORP", "SamAccountName": "ESX Admins"})),
 		map[string]any{"action": "created", "object_category": "group", "object": "ESX Admins", "sam_account_name": "ESX Admins"})
 	expect(t, security("4730", subject(map[string]string{"TargetUserName": "Old Group"})), map[string]any{"action": "deleted", "object": "Old Group"})
+	expect(t, security("4731", subject(map[string]string{"TargetUserName": "Backup Operators", "TargetDomainName": "WS1",
+		"TargetSid": "S-1-5-21-2-1009", "PrivilegeList": "-", "SamAccountName": "Backup Operators", "SidHistory": "-"})), map[string]any{
+		"datamodel": "Change", "action": "created", "object_category": "group", "object": "Backup Operators", "object_domain": "WS1",
+		"object_sid": "S-1-5-21-2-1009", "user": "eve", "signature": "A security-enabled local group was created",
+	})
+	for id, sig := range map[string]string{
+		"4744": "A security-disabled local group was created", "4749": "A security-disabled global group was created",
+		"4754": "A security-enabled universal group was created", "4759": "A security-disabled universal group was created",
+		"4783": "A basic application group was created", "4790": "An LDAP query group was created",
+	} {
+		expect(t, security(id, subject(map[string]string{"TargetUserName": "DnsAdmins"})),
+			map[string]any{"datamodel": "Change", "action": "created", "object": "DnsAdmins", "user": "eve", "signature": sig})
+	}
 	expect(t, security("4729", subject(map[string]string{"MemberSid": "S-1-5-21-1-1105", "TargetUserName": "Domain Admins"})),
 		map[string]any{"action": "modified", "member_sid": "S-1-5-21-1-1105", "object": "Domain Admins"})
 	expect(t, security("4798", subject(map[string]string{"TargetUserName": "bob", "CallerProcessId": "0x1a4",
@@ -770,6 +800,18 @@ func TestWindowsSecurityNamedEvents(t *testing.T) {
 		"TaskContentNew": `<Task><Actions><Exec><Command>cmd.exe</Command><Arguments>/c whoami</Arguments></Exec></Actions></Task>`})), map[string]any{
 		"action": "modified", "task_name": `\Updater`, "task_command": "cmd.exe", "task_arguments": "/c whoami",
 	})
+	expect(t, security("4724", subject(map[string]string{"TargetUserName": "Administrator", "TargetDomainName": "CORP",
+		"TargetSid": "S-1-5-21-1-500"})), map[string]any{
+		"datamodel": "Change", "action": "modified", "object_category": "user", "object": "Administrator",
+		"object_sid": "S-1-5-21-1-500", "user": "eve", "user_sid": "S-1-5-21-1-1104",
+		"signature": "An attempt was made to reset an account's password",
+	})
+	expect(t, security("4723", subject(map[string]string{"TargetUserName": "bob", "TargetSid": "S-1-5-21-1-1105", "PrivilegeList": "-"})),
+		map[string]any{"datamodel": "Change", "action": "modified", "object": "bob", "user": "eve"})
+	expect(t, security("4725", subject(map[string]string{"TargetUserName": "bob", "TargetDomainName": "CORP"})),
+		map[string]any{"datamodel": "Change", "signature": "A user account was disabled", "object": "bob", "object_domain": "CORP"})
+	expect(t, security("4722", subject(map[string]string{"TargetUserName": "Guest"})),
+		map[string]any{"datamodel": "Change", "signature": "A user account was enabled", "object": "Guest", "user": "eve"})
 	expect(t, security("5140", subject(map[string]string{"ObjectType": "File", "IpAddress": "192.0.2.10", "IpPort": "50123",
 		"ShareName": `\\*\ADMIN$`, "ShareLocalPath": `\??\C:\Windows`, "AccessMask": "0x1", "AccessList": "%%4416"})), map[string]any{
 		"datamodel": "Filesystem", "share_name": `\\*\ADMIN$`, "share_path": `\??\C:\Windows`, "src": "192.0.2.10", "user": "eve",

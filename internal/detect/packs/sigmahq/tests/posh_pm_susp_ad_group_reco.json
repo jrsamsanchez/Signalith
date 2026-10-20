@@ -1,0 +1,5 @@
+{"rule": "815bfc17-7fc6-4908-a55e-2f37b98cedb4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"get-ADPrincipalGroupMembership"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"ContextInfo":"get-aduser -f  -pr  DoesNotRequirePreAuth"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

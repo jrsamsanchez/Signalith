@@ -1,0 +1,8 @@
+{"rule": "e78a1037-4548-4072-bb1b-ad99ae416426", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"NewValue\":\"test-newvalue-0\"},{\"NewValue\":\"test-newvalue\"},{\"NewValue\":\"29232cdf-9323-42fd-ade2-1d097af3e4de\"}]","ObjectId":"test-objectid","Operation":"Add member to role.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add member to role.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Add member to rolf.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Add member to role.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"NewValue\":\"test-newvalue-0\"},{\"NewValue\":\"test-newvalue\"},{\"NewValue\":\"29232cdf-9323-42fd-ade2-1d097af3e4df\"}]","ObjectId":"test-objectid","Operation":"Add member to role.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

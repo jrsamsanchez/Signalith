@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -9,6 +12,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // The agents that send events (Fluent Bit and OpenTelemetry Collectors),
@@ -58,9 +62,9 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // its resourcedetection processor puts its computer's name on every
 // event, so a batch with one host name is named by it. A Collector that
 // forwards other computers' events is told apart by address and token.
-func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string) {
+func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
 	name := r.Header.Get(agentinv.AgentHeader)
-	if name == "" && intake == ingest.IntakeOTLP {
+	if name == "" && (intake == ingest.IntakeOTLP || intake == ingest.IntakeHEC) {
 		if len(hosts) != 1 && events == 0 {
 			return // nothing to tell it by, and nothing stored
 		}
@@ -78,6 +82,7 @@ func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.
 		TokenID: who.ID, TokenName: who.Name,
 		Config: r.Header.Get(agentinv.ConfigHeader),
 		Events: events,
+		Sensor: sensor,
 	})
 }
 
@@ -103,9 +108,19 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	current, next := s.caPins()
 	now := time.Now()
+	p := principalOf(r)
+	admin := p != nil && p.Role.AtLeast(users.Admin)
 	out := make([]agentView, 0, len(list))
 	silent, needs := 0, 0
 	for _, a := range list {
+		if a.Sensor != nil && !admin {
+			// Why a sensor refused the rule tuning often quotes the
+			// tuning's own lines, which only admins read (Settings >
+			// Network sensors); the others see that it failed.
+			c := *a.Sensor
+			c.TuningError, c.TuningHash, c.TuningFailed = "", "", ""
+			a.Sensor = &c
+		}
 		v := s.agentFlags(a, current, next, now)
 		if v.Silent {
 			silent++
@@ -134,7 +149,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // (current and next pins) and the agent tokens.
 func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Time) agentView {
 	v := agentView{Agent: a, NeedsConfig: []string{}, Notes: []string{}}
-	v.Silent = now.Sub(a.LastSeen) > agentinv.SilentAfter
+	v.Silent = agentinv.Silent(a, now)
 	// Each entry of a.CA is one configuration's pins: it is fine when it
 	// trusts the current certificate authority or the one prepared to
 	// replace it (a configuration made while a switch was prepared
@@ -165,10 +180,10 @@ func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Tim
 			v.NeedsConfig = append(v.NeedsConfig, needsRevoked)
 		}
 	}
-	// OpenTelemetry Collectors send no name of their own: one without a
+	// OpenTelemetry Collectors and HEC senders send no name of their own: one without a
 	// name forwards other computers' events, and a new configuration
 	// would not change that.
-	if a.Name == "" && !a.Refusing && a.Intake != ingest.IntakeOTLP {
+	if a.Name == "" && !a.Refusing && a.Intake != ingest.IntakeOTLP && a.Intake != ingest.IntakeHEC {
 		v.Notes = append(v.Notes, needsOld)
 	}
 	slices.Sort(v.NeedsConfig)

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
@@ -8,10 +11,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/geoip/geoiptest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -245,6 +251,30 @@ func (r *slowRunner) Execute(ctx context.Context, q *query.Query) (*search.Resul
 	return &search.Result{Kind: "table"}, nil
 }
 
+// TestSlotsMissedBeforeTakingOverAreNotLate: slots that ended while
+// another server ran the schedule (or none did) are caught up without
+// counting as late runs, so the Servers page does not blame busy workers
+// for a handover or a restart.
+func TestSlotsMissedBeforeTakingOverAreNotLate(t *testing.T) {
+	lib := OnlyRules(t, &Detection{ID: "catch", Title: "Catching up", Query: "user=catch", Enabled: true, Schedule: "1m", Lookback: "1m"})
+	run := &recRunner{}
+	clock := &fakeClock{t: t0}
+	s := newTestScheduler(lib, run, clock)
+	var mine atomic.Bool
+	mine.Store(true)
+	s.Allowed = mine.Load
+	s.RunDue(context.Background())
+	mine.Store(false)
+	clock.Add(10 * time.Minute)
+	s.RunDue(context.Background())
+	mine.Store(true)
+	s.RunDue(context.Background())
+	st := mustState(t, s, "catch")
+	if len(run.windows("catch")) < 10 || st.LateRuns != 0 || !st.LastLate.IsZero() {
+		t.Fatalf("after taking the schedule back: %d runs, state %+v", len(run.windows("catch")), st)
+	}
+}
+
 // TestCatchUpRunsMissedSlotsInOrder: slots missed while detections did
 // not run are run later, oldest first, each with its own window, 48 per
 // tick, after the rules that are on time.
@@ -397,6 +427,36 @@ func TestErrorsRetryOrAdvance(t *testing.T) {
 	s := newTestScheduler(lib, &recRunner{}, clock)
 	if _, err := s.run(context.Background(), d, runSpec{at: t0, slot: t0, raised: t0}); ErrorKind(err) != ErrorQuery {
 		t.Errorf("parse error is %q: %v", ErrorKind(err), err)
+	}
+}
+
+// TestGeoIPLoadingRetries: a rule that runs iplocation while the
+// server's first GeoIP database is still loading fails transiently, and
+// its slot runs again once the database is in.
+func TestGeoIPLoadingRetries(t *testing.T) {
+	lib := OnlyRules(t, &Detection{ID: "geo", Title: "Geo", Query: `src=* | stats count by src | iplocation src | where Country="Testland"`,
+		Enabled: true, Schedule: "5m", Lookback: "5m"})
+	eng := &search.Engine{Store: emptySearcher{}, GeoIP: geoip.Loading()}
+	clock := &fakeClock{t: t0}
+	s := newTestScheduler(lib, eng, clock)
+	s.RunDue(context.Background())
+	last := mustState(t, s, "geo").LastSlot
+	clock.Add(10 * time.Minute)
+	s.RunDue(context.Background())
+	st := mustState(t, s, "geo")
+	if st.ErrorKind != ErrorTransient || !strings.Contains(st.LastError, "still loading") || !st.LastSlot.Equal(last) {
+		t.Fatalf("while loading: %+v", st)
+	}
+	b, err := geoiptest.Build("GeoLite2-City", map[string]geoiptest.City{"198.51.100.0/24": {Country: "Testland"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eng.GeoIP, err = geoip.FromBytes(b); err != nil {
+		t.Fatal(err)
+	}
+	s.RunDue(context.Background())
+	if st := mustState(t, s, "geo"); st.LastError != "" || !st.LastSlot.Equal(last.Add(10*time.Minute)) {
+		t.Errorf("after the retry: %+v", st)
 	}
 }
 
@@ -701,4 +761,17 @@ func TestDetectionsDoNotWaitForAnalysts(t *testing.T) {
 		t.Error("no detection ran")
 	}
 	close(st.release)
+}
+
+// Detections read events, never summary indexes, so an event that
+// arrives late counts at the next run.
+func TestDetectionsReadEventsOnly(t *testing.T) {
+	s := &Scheduler{}
+	q, _, _, err := s.prepare(&Detection{Query: `datamodel=Authentication | stats count by src`, Lookback: "1h"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.EventsOnly {
+		t.Error("a detection's search may read summaries")
+	}
 }

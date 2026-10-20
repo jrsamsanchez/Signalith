@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package store talks to OpenSearch over its REST API using only net/http,
 // so the server stays a single dependency-light binary on Windows and Linux.
 package store
@@ -36,7 +39,12 @@ type Config struct {
 	// URL is the OpenSearch address. A user name and password in it are
 	// used as Username and Password (when those are empty) and are never
 	// shown in errors.
-	URL      string
+	URL string
+	// URLs are more addresses of the same OpenSearch cluster, separated
+	// by commas, without user names or passwords. Requests are spread over
+	// URL and these, and one that is down is skipped for a while. (A
+	// string, not a slice, so that a Config can be compared with ==.)
+	URLs     string
 	Username string
 	// Password shows as [redacted] when a Config is printed or logged.
 	Password secrets.Secret
@@ -68,26 +76,45 @@ type Config struct {
 	MaxResponseBytes int64
 }
 
-// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes.
+// ErrResponseTooLarge is an answer larger than Config.MaxResponseBytes,
+// or than the limit WithMaxResponse put on a request.
 var ErrResponseTooLarge = errors.New("the answer is larger than OpenSearch sends here")
+
+type maxResponseKey struct{}
+
+// WithMaxResponse returns ctx with a cap on the size of each answer read
+// for requests made with it, below Config.MaxResponseBytes if that is
+// set: a request whose answer a sender's data can make huge (an
+// aggregation over their values) fails instead of filling memory.
+func WithMaxResponse(ctx context.Context, n int64) context.Context {
+	return context.WithValue(ctx, maxResponseKey{}, n)
+}
+
+// maxResponse is the cap on one answer to a request made with ctx; 0 for
+// none.
+func (c *Client) maxResponse(ctx context.Context) int64 {
+	limit := c.cfg.MaxResponseBytes
+	if n, ok := ctx.Value(maxResponseKey{}).(int64); ok && n > 0 && (limit <= 0 || n < limit) {
+		limit = n
+	}
+	return limit
+}
 
 // Client is an OpenSearch REST client.
 type Client struct {
-	base string
-	// shown is base as errors show it, with any secrets hidden.
-	shown string
-	cfg   Config
-	http  *http.Client
+	// eps are the OpenSearch addresses; with only Config.URL set, one.
+	eps  *endpointSet
+	cfg  Config
+	http *http.Client
 	// setupErr is why the TLS or proxy settings could not be used; every
 	// request then fails with it. config.Validate reports the same
 	// problems before the server starts.
 	setupErr error
-	// proxyHint is added to connection errors when the environment names
-	// a proxy that OpenSearch traffic does not use.
-	proxyHint string
 }
 
-// New returns a client for one OpenSearch endpoint.
+// New returns a client for one OpenSearch cluster, at Config.URL and any
+// Config.URLs. All addresses share one transport, and so one client
+// certificate.
 func New(cfg Config) *Client {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 60 * time.Second
@@ -98,26 +125,24 @@ func New(cfg Config) *Client {
 			cfg.Username, cfg.Password = user, secrets.New("opensearch.password", pw)
 		}
 	}
-	base := strings.TrimRight(cfg.URL, "/")
+	bases, listErr := endpointList(cfg)
 	tr, err := Transport(cfg)
 	c := &Client{
-		base:     base,
-		shown:    redact.URL(base),
+		eps:      newEndpointSet(cfg, bases),
 		cfg:      cfg,
-		setupErr: err,
+		setupErr: errors.Join(err, listErr),
 		http: &http.Client{Timeout: cfg.Timeout, Transport: tr,
 			// A redirect is never part of the OpenSearch API, and following
 			// one could send the credentials somewhere else.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
-	c.proxyHint = proxyHint(cfg, base)
 	return c
 }
 
-// Endpoint is the OpenSearch address, as errors show it: without any
-// password.
-func (c *Client) Endpoint() string { return c.shown }
+// Endpoint is the (first) OpenSearch address, as errors show it: without
+// any password.
+func (c *Client) Endpoint() string { return c.eps.list[0].shown }
 
 // CloseIdleConnections closes the connections kept open for the next
 // request, for a client that is no longer used, such as the one of the
@@ -135,6 +160,11 @@ func (c *Client) CloseIdleConnections() {
 func Transport(cfg Config) (*http.Transport, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = nil
+	// Ingest runs many bulk writes at once (ingest.DefaultMaxConcurrent);
+	// the default of 2 idle connections per host would make most of them
+	// open a new TLS connection each time.
+	tr.MaxIdleConns = 128
+	tr.MaxIdleConnsPerHost = 64
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	tr.TLSClientConfig = tlsCfg
 	var errs []error
@@ -338,32 +368,86 @@ func (e *Error) Error() string {
 }
 
 // Do sends a request and decodes a JSON response into out (if non-nil).
+// With several OpenSearch addresses, a request that could not be sent to
+// one is tried on the next, and so is one that may have arrived, when
+// sending it again is harmless (see resendable).
 func (c *Client) Do(ctx context.Context, method, path string, body any, out any) error {
-	var rd io.Reader
+	var raw []byte
 	contentType := "application/json"
 	switch b := body.(type) {
 	case nil:
 	case []byte:
-		rd = bytes.NewReader(b)
+		raw = b
 		contentType = "application/x-ndjson"
 	default:
 		buf, err := json.Marshal(b)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(buf)
+		raw = buf
 	}
 	if c.setupErr != nil {
 		return c.setupErr
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
+	eps := c.eps.pick()
+	if len(eps) == 1 {
+		err, _ := c.doOne(ctx, eps[0], method, path, raw, body != nil, contentType, out)
+		return err
+	}
+	var last error
+	var lastAt *endpoint
+	tried := 0
+	for i, e := range eps {
+		if i > 0 && ctx.Err() != nil {
+			break
+		}
+		err, fail := c.doOne(ctx, e, method, path, raw, body != nil, contentType, out)
+		tried++
+		if fail == failNone {
+			c.eps.markUp(e)
+			return err
+		}
+		c.eps.markDown(e, err)
+		last, lastAt = err, e
+		if fail == failAfterSend && !resendable(method, path, raw) {
+			break
+		}
+	}
+	if tried == 1 {
+		return last
+	}
+	return &failedOverError{err: last, shown: lastAt.shown, others: tried - 1}
+}
+
+// failure says whether a request failed because of the address it was
+// sent to, and whether it was sent first.
+type failure int
+
+const (
+	// failNone: OpenSearch answered (possibly with an error).
+	failNone failure = iota
+	// failNotSent: no byte of the request was sent.
+	failNotSent
+	// failAfterSend: the request may have arrived, and then the
+	// connection failed, the time ran out or a proxy in front of
+	// OpenSearch answered 502, 503 or 504.
+	failAfterSend
+)
+
+// doOne sends a request to one address.
+func (c *Client) doOne(ctx context.Context, e *endpoint, method, path string, raw []byte, hasBody bool, contentType string, out any) (error, failure) {
+	var rd io.Reader
+	if hasBody {
+		rd = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, e.base+path, rd)
 	if err != nil {
 		// The parse error would repeat the whole URL.
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
-		return fmt.Errorf("opensearch request to %s: %w", c.shown, err)
+		return fmt.Errorf("opensearch request to %s: %w", e.shown, err), failNone
 	}
 	if rd != nil {
 		req.Header.Set("Content-Type", contentType)
@@ -386,41 +470,50 @@ func (c *Client) Do(ctx context.Context, method, path string, body any, out any)
 	}))
 	resp, err := c.http.Do(req)
 	if err != nil {
+		fail := failNotSent
+		if sent.Load() {
+			fail = failAfterSend
+		}
 		// Go hides the password in the URL it repeats, but not the rest.
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			ue.URL = redact.URL(ue.URL)
 		}
-		if sent.Load() && timedOut(err) && (!reused.Load() || c.reachable()) {
-			return &noAnswerError{msg: fmt.Sprintf("opensearch at %s did not answer in time: %v%s", c.shown, err, c.proxyHint), err: err}
+		if sent.Load() && timedOut(err) && (!reused.Load() || c.reachable(e)) {
+			return &noAnswerError{msg: fmt.Sprintf("opensearch at %s did not answer in time: %v%s", e.shown, err, e.proxyHint), err: err}, fail
 		}
-		return fmt.Errorf("opensearch unreachable at %s: %w%s", c.shown, err, c.proxyHint)
+		return fmt.Errorf("opensearch unreachable at %s: %w%s", e.shown, err, e.proxyHint), fail
 	}
 	defer resp.Body.Close()
 	var rd2 io.Reader = resp.Body
-	if limit := c.cfg.MaxResponseBytes; limit > 0 {
+	limit := c.maxResponse(ctx)
+	if limit > 0 {
 		rd2 = io.LimitReader(resp.Body, limit+1)
 	}
 	data, err := io.ReadAll(rd2)
 	if err != nil {
-		return err
+		return err, failAfterSend
 	}
-	if limit := c.cfg.MaxResponseBytes; limit > 0 && int64(len(data)) > limit {
-		return fmt.Errorf("%s at %s: %w", path, c.shown, ErrResponseTooLarge)
+	if limit > 0 && int64(len(data)) > limit {
+		return fmt.Errorf("%s at %s: %w", path, e.shown, ErrResponseTooLarge), failNone
 	}
 	if resp.StatusCode/100 == 3 {
 		return fmt.Errorf("opensearch at %s answered with a redirect (%d) to %q; Signalith does not follow redirects, so set opensearch.url to the address OpenSearch is really at",
-			c.shown, resp.StatusCode, redact.URL(resp.Header.Get("Location")))
+			e.shown, resp.StatusCode, redact.URL(resp.Header.Get("Location"))), failNone
 	}
 	if resp.StatusCode/100 != 2 {
-		return &Error{Status: resp.StatusCode, Body: string(data)}
+		fail := failNone
+		if failsOver(resp.StatusCode) {
+			fail = failAfterSend
+		}
+		return &Error{Status: resp.StatusCode, Body: string(data)}, fail
 	}
 	if out != nil {
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.UseNumber()
-		return dec.Decode(out)
+		return dec.Decode(out), failNone
 	}
-	return nil
+	return nil, failNone
 }
 
 // Search implements Searcher.
@@ -439,12 +532,12 @@ func (c *Client) Search(ctx context.Context, index string, body map[string]any) 
 // OpenSearch still takes connections. It also drops the other kept
 // connections, which may lead nowhere too. Through a proxy it can't tell,
 // and reports true.
-func (c *Client) reachable() bool {
+func (c *Client) reachable(e *endpoint) bool {
 	c.http.CloseIdleConnections()
 	if c.cfg.Proxy != "" {
 		return true
 	}
-	u, err := url.Parse(c.base)
+	u, err := url.Parse(e.base)
 	if err != nil || u.Hostname() == "" {
 		return true
 	}
@@ -470,6 +563,70 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	}
 	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
 	return out.Status, err
+}
+
+// AutoShards is number_of_shards in the event index settings when
+// opensearch.shards is automatic: ingest.PutIndexTemplate replaces it
+// with a number sized from the data nodes before the template is written.
+const AutoShards = "auto"
+
+// ShardRoom returns how many shard copies the cluster holds and how many
+// it allows: cluster.max_shards_per_node (1,000 unless set) times the
+// data nodes. OpenSearch refuses to create an index past that limit.
+func (c *Client) ShardRoom(ctx context.Context) (used, limit int, err error) {
+	var health struct {
+		Nodes      int `json:"number_of_data_nodes"`
+		Active     int `json:"active_shards"`
+		Unassigned int `json:"unassigned_shards"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &health); err != nil {
+		return 0, 0, err
+	}
+	var set map[string]map[string]any
+	err = c.Do(ctx, http.MethodGet, "/_cluster/settings?include_defaults=true&flat_settings=true&filter_path=*.cluster.max_shards_per_node", nil, &set)
+	if err != nil {
+		return 0, 0, err
+	}
+	per := 1000
+	for _, scope := range []string{"transient", "persistent", "defaults"} {
+		if v, ok := set[scope]["cluster.max_shards_per_node"]; ok {
+			var n int
+			if _, err := fmt.Sscan(fmt.Sprint(v), &n); err == nil && n > 0 {
+				per = n
+				break
+			}
+		}
+	}
+	return health.Active + health.Unassigned, per * max(health.Nodes, 1), nil
+}
+
+// DataNodes returns how many data nodes the cluster has.
+func (c *Client) DataNodes(ctx context.Context) (int, error) {
+	var out struct {
+		N int `json:"number_of_data_nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
+	return out.N, err
+}
+
+// SearchThreads returns the size of the search thread pool summed over
+// the data nodes: how many searches OpenSearch runs at once.
+func (c *Client) SearchThreads(ctx context.Context) (int, error) {
+	var out struct {
+		Nodes map[string]struct {
+			ThreadPool struct {
+				Search struct {
+					Size int `json:"size"`
+				} `json:"search"`
+			} `json:"thread_pool"`
+		} `json:"nodes"`
+	}
+	err := c.Do(ctx, http.MethodGet, "/_nodes/data:true/thread_pool?filter_path=nodes.*.thread_pool.search.size", nil, &out)
+	n := 0
+	for _, nd := range out.Nodes {
+		n += nd.ThreadPool.Search.Size
+	}
+	return n, err
 }
 
 // BulkItemError describes one rejected document in a bulk request.
@@ -521,7 +678,11 @@ func (c *Client) Bulk(ctx context.Context, docs []IndexedDoc) ([]BulkItemError, 
 		if d.ID != "" {
 			meta["_id"] = d.ID
 		}
-		if err := enc.Encode(map[string]any{"create": meta}); err != nil {
+		action := "create"
+		if d.Replace {
+			action = "index"
+		}
+		if err := enc.Encode(map[string]any{action: meta}); err != nil {
 			return nil, err
 		}
 		if err := enc.Encode(d.Doc); err != nil {
@@ -562,6 +723,9 @@ type IndexedDoc struct {
 	// refused as a conflict (409) instead of storing it twice.
 	ID  string
 	Doc map[string]any
+	// Replace writes the document over one stored with the same ID
+	// instead of refusing it.
+	Replace bool
 }
 
 // PutIndexTemplate creates or replaces a composable index template.

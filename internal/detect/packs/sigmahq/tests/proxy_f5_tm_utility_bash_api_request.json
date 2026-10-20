@@ -1,0 +1,5 @@
+{"rule": "b59c98c6-95e8-4d65-93ee-f594dfb96b17", "cases": [
+  {"expect":true,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/mgmt/tm/util/bash","cs-host":"downloads.example.com","cs-method":"POST"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"cs-method":"POST"}},
+  {"expect":false,"source":"synthesized","channel":"zeek:http","event_id":"proxy","data":{"c-uri":"http://downloads.example.com/mgmt/tm/util/bash","cs-host":"downloads.example.com"}}
+]}

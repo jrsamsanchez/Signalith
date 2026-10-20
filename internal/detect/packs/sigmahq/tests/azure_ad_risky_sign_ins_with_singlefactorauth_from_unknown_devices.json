@@ -1,0 +1,11 @@
+{"rule": "572b12d4-9062-11ed-a1eb-0242ac120002", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.trusttype":"","RiskState":"atRisk","Status":"Success"}},
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","RiskState":"atRisk","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"DeviceDetail.trusttype":"","RiskState":"atRisk","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.trusttype":"unrelated-value","RiskState":"atRisk","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.trusttype":"","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.trusttype":"","RiskState":"atRisk"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"RiskState":"atRisk","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","Status":"Success"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","RiskState":"atRisk"}}
+]}

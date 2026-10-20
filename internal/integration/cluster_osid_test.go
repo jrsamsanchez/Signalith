@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build integration && linux
 
 package integration
@@ -235,11 +238,22 @@ func TestClusterOSIdentity(t *testing.T) {
 	})
 	old := putCRL(t, compose, list)
 	t.Cleanup(func() { putCRL(t, compose, old) })
-	if _, _, err := trySignIn(url, caFile, filepath.Join(b.dir, "opensearch")); err == nil {
-		t.Error("OpenSearch still lets siem-b's revoked certificate in")
+	// Every node checks it: with several (SIGNALITH_TEST_OPENSEARCH_URLS,
+	// the other nodes' addresses), a node that skips the list would still
+	// let siem-b in.
+	nodes := []string{url}
+	for _, u := range strings.Split(os.Getenv("SIGNALITH_TEST_OPENSEARCH_URLS"), ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			nodes = append(nodes, u)
+		}
 	}
-	if user, _ := signsInAs(t, url, caFile, filepath.Join(a.dir, "opensearch")); user != "signalith-server-siem-a" {
-		t.Errorf("after revoking siem-b, siem-a signs in as %q", user)
+	for _, node := range nodes {
+		if _, _, err := trySignIn(node, caFile, filepath.Join(b.dir, "opensearch")); err == nil {
+			t.Errorf("OpenSearch at %s still lets siem-b's revoked certificate in", node)
+		}
+		if user, _ := signsInAs(t, node, caFile, filepath.Join(a.dir, "opensearch")); user != "signalith-server-siem-a" {
+			t.Errorf("after revoking siem-b, siem-a signs in at %s as %q", node, user)
+		}
 	}
 }
 

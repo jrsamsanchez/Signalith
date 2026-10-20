@@ -1,0 +1,201 @@
+# Signalith on Kubernetes. Every value here has a safe default: no default
+# passwords (a Job makes them, as Kubernetes Secrets), HTTPS everywhere,
+# pods that run as non-root users with a read-only root file system and no
+# capabilities, and network policies around OpenSearch. See
+# docs/kubernetes.md for what each part does.
+
+image:
+  repository: ghcr.io/jrsamsanchez/signalith
+  # Defaults to the chart's appVersion: the release the chart came with.
+  tag: ""
+  # A digest (sha256:...) pins the image exactly, and wins over tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# The Signalith servers. With more than one replica they share OpenSearch,
+# settings, users and detections, take turns running the background jobs
+# (detections, threat intel, retention), and each takes events from agents.
+server:
+  replicas: 1
+  # The address agents, devices and browsers use to reach Signalith, such
+  # as https://siem.example.com:9000 or the load balancer's address. Add
+  # data gives agents the same host on the agent port. Empty: the web
+  # Service's name inside the cluster, which only agents in the cluster
+  # can reach.
+  publicURL: ""
+  # Web UI and API, over HTTPS (plain http:// answers the health checks
+  # and redirects everything else).
+  port: 9000
+  # Agents (Fluent Bit, the OpenTelemetry Collector, osquery), over HTTPS
+  # on a port of their own, apart from the web page and API
+  # (docs/sending-data.md#the-agent-port). The web Service carries both.
+  agentPort: 7779
+  # More settings for signalith.yaml, merged over the chart's (see
+  # docs/settings.md), for example:
+  #   retention: { days: 180 }
+  #   search: { max_events: 20000 }
+  config: {}
+  # HTTPS certificate. Empty: Signalith makes and renews its own from a
+  # certificate authority the servers share (docs/https.md). Or name a
+  # kubernetes.io/tls Secret (from cert-manager, for example), and every
+  # server serves that one.
+  tls:
+    existingSecret: ""
+  # Extra environment variables, such as SIGNALITH_NVD_API_KEY from a
+  # Secret.
+  extraEnv: []
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+  # Each server's own folder: its master key, its identity, detections,
+  # lookups, dashboards and archived days.
+  persistence:
+    size: 10Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  # A stop gives the background jobs up to a minute to finish before
+  # another server takes them over.
+  terminationGracePeriodSeconds: 90
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  service:
+    # ClusterIP, NodePort or LoadBalancer.
+    type: ClusterIP
+    annotations: {}
+    # With LoadBalancer: the networks that may connect (empty: any).
+    loadBalancerSourceRanges: []
+    # Local keeps each client's own address, which sign-in limits and the
+    # audit log use.
+    externalTrafficPolicy: ""
+  # Syslog from firewalls, switches and servers without an agent, on its
+  # own Service: syslog over TLS on 6514.
+  syslog:
+    enabled: true
+    # Plain syslog over UDP and TCP 514, for devices that cannot send over
+    # TLS. It is unencrypted and anyone who can reach the port can send
+    # fake events. true adds UDP and TCP 514 to the Service (the pods listen
+    # on 5514); false leaves it off. Unset (auto): a new install is TLS
+    # only, and an upgrade keeps plain syslog as it was, on when the
+    # release's syslog Service already takes 514 (as releases before 0.3.1
+    # did). The servers' Settings page shows it locked, since the chart
+    # sets it.
+    plain: auto
+    service:
+      type: ClusterIP
+      annotations: {}
+      loadBalancerSourceRanges: []
+      externalTrafficPolicy: ""
+    # Addresses or networks that may send syslog (empty: any).
+    allow: []
+  podDisruptionBudget:
+    # With more than one replica, keep at least one running during node
+    # drains.
+    enabled: true
+
+# Vulnerability scanners: servers that only scan the networks picked for
+# them on the Vulnerabilities page, from inside the cluster, and never run
+# the background jobs (docs/multi-server.md, Cluster servers and
+# scanners). Agents don't send to them. Network sensors (Zeek, Suricata)
+# need a mirror port and run on their own machines (docs/network-sensor.md).
+scanner:
+  enabled: false
+  replicas: 1
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  persistence:
+    size: 2Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# OpenSearch, where events, findings and cases are kept.
+opensearch:
+  # true: the chart runs OpenSearch, secured with certificates from its own
+  # CA (made by the setup Job), reachable only from Signalith's pods.
+  # false: use one you run yourself (external, below).
+  enabled: true
+  image:
+    repository: opensearchproject/opensearch
+    tag: "3.9.0"
+    digest: "sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c"
+    pullPolicy: IfNotPresent
+  # 1, or 3 or more for a cluster that keeps working when a node stops.
+  replicas: 1
+  javaOpts: "-Xms1g -Xmx1g"
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { memory: 2Gi }
+  persistence:
+    size: 30Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  podDisruptionBudget:
+    enabled: true
+  # OpenSearch you run yourself, when enabled is false. It must use HTTPS
+  # and a sign-in (docs/multi-server.md, What a new server needs).
+  external:
+    # One or more addresses, such as https://opensearch.example.com:9200.
+    urls: []
+    # A Secret with ca.crt, the CA to check OpenSearch with, and the
+    # sign-in: username and password, or tls.crt and tls.key.
+    existingSecret: ""
+    # password or certificate: which sign-in the Secret holds.
+    auth: password
+
+# The setup Job, run before each install and upgrade. It makes what has no
+# safe default and keeps it from then on, as Kubernetes Secrets:
+# OpenSearch's CA and certificates, Signalith's client certificate, the
+# first admin password, the agents' ingest token and the cluster key. It
+# renews certificates within 30 days of expiry.
+setup:
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  backoffLimit: 3
+
+# Network policies: OpenSearch takes connections only from Signalith's pods
+# (and its own nodes), and Signalith's pods only on their web, agent and
+# syslog ports. Needs a network plugin that enforces them (Calico, Cilium, ...).
+networkPolicy:
+  enabled: true
+  # Who may reach the web port (UI and API). Empty: anyone. For example,
+  # only an ingress controller's namespace and the admins' network:
+  #   - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+  #   - ipBlock: { cidr: 10.20.0.0/16 }
+  webFrom: []
+  # Who may reach the agent port (agents still need a token). Not set
+  # (null): the same as webFrom. Empty ([]): anyone. For example, only the
+  # networks your agents are on:
+  #   - ipBlock: { cidr: 10.30.0.0/16 }
+  # or, with webFrom set, open the agent port to everyone:
+  #   - ipBlock: { cidr: 0.0.0.0/0 }
+  #   - namespaceSelector: {}
+  agentsFrom: null
+  # Who may send syslog. Empty: anyone.
+  syslogFrom: []
+  # Limit where Signalith's pods may connect to. Empty: anywhere, which
+  # threat intel downloads, CVE lookups, content updates, notifications
+  # and scans need. Rules here are added to DNS and OpenSearch, which are
+  # always allowed.
+  serverEgress: []

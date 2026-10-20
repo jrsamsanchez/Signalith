@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package dashboards
 
 import (
@@ -12,6 +15,10 @@ import (
 
 // MalwareID is the ID of the built-in Malware dashboard.
 const MalwareID = "malware"
+
+// NetworkID is the ID of the built-in Network dashboard, filled by a
+// network sensor (Zeek, Suricata).
+const NetworkID = "network"
 
 // VulnerabilitiesID is the ID of the built-in Vulnerabilities dashboard.
 const VulnerabilitiesID = "vulnerabilities"

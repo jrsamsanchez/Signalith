@@ -1,10 +1,6 @@
 {"rule": "1a7e7650-b81d-492e-99d4-d5ab633afbdd", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\mozglue.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\nss3.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\mozglue.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\mozglue.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\nss3.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\nss3.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\mozglue.dlm","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x :\\Program Files\\Mozilla Firefox\\firefox.exe","ImageLoaded":"x \\mozglue.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},

@@ -1,0 +1,4 @@
+{"rule": "88a22f69-62f9-4b8a-aa00-6b0212f2f05a", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"shellexec_rundll\u0026\u0026shell32.dllcomspecrundll32"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

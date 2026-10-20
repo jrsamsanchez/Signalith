@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -28,7 +31,7 @@ func (s *Server) routeRespond(api *router) {
 	api.analyst("POST /api/respond/run", s.handleRespondRun)
 	// Setting actions up decides what Signalith can change elsewhere.
 	api.admin("GET /api/respond/config", s.handleRespondConfig)
-	api.admin("PUT /api/respond/config", s.handleRespondSave)
+	api.sensitive("PUT /api/respond/config", s.handleRespondSave)
 	api.admin("POST /api/respond/test", s.handleRespondTest)
 }
 
@@ -111,7 +114,7 @@ func writeRespondError(w http.ResponseWriter, err error) {
 }
 
 // respondConfig is what the Response actions page shows.
-func (s *Server) respondConfig() map[string]any {
+func (s *Server) respondConfig(r *http.Request) map[string]any {
 	list, err := s.Respond.Actions.List()
 	views := make([]respond.View, 0, len(list))
 	for _, c := range list {
@@ -125,7 +128,7 @@ func (s *Server) respondConfig() map[string]any {
 			"domain": users.Domain(d.UserBaseDN), "service_account": d.BindDN, "problem": users.WriteProblem(d)}
 	}
 	body := map[string]any{
-		"actions": views, "file": fullPath(s.Respond.Actions.File), "scripts_dir": fullPath(s.Respond.ScriptsDir),
+		"actions": views, "file": serverPath(r, s.Respond.Actions.File), "scripts_dir": serverPath(r, s.Respond.ScriptsDir),
 		"scripts": respond.ListScripts(s.Respond.ScriptsDir), "directory": dir, "templates": respond.Templates(),
 		"placeholders": respond.Placeholders, "max_timeout": respond.MaxScriptTimeout,
 	}
@@ -139,7 +142,7 @@ func (s *Server) handleRespondConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.respondReady(w) {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.respondConfig())
+	writeJSON(w, http.StatusOK, s.respondConfig(r))
 }
 
 func writeRespondSettingsError(w http.ResponseWriter, err error) {
@@ -185,7 +188,7 @@ func (s *Server) handleRespondSave(w http.ResponseWriter, r *http.Request) {
 		names[i] = c.Name
 	}
 	s.Log.Info("response actions changed", "audit", true, "by", userOf(r), "actions", strings.Join(names, ","))
-	writeJSON(w, http.StatusOK, s.respondConfig())
+	writeJSON(w, http.StatusOK, s.respondConfig(r))
 }
 
 func (s *Server) handleRespondTest(w http.ResponseWriter, r *http.Request) {

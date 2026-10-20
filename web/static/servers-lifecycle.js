@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: draining, removing and moving work between servers, and
 // rotating the cluster key. Each server's side panel (serverPanels) gets
 // a part with Drain or Resume, Move the background jobs here, and Remove
@@ -126,7 +128,8 @@
       ok.disabled = true;
       close();
       const res = await run(`api/cluster/servers/${encodeURIComponent(s.node_id)}?rotate=${rotate.checked}`, null, 'DELETE', 'remove ' + s.name,
-        (r) => (r && r.rotate_skipped ? `${s.name} was removed. ${r.rotate_skipped}` : `${s.name} was removed and the cluster key rotated.`));
+        (r) => [r && r.rotate_skipped ? `${s.name} was removed. ${r.rotate_skipped}` : `${s.name} was removed and the cluster key rotated.`,
+          ...((r && r.warnings) || [])].join(' '));
       if (res && $('sv-panel') && $('sv-panel').open) $('sv-panel').close();
     } }, 'Remove ' + s.name);
     const why = rotate.disabled

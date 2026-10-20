@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -138,7 +141,7 @@ func TestRetentionSaveWhilePoliciesMove(t *testing.T) {
 func TestUserSaveWhileUsersMove(t *testing.T) {
 	saveWhileMoving(t, shared.ImportUsers, "", nil,
 		func(rs *running) (int, map[string]any, error) {
-			return rs.call("", "POST", "/api/users", `{"username":"carol","password":"carol-password-1","role":"analyst","must_change_password":false}`)
+			return rs.call("", "POST", "/api/users", `{"username":"carol","password":"a-password-for-c","role":"analyst","must_change_password":false}`)
 		},
 		func(rs *running) bool {
 			_, out, _ := rs.call("", "GET", "/api/users", "")
@@ -212,6 +215,35 @@ func TestListSaveWhileListsMove(t *testing.T) {
 		func(rs *running) bool {
 			rs.libraryShared()
 			// In the shared settings, not only in this server's copy.
+			_, out, _ := rs.call("", "GET", "/api/lookups/assets", "")
+			etag, _ := out["etag"].(string)
+			return out["count"] == float64(1) && etag != "" && etag != clusterlib.NoList
+		})
+}
+
+// A detection saved while the founder records that it has no detections
+// of its own to move is not lost either: the importer holds the folder
+// from reading it until the import is recorded.
+func TestDetectionSaveWhenNoDetectionsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportDetections, "", nil,
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "POST", "/api/detections", `{"id":"moved-rule","title":"Saved while moving","query":"event.action=failure","schedule":"5m","lookback":"5m","severity":"low","enabled":true}`)
+		},
+		func(rs *running) bool {
+			rs.libraryShared()
+			code, _, _ := rs.call("", "GET", "/api/detections/moved-rule", "")
+			return code == http.StatusOK
+		})
+}
+
+// The same for an asset list when the founder has none.
+func TestListSaveWhenNoListsMove(t *testing.T) {
+	saveWhileMoving(t, shared.ImportLookups, "", nil,
+		func(rs *running) (int, map[string]any, error) {
+			return rs.call("", "PUT", "/api/lookups/assets", "host,priority\nmoved1,high\n")
+		},
+		func(rs *running) bool {
+			rs.libraryShared()
 			_, out, _ := rs.call("", "GET", "/api/lookups/assets", "")
 			etag, _ := out["etag"].(string)
 			return out["count"] == float64(1) && etag != "" && etag != clusterlib.NoList

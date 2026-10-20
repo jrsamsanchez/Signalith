@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
@@ -97,6 +100,33 @@ func TestWildcardFieldTerms(t *testing.T) {
 		}
 		if got := WildcardFieldTerms(q.Search); got != want {
 			t.Errorf("%s: %d, want %d", src, got, want)
+		}
+	}
+}
+
+// A list field (a DNS lookup's answers) matches when one of its elements
+// does, as OpenSearch indexes each element.
+func TestMatchDocList(t *testing.T) {
+	doc := map[string]any{"answer": []string{"192.0.2.1", "Invoke-Expression x"}, "ports": []any{int64(80), int64(443)}}
+	for q, want := range map[string]bool{
+		`answer=192.0.2.1`:              true,
+		`answer="*Invoke-Expression*"`:  true,
+		`answer=198.51.100.1`:           false,
+		`ports=443`:                     true,
+		`ports>500`:                     false,
+		`NOT answer=192.0.2.1`:          false,
+		`answer=~"invoke-expression.*"`: false,
+	} {
+		e, err := query.Parse(q)
+		if err != nil {
+			t.Fatal(q, err)
+		}
+		got, err := MatchDoc(e.Search, doc)
+		if err != nil {
+			t.Fatal(q, err)
+		}
+		if got != want {
+			t.Errorf("%s = %v, want %v", q, got, want)
 		}
 	}
 }

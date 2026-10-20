@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -136,6 +139,33 @@ func TestFleetGivesUpWhenTheDrainEnds(t *testing.T) {
 	}
 }
 
+func TestFleetCapsBufferedBatches(t *testing.T) {
+	// A server that never answers: every batch stays buffered.
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	f := newFleet("run1", "tok", []string{srv.URL}, srv.Client(), newMetrics())
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	// Batches of about 100 KB against a 1 MB cap.
+	f.Run(ctx, AgentLoad{N: 4, Rate: 10000, Batch: 100, EventBytes: 1000, BufferMB: 1})
+	if got := f.buffered.Load(); got > 1<<20+200<<10 {
+		t.Errorf("buffered %d bytes past a 1 MB cap", got)
+	}
+	if f.dropped.Load() == 0 {
+		t.Error("nothing dropped once the buffer was full")
+	}
+	f.StopRetrying()
+	close(block)
+	f.Close()
+	if got := f.buffered.Load(); got != 0 {
+		t.Errorf("%d bytes still counted after Close", got)
+	}
+}
+
 func TestBatchBody(t *testing.T) {
 	f := newFleet("abc", "tok", []string{"http://x"}, nil, newMetrics())
 	a := &simAgent{id: 42, host: "agent-0042", next: 7}
@@ -175,5 +205,49 @@ func TestPaceIsOpenLoop(t *testing.T) {
 	}
 	if m.Hist("", "generator_lag").Max() < 50*time.Millisecond {
 		t.Error("the stall was not recorded as generator lag")
+	}
+}
+
+func TestFleetAgentGoesBackToItsTarget(t *testing.T) {
+	old := homeAfter
+	homeAfter = 1500 * time.Millisecond
+	defer func() { homeAfter = old }()
+	var mu sync.Mutex
+	refusals, home, other := 0, 0, 0
+	answer := func(w http.ResponseWriter, n *int, ok bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !ok {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		*n++
+		_ = json.NewEncoder(w).Encode(map[string]int{"indexed": 1})
+	}
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		ok := refusals > 0
+		refusals++
+		mu.Unlock()
+		answer(w, &home, ok)
+	}))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		answer(w, &other, true)
+	}))
+	defer b.Close()
+	f := newFleet("run1", "tok", []string{a.URL, b.URL}, a.Client(), newMetrics())
+	// One agent, whose own target is a, which refuses its first batch:
+	// the agent switches to b, and returns to a once homeAfter is over.
+	ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+	defer cancel()
+	f.Run(ctx, AgentLoad{N: 1, Rate: 20, Batch: 1, SwitchOnError: true})
+	f.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	if other == 0 || home == 0 {
+		t.Errorf("batches stored by its own target %d, by the other %d", home, other)
 	}
 }

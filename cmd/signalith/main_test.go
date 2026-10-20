@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -94,7 +97,7 @@ func TestPasswdKeepsEnvironmentSecretsOutOfTheFile(t *testing.T) {
 		os.Unsetenv(k)
 	}
 	c, err := config.Load(path)
-	if err != nil || !c.CheckPassword("admin", "second password") {
+	if err != nil || !c.CheckPassword("signalithadmin", "second password") {
 		t.Fatalf("new password does not work: %v", err)
 	}
 }
@@ -135,9 +138,9 @@ func TestPasswdUsesTheServiceEnvironment(t *testing.T) {
 		if env[name] == "" {
 			name = "SIGNALITH_ADMIN_PASSWORD"
 		}
-		t.Setenv("SIGNALITH_NEW_PASSWORD", "new admin password")
+		t.Setenv("SIGNALITH_NEW_PASSWORD", "new break-glass password")
 		out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) })
-		if err != nil || !strings.Contains(out, hashFile) || !strings.Contains(out, "the signalith service is given "+name) || strings.Contains(out, "new admin password") {
+		if err != nil || !strings.Contains(out, hashFile) || !strings.Contains(out, "the signalith service is given "+name) || strings.Contains(out, "new break-glass password") {
 			t.Errorf("%s: passwd: %v\n%s", name, err, out)
 		}
 		if after, _ := os.ReadFile(path); string(after) != string(before) {
@@ -151,7 +154,7 @@ func TestPasswdUsesTheServiceEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !c.CheckPassword("admin", "new admin password") || c.CheckPassword("admin", "password from the service") {
+		if !c.CheckPassword("admin", "new break-glass password") || c.CheckPassword("admin", "password from the service") {
 			t.Errorf("%s: the new password does not work, or the service's still does", name)
 		}
 		t.Setenv(name, "")
@@ -200,7 +203,7 @@ func TestFallbackStateDirIsNotedOnlyWhenWritten(t *testing.T) {
 	if _, err := os.Stat(fallback); !os.IsNotExist(err) {
 		t.Fatalf("reading the config made the fallback folder: %v", err)
 	}
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "new admin password")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "new break-glass password")
 	if out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) }); err != nil {
 		t.Fatalf("passwd: %v\n%s", err, out)
 	}
@@ -246,8 +249,72 @@ func TestSyslogSummary(t *testing.T) {
 	}
 }
 
+// init's agent port listens on -listen's host, so a server whose web page
+// is on loopback only takes agents on loopback only too, and the
+// installers open no firewall port for either.
+func TestInitAgentPortFollowsListen(t *testing.T) {
+	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	for listen, want := range map[string]string{"127.0.0.1:9000": "127.0.0.1:7779", "0.0.0.0:9000": "0.0.0.0:7779"} {
+		path := filepath.Join(t.TempDir(), "signalith.yaml")
+		captureStdout(t, func() {
+			if err := cmdInit([]string{"-c", path, "-admin-password", "first-password", "-listen", listen}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		raw, _ := os.ReadFile(path)
+		if !strings.Contains(string(raw), "agent_listen: "+want) {
+			t.Errorf("-listen %s: config lacks agent_listen %s:\n%s", listen, want, raw)
+		}
+	}
+	for host, want := range map[string]string{"127.0.0.1": "local", "::1": "local", "localhost": "local", "0.0.0.0": "any", "": "any", "10.0.0.5": "any"} {
+		if got := listenScope(host); got != want {
+			t.Errorf("listenScope(%q) = %q, want %q", host, got, want)
+		}
+	}
+	c := config.Default()
+	c.Server.Listen, c.Server.AgentListen = "0.0.0.0:9000", "127.0.0.1:7779"
+	if out := captureStdout(t, func() { printWebPorts(c) }); out != "web 9000 any\nagents 7779 local\n" {
+		t.Errorf("printWebPorts:\n%s", out)
+	}
+}
+
 // A new config serves HTTPS with Signalith's own certificate, refuses
 // agents over plain HTTP and receives syslog over TLS on 6514.
+// A new install's built-in admin is signalithadmin, while a config file
+// that names none (one written by hand before 0.3.1) keeps admin.
+func TestInitNamesBuiltinAdminSignalithadmin(t *testing.T) {
+	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	path := filepath.Join(t.TempDir(), "signalith.yaml")
+	out := captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "User:        signalithadmin") {
+		t.Errorf("init output does not name signalithadmin:\n%s", out)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Auth.AdminUser != config.DefaultAdminUser || config.DefaultAdminUser != "signalithadmin" {
+		t.Errorf("auth.admin_user %q, want signalithadmin", c.Auth.AdminUser)
+	}
+	if !c.CheckPassword("signalithadmin", "first-password") || c.CheckPassword("admin", "first-password") {
+		t.Error("the first password should sign in as signalithadmin only")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(raw), "admin_user: signalithadmin", "", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := config.LoadFile(path); err != nil || c.Auth.AdminUser != "admin" {
+		t.Errorf("a file naming no admin: %v, %+v; want admin", err, c)
+	}
+}
+
 func TestInitTurnsOnHTTPS(t *testing.T) {
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
 	path := filepath.Join(t.TempDir(), "signalith.yaml")

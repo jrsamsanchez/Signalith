@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -36,6 +39,7 @@ func (s *Server) routeDetections(api *router) {
 	// a run raises findings.
 	api.admin("POST /api/detections", s.handleCreateDetection)
 	api.admin("POST /api/detections/test", s.handleTestDetection)
+	s.routeDetectionDrafts(api)
 	api.admin("POST /api/detections/sigma", s.handleSigma)
 	api.admin("POST /api/detections/enable", s.handleEnableDetections)
 	api.admin("PUT /api/detections/{id}", s.handlePutDetection)

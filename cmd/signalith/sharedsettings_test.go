@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -863,13 +866,35 @@ func TestCAScopeSaveWhileOwnSettingsMove(t *testing.T) {
 	saved := make(chan result, 1)
 	var once sync.Once
 	var cur atomic.Pointer[running]
+	waiting := make(chan struct{}, 1)
+	// Once the cluster's level allows it, the start in use takes the
+	// cluster's certificate authority at its next look (tlsPoll), and a
+	// prepare is refused from then on; here only the start that follows
+	// the move takes it, and only once the prepare is done (below).
+	oldPoll := tlsPoll
+	tlsPoll = time.Hour
+	t.Cleanup(func() { tlsPoll = oldPoll })
 	importOwnHook = func(r *runner) {
+		if !r.ownMoved() || r.sharedContent.settingsOn.Load() {
+			return
+		}
+		// The founding can move the settings before startRunnerWith has
+		// returned (signed in): that move is the one to save during.
 		rs := cur.Load()
-		if rs == nil || rs.r != r || !r.ownMoved() || r.sharedContent.settingsOn.Load() {
+		for deadline := time.Now().Add(30 * time.Second); rs == nil && time.Now().Before(deadline); rs = cur.Load() {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if rs == nil || rs.r != r {
 			return
 		}
 		once.Do(func() {
+			// The start that follows takes the cluster's certificate
+			// authority (sharedTLS.sync) on the same Manager: it is kept
+			// from that until the prepare is done.
+			tls := &r.sharedContent.tls.mu
+			tls.Lock()
 			go func() {
+				defer tls.Unlock()
 				code, out, err := rs.call("", "POST", "/api/security/ca", `{"action":"prepare","scope":"strict"}`)
 				if err == nil && code == http.StatusUnauthorized {
 					rs.signInAs("admin", "s3cret-pass")
@@ -878,11 +903,22 @@ func TestCAScopeSaveWhileOwnSettingsMove(t *testing.T) {
 				saved <- result{code, out, err}
 			}()
 			// Without the hold the scope lands in settings.yaml now,
-			// after the move; with it, it waits for this to return.
-			time.Sleep(300 * time.Millisecond)
+			// after the move; with it, it waits for this to return. This
+			// returns once the save waits, however long the request takes
+			// to arrive.
+			select {
+			case <-waiting:
+			case <-time.After(30 * time.Second):
+			}
 		})
 	}
-	t.Cleanup(func() { importOwnHook = nil })
+	holdFileHook = func() {
+		select {
+		case waiting <- struct{}{}:
+		default:
+		}
+	}
+	t.Cleanup(func() { importOwnHook, holdFileHook = nil, nil })
 	rs := startRunnerWith(t, runOptions{scheduler: true, server: "  tls:\n    mode: auto\n"})
 	cur.Store(rs)
 	var res result

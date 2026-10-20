@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -149,7 +152,7 @@ func (j *joinAPI) Issue(ctx context.Context, by string, req api.JoinTokenRequest
 		return nil, err
 	}
 	return j.tokens.Issue(ctx, clusterjoin.IssueArgs{By: by, Node: cmp.Or(j.node, j.rt.Self().Name), URL: u, CADER: req.CADER,
-		TTL: time.Duration(req.TTLMinutes) * time.Minute, Platform: req.Platform, Note: req.Note, NodeURL: req.NodeURL})
+		TTL: time.Duration(req.TTLMinutes) * time.Minute, Platform: req.Platform, Note: req.Note, NodeURL: req.NodeURL, Role: req.Role})
 }
 
 func (j *joinAPI) Revoke(ctx context.Context, by, id string) error {

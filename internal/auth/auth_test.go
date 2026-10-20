@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package auth
 
 import (
@@ -33,13 +36,17 @@ func TestSessions(t *testing.T) {
 		t.Error("idle session still valid")
 	}
 
-	// A remembered session survives idle time but not the maximum age.
+	// A remembered session survives idle time but not the maximum age,
+	// 24 hours by default.
+	if s.MaxAge != 24*time.Hour {
+		t.Errorf("default max age %v", s.MaxAge)
+	}
 	keep := s.Create("admin", true)
-	c.t = c.t.Add(3 * 24 * time.Hour)
+	c.t = c.t.Add(20 * time.Hour)
 	if _, ok := s.Lookup(keep); !ok {
 		t.Error("remembered session ended while idle")
 	}
-	c.t = c.t.Add(5 * 24 * time.Hour)
+	c.t = c.t.Add(4 * time.Hour)
 	if _, ok := s.Lookup(keep); ok {
 		t.Error("remembered session outlived MaxAge")
 	}
@@ -48,6 +55,33 @@ func TestSessions(t *testing.T) {
 	s.Delete(other)
 	if _, ok := s.Lookup(other); ok {
 		t.Error("deleted session still valid")
+	}
+}
+
+// SetMaxAge applies to the sessions there are already, remembered or not,
+// and a session in use still ends at the maximum age.
+func TestSetMaxAge(t *testing.T) {
+	c := &clock{time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC)}
+	s := NewSessions(time.Hour)
+	s.Now = c.now
+	keep := s.Create("admin", true)
+	used := s.Create("admin", false)
+	s.SetMaxAge(2 * time.Hour)
+	if s.MaxAgeNow() != 2*time.Hour {
+		t.Fatalf("max age %v", s.MaxAgeNow())
+	}
+	for range 3 {
+		c.t = c.t.Add(30 * time.Minute)
+		if _, ok := s.Lookup(used); !ok {
+			t.Fatal("session in use ended before the maximum age")
+		}
+	}
+	c.t = c.t.Add(30 * time.Minute)
+	if _, ok := s.Lookup(used); ok {
+		t.Error("session in use outlived the maximum age")
+	}
+	if _, ok := s.Lookup(keep); ok {
+		t.Error("remembered session outlived the maximum age")
 	}
 }
 
@@ -114,5 +148,27 @@ func TestPeekDoesNotKeepSessionAlive(t *testing.T) {
 	}
 	if _, ok := s.Lookup(tok); ok {
 		t.Fatal("expired session still usable")
+	}
+}
+
+func TestForward(t *testing.T) {
+	s := NewSessions(time.Hour)
+	before := s.Start(NewSession{User: "admin"})
+	var got []Held
+	s.Forward(func(h Held) { got = append(got, h) })
+	after := s.Start(NewSession{User: "jlee", Method: "local"})
+	if len(got) != 1 || got[0].User != "jlee" || got[0].Hash != hash(after) || got[0].Method != "local" {
+		t.Fatalf("forwarded %+v", got)
+	}
+	if _, ok := s.Lookup(after); ok {
+		t.Error("a forwarded session is kept here too")
+	}
+	if held := s.Take(); len(held) != 1 || held[0].Hash != hash(before) {
+		t.Errorf("taken %+v", held)
+	}
+	s.Forward(nil)
+	again := s.Start(NewSession{User: "kim"})
+	if _, ok := s.Lookup(again); !ok || len(got) != 1 {
+		t.Error("a session started after Forward(nil) is not kept")
 	}
 }

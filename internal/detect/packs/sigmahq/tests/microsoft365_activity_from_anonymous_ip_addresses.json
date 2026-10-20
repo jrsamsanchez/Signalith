@@ -1,0 +1,6 @@
+{"rule": "d8b0a4fe-07a8-41be-bd39-b14afa025d95", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from anonymous IP addresses","eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventSource":"SecurityComplianceCenter","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from anonymous IP addresses","status":"success"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"audit","data":{"eventName":"Activity from anonymous IP addresses","eventSource":"SecurityComplianceCenter"}}
+]}

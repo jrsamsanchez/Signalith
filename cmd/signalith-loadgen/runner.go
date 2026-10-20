@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -159,11 +162,22 @@ func (r *runner) checkNeeds(ctx context.Context) string {
 			continue // checked once the cluster is known
 		}
 		key, ok := needSettings[need]
-		if !ok {
+		if !ok && need != "rolling_upgrade" {
 			return fmt.Sprintf("needs %s, which this load generator cannot check for yet", need)
 		}
 		if len(r.admin) == 0 {
 			return fmt.Sprintf("needs %s; checking for it takes credentials.admin_file", need)
+		}
+		if need == "rolling_upgrade" {
+			// A version with rolling upgrades answers the upgrade check.
+			var v upgradeView
+			if err := r.admin[0].Do(ctx, http.MethodGet, "/api/cluster/upgrade", nil, &v); err != nil {
+				if statusOf(err) == http.StatusNotFound {
+					return "needs rolling_upgrade, which this server does not have (no GET /api/cluster/upgrade)"
+				}
+				return fmt.Sprintf("needs rolling_upgrade; the upgrade check did not answer: %v", err)
+			}
+			continue
 		}
 		var v settingsView
 		if err := r.admin[0].Do(ctx, http.MethodGet, "/api/settings", nil, &v); err != nil {
@@ -268,7 +282,11 @@ func (r *runner) prepare(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("agents need an agent token in credentials.token_file: %w", err)
 		}
-		r.fleet = newFleet(r.run, token, s.Targets, &http.Client{Transport: r.tr}, r.m)
+		agentTargets := s.AgentTargets
+		if len(agentTargets) == 0 {
+			agentTargets = s.Targets
+		}
+		r.fleet = newFleet(r.run, token, agentTargets, &http.Client{Transport: r.tr}, r.m)
 	}
 	return nil
 }
@@ -563,6 +581,11 @@ func (r *runner) measure(c Criterion) (float64, string) {
 			return 0, "no agents in the scenario"
 		}
 		return float64(r.fleet.undelivered.Load()), ""
+	case "events_dropped":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		return float64(r.fleet.dropped.Load()), ""
 	case "ingest_error_rate":
 		n := m.Count(ph, "ingest_requests")
 		if n == 0 {
@@ -709,6 +732,47 @@ func (r *runner) measure(c Criterion) (float64, string) {
 		if !ok {
 			return 0, "nothing measured"
 		}
+		return v, ""
+	case "servers_not_upgraded", "upgrade_server_seconds":
+		var upgrades []FaultResult
+		for _, f := range r.report.Faults {
+			if f.Kind == "upgrade" {
+				upgrades = append(upgrades, f)
+			}
+		}
+		if len(upgrades) == 0 {
+			return 0, "no upgrade fault"
+		}
+		if c.Name == "servers_not_upgraded" {
+			n := 0
+			for _, f := range upgrades {
+				if f.Skipped != "" {
+					return 0, "upgrade skipped: " + f.Skipped
+				}
+				n += len(f.ToUpgrade)
+				for _, st := range f.Upgrades {
+					if st.Error == "" {
+						n--
+					}
+				}
+			}
+			return float64(n), ""
+		}
+		v, ok := m.Gauge(ph, c.Name)
+		if !ok {
+			return 0, "no server was upgraded"
+		}
+		return v, ""
+	case "jobs_moves":
+		if m.Count(ph, "leader_samples") == 0 {
+			return 0, "needs each server listed in targets, with admin credentials"
+		}
+		return float64(m.Count(ph, c.Name)), ""
+	case "page_reloads_per_user":
+		if m.Count(ph, "user_requests") == 0 {
+			return 0, "no user requests"
+		}
+		v, _ := m.Gauge(ph, c.Name)
 		return v, ""
 	case "check_failures":
 		if len(r.report.Checks) == 0 {

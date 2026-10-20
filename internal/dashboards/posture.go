@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package dashboards
 
 import (
@@ -57,7 +60,9 @@ type Report struct {
 	EventsBySourcetype *search.Result    `json:"events_by_sourcetype,omitempty"`
 	Health             *Health           `json:"health,omitempty"`
 	Queries            map[string]string `json:"queries"`
-	Errors             map[string]string `json:"errors,omitempty"`
+	// Drills finds the events behind the numbers each query gives.
+	Drills map[string]*query.Drill `json:"drills"`
+	Errors map[string]string       `json:"errors,omitempty"`
 	// FindingsTruncated is set when there were more findings in the period
 	// than one request returns; finding metrics then undercount.
 	FindingsTruncated bool `json:"findings_truncated,omitempty"`
@@ -201,6 +206,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 		},
 		Errors: map[string]string{},
 	}
+	rep.Drills = drills(rep.Queries)
 
 	var (
 		mu                                     sync.Mutex
@@ -512,11 +518,11 @@ func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map
 	if sources != nil {
 		for _, r := range sources.Rows {
 			h.Sources++
-			ms, ok := toFloatAny(r["last_seen"])
+			sec, ok := toFloatAny(r["last_seen"])
 			if !ok {
 				continue
 			}
-			last := time.UnixMilli(int64(ms)).UTC()
+			last := time.Unix(0, int64(sec*1e9)).UTC()
 			if now.Sub(last) > stale {
 				h.StaleSources = append(h.StaleSources, Source{Host: fmt.Sprint(r["host"]), Sourcetype: fmt.Sprint(r["sourcetype"]), LastSeen: last, Events: int64(toNum(r["count"]))})
 			}
@@ -713,4 +719,15 @@ func toFloatAny(v any) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// drills works out each posture query's drilldown.
+func drills(queries map[string]string) map[string]*query.Drill {
+	out := map[string]*query.Drill{}
+	for k, src := range queries {
+		if q, err := query.Parse(src); err == nil {
+			out[k] = q.Drilldown()
+		}
+	}
+	return out
 }

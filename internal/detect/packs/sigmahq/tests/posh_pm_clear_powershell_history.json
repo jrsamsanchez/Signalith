@@ -1,0 +1,6 @@
+{"rule": "f99276ad-d122-4989-a09a-d00904a5f9d2", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"Set-PSReadlineOptionSaveNothing–HistorySaveStyle"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"Set-PSReadlineOptionSaveNothing-HistorySaveStyle"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"(Get-PSReadlineOption).HistorySavePath del"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

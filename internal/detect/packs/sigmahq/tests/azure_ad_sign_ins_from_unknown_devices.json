@@ -1,0 +1,7 @@
+{"rule": "4d136857-6a1a-432a-82fc-5dd497ee5e7c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.deviceId":"","NetworkLocationDetails":"[]","ResultType":"0"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"DeviceDetail.deviceId":"","NetworkLocationDetails":"[]","ResultType":"0"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.deviceId":"unrelated-value","NetworkLocationDetails":"[]","ResultType":"0"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.deviceId":"","ResultType":"0"}},
+  {"expect":false,"source":"synthesized","channel":"azure","event_id":"signinlogs","data":{"AuthenticationRequirement":"singleFactorAuthentication","DeviceDetail.deviceId":"","NetworkLocationDetails":"[]"}}
+]}

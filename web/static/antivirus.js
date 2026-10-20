@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data: Antivirus. One tab per product: Microsoft Defender and ClamAV
 // come in through the Fluent Bit agent, the others send syslog (CEF, LEEF
 // or their own format) from their management console. The syslog setups

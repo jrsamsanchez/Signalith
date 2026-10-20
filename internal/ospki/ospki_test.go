@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ospki
 
 import (
@@ -192,7 +195,7 @@ func TestCheckFindsProblems(t *testing.T) {
 // Signalith's certificate gets.
 func TestSecurityFiles(t *testing.T) {
 	files := SecurityFiles()
-	want := map[string]string{"config.yml": "config", "internal_users.yml": "internalusers", "roles.yml": "roles", "roles_mapping.yml": "rolesmapping"}
+	want := map[string]string{"audit.yml": "audit", "config.yml": "config", "internal_users.yml": "internalusers", "roles.yml": "roles", "roles_mapping.yml": "rolesmapping"}
 	if len(files) != len(want) {
 		t.Errorf("files %v", keys(files))
 	}
@@ -219,6 +222,12 @@ func TestSecurityFiles(t *testing.T) {
 	if dig(cc, "http_authenticator", "type") != "clientcert" || dig(cc, "http_authenticator", "config", "username_attribute") != "cn" ||
 		dig(cc, "authentication_backend", "type") != "noop" || cc["http_enabled"] != true {
 		t.Errorf("clientcert domain: %v", cc)
+	}
+	// OpenSearch's audit log keeps no request bodies or documents.
+	if dig(docs["audit.yml"], "config", "audit", "log_request_body") != false ||
+		dig(docs["audit.yml"], "config", "compliance", "read_metadata_only") != true ||
+		dig(docs["audit.yml"], "config", "compliance", "write_metadata_only") != true {
+		t.Errorf("audit settings: %v", docs["audit.yml"])
 	}
 	if dig(docs["config.yml"], "config", "dynamic", "http", "anonymous_auth_enabled") != false {
 		t.Error("anonymous access is not off")

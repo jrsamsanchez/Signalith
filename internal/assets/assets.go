@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package assets holds the asset and identity lists that give events
 // business context, like the Splunk ES asset and identity framework: who
 // owns a host, how critical it is, who a username belongs to, and whether
@@ -488,11 +491,42 @@ func (s *Store) Asset(v string) (*Asset, bool) {
 // SetFound replaces the hosts Signalith found itself, such as the osquery
 // hosts on the Endpoints page. They are never written to a file or the
 // user's list, and the user's list and the sample data win over them.
+//
+// as is in order of trust: osquery hosts, then scanned hosts, then the
+// hosts a network sensor saw. A host name goes to the first host that
+// has it; a later one keeps its address but loses the name, so a device
+// that announces another host's name (a DHCP client chooses its own)
+// cannot take that name's lookups over.
 func (s *Store) SetFound(as []Asset) {
-	l := newLookup(append([]Asset(nil), as...), nil)
+	l := newLookup(firstNames(as), nil)
 	s.mu.Lock()
 	s.found = l
 	s.mu.Unlock()
+}
+
+// firstNames copies as, leaving out of each host the names (and short
+// names) an earlier host already has.
+func firstNames(as []Asset) []Asset {
+	out := make([]Asset, 0, len(as))
+	taken := map[string]bool{}
+	for _, a := range as {
+		var hs []string
+		for _, h := range a.Host {
+			if n := normHost(h); n != "" && !taken[n] {
+				hs = append(hs, h)
+			}
+		}
+		for _, h := range hs {
+			n := normHost(h)
+			taken[n] = true
+			if short, _, ok := strings.Cut(n, "."); ok && short != "" {
+				taken[short] = true
+			}
+		}
+		a.Host = hs
+		out = append(out, a)
+	}
+	return out
 }
 
 // Found returns copies of the hosts Signalith found itself that the
@@ -512,6 +546,13 @@ func (s *Store) Found() []Asset {
 			if _, ok := own.asset(h); ok {
 				known = true
 				break
+			}
+		}
+		// A host found by its address alone (a scan or the network
+		// sensor) that the list names by that address.
+		for _, ip := range a.IP {
+			if addr, err := netip.ParseAddr(ip); err == nil && !known {
+				_, known = own.byIP[addr.Unmap()]
 			}
 		}
 		if !known {
@@ -697,15 +738,21 @@ func replaceFile(path string, data []byte) error {
 
 // renameOver renames from over to. On Windows a file another goroutine
 // or program is reading at that moment cannot be replaced (access is
-// denied until it is closed), so it tries again for a short while.
+// denied until it is closed), so it tries again for a while: readers
+// here close the file at once, but an antivirus scanning the file just
+// written, on a busy computer, can keep it open for longer than a
+// moment.
 func renameOver(from, to string) error {
 	err := os.Rename(from, to)
-	for i := 0; err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && i < 20; i++ {
+	for deadline := time.Now().Add(renameWait); err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && time.Now().Before(deadline); {
 		time.Sleep(25 * time.Millisecond)
 		err = os.Rename(from, to)
 	}
 	return err
 }
+
+// renameWait is how long renameOver tries again.
+const renameWait = 5 * time.Second
 
 // CSV returns a list as CSV, for download. Cells a spreadsheet would run
 // as a formula are written with a leading quote (see SafeCell), as the web

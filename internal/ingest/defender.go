@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -385,14 +388,19 @@ func defenderResource(f map[string]any, path string) {
 	}
 }
 
-// setPID reads the number after "pid:" into process_id.
+// setPID reads the number after "pid:" into process_id. It compares in
+// place rather than searching strings.ToLower(s): lowering turns invalid
+// UTF-8 into the longer U+FFFD, so an index into the lowered copy can run
+// past the end of s.
 func setPID(f map[string]any, s string) {
-	// Matched in place: lowering s can change its length (invalid UTF-8,
-	// 'İ'), so an index into strings.ToLower(s) is not one into s.
-	i := 0
-	for ; i+4 <= len(s) && !strings.EqualFold(s[i:i+4], "pid:"); i++ {
+	i := -1
+	for j := 0; j+4 <= len(s); j++ {
+		if strings.EqualFold(s[j:j+4], "pid:") {
+			i = j
+			break
+		}
 	}
-	if i+4 > len(s) {
+	if i < 0 {
 		return
 	}
 	s = s[i+4:]

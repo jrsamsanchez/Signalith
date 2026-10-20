@@ -1,6 +1,5 @@
 {"rule": "31810b7a-0abe-42be-a210-0dec8106afee", "cases": [
   {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"rmmod"}},
-  {"expect":true,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"rmmod"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALM","data":{"comm":"rmmod"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{"comm":"rmmoe"}},
   {"expect":false,"source":"synthesized","channel":"Linux-auditd","event_id":"SYSCALL","data":{}},

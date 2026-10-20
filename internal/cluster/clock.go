@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package cluster lets several Signalith servers share one OpenSearch.
 // Each server keeps an identity in its state folder, writes a heartbeat
 // document into <prefix>_runtime every 10 seconds, and the servers that

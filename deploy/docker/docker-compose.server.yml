@@ -27,9 +27,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      # Web UI, API and agents, and the other servers' checks.
-      - "8080:8080"
-      # Syslog on this computer's 514 (and over TLS on 6514).
+      # Web UI and API, and the other servers' checks.
+      - "9000:9000"
+      # Agents.
+      - "7779:7779"
+      # Syslog over TLS on 6514, and plain syslog on this computer's 514
+      # once it is turned on (see below).
       - "514:5514/udp"
       - "514:5514/tcp"
       - "6514:6514"
@@ -39,13 +42,18 @@ services:
       - SIGNALITH_JOIN=${SIGNALITH_JOIN:-}
       - SIGNALITH_NODE_NAME=${SIGNALITH_NODE_NAME:-signalith-2}
       # The address the other servers reach this one at, such as
-      # https://192.168.1.21:8080.
+      # https://192.168.1.21:9000.
       - SIGNALITH_NODE_URL=${SIGNALITH_NODE_URL:-}
       # The ports inside the container, which the ports above reach (it
       # cannot open ports below 1024).
-      - SIGNALITH_LISTEN=0.0.0.0:8080
-      - SIGNALITH_SYSLOG_UDP=0.0.0.0:5514
-      - SIGNALITH_SYSLOG_TCP=0.0.0.0:5514
+      - SIGNALITH_LISTEN=0.0.0.0:9000
+      - SIGNALITH_AGENT_LISTEN=0.0.0.0:7779
+      # Plain syslog over UDP and TCP is off: it is unencrypted and can be
+      # forged. For devices that cannot send over TLS, turn it on with
+      # "Turn on plain syslog" on this server's Add data page (Syslog), or
+      # uncomment these two lines (which lock it on the Settings page).
+      # - SIGNALITH_SYSLOG_UDP=0.0.0.0:5514
+      # - SIGNALITH_SYSLOG_TCP=0.0.0.0:5514
     volumes:
       # Everything this server keeps: its identity, keys, certificates and
       # its settings.
