@@ -74,6 +74,22 @@ KEY_FPR_OISF_COPR=76F7EC544835D6B60BB559799E86AAEAE704C1FB
 # Zeek's long-term support line (OBS package zeek-<LTS>).
 ZEEK_PACKAGE='zeek-8.0'
 
+# --ot: CISA's ICSNPP analyzers for Zeek (BSD 3-Clause), one a line: the
+# name, then the commit zkg checks out (each was at least two weeks old
+# when chosen). Modbus and DNP3 are Zeek scripts; the others are built on
+# the sensor, which needs a C++ compiler and Zeek's development files.
+ICSNPP_REPO=https://github.com/cisagov
+ICSNPP='modbus 27f22b41fd9839c0bad1b98df9c6289e578fd02a
+dnp3 b31dbadeceb1cbcda16aef89c650559cd177dd7e
+s7comm 7ebeb03a0f954541369361651d1c27d09a64b5a3
+enip 808f90b0d834481a1368dbcad650f63c88550991
+bacnet 29d76f37560d7ba851b23cd1da8f0067e1a0d488
+opcua-binary d56650b700cef9ff25d345f9adce62699ab5a110
+profinet-io-cm a3ee85e4a2271cc40e12965a35b0f8ef50e75c2e
+ge-srtp b621f43bebd57bbc9d7e07cae1cf11b40609ece4
+omron-fins 86f4277e6741e65364daa553cb8d489e9511e2c1
+hart-ip 078a5ded70193b14118a40283f5d825f65c857fe'
+
 # --docker: the publishers' images, pinned by version and digest.
 IMAGE_ZEEK=zeek/zeek:8.0.10@sha256:73e80e9cd23ff71fd28d158e9a9af5c7b2b0ef5d4036af61521827531347c0e3
 IMAGE_SURICATA=jasonish/suricata:8.0.7@sha256:bf4bea5b45d9c10265a3ee6628e2ec8930b9d1fb7caf9d1afb63af413b9cbb26
@@ -106,6 +122,7 @@ networks=''
 zeek=yes
 suricata=yes
 protocols=no
+ot=no
 local_rules=''
 zeek_workers=''
 suricata_threads=''
@@ -145,7 +162,7 @@ usage() {
 Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
          [--name <name>] [--interface <port>] [--networks <cidr,...>]
-         [--no-zeek | --no-suricata] [--suricata-protocols] [--local-rules <file>]
+         [--no-zeek | --no-suricata] [--suricata-protocols] [--ot] [--local-rules <file>]
          [--zeek-workers <n>] [--suricata-threads <n>] [--docker]
          [--check-only] [--dry-run <folder>]
        sudo sh install.sh --uninstall [--purge]
@@ -166,6 +183,10 @@ Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signali
   --no-suricata       Zeek only.
   --suricata-protocols  Suricata also logs flows, DNS, HTTP and TLS (on when
                       there is no Zeek).
+  --ot                Industrial protocols: Suricata parses Modbus, DNP3 and
+                      EtherNet/IP, and Zeek gets CISA's ICSNPP analyzers
+                      (S7comm, EtherNet/IP and CIP, BACnet, OPC UA and
+                      more; not with --docker), built on this machine.
   --local-rules       A file of your own Suricata rules to add.
   --zeek-workers      Zeek processes reading the port (default from the cores).
   --suricata-threads  Suricata capture threads (default: half the cores).
@@ -204,6 +225,7 @@ while [ $# -gt 0 ]; do
     --no-zeek) zeek=no; shift ;;
     --no-suricata) suricata=no; shift ;;
     --suricata-protocols) protocols=yes; shift ;;
+    --ot) ot=yes; shift ;;
     --local-rules) need "$1" $#; local_rules=$2; shift 2 ;;
     --local-rules=*) local_rules=${1#*=}; shift ;;
     --zeek-workers) need "$1" $#; zeek_workers=$2; shift 2 ;;
@@ -393,6 +415,12 @@ manifest_add() {
 }
 manifest_has() {
   [ -f "$manifest" ] && grep -qxF "$*" "$manifest"
+}
+# manifest_del drops line $* from the record.
+manifest_del() {
+  [ -f "$manifest" ] || return 0
+  grep -vxF "$*" "$manifest" >"$tmp/manifest" || true
+  cat "$tmp/manifest" >"$manifest"
 }
 
 changed=''
@@ -1204,6 +1232,77 @@ zeek_workers_default() {
   fi
 }
 
+# --- Sensor: industrial protocols (--ot) ---------------------------------
+
+zkg_conf=/var/lib/signalith-sensor/zkg/config
+# zkg runs Zeek's package manager with the sensor's own settings.
+zkg() {
+  # Readable by Zeek's own account, whatever umask sudo left.
+  (umask 022 && quiet /opt/zeek/bin/zkg --configfile "$R$zkg_conf" "$@")
+}
+# zkg_forget drops the record of ICSNPP package $1.
+zkg_forget() {
+  [ -f "$manifest" ] || return 0
+  grep "^zkg $1 " "$manifest" | while IFS= read -r l; do manifest_del "$l"; done
+}
+
+# sensor_icsnpp installs the ICSNPP analyzers pinned above (--ot) with
+# Zeek's package manager, each checked out at its commit and built here.
+# Each is recorded as "zkg <name> <commit> <Zeek version>": a re-run
+# installs again only one that is new, pinned to another commit, or built
+# for another Zeek. Without --ot it removes those an earlier --ot added.
+sensor_icsnpp() {
+  if [ "$ot" = no ]; then
+    had=''
+    if [ -f "$manifest" ]; then had=$(sed -n 's/^zkg \([^ ]*\) .*/\1/p' "$manifest"); fi
+    [ -n "$had" ] || return 0
+    for p in $had; do
+      zkg remove --force "$p" || warn "Removing the Zeek package $p failed (see above)." "sudo /opt/zeek/bin/zkg --configfile $zkg_conf remove --force $p"
+      zkg_forget "$p"
+    done
+    printf 'zeek\n' >>"$tmp/changed"
+    ok "Zeek: removed the ICSNPP analyzers (the line has no --ot)"
+    return 0
+  fi
+  pkg_install git cmake make g++
+  zv=dry-run site=/opt/zeek/share/zeek/site plugins=/opt/zeek/lib/zeek/plugins
+  if [ -z "$dryrun" ]; then
+    if [ ! -x /opt/zeek/bin/zkg ] || [ ! -x /opt/zeek/bin/zeek-config ]; then
+      fail "Zeek's package manager (zkg) or its development files are missing, and --ot needs them." "Run the line again; or run it without --ot (Suricata still parses Modbus, DNP3 and EtherNet/IP)."
+    fi
+    zv=$(/opt/zeek/bin/zeek-config --version)
+    site=$(/opt/zeek/bin/zeek-config --site_dir)
+    plugins=$(/opt/zeek/bin/zeek-config --plugin_dir)
+  fi
+  folder /var/lib/signalith-sensor/zkg 0700 root:root
+  put "$zkg_conf" 0600 root:root zeek <<EOF
+# Written by the Signalith sensor install script: Zeek's package manager's
+# settings for the ICSNPP analyzers (--ot). No package sources: each
+# analyzer is installed from its own repository, at a pinned commit.
+[sources]
+[paths]
+state_dir = /var/lib/signalith-sensor/zkg
+script_dir = $site
+plugin_dir = $plugins
+bin_dir = /opt/zeek/bin
+EOF
+  while read -r n c; do
+    [ -n "$n" ] || continue
+    p=icsnpp-$n
+    if manifest_has "zkg $p $c $zv" && { [ -n "$dryrun" ] || [ -e "$site/packages/$p" ]; }; then continue; fi
+    if [ -z "$dryrun" ] && [ -e "$site/packages/$p" ]; then zkg remove --force "$p" || true; fi
+    zkg_forget "$p"
+    info "Zeek: building CISA's ICSNPP analyzer for $n"
+    zkg install --force --skip-tests --version "$c" "$ICSNPP_REPO/$p" ||
+      fail "Installing CISA's ICSNPP analyzer for $n failed (see above)." "Check that this machine reaches github.com and has 2 GB of disk free, then run the line again; or run it without --ot."
+    manifest_add "zkg $p $c $zv"
+    printf 'zeek\n' >>"$tmp/changed"
+    ok "Zeek: ICSNPP $n"
+  done <<EOF
+$ICSNPP
+EOF
+}
+
 sensor_zeek_config() {
   workers=$(zeek_workers_default)
   if [ "$workers" -eq 0 ]; then
@@ -1303,6 +1402,13 @@ zeek_script() {
 # no DNS, HTTP or TLS for them. Suricata decides this for itself.
 redef ignore_checksums = T;
 EOF
+  if [ "$ot" = yes ] && [ "$layout" = packages ]; then
+    cat <<'EOF'
+# CISA's ICSNPP analyzers for industrial protocols (--ot), which the
+# script installed with Zeek's package manager.
+@load packages
+EOF
+  fi
   if [ "$layout" = docker ]; then
     cat <<EOF
 redef Site::local_nets += { $(zeek_nets ', ') };
@@ -1405,6 +1511,27 @@ EOF
         - tls
 EOF
   fi
+  [ "$ot" = yes ] || return 0
+  # Industrial protocols: parsed for the rules always, and logged on the
+  # same terms as the other protocols (Zeek logs them when it runs).
+  if [ "$protocols" = yes ]; then
+    printf '        - modbus\n        - dnp3\n'
+    if suricata_logs_enip; then printf '        - enip\n'; fi
+  fi
+  cat <<'EOF'
+# Industrial protocols (--ot), which suricata.yaml leaves off.
+app-layer.protocols.modbus.enabled: yes
+app-layer.protocols.dnp3.enabled: yes
+app-layer.protocols.enip.enabled: yes
+EOF
+}
+
+# suricata_logs_enip is true when Suricata can log EtherNet/IP: version 8
+# and later (Debian's own Suricata 7 only parses it).
+suricata_logs_enip() {
+  [ "$layout" = packages ] || return 0
+  v=$(suricata -V 2>/dev/null | sed -n 's/.*version \([0-9][0-9]*\)\..*/\1/p' | head -n 1)
+  [ -z "$v" ] || [ "$v" -ge 8 ]
 }
 
 sensor_suricata_config() {
@@ -1465,6 +1592,7 @@ NETWORKS='$networks'
 ZEEK='$zeek'
 SURICATA='$suricata'
 PROTOCOLS='$protocols'
+OT='$ot'
 SENSOR_VERSION='$version'
 EOF
 }
@@ -2972,6 +3100,11 @@ common_uninstall() {
   for u in $(sed -n 's/^mask //p' "$manifest"); do
     quiet systemctl unmask "$u" || true
   done
+  # The ICSNPP analyzers (--ot), while Zeek's package manager is here.
+  # shellcheck disable=SC2013 # names, one a line
+  for p in $(sed -n 's/^zkg \([^ ]*\) .*/\1/p' "$manifest"); do
+    zkg remove --force "$p" || warn "Removing the Zeek package $p failed (see above)." "sudo /opt/zeek/bin/zkg --configfile $zkg_conf remove --force $p"
+  done
   # The package's own services that were running before the sensor.
   # shellcheck disable=SC2013 # names, one a line
   for u in $(sed -n 's/^was running //p' "$manifest"); do
@@ -3061,6 +3194,10 @@ else
   sensor_packages
 fi
 sensor_accounts
+if [ "$zeek" = yes ] && [ "$layout" = packages ]; then sensor_icsnpp; fi
+if [ "$ot" = yes ] && [ "$zeek" = yes ] && [ "$layout" = docker ]; then
+  info "Zeek in a container has no ICSNPP analyzers: it logs Modbus and DNP3 only (install from packages for S7comm, EtherNet/IP, BACnet and more)"
+fi
 if [ "$zeek" = yes ] && [ "$layout" = packages ]; then sensor_zeek_config; fi
 if [ "$suricata" = yes ]; then sensor_suricata_config; fi
 if [ "$layout" = docker ]; then sensor_docker_files; fi

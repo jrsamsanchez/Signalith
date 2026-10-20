@@ -1195,6 +1195,11 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
                   <button type="button" data-layout="docker" aria-pressed="false">Docker</button>
                 </div>
               </div>
+              <div class="agent-addr__row">
+                <span class="label" id="sensor-ot-label">Also watch</span>
+                <label class="switch"><input type="checkbox" id="sensor-ot" aria-labelledby="sensor-ot-label sensor-ot-text" aria-describedby="sensor-ot-help"> <span id="sensor-ot-text">Industrial protocols</span></label>
+              </div>
+              <p id="sensor-ot-help" class="hint agent-token__help">For a network with PLCs or other industrial devices: Modbus, DNP3, S7comm, EtherNet/IP, BACnet and more. The sensor only listens. With packages, Zeek's analyzers are built on the sensor, which takes a few minutes more.</p>
             </div>
             <div id="aws-paths" class="hidden">
               <div class="agent-addr__row">

@@ -34,7 +34,7 @@ sudo ip link set cap1 up
 
 step "The line, as the Add data page asks for it, with a new sensor token"
 api -G "$SIGNALITH/api/sensor/install" --data-urlencode "server=$SIGNALITH" \
-  --data-urlencode interface=cap0 --data-urlencode networks=10.99.0.0/16 >install.json
+  --data-urlencode interface=cap0 --data-urlencode networks=10.99.0.0/16 --data-urlencode ot=true >install.json
 placeholder=$(jq -r .token_placeholder install.json)
 token=$(api -H 'Content-Type: application/json' -d '{"name":"CI sensor","purpose":"sensor"}' "$SIGNALITH/api/agent-tokens" | jq -r .secret)
 # One rule of our own, so an alert is certain.
@@ -46,18 +46,56 @@ printf '%s\n' "$line" | sed "s|$token|<token>|"
 step "Install"
 sh -c "$line"
 
-step "Traffic: HTTP and DNS on lo, captured, then replayed on the capture port"
+step "The ICSNPP analyzers Zeek loads (--ot)"
+sudo /opt/zeek/bin/zeek -NN | tee plugins.txt >/dev/null
+grep -E '^ICSNPP::' plugins.txt
+for p in ICSNPP::BACnet ICSNPP::ENIP ICSNPP::OPCUA_Binary ICSNPP::S7COMM GE_SRTP_TCP HART_IP_TCP PROFINET_IO_CM OMRON_FINS_TCP; do
+  grep -q "$p" plugins.txt || { echo "Zeek does not load $p"; exit 1; }
+done
+
+step "Traffic: HTTP, DNS and Modbus on lo, captured, then replayed on the capture port"
 python3 -m http.server 8099 --bind 127.0.0.1 >/dev/null 2>&1 &
 web=$!
+# A Modbus device on its usual port: it answers reads with two registers
+# and echoes writes.
+cat >modbus.py <<'EOF'
+import socket, struct, sys
+if sys.argv[1] == "serve":
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", 502))
+    s.listen(1)
+    s.settimeout(20)
+    c, _ = s.accept()
+    while True:
+        h = c.recv(7)
+        if len(h) < 7:
+            break
+        tid, _, n, unit = struct.unpack(">HHHB", h)
+        pdu = c.recv(n - 1)
+        if pdu[0] == 3:
+            pdu = bytes([3, 4, 0, 1, 0, 2])
+        c.sendall(struct.pack(">HHHB", tid, 0, len(pdu) + 1, unit) + pdu)
+else:
+    c = socket.create_connection(("127.0.0.1", 502))
+    for tid, pdu in enumerate([bytes([3, 0, 0, 0, 2]), bytes([6, 0, 1, 0, 42]), bytes([3, 0, 0, 0, 2])], 1):
+        c.sendall(struct.pack(">HHHB", tid, 0, len(pdu) + 1, 1) + pdu)
+        c.recv(64)
+    c.close()
+EOF
+sudo python3 modbus.py serve &
+modbus=$!
 sleep 1
-sudo timeout 15 tcpdump -i lo -w traffic.pcap 'port 8099 or port 53' >/dev/null 2>&1 &
+sudo timeout 15 tcpdump -i lo -w traffic.pcap 'port 8099 or port 53 or port 502' >/dev/null 2>&1 &
 sleep 2
 for i in 1 2 3; do
   curl -s -o /dev/null "http://127.0.0.1:8099/signalith-ci?try=$i" || true
   getent hosts "example$i.com" >/dev/null || true
 done
+python3 modbus.py client
 sleep 14
 kill "$web" || true
+sudo kill "$modbus" 2>/dev/null || true
 sudo chmod 644 traffic.pcap
 # Packets taken on lo carry checksums the kernel never filled in; a real
 # capture port sees them filled in, so the copy replayed has them too.
@@ -69,6 +107,8 @@ done
 
 step "What reaches Signalith (up to 3 minutes)"
 want='sourcetype=zeek:conn|sourcetype=zeek:dns|sourcetype=suricata:alert signature_id=9900001|sourcetype=suricata:stats|sourcetype=sensor:status'
+# Industrial: Zeek's own Modbus log, and ICSNPP's, mapped.
+want="$want|datamodel=Industrial sourcetype=zeek:modbus ot_function=READ_HOLDING_REGISTERS|datamodel=Industrial sourcetype=zeek:modbus_detailed category=write"
 end=$(($(date +%s) + 180))
 while :; do
   missing=''
