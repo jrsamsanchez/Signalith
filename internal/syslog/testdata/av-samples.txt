@@ -1,0 +1,512 @@
+# Real antivirus log lines from public sources, as test fixtures for the
+# antivirus parsers (TestRealAVSamples). Each sample is a "# source:" URL, its
+# "# license:", an optional "# note:" on what was changed (only syslog headers
+# are ever added; the messages are as published), the fields it must give as
+# "# want: field=value" lines, and the line itself. Licence notices are in
+# README.md next to this file.
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> Received signal: wake up
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> ClamAV update process started at Tue Mar  3 00:28:23 2020
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> ^Your ClamAV installation is OUTDATED!
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> ^Local version: 0.100.2 Recommended version: 0.102.2
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> DON'T PANIC! Read https://www.clamav.net/documents/upgrading-clamav
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> main.cvd is up to date (version: 59, sigs: 4564902, f-level: 60, builder: sigmgr)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Malware
+# want: type=health
+# want: action=updated
+# want: signature=Antivirus definitions updated
+# want: dest=mail
+# want: signature_version=25739
+# want: vendor_product=ClamAV
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> daily.cld is up to date (version: 25739, sigs: 2203033, f-level: 63, builder: raynman)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 00:28:23 mail freshclam[24880]: Tue Mar  3 00:28:23 2020 -> bytecode.cvd is up to date (version: 331, sigs: 94, f-level: 63, builder: anvilleg)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 12:28:26 mail freshclam[24880]: Tue Mar  3 12:28:26 2020 -> Downloading daily-25740.cdiff [100%]
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Malware
+# want: type=health
+# want: action=updated
+# want: signature=Antivirus definitions updated
+# want: dest=mail
+# want: signature_version=25740
+# want: vendor_product=ClamAV
+<30>Mar  3 12:29:37 mail freshclam[24880]: Tue Mar  3 12:29:37 2020 -> daily.cld updated (version: 25740, sigs: 2204413, f-level: 63, builder: raynman)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 12:30:07 mail freshclam[24880]: Tue Mar  3 12:30:07 2020 -> *Can't query daily.25740.93.1.0.6810DB54.ping.clamav.net
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 12:30:07 mail freshclam[24880]: Tue Mar  3 12:30:07 2020 -> bytecode.cvd is up to date (version: 331, sigs: 94, f-level: 63, builder: anvilleg)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 12:30:12 mail freshclam[24880]: Tue Mar  3 12:30:12 2020 -> Database updated (6769409 signatures) from db.local.clamav.net (IP: 104.16.219.84)
+
+# source: https://raw.githubusercontent.com/sepses/slogert/master/input/mail.onion.com/daemon.log (lines 3-10, 197-202; commit e529c17)
+# license: MIT (sepses/slogert)
+# note: priority added
+# want: _model=Other
+<30>Mar  3 12:30:12 mail freshclam[24880]: Tue Mar  3 12:30:12 2020 -> !NotifyClamd: Can't find or parse configuration file /etc/clamav/clamd.conf
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/ASIM/CrowdStrike_FalconHost_ASimNetworkSession_RawLogs.txt (line 21)
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added
+# want: _model=Malware
+# want: type=threat
+# want: action=blocked
+# want: signature=Disable or Modify Tools
+# want: dest=ABC123-456
+# want: dest_ip=190.160.10.50
+# want: user=ABC123-456$
+# want: file_path=\Device\HarddiskVolume3\Program Files (x86)\360\Total Security\safemon
+# want: category=behavior
+# want: vendor_product=CrowdStrike Falcon
+<14>Oct 13 09:14:02 cs-conn CEF:0|CrowdStrike|FalconHost|1.0|Network Access In A Detection Summary Event|Defense Evasion|4|externalId=bca17fc2f81241d8a7df1cb8dc0aefd5 cn2Label=ProcessId cn2=293768568327 dhost=ABC123-456 duser=ABC123-456$ fname=QHActiveDefense.exe filePath=\\Device\\HarddiskVolume3\\Program Files (x86)\\360\\Total Security\\safemon cs5Label=CommandLine cs5="C:\\Program Files (x86)\\360\\Total Security\\safemon\\QHActiveDefense.exe" dntdom=CDSYS c6a2=190.160.10.50 c6a3=100.20.10.100 spt=49841 dpt=80 cs6Label=FalconHostLink cs6=https://falcon.us-2.crowdstrike.com/activity/detections/detail/bca17fc2f81241d8a7df1cb8dc0aefd5/85900025250?_cid\=g04000yyzfxqmvbncadppr6yduthjuxy cn3Label=Offset cn3=25900 deviceCustomDate1Label=Network Access Timestamp deviceCustomDate1=Sep 03 2023 20:09:58 rt=1694082834000 src=190.160.10.50 smac=dc-21-48-5a-25-17 cat=Defense Evasion act=Disable or Modify Tools reason=Keep Access outcome=32768 CSMTRPatternDisposition=File system Operation Blocked
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/ASIM/CrowdStrike_FalconHost_ASimNetworkSession_RawLogs.txt (line 31)
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added
+# want: _model=Malware
+# want: type=threat
+# want: action=quarantined
+# want: signature=Adware/PUP
+# want: dest=ABC124-1254
+# want: dest_ip=172.20.10.170
+# want: user=user2.xyz
+# want: file_path=\Device\HarddiskVolume3\Windows
+# want: category=adware
+# want: vendor_product=CrowdStrike Falcon
+<14>Oct 13 09:14:02 cs-conn CEF:0|CrowdStrike|FalconHost|1.0|Network Access In A Detection Summary Event|Machine Learning|2|externalId=10f12551df934881819b5f640d8a3e20 cn2Label=ProcessId cn2=173701337145 dhost=ABC124-1254 duser=user2.xyz fname=explorer.exe filePath=\\Device\\HarddiskVolume3\\Windows cs5Label=CommandLine cs5=C:\\Windows\\Explorer.EXE dntdom=CDSYS c6a2=170.20.10.170 dst=20.200.240.80 spt=54053 dpt=443 cs6Label=FalconHostLink cs6=https://falcon.us-2.crowdstrike.com/activity/detections/detail/10f12551df934881819b5f640d8a3e20/68720751565?_cid\=g04000yyzfxqmvbncadppr6yduthjuxy cn3Label=Offset cn3=43424 deviceCustomDate1Label=Network Access Timestamp deviceCustomDate1=Sep 14 2023 11:00:41 rt=1694691155000 src=172.20.10.170 smac=a1-b2-65-3c-99-d4 cat=Machine Learning act=Adware/PUP reason=Falcon Detection Method outcome=128 CSMTRPatternDisposition=Detection/Quarantine, standard detection and quarantine was attempted.
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/ASIM/CrowdStrike_FalconHost_ASimNetworkSession_RawLogs.txt (line 1)
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added
+# want: _model=Other
+<14>Oct 13 09:14:02 cs-conn CEF:0|CrowdStrike|FalconHost|1.0|FirewallMatchEvent|Firewall Match event|1|cat=FirewallMatchEvent deviceId=2a611bc1add148e4a61eb0ecb8c33896 ipVLabel=IpV cmdLineLabel=Command Line cmdLine=System connectionDirectionLabel=Connection Direction connectionDirection=1 eventType=FirewallRuleIP4Matched hostName=ABC123-1230 icmpCodeLabel=ICMP Code icmpTypeLabel=ICMP Type imageFileNameLabel=Image File Name imageFileName=System localAddressLabel=Local Address localAddress=170.10.20.250 localPortLabel=Local Port localPort=138 matchCountLabel=Match Count matchCount=1 matchCountSinceLastReportLabel=Match Count Since Last Report networkProfileLabel=Network Profile networkProfile=ABC Windows Firewall Policy Dynamic Host Group PolicyNameLabel=Policy Name protocolLabel=Protocol protocol=17 remoteAddressLabel=Remote Address remoteAddress=170.15.10.240 remotePortLabel=Remote Port remotePort=138 ruleActionLabel=Rule Action ruleAction=2 ruleDescriptionLabel=Rule Description ruleDescription=NetBIOS/IP TCP 137-139 ruleGroupNameLabel=Rule Group Name ruleGroupName=ABC Windows Firewall Inbound Block Rules ruleNameLabel=Rule Name ruleName=NetBIOS/IP TCP 137-139 statusLabel=Status cn3Label=Offset cn3=29214 rt=1694428385000
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/ASIM/CrowdStrike_FalconHost_ASimAuditEvent_RawLogs.txt (line 16)
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added
+# want: _model=Other
+<14>Oct 13 09:14:02 cs-conn CEF:0|CrowdStrike|FalconHost|1.0|UserActivityAuditEvent|update_policy|1|cat=UserActivityAuditEvent destinationTranslatedAddress=160.110.200.140 duser=sanitized@sanitized.com deviceProcessName=device_control_policy cn3Label=Offset cn3=26133 rt=1694167560000
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@3401 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] ?<?xml version="1.0" encoding="UTF-8"?><EPOEvent><MachineInfo><MachineName>DESKTOP-00001</MachineName><AgentGUID>0011aacc-eeee-0000-0000-000011223311</AgentGUID><IPAddress>10.222.22.131</IPAddress><OSName>Windows 10 Server</OSName><UserName>%CTX_DOMAIN_USER%</UserName><TimeZoneBias>-330</TimeZoneBias><RawMACAddress>000011223311</RawMACAddress></MachineInfo><SoftwareInfo ProductName="McAfee Endpoint Security" ProductVersion="10.6.1.1607" ProductFamily="TVD"><CommonFields><Analyzer>ENDP_GS_1060</Analyzer><AnalyzerName>McAfee Endpoint Security</AnalyzerName><AnalyzerVersion>10.6.1.1607</AnalyzerVersion><AnalyzerHostName>DESKTOP-00001</AnalyzerHostName><AnalyzerDATVersion></AnalyzerDATVersion><AnalyzerEngineVersion></AnalyzerEngineVersion></CommonFields><Event><EventID>1120</EventID><Severity>0</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><CommonFields><AnalyzerDetectionMethod></AnalyzerDetectionMethod><ThreatName>_</ThreatName><ThreatType></ThreatType><ThreatCategory>ops.update</ThreatCategory><ThreatHandled>1</ThreatHandled><ThreatActionTaken>none</ThreatActionTaken><ThreatSeverity>6</ThreatSeverity></CommonFields></Event></SoftwareInfo></EPOEvent>
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@3401 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] ?<?xml version="1.0" encoding="UTF-8"?><EPOEvent><MachineInfo><MachineName>DESKTOP-00001</MachineName><AgentGUID>0011aacc-eeee-0000-0000-000011223311</AgentGUID><IPAddress>10.222.22.83</IPAddress><OSName>Windows 10 Server</OSName><UserName>%CTX_DOMAIN_USER%</UserName><TimeZoneBias>-330</TimeZoneBias><RawMACAddress>000011223311</RawMACAddress></MachineInfo><SoftwareInfo ProductName="McAfee Endpoint Security" ProductVersion="10.7.0.1285" ProductFamily="TVD"><CommonFields><Analyzer>ENDP_GS_1070</Analyzer><AnalyzerName>McAfee Endpoint Security</AnalyzerName><AnalyzerVersion>10.7.0.1285</AnalyzerVersion><AnalyzerHostName>DESKTOP-00001</AnalyzerHostName><AnalyzerDATVersion></AnalyzerDATVersion><AnalyzerEngineVersion></AnalyzerEngineVersion></CommonFields><Event><EventID>1118</EventID><Severity>0</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><CommonFields><AnalyzerDetectionMethod></AnalyzerDetectionMethod><ThreatName>_</ThreatName><ThreatType></ThreatType><ThreatCategory>ops.update.end</ThreatCategory><ThreatHandled>1</ThreatHandled><ThreatActionTaken>none</ThreatActionTaken><ThreatSeverity>6</ThreatSeverity></CommonFields></Event></SoftwareInfo></EPOEvent>
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@3401 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] ?<?xml version="1.0" encoding="UTF-8"?><EPOevent><MachineInfo><MachineName>DESKTOP-00001</MachineName><AgentGUID>0011aacc-eeee-0000-0000-000011223311</AgentGUID><IPAddress>10.222.22.45</IPAddress><OSName>Windows 10 Workstation</OSName><UserName>SYSTEM</UserName><TimeZoneBias>-330</TimeZoneBias><RawMACAddress>000011223311</RawMACAddress></MachineInfo><SoftwareInfo ProductName="McAfee Endpoint Security" ProductVersion="10.6.1" ProductFamily="TVD"><CommonFields><Analyzer>ENDP_WP_1060</Analyzer><AnalyzerName>McAfee Endpoint Security</AnalyzerName><AnalyzerVersion>10.6.1</AnalyzerVersion><AnalyzerHostName>DESKTOP-00001</AnalyzerHostName><AnalyzerDetectionMethod>URL navigation</AnalyzerDetectionMethod></CommonFields><Event><EventID>18600</EventID><Severity>3</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><CommonFields><ThreatCategory>wp.detect.url</ThreatCategory><ThreatEventID>18600</ThreatEventID><ThreatSeverity>2</ThreatSeverity><ThreatName>Web Control Violation</ThreatName><ThreatType>IDS_THREAT_TYPE_URL</ThreatType><DetectedUTC>2026-10-13T09:14:02ZZ</DetectedUTC><ThreatActionTaken>blocked</ThreatActionTaken><ThreatHandled>True</ThreatHandled><SourceIPV4>213.211.198.58</SourceIPV4><SourceURL>http://2222.aaaaa.org/download/eicarcom2.zip</SourceURL><SourceUserName>DESKTOP-00001\admin</SourceUserName><SourceProcessName>C:\Program Files\McAfee\Endpoint Security\Web Control\McChHost.exe</SourceProcessName><TargetUserName>DESKTOP-00001\admin</TargetUserName></CommonFields><CustomFields target="EPExtendedEventMT"><BladeName>IDS_BLADE_NAME_WP</BladeName><AnalyzerGTIQuery>True</AnalyzerGTIQuery><SourceProcessHash>03e33bcdd99853ea8c83407c3ab4599c</SourceProcessHash><SourceParentProcessName>C:\Program Files\Google\Chrome\Application\chrome.exe</SourceParentProcessName><SourceParentProcessHash>a1902e39f3a1610751b707a6742082c3</SourceParentProcessHash><SourceParentProcessSigned>True</SourceParentProcessSigned><SourceParentProcessSigner>Google LLC</SourceParentProcessSigner><SourceFileSize>0</SourceFileSize><SourceSigned>False</SourceSigned><SourceURLRatingCode>IDS_SECUIRTY_RATING_SA_RED</SourceURLRatingCode><SourceURLWebCategory>IDS_SAE_CONTENT_MS</SourceURLWebCategory><AttackVectorType>1</AttackVectorType><NaturalLangDescription>IDS_WC_NLD_URL_RATING|SourceURL=http://2222.aaaaa.org/download/eicarcom2.zip|SourceProcessName=C:\Program Files\McAfee\Endpoint Security\Web Control\McChHost.exe|SourceUserName=DESKTOP-00001\admin|ThreatActionTaken=blocked|AnalyzerName=McAfee Endpoint Security|SourceURLRatingCode=IDS_SECUIRTY_RATING_SA_RED</NaturalLangDescription></CustomFields><CustomFields target="WP_EventInfoMT"><EventTypeId>18600</EventTypeId><DomainName>2222.aaaaa.org</DomainName><URL>http://2222.aaaaa.org/download/eicarcom2.zip</URL><Count>1</Count><ObserverMode>0</ObserverMode><ActionID>4</ActionID><ReasonID>1</ReasonID><RatingID>3</RatingID><ListID>1</ListID><PhishingRatingID>4</PhishingRatingID><DownloadRatingID>3</DownloadRatingID><SpamRatingID>4</SpamRatingID><PopupRatingID>4</PopupRatingID><BadLinkRatingID>4</BadLinkRatingID><ExploitRatingID>4</ExploitRatingID><ContentID>130</ContentID><ContentCategories>00000100000000000000000011000000</ContentCategories></CustomFields></Event></SoftwareInfo></EPOevent>
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=EICAR test file
+# want: dest=DESKTOP-00001
+# want: dest_ip=10.222.22.131
+# want: user=DESKTOP-00001\admin123
+# want: file_path=C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\TEST_SAMPLES_MVS\Standard Test Set\eicar
+# want: category=test
+# want: vendor_product=McAfee Endpoint Security
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@3401 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] ?<?xml version="1.0" encoding="UTF-8"?><EPOevent><MachineInfo><MachineName>DESKTOP-00001</MachineName><AgentGUID>0011aacc-eeee-0000-0000-000011223311</AgentGUID><IPAddress>10.222.22.131</IPAddress><OSName>Windows 10 Server</OSName><UserName>SYSTEM</UserName><TimeZoneBias>-330</TimeZoneBias><RawMACAddress>000011223311</RawMACAddress></MachineInfo><SoftwareInfo ProductName="McAfee Endpoint Security" ProductVersion="10.6.1" ProductFamily="TVD"><CommonFields><Analyzer>ENDP_AM_1060</Analyzer><AnalyzerName>McAfee Endpoint Security</AnalyzerName><AnalyzerVersion>10.6.1</AnalyzerVersion><AnalyzerHostName>DESKTOP-00001</AnalyzerHostName><AnalyzerEngineVersion>6010.8670</AnalyzerEngineVersion><AnalyzerDetectionMethod>On-Access Scan</AnalyzerDetectionMethod><AnalyzerDATVersion>3811.0</AnalyzerDATVersion></CommonFields><Event><EventID>1278</EventID><Severity>3</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><CommonFields><ThreatCategory>av.detect</ThreatCategory><ThreatEventID>1278</ThreatEventID><ThreatSeverity>2</ThreatSeverity><ThreatName>EICAR test file</ThreatName><ThreatType>test</ThreatType><DetectedUTC>2026-10-13T09:14:02ZZ</DetectedUTC><ThreatActionTaken>IDS_ALERT_ACT_TAK_DEL</ThreatActionTaken><ThreatHandled>True</ThreatHandled><SourceHostName>DESKTOP-00001</SourceHostName><SourceProcessName>C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\Tops.exe</SourceProcessName><TargetHostName>DESKTOP-00001</TargetHostName><TargetUserName>DESKTOP-00001\admin123</TargetUserName><TargetFileName>C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\TEST_SAMPLES_MVS\Standard Test Set\eicar</TargetFileName></CommonFields><CustomFields target="EPExtendedEventMT"><BladeName>IDS_BLADE_NAME_SPB</BladeName><AnalyzerContentCreationDate>2019-08-25T02:22:00Z</AnalyzerContentCreationDate><AnalyzerGTIQuery>False</AnalyzerGTIQuery><ThreatDetectedOnCreation>True</ThreatDetectedOnCreation><TargetName>eicar</TargetName><TargetPath>C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\TEST_SAMPLES_MVS\Standard Test Set</TargetPath><TargetHash>e7e5fa40569514ec442bbdf755d89c2f</TargetHash><TargetFileSize>70</TargetFileSize><TargetModifyTime>2000-10-24T05:13:46Z</TargetModifyTime><TargetAccessTime>2019-08-26T05:32:39Z</TargetAccessTime><TargetCreateTime>2019-08-26T05:32:39Z</TargetCreateTime><Cleanable>False</Cleanable><TaskName>IDS_OAS_TASK_NAME</TaskName><FirstAttemptedAction>IDS_ALERT_THACT_ATT_CLE</FirstAttemptedAction><FirstActionStatus>False</FirstActionStatus><SecondAttemptedAction>IDS_ALERT_THACT_ATT_DEL</SecondAttemptedAction><SecondActionStatus>True</SecondActionStatus><AttackVectorType>4</AttackVectorType><DurationBeforeDetection>10</DurationBeforeDetection><NaturalLangDescription>IDS_NATURAL_LANG_OAS_DETECTION_DEL|TargetName=eicar|TargetPath=C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\TEST_SAMPLES_MVS\Standard Test Set|ThreatName=EICAR test file|SourceProcessName=C:\Users\admin123.WIN-QFN79SPC5U4.000\Desktop\Tops.exe|ThreatType=test|TargetUserName=DESKTOP-00001\admin123</NaturalLangDescription><AccessRequested></AccessRequested><DetectionMessage>IDS_OAS_DEFAULT_THREAT_MESSAGE</DetectionMessage><AMCoreContentVersion>3811.0</AMCoreContentVersion></CustomFields></Event></SoftwareInfo></EPOevent>
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@4444 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] <?xml version="1.0" encoding="utf-8"?><UpdateEvents><MachineInfo><AgentGUID>{0011aacc-eeee-0000-0000-000011223311}</AgentGUID><MachineName>THEMBP1</MachineName><RawMACAddress>000011223311</RawMACAddress><IPAddress>172.16.23.123</IPAddress><AgentVersion>1.1.1.103</AgentVersion><OSName>Windows 10</OSName><TimeZoneBias>240</TimeZoneBias><UserName></UserName></MachineInfo><McAfeeCommonUpdater ProductName="McAfee Agent" ProductVersion="1.0.0" ProductFamily="TVD"><UpdateEvent><EventID>2422</EventID><Severity>4</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><ProductID>POLICYAU6000</ProductID><Locale>0409</Locale><Error>59</Error><Type>Policy Enforcement</Type><Version>N/A</Version><InitiatorID>EPOAGENT3000</InitiatorID><InitiatorType>N/A</InitiatorType><SiteName>N/A</SiteName><Description>N/A</Description></UpdateEvent></McAfeeCommonUpdater></UpdateEvents>
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_mcafee_epo.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 EPOEvents - EventFwd [agentInfo@4444 tenantId="1" bpsId="1" tenantGUID="{00000000-0000-0000-0000-000000000000}" tenantNodePath="1\2"] <?xml version="1.0" encoding="utf-8"?><AssessmentResultEvent><MachineInfo><AgentGUID>{0011aacc-eeee-0000-0000-000011223311}</AgentGUID><MachineName>THEMBP1</MachineName><RawMACAddress>000011223311</RawMACAddress><IPAddress>172.16.23.123</IPAddress><AgentVersion>1.1.1.103</AgentVersion><OSName>Linux</OSName><TimeZoneBias>0</TimeZoneBias><UserName>GARY</UserName></MachineInfo><PhoenixEngine ProductName="Policy Auditor Vulnerability Assessment" ProductVersion="1.1.0" ProductFamily="Security" EngineVersion="1.1.0"><InventoryAssessmentResultInfo><EventID>18905</EventID><Severity>0</Severity><GMTTime>2026-10-13T09:14:02Z</GMTTime><ProductName>Policy Auditor Vulnerability Assessment</ProductName><ProductVersion>1.1.0</ProductVersion><ProductFamily>Security</ProductFamily><EngineVersion>0</EngineVersion><TaskId>20</TaskId><Result>eJx1jjELgzAUhPf+ipCpBYWoS+smOHYQHEuR1xjKK+YZzEupiP+9j+7d7o7vuNs0gXe61l2jmhgd qxYYVG+BCOmprkjpo45N1/UnnemUcBS4NKIZvYsMPvyC0uSmyouLKqramLo8C7G4mCYeeA2ysGkI YUILjDMN8+PlLEsTyS7OO2KY9J6JfYuel3UY5ce/1u2+74cvff89lg==</Result></InventoryAssessmentResultInfo></PhoenixEngine></AssessmentResultEvent>
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Tools/Syslog-cef-data-replicator/Sample%20Data/esetsyslograw.log (line 1)
+# license: MIT (Azure/Azure-Sentinel)
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Win32/WaveBrowser.A
+# want: dest=viq-showe
+# want: dest_ip=10.0.0.192
+# want: user=AzureAD\SusanRowe
+# want: file_path=C:\Users\SUSANR~1\AppData\Local\Temp\{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe
+# want: category=pua
+# want: vendor_product=ESET PROTECT
+<12>1 2022-04-12T14:21:47.166Z VIQESETNA-EC2 ERAServer 1296 - - ...{"event_type":"Threat_Event","ipv4":"10.0.0.192","hostname":"viq-showe","source_uuid":"67d8dcc8-725a-40a4-bd07-397648cab6d4","occured":"12-Apr-2022 14:21:01","severity":"Warning","threat_type":"Potentially unwanted application","threat_name":"Win32/WaveBrowser.A","scanner_id":"Real-time file system protection","scan_id":"virlog.dat","engine_version":"25094 (20220412)","object_type":"File","object_uri":"file:///C:/Users/SUSANR~1/AppData/Local/Temp/{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe","action_taken":"Cleaned by deleting","threat_handled":true,"need_restart":false,"username":"AzureAD\\SusanRowe","processname":"C:\\Users\\SusanRowe\\Wavesor Software\\SWUpdater\\SWUpdater.exe","circumstances":"Event occurred on a newly created file.","hash":"88E277D8BC756FF3BCCBBBB8E7BEA2B00B489756"}
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Tools/Syslog-cef-data-replicator/Sample%20Data/esetsyslograw.log (line 3)
+# license: MIT (Azure/Azure-Sentinel)
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Win32/WaveBrowser.A
+# want: dest=viq-showe
+# want: dest_ip=10.0.0.192
+# want: user=AzureAD\SusanRowe
+# want: file_path=C:\Users\SUSANR~1\AppData\Local\Temp\{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe\Script.nsi
+# want: category=pua
+# want: vendor_product=ESET PROTECT
+<12>1 2022-04-12T14:21:47.167Z VIQESETNA-EC2 ERAServer 1296 - - ...{"event_type":"Threat_Event","ipv4":"10.0.0.192","hostname":"viq-showe","source_uuid":"67d8dcc8-725a-40a4-bd07-397648cab6d4","occured":"12-Apr-2022 14:21:01","severity":"Warning","threat_type":"Potentially unwanted application","threat_name":"Win32/WaveBrowser.A","scanner_id":"Real-time file system protection","scan_id":"virlog.dat","engine_version":"25094 (20220412)","object_type":"File","object_uri":"file:///C:/Users/SUSANR~1/AppData/Local/Temp/{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe/Script.nsi","action_taken":"Cleaned by deleting","threat_handled":true,"need_restart":false,"username":"AzureAD\\SusanRowe","processname":"C:\\Users\\SusanRowe\\Wavesor Software\\SWUpdater\\SWUpdater.exe","circumstances":"Event occurred on a newly created file.","hash":"0177DCF7219627E8787C3470A096C76A40E9DA53"}
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Tools/Syslog-cef-data-replicator/Sample%20Data/esetsyslograw2.log (line 1)
+# license: MIT (Azure/Azure-Sentinel)
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Win32/WaveBrowser.A
+# want: dest=viq-showe
+# want: dest_ip=10.0.0.192
+# want: user=AzureAD\SusanRowe
+# want: file_path=C:\Users\SUSANR~1\AppData\Local\Temp\{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe
+# want: category=pua
+# want: vendor_product=ESET PROTECT
+<12>1 2022-04-12T14:21:47 VIQESETNA-EC2 ERAServer 1296 - - ...{"event_type":"Threat_Event","ipv4":"10.0.0.192","hostname":"viq-showe","source_uuid":"67d8dcc8-725a-40a4-bd07-397648cab6d4","occured":"12-Apr-2022 14:21:01","severity":"Warning","threat_type":"Potentially unwanted application","threat_name":"Win32/WaveBrowser.A","scanner_id":"Real-time file system protection","scan_id":"virlog.dat","engine_version":"25094 (20220412)","object_type":"File","object_uri":"file:///C:/Users/SUSANR~1/AppData/Local/Temp/{1E278041-6939-4D8B-8350-ABCC0FAC1F4E}-WaveInstaller-v1.1.6.1.exe","action_taken":"Cleaned by deleting","threat_handled":true,"need_restart":false,"username":"AzureAD\\SusanRowe","processname":"C:\\Users\\SusanRowe\\Wavesor Software\\SWUpdater\\SWUpdater.exe","circumstances":"Event occurred on a newly created file.","hash":"88E277D8BC756FF3BCCBBBB8E7BEA2B00B489756"}
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_kaspersky.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 KES|11.0.0.0 - GNRL_EV_APPLICATION_LAUNCH_DENIE [event@23668 p1="829fdcfa98cbcc63" p2="NT AUTHORITY\\SYSTEM" p3="00000000000000000000000000000000" p4="EAC00100000000000000000000000000" p5="{\"CertSerial\":\"\" ,\"CertThumbprint\":\"\" ,\"CertIssuer\":\"\" ,\"CertSubject\":\"\" ,\"ParentProcess\":\"\"}" p6="rm.bat" p7="C:\\Windows\\SysWOW64\\config\\systemprofile\\Citrix\\UpdaterBinaries\\rm.bat" p8=";DF4C7A695766C5592C6AAB9BD2D2EB87E0C73EAE9218955F61E507E564F26CFC" et="GNRL_EV_APPLICATION_LAUNCH_DENIED" tdn="Application Control" etdn="Application startup prohibited" hdn="WS11128" hip="10.21.203.17" gn="Bourbonnais Medical Plaza"] Event type: Application startup prohibited\r\nComment: At the next operating system restart, the prohibited process will be automatically blocked until Kaspersky Endpoint Security for Windows starts\r\nObject name: rm.bat\r\nPath to object: C:\Windows\SysWOW64\config\systemprofile\Citrix\UpdaterBinaries\rm.bat\r\nSHA256: df4c7a695766c5592c6aab9bd2d2eb87e0c73eae9218955f61e507e564f26cfc\r\nKL category: Uncategorized\r\nKL category source: Local databases\r\nUser: NT AUTHORITY\SYSTEM (Initiator)\r\nResult: Blocked\r\nRule category: Default Deny\r\nRule type: Not test
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_kaspersky.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<29>1 2026-10-13T09:14:02.000Z srv-01 CEF:0|KasperskyLab|SecurityCenter|13.2.0.1511|KLPRCI_TaskState|Completed successfully|1|rt=1647626887000 cs9=site location Bldg cs9Label=GroupName dhost=WS6465 dst=10.55.203.12 cs2=KES cs2Label=ProductName cs3=11.0.0.0 cs3Label=ProductVersion cs10=Uninstall EDR cs10Label=TaskName cs4=885 cs4Label=TaskId cn2=4 cn2Label=TaskNewState cn1=0 cn1Label=TaskOldState 
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Scr.MalMacro!gen2
+# want: dest=HOST747290
+# want: dest_ip=10.216.95.73
+# want: user=SYSTEM
+# want: file_path=C:\ProgramData\CC\DMStorage\DMShare\DAE725213,\Users\testuser35\OneDrive - ABC Company\Documents\DUTIES,552,OT\Duties\05.06\AUTOSAVE.XLA
+# want: category=virus
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Virus found,IP Address: 10.216.95.73,Computer name: HOST747290,Source: Scheduled scan,Risk name: Scr.MalMacro!gen2,Occurrences: 1,File path: "C:\ProgramData\CC\DMStorage\DMShare\DAE725213,\Users\testuser35\OneDrive - ABC Company\Documents\DUTIES,552,OT\Duties\05.06\AUTOSAVE.XLA",Description: ,Actual action: Cleaned by deletion,Requested action: Cleaned,Secondary action: Quarantined,Event time: 2020-12-15 16:02:44,Event Insert Time: 2020-12-15 16:04:01,End Time: 2020-12-15 16:02:45,Last update time: 2020-12-15 16:04:01,Domain Name: Default,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Desktops,Server Name: SERVER0007,User Name: SYSTEM,Source Computer Name: ,Source Computer IP: ,Disposition: Bad,Download site: ,Web domain: ,Downloaded by: ,Prevalence: Unknown,Confidence: There is not enough information about this file to recommend it.,URL Tracking Status: On,First Seen: Symantec has known about this file approximately 2 days.,Sensitivity: ,Permitted application reason: Not on the permitted application list,Application hash: 2409847DC8F46884B79AB4CF905632AF7853DCF915E42B1DB776E698C7CFA5AB,Hash type: SHA2,Company name: ,Application name: AUTOSAVE.XLA,Application version: ,Application type: 127,File size (bytes): 65536,Category set: Malware,Category type: Heuristic Virus,Location: ON NET,Intensive Protection Level: 0,Certificate issuer: ,Certificate signer: ,Certificate thumbprint: ,Signing timestamp: 0,Certificate serial number: 
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Scr.MalMacro!gen2
+# want: dest=HOST707386
+# want: dest_ip=192.132.126.158
+# want: user=SYSTEM
+# want: file_path=C:\ProgramData\CC\DMStorage\DMShare\DAE725213,\Users\testuser71\OneDrive - ABC Company\Documents\DUTY\Duties 06.07\AUTOSAVE.XLA
+# want: category=virus
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Virus found,IP Address: 192.132.126.158,Computer name: HOST707386,Source: Scheduled scan,Risk name: Scr.MalMacro!gen2,Occurrences: 1,File path: C:\ProgramData\CC\DMStorage\DMShare\DAE725213,\Users\testuser71\OneDrive - ABC Company\Documents\DUTY\Duties 06.07\AUTOSAVE.XLA,Description: ,Actual action: Cleaned by deletion,Requested action: Cleaned,Secondary action: Quarantined,Event time: 2020-12-15 16:02:46,Event Insert Time: 2020-12-15 16:04:01,End Time: 2020-12-15 16:02:47,Last update time: 2020-12-15 16:04:02,Domain Name: Default,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Desktops,Server Name: SERVER0007,User Name: SYSTEM,Source Computer Name: ,Source Computer IP: ,Disposition: Bad,Download site: ,Web domain: ,Downloaded by: ,Prevalence: Unknown,Confidence: There is not enough information about this file to recommend it.,URL Tracking Status: On,First Seen: Symantec has known about this file approximately 2 days.,Sensitivity: ,Permitted application reason: Not on the permitted application list,Application hash: BF6C746E5E2C79597846E40ECD743AC3E1B33B44CD0C2646BBBC33966AF6F2HOST707386,Hash type: SHA2,Company name: ,Application name: AUTOSAVE.XLA,Application version: ,Application type: 127,File size (bytes): 65536,Category set: Malware,Category type: Heuristic Virus,Location: ON NET,Intensive Protection Level: 0,Certificate issuer: ,Certificate signer: ,Certificate thumbprint: ,Signing timestamp: 0,Certificate serial number: 
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=threat
+# want: action=quarantined
+# want: signature=WS.Reputation.1
+# want: dest=HOST629814
+# want: dest_ip=10.115.102.88
+# want: user=testuser59
+# want: file_path=c:\Users\testuser2\simbaodbcdriverforgooglebigquery64_10.115.102.883.msi
+# want: category=other
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Security risk found,IP Address: 10.115.102.88,Computer name: HOST629814,Source: Auto-Protect scan,Risk name: WS.Reputation.1,Occurrences: 1,File path: c:\Users\testuser2\simbaodbcdriverforgooglebigquery64_10.115.102.883.msi,Description: ,Actual action: Quarantined,Requested action: Quarantined,Secondary action: Left alone,Event time: 2020-12-15 15:56:49,Event Insert Time: 2020-12-15 15:57:30,End Time: 2020-12-15 15:56:53,Last update time: 2020-12-15 15:57:30,Domain Name: Default,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Laptops,Server Name: SERVER0007,User Name: testuser59,Source Computer Name: ,Source Computer IP: ,Disposition: Good,Download site: https://storage.googleapis.com/simba-bq-release/odbc/SimbaODBCDriverforGoogleBigQuery64_10.115.102.883.msi,Web domain: storage.googleapis.com,Downloaded by: c:/windows/explorer.exe,Prevalence: Unknown,Confidence: There is growing evidence that this file is trustworthy.,URL Tracking Status: On,First Seen: Symantec has known about this file approximately 2 days.,Sensitivity: Low,Permitted application reason: Not on the permitted application list,Application hash: BEBBB940C012ACDB0919854FED7FD48DD8FF185975A08261968D62FF5C6A2HOST629814,Hash type: SHA2,Company name: ,Application name: simbaodbcdriverforgooglebigquery64_10.115.102.883.msi,Application version: ,Application type: 127,File size (bytes): 32583680,Category set: Malware,Category type: Insight Network Threat,Location: ON NET,Intensive Protection Level: 0,"Certificate issuer: Magnitude Software,Inc.",Certificate signer: DigiCert SHA2 Assured ID Code Signing CA,Certificate thumbprint: 1F7A4F7A3B2E5CEA9E3135C991ACD9997A541C03,Signing timestamp: 1606352066,Certificate serial number: 0F7AF657B2F8064757D91D8BBBBED4C1
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=health
+# want: action=update_failed
+# want: signature=Definitions update failed
+# want: dest=HOST124946
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST124946,Category: 2,LiveUpdate Manager,Event Description: The latest SONAR Definitions update failed to load. The component has no valid content and will not function correctly until it is updated.,Event time: 2020-12-15 16:04:28,Group Name: My Company\ABC - Production\Workstations - Production\Devices marked Disabled
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=health
+# want: action=update_failed
+# want: signature=Definitions update failed
+# want: dest=HOST315516
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST315516,Category: 2,LiveUpdate Manager,"Event Description: An update for Intrusion Prevention Signatures failed to install.  Error: Content patching failure (0xE0010005), DuResult: Success (0).",Event time: 2020-12-15 15:56:03,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Laptops
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Malware
+# want: type=health
+# want: action=update_failed
+# want: signature=Definitions update failed
+# want: dest=HOST114859
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST114859,Category: 0,CVE,Event Description: New content update failed to download from the management server.     Remote file path: https://10.216.191.30:443/content/{0A4513F4-5EC7-4ED2-B100-538C75C0D87A}/201214061/xdelta201214061_To_201214063.dax,Event time: 2020-12-15 16:11:55,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Laptops
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST395964,Category: 0,Smc,Event Description: Symantec Endpoint Protection is unable to download the newest policy from the management server.,Event time: 2020-12-15 16:13:29,Group Name: My Company\ABC - Production\Workstations - Production\Windows 10 Devices\Laptops
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: TEST_SITE,Server Name: SERVER0003,Domain Name: Default,The client has downloaded the content package successfully,abc.abcompany.com,testuser76,abc.abcompany.com
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST165249,172.224.56.130,Blocked,[AC9-1.1] Block access to autorun.inf - Caller MD5=47ea9e07b7dbfbeba368bd95a3a2d25b,File Read,Begin: 2020-12-15 15:18:17,End Time: 2020-12-15 15:18:17,Rule: Explorer | [AC9-1.1] Autorun.inf,21288,C:/Windows/explorer.exe,0,No Module Name,D:/autorun.inf,User Name: testuser60,Domain Name: ABC,Action Type: ,File size (bytes): 0,Device ID: USBSTOR\Disk&Ven_Kingston&Prod_DataTraveler_3.0&Rev_PMAP\60A44C3FAC7DE26099720C19&0
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST151032,"Event Description: Somebody is scanning your computer.  Your computer's TCP ports:   8443, 9990, 1311, 411 and 3202 have been scanned from 10.99.121.239.",Local Host IP: 10.99.121.239,Local Host MAC: 5065F3396BDF,Remote Host Name: ,Remote Host IP: 10.99.121.239,Remote Host MAC: E02F6D6710A0,Inbound,TCP,,Begin: 2020-12-15 16:21:32,End Time: 2020-12-15 16:21:41,Occurrences: 10,Application: ,Location: ON NET,User Name: testuser4,Domain Name: ABC,Local Port: 0,Remote Port: 0,CIDS Signature ID: 0,CIDS Signature string: ,CIDS Signature SubID: 0,Intrusion URL: ,Intrusion Payload URL: ,SHA-256: ,MD-5: 
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Sample%20Data/Syslog/SymantecEndpointProtection.json
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST446145,Event Description: [SID: 32626] Web Attack: Malicious Redirection 44 attack blocked. Traffic has been blocked for this application: C:,\Users\testuser69\APPDATA\LOCAL\GOOGLE\CHROME\APPLICATION\CHROME.EXE,Local Host IP: 172.98.27.99,Local Host MAC: 000000000000,Remote Host Name: ,Remote Host IP: 172.98.27.99,Remote Host MAC: 000000000000,Inbound,TCP,Intrusion ID: 0,Begin: 2020-12-15 23:09:29,End Time: 2020-12-15 23:09:29,Occurrences: 1,Application: C:/Users/testuser99/APPDATA/LOCAL/GOOGLE/CHROME/APPLICATION/CHROME.EXE,Location: ON NET,User Name: testuser,HOST446145,Domain Name: ABC,Local Port: 63907,Remote Port: 9400,CIDS Signature ID: 32626,CIDS Signature string: Web Attack: Malicious Redirection 44,CIDS Signature SubID: 72835,Intrusion URL: railroadtomato.com/mjek85vjb?shu=5e40b62b7d77b203322c6eb28dbbabe7ba212f8ff0f4230fc4c011db1c3e28b349a2c40cd5edb6a5c8758c50688bc9ff3ac44be734f2bed84c47b355633010159ba2ea66305026ba16133ab6056519786c8e0f6c&pst=1608073828&rmtc=t&uuid=58e2cf1e-2596-4a20-9f1d-edd947c1018b%3A1%3A1&pii=&in=false&key=485b2eb524b133c640cd9af6355eb44e&refer=https%3A%2F%2Fwww.cinebloom.org%2F%3F__cf_chl_captcha_tk__%3Df55a98179adc6f0a9ae377f1b9f93fd3bbd9dd11-1608073731-0-AVeI2lSDZYCAkv0768_xrd0HbSM40DMKy7tJJooy5Aiq__rlRECL91XK_W-4BQ0DgBc82x11N1R4uHtrtk5zaQp474vPAAJfenN3LusDKo-deeLcKq0ynh4RfJzyIRdVpAPJ2yTgwifedOkPcub5KE0z7SYDflIspR2isakUITJzJFIRUV_FYyCAdPK_WaUPQixdMUSeyTbXJSnMiyZIWBVHTxT2nD9PXBOqauHaZ21gyvvRl-8NiWJGa7PS67g5DIvHQBEPZ3-2IvlyOC7nlz_LURZvQoaDY55jPw6X_ngw-BG401AlENBHv4RKWY8Ccnl3MOfZnJJxOzJWuebre3i7RlgrWVCcz_g1hV1pnYxzjlYcoJM64LwDqHWMCfFB3dxbt8efwzcbH9m8-1pUansTCXcBKk1VupgYvfRR2pMYk9_DirUuLbngusymMcAJ3J7QmMLkCQoubUTxCTd6L0MgJUbbeNIjn0ptiAqUe9GM6qGyybV2Hmfn685ExIhaPzq-Jkemlza4uuSoD3BTCyoZo5FHxa9dGMIAYbXoLKgHTWcAmcKJjiOmJJCgB8rcWZXk5BrBwndAeGrxgzNgFpI&kw=%5B%22cinebloom%22%2C%22-%22%2C%22watch%22%2C%22stream%22%2C%22free%22%2C%22movies%22%2C%22online%22%5D&scrWidth=1920&scrHeight=1080&tz=0&v=20.7.v.1&res=7.31&dev=r&zht=88,Intrusion Payload 
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site xxxxx,Server Name: xxxxx,Domain Name: Default,The management server received the client log successfully,yyyyyyy,zzzzzzzz,host.domain.suffix
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site xxxxx,Server Name: xxxxx,Domain Name: Default,Client has downloaded the issued Command,yyyyyyy,zzzzzzzz,host.domain.suffix
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: yyyyyy,Category: 2,LiveUpdate Manager,Event Description: A LiveUpdate session ran successfully.  No new updates were available.,Event time: 2020-04-14 10:41:33,Group Name: My Company\Default Group
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site xxxxx-xxxxx,Server Name: xxxxx-xxxxx,Event Description: No updates found for Application Control Data 14.2 RU2.
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Scan ID: 1581582179,Begin: 2020-04-14 10:01:04,End Time: 2020-04-14 10:02:14,Completed,Duration (seconds): 70,User1: Spiderman,User2: Spiderman,Scan started on selected drives and folders and all extensions.,Scan Complete:  Risks: 0   Scanned: 1062   Files/Folders/Drives Omitted: 0 Trusted Files Skipped: 698,Command: Not a command scan (),Threats: 0,Infected: 0,Total files: 1062,Omitted: 0,Computer: yyyyyyy,IP Address: 1.1.1.1,Domain Name: Default,Group Name: My Company\Preprod Tuesday,Server Name: xxxxx-xxxxx
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: yyyyyy,...,Blocked,C:\Program Files (x86)\Symantec\Symantec Endpoint Protection\14.2.3335.1000.105\Bin\ccSvcHst.exe,,Begin: 2020-04-14 10:36:40,End Time: 2020-04-14 10:36:40,Rule: ,3248,C:\PROGRAM FILES (X86)\BIGFIX ENTERPRISE\BES CLIENT\BESCLIENT.EXE,0,,C:\Program Files (x86)\Symantec\Symantec Endpoint Protection\14.2.3335.1000.105\Bin\ccSvcHst.exe,User Name: SYSTEM,Domain Name: ,Action Type: 55,File size (bytes): ,Device ID: 
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site_B,Server Name: Example Server B,Domain Name: Domain_B,Admin: Admin_B,Event Description: Administrator log on failed
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: ccccc,Local Host IP: 10.0.8.1,Local Port: 50221,Remote Host IP: 10.0.1.2,Remote Host Name: qqqqq,Remote Port: 20362,Outbound,Application: C:/Windows/System32/example_y.exe,Action: Allowed
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Site: Site_B,Server Name: Example Server B,Domain Name: Domain_B,Admin: Admin_B,"Event Description: Policy has been edited: Changed Console mode at [Default]",Client Policy
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Malware
+# want: type=threat
+# want: action=allowed
+# want: signature=Trojan.Gen.2
+# want: dest=ooooo
+# want: dest_ip=10.0.0.2
+# want: user=user_b
+# want: category=trojan
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Potential risk found,Computer name: ooooo,IP Address: 10.0.0.2,Detection type: System Change HostFile,First Seen: Symantec has known about this file for more than 1 year.,Application name: Microsoft\xAE Windows\xAE Operating System,Application type: 127,Application version: 6.1.7600.16385,Hash type: SHA-256,Application hash: ded6fc40-4365-4ba0-8446-3fa77a30cb6e,Company name: KKK.,LLLL,MMMM,File size (bytes): 3507,Sensitivity: 2,Detection score: 3,COH Engine Version: ,Detection Submissions No,Permitted application reason: Not on the permitted application list,Disposition: Bad,Download site: http://attraction.example.org/,Web domain: tkhwesmptszdody.dm,Downloaded by: c:/users/administrator/desktop/tools/tools/xxxtools.exe,Prevalence: Unknown,Confidence: There is not enough information about this file to recommend it.,URL Tracking Status: on,Risk Level: High,Risk type: 3,Source: Heuristic Scan,Risk name: Trojan.Gen.2,Occurrences: 9,PolicyZZZ,Realtime deferred scanning,Actual action: Left alone,Requested action: Quarantined,Secondary action: Left alone,Event time: 2020-05-04 06:57:02,Inserted: 2020-05-04 06:57:02,End: 2020-05-04 06:57:02,Domain: Domain A,Group: My Company\Default Group,Server: Example Server C,User: user_b,Source computer: fffff,Source IP: 10.0.9.2,Intensive Protection Level: 0,Certificate issuer: Symantec,Certificate signer: Unizeto,Certificate thumbprint: e5:xx:74:3c:xx:01:c4:9b:xx:43:xx:bb:zz:e8:6a:81:10:9f:e4:xx,Signing timestamp: 0,Certificate serial number: 149843929435818692848040365716851702463
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: qqqqq,Event Description: "Web Attack: Fake Scan Webpage 7",Local Host IP: 10.0.3.4,Local Host MAC: c1411f5F9502,Remote Host Name: eeeee,Remote Host IP: 10.0.3.6,Remote Host MAC: aD31CCFD3eFF,Inbound,TCP,Intrusion ID: 1,Begin: 2020-05-06 09:06:09,End Time: 2020-05-06 09:06:09,Occurrences: 3,Application: C:/Windows/System32/example_x.exe,Location: Internal,User Name: user_h,Domain Name: CompanyXX,Local Port: 1991,Remote Port: 46926,CIDS Signature ID: 25198,CIDS Signature string: Web Attack: Fake Scan Webpage 7,CIDS Signature SubID: 25378,Intrusion URL: https://www.example.org/,Intrusion Payload URL: http://www.example.com/,SHA-256: 6d2fe32dc4249ef7e7359c6d874fffbbf335e832e49a2681236e1b686af78794,MD-5: 70270ca63a3de2d8905a9181a0245e58
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Malware
+# want: type=threat
+# want: action=quarantined
+# want: signature=Backdoor.Joggver
+# want: dest=qqqqq
+# want: dest_ip=10.0.3.1
+# want: user=user_h
+# want: file_path=e:\resharper 9.1 + keygen\resharper.8.x.keygen.exe
+# want: category=backdoor
+# want: vendor_product=Symantec Endpoint Protection
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: Security risk found,IP Address: 10.0.3.1,Computer name: qqqqq,Source: Definition downloader,Risk name: Backdoor.Joggver,Occurrences: 7,e:\resharper 9.1 + keygen\resharper.8.x.keygen.exe,"Still contains, 2 infected items",Actual action: Quarantined,Requested action: Process terminate pending restartLeft alone,Secondary action: Quarantined,Event time: 2020-05-06 08:29:27,Inserted: 2020-05-06 08:29:27,End: 2020-05-06 08:29:27,Last update time: 2020-05-06 08:29:27,Domain: SomeComp,Group: My Company\\Default Group,Server: Example Server C,User: user_h,Source computer: hhhhh,Source IP: 10.0.4.1,Disposition: Reputation was not used in this detection.,Download site: http://bbbb.example.com/,Web domain: gqtavlakkdkcryl.xn--pgbs0dh,Downloaded by: c:/program files (x86)/ggggg/cccc/application/cccc.exe,Prevalence: This file has been seen by fewer than 100 Symantec users.,Confidence: There is growing evidence that this file is trustworthy.,URL Tracking Status: off,First Seen: Reputation was not used in this detection.,Sensitivity: low,MDS,Application hash: 44d7fb7e-8c40-4a17-9aff-9c4aa0b96696,Hash type: SHA1,Company name: "Sample Inc. a wholly owned subsidiary of Dummy, Inc.",Application name: Setup Factory 7.0 Runtime,Application version: ,Application type: 127,File size (bytes): 1318,Category set: Security risk,Category type: UNKNOWN,Location: AZ - Office,Intensive Protection Level: 0,Certificate issuer: "Realtime deferred scanning",Certificate signer: Comodo,Certificate thumbprint: e5:xx:74:3c:xx:01:c4:9b:xx:43:xx:bb:zz:e8:6a:81:10:9f:e4:xx,Signing timestamp: 0,Certificate serial number: 903804111
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_symantec_ep.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: nnnnn,Local Host IP: 10.0.0.2,Local Port: 10456,Local Host MAC: B9e90F5c3aC4,Remote Host IP: 10.0.9.2,Remote Host Name: lllll,Remote Port: 58999,Remote Host MAC: 7b6A329f7c1e,others,Inbound,Begin: 2020-05-06 09:18:32,End: 2020-05-06 09:18:32,Occurrences: 8,Application: C:/Windows/System32/example_y.EXE,Rule: Block all other IP traffic and log,Location: Public Network,User: user_f,Domain: XXXXDOMAIN,Action: Blocked,SHA-256: d1616b874a96df2515da372a90bddc00792cbff027f5e097cafa31d3aea8b310,MD-5: 82136b4240d6ce4ea7d03e51469a393b
+
+# source: https://raw.githubusercontent.com/Azure/Azure-Sentinel/master/Tools/Syslog-cef-data-replicator/Sample%20Data/SymantecEndpointProtectionRaw.log (line 218)
+# license: MIT (Azure/Azure-Sentinel)
+# note: syslog header added; the source keeps only the message
+# want: _model=Other
+<13>Oct 13 09:14:02 sepm-01 SymantecServer: HOST467565,10.146.185.22,Blocked,[AC9-1.1] Block access to autorun.inf - Caller MD5=47ea9e07b7dbfbeba368bd95a3a2d25b,File Read,Begin: 2020-12-15 15:17:45,End Time: 2020-12-15 15:18:18,Rule: Explorer | [AC9-1.1] Autorun.inf,33904,C:/Windows/explorer.exe,0,No Module Name,D:/autorun.inf,User Name: testuser,HOST467565,Domain Name: ABC,Action Type: ,File size (bytes): 0,Device ID: USBSTOR\Disk&Ven_Kingston&Prod_DataTraveler_3.0&Rev_PMAP\60A44C3FAC7DE26099720C19&0
+
+# source: https://raw.githubusercontent.com/sophos/Sophos-Central-SIEM-Integration/master/tests/unit/test_siem.py
+# license: Apache-2.0 (sophos/Sophos-Central-SIEM-Integration)
+# want: _model=Other
+CEF:0|sophos|sophos central|1.0|NA|NA|8|type=Event::TestEndpoint::TestSuccess suser=suser end=end
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Manager|0.0.0|600|User Signed In|3|src=10.52.116.160 suser=admin target=admin msg=User signed in from 2001:db8::5
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Malware
+# want: type=threat
+# want: action=deleted
+# want: signature=Eicar_test_file
+# want: dest=dsm-01
+# want: file_path=C:\Users\trend\Desktop\eicar.exe
+# want: category=test
+# want: vendor_product=Trend Micro Deep Security
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|4000000|Eicar_test_file|6|cn1=1 cn1Label=Host ID dvchost=dsm-01 cn2=205 cn2Label=Quarantine File Size cs6=ContainerImageName | ContainerName | ContainerID cs6Label=Container filePath=C:\Users\trend\Desktop\eicar.exe act=Delete msg=Realtime TrendMicroDsMalwareTarget=N/A TrendMicroDsMalwareTargetType=N/TrendMicroDsFileMD5=44D88612FEA8A8F36DE82E1278ABB02F TrendMicroDsFileSHA1=3395856CE81F2B7382DEE72602F798B642F14140 TrendMicroDsFileSHA256=275A021BBFB6489E54D471899F7DB9D1663FC695EC2FE2A2C4538AABF651FD0F TrendMicroDsDetectionConfidence=95 TrendMicroDsRelevantDetectionNames=Ransom_CERBER.BZC;Ransom_CERBER.C;Ransom_CRYPNISCA.SM
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<111>Oct 13 09:14:02 dsm-01 CEF: 0|Trend Micro|Deep Security Agent|10.2.229|6001200|AppControl detectOnly|6|cn1=202 cn1Label=Host ID dvc=192.168.33.128 TrendMicroDsTenant=Primary TrendMicroDsTenantId=0 fileHash=80D4AC182F97D2AB48EE4310AC51DA5974167C596D133D64A83107B9069745E0 suser=root suid=0 act=detectOnly filePath=/home/user1/Desktop/Directory1//heartbeatSync.sh fsize=20 aggregationType=0 repeatCount=1 cs1=notWhitelisted cs1Label=actionReason cs2=0CC9713BA896193A527213D9C94892D41797EB7C cs2Label=sha1 cs3=7EA8EF10BEB2E9876D4D7F7E5A46CF8D cs3Label=md5
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Network_Traffic
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|20|Log for TCP Port 80|0|cn1=1 cn1Label=Host ID dvc=hostname act=Log dmac=00:50:56:F5:7F:47 smac=00:0C:29:EB:35:DE TrendMicroDsFrameType=IP src=192.168.126.150 dst=72.14.204.147 out=1019 cs3=DF MF cs3Label=Fragmentation Bits proto=TCP spt=49617 dpt=80 cs2=0x00 ACK PSH cs2Label=TCP Flags cnt=1
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|30|New Integrity Monitoring Rule|6|cn1=1 cn1Label=Host ID dvchost=dsm-01 act=updated filePath=c:\windows\message.dll suser=admin msg=lastModified,sha1,size
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Network_Traffic
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|1001111|Test Intrusion Prevention Rule|3|cn1=1 cn1Label=Host ID dvchost=dsm-01 dmac=00:50:56:F5:7F:47 smac=00:0C:29:EB:35:DE TrendMicroDsFrameType=IP src=192.168.126.150 dst=72.14.204.105 out=1093 cs3=DF MF cs3Label=Fragmentation Bits proto=TCP spt=49786 dpt=80 cs2=0x00 ACK PSH cs2Label=TCP Flags cnt=1 act=IDS:Reset cn3=10 cn3Label=Intrusion Prevention Packet Position cs5=10 cs5Label=Intrusion Prevention Stream Position cs6=8 cs6Label=Intrusion Prevention Flags
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|3002795|Microsoft Windows Events|8|cn1=1 cn1Label=Host ID dvchost=dsm-01 cs1Label=LI Description cs1=Multiple Windows Logon Failures fname=Security src=127.0.0.1 duser=(no user) shost=WIN-RM6HM42G65V msg=WinEvtLog Security: AUDIT_FAILURE(4625): Microsoft-Windows-Security-Auditing: (no user): no domain: WIN-RM6HM42G65V: An account failed to log on
+
+# source: https://raw.githubusercontent.com/splunk/splunk-connect-for-syslog/main/tests/test_trend_deep_security.py
+# license: BSD-2-Clause (splunk/splunk-connect-for-syslog test fixture)
+# note: template rendered with a priority, time and host
+# want: _model=Other
+<111>Oct 13 09:14:02 dsm-01 CEF:0|Trend Micro|Deep Security Agent|<DSA version>|5000000|WebReputation|5|cn1=1 cn1Label=Host ID dvchost=dsm-01 request=example.com msg=Blocked By Admin

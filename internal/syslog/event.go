@@ -75,6 +75,8 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 		}
 		ev = ingest.Event{Model: model, Fields: f}
 	}
+	var rec avRecord
+	kf := map[string]any{}
 	switch {
 	case m.CEF != nil:
 		f := map[string]any{"app": app}
@@ -91,6 +93,11 @@ func (m *Message) Event(sender netip.Addr, received time.Time, maxAge time.Durat
 		if agent, _ := ev.Fields["host"].(string); agent != "" {
 			host = truncate(agent, maxHostLen)
 		}
+	case esetThreat(m.Text, &rec):
+		structured(map[string]any{"app": app, "sourcetype": "eset:protect"}, time.Time{}, rec)
+	case kasperskyThreat(m, &rec, kf):
+		kf["app"], kf["sourcetype"] = app, "kaspersky:syslog"
+		structured(kf, time.Time{}, rec)
 	case isSuricata(m.Text, &suricata, &ev):
 		// Suricata's EVE output over syslog (pfSense, OPNsense, any box
 		// that can only send syslog): the event has its own time, and
