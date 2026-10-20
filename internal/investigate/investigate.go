@@ -650,7 +650,7 @@ Rules:
 - Base every claim on the data shown, and cite the step numbers it came from. Say "unsure" when the data is thin or points both ways.
 - Values like masked-user-1 stand in for values that are hidden from you. Use them as they are in queries; never guess the real value.
 - Suggest response actions only when the verdict is real, only from the list given, and only on a user, host or address the data shows; leave "actions" empty otherwise. A person reviews and runs them.
-- Your searches may use search, where, stats, timechart, top, sort, head, table, dedup and fields. A masked field can be matched only with = or != and one of its stand-ins, and counted with count or dc.
+- Your searches may use search, where, stats, timechart, top, sort, head, table, dedup and fields. A masked field can be matched only with = or != and one of its stand-ins, and counted with count or dc. Regular expressions are not allowed; a wildcard pattern needs at least 3 characters between wildcards, free text needs words of at least 3 characters, < and > work on numbers and _time only, and where may use only len, lower, upper, trim, like, in, cidrmatch, if, case, coalesce, isnull, isnotnull and arithmetic. A search with a value that could match a masked value, in any field, is refused.
 - Keep the timeline to the events that matter, in time order, at most %d entries.
 - Plain language for a busy analyst. No markdown.
 

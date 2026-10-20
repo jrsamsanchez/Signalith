@@ -92,12 +92,26 @@ can do:
 - The model has no tools of its own. Its searches are read-only and limited to `search`,
   `where`, `stats`, `timechart`, `top`, `sort`, `head`, `table`, `dedup` and `fields`. A
   masked field, and the event text `_raw`, can be matched only with `=` or `!=` and one of
-  its stand-ins, and counted with `count` or `dc`. Free text must be whole words, with no
-  wildcards, and cannot follow a command. So a search cannot copy a masked value into
-  another column (`eval`, `rename`, `values()`, `timechart ... by`) or test guesses
-  against it one character at a time (wildcards, regular expressions, `like()`). A search
-  that does not parse is not run either. A refused search shows on the page with the
-  reason, and goes in the audit log.
+  its stand-ins, and counted with `count` or `dc`. Free text must be whole words of at
+  least three characters, with no wildcards, and cannot follow a command. So a search
+  cannot copy a masked value into another column (`eval`, `rename`, `values()`,
+  `timechart ... by`).
+- The same value is often kept under other names too (`user` and `TargetUserName`, or the
+  `message` text), so the masked values themselves are guarded on every field: a value,
+  wildcard pattern or free-text word that equals, holds or lies inside a masked value seen
+  so far is refused, whatever field it names (`TargetUserName=adm*` or `administrator`
+  when `user` is masked). Regular expressions (`=~`, `match()`) are not allowed at all, a
+  wildcard pattern needs at least three characters between wildcards, `<` and `>` work
+  only on numbers and `_time` (and not at all while a masked value is a number), a
+  network such as `10.0.0.0/8` cannot be matched while a masked value is an address, and
+  `where` may use only functions that do not take a value apart (`len`, `lower`, `like`,
+  `in`, `if`, `coalesce` and the like). A refusal does tell the model that something it
+  wrote matches a masked value, so it can still confirm a guess of a whole value, or of
+  three characters of one, a few searches at a time; it cannot spell a value out one
+  character at a time. Mask every field that holds a sensitive value, or use a model on
+  your own network, when that matters.
+- A search that does not parse is not run either. A refused search shows on the page with
+  the reason, and goes in the audit log.
 - The model may suggest only containment actions (blocking an address, isolating a host,
   disabling a user), never one that undoes containment or a workflow that takes any
   target. Each must act on a user, host or address that the finding or Signalith's own

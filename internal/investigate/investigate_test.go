@@ -336,6 +336,96 @@ func TestGuardQuery(t *testing.T) {
 	}
 }
 
+// TestGuardMaskedValuesOnAliases: the same value is often kept under
+// other names (TargetUserName, src_user, the message text), so a masked
+// value cannot be guessed, or spelled out a character at a time, through
+// a field that is not masked, or through free text.
+func TestGuardMaskedValuesOnAliases(t *testing.T) {
+	m := NewMasker([]string{"user"})
+	m.Value("user", "Administrator")
+	m.Value("password", "hunter22")
+	for src, ok := range map[string]bool{
+		// Guesses of the whole value, under another name or as free text.
+		`TargetUserName=administrator`:                        false,
+		`TargetUserName=ADMINISTRATOR | stats count`:          false,
+		`src_user IN (bob, administrator)`:                    false,
+		`message="logon by administrator"`:                    false,
+		`administrator`:                                       false,
+		`administrator | stats count by src`:                  false,
+		`hunter22`:                                            false,
+		`* | where TargetUserName="Administrator"`:            false,
+		`* | where in(TargetUserName, "x1", "administrator")`: false,
+		// Prefixes, substrings and wildcards that match the value.
+		`TargetUserName=adm*`:                    false,
+		`TargetUserName=*strat*`:                 false,
+		`TargetUserName=?????????????`:           false,
+		`TargetUserName=a*`:                      false,
+		`TargetUserName=x*`:                      false, // too short, whatever the value
+		`message=*logon*admin*`:                  false,
+		`admin`:                                  false,
+		`adm`:                                    false,
+		`ad`:                                     false,
+		`* | where like(TargetUserName, "adm%")`: false,
+		`* | where TargetUserName LIKE "%nis%"`:  false,
+		`* | where like(TargetUserName, "a%")`:   false,
+		// Ways around wildcards: regular expressions, ranges on text,
+		// functions that take a value apart.
+		`TargetUserName=~"^adm"`:                                    false,
+		`message=~"zzz"`:                                            false,
+		`TargetUserName>"am"`:                                       false,
+		`* | where TargetUserName < "am"`:                           false,
+		`* | where substr(TargetUserName, 1, 1) = "a"`:              false,
+		`* | where match(TargetUserName, "^a")`:                     false,
+		`* | where tonumber(substr(TargetUserName, 1, 1), 36) = 10`: false,
+		`* | where substr(TargetUserName, 1, 3) = "adm"`:            false,
+		// The stand-in works on any field, and other values still do.
+		`TargetUserName=masked-user-1 | stats count by src`: true,
+		`masked-user-1 | stats count by host`:               true,
+		`TargetUserName=bob`:                                true,
+		`process=*powershell*`:                              true,
+		`src=10.1.*`:                                        true,
+		`dest_ip=10.0.0.0/8`:                                true,
+		`bytes>1000`:                                        true,
+		`* | where len(process) > 200 AND like(process, "%mimikatz%")`: true,
+		`mimikatz`: true,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		err = guardQuery(q, m)
+		if (err == nil) != ok {
+			t.Errorf("%s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
+		}
+		if err != nil && strings.Contains(strings.ToLower(err.Error()), "masked-user-1") && !strings.Contains(err.Error(), "such as masked-user-1") {
+			t.Errorf("%s: the refusal names the stand-in: %v", src, err)
+		}
+	}
+
+	// A masked address: networks could halve their way to it.
+	m2 := NewMasker([]string{"src", "uid"})
+	m2.Value("src", "10.9.8.7")
+	m2.Value("uid", "1001")
+	for src, ok := range map[string]bool{
+		`dest_ip=10.0.0.0/8`:             false,
+		`dest_ip=10.9.8.7`:               false,
+		`dest_ip=10.9.8.8`:               true,
+		`* | where account_id > 1000`:    false,
+		`dest_port>1000`:                 false,
+		`_time>"2026-01-01"`:             true,
+		`dest_ip=masked-src-1`:           true,
+		`* | where dest_ip = "10.9.8.7"`: false,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if err := guardQuery(q, m2); (err == nil) != ok {
+			t.Errorf("masked src: %s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
+		}
+	}
+}
+
 // TestGuardFailsClosed: a query that only parses once its stand-ins are
 // replaced is not run, and the one that runs is the one checked.
 func TestGuardFailsClosed(t *testing.T) {
