@@ -293,6 +293,9 @@ func packThrottle(category, datamodel string) []string {
 	case "windefend":
 		// A Defender event: which one, and the threat, file or setting.
 		return []string{"host", "signature_id", "signature", "file_path", "setting"}
+	case "antivirus":
+		// An antivirus alert: the threat and the file it was found in.
+		return []string{"host", "signature", "file_path"}
 	case "application", "code_integrity":
 		// An Application or Code Integrity event: which program logged
 		// which one.
