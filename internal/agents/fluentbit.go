@@ -259,8 +259,8 @@ func sensorOptions(o *Options) error {
 // is sent as it is and Signalith decodes it, so no parsers file is
 // needed. Lines up to 500 KB are read and longer ones skipped: each line
 // travels as a JSON string, where escaping can double its size, and
-// Signalith refuses a whole request holding a record over 1 MB, which
-// Fluent Bit would then retry for ever.
+// Signalith refuses a whole request holding a record over 1 MB, and
+// Fluent Bit drops a batch Signalith refuses.
 func sensorInput(tag, path, db string, extra ...[2]string) string {
 	kv := [][2]string{{"Name", "tail"}, {"Tag", tag}, {"Path", path}}
 	kv = append(kv, extra...)
@@ -909,17 +909,29 @@ func Generate(o Options) (*Agent, error) {
 	if o.Recycle > 0 {
 		out = append(out, [2]string{"net.keepalive_max_recycle", strconv.Itoa(o.Recycle)})
 	}
+	// While Signalith cannot be reached the buffer grows on disk, and
+	// Fluent Bit sets it no limit. Past the cap the oldest data is
+	// dropped rather than filling the disk: 1 GB holds days of a typical
+	// server's logs and hours of a busy domain controller's, and a sensor, which
+	// sends far more than a host, gets 4 GB. Below the cap batches are
+	// retried until Signalith is back, so a short outage loses nothing.
+	limit := hostBufferLimit
 	if sensor {
-		// A sensor sends far more than a host. While Signalith cannot be
-		// reached its buffer grows on disk; past 4 GB the oldest data is
-		// dropped rather than filling the disk Zeek and Suricata log to.
-		out = append(out, [2]string{"storage.total_limit_size", "4G"})
+		limit = sensorBufferLimit
 	}
+	out = append(out, [2]string{"storage.total_limit_size", limit})
 	out = append(out, [2]string{"Retry_Limit", "False"})
 	b.WriteString(section("OUTPUT", out))
 	a.Config = b.String()
 	return a, nil
 }
+
+// The most a host's and a sensor's Fluent Bit keep on disk for Signalith
+// while it cannot be reached.
+const (
+	hostBufferLimit   = "1G"
+	sensorBufferLimit = "4G"
+)
 
 // verifyName returns the name an agent sending to host checks the
 // server's certificate against: host itself when it is a name; for an IP

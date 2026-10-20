@@ -37,12 +37,14 @@ Everyone in these roles uses multi-factor authentication for GitHub.
 
 ## Privacy
 
-Signalith does not send information to other networked systems unless you set it up to.
-It only connects to the systems you configure: your OpenSearch, the agents and devices
-that send it data, threat intel feeds you add, notification channels you add, an AI
-provider if you turn on the assistant (only the question is sent), directory servers
-for sign-in, and, if you choose **Daily** content updates (the default is **Manual**),
-the project's GitHub releases to check for newer detection rules. There is no telemetry.
+Signalith sends nothing to the Signalith project: there is no telemetry. It connects to
+the systems you configure (your OpenSearch, agents, threat intel feeds, notification
+channels, an AI provider, directory servers) and, by default, to one public download:
+the iptoasn.com IP database for behavior baselines, which can be turned off or replaced
+with a local file. Vulnerability scans add CISA's KEV catalog, EPSS scores and NVD CVE
+lookups, and **Daily** content updates (the default is **Manual**) check the project's
+GitHub releases. [Outbound connections](outbound.md) lists every host, and
+[Where your data goes](data-residency.md) what each feature sends.
 
 ## Reporting a problem
 

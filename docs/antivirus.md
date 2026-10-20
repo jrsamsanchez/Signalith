@@ -7,7 +7,7 @@ out of date). Every antivirus event goes into the **Malware** data model
 (`datamodel=Malware`, kept in the `<index_prefix>-malware-YYYY.MM.DD`
 indices and listed as **Malware** on the Data retention page). The built-in
 [Malware dashboard](#the-malware-dashboard) shows it at a glance, and
-[eight built-in detections](#detections) raise findings for malware that
+[ten built-in detections](#detections) raise findings for malware that
 was not removed, outbreaks across several hosts, ransomware, and antivirus
 being turned off or given exclusions.
 

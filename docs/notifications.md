@@ -360,7 +360,8 @@ A finding:
     "risk_score": null,
     "created": "2026-10-13T09:14:51Z",
     "link": "https://siem.example.com/#findings",
-    "sample": false
+    "sample": false,
+    "credit": ""
   }
 }
 ```
@@ -378,6 +379,7 @@ A finding:
 | `finding.risk_score` | A number for findings of risk detections, else `null` |
 | `finding.link` | `server.public_url` + `/#findings`, or empty when that is not set |
 | `finding.sample` | `true` for a finding from sample data |
+| `finding.credit` | For a rule from a content pack, its author and licence, as in `Rule by Florian Roth, from SigmaHQ community rules (DRL-1.1, ...)`; empty for built-in rules. Email, Slack and Teams messages show it as a line of their own. |
 
 A flood guard summary:
 
