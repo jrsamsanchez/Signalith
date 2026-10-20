@@ -112,8 +112,11 @@ in part) are left out. National laws that transpose NIS2 can add to it; check yo
   names, sometimes email addresses. These controls check how Signalith itself treats
   them: access limited to named accounts with roles (Article 5(1)(f)), two-step sign-in
   and limited access by default (Article 25), encryption in transit and of the secrets
-  it keeps, its own audit trail of who did what (Article 5(2)), and event data deleted
-  after a set time rather than kept forever (Article 5(1)(e)). Set the retention to what
+  it keeps, its own audit trail of who did what (Article 5(2)), and events, findings and
+  investigations deleted after a set time rather than kept forever (Article 5(1)(e)). A
+  data type with its own longer policy, resolved findings or closed investigations kept
+  forever, and archive files (which Signalith keeps until you delete them) make that
+  control partial. Set the retention to what
   your purposes and legal duties need: NIS2, PCI DSS and your own incident handling may
   call for a year, while data protection asks for no longer than needed.
 - **Security of processing and breaches** for your other systems: Article 32 (encryption,

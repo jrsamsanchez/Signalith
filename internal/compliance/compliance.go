@@ -289,6 +289,10 @@ type Retention struct {
 	Guard     bool
 	// Shorter names the data categories with their own, shorter policy.
 	Shorter []string
+	// Longer names the event categories with their own policy that keeps
+	// data longer than the default, and findings and investigations when
+	// they are kept forever, with how long.
+	Longer []string
 }
 
 // Users counts who can sign in to Signalith.

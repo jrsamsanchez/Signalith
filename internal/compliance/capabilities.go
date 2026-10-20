@@ -228,8 +228,8 @@ var capabilities = []Capability{
 		Fix:         "Keep event data 365 days, or turn on archiving, on Settings > Data retention.",
 		eval:        func(s *Snapshot, _ *controlCtx) (Status, string) { return evalRetention(s, 365, true) }},
 	{ID: "retention-limit", Name: "Logs are deleted when no longer needed", Page: "retention",
-		Description: "Event data, which holds personal data such as user names and addresses, is deleted after a set time instead of kept forever.",
-		Fix:         "Set how many days event data is kept on Settings > Data retention, as long as your purposes and legal duties need and no longer.",
+		Description: "Event data, findings and investigations, which hold personal data such as user names and addresses, are deleted after a set time instead of kept forever.",
+		Fix:         "On Settings > Data retention, set how many days events, findings and investigations are kept: as long as your purposes and legal duties need, and no longer. Delete archive files on the same schedule.",
 		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
 			r := s.Retention
 			switch {
@@ -238,11 +238,16 @@ var capabilities = []Capability{
 			case r.KeepDays == 0:
 				return Missing, "Event data is kept until it is deleted by hand."
 			}
-			d := fmt.Sprintf("Event data is deleted after %d days.", r.KeepDays)
-			if r.Archive {
-				d += " It is archived first: delete archive files on the same schedule your retention policy sets."
+			st, d := Met, fmt.Sprintf("Event data is deleted after %d days.", r.KeepDays)
+			if len(r.Longer) > 0 {
+				st = Partial
+				d += fmt.Sprintf(" Some data is kept longer: %s.", strings.Join(r.Longer, ", "))
 			}
-			return Met, d
+			if r.Archive {
+				st = Partial
+				d += " It is archived first, and archive files are kept until you delete them."
+			}
+			return st, d
 		}},
 	{ID: "storage-guard", Name: "Log storage capacity", Page: "retention",
 		Description: "The disk guard deletes the oldest data before the disk fills, so new events keep arriving.",
