@@ -27,6 +27,7 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
 
 | Try it | |
 | --- | --- |
+| In your browser, nothing to install | [demo.signalith.io](https://demo.signalith.io), a read-only demo with the sample data |
 | On your own computer, with Docker | [Quick start](#docker-evaluation), two commands after `git clone` |
 | With made-up data that has attacks hidden in it | [Sample data](#try-it-with-sample-data), one click |
 | On a Linux or Windows server | [Linux](#linux), [Windows](#windows), [Kubernetes](#kubernetes-helm) |
