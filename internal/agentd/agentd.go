@@ -65,6 +65,10 @@ type Agent struct {
 	// osqueryRun is the flags osquery runs with, "" when it runs none.
 	osqueryRun string
 	started    time.Time
+	// refusals counts the server's refusals of the token in a row, and
+	// idle is whether the collectors are stopped for them.
+	refusals int
+	idle     bool
 
 	// updateTried is when the agent last tried to get each version ready.
 	updateTried map[string]time.Time
@@ -81,6 +85,17 @@ type Agent struct {
 
 // maxConfigBytes caps the configuration the agent reads.
 const maxConfigBytes = 4 << 20
+
+// refusedStop is how many refusals of the token in a row stop the
+// collectors: Fluent Bit would otherwise read and drop every event, since
+// it does not send again a batch Signalith refused. Stopped, they keep
+// their place in each log and carry on from it once the token is
+// accepted again.
+const refusedStop = 3
+
+// errTokenRefused is a server's answer that it revoked or does not know
+// the agent's token.
+var errTokenRefused = errors.New("Signalith refused this computer's token")
 
 // retry is the shortest pause before asking the server again after a
 // failure; it doubles up to the poll interval.
@@ -162,14 +177,21 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-time.After(wait):
 		}
 		if err := a.sync(ctx); err != nil {
-			a.Log.Warn("could not get the configuration; the one in use keeps running", "err", err)
-			a.setConfigErr(err.Error())
+			a.refused(errors.Is(err, errTokenRefused))
+			if a.idle {
+				a.Log.Warn("Signalith refuses this computer's token; the collectors stay stopped until it is accepted", "err", err)
+				a.setConfigErr(err.Error() + "; collectors stopped until it is accepted")
+			} else {
+				a.Log.Warn("could not get the configuration; the one in use keeps running", "err", err)
+				a.setConfigErr(err.Error())
+			}
 			if wait < retry {
 				wait = retry
 			} else {
 				wait = min(wait*2, poll)
 			}
 		} else {
+			a.refused(false)
 			a.setConfigErr("")
 			a.mu.Lock()
 			poll = time.Duration(agentPoll(a.cfg)) * time.Second
@@ -213,6 +235,42 @@ func (a *Agent) reportSoon() {
 	select {
 	case a.report <- struct{}{}:
 	default:
+	}
+}
+
+// refused counts a refusal of the token, or (no) an answer that was not
+// one, and stops or starts the collectors to match.
+func (a *Agent) refused(yes bool) {
+	if !yes {
+		a.refusals = 0
+		if a.idle {
+			a.idle = false
+			a.Log.Info("Signalith accepts this computer's token again; the collectors start")
+			a.mu.Lock()
+			cfg := a.cfg
+			a.mu.Unlock()
+			if cfg != nil {
+				if err := a.writeOsquery(cfg); err != nil {
+					a.Log.Warn("osquery's flags", "err", err)
+				}
+				a.osqueryRun = ""
+				a.runFluentBit(cfg)
+				a.runOsquery(cfg)
+			}
+		}
+		return
+	}
+	a.refusals++
+	if a.refusals >= refusedStop && !a.idle {
+		a.idle = true
+		a.fluentBit.set(nil)
+		// On Linux osquery is a service of its own, which runs only
+		// while its flags file is there.
+		if err := os.Remove(a.Paths.osqueryFlags()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			a.Log.Warn("removing osquery's flags", "err", err)
+		}
+		a.osqueryRun = ""
+		a.osquery.set(nil)
 	}
 }
 
@@ -310,6 +368,8 @@ func (a *Agent) sync(ctx context.Context) error {
 	case http.StatusNotModified:
 		return nil
 	case http.StatusOK:
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%w: %w", errTokenRefused, serverError(resp))
 	default:
 		return serverError(resp)
 	}
@@ -359,8 +419,12 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	a.cfg = cfg
 	a.mu.Unlock()
 	a.Log.Info("applied a new configuration", "revision", cfg.Revision)
-	a.runFluentBit(cfg)
-	a.runOsquery(cfg)
+	if !a.idle {
+		// Stopped for refusals, the collectors start with it once
+		// the answer is counted (see refused).
+		a.runFluentBit(cfg)
+		a.runOsquery(cfg)
+	}
 	return nil
 }
 
@@ -531,7 +595,6 @@ func (a *Agent) sendStatus(ctx context.Context) {
 	a.mu.Lock()
 	a.reported = ok
 	a.mu.Unlock()
-	_ = writeFile(a.Paths.StatusFile(), b, 0o600)
 	cfg := "ok"
 	if st.ConfigError != "" {
 		cfg = oneLine(st.ConfigError)
@@ -551,7 +614,11 @@ func (a *Agent) sendStatus(ctx context.Context) {
 		health += c.Name + "=" + line + "\n"
 	}
 	health += "reported=" + rep + "\n"
+	// The health file first: the updater takes a new status.json as
+	// this run's, then reads the health file for whether it reached
+	// Signalith (see Updater.reported).
 	_ = writeFile(a.Paths.HealthFile(), []byte(health), 0o644)
+	_ = writeFile(a.Paths.StatusFile(), b, 0o600)
 }
 
 // oneLine keeps the first line of s.
