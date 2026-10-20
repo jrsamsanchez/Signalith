@@ -1448,8 +1448,9 @@ syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 In a lab, one Signalith server with 2 CPU cores and two 8-core OpenSearch nodes stored
 events at a rate of about 21,500 a second (about 1 TB a day) in 4-hour runs on two days
 in a row, with no late
-detections and searches answered in under a second
-([sizing](https://signalith.io/docs/performance/#lab-sizes)).
+detections and searches answered in under a second. Three 2-core Signalith servers stored
+all 25,000 events a second offered for 4 hours with 1,520 detections running and none
+late ([sizing](https://signalith.io/docs/performance/#lab-sizes)).
 
 ## Building
 

@@ -36,10 +36,9 @@ program with the web UI built in.
   itself, has no host-side active response and runs on no other platforms.
 - **No full packet capture.** The [network sensor](network-sensor.md) runs Zeek and
   Suricata, but does not keep packets.
-- **Lab sizing covers one server so far.** One 2-core Signalith server stored about
-  21,500 events a second in two 4-hour lab runs
-  ([performance](performance.md#lab-sizes)); ingest numbers for several servers are
-  still to come.
+- **Lab sizing covers 4-hour runs so far.** One 2-core Signalith server stored about
+  21,500 events a second, and three stored 25,000 a second
+  ([performance](performance.md#lab-sizes)); runs longer than a day are still to come.
 - **The Windows installer is not code-signed yet** ([code signing policy](code-signing.md)).
 
 ## At a glance
