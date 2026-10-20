@@ -23,8 +23,8 @@ server picked, if one is) was changed or removed; see [Tamper evidence](#tamper-
 
 Events hold personal data such as user names and addresses, so reading them is audited
 like changing a setting. Each search run from the Search page, the API, an API token or
-the MCP server, each dashboard run, each panel preview, each notebook search and each look at a field's top values writes a
-line with:
+the MCP server, each dashboard run, each panel preview, each notebook search, each search
+added to an investigation and each look at a field's top values writes a line with:
 
 - who ran it (`by`), their tenant, how they signed in (`method`: session, basic or token,
   and `token_id`) and from which address (`client`);
@@ -38,8 +38,10 @@ Searches Signalith runs on its own (scheduled detections, summaries, the Complia
 are not logged as a person's search. Pick **Searches** under actions on the Audit page to
 see only these lines.
 
-The query text can hold what someone looked for, such as a user name, so these lines are
-kept like every other audit line: only admins see them, and they are chained and signed.
+The query text can itself hold personal data or a secret someone typed, such as a user
+name or a password they searched for, so these lines are kept like every other audit line:
+only the provider's admins see them (tenant admins do not), they are chained and signed,
+and the **Audit records** retention policy decides how long they are kept.
 
 ## How the lines are kept
 
