@@ -186,6 +186,9 @@ type prevCaps struct {
 	sharedUsers   bool
 	// yieldNewer: its leader hands the jobs to a newer version.
 	yieldNewer bool
+	// spread: it runs the detection buckets assigned to it, so it can
+	// share them with this commit.
+	spread bool
 }
 
 // detectCaps reads what s, which runs the previous release, can do.
@@ -202,8 +205,9 @@ func detectCaps(t *testing.T, b upgradeBins, s *testServer) prevCaps {
 	c.sharedUsers = c.level >= shared.LevelSharedUsers
 	if hb, ok := s.h.heartbeat(s.name); ok {
 		c.yieldNewer = slices.Contains(hb.Features, cluster.FeatureYieldNewer)
+		c.spread = slices.Contains(hb.Features, cluster.FeatureDetectionSpread)
 	}
-	t.Logf("prev %s: level %d, version header %v, upgrade-check %v, shared users %v, yield newer %v", b.prevVersion, c.level, c.versionHeader, c.upgradeCheck, c.sharedUsers, c.yieldNewer)
+	t.Logf("prev %s: level %d, version header %v, upgrade-check %v, shared users %v, yield newer %v, spread %v", b.prevVersion, c.level, c.versionHeader, c.upgradeCheck, c.sharedUsers, c.yieldNewer, c.spread)
 	return c
 }
 
