@@ -24,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/risk"
 	"github.com/jrsamsanchez/signalith/internal/sample"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/vulnscan"
 )
 
 const sampleUsage = `usage:
@@ -157,6 +158,7 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		Bulk:     cl,
 		OS:       cl,
 		Intel:    indicators,
+		Vulns:    vulnscan.NewStore(cl, c.OpenSearch.IndexPrefix),
 		Assets:   lists,
 		Library:  lib,
 		Engine:   eng,

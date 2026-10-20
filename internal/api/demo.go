@@ -20,11 +20,12 @@ import (
 // Demo mode (demo.enabled; see docs/demo.md) makes the server a public,
 // read-only demo. It is decided here, in a few central places:
 //
-//   - Visitors sign in with one click (demoRoute) as a built-in viewer
+//   - Visitors sign in with one click (demoRoute) as a built-in analyst
 //     that has no password and no account: its sessions are kept in this
 //     server's memory only, apart from the users' sessions, and are short.
-//     demoMayUse allows such a session only the routes a viewer may use
-//     that only read.
+//     demoMayUse allows such a session only the routes a viewer or an
+//     analyst may use that only read, so the analysts' pages show but
+//     nothing changes. The admins' pages stay hidden.
 //   - Password sign-in (the sign-in page, HTTP Basic and API tokens) works
 //     only from demo.admin_networks (demoAdminClient).
 //   - Of the routes that work without signing in, only signing in and out
@@ -62,12 +63,14 @@ const (
 // demoPublicRoutes are the routes of publicRoutes that work in demo mode.
 var demoPublicRoutes = []string{"POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem", demoRoute}
 
-// demoReads are the routes for viewers that only read although they are
-// not GET: running a search, a dashboard or a notebook (a viewer's run is
-// not saved).
+// demoReads are the routes for viewers and analysts that only read
+// although they are not GET: running a search, a dashboard or a notebook
+// (a viewer's run is not saved), and turning a question into a search
+// (Ask, offline only in demo mode).
 var demoReads = []string{
 	"POST /api/search", "POST /api/explain", "POST /api/build", "POST /api/parse",
 	"POST /api/dashboards/{id}/run", "POST /api/panels/run", "POST /api/notebooks/{id}/run",
+	"POST /api/ask",
 }
 
 // demoOffRoute is a route path (after /api/) demo mode refuses to
@@ -86,7 +89,7 @@ type demoOffRoute struct {
 var demoOffRoutes = []demoOffRoute{
 	{path: "investigate"}, {path: "findings/{id}/investigate"},
 	{path: "notify"}, {path: "respond"}, {path: "playbooks"}, {path: "chat"},
-	{path: "ticketing"}, {path: "cases/{id}/tickets"}, {path: "vulns"},
+	{path: "ticketing"}, {path: "cases/{id}/tickets"}, {path: "vulns", writes: true},
 	{path: "intel/feeds", writes: true}, {path: "intel/catalog", writes: true}, {path: "intel/taxii"},
 	{path: "auth/oidc"}, {path: "auth/saml"}, {path: "auth/scim"}, {path: "auth/directory", writes: true},
 	{path: "settings/test"}, {path: "tenants", writes: true},
@@ -108,9 +111,10 @@ func (s *Server) demoSessions() *auth.Sessions {
 	return s.demoSess
 }
 
-// demoPrincipal is the demo's visitor: a viewer.
+// demoPrincipal is the demo's visitor: an analyst, so every page an
+// analyst has shows, but one who only reads (demoMayUse).
 func demoPrincipal() *principal {
-	return &principal{Username: demoUser, Name: "Demo visitor", Role: users.Viewer, Source: sourceDemo}
+	return &principal{Username: demoUser, Name: "Demo visitor", Role: users.Analyst, Source: sourceDemo}
 }
 
 // demoVisitor returns the visitor whose session cookie r carries, or nil.
@@ -153,9 +157,9 @@ func (s *Server) demoAdminClient(r *http.Request) bool {
 }
 
 // demoMayUse reports whether the demo's visitor may use route rt: one for
-// viewers that only reads, and asks for no password again.
+// viewers or analysts that only reads, and asks for no password again.
 func demoMayUse(rt route, r *http.Request) bool {
-	if rt.Role != users.Viewer || rt.Recheck {
+	if (rt.Role != users.Viewer && rt.Role != users.Analyst) || rt.Recheck || rt.Unclassified {
 		return false
 	}
 	return r.Method == http.MethodGet || r.Method == http.MethodHead || slices.Contains(demoReads, rt.Pattern)

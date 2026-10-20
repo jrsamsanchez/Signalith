@@ -61,13 +61,13 @@ func demoVisit(t *testing.T, ts *httptest.Server) *http.Cookie {
 	return nil
 }
 
-// Visitors sign in with one click, with no password, as a viewer that is
+// Visitors sign in with one click, with no password, as an analyst that is
 // marked as the demo's.
-func TestDemoVisitorSignsInAsAViewer(t *testing.T) {
+func TestDemoVisitorSignsInAsAnAnalyst(t *testing.T) {
 	ts, s := newDemoServer(t)
 	c := demoVisit(t, ts)
 	code, me, _ := call(t, ts, "GET", "/api/me", "", "", "", c)
-	if code != http.StatusOK || me["role"] != string(users.Viewer) || me["demo"] != true || me["source"] != sourceDemo ||
+	if code != http.StatusOK || me["role"] != string(users.Analyst) || me["demo"] != true || me["source"] != sourceDemo ||
 		me["can_change_password"] != false || me["username"] != demoUser {
 		t.Fatalf("the visitor's /api/me = %d %v", code, me)
 	}
@@ -89,8 +89,8 @@ func TestDemoVisitorSignsInAsAViewer(t *testing.T) {
 	}
 }
 
-// The visitor reaches only the routes for viewers that only read: no
-// analyst or admin route, and nothing that changes anything, its own
+// The visitor reaches only the routes for viewers and analysts that only
+// read: no admin route, and nothing that changes anything, its own
 // password, two-step sign-in, passkeys, API tokens and setup guide
 // included.
 func TestDemoVisitorOnlyReads(t *testing.T) {
@@ -103,8 +103,9 @@ func TestDemoVisitorOnlyReads(t *testing.T) {
 		path = wildcard.ReplaceAllString(path, "x")
 		code, body, raw := call(t, ts, method, path, "{}", "", "", c)
 		refused := code == http.StatusForbidden && (body["code"] == "demo_read_only" || body["code"] == "demo_off")
-		readOnly := rt.Role == users.Viewer && !rt.Recheck &&
-			(method == http.MethodGet || method == http.MethodHead || slices.Contains(demoReads, rt.Pattern))
+		readOnly := (rt.Role == users.Viewer || rt.Role == users.Analyst) && !rt.Recheck && !rt.Unclassified &&
+			(method == http.MethodGet || method == http.MethodHead || slices.Contains(demoReads, rt.Pattern)) &&
+			!demoOff(rt, method)
 		if refused == readOnly {
 			t.Errorf("visitor %s: status %d, refused=%v, want refused=%v (%s)", rt.Pattern, code, refused, !readOnly, raw)
 		}
@@ -119,11 +120,22 @@ func TestDemoVisitorOnlyReads(t *testing.T) {
 		"POST /api/me/password", "POST /api/me/mfa/setup", "POST /api/me/passkeys/options", "POST /api/api-tokens",
 		"PUT /api/me/setup", "POST /api/chat/link", "POST /api/cases", "PATCH /api/findings/x", "POST /api/sample/load",
 		"PUT /api/settings", "POST /api/users", "POST /api/agent-tokens", "POST /api/tenants/switch",
+		"GET /api/settings", "GET /api/users", "GET /api/audit", "POST /api/vulns/networks/x/scan", "POST /api/notebooks",
 	} {
 		method, path, _ := strings.Cut(p, " ")
 		if code, body, _ := call(t, ts, method, path, "{}", "", "", c); code != http.StatusForbidden {
 			t.Errorf("visitor %s = %d %v, want 403", p, code, body)
 		}
+	}
+	// The analysts' pages read: Vulnerabilities, Endpoints and Ask.
+	for _, p := range []string{"GET /api/vulns", "GET /api/endpoints"} {
+		method, path, _ := strings.Cut(p, " ")
+		if code, body, _ := call(t, ts, method, path, "", "", "", c); code == http.StatusForbidden || code == http.StatusUnauthorized {
+			t.Errorf("visitor %s = %d %v", p, code, body)
+		}
+	}
+	if code, body, _ := call(t, ts, "POST", "/api/ask", `{"question":"failed logins today"}`, "", "", c); code != http.StatusOK {
+		t.Errorf("visitor Ask = %d %v", code, body)
 	}
 	// Searching works.
 	if code, body, _ := call(t, ts, "POST", "/api/search", `{"query":"*"}`, "", "", c); code == http.StatusForbidden || code == http.StatusUnauthorized {
