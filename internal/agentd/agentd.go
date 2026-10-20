@@ -392,7 +392,31 @@ func (a *Agent) sync(ctx context.Context) error {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return fmt.Errorf("the configuration is not valid JSON: %w", err)
 	}
+	cfg.Revision = a.revisionOf(b, &cfg)
 	return a.apply(&cfg, resp.TLS)
+}
+
+// revisionOf is the revision the agent keeps for cfg, read from b: the
+// server's claim only when it holds, never taken on its word, since a
+// stale or forged one could make the agent skip a configuration or
+// report one it doesn't run. The claim holds when it is the sum of the
+// bytes received (RawRevision), which counts fields this agent doesn't
+// know yet, or how an older server summed it (LegacyRevisionOf). Either
+// way the agent sends back what the server's ETag holds, so it doesn't
+// fetch the whole configuration again on every poll. Otherwise the
+// agent keeps its own sum of the bytes.
+func (a *Agent) revisionOf(b []byte, cfg *agentproto.Config) string {
+	raw, ok := agentproto.RawRevision(b)
+	if cfg.Revision != "" && (ok && raw == cfg.Revision || agentproto.LegacyRevisionOf(*cfg) == cfg.Revision) {
+		return cfg.Revision
+	}
+	if !ok {
+		raw = agentproto.RevisionOf(*cfg)
+	}
+	if cfg.Revision != "" {
+		a.Log.Warn("the configuration's revision doesn't match what it holds; the agent's own is kept", "claimed", cfg.Revision, "revision", raw)
+	}
+	return raw
 }
 
 // apply puts a new configuration in place: the certificate authority, then
@@ -400,15 +424,6 @@ func (a *Agent) sync(ctx context.Context) error {
 // itself, and restarts Fluent Bit (and osquery, when its flags changed)
 // with it.
 func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
-	// The revision is the agent's own sum of what it got, never the one
-	// the server claims: a stale or forged claim could otherwise make the
-	// agent skip a configuration, or keep reporting one it doesn't run.
-	if rev := agentproto.RevisionOf(*cfg); cfg.Revision != rev {
-		if cfg.Revision != "" {
-			a.Log.Warn("the configuration's revision doesn't match what it holds; the agent's own is kept", "claimed", cfg.Revision, "revision", rev)
-		}
-		cfg.Revision = rev
-	}
 	a.mu.Lock()
 	same := a.cfg != nil && a.cfg.Revision == cfg.Revision && cfg.Revision != ""
 	a.mu.Unlock()
@@ -508,7 +523,6 @@ func (a *Agent) loadConfig() (*agentproto.Config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return nil, err
 	}
-	cfg.Revision = agentproto.RevisionOf(cfg)
 	return &cfg, nil
 }
 

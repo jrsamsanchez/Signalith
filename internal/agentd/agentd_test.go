@@ -469,31 +469,92 @@ func TestSwVersName(t *testing.T) {
 	}
 }
 
-// The agent names a configuration by its own sum of what it got, never
-// by the revision the server claims, and reports the fingerprints of the
+// The agent keeps the server's revision only when it holds over the
+// bytes it got: one with a field this agent doesn't know is kept, so the
+// next poll is a 304, not the whole configuration again; a forged one is
+// replaced by the agent's own sum. It reports the fingerprints of the
 // certificate authorities it trusts.
 func TestAgentRecomputesRevision(t *testing.T) {
-	a := syncAgent(t, "http://127.0.0.1:1")
-	cfg := agentproto.Config{PollSeconds: 300}
-	want := agentproto.RevisionOf(cfg)
-	cfg.Revision = "0000000000000000000000000000dead"
-	if err := a.apply(&cfg, nil); err != nil {
-		t.Fatal(err)
+	var mu sync.Mutex
+	var body []byte
+	var etag string
+	full := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		full++
+		w.Header().Set("ETag", etag)
+		w.Write(body)
+	}))
+	defer srv.Close()
+	serve := func(b []byte, claim string) {
+		mu.Lock()
+		body, etag, full = b, `"`+claim+`"`, 0
+		mu.Unlock()
 	}
-	if st := a.Status(); st.Revision != want {
-		t.Fatalf("revision %q, want %q", st.Revision, want)
+	a := syncAgent(t, srv.URL)
+	ctx := context.Background()
+
+	// A newer server: a field this agent doesn't know, summed over what
+	// it sends.
+	newer := []byte(`{"revision":"","poll_seconds":300,"future":{"x":[1,2]},"fluentbit":{"config":"a & <b>"}}` + "\n")
+	rev, ok := agentproto.RawRevision(newer)
+	if !ok {
+		t.Fatal("no revision in the newer configuration")
 	}
-	kept, err := a.loadConfig()
-	if err != nil || kept.Revision != want {
+	newer = []byte(strings.Replace(string(newer), `"revision":""`, `"revision":"`+rev+`"`, 1))
+	serve(newer, rev)
+	for range 3 {
+		if err := a.sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := a.Status(); st.Revision != rev {
+		t.Fatalf("revision %q, want the server's %q", st.Revision, rev)
+	}
+	if kept, err := a.loadConfig(); err != nil || kept.Revision != rev {
 		t.Fatalf("kept %+v %v", kept, err)
 	}
-	// Another configuration that claims the revision in use is applied.
-	other := agentproto.Config{PollSeconds: 60, Revision: want}
-	if err := a.apply(&other, nil); err != nil {
+	mu.Lock()
+	if full != 1 {
+		t.Errorf("fetched the whole configuration %d times", full)
+	}
+	mu.Unlock()
+
+	// An older server summed json.Marshal, which escapes & while what it
+	// sent doesn't.
+	cfg := agentproto.Config{PollSeconds: 120, FluentBit: &agentproto.FluentBit{Config: "x & y"}}
+	legacy := agentproto.LegacyRevisionOf(cfg)
+	cfg.Revision = legacy
+	serve(agentproto.Encode(cfg), legacy)
+	for range 2 {
+		if err := a.sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := a.Status(); st.Revision != legacy {
+		t.Fatalf("older server: revision %q, want %q", st.Revision, legacy)
+	}
+	mu.Lock()
+	if full != 1 {
+		t.Errorf("older server: fetched the whole configuration %d times", full)
+	}
+	mu.Unlock()
+
+	// A forged claim: the agent's own sum, and a configuration claiming
+	// the revision in use is still applied.
+	forged := agentproto.Config{PollSeconds: 60, Revision: legacy}
+	serve(agentproto.Encode(forged), legacy+"x")
+	if err := a.sync(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st := a.Status(); st.Revision != agentproto.RevisionOf(other) || st.Revision == want {
-		t.Fatalf("a claimed revision skipped a new configuration: %q", st.Revision)
+	own := agentproto.RevisionOf(forged)
+	if st := a.Status(); st.Revision != own || st.Revision == legacy {
+		t.Fatalf("forged: revision %q, want %q", st.Revision, own)
 	}
 
 	if st := a.Status(); len(st.CAs) != 0 {

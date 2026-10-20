@@ -139,8 +139,7 @@ func TestRunWithDefaults(t *testing.T) {
 	if !strings.Contains(s.query[0], "sysmon=true") || !strings.Contains(s.query[0], "osquery=true") {
 		t.Errorf("query %q", s.query[0])
 	}
-	// Named by the agent's own sum of it, not the revision it was kept with.
-	if a.Status().Revision != agentproto.RevisionOf(agentproto.Config{Osquery: &agentproto.Osquery{Flags: "--utc\n"}}) {
+	if a.Status().Revision != "r1" {
 		t.Errorf("the kept configuration is not in use: %+v", a.Status())
 	}
 }
@@ -209,7 +208,7 @@ func TestSyncFailures(t *testing.T) {
 	}
 	// The same revision again is not applied again.
 	os.Remove(a.Paths.configFile())
-	if err := a.apply(&agentproto.Config{Revision: "r1"}, nil); err != nil {
+	if err := a.apply(&agentproto.Config{Revision: a.Status().Revision}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.Paths.configFile()); err == nil {

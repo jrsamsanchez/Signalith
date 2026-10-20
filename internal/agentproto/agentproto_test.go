@@ -4,6 +4,8 @@
 package agentproto
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -102,6 +104,38 @@ func TestCleanCAs(t *testing.T) {
 	for _, c := range out.CAs {
 		if len(c) != 64 {
 			t.Errorf("kept %q", c)
+		}
+	}
+}
+
+// RawRevision over what the server sends is RevisionOf, with <, > and &
+// in it, however the bytes are spaced; anything but one object with one
+// top-level revision string has none.
+func TestRawRevision(t *testing.T) {
+	c := Config{PollSeconds: 300, CA: "-----BEGIN CERTIFICATE-----\nx\n", FluentBit: &FluentBit{Config: "a & <b> \"revision\":\"z\""},
+		Osquery: &Osquery{Flags: "--utc\n"}}
+	c.Revision = RevisionOf(c)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(c); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := RawRevision(buf.Bytes()); !ok || got != c.Revision {
+		t.Errorf("as the server sends it: %q %v, want %q", got, ok, c.Revision)
+	}
+	// The value's place doesn't matter, nor a field this side doesn't know.
+	moved := []byte(`{"poll_seconds":1,"later":[{"revision":"n"}],"revision" : "abc"}`)
+	blank := []byte(`{"poll_seconds":1,"later":[{"revision":"n"}],"revision":""}`)
+	if got, ok := RawRevision(moved); !ok || got != revisionSum(blank) {
+		t.Errorf("moved: %q %v", got, ok)
+	}
+	if LegacyRevisionOf(c) == RevisionOf(c) {
+		t.Error("the legacy sum ignored the escaping of &")
+	}
+	for _, bad := range []string{``, `[]`, `{"poll_seconds":1}`, `{"revision":1}`, `{"revision":"a","revision":"b"}`, `{"revision":"a"} {}`, `{"revision":"a"`} {
+		if _, ok := RawRevision([]byte(bad)); ok {
+			t.Errorf("%q has a revision", bad)
 		}
 	}
 }
