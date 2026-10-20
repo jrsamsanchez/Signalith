@@ -360,7 +360,8 @@ func TestWriteErrorFiveHundreds(t *testing.T) {
 		{"500 of our own", 500, errUser("this server cannot read its own program"), "this server cannot read its own program", "ref"},
 		{"context kept", 500, errHidden("could not save the settings file", pathErr), "could not save the settings file (ref ", "master.key"},
 		{"busy", 503, fmt.Errorf("search: %w", search.ErrBusy), search.ErrBusy.Error(), "ref"},
-		{"the AI model's answer", 502, &assistant.APIError{Status: 401, StatusText: "401 Unauthorized", Message: "bad key"}, "the AI model returned 401 Unauthorized: bad key", "ref"},
+		{"the AI model's answer", 502, &assistant.APIError{Status: 401, StatusText: "401 Unauthorized", Message: "bad key", Parsed: true}, "the AI model returned 401 Unauthorized: bad key", "ref"},
+		{"a page in its place", 502, &assistant.APIError{Status: 502, StatusText: "502 Bad Gateway", Message: "<html>proxy.internal.example</html>"}, "(ref ", "proxy.internal"},
 		{"a 4xx is shown", 400, errors.New("title is required"), "title is required", "ref"},
 	} {
 		var logs logBuffer
@@ -377,6 +378,15 @@ func TestWriteErrorFiveHundreds(t *testing.T) {
 		if ref, _ := out["ref"].(string); ref != "" && !strings.Contains(logs.String(), "ref="+ref) {
 			t.Errorf("%s: not logged with its reference: %s", c.name, logs.String())
 		}
+	}
+
+	// What is logged has its secrets hidden.
+	var logs logBuffer
+	s := &Server{Log: slog.New(slog.NewTextHandler(&logs, nil))}
+	err := fmt.Errorf("saving password=Hunter22 for https://svc:Pa55@db.internal/x: %w", pathErr)
+	writeError(s.withErrorLog(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/x", nil)), 500, err)
+	if l := logs.String(); strings.Contains(l, "Hunter22") || strings.Contains(l, "Pa55") || !strings.Contains(l, "db.internal") || !strings.Contains(l, "master.key") {
+		t.Errorf("logged %s", l)
 	}
 }
 

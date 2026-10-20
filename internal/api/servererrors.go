@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -80,10 +81,11 @@ func shownAsIs(status int, err error) (string, bool) {
 	if errors.As(err, &ue) {
 		return ue.msg, true
 	}
-	// The AI model's own answer (a wrong key, an unknown model) says
-	// nothing about this server.
+	// The AI model's own error message (a wrong key, an unknown model)
+	// says nothing about this server. Raw text in its place may be a
+	// proxy's page, so that is logged instead.
 	var ae *assistant.APIError
-	if errors.As(err, &ae) {
+	if errors.As(err, &ae) && ae.Parsed {
 		return ae.Error(), true
 	}
 	for _, e := range []error{search.ErrBusy, search.ErrUserBusy} {
@@ -173,10 +175,15 @@ func (e *errorLogWriter) Unwrap() http.ResponseWriter { return e.ResponseWriter 
 // logServerError logs an error hidden from the answer, with its
 // reference: in the server's log when the request came through the
 // server's handler, else in the default log.
+//
+// The error is logged as redact.Text shows it: an error built from a
+// request can hold what the request carried, and a password typed into
+// a form or a key in an address must not reach the log.
 func logServerError(w http.ResponseWriter, ref string, status int, err error) {
+	msg := redact.Text(err.Error())
 	for w != nil {
 		if e, ok := w.(*errorLogWriter); ok && e.log != nil {
-			e.log.Error("request failed", "ref", ref, "status", status, "method", e.r.Method, "path", e.r.URL.Path, "err", err)
+			e.log.Error("request failed", "ref", ref, "status", status, "method", e.r.Method, "path", e.r.URL.Path, "err", msg)
 			return
 		}
 		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
@@ -185,5 +192,5 @@ func logServerError(w http.ResponseWriter, ref string, status int, err error) {
 		}
 		w = u.Unwrap()
 	}
-	slog.Error("request failed", "ref", ref, "status", status, "err", err)
+	slog.Error("request failed", "ref", ref, "status", status, "err", msg)
 }
