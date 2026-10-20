@@ -14,8 +14,8 @@ before they install anything.
 | --- | --- | --- | --- |
 | Root key | Revocation lists; it can also sign a content bundle or an agent manifest when an online key has to be replaced at once | Offline only, never in GitHub | `internal/keytrust/root.keys` |
 | Agent release key | The manifest of agent programs that [agents update to](signalith-agent.md#updates) | `SIGNALITH_AGENT_KEY`, a secret of the `release` environment | `internal/agentproto/release.keys` |
-| Content key | [Content update](detections.md#content-updates) bundles | `SIGNALITH_CONTENT_KEY` secret | `internal/content/trusted.keys` |
-| GPG release key | `.deb` and `.rpm` packages, `SHA256SUMS`, and the apt and dnf repositories | `SIGNALITH_GPG_PRIVATE_KEY` secret | `signalith-release-key.asc` on each release |
+| Content key | [Content update](detections.md#content-updates) bundles | `SIGNALITH_CONTENT_KEY`, a secret of the `signing` environment | `internal/content/trusted.keys` |
+| GPG release key | `.deb` and `.rpm` packages, `SHA256SUMS`, and the apt and dnf repositories | `SIGNALITH_GPG_PRIVATE_KEY`, a secret of the `release` and `signing` environments | `signalith-release-key.asc` on each release |
 | Sigstore | Release files, container images and the Helm chart | No key to keep: GitHub vouches for the workflow run | The release workflow's identity ([Check a download](install-packages.md#check-a-download)) |
 
 The root key, the agent release key and the content key are all Ed25519 keys. Each
@@ -24,7 +24,7 @@ public key. That ID is how a key is named when it is revoked. Each key signs one
 thing only. The root key is the exception, since it has to be able to stand in for a
 leaked key.
 
-[Releasing](releasing.md#signing-keys) explains how each online key is made and stored.
+[Releasing](releasing.md#signing-keys) explains how each online key is made, and [Where the keys are kept](releasing.md#where-the-keys-are-kept) which environment holds it.
 
 ### The root key
 

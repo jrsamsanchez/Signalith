@@ -35,13 +35,23 @@ func TestAgentPort(t *testing.T) {
 	if code, err := send(rs.addr); code != http.StatusServiceUnavailable {
 		t.Errorf("web port: %d %s", code, err)
 	}
-	resp, err := rs.client.Get("https://" + agents + "/readyz")
-	if err != nil {
-		t.Fatal(err)
+	// The server is ready once its first heartbeat reached OpenSearch,
+	// which can come a moment after it takes events; a load balancer
+	// asks again.
+	ready := 0
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		resp, err := rs.client.Get("https://" + agents + "/readyz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if ready = resp.StatusCode; ready == http.StatusOK || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("readyz on the agent port: %d", resp.StatusCode)
+	if ready != http.StatusOK {
+		t.Errorf("readyz on the agent port: %d", ready)
 	}
 
 	// A restart that keeps the address keeps the port open: agents
