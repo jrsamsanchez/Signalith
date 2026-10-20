@@ -271,7 +271,9 @@ at. It understands:
 
 | You write | It adds |
 | --- | --- |
-| logins, processes, connections, account changes, risk | `datamodel=...` |
+| logins, processes, connections, account changes, risk, dns, web requests, registry, suricata or wazuh alerts, certificates | `datamodel=...` |
+| account lockouts, locked out | `signature_id=4740` (Windows), by user when the question asks about accounts |
+| dns queries for evil.com, web requests with status 500, requests to example.com | `query=`, `status=`, `dest_host=` |
 | failed, successful, blocked, allowed, created, deleted | `action=...` |
 | from 10.0.0.5, to web1, on dc01, by alice, port 22, user bob | field filters; `not`/`except` negates |
 | powershell, cmd, certutil, mimikatz.exe, spawned by winword | `process_name`, `parent_process_name` |
@@ -286,7 +288,11 @@ at. It understands:
 | per hour, over time, daily | `timechart` |
 | show user, src and dest | `table _time, user, src, dest` |
 
-Names from the asset and identity lists are recognized as users or hosts.
+Names from the asset and identity lists are recognized as users or hosts. A word that
+ends up in no filter, grouping or data model counts as not understood, even when it
+is a field name: "service account logins from workstations" keeps only `logins`, so
+it is not read as understood. A question less than 80% understood is shown with its
+query but not run until you check the query and run it.
 
 ### Using an AI model
 

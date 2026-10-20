@@ -2689,8 +2689,14 @@ async function ask(question, mode) {
   const switchTo = res.source !== 'ai' && askInfo.ai_available ? ['Ask the AI model instead', 'ai'] : res.source === 'ai' ? ['Use the built-in translator instead', 'rules'] : null;
   kids.push(el('span', { class: 'ask-read__actions' },
     switchTo ? el('button', { type: 'button', class: 'link-btn', onclick: () => ask(question, switchTo[1]) }, switchTo[0]) : null, askClose()));
+  // A query the translator was unsure of waits for the analyst, so a
+  // half-understood question does not show results for another one.
+  if (!res.run) {
+    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'Not run: part of the question was not understood. Check the query, then ',
+      el('button', { type: 'button', class: 'link-btn', onclick: () => runSearch() }, 'run it'), '.'));
+  }
   showAskResult(...kids);
-  if (res.source === 'ai' || res.confidence > 0) runSearch();
+  if (res.run) runSearch();
 }
 $('ask-form').addEventListener('submit', (ev) => { ev.preventDefault(); ask($('ask').value); });
 
