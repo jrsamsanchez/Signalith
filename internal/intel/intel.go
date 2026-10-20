@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package intel is Signalith's threat intelligence framework, like the
 // Splunk ES threat intelligence framework: indicators (IP addresses and
 // networks, domains, URLs, file hashes and email addresses) come from

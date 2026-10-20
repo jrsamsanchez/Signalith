@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -21,6 +24,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"gopkg.in/yaml.v3"
@@ -38,6 +42,7 @@ func (s *Server) routeSettings(api *router) {
 	api.admin("POST /api/settings/test/opensearch", s.handleTestOpenSearch)
 	api.admin("POST /api/settings/test/assistant", s.handleTestAssistant)
 	api.admin("POST /api/settings/test/m365", s.handleTestM365)
+	api.admin("POST /api/settings/test/okta", s.handleTestOkta)
 	api.admin("POST /api/settings/assistant/models", s.handleAssistantModels)
 	api.admin("POST /api/settings/restart", s.handleRestart)
 	api.admin("POST /api/settings/restart/confirm", s.handleConfirmMove)
@@ -424,6 +429,10 @@ func (s *Server) settingsView() (map[string]any, error) {
 	onShared := saved.SharedSettings()
 	sections := make([]settingsSection, 0, len(config.Sections))
 	for _, sec := range config.Sections {
+		if sec.Tab != "" {
+			// A tab of its own shows it.
+			continue
+		}
 		out := settingsSection{ID: sec.ID, Title: sec.Title, Help: sec.Help, Fields: []settingField{}}
 		for i := range config.Registry {
 			set := &config.Registry[i]
@@ -444,6 +453,9 @@ func (s *Server) settingsView() (map[string]any, error) {
 			// empty, with what it works out to now.
 			if set.Key == "server.public_url" && saved.PublicURLDerived() {
 				f.EmptyMeans = saved.Server.PublicURL + ", worked out from the listen address"
+			}
+			if set.Key == "server.agent_listen" && saved.AgentListenDerived() {
+				f.EmptyMeans = saved.Server.AgentListen + ", worked out from the listen address; the web port also accepts agents set up before 0.3"
 			}
 			// A file from before HTTPS was the default believes a proxy on
 			// this computer or a private network until one is listed.
@@ -627,6 +639,7 @@ func (s *Server) aboutServer(c *config.Config) map[string]any {
 		{Key: "response.file", Label: "Response actions file", Path: c.ResponseFile(), Source: c.Source("response.file")},
 		{Key: "response.scripts_dir", Label: "Response scripts folder", Path: c.ResponseScriptsDir(), Source: c.Source("response.scripts_dir")},
 		{Key: "playbooks.file", Label: "Playbooks file", Path: c.PlaybooksFile(), Source: c.Source("playbooks.file")},
+		{Key: "ticketing.file", Label: "Ticketing file", Path: c.TicketingFile(), Source: c.Source("ticketing.file")},
 	}
 	// Whoever reads the page is not in Signalith's working folder.
 	for i := range paths {
@@ -860,6 +873,9 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var raw json.RawMessage
 	if err := readJSON(r, &raw); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if settingsSaveRecheck(raw) && s.recheckNeeded(w, r, principalOf(r)) {
 		return
 	}
 	if s.Config.Path() == "" {
@@ -1128,20 +1144,12 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("auth.session_timeout") {
 		s.sessions().SetIdle(next.SessionIdle())
 	}
-	if changed("search.") && s.Engine != nil {
-		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents)
+	if changed("auth.session_max_age") {
+		s.sessions().SetMaxAge(next.SessionMaxAge())
 	}
-	if changed("detections.max_findings_per_run") && s.Scheduler != nil {
-		s.Scheduler.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
-	}
-	if changed("detections.catch_up") && s.Scheduler != nil {
-		s.Scheduler.SetCatchUp(next.DetectionsCatchUp())
-	}
-	if changed("assistant.") {
-		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
-	}
+	s.useLive(&next, applied)
 	if changed("vulns.") && s.Vulns != nil {
-		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey)
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
 	}
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)
@@ -1149,16 +1157,70 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	if changed("server.tls.plaintext_ingest") {
 		s.endOldTokenLocked()
 	}
+	if changed("server.node_url") && s.NodeURLChanged != nil {
+		s.NodeURLChanged(&next)
+	}
+	// Each tenant's server works with the same settings.
+	if s.TenantRuntime != nil {
+		s.TenantRuntime.SettingsChanged()
+	}
+	return applied
+}
+
+// useLive puts the settings applied at once into use in the parts of
+// the server that keep their own copy of them and that every tenant's
+// server has.
+func (s *Server) useLive(next *config.Config, applied []string) {
+	changed := func(prefix string) bool {
+		return slices.ContainsFunc(applied, func(k string) bool { return strings.HasPrefix(k, prefix) })
+	}
+	if changed("search.") && s.Engine != nil {
+		s.Engine.SetDefaults(next.Search.DefaultEarliest, next.Search.MaxEvents, next.Search.SummaryDays)
+	}
+	for _, sched := range []*detect.Scheduler{s.Scheduler, s.SpreadScheduler} {
+		if sched == nil {
+			continue
+		}
+		if changed("detections.max_findings_per_run") {
+			sched.SetMaxFindingsPerRun(next.Detections.MaxFindingsPerRun)
+		}
+		if changed("detections.catch_up") {
+			sched.SetCatchUp(next.DetectionsCatchUp())
+		}
+		if changed("detections.spread") {
+			sched.SetSpread(next.Detections.SpreadOn())
+		}
+		if changed("detections.search_budget") {
+			sched.SetSearchBudget(next.Detections.SearchBudget)
+		}
+	}
+	if changed("assistant.") {
+		s.liveAI.Store(&liveModel{c: next.AssistantClient()})
+	}
 	if changed("ingest.max_event_age") && s.EventAge != nil {
-		s.EventAge.Use(&next)
+		s.EventAge.Use(next)
 	}
 	if changed("ingest.url_query") && s.Pipeline != nil {
 		s.Pipeline.SetURLQuery(next.URLQueryMode())
 	}
-	if changed("server.node_url") && s.NodeURLChanged != nil {
-		s.NodeURLChanged(&next)
+}
+
+// FollowLive makes the settings of tenant server s those of the default
+// tenant's server, front: the settings it started with and those
+// applied at once since, as they are for this tenant.
+func (s *Server) FollowLive(front *config.Config) {
+	next := front.ForTenant(s.TenantID)
+	s.followMu.Lock()
+	defer s.followMu.Unlock()
+	cur := s.conf()
+	var applied []string
+	for i := range config.Registry {
+		if k := config.Registry[i].Key; !config.SameValue(cur, next, k) {
+			applied = append(applied, k)
+		}
 	}
-	return applied
+	s.live.Store(next)
+	s.useLive(next, applied)
 }
 
 // coverPublicURL adds the public address's host to Signalith's own HTTPS
@@ -1348,11 +1410,11 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 		case a.Provider == "":
 			fields["assistant.provider"] = "Choose a provider to test."
 		case a.Provider != assistant.Anthropic && a.Provider != assistant.OpenAI:
-			fields["assistant.provider"] = "Choose Anthropic or OpenAI or compatible."
+			fields["assistant.provider"] = "Choose Anthropic, or Local model or OpenAI-compatible."
 		case a.URL != "" && config.Origin(a.URL) == "":
 			fields["assistant.url"] = "Enter an address like http://localhost:11434/v1, or leave it empty."
 		case a.Provider == assistant.OpenAI && a.Model == "":
-			fields["assistant.model"] = "Enter the model's name: OpenAI or compatible needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
+			fields["assistant.model"] = "Enter the model's name: a local model or OpenAI-compatible service needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
 		case a.Provider == assistant.Anthropic && a.APIKey == "":
 			fields["assistant.api_key"] = "Enter the API key."
 		}

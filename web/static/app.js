@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Signalith web UI. Plain JavaScript, no build step, so the server can
 // embed it and run on Windows and Linux without Node.
 'use strict';
@@ -129,10 +131,10 @@ const looksLikeIP = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || /^[0-9a-f]*:[0-9
 // works behind a proxy; a signed-out session goes to the sign-in page and
 // comes back here afterwards.
 let signingIn = false;
-const toSignIn = (change) => {
+const toSignIn = (change, mfa) => {
   if (signingIn) return;
   signingIn = true;
-  location.assign('login?' + (change ? 'change=1&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search + location.hash));
+  location.assign('login?' + (change ? 'change=1&' : '') + (mfa ? 'mfa=setup&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search + location.hash));
 };
 // A request made with no one using the page in the last few seconds,
 // such as a refresh on a timer, is marked as background so the server does
@@ -227,15 +229,24 @@ async function api(path, body, method, extraHeaders) {
   };
   const resp = await apiRaw(path, opts);
   const data = await resp.json().catch(() => ({}));
+  // A sensitive change asks for the password or code again (users.js);
+  // once given, the request is sent once more.
+  if (resp.status === 403 && data.code === 'recheck_required' && typeof window.confirmIdentity === 'function' && !(extraHeaders && extraHeaders['X-Signalith-Rechecked'])) {
+    if (await window.confirmIdentity(data)) return api(path, body, method, { ...(extraHeaders || {}), 'X-Signalith-Rechecked': '1' });
+    data.error = 'Nothing was changed: the change needs your password or code.';
+  }
   if (resp.status === 401) toSignIn();
   // A temporary password must be replaced first; the sign-in page asks for it.
   if (resp.status === 403 && data.code === 'password_change_required') toSignIn(true);
+  // Two-step sign-in is required and not set up yet; the sign-in page sets it up.
+  if (resp.status === 403 && data.code === 'mfa_setup_required') toSignIn(false, true);
   if (resp.status === 403 && data.code === 'forbidden') {
     // An admin changed this user's role since the page loaded: reload, so
     // every page, menu and button matches the new role at once.
     if (data.role && me && data.role !== me.role) roleChanged(data.role);
     else if (typeof toast === 'function') toast(data.error, null, { tone: 'danger', title: 'Your role can’t do that' });
   }
+  if ((resp.status === 409 || resp.status === 503) && data.code === 'tenant_unavailable') tenantUnavailable(resp.status, data.error);
   if (!resp.ok) {
     const err = new Error(data.error || resp.statusText);
     err.status = resp.status;
@@ -248,6 +259,33 @@ async function api(path, body, method, extraHeaders) {
     throw err;
   }
   return data;
+}
+
+// tenantUnavailable tells that the tenant the session works in can't be
+// used. 409: it was turned off, and the server moved the session back to
+// the default tenant, so the page reloads once to show that tenant's data
+// and says why afterwards. 503: the tenant isn't running on the server
+// that answered (another server of a cluster); the page says so once.
+const TENANT_NOTE_KEY = 'signalith.tenantGone';
+let tenantNoted = false;
+function tenantUnavailable(status, text) {
+  if (tenantNoted || reloading) return;
+  tenantNoted = true;
+  const msg = sentence(text || 'The tenant you were working in can’t be used now.');
+  if (status === 409) {
+    let last = 0;
+    try { last = Number(JSON.parse(sessionStorage.getItem(TENANT_NOTE_KEY) || '{}').at) || 0; } catch (_) { last = Date.now(); }
+    // A second refusal soon after the reload is not reloaded again.
+    if (Date.now() - last > 30000) {
+      try {
+        sessionStorage.setItem(TENANT_NOTE_KEY, JSON.stringify({ at: Date.now(), text: msg }));
+        reloading = true;
+        location.reload();
+        return;
+      } catch (_) { /* no reload without a guard */ }
+    }
+  }
+  if (typeof toast === 'function') toast(msg, null, { tone: 'danger', title: 'This tenant can’t be used now' });
 }
 
 // followRequest follows work this server asked of the server that runs
@@ -297,16 +335,57 @@ function roleChanged(role) {
   try { sessionStorage.setItem(ROLE_NOTE_KEY, role); } catch (_) { /* storage may be blocked */ }
   location.reload();
 }
+// Pages about the server itself (Settings > Server, Servers, Security,
+// Audit, sign-in setup, tenants and the like) carry data-provider-only:
+// only the provider's own users may open them. <body data-scope> is
+// "provider" for them and "tenant" for a user who belongs to a tenant,
+// and CSS hides such controls unless it is "provider" (see
+// docs/multi-tenant.md). The server refuses them to tenant users anyway.
+const inTenant = () => !!me && !!me.tenant;
+const providerOnly = (name) => !!document.querySelector(`.nav__item[data-page="${name}"][data-provider-only]`);
+function setScope(m) {
+  document.body.dataset.scope = m.tenant ? 'tenant' : 'provider';
+  if (!m.tenant) return;
+  // Settings at the foot of the sidebar opens the first Settings page a
+  // tenant user may open, as Server is the provider's.
+  const first = [...document.querySelectorAll('#set-tabs .set-tab[data-page]')].find((t) => pageAllowed(t.dataset.page));
+  const home = document.querySelector('.nav__item[data-settings-home]');
+  if (first && home) {
+    home.dataset.page = first.dataset.page;
+    home.href = '#' + first.dataset.page;
+  }
+}
 // meReady resolves once api/me has answered (to null if it failed).
 const meReady = api('api/me').then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
+  if (m.must_setup_mfa) { toSignIn(false, true); return m; }
   me = m;
   setRole(m.role);
+  setScope(m);
   showUser(m);
   let note = null;
-  try { note = sessionStorage.getItem(ROLE_NOTE_KEY); sessionStorage.removeItem(ROLE_NOTE_KEY); } catch (_) { /* ignore */ }
+  let left = null;
+  try {
+    note = sessionStorage.getItem(ROLE_NOTE_KEY); sessionStorage.removeItem(ROLE_NOTE_KEY);
+    left = sessionStorage.getItem('signalith.recovery-left'); sessionStorage.removeItem('signalith.recovery-left');
+  } catch (_) { /* ignore */ }
   if (note && typeof toast === 'function') {
     toast(`An admin changed your role to ${m.role_label || m.role}. The page reloaded to match.`, null, { title: 'Your role changed' });
+  }
+  let gone = null;
+  try { gone = JSON.parse(sessionStorage.getItem(TENANT_NOTE_KEY) || 'null'); } catch (_) { /* ignore */ }
+  if (gone && gone.text && typeof toast === 'function') {
+    // Left in place (with the text gone) so a refusal right after this
+    // reload does not reload again.
+    try { sessionStorage.setItem(TENANT_NOTE_KEY, JSON.stringify({ at: gone.at })); } catch (_) { /* ignore */ }
+    toast(gone.text, null, { tone: 'danger', title: 'The tenant you were in was turned off' });
+  }
+  if (left !== null && typeof toast === 'function') {
+    // Signed in with a recovery code.
+    const n = Number(left);
+    toast(n > 0 ? `You have ${n} recovery code${n === 1 ? '' : 's'} left. Make new ones under Two-step sign-in in the account menu.`
+      : 'That was your last recovery code. Make new ones under Two-step sign-in in the account menu.', null,
+    { title: 'You signed in with a recovery code', tone: n > 0 ? undefined : 'danger' });
   }
   return m;
 }).catch(() => null);
@@ -316,7 +395,7 @@ function pageRole(name) {
   const item = document.querySelector(`.nav__item[data-page="${name}"][data-min-role]`);
   return item ? item.dataset.minRole : '';
 }
-const pageAllowed = (name) => !pageRole(name) || can(pageRole(name));
+const pageAllowed = (name) => (!pageRole(name) || can(pageRole(name))) && !(inTenant() && providerOnly(name));
 
 // ---------- app shell: navigation ----------
 // Each page is a <section id="page-NAME" class="page">; its nav item
@@ -381,7 +460,8 @@ function showPage(name, opts = {}) {
     const who = pageRole(name) === 'admin' ? 'admins' : 'analysts and admins';
     const { title, group } = pageInfo(name);
     const what = group === 'Settings' ? `Settings > ${title}` : title;
-    if (me && typeof toast === 'function') toast(`${what} is only for ${who}.`, null, { tone: 'danger' });
+    const why = inTenant() && providerOnly(name) ? `${what} is about the server itself, which your provider manages.` : `${what} is only for ${who}.`;
+    if (me && typeof toast === 'function') toast(why, null, { tone: 'danger' });
     name = 'search';
     opts = { ...opts, replace: true };
   }
@@ -407,7 +487,7 @@ function showPage(name, opts = {}) {
   }
   hashSource = false;
   if (switching) window.scrollTo(0, 0);
-  if (name === 'data') { loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
+  if (name === 'data') { setSourcePicking(false); loadDataSource(); if (typeof loadSampleCard === 'function') loadSampleCard(); }
   if (name === 'health') loadHealth();
   if (typeof onPageShown === 'function') onPageShown(name);
   try { localStorage.setItem('signalith.page', name); } catch (_) { /* storage may be blocked */ }
@@ -415,8 +495,16 @@ function showPage(name, opts = {}) {
 
 // pageFromHash reads the page from the address. Add data takes the source
 // to show, as in #data?source=antivirus; it is selected here and the
-// address goes back to #data once the page opens.
+// address goes back to #data once the page opens. Hunting notebooks take
+// the notebook to open, as in #notebooks?id=NB-20261016-..., which
+// notebooks.js picks up from hashNotebook, and Investigations the case to
+// open, as in #cases?id=…, which cases.js picks up from hashCase.
 let hashSource = false;
+// pageQuery is the rest of an address such as #storyline?type=user&object=bob,
+// for the page to read when it opens (and clear).
+let pageQuery = '';
+let hashNotebook = null;
+let hashCase = '';
 function pageFromHash() {
   let name = location.hash.slice(1);
   let query = '';
@@ -425,11 +513,17 @@ function pageFromHash() {
   try { name = decodeURIComponent(name); } catch (_) { return null; }
   if (!name || !$('page-' + name)) return null;
   hashSource = name === 'data' && pickDataSource(new URLSearchParams(query).get('source') || '');
+  pageQuery = name === 'data' ? '' : query;
+  if (name === 'notebooks') {
+    hashNotebook = new URLSearchParams(query).get('id') || null;
+    hashSource = !!hashNotebook;
+  }
+  hashCase = name === 'cases' ? (new URLSearchParams(query).get('id') || '').slice(0, 200) : '';
   return name;
 }
 const followHash = () => {
   const name = pageFromHash();
-  if (name && (name !== currentPage || hashSource)) showPage(name, { replace: true });
+  if (name && (name !== currentPage || hashSource || hashCase)) showPage(name, { replace: true });
 };
 window.addEventListener('hashchange', followHash);
 window.addEventListener('popstate', followHash);
@@ -500,23 +594,135 @@ function syncInspectInert() {
 new MutationObserver(syncInspectInert).observe(appEl, { attributes: true, attributeFilter: ['data-inspect'] });
 slideOver.addEventListener('change', syncInspectInert);
 
+// ---------- app shell: side panel size ----------
+// Every panel that opens at the side (the inspectors, a server's panel) can
+// be made wider: drag its left edge (or focus the edge and use the arrow
+// keys; a double click goes back to the normal width), or use the expand
+// button in its bar to fill the page and back. Each panel keeps its own
+// size in this browser. On a phone the panel already fills the screen, so
+// neither control shows.
+const PANEL_MIN = 320;
+const PANEL_LIST_MIN = 560;   // a docked panel leaves the list beside it this much (app.css .split)
+const panelPhone = matchMedia('(max-width: 640px)');
+function sidePanel(panel, key) {
+  if (panel.dataset.panelKey) return;
+  panel.dataset.panelKey = key;
+  const store = 'signalith.panel.' + key;
+  let pref = {};
+  try { pref = JSON.parse(localStorage.getItem(store)) || {}; } catch (_) { /* storage may be blocked */ }
+  const save = () => { try { localStorage.setItem(store, JSON.stringify(pref)); } catch (_) { /* storage may be blocked */ } };
+  const split = () => (panel.parentElement && panel.parentElement.classList.contains('split') ? panel.parentElement : null);
+  const docked = () => !!split() && !slideOver.matches;
+  const maxW = () => {
+    const s = split();
+    const w = docked() ? s.getBoundingClientRect().width - PANEL_LIST_MIN - 16 : window.innerWidth - 16;
+    return Math.max(PANEL_MIN, Math.round(w));
+  };
+  const btn = el('button', { class: 'btn btn--ghost btn--icon btn--sm panel-size', type: 'button', onclick: () => {
+    pref.wide = !pref.wide;
+    save();
+    apply();
+  } });
+  const grip = el('div', { class: 'panel-grip', role: 'separator', tabindex: '0', 'aria-orientation': 'vertical',
+    'aria-label': 'Panel width', title: 'Drag to resize; double-click for the normal width' });
+  function apply() {
+    const wide = !!pref.wide;
+    for (const n of [panel, split()]) {
+      if (!n) continue;
+      n.toggleAttribute('data-panel-wide', wide);
+      if (pref.w) n.style.setProperty('--panel-w', pref.w + 'px'); else n.style.removeProperty('--panel-w');
+    }
+    const label = wide ? 'Restore panel width' : 'Expand panel';
+    btn.replaceChildren(icon(wide ? 'minimize-2' : 'maximize-2'));
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.setAttribute('aria-pressed', String(wide));
+    grip.hidden = wide;
+    grip.setAttribute('aria-valuemin', String(PANEL_MIN));
+    grip.setAttribute('aria-valuemax', String(maxW()));
+    grip.setAttribute('aria-valuenow', String(Math.round(panel.getBoundingClientRect().width) || pref.w || PANEL_MIN));
+  }
+  // crowded: the list beside a docked panel no longer fits and would spill under it
+  const crowded = () => {
+    const s = docked() && split();
+    const list = s && [...s.children].find((c) => c !== panel);
+    return !!list && list.scrollWidth > list.clientWidth + 1;
+  };
+  const setW = (w) => {
+    const floor = Math.min(Math.round(w), pref.w || PANEL_MIN);
+    pref.w = Math.min(maxW(), Math.max(PANEL_MIN, Math.round(w)));
+    pref.wide = false;
+    apply();
+    while (crowded() && pref.w - 8 >= floor) { pref.w -= 8; apply(); }
+  };
+  grip.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    grip.setPointerCapture(ev.pointerId);
+    const right = panel.getBoundingClientRect().right;
+    document.documentElement.classList.add('panel-resizing');
+    const move = (e) => setW(right - e.clientX);
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      document.documentElement.classList.remove('panel-resizing');
+      save();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up, { once: true });
+    grip.addEventListener('pointercancel', up, { once: true });
+  });
+  grip.addEventListener('dblclick', () => {
+    delete pref.w;
+    pref.wide = false;
+    save();
+    apply();
+  });
+  grip.addEventListener('keydown', (ev) => {
+    const now = panel.getBoundingClientRect().width;
+    const to = { ArrowLeft: now + 32, ArrowRight: now - 32, Home: PANEL_MIN, End: maxW() }[ev.key];
+    if (to === undefined) return;
+    ev.preventDefault();
+    setW(to);
+    save();
+  });
+  // Pages redraw their panels, so the controls go back in whenever they are missing.
+  const place = () => {
+    if (!grip.isConnected) panel.append(grip);
+    if (btn.isConnected && panel.contains(btn)) return;
+    const bar = panel.querySelector(':scope > .inspector__bar, :scope > .modal__head');
+    if (!bar) return;
+    const close = bar.querySelector(':scope > .modal__close') || bar.lastElementChild;
+    bar.insertBefore(btn, close);
+    apply();
+  };
+  new MutationObserver(place).observe(panel, { childList: true });
+  place();
+  apply();
+}
+[['f-detail', 'finding'], ['d-detail', 'detection'], ['r-detail', 'risk'], ['ti-detail', 'indicator']].forEach(([id, key]) => {
+  if ($(id)) sidePanel($(id), key);
+});
+
 // ---------- app shell: page jumper ----------
 // Typing in the sidebar box filters the nav; Enter opens the first match.
 // Ctrl+K (Cmd+K on a Mac), or / when not typing, focuses it.
 const JUMP_WORDS = {
   dashboards: 'home overview posture charts', findings: 'alerts incidents queue triage', cases: 'cases investigations',
-  risk: 'risk scores', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
+  risk: 'risk scores', storyline: 'attack story kill chain timeline graph mitre att&ck tactics intrusion entities incident', vulns: 'vulnerabilities cve scan scanner nmap ports open services patch exposure kev exploited', search: 'query events logs hunt', intel: 'threat intel ioc indicators feeds',
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
   compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
   health: 'status opensearch ingest', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
+  tenants: 'tenants customers organizations clients msp mssp multi-tenant switch',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
   notify: 'notifications alerts email slack teams webhook smtp channels rules paging',
   respond: 'response actions respond block ip firewall opnsense pfsense webhook shuffle script isolate disable account soar playbook',
   playbooks: 'playbooks automation soar workflow runbook automatic response steps',
   approvals: 'approvals approve reject pending waiting playbook runs',
   sensors: 'network sensors zeek suricata ids rules tuning disable threshold suppress local rules sid packet drops capture span mirror',
+  baselines: 'ueba behavior behaviour baselines anomaly anomalies first seen rare new country unusual hour impossible travel data volume exfiltration',
+  lookuptables: 'lookup lookups tables csv reference owners enrichment context',
   security: 'hardening encryption certificate authority ca tls https keys permissions bitlocker luks',
   settings: 'configuration config server opensearch syslog listen address port tls certificate ai assistant model api key restart yaml',
 };
@@ -652,7 +858,7 @@ document.addEventListener('keydown', (ev) => {
 // ---------- app shell: user menu ----------
 // showUser fills the top bar and the account menu from api/me: the
 // display name (or username), and the username and role under it.
-const SOURCE_NOTE = { builtin: 'built-in account', directory: 'directory account' };
+const SOURCE_NOTE = { builtin: 'built-in account', directory: 'directory account', demo: 'public demo, read-only' };
 function showUser(m) {
   const name = m.name || m.username || m.user || '';
   const initial = (name.replace(/^[^a-z0-9]+/i, '').charAt(0) || '?').toUpperCase();
@@ -664,6 +870,9 @@ function showUser(m) {
   $('user-menu-meta').textContent = meta.join(' · ');
   $('user-menu').querySelector('summary').setAttribute('aria-label', `Account menu: ${name}, ${m.role_label || m.role}`);
   $('change-password').classList.toggle('hidden', !m.can_change_password);
+  // Single sign-on users get the second step from where they sign in.
+  $('mfa-open').classList.toggle('hidden', !['local', 'builtin', 'directory'].includes(m.source) || m.auth === 'token');
+  $('mfa-hint').textContent = m.mfa ? 'On' : 'Off';
   // A browser that signed in with HTTP Basic auth keeps sending the
   // password, so signing out would not stick.
   const basic = m.auth === 'basic';
@@ -878,17 +1087,77 @@ const commandOf = (seg) => ((seg || '').trim().match(/^[a-z_]+/i) || [''])[0].to
 function eventsPart(q) {
   const segs = pipeSegments(q);
   const i = segs.findIndex((s, n) => n > 0 && ['stats', 'timechart', 'top'].includes(commandOf(s)));
-  return i < 0 ? null : segs.slice(0, i).map((s) => s.trim()).join('\n| ') || '*';
+  // The events behind the numbers; an outputlookup among them wrote its
+  // table already and is not run again.
+  return i < 0 ? null : segs.slice(0, i).filter((s, n) => n === 0 || commandOf(s) !== 'outputlookup').map((s) => s.trim()).join('\n| ') || '*';
 }
 function quoteValue(v) {
   v = String(v);
   return /^[^\s|()=!<>,"]+$/.test(v) && !/^(AND|OR|NOT|IN)$/i.test(v) ? v : '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 }
+// ---------- drilldown: from a number to the events behind it ----------
+// A drill (query.Drill on the server) is a query's search, the commands
+// before its stats, top or timechart, and which result columns name event
+// fields. drillTerm filters on one value; a missing value matches the
+// events without the field.
+function drillTerm(f, v) {
+  if (v == null || v === '') return `NOT ${f}=*`;
+  return f + '=' + filterValue(v);
+}
+// filterValue is a value as a search term reads it: a backslash, as in a
+// Windows path or CORP\user, is only kept inside quotes.
+function filterValue(v) {
+  const s = String(v);
+  return s.includes('\\') ? '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : quoteValue(s);
+}
+// drillQuery adds [field, value] filters to a drill: in the search, or in a
+// where after the commands that make the fields.
+function drillQuery(dr, pairs = []) {
+  const terms = pairs.filter(([, v]) => v == null || typeof v !== 'object').map(([f, v]) => drillTerm(f, v));
+  let search = dr.search || '';
+  if (terms.length && !dr.where) search = [search, ...terms].filter(Boolean).join(' ');
+  let q = (search || '*') + (dr.pipe || '');
+  if (terms.length && dr.where) q += '\n| where ' + terms.join(' AND ');
+  return q;
+}
+// drillBucket: the start and end of timechart row i, or null when the rows
+// do not say how long a bucket is.
+function drillBucket(rows, i) {
+  if (i == null || !rows[i] || rows.length < 2) return null;
+  const t = (k) => new Date(rows[k]._time).getTime();
+  const start = t(i);
+  const step = i + 1 < rows.length ? t(i + 1) - start : start - t(i - 1);
+  if (!(step > 0)) return null;
+  return [new Date(start).toISOString(), new Date(start + step - 1).toISOString()];
+}
+// drillTarget: the filters and time bucket behind the number in column col
+// of row i of a summary.
+function drillTarget(dr, res, i, col) {
+  const rows = res.rows || [];
+  if (res.kind === 'timechart') return { pairs: dr.series && col && col !== '_time' ? [[dr.series, col]] : [], bucket: drillBucket(rows, i) };
+  const row = rows[i] || {};
+  return { pairs: Object.entries(dr.fields || {}).filter(([c]) => (res.columns || []).includes(c)).map(([c, f]) => [f, row[c]]), bucket: null };
+}
+// drillEvent: the query for one row of an events result, by the values it
+// shows (the caller searches its exact _time). Commands that only filter or
+// shape the table are left out, so Search shows the whole event.
+function drillEvent(dr, row, cols) {
+  const pairs = cols.filter((c) => c !== '_time' && c !== '_raw').map((c) => [c, row[c]]);
+  return drillQuery(dr.where ? dr : { search: dr.search }, pairs);
+}
+
 function addSearchTerm(term) {
   const [search, rest] = splitPipes($('query').value);
   let s = search.trim();
   if (s === '*' || s === '') s = term; else s = s + ' ' + term;
   setQuery(s + (rest ? '\n' + rest.trim() : ''));
+  runSearch();
+}
+// newSearchFor starts a search for one term alone, as Splunk's "New
+// search" does, keeping the time range written in the current search.
+function newSearchFor(term) {
+  const times = splitPipes($('query').value)[0].match(/\b(?:earliest|latest)\s*=\s*("[^"]*"|\S+)/gi) || [];
+  setQuery([term, ...times].join(' '));
   runSearch();
 }
 function currentDatamodel() {
@@ -903,12 +1172,12 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // functions, keywords and values apart. The Query guide uses the same
 // colouring for its examples.
 const lang = {
-  commands: ['stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'enrich', 'threatmatch', 'intel'],
+  commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous', 'union', 'geostats', 'extract', 'outlier', 'gauge', 'multisearch', 'timewrap', 'cluster', 'xpath', 'abstract', 'highlight', 'anomalydetection', 'correlate', 'predict', 'set', 'setfields', 'kmeans', 'eventcount', 'outputlookup', 'from'],
   functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
-  evalFunctions: ['abs', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isnotnull', 'isnull', 'isnum', 'isstr', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvindex', 'mvjoin', 'mvsort', 'now', 'null', 'nullif', 'pow', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode'],
+  evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
 };
-const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like']);
+const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
 const QL_EVAL_FUNCS = new Set(lang.evalFunctions);
 const QL_KEYS = new Set(['datamodel', 'index', 'earliest', 'latest']);
@@ -947,7 +1216,7 @@ function tokenizeQuery(text) {
       const lw = w.toLowerCase();
       const next = (text.slice(j).match(/^\s*(\S)/) || [])[1];
       if (afterPipe) { cls = 'tok-cmd'; cmd = lw; } else if (QL_KEYWORDS.has(lw) && (cmd || w === w.toUpperCase())) cls = 'tok-kw';
-      else if ((QL_FUNCS.has(lw) || /^perc\d{1,2}$/.test(lw)) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'timechart'].includes(cmd)))) cls = 'tok-fn';
+      else if ((QL_FUNCS.has(lw) || /^perc\d{1,2}$/.test(lw)) && (next === '(' || (lw === 'count' && ['stats', 'eventstats', 'streamstats', 'timechart', 'tstats', 'chart'].includes(cmd)))) cls = 'tok-fn';
       else if (QL_EVAL_FUNCS.has(lw) && next === '(' && (cmd === 'eval' || cmd === 'where')) cls = 'tok-fn';
       else if (!cmd && QL_KEYS.has(lw) && next === '=') cls = 'tok-cmd';
       else if (afterOp) cls = 'tok-str';
@@ -1192,7 +1461,7 @@ function acceptSuggestion(i) {
   onQueryInput();
 }
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch(); return; }
+  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
   if (!suggestions.length) return;
   if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
   else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
@@ -1412,8 +1681,13 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-async function runSearch() {
+// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// writeLookups, so an outputlookup in the query writes its table when the
+// user runs it, not again when a time change, sort, filter or drilldown
+// re-runs it, nor when the Ask box runs a query it wrote.
+async function runSearch(opts) {
   const query = queryBox.value.trim() || '*';
+  const writeLookups = !!(opts && opts.writeLookups);
   const earliest = timeEarliest();
   const seq = ++searchSeq;
   $('query-error').classList.add('hidden');
@@ -1422,7 +1696,7 @@ async function runSearch() {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1445,7 +1719,7 @@ async function runSearch() {
     if (seq === searchSeq) setSearching(false);
   }
 }
-$('run').addEventListener('click', runSearch);
+$('run').addEventListener('click', () => runSearch({ writeLookups: true }));
 $('time').addEventListener('change', () => {
   const v = $('time').value;
   if (v === QUERY_TIME) return;
@@ -1551,6 +1825,9 @@ function renderResult() {
     el('span', { class: 'hide-sm', 'aria-hidden': 'true' }, '·'),
     el('span', { class: 'hide-sm' }, `${(res.took_ms || 0).toLocaleString()} ms`),
   ];
+  if ((res.summaries || []).length) {
+    stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
+  }
   if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
   if ((res.rows || []).length) {
     stats.push(el('button', {
@@ -1700,6 +1977,52 @@ function pivotItems(item, field, value) {
     item('chart-bar', `List the ${p.who} with this ${p.what}`, () => run(`${term}\n| stats count, dc(${p.other}) as ${p.others} by ${p.by}\n| sort -count`)),
   ];
 }
+// An open event lists every field it has, like an event viewer: the
+// event's own fields first, then where and when it came from. Each value
+// can be added to the search or excluded from it in one click, and a click
+// on the value opens the same menu as the chips.
+const EVENT_DEFAULT_FIELDS = ['_time', 'host', 'source', 'sourcetype', 'index', 'datamodel'];
+const SAFE_FIELD_RE = /^[A-Za-z_][\w.:@-]*$/;
+function eventDetail(r, opts) {
+  const isDefault = (k) => EVENT_DEFAULT_FIELDS.includes(k) || k.startsWith('signalith_');
+  const has = (k) => k !== '_raw' && r[k] != null && r[k] !== '';
+  const keys = Object.keys(r).filter(has);
+  const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+  const own = keys.filter((k) => !isDefault(k)).sort(byName);
+  const dflt = [...EVENT_DEFAULT_FIELDS.filter((k) => keys.includes(k)), ...keys.filter((k) => k.startsWith('signalith_')).sort(byName)];
+  const show = (k, v) => (k === '_time' ? fmtTime(v) : v !== null && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : fmtValue(v));
+  const act = (iconName, label, term) => el('button', {
+    type: 'button', class: 'btn btn--ghost btn--icon btn--sm ev-kv__act', title: label, 'aria-label': label,
+    onclick: (ev) => { ev.stopPropagation(); addSearchTerm(term); },
+  }, icon(iconName));
+  const row = (k) => {
+    const v = r[k];
+    const text = show(k, v);
+    // A filter needs one plain value and a field name the query language reads.
+    const filterable = k !== '_time' && SAFE_FIELD_RE.test(k) && (typeof v !== 'object' || v === null);
+    const value = el('button', { type: 'button', class: 'ev-kv__v', title: text }, text);
+    value.addEventListener('click', (ev) => showCellMenu(ev, k, v, 'events', r, opts.sortable));
+    return el('tr', {},
+      el('th', { scope: 'row', class: 'ev-kv__k', title: k }, k),
+      el('td', {}, value),
+      el('td', { class: 'ev-kv__acts' }, ...(filterable ? [
+        act('filter', `Add ${k}=${text} to the search`, k + '=' + filterValue(v)),
+        act('filter-x', `Exclude ${k}=${text} from the search`, k + '!=' + filterValue(v)),
+      ] : [])));
+  };
+  const group = (title, ks) => (ks.length ? [el('tr', { class: 'ev-kv__group' }, el('th', { colspan: '3', scope: 'colgroup' }, title)), ...ks.map(row)] : []);
+  const pin = can('analyst') && typeof pinEventToCase === 'function'
+    ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => pinEventToCase(r) }, icon('pin'), 'Pin to a case') : null;
+  const copy = el('button', {
+    type: 'button', class: 'btn btn--ghost btn--sm',
+    onclick: () => navigator.clipboard.writeText(JSON.stringify(r, null, 2)).then(() => { if (typeof toast === 'function') toast('Copied the event as JSON.'); }, () => {}),
+  }, icon('copy'), 'Copy as JSON');
+  return el('div', { class: 'ev-detail__body' },
+    el('div', { class: 'ev-detail__head' },
+      el('span', { class: 'ev-detail__count' }, `${keys.length} field${keys.length === 1 ? '' : 's'}`),
+      el('span', { class: 'ev-detail__actions' }, copy, pin)),
+    el('table', { class: 'ev-kv' }, el('colgroup', {}, el('col', { class: 'ev-kv__kc' }), el('col'), el('col', { class: 'ev-kv__ac' })), el('tbody', {}, ...group('Event', own), ...group('Time and source', dflt))));
+}
 function renderEvents(box, res, opts) {
   const rows = res.rows || [];
   if (!rows.length) {
@@ -1719,7 +2042,9 @@ function renderEvents(box, res, opts) {
   } else {
     timeHead.append('Time');
   }
-  const body = rows.map((r) => {
+  // Which events are open, kept while the same results are shown again.
+  const open = res.openEvents || (res.openEvents = new Set());
+  const body = rows.map((r, ri) => {
     const d = new Date(r._time);
     const time = el('td', { class: 'time' });
     if (r._time != null) {
@@ -1731,8 +2056,9 @@ function renderEvents(box, res, opts) {
     }
     const event = el('td', { class: 'event' });
     if (r._raw != null && r._raw !== '') {
-      const raw = el('div', { class: 'ev-raw' }, fmtValue(r._raw));
-      raw.addEventListener('click', (ev) => showCellMenu(ev, '_raw', r._raw, 'events', r));
+      const raw = el('div', { class: 'ev-raw', title: 'Click to show every field' }, fmtValue(r._raw));
+      // A click opens the event's fields; dragging to select text does not.
+      raw.addEventListener('click', () => { if (!String(window.getSelection() || '')) toggle(); });
       event.append(raw);
     }
     const chips = keys.filter((k) => r[k] != null && r[k] !== '').map((k) => {
@@ -1742,10 +2068,25 @@ function renderEvents(box, res, opts) {
       return b;
     });
     if (chips.length) event.append(el('div', { class: 'ev-fields' }, ...chips));
-    return el('tr', {}, time, event);
+    const detailId = 'ev-detail-' + ri;
+    const btn = el('button', { type: 'button', class: 'ev-toggle', 'aria-expanded': 'false', 'aria-controls': detailId, 'aria-label': 'Show every field of this event', title: 'Show every field' }, icon('chevron-right', 'icon--sm'));
+    const detail = el('tr', { class: 'ev-detail', id: detailId, hidden: true });
+    const tr = el('tr', { class: 'ev-row' }, el('td', { class: 'ev-tog' }, btn), time, event);
+    function toggle(on = detail.hidden) {
+      if (on && !detail.firstChild) detail.append(el('td', { colspan: '3' }, eventDetail(r, opts)));
+      detail.hidden = !on;
+      tr.classList.toggle('is-open', on);
+      btn.setAttribute('aria-expanded', String(on));
+      btn.setAttribute('aria-label', on ? 'Hide the fields of this event' : 'Show every field of this event');
+      btn.title = on ? 'Hide the fields' : 'Show every field';
+      if (on) open.add(ri); else open.delete(ri);
+    }
+    btn.addEventListener('click', () => toggle());
+    if (open.has(ri)) toggle(true);
+    return [tr, detail];
   });
   const kids = [el('div', { class: 'table-wrap' }, el('table', { class: 'table table--compact res-events' },
-    el('thead', {}, el('tr', {}, timeHead, el('th', { scope: 'col' }, 'Event'))), el('tbody', {}, ...body)))];
+    el('thead', {}, el('tr', {}, el('th', { scope: 'col', class: 'ev-tog' }, el('span', { class: 'sr-only' }, 'Fields')), timeHead, el('th', { scope: 'col' }, 'Event'))), el('tbody', {}, ...body.flat())))];
   const matched = opts.matched || res.matched || 0;
   if (matched > rows.length) {
     kids.push(el('div', { class: 'table-foot' }, `Showing the first ${rows.length.toLocaleString()} of ${matched.toLocaleString()} matching events. Narrow the search, or add | head to choose how many.`));
@@ -1783,13 +2124,19 @@ function renderTable(box, res, opts) {
         icon(on ? (sort.desc ? 'arrow-down' : 'arrow-up') : 'arrow-up-down', on ? 'is-on' : '')));
     return th;
   });
-  const body = rows.map((r) => el('tr', {}, ...cols.map((c) => {
+  const drill = res.drill && opts.kind !== 'events' ? res.drill : null;
+  const body = rows.map((r, ri) => el('tr', {}, ...cols.map((c) => {
     const v = r[c];
     const td = el('td', { 'data-label': c });
     if (numCols.has(c)) td.className = 'num';
     if (c === '_raw') td.className = 'raw';
     if (c === '_time') td.className = 'time';
-    td.addEventListener('click', (ev) => showCellMenu(ev, c, v, opts.kind, r));
+    const go = drill ? () => searchDrill(res, ri, c) : null;
+    if (go && numCols.has(c) && c !== 'percent' && v != null) {
+      td.classList.add('drill');
+      td.title = DRILL_TITLE;
+      td.addEventListener('click', (ev) => { ev.stopPropagation(); go(); });
+    } else td.addEventListener('click', (ev) => showCellMenu(ev, c, v, opts.kind, r, false, go));
     if (v == null || v === '') return td;
     const text = c === '_time' ? fmtTime(v) : fmtValue(v);
     const kind = searchEntityKind(c, v);
@@ -1976,12 +2323,27 @@ function timeTicks(t0, t1, max) {
 }
 
 // ---------- cell actions ----------
-function showCellMenu(ev, col, value, kind, row, canSort) {
+// searchDrill opens the events behind row i's number in column col of a
+// summary in Search.
+const DRILL_TITLE = 'Click to see the events behind this number';
+function searchDrill(res, i, col) {
+  const dr = res.drill;
+  const t = drillTarget(dr, res, i, col);
+  const [from, to] = t.bucket || [dr.earliest || (lastSearch && lastSearch.earliest) || undefined, dr.latest || undefined];
+  openSearch(drillQuery(dr, t.pairs), from, to);
+}
+
+function showCellMenu(ev, col, value, kind, row, canSort, drill) {
   hideCellMenu();
   const item = (iconName, label, act) => el('button', {
     type: 'button', class: 'menu__item', role: 'menuitem', title: label,
     onclick: (e) => { e.stopPropagation(); hideCellMenu(); act(); },
   }, icon(iconName), el('span', {}, label));
+  const show = drill ? item('list', 'Show the events behind this row', drill) : null;
+  if (show && (value === null || value === undefined || col === 'count' || col === 'percent')) {
+    openCellMenu(ev, [show]);
+    return;
+  }
   const pin = kind === 'events' && row && can('analyst') && typeof pinEventToCase === 'function' ? item('pin', 'Pin this event to a case', () => pinEventToCase(row)) : null;
   if (value === null || value === undefined || col === 'count' || col === 'percent' || (col === '_raw' && !pin)) return;
   if (col === '_raw') {
@@ -1989,11 +2351,12 @@ function showCellMenu(ev, col, value, kind, row, canSort) {
     return;
   }
   const field = col === '_time' ? null : col;
-  const items = [];
+  const items = show ? [show] : [];
   if (field && kind !== 'timechart') {
     items.push(...pivotItems(item, field, value));
-    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + quoteValue(value))));
-    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + quoteValue(value))));
+    items.push(item('filter', `Filter to ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '=' + filterValue(value))));
+    items.push(item('filter-x', `Exclude ${field}=${fmtValue(value)}`, () => addSearchTerm(field + '!=' + filterValue(value))));
+    items.push(item('search', `New search for ${field}=${fmtValue(value)}`, () => newSearchFor(field + '=' + filterValue(value))));
     items.push(item('chart-bar', `Count events by ${field}`, () => {
       setQuery(splitPipes(queryBox.value)[0].trim() + '\n| stats count by ' + field + '\n| sort -count');
       runSearch();
@@ -2299,6 +2662,13 @@ async function ask(question, mode) {
       kids.push(el('span', { class: 'ask-read__label' }, 'Not understood:'), el('span', { class: 'ask-unknown' }, ...res.unknown.map((w) => el('code', {}, w))));
       if (!askInfo.ai_available) kids.push(el('span', { class: 'ask-read__label' }, 'Try field names from the Fields list, or edit the query.'));
     }
+    // Without an AI model only the built-in translator answers, and the
+    // Use AI switch stays hidden: say where to set one up.
+    if (!askInfo.ai_available && ((res.unknown || []).length || !res.confidence)) {
+      kids.push(pageAllowed('settings')
+        ? el('button', { type: 'button', class: 'link-btn', onclick: () => window.openSetting && window.openSetting('assistant.provider') }, 'Set up an AI model to write queries from questions like this')
+        : el('span', { class: 'ask-read__label' }, 'An admin can set up an AI model to write queries from questions like this.'));
+    }
   }
   if (res.ai_error) kids.push(el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'The AI model failed, so this is the built-in translation: ' + res.ai_error));
   const switchTo = res.source !== 'ai' && askInfo.ai_available ? ['Ask the AI model instead', 'ai'] : res.source === 'ai' ? ['Use the built-in translator instead', 'rules'] : null;
@@ -2357,7 +2727,8 @@ function renderGuide() {
 // as "Do this: command" shows the command in a copyable well, and the step
 // that saves the config file carries the file itself.
 //
-// "Agents send to" is the address written into the config. It starts as
+// "Agents send to" is the address written into the config, on the agent
+// port (the server puts an address of this server on it). It starts as
 // the server's public_url; when that is localhost but this browser reached
 // Signalith by another name, the browser's address is the better guess. An
 // address typed here is remembered in this browser.
@@ -2380,6 +2751,45 @@ try {
   agentServerEl.value = location.protocol === 'https:' && /^http:\/\//i.test(saved) ? 'https://' + saved.slice(7) : saved;
 } catch (_) { /* storage may be blocked */ }
 document.querySelectorAll('input[name=os]').forEach((r) => r.addEventListener('change', () => loadDataSource()));
+
+// ---------- add data: choosing a source ----------
+// Once a source is chosen only its card stays on screen, so its steps sit
+// right below it; "Choose a different source" brings the whole list back.
+// Arrow keys only move the choice: a click, Enter or Space settles it.
+function setSourcePicking(on, focus) {
+  const agentPickEl = $('agent-pick');
+  const was = agentPickEl.dataset.state === 'choosing';
+  agentPickEl.dataset.state = on ? 'choosing' : 'chosen';
+  $('agent-pick-change').setAttribute('aria-expanded', String(on));
+  if (was === on || !focus) return;
+  const checked = document.querySelector('input[name=os]:checked');
+  if (on && checked) checked.focus({ preventScroll: true });
+  const top = agentPickEl.getBoundingClientRect().top;
+  if (on || top < 0 || top > innerHeight * 0.4) {
+    agentPickEl.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+}
+$('agent-pick-change').addEventListener('click', () => setSourcePicking(true, true));
+$('agent-pick-list').addEventListener('click', (e) => {
+  if ($('agent-pick').dataset.state !== 'choosing' || !e.target.closest('.agent-os__card')) return;
+  // the click a label passes on to its radio, or one from the keyboard
+  if (e.target.tagName === 'INPUT' && e.detail === 0) return;
+  setTimeout(() => setSourcePicking(false, true));
+});
+$('agent-pick-list').addEventListener('keydown', (e) => {
+  if ($('agent-pick').dataset.state !== 'choosing' || e.target.name !== 'os') return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (!e.target.checked) {
+      e.target.checked = true;
+      e.target.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setSourcePicking(false, true);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    setSourcePicking(false, true);
+  }
+});
 $('linux-source').addEventListener('change', loadAgentConfig);
 $('otel-host').addEventListener('change', loadAgentConfig);
 $('osquery-platform').addEventListener('change', loadAgentConfig);
@@ -2389,7 +2799,7 @@ $('powershell').addEventListener('change', loadAgentConfig);
 ['sensor-zeek', 'sensor-suricata', 'sensor-protocols'].forEach((id) => $(id).addEventListener('change', loadAgentConfig));
 // The paths are asked for as they are typed, like the server address.
 let sensorPathTimer = 0;
-['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue'].forEach((id) => $(id).addEventListener('input', () => {
+['sensor-zeek-dir', 'sensor-eve-path', 'aws-bucket', 'aws-queue', 'gcp-project', 'gcp-subscription'].forEach((id) => $(id).addEventListener('input', () => {
   clearTimeout(sensorPathTimer);
   sensorPathTimer = setTimeout(loadAgentConfig, 400);
 }));
@@ -2425,15 +2835,15 @@ agentServerEl.addEventListener('change', async () => {
 // in storage; changing the name or the source drops it, so the next copy
 // makes a new token. "Use a token I already have" takes a pasted token
 // instead (checked here only).
-const AGENT_TOKEN_DEFAULTS = { linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure' };
+const AGENT_TOKEN_DEFAULTS = { agent: 'Computers with the Signalith Agent', linux: 'Linux servers', windows: 'Windows servers', otel: 'OpenTelemetry Collector', osquery: 'osquery hosts', wazuh: 'Wazuh manager', sensor: 'Network sensor', aws: 'AWS CloudTrail', azure: 'Entra ID and Azure', gcp: 'Google Cloud' };
 // AGENT_TOKEN_PURPOSES is the token purpose of a source whose agent is
 // another's: Fluent Bit on the Wazuh manager is a Linux agent, and the
-// Collectors that read AWS CloudTrail or Azure's event hub OpenTelemetry
-// Collectors.
-const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel' };
+// Collectors that read AWS CloudTrail, Azure's event hub or Google Cloud's
+// Pub/Sub subscription OpenTelemetry Collectors.
+const AGENT_TOKEN_PURPOSES = { wazuh: 'linux', aws: 'otel', azure: 'otel', gcp: 'otel' };
 const agentTokenNameKey = 'signalith.agentTokenName.';
 const agentTok = {
-  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws or azure: what the setup on screen is for
+  purpose: '', // linux, windows, otel, osquery, wazuh, sensor, aws, azure or gcp: what the setup on screen is for
   secret: '', // the token made on this page for name + purpose
   madeFor: '', // purpose + name the secret was made for
   made: null, // the token record of the secret, for the success line
@@ -2517,6 +2927,7 @@ function agentTokDrop() {
   $('agent-token-made').replaceChildren();
   if (had && agentSetupData) agentSetupRender(agentSetupData);
   if (had && typeof sensorSetupRender === 'function') sensorSetupRender();
+  if (had && typeof agentInstallRender === 'function') agentInstallRender();
 }
 
 function agentTokError(msg) {
@@ -2597,6 +3008,7 @@ async function agentTokEnsure() {
       agentTokMadeNote();
       if (agentSetupData) agentSetupRender(agentSetupData);
       if (typeof sensorSetupRender === 'function') sensorSetupRender();
+      if (typeof agentInstallRender === 'function') agentInstallRender();
       if (typeof tokensReload === 'function') tokensReload();
       return true;
     } catch (e) {
@@ -2614,7 +3026,7 @@ function agentTokMadeNote() {
   const box = $('agent-token-made');
   box.replaceChildren(icon('circle-check'), el('div', {},
     el('b', {}, `Created token “${agentTok.made.name}”.`),
-    el('p', {}, typeof sensorSetupActive === 'function' && sensorSetupActive()
+    el('p', {}, (typeof sensorSetupActive === 'function' && sensorSetupActive()) || (typeof agentInstallActive === 'function' && agentInstallActive())
       ? 'It’s in the line below. Signalith shows it only now, so copy the line before you leave this page.'
       : 'It’s in the configuration below. Signalith shows it only now, so copy or download the configuration before you leave this page.')));
   box.classList.remove('hidden');
@@ -2687,11 +3099,17 @@ async function agentSetupLoad() {
   // Entra ID and Azure: an OpenTelemetry Collector that reads the event
   // hub they send their logs to.
   const azure = os === 'azure';
-  const cloud = aws || azure;
+  // Google Cloud: an OpenTelemetry Collector that reads the Pub/Sub
+  // subscription a log sink feeds.
+  const gcp = os === 'gcp';
+  const cloud = aws || azure || gcp;
   const collector = otel || cloud;
-  const host = collector ? $('otel-host').value : osq || sensor ? '' : os;
+  // Signalith Agent: one line, made by agent-setup.js.
+  const managed = os === 'agent';
+  const host = collector ? $('otel-host').value : osq || sensor || managed ? '' : os;
   agentTokPurpose(otel ? 'otel' : osq ? 'osquery' : sensor ? 'sensor' : os);
   $('aws-paths').classList.toggle('hidden', !aws);
+  $('gcp-paths').classList.toggle('hidden', !gcp);
   $('sensor-opts').classList.toggle('hidden', !sensor);
   $('sensor-paths').classList.toggle('hidden', !sensor);
   $('sensor-note').classList.toggle('hidden', !sensor);
@@ -2711,17 +3129,20 @@ async function agentSetupLoad() {
   $('agent-title').textContent = osq ? 'Manage ' + osqName + ' hosts with osquery' : otel ? 'Set up the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : aws ? 'Read AWS CloudTrail with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : azure ? 'Read Entra ID and Azure logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
+    : gcp ? 'Read Google Cloud audit logs with the OpenTelemetry Collector on ' + (host === 'windows' ? 'Windows' : 'Linux')
     : wazuh ? 'Set up Fluent Bit on the Wazuh manager'
     : sensor ? 'Send network sensor logs with Fluent Bit'
     : 'Set up Fluent Bit on ' + (os === 'windows' ? 'Windows' : 'Linux');
   $('agent-sub').textContent = wazuh ? 'Do this once, on the Wazuh manager. Your Wazuh agents keep reporting to it as before.'
     : aws ? 'Do this once, on a machine that can reach AWS and this server, such as a small EC2 instance.'
     : azure ? 'Do this once, on a machine that can reach Azure and this server, such as a small Azure VM.'
+    : gcp ? 'Do this once, on a machine that can reach Google Cloud and this server, such as a small Compute Engine VM.'
     : sensor ? 'Do this on the machine that runs Zeek or Suricata.'
     : 'Do this on each host you want to collect from.';
   // Network sensor > Set up a new sensor: one line instead of a
   // configuration (sensor-setup.js).
   if (typeof sensorSetupSync === 'function' && sensorSetupSync(sensor)) return;
+  if (typeof agentInstallSync === 'function' && agentInstallSync(managed)) return;
   const steps = $('agent-steps');
   const seq = ++agentSetupSeq;
   steps.setAttribute('aria-busy', 'true');
@@ -2731,6 +3152,7 @@ async function agentSetupLoad() {
       zeek_dir: $('sensor-zeek-dir').value.trim(), eve_path: $('sensor-eve-path').value.trim() })
     : aws ? new URLSearchParams({ os, aws_bucket: $('aws-bucket').value.trim(), aws_queue: $('aws-queue').value.trim() })
     : azure ? new URLSearchParams({ os })
+    : gcp ? new URLSearchParams({ os, gcp_project: $('gcp-project').value.trim(), gcp_subscription: $('gcp-subscription').value.trim() })
     : new URLSearchParams({ os, source: $('linux-source').value, sysmon: (host === 'linux' ? !otel && $('sysmon-linux').checked : $('sysmon').checked), powershell: $('powershell').checked });
   if (collector) q.set('collector', host);
   if (osq) q.set('platform', $('osquery-platform').value);
@@ -2746,9 +3168,16 @@ async function agentSetupLoad() {
     agentServerError('');
     sensorFieldError('');
     awsFieldError('');
+    gcpFieldError('');
+    let shown = server;
+    if (!agentDest.to && server && a.server_url && a.server_url !== server && agentSameHost(server, a.server_url)) {
+      // An address of this server, such as the web page's: agents send to
+      // it on the agent port, which the field shows.
+      shown = agentServerEl.value = agentServerSent = a.server_url;
+    }
     try {
       if (agentDest.to) { /* one server's own address: not remembered */ }
-      else if (server && server !== agentServerGuess) localStorage.setItem(agentServerKey, server);
+      else if (shown && shown !== agentServerGuess) localStorage.setItem(agentServerKey, shown);
       else localStorage.removeItem(agentServerKey);
     } catch (_) { /* storage may be blocked */ }
     agentSetupRender(a);
@@ -2757,6 +3186,7 @@ async function agentSetupLoad() {
     if (e.field === 'server' || e.field === 'to') agentServerError(e.message);
     else if (sensor && ['tools', 'zeek_dir', 'eve_path'].includes(e.field)) sensorFieldError(e.field, e.message);
     else if (aws && ['aws_bucket', 'aws_queue'].includes(e.field)) awsFieldError(e.field, e.message);
+    else if (gcp && ['gcp_project', 'gcp_subscription'].includes(e.field)) gcpFieldError(e.field, e.message);
     else agentSetupError(e);
   } finally {
     if (seq === agentSetupSeq) steps.removeAttribute('aria-busy');
@@ -2805,12 +3235,53 @@ function awsFieldError(field, msg) {
   }
 }
 
+// agentSameHost reports whether two addresses differ in their port alone.
+function agentSameHost(a, b) {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    return x.protocol === y.protocol && x.hostname === y.hostname;
+  } catch (_) {
+    return false;
+  }
+}
+
+// gcpFieldError shows a Google Cloud option's error under it (field
+// gcp_project or gcp_subscription), or clears both when field is empty.
+function gcpFieldError(field, msg) {
+  for (const f of ['gcp_project', 'gcp_subscription']) {
+    const id = f === 'gcp_project' ? 'gcp-project' : 'gcp-subscription';
+    const on = f === field && msg;
+    const err = $(id + '-error');
+    err.replaceChildren(...(on ? [icon('circle-alert'), msg.charAt(0).toUpperCase() + msg.slice(1) + (/[.?!]$/.test(msg) ? '' : '.')] : []));
+    err.classList.toggle('hidden', !on);
+    if (on) $(id).setAttribute('aria-invalid', 'true');
+    else $(id).removeAttribute('aria-invalid');
+  }
+  // nothing to show for a config that can't be made
+  if (field) {
+    agentSetupConfig = '';
+    $('agent-steps').replaceChildren();
+    agentFileEl.classList.add('hidden');
+  }
+}
+
 // agentServerFirst takes the server's own address as the guess and fills
 // the empty field with it. It returns true when the browser's address is
 // the better guess, so the config must be built again.
 function agentServerFirst(a) {
   const own = a.server_url || '';
-  agentServerGuess = a.server_loopback && !agentLoopbackHost(location.hostname) ? location.origin : own;
+  agentServerGuess = own;
+  if (a.server_loopback && !agentLoopbackHost(location.hostname)) {
+    // This browser's address, on the port agents send to (server_url's).
+    try {
+      const u = new URL(own);
+      u.hostname = location.hostname;
+      agentServerGuess = u.origin;
+    } catch (_) {
+      agentServerGuess = location.origin;
+    }
+  }
   agentServerEl.placeholder = agentServerGuess;
   if (!agentServerEl.value.trim()) agentServerEl.value = agentServerGuess;
   return agentServerGuess !== own;
@@ -2842,8 +3313,8 @@ function agentServerWarn(a) {
   if (w.dataset.url === a.server_url) return; // unchanged: don't announce it again
   w.dataset.url = a.server_url;
   let host = 'localhost';
-  let example = 'https://192.168.1.20:8080';
-  let port = '8080';
+  let example = 'https://192.168.1.20:7779';
+  let port = '7779';
   try {
     const u = new URL(a.server_url);
     host = u.hostname;
@@ -3195,6 +3666,8 @@ const syslogState = {
   nameError: null,
   // since the panel opened: when, the counts then, new senders announced, and what the live box says
   opened: 0, base: null, announced: new Set(), liveKey: '',
+  // the syslog settings behind "Turn on plain syslog" (admins): { view } or { err }, read when needed
+  plain: null,
 };
 try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; } catch (_) { /* storage may be blocked */ }
 
@@ -3202,17 +3675,27 @@ try { syslogState.vendor = localStorage.getItem(syslogVendorKey) || 'rsyslog'; }
 // setup lives in antivirus.js.
 function loadDataSource() {
   const src = document.querySelector('input[name=os]:checked').value;
-  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365');
+  $('agent-setup').classList.toggle('hidden', src === 'syslog' || src === 'antivirus' || src === 'm365' || src === 'okta' || src === 'kubernetes' || src === 'github' || src === 'custom');
   $('syslog-setup').classList.toggle('hidden', src !== 'syslog');
   $('antivirus-setup').classList.toggle('hidden', src !== 'antivirus');
   $('m365-setup').classList.toggle('hidden', src !== 'm365');
+  $('okta-setup').classList.toggle('hidden', src !== 'okta');
+  $('kubernetes-setup').classList.toggle('hidden', src !== 'kubernetes');
+  $('github-setup').classList.toggle('hidden', src !== 'github');
+  $('custom-setup').classList.toggle('hidden', src !== 'custom');
+  if (src === 'custom') return typeof customLogsOpen === 'function' ? customLogsOpen() : null;
   if (src === 'm365') return typeof m365Open === 'function' ? m365Open() : null;
+  if (src === 'okta') return typeof oktaOpen === 'function' ? oktaOpen() : null;
+  // Kubernetes: the steps are on the page.
+  if (src === 'kubernetes') return null;
+  // GitHub: the steps are the card's own; nothing to load.
+  if (src === 'github') return null;
   if (src === 'antivirus') return typeof antivirusOpen === 'function' ? antivirusOpen() : null;
   return src === 'syslog' ? syslogOpen() : loadAgentConfig();
 }
 
-// pickDataSource selects a source card on the Add data page: linux,
-// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure or m365. It is false
+// pickDataSource selects a source card on the Add data page: agent, linux,
+// windows, syslog, antivirus, otel, osquery, wazuh, sensor, aws, azure, m365, okta, github, gcp, kubernetes or custom. It is false
 // for anything else.
 function pickDataSource(src) {
   const r = document.querySelector(`input[name=os][value="${CSS.escape(String(src))}"]`);
@@ -3246,6 +3729,7 @@ async function syslogOpen() {
   st.opened = Date.now();
   st.announced.clear();
   st.liveKey = '';
+  st.plain = null;
   if (!st.ticker) st.ticker = setInterval(syslogTick, 1000);
   if (!st.h) syslogSkeleton();
   await syslogGuessHost();
@@ -3482,7 +3966,10 @@ function syslogBuild(sl) {
   addr.classList.toggle('hidden', !sl.enabled);
   if (!sl.enabled) {
     syslogHostError('');
-    return main.replaceChildren(...syslogOff(h));
+    main.replaceChildren(...syslogOff());
+    syslogPlainRender();
+    syslogPlainLoad();
+    return;
   }
   const d = syslogDest(sl);
   const ips = (h.runtime && h.runtime.addresses) || [];
@@ -3543,11 +4030,17 @@ function syslogBuild(sl) {
     e.preventDefault();
     pickTab(list[(to + list.length) % list.length].dataset.vendor, true);
   });
-  main.replaceChildren(el('ol', { class: 'agent-steps', role: 'list' },
+  // Only syslog over TLS is on: devices that can't use it need plain syslog.
+  const plain = !d.udp && !d.tcp ? el('div', { class: 'sl-plain', id: 'syslog-plain', tabindex: '-1' }) : null;
+  main.replaceChildren(...(plain ? [plain] : []), el('ol', { class: 'agent-steps', role: 'list' },
     step(1, 'Set up the device', syslogTabBar(tabs), panel),
     step(2, 'Send a test message', ...syslogTest(d)),
     step(3, 'See it arrive', el('div', { class: 'sl-live', id: 'syslog-live', 'aria-live': 'off' }))));
   pickTab(syslogState.vendor);
+  if (plain) {
+    syslogPlainRender();
+    syslogPlainLoad();
+  }
 }
 
 // syslogRevealTab scrolls the tab strip, never the page, so a tab is clear
@@ -3583,53 +4076,190 @@ function syslogTabBar(tabs) {
 const syslogSh = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 const syslogPs = (s) => `'${s.replace(/'/g, '\'\'')}'`;
 
-// syslogOff says syslog is off and how to turn it on, as steps for the
-// system the server runs on (api/health "runtime"): what lets a Linux
-// service open port 514 (before the restart that needs it), the values to
-// set on the Settings page, which checks them and restarts Signalith, and
-// the Windows firewall rules. The page keeps polling and shows the setup
-// once syslog is on.
-function syslogOff(h) {
-  const rt = h.runtime || {};
+// syslogPlainPlan is how plain syslog (UDP and TCP) is turned on where the
+// server runs (api/health "runtime"): the port Signalith listens on, the
+// one devices send to, the settings to save, and whether a Linux service
+// must first be let open port 514. Ports below 1024 need root or the
+// systemd unit's capability; a service can be given it, anything else
+// gets a high port. In a container the port is 5514, which the Docker
+// quick start publishes as 514.
+function syslogPlainPlan(rt) {
+  rt = rt || {};
   const docker = !!rt.container;
   const win = rt.os === 'windows';
   const linux = !docker && !win;
-  // Ports below 1024 need root or the systemd unit's capability; a
-  // service can be given it, anything else gets a high port.
   const port = docker ? 5514 : linux && rt.low_ports === false && !rt.systemd ? 1514 : 514;
+  const addr = `0.0.0.0:${port}`;
+  return {
+    docker, win, linux, port, sendTo: docker ? 514 : port,
+    capability: linux && rt.low_ports === false && !!rt.systemd,
+    values: { 'syslog.udp': addr, 'syslog.tcp': addr },
+  };
+}
+
+// syslogSettingField finds one setting in an api/settings view.
+function syslogSettingField(v, key) {
+  for (const s of (v && v.sections) || []) for (const f of s.fields || []) if (f.key === key) return f;
+  return null;
+}
+
+// syslogPlainWarning says what plain syslog risks, next to the button
+// that turns it on.
+function syslogPlainWarning(title) {
+  return el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'), el('div', {},
+    el('b', {}, title),
+    el('p', {}, 'Plain syslog is unencrypted, and anyone who can reach the port can send fake events. Use syslog over TLS where the device supports it, ' +
+      'as rsyslog and syslog-ng do. Turn plain syslog on only for devices that can’t, and limit who may send with ', el('b', {}, 'Allowed senders'), ' (syslog.allow).')));
+}
+
+// syslogPlainSteps are what is left to do once plain syslog is saved: let
+// a Linux service open port 514 (that restarts Signalith too) or restart
+// it, then let syslog through the Windows firewall.
+function syslogPlainSteps(plan, view) {
   const code = (t) => el('code', {}, t);
-  const step = (n, title, ...body) => el('li', { class: 'agent-step' }, el('span', { class: 'agent-step__num' }, n),
-    el('div', { class: 'agent-step__body' }, el('p', { class: 'agent-step__text' }, ...[].concat(title)), ...body));
-  const steps = [];
-  if (linux && rt.low_ports === false && rt.systemd) {
-    steps.push([['Let the service open port 514, then restart it so it can:'], agentSetupCommand('sudo mkdir -p /etc/systemd/system/signalith.service.d\n' +
-      'printf \'[Service]\\nAmbientCapabilities=CAP_NET_BIND_SERVICE\\n\' | sudo tee /etc/systemd/system/signalith.service.d/syslog.conf\n' +
-      'sudo systemctl daemon-reload && sudo systemctl restart signalith', 'Copy commands')]);
+  const out = [];
+  if (plan.capability) {
+    out.push(el('p', {}, 'Let the service open port 514. This also restarts Signalith, which then starts plain syslog:'),
+      agentSetupCommand('sudo mkdir -p /etc/systemd/system/signalith.service.d\n' +
+        'printf \'[Service]\\nAmbientCapabilities=CAP_NET_BIND_SERVICE\\n\' | sudo tee /etc/systemd/system/signalith.service.d/syslog.conf\n' +
+        'sudo systemctl daemon-reload && sudo systemctl restart signalith', 'Copy commands'));
+  } else {
+    const r = (view && view.restart) || {};
+    out.push(el('p', {}, 'It starts when Signalith restarts.'));
+    if (r.available) {
+      out.push(el('div', { class: 'btn-row' }, el('button', { type: 'button', class: 'btn btn--primary btn--sm', onclick: () => window.openRestart && window.openRestart() },
+        icon('rotate-ccw'), 'Restart now…')),
+      el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Opens the Settings page, which lists every change waiting for the restart. Choose ', el('b', {}, 'Restart now'), ' there.')));
+    } else {
+      out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, r.unavailable || 'Restart Signalith on the server to apply it.')));
+    }
   }
-  const set = [['On the Settings page, under Syslog, set ', el('b', {}, 'UDP address'), ' and ', el('b', {}, 'TCP address'), ' to ', code(`0.0.0.0:${port}`),
-    ...(docker ? [', and ', el('b', {}, 'Port devices send to'), ' to ', code('514')] : []),
-    '. Save, then choose ', el('b', {}, 'Restart now'), ' at the top of that page.'],
-  el('div', {}, el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: () => openSetting('syslog.udp') },
-    icon('settings'), 'Open syslog settings'))];
-  if (port === 1514) set.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Ports below 1024 need root on Linux, so this uses 1514. Devices then send to port 1514.')));
-  if (docker) set.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'In the Docker quick start, port 514 on this machine reaches 5514 inside the container.')));
-  steps.push(set);
-  if (win) {
-    const fw = (p) => `New-NetFirewallRule -DisplayName 'Signalith syslog ${p} 514' -Direction Inbound -Protocol ${p} -LocalPort 514 -Action Allow`;
-    steps.push([['In PowerShell as administrator, let syslog through Windows Firewall:'], agentSetupCommand(`${fw('UDP')}\n${fw('TCP')}`, 'Copy commands')]);
+  if (plan.win) {
+    const fw = (p) => `New-NetFirewallRule -DisplayName 'Signalith syslog ${p} ${plan.port}' -Direction Inbound -Protocol ${p} -LocalPort ${plan.port} -Action Allow`;
+    out.push(el('p', {}, 'In PowerShell as administrator, let syslog through Windows Firewall:'), agentSetupCommand(`${fw('UDP')}\n${fw('TCP')}`, 'Copy commands'));
   }
+  if (plan.port === 1514) out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Ports below 1024 need root on Linux, so this uses 1514. Devices then send to port 1514.')));
+  if (plan.docker) out.push(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'In the Docker quick start, port ', code('514'), ' on this machine reaches ', code('5514'), ' inside the container.')));
+  return out;
+}
+
+// syslogPlainLoad reads the syslog settings for the admin's "Turn on
+// plain syslog" button: whether they can be changed here and whether a
+// change waits for a restart. It reads them again when the panel opens.
+async function syslogPlainLoad() {
+  const st = syslogState;
+  if (!can('admin') || st.plain) return;
+  st.plain = { loading: true };
+  try {
+    st.plain = { view: await api('api/settings') };
+  } catch (e) {
+    st.plain = { err: e };
+  }
+  syslogPlainRender();
+}
+
+// syslogPlainOn saves syslog.udp and syslog.tcp the way the Settings page
+// does (PUT api/settings, which asks for the password again when a save
+// needs it), then shows what is left: the restart, and the port and
+// firewall steps the system needs.
+async function syslogPlainOn(btn) {
+  const st = syslogState;
+  const plan = syslogPlainPlan(st.h && st.h.runtime);
+  const values = { ...plan.values };
+  // The Docker quick start's devices send to 514 on the host.
+  const pub = syslogSettingField(st.plain && st.plain.view, 'syslog.public_port');
+  if (plan.docker && pub && !pub.locked && !pub.value) values['syslog.public_port'] = 514;
+  const restore = busy(btn, 'Turning on…');
+  try {
+    const v = await api('api/settings', { values }, 'PUT');
+    st.plain = { view: v, saved: true };
+    toast('Plain syslog is saved. It starts when Signalith restarts.', null, { title: 'Saved' });
+  } catch (e) {
+    restore();
+    if (e.code === 'forbidden') return;
+    const why = e.fields ? Object.values(e.fields).join(' ') : '';
+    st.plain = { ...(st.plain || {}), saveErr: why || e.message };
+  }
+  syslogPlainRender();
+  const box = $('syslog-plain');
+  if (box) box.focus({ preventScroll: true });
+}
+
+// syslogPlainRender fills the box that turns on plain syslog, in place,
+// so the device setups around it keep their state.
+function syslogPlainRender() {
+  const box = $('syslog-plain');
+  if (!box) return;
+  const st = syslogState;
+  const h = st.h || {};
+  const plan = syslogPlainPlan(h.runtime);
+  const code = (t) => el('code', {}, t);
+  const openSettings = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: () => openSetting('syslog.udp') }, icon('settings'), 'Open syslog settings');
+  if (!can('admin')) {
+    return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {},
+      'Plain syslog over UDP and TCP is off. An admin can turn it on here for devices that can’t send over TLS.')));
+  }
+  const p = st.plain;
+  if (!p || p.loading) return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {}, 'Checking the syslog settings…')));
+  // Without the settings, the steps to make the change by hand.
+  if (p.err) {
+    return box.replaceChildren(syslogPlainWarning('Plain syslog (UDP and TCP) is off.'),
+      el('p', {}, 'On the Settings page, under Syslog, set ', el('b', {}, 'UDP address'), ' and ', el('b', {}, 'TCP address'), ' to ', code(plan.values['syslog.udp']),
+        ', save, then choose ', el('b', {}, 'Restart now'), ' at the top of that page.'),
+      el('div', { class: 'btn-row' }, openSettings));
+  }
+  const v = p.view;
+  const udp = syslogSettingField(v, 'syslog.udp');
+  const tcp = syslogSettingField(v, 'syslog.tcp');
+  const locked = [udp, tcp].find((f) => f && f.locked);
+  if (locked) {
+    return box.replaceChildren(el('div', { class: 'alert', 'data-tone': 'info', role: 'status' }, icon('lock'), el('div', {},
+      el('b', {}, 'Plain syslog (UDP and TCP) is set outside Signalith.'),
+      el('p', {}, sentence(locked.locked_reason || `It is set by ${locked.env} in this server’s environment`) + ' ',
+        'In Kubernetes, set ', code('server.syslog.plain: true'), ' and run ', code('helm upgrade'), '; elsewhere, change ', code(locked.env || 'SIGNALITH_SYSLOG_UDP'),
+        ' and ', code('SIGNALITH_SYSLOG_TCP'), ' where the service is started.'))));
+  }
+  if (v && v.editable === false) {
+    return box.replaceChildren(el('p', { class: 'hint' }, icon('info'), el('span', {},
+      'Plain syslog is off, and this server was started without a configuration file, so it can’t be turned on here. Set syslog.udp and syslog.tcp where it is started.')));
+  }
+  const saved = [udp, tcp].filter((f) => f && f.pending && f.value);
+  if (saved.length) {
+    const addr = saved.map((f) => f.value).filter((a, i, all) => all.indexOf(a) === i).join(' and ');
+    return box.replaceChildren(el('div', { class: 'alert', 'data-tone': 'success', role: 'status' }, icon('circle-check'), el('div', {},
+      el('b', {}, `Plain syslog is saved: ${saved.map((f) => (f.key === 'syslog.udp' ? 'UDP' : 'TCP')).join(' and ')} on ${addr}.`),
+      ...syslogPlainSteps(plan, v))));
+  }
+  const btn = el('button', { type: 'button', class: 'btn btn--primary btn--sm', id: 'syslog-plain-on' }, icon('power'), 'Turn on plain syslog (UDP and TCP)');
+  btn.addEventListener('click', () => syslogPlainOn(btn));
+  return box.replaceChildren(syslogPlainWarning('Plain syslog (UDP and TCP) is off.'),
+    el('p', {}, 'For devices that can only send plain syslog, such as many firewalls, switches and routers: Signalith then listens on UDP and TCP ',
+      code(plan.values['syslog.udp']), ...(plan.sendTo !== plan.port ? ['; devices send to port ', code(String(plan.sendTo))] : []), '.'),
+    ...(p.saveErr ? [el('p', { class: 'hint', 'data-tone': 'warning' }, icon('circle-alert'), el('span', {}, 'Nothing was saved. ' + sentence(p.saveErr)))] : []),
+    el('div', { class: 'btn-row' }, btn, openSettings));
+}
+
+// syslogOff says syslog is off and how to turn it on. Admins turn plain
+// syslog on with one click (syslogPlainRender); syslog over TLS is the
+// safer choice, set on the Settings page. The page keeps polling and
+// shows the setup once syslog is on.
+function syslogOff() {
   return [
     el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'), el('div', {},
-      el('b', {}, 'Syslog is off.'), el('p', {}, 'Turn it on with these steps. This page shows the device setup once it is on.'))),
-    el('ol', { class: 'agent-steps', role: 'list' }, ...steps.map(([title, ...body], i) => step(i + 1, title, ...body))),
+      el('b', {}, 'Syslog is off.'), el('p', {}, 'Syslog over TLS keeps logs private and can’t be forged on the way: set ', el('b', {}, 'TLS address'),
+        ' to ', el('code', {}, '0.0.0.0:6514'), ' on the Settings page, under Syslog. This page shows the device setup once syslog is on.'))),
+    el('div', { class: 'sl-plain', id: 'syslog-plain', tabindex: '-1' }),
   ];
 }
 
 // syslogTest is a test message from Linux (logger) and from Windows
-// (PowerShell has no syslog command, so it sends one RFC 5424 line).
+// (PowerShell has no syslog command, so it sends one RFC 5424 line). With
+// only syslog over TLS on, the message goes over TLS: openssl on Linux, an
+// SslStream in PowerShell.
 function syslogTest(d) {
   const p = d.udp ? 'udp' : d.tcp ? 'tcp' : '';
-  if (!p) return [el('p', { class: 'hint' }, icon('info'), 'Turn on syslog.udp or syslog.tcp to send a test from here.')];
+  if (!p && d.tls) return syslogTestTLS(d);
+  if (!p) return [el('p', { class: 'hint' }, icon('info'), 'Turn on syslog to send a test from here.')];
   const host = d.host;
   const port = d[p];
   const msg = '"<14>1 - $env:COMPUTERNAME signalith-test - - - Test message from $env:COMPUTERNAME' + (p === 'tcp' ? '`n' : '') + '"';
@@ -3641,6 +4271,25 @@ function syslogTest(d) {
     agentSetupCommand(`logger -n ${host} -P ${port} ${p === 'udp' ? '-d' : '-T'} -t signalith-test "Test message from $(hostname)"`),
     el('p', { class: 'sl-label' }, 'From Windows PowerShell'),
     agentSetupCommand(ps),
+  ];
+}
+
+// syslogTestTLS is the test message over TLS. It only tests the way to
+// Signalith, so it does not check the certificate; the device setups do.
+function syslogTestTLS(d) {
+  const host = d.host;
+  const port = d.tls;
+  const msg = '"<14>1 - $env:COMPUTERNAME signalith-test - - - Test message from $env:COMPUTERNAME`n"';
+  const ps = `$t = New-Object Net.Sockets.TcpClient('${host}', ${port}); $s = New-Object Net.Security.SslStream($t.GetStream(), $false, { $true }); ` +
+    `$s.AuthenticateAsClient('${host}', $null, [Security.Authentication.SslProtocols]::Tls12, $false); ` +
+    `$b = [Text.Encoding]::UTF8.GetBytes(${msg}); $s.Write($b, 0, $b.Length); $s.Close(); $t.Close()`;
+  return [
+    el('p', { class: 'sl-label' }, 'From Linux'),
+    agentSetupCommand(`printf '<14>1 - %s signalith-test - - - Test message from %s\\n' "$(hostname)" "$(hostname)" | ` +
+      `openssl s_client -connect ${syslogHostPort(host, port)} -servername ${host} -quiet -no_ign_eof >/dev/null`),
+    el('p', { class: 'sl-label' }, 'From Windows PowerShell'),
+    agentSetupCommand(ps),
+    slNote('This sends over TLS without checking Signalith’s certificate, to test the way here only. The device setups above check it.'),
   ];
 }
 
@@ -3776,8 +4425,10 @@ function syslogVendors(d, ips) {
   const pick = (...order) => order.find((p) => d[p]) || '';
   const hp = (p) => syslogHostPort(d.host, d[p]);
   const v6 = d.host.includes(':');
-  const none = () => [slNote('Only syslog over TLS is on, and this setup needs UDP or TCP. Set syslog.udp or syslog.tcp to turn one on.')];
-  const udpOnly = (name) => [slNote(name + ' sends over UDP only, and UDP is off here. Set syslog.udp to turn it on.')];
+  const none = () => [slNote('This device can’t send over TLS, and plain syslog (UDP and TCP) is off here. ' +
+    (can('admin') ? 'Turn it on above to set it up.' : 'An admin can turn it on above.'))];
+  const udpOnly = (name) => [slNote(name + ' sends over UDP only, and UDP is off here. ' +
+    (can('admin') ? 'Turn on plain syslog above to set it up.' : 'An admin can turn on plain syslog above.'))];
   // Servers send over TLS when it is on and Signalith has a CA to give
   // them: they check the server with it, and nobody on the network can
   // read the logs.

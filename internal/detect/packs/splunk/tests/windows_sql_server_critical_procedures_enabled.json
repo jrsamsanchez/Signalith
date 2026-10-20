@@ -1,0 +1,15 @@
+{"rule": "d0434864-b043-41e3-8c08-30e53605e9cb", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"Ad Hoc Distributed Queries","EventCode":"test-eventcode","Provider_Name":"MSSQLSERVER","change_type":"test-change_type","config_name":"test-config_name","dest":"test-dest","risk_message":"test-risk_message","risk_score":"test-risk_score"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"external scripts enabled","EventCode":"test-eventcode","Provider_Name":"MSSQLSERVER","change_type":"test-change_type","config_name":"test-config_name","dest":"test-dest","risk_message":"test-risk_message","risk_score":"test-risk_score"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"Ad Hoc Distributed Queries","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"external scripts enabled","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"Ole Automation Procedures","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"clr enabled","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"A","Data2":"A","Data3":"A","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"Ad Hoc Distributed Queries","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"external scripts enabled","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"Ole Automation Procedures","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"clr enabled","Provider_Name":"MSSQLSERVER"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"15457","data":{"Data1":"clr strict security","Provider_Name":"MSSQLSERVER"}}
+]}

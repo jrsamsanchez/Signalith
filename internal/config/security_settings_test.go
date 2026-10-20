@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package config
 
 import (
@@ -134,7 +137,7 @@ func TestSecretInventory(t *testing.T) {
 	for _, f := range c.SecretFiles() {
 		paths = append(paths, f.Path)
 	}
-	if !slices.Equal(paths, []string{path, c.DirectoryFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.SettingsFile(),
+	if !slices.Equal(paths, []string{path, c.UsersFile(), c.DirectoryFile(), c.IntelFeedsFile(), c.NotifyFile(), c.ResponseFile(), c.TicketingFile(), c.SettingsFile(),
 		shared.NodeKeyPath(c.StateDir()), shared.CachePath(c.StateDir())}) {
 		t.Errorf("files %v", paths)
 	}

@@ -1,0 +1,6 @@
+{"rule": "e0cfaecd-602d-41af-988d-f6ccebb2af26", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"preinstall","parent_cmdline":"/package_script_service","parent_path":"/package_script_service","path":"/php"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/php","parent_cmdline":"/package_script_service","parent_path":"/package_script_service","path":"/php"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"preinstall","parent_cmdline":"/package_script_service","parent_path":"/package_script_service","path":"/usr/local/bin/helper"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"preinstall","path":"/php"}}
+]}

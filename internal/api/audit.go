@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -6,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/audit"
@@ -22,7 +26,23 @@ type Audit struct {
 	// SharedAudit); until then the audit records are only in each
 	// server's log, and restores run where they are asked for.
 	Shared func() bool
+	// Keys returns, for one integrity check, the audit keys of every
+	// cluster key this server holds, retired ones included; nil, or a nil
+	// KeyFunc, when it holds none.
+	Keys func() audit.KeyFunc
+	// SignedSince returns, from the cluster document, when each server
+	// started signing its audit records (audit.VerifyQuery.SignedSince);
+	// nil is none known.
+	SignedSince func() map[string]time.Time
+
+	// verifying is held while an integrity check runs: one at a time, as
+	// each reads up to auditVerifyLimit records.
+	verifying sync.Mutex
 }
+
+// auditVerifyLimit is the most records the integrity check reads at once;
+// signalith audit verify reads more.
+const auditVerifyLimit = 500_000
 
 func (a *Audit) on() bool { return a != nil && a.Shared != nil && a.Shared() }
 
@@ -30,6 +50,63 @@ func (a *Audit) on() bool { return a != nil && a.Shared != nil && a.Shared() }
 func (s *Server) routeAudit(api *router) {
 	api.admin("GET /api/audit", s.handleAudit)
 	api.admin("GET /api/audit/servers", s.handleAuditServers)
+	api.admin("GET /api/audit/verify", s.handleAuditVerify)
+}
+
+// handleAuditVerify checks that the audit records were not changed or
+// removed (audit.Verify): ?from=&to= (RFC 3339) and server, as for the
+// search.
+func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
+	if !s.Audit.on() {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false,
+			"note": "Audit records are checked here once servers share one OpenSearch as a cluster."})
+		return
+	}
+	q := r.URL.Query()
+	vq := audit.VerifyQuery{Server: q.Get("server"), Limit: auditVerifyLimit}
+	if !parseAuditTimes(w, q.Get("from"), q.Get("to"), &vq.From, &vq.To) {
+		return
+	}
+	if !s.Audit.verifying.TryLock() {
+		writeError(w, http.StatusTooManyRequests, errors.New("an integrity check is running already; try again once it has finished"))
+		return
+	}
+	defer s.Audit.verifying.Unlock()
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	var keys audit.KeyFunc
+	if s.Audit.Keys != nil {
+		keys = s.Audit.Keys()
+	}
+	if s.Audit.SignedSince != nil {
+		vq.SignedSince = s.Audit.SignedSince()
+	}
+	rep, err := audit.Verify(ctx, s.Audit.Client, s.Audit.Prefix, vq, keys)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "report": rep, "tampered": rep.Tampered()})
+}
+
+// parseAuditTimes reads the from and to parameters, answering 400 when
+// one is not a time.
+func parseAuditTimes(w http.ResponseWriter, from, to string, fromT, toT *time.Time) bool {
+	for _, f := range []struct {
+		name, v string
+		t       *time.Time
+	}{{"from", from, fromT}, {"to", to, toT}} {
+		if f.v == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, f.v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New(f.name+" must be a time such as 2026-10-14T00:00:00Z"))
+			return false
+		}
+		*f.t = t
+	}
+	return true
 }
 
 // handleAudit searches the audit records, newest first:
@@ -44,18 +121,8 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	var aq audit.Query
-	for _, f := range []struct {
-		name string
-		t    *time.Time
-	}{{"from", &aq.From}, {"to", &aq.To}} {
-		if v := q.Get(f.name); v != "" {
-			t, err := time.Parse(time.RFC3339, v)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, errors.New(f.name+" must be a time such as 2026-10-14T00:00:00Z"))
-				return
-			}
-			*f.t = t
-		}
+	if !parseAuditTimes(w, q.Get("from"), q.Get("to"), &aq.From, &aq.To) {
+		return
 	}
 	aq.Server, aq.User, aq.Action, aq.Text = q.Get("server"), q.Get("user"), q.Get("action"), q.Get("q")
 	if v := q.Get("size"); v != "" {

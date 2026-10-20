@@ -1,0 +1,7 @@
+{"rule": "c6998a30-fef4-4e89-97ac-3bb0123719b4", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"AdminMailAccess","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCentes","data":{"ClientIP":"203.0.113.7","Operation":"AdminMailAccess","UserId":"admin@example.com","Workload":"SecurityComplianceCentes"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"AdminMailAccess","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"AdminMailAccest","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"SecurityComplianceCenter","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"SecurityComplianceCenter"}}
+]}

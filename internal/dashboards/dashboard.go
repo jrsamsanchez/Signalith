@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dashboards holds the built-in security posture summary and the
 // custom dashboards users build from Signalith queries, like the Splunk ES
 // Security Posture and executive summary dashboards.

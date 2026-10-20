@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Users page (admins): the people who can sign in and their roles, and
 // directory (LDAP or Active Directory) sign-in. Also the account menu's
 // Change password, which every local user has.
@@ -12,7 +14,7 @@
     { id: 'analyst', label: 'Analyst', description: 'Also triages findings, works investigations and builds dashboards.' },
     { id: 'admin', label: 'Admin', description: 'Also manages detections, threat intel, data collection and users.' },
   ];
-  const SOURCE_LABEL = { local: 'Local', directory: 'Directory', builtin: 'Built-in' };
+  const SOURCE_LABEL = { local: 'Local', directory: 'Directory', sso: 'Single sign-on', builtin: 'Built-in' };
 
   const U = { data: null, seq: 0, tab: 'users', loadedAt: 0 };
 
@@ -20,6 +22,8 @@
   const roles = () => (U.data && U.data.roles) || ROLE_INFO;
   const roleLabel = (r) => ROLE_LABEL[r] || r || 'None';
   const displayName = (u) => u.name || u.username;
+  // The tenant whose users this page shows: their names end in @ and its ID.
+  const userTenantId = () => (me && (me.tenant || (me.active_tenant && me.active_tenant !== 'default' ? me.active_tenant : ''))) || '';
 
   // field wraps a control with its label and an optional hint.
   function field(label, control, hint, opts = {}) {
@@ -213,6 +217,9 @@
   // ---------- the list ----------
   pageHooks.push((name) => {
     if (name !== 'users') return;
+    // Directory users are the provider's, so a tenant's admins have no
+    // Directory sign-in tab (data-provider-only).
+    if (inTenant()) U.tab = 'users';
     selectTab(U.tab, false);
     loadUsers({ quiet: !!U.data });
     if (U.tab === 'directory') loadDirectory();
@@ -261,16 +268,22 @@
   function statusOf(u) {
     if (u.disabled) return ['off', 'Disabled', 'Cannot sign in until an admin enables them.'];
     if (u.refused) return ['off', 'No access', `Refused by the directory: ${u.refused}. Access comes back if a later sign-in is accepted.`];
+    if (u.pending) return ['temp', 'Not signed in yet', 'Added by provisioning (SCIM). Their role comes from their identity provider groups when they first sign in.'];
     if (u.must_change_password) return ['temp', 'Temporary password', 'Must choose a new password at their next sign-in.'];
     return ['ok', 'Active', ''];
   }
+  // mfaBadge marks a user who signs in with a passkey or an app's code.
+  const mfaBadge = (u) => (u.mfa ? el('span', { class: 'u-mfa', title: 'Two-step sign-in is on: they use a passkey or a code from an authenticator app.' },
+    icon('shield-check'), el('span', {}, 'Two-step')) : null);
 
   function userRow(u) {
     const [state, stateLabel, stateTitle] = statusOf(u);
     const sub = u.source === 'builtin' ? [U.data && U.data.shared ? 'The same on every server' : 'Set on the server (signalith passwd)']
-      : [u.name ? u.username : '', u.email].filter(Boolean);
+      : [u.name ? u.username : '', u.email].filter((v, i, a) => v && a.indexOf(v) === i);
     const roleBadge = el('span', { class: 'badge u-role', 'data-role': u.role }, roleLabel(u.role));
     if (u.source === 'directory') roleBadge.title = 'From their directory groups at their last sign-in';
+    if (u.source === 'sso') roleBadge.title = u.pending ? 'Set from their identity provider groups when they first sign in' : 'From their identity provider groups at their last sign-in';
+    if (u.pending) roleBadge.textContent = 'At first sign-in';
     const nameAttrs = { class: 'u-user__name' };
     if (u.dn) nameAttrs.title = u.dn;
     return el('tr', { 'data-user': u.username, class: u.disabled ? 'u-off' : '' },
@@ -283,7 +296,7 @@
             el('span', { class: 'u-user__src' }, (sub.length ? ' · ' : '') + (SOURCE_LABEL[u.source] || u.source)))))),
       el('td', { 'data-col': 'role' }, roleBadge),
       el('td', { 'data-col': 'source' }, el('span', { class: 'u-source' }, SOURCE_LABEL[u.source] || u.source)),
-      el('td', { 'data-col': 'status' }, el('span', { class: 'u-status', 'data-state': state, title: stateTitle }, stateLabel)),
+      el('td', { 'data-col': 'status' }, el('div', { class: 'u-status-cell' }, el('span', { class: 'u-status', 'data-state': state, title: stateTitle }, stateLabel), mfaBadge(u))),
       el('td', { 'data-col': 'last' }, u.last_sign_in
         // With shared users, the server they signed in on last, too.
         ? el('div', {}, el('span', { class: 'age', title: new Date(u.last_sign_in).toLocaleString() + (u.last_sign_in_server ? ` on ${u.last_sign_in_server}` : '') }, ago(u.last_sign_in)),
@@ -299,6 +312,7 @@
     // The built-in admin's own row, once every server shares its password.
     if (has('change_password')) items.push({ icon: 'key-round', label: 'Change password', run: () => openChangePassword() });
     if (has('reset_password')) items.push({ icon: 'key-round', label: 'Reset password', run: () => openResetPassword(u) });
+    if (has('reset_mfa')) items.push({ icon: 'shield-off', label: 'Reset two-step sign-in', run: () => resetMFA(u) });
     if (has('disable')) items.push({ icon: 'user-x', label: 'Disable', run: () => setDisabled(u, true) });
     if (has('enable')) items.push({ icon: 'user-check', label: 'Enable', run: () => setDisabled(u, false) });
     if (has('delete')) items.push('sep', { icon: 'trash-2', label: 'Delete', danger: true, run: () => deleteUser(u) });
@@ -341,7 +355,8 @@
     if (local) bits.push(`${local} local`);
     if (dirUsers) bits.push(`${dirUsers} from the directory`);
     let note = null;
-    if (users.length === 1 && !directory.enabled) {
+    // A tenant's admins have no built-in admin or directory sign-in.
+    if (users.length === 1 && !directory.enabled && !inTenant()) {
       note = el('span', {}, 'Only the built-in admin can sign in. Add a user for each person, or ',
         el('button', { type: 'button', class: 'link-btn', onclick: () => selectTab('directory', true) }, 'set up directory sign-in'), '.');
     } else if (directory.enabled) {
@@ -368,9 +383,10 @@
   $('u-find').addEventListener('input', () => { if (U.data) renderUsers(); });
 
   // The Audit page, with the records about users: who added, changed or
-  // removed them, and sign-ins.
+  // removed them, and sign-ins. It is about the server itself, so a
+  // tenant's admins don't have it (data-provider-only).
   {
-    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'u-audit' }, icon('scroll-text'), 'Audit');
+    const btn = el('button', { class: 'btn btn--ghost', type: 'button', id: 'u-audit', 'data-provider-only': '' }, icon('scroll-text'), 'Audit');
     btn.addEventListener('click', () => window.openAudit && window.openAudit({ q: 'user' }));
     $('u-add').before(btn);
   }
@@ -395,7 +411,9 @@
     const form = el('form', { novalidate: '' },
       modalHead('u-dialog', 'Add a user', 'They sign in with this username and a password you give them.', close),
       el('div', { class: 'modal__body' }, err,
-        field('Username', username, 'Used to sign in. Letters, digits, dots, dashes, underscores or @.'),
+        field('Username', username, userTenantId()
+          ? `Used to sign in, with @${userTenantId()} added. Letters, digits, dots, dashes or underscores.`
+          : 'Used to sign in. Letters, digits, dots, dashes, underscores or @.'),
         el('div', { class: 'form-grid' }, field('Name', name, null, { optional: true }), field('Email', email, null, { optional: true })),
         role, pw.node),
       footer(cancelButton(d), submit));
@@ -495,7 +513,7 @@
     const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Reset password');
     d.onclose = () => focusRow(u.username);
     const form = el('form', { novalidate: '' },
-      modalHead('u-dialog', `Reset ${u.username}’s password`, 'They are signed out everywhere and must choose a new password at their next sign-in.', close),
+      modalHead('u-dialog', `Reset ${u.username}’s password`, 'They are signed out everywhere, their passkeys are removed, and they must choose a new password at their next sign-in.', close),
       el('div', { class: 'modal__body' }, err, pw.node),
       footer(cancelButton(d), submit));
     form.addEventListener('submit', async (ev) => {
@@ -520,6 +538,7 @@
         close();
         toast(`${u.username} must choose a new password at their next sign-in.`, null, { title: 'Password reset' });
       }
+      if (res.warning) toast(res.warning, null, { title: 'Passkeys not removed', tone: 'warning' });
     });
     fill(d, form);
     pw.init();
@@ -527,12 +546,33 @@
     form.querySelector('.seg button').focus();
   }
 
+  // resetMFA turns off a user's two-step sign-in, for someone who lost
+  // their phone and their recovery codes.
+  async function resetMFA(u) {
+    const ok = await caseConfirm({
+      title: `Reset ${u.username}’s two-step sign-in?`,
+      text: 'Their passkeys, authenticator app and recovery codes stop working. They sign in with only their password until they set it up again, '
+        + 'right away if two-step sign-in is required. Do this only once you are sure it is them asking.',
+      confirm: 'Reset two-step sign-in',
+    });
+    if (!ok) { focusRow(u.username); return; }
+    try {
+      await api('api/users/' + encodeURIComponent(u.username) + '/mfa', undefined, 'DELETE');
+    } catch (e) {
+      toastChangeFailed(u, e, 'Couldn’t reset ' + u.username + '’s two-step sign-in');
+      focusRow(u.username);
+      return;
+    }
+    toast(`${u.username} can sign in with their password and set up two-step sign-in again.`, null, { title: 'Two-step sign-in reset' });
+    loadUsers({ quiet: true }).then(() => focusRow(u.username));
+  }
+
   async function setDisabled(u, off) {
     if (off) {
       const ok = await caseConfirm({
         title: `Disable ${u.username}?`,
-        text: u.source === 'directory'
-          ? 'They are signed out now and stay out, even if the directory accepts their password, until you enable them.'
+        text: u.source === 'directory' || u.source === 'sso'
+          ? `They are signed out now and stay out, even if the ${u.source === 'sso' ? 'identity provider' : 'directory'} lets them in, until you enable them.`
           : 'They are signed out now and cannot sign in until you enable them.',
         confirm: 'Disable',
       });
@@ -553,8 +593,8 @@
   async function deleteUser(u) {
     const ok = await caseConfirm({
       title: `Delete ${u.username}?`,
-      text: u.source === 'directory'
-        ? 'They are signed out and removed from this list. If the directory still lets them in, they come back at their next sign-in; disable them instead to keep them out.'
+      text: u.source === 'directory' || u.source === 'sso'
+        ? `They are signed out and removed from this list. If the ${u.source === 'sso' ? 'identity provider' : 'directory'} still lets them in, they come back at their next sign-in; disable them instead to keep them out.`
         : 'They are signed out and can no longer sign in. Findings and notes keep their name. This cannot be undone.',
       confirm: 'Delete user',
     });
@@ -598,7 +638,7 @@
     if (b && currentPage === 'users') b.focus();
   };
   document.querySelector('.u-tabs').addEventListener('keydown', (ev) => {
-    if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
+    if ((ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') || inTenant()) return;
     const next = TABS[(TABS.indexOf(U.tab) + 1) % TABS.length];
     selectTab(next, true);
     $('u-tab-' + next).focus();
@@ -1274,10 +1314,468 @@
         return;
       }
       close();
-      toast('Other browsers signed in as you were signed out.', null, { title: 'Password changed' });
+      // Passkeys sign in without the password, so say they still work.
+      let keys = 0;
+      try { keys = ((await api('api/me/mfa')).passkeys || []).length; } catch { /* the toast still helps */ }
+      toast(keys
+        ? `Other browsers signed in as you were signed out. Your ${keys === 1 ? 'passkey still signs' : `${keys} passkeys still sign`} you in: remove any you don’t recognize under Two-step sign-in.`
+        : 'Other browsers signed in as you were signed out.', null, { title: 'Password changed' });
     });
     fill(d, form);
     d.showModal();
     cur.focus();
   }
+  // ---------- Two-step sign-in (account menu) ----------
+  // A passkey, or a code from an authenticator app, after the password.
+  // Setting up the app shows a QR code and checks one code from it; the
+  // first passkey or app shows the recovery codes once. Turning the app
+  // off or making new recovery codes takes a code or a passkey.
+  $('mfa-open').addEventListener('click', () => {
+    $('user-menu').removeAttribute('open');
+    openMFA();
+  });
+
+  const fmtDay = (t) => new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
+  function codeInput(id, recovery) {
+    const n = el('input', { id, class: 'input input--lg mfa-code', autocomplete: 'one-time-code', inputmode: 'numeric', maxlength: '6', placeholder: '123456', spellcheck: 'false' });
+    if (recovery) {
+      // A recovery code works here too.
+      n.maxLength = 11;
+      n.inputMode = 'text';
+      n.placeholder = '123456 or a recovery code';
+      n.dataset.kind = 'recovery';
+    } else {
+      n.addEventListener('input', () => { n.value = n.value.replace(/\D/g, '').slice(0, 6); });
+    }
+    return n;
+  }
+
+  async function openMFA() {
+    const d = modalDialog('u-mfa-dialog');
+    d.classList.add('u-dialog', 'u-mfa-dialog');
+    d.onclose = null;
+    const close = () => d.close();
+    fill(d, modalHead('u-mfa-dialog', 'Two-step sign-in', 'A passkey or a code from an app after your password.', close),
+      el('div', { class: 'modal__body' }, el('div', { class: 'u-skel-gap' }), dxSkel('100%'), el('div', { class: 'u-skel-gap' }), dxSkel('60%')));
+    if (!d.open) d.showModal();
+    let st;
+    try {
+      st = await api('api/me/mfa');
+    } catch (e) {
+      fill(d, modalHead('u-mfa-dialog', 'Two-step sign-in', '', close),
+        el('div', { class: 'modal__body' }, dxEmpty({ tone: 'danger', icon: 'circle-alert', title: 'Couldn’t load two-step sign-in', text: sentence(e.message), action: dxRetry(openMFA) })));
+      return;
+    }
+    mfaView(d, st);
+  }
+
+  const PK = window.SignalithPasskey;
+  // passkeysHere are the user's passkeys that work at this address.
+  const passkeysHere = (st) => (st.passkeys || []).filter((k) => k.here);
+
+  // mfaView shows the user's passkeys and authenticator app, and what they
+  // can do with them.
+  function mfaView(d, st) {
+    d.onclose = null;
+    const close = () => d.close();
+    const left = st.recovery_left;
+    const leftText = left === 0 ? 'no recovery codes left' : `${left} recovery code${left === 1 ? '' : 's'} left`;
+    const canPasskey = !st.passkey_problem && PK && PK.supported();
+    const add = el('button', { type: 'button', class: 'btn btn--secondary btn--sm', disabled: canPasskey ? null : '' }, icon('plus'), 'Add a passkey');
+    add.addEventListener('click', () => passkeyAddView(d, st));
+    const keys = (st.passkeys || []).map((k) => {
+      const rm = el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', 'aria-label': `Remove ${k.name}`, title: 'Remove' }, icon('trash-2'));
+      rm.addEventListener('click', () => removePasskey(d, st, k));
+      const used = k.last_used ? `last used ${fmtDay(k.last_used)}` : 'not used yet';
+      return el('li', {},
+        el('div', { class: 'mfa-key__text' }, el('b', {}, k.name),
+          el('span', {}, `Added ${fmtDay(k.created)} · ${used}${k.here ? '' : ` · works at ${k.host}`}`)),
+        el('span', { class: 'mfa-key__tag', title: k.synced ? 'Synced to your other devices by your password manager or account' : 'Kept on this one device or security key' }, k.synced ? 'Synced' : 'One device'),
+        rm);
+    });
+    const appBtn = st.app
+      ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm u-mfa-off' }, 'Turn off')
+      : el('button', { type: 'button', class: 'btn btn--secondary btn--sm' }, 'Set up');
+    appBtn.addEventListener('click', () => (st.app ? mfaCodeStep(d, st, 'off') : mfaSetupView(d, st)));
+    const renew = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('refresh-cw'), 'New recovery codes');
+    renew.addEventListener('click', () => mfaCodeStep(d, st, 'renew'));
+    fill(d,
+      modalHead('u-mfa-dialog', 'Two-step sign-in', st.on ? 'A passkey or a code from an app after your password.' : 'Keep your account safe even if someone learns your password.', close),
+      el('div', { class: 'modal__body' },
+        st.problem ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('circle-alert'), el('div', {}, el('b', {}, 'Codes are refused here.'), el('p', {}, st.problem))) : null,
+        el('div', { class: 'mfa-status' },
+          el('span', { class: 'mfa-mark', 'data-tone': st.on ? 'success' : null, 'aria-hidden': 'true' }, icon(st.on ? 'shield-check' : 'shield')),
+          el('div', { class: 'mfa-status__text' }, el('b', {}, st.on ? 'On' : 'Off'),
+            el('span', {}, st.on ? `Since ${fmtDay(st.since)} · ${leftText}` : 'Add a passkey or set up an authenticator app.'))),
+        st.on && left <= 2 ? el('p', { class: 'hint' }, icon('info'), left === 0 ? 'Make new recovery codes, so you can still sign in if you lose your passkey or phone.' : 'You are running out of recovery codes. Make new ones.') : null,
+        el('section', { class: 'mfa-section', 'aria-labelledby': 'u-mfa-passkeys' },
+          el('div', { class: 'mfa-section__head' }, el('h3', { id: 'u-mfa-passkeys' }, icon('fingerprint'), 'Passkeys'), add),
+          el('p', {}, st.passkey_alone
+            ? 'Sign in with your fingerprint, face or device PIN. A passkey works on its own, without your password, and look-alike sites can’t use it.'
+            : 'Your fingerprint, face or device PIN after your password. Look-alike sites can’t use it.'),
+          keys.length ? el('ul', { class: 'mfa-keys', 'aria-label': 'Your passkeys' }, ...keys) : el('p', { class: 'mfa-empty' }, 'No passkeys yet.'),
+          !canPasskey ? el('p', { class: 'hint' }, icon('info'), st.passkey_problem || 'This browser can’t use passkeys.') : null),
+        el('section', { class: 'mfa-section', 'aria-labelledby': 'u-mfa-app' },
+          el('div', { class: 'mfa-section__head' }, el('h3', { id: 'u-mfa-app' }, icon('smartphone'), 'Authenticator app')),
+          el('div', { class: 'mfa-app' },
+            el('div', { class: 'mfa-key__text' }, el('b', {}, st.app ? 'On' : 'Not set up'),
+              el('span', {}, st.app ? 'A 6-digit code from the app after your password.' : 'Microsoft Authenticator, Google Authenticator, 1Password and the like.')),
+            appBtn))),
+      footer(st.on ? renew : null, el('span', { class: 'spacer' }), el('button', { type: 'button', class: 'btn btn--primary', onclick: close }, 'Done')));
+    (canPasskey ? add : appBtn).focus();
+  }
+
+  // passkeyAddView names a new passkey, then has the browser make it.
+  function passkeyAddView(d, st) {
+    const err = formAlert();
+    const name = input('u-passkey-name', { maxlength: '64', value: PK.guessName() });
+    const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, icon('fingerprint'), 'Continue');
+    const back = el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => mfaView(d, st) }, 'Back');
+    const form = el('form', { novalidate: '' },
+      modalHead('u-mfa-dialog', 'Add a passkey', 'Your browser asks for your fingerprint, face or device PIN, or for a security key.', () => d.close()),
+      el('div', { class: 'modal__body' }, err,
+        field('Name', name, 'So you can tell your passkeys apart, such as “Work laptop”.')),
+      footer(back, submit));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.classList.add('hidden');
+      const restore = busy(submit, 'Waiting for your passkey…');
+      let res;
+      try {
+        const opts = await api('api/me/passkeys/options', {});
+        let ans;
+        try {
+          ans = await PK.create(opts);
+        } catch (e) {
+          restore();
+          const why = PK.problem(e, true);
+          if (why) showAlert(err, 'No passkey was made.', why);
+          return;
+        }
+        res = await api('api/me/passkeys', { ...ans, name: name.value.trim() });
+      } catch (e) {
+        restore();
+        showAlert(err, 'The passkey was not added.', sentence(e.message));
+        return;
+      }
+      if (res.recovery_codes) {
+        mfaCodesView(d, res.recovery_codes, 'Two-step sign-in is on');
+        refreshMe();
+        return;
+      }
+      toast(`${name.value.trim() || 'Passkey'} is ready to use.`, null, { title: 'Passkey added' });
+      mfaView(d, res.mfa);
+    });
+    fill(d, form);
+    name.select();
+  }
+
+  async function removePasskey(d, st, k) {
+    const last = (st.passkeys || []).length === 1 && !st.app;
+    const ok = await caseConfirm({
+      title: `Remove ${k.name}?`,
+      text: last
+        ? (st.required ? 'It is your only second step, so two-step sign-in turns off, and your admin will have you set it up again right away.'
+          : 'It is your only second step, so two-step sign-in turns off: your password alone will sign you in.')
+        : 'It stops signing you in to Signalith. Remove it from the device or password manager too.',
+      confirm: 'Remove passkey',
+    });
+    if (!ok) return;
+    let res;
+    try {
+      res = await api('api/me/passkeys/' + encodeURIComponent(k.id), undefined, 'DELETE');
+    } catch (e) {
+      toast(sentence(e.message), null, { tone: 'danger', title: 'The passkey was not removed' });
+      return;
+    }
+    toast(last ? 'Two-step sign-in is off.' : `${k.name} no longer signs you in.`, null, { title: 'Passkey removed' });
+    refreshMe();
+    if (last && st.required) { d.close(); toSignIn(false, true); return; }
+    mfaView(d, res.mfa);
+  }
+
+  async function mfaSetupView(d, st) {
+    const close = () => d.close();
+    const err = formAlert();
+    const img = el('img', { alt: 'QR code for your authenticator app', width: '176', height: '176', hidden: '' });
+    const wait = el('span', { class: 'mfa-qr__wait' }, 'Making a QR code…');
+    const key = el('code', {});
+    const copy = el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', 'aria-label': 'Copy the key', title: 'Copy the key' }, icon('copy'));
+    const code = codeInput('u-mfa-code');
+    const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Turn on');
+    const form = el('form', { novalidate: '' },
+      modalHead('u-mfa-dialog', 'Set up two-step sign-in', 'It takes a minute.', close),
+      el('div', { class: 'modal__body' }, err,
+        el('ol', { class: 'mfa-steps' },
+          el('li', {}, el('b', {}, 'Scan the QR code'), ' with an authenticator app, such as Microsoft Authenticator, Google Authenticator or 1Password.',
+            el('div', { class: 'mfa-qr' }, img, wait),
+            el('details', { class: 'mfa-manual' }, el('summary', {}, 'Can’t scan it? Type this key instead'),
+              el('div', { class: 'mfa-key' }, key, copy),
+              el('p', { class: 'hint' }, 'Choose a time-based key. The app shows Signalith with your username.'))),
+          el('li', {}, el('b', {}, 'Enter the 6-digit code'), ' the app shows.', code))),
+      footer(cancelButton(d), submit));
+    let secret = '';
+    async function load() {
+      img.hidden = true;
+      wait.hidden = false;
+      wait.textContent = 'Making a QR code…';
+      try {
+        const res = await api('api/me/mfa/setup', {});
+        secret = res.secret;
+        key.textContent = res.secret;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(res.qr_svg);
+        img.hidden = false;
+        wait.hidden = true;
+      } catch (e) {
+        wait.textContent = 'No QR code';
+        showAlert(err, 'Two-step sign-in could not be set up.', sentence(e.message));
+      }
+    }
+    copy.addEventListener('click', async () => {
+      const ok = await copyText(secret.replace(/\s/g, ''));
+      copy.querySelector('use').setAttribute('href', ok ? '#i-check' : '#i-circle-alert');
+    });
+    code.addEventListener('input', () => clearField(code));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.classList.add('hidden');
+      clearFields(form);
+      if (!/^\d{6}$/.test(code.value)) { markField(code, 'enter the 6-digit code the app shows'); code.focus(); return; }
+      const restore = busy(submit, 'Checking…');
+      let res;
+      try {
+        res = await api('api/me/mfa/confirm', { code: code.value });
+      } catch (e) {
+        restore();
+        if (e.code === 'mfa_no_setup') { showAlert(err, 'That QR code expired.', 'Scan the new one, then enter the code it shows.'); code.value = ''; load(); return; }
+        if (e.code === 'mfa_wrong') { markField(code, 'that code isn’t right. Check the app shows Signalith, then enter the code it shows now'); code.select(); return; }
+        showAlert(err, 'Two-step sign-in was not turned on.', sentence(e.message));
+        return;
+      }
+      mfaCodesView(d, res.recovery_codes || [], st.on ? 'Your app is set up' : 'Two-step sign-in is on');
+      refreshMe();
+    });
+    // Closing before the code stops the set-up, so no half-made key stays.
+    d.onclose = () => { if (form.isConnected) api('api/me/mfa/off', {}).catch(() => {}); };
+    fill(d, form);
+    code.focus();
+    await load();
+  }
+
+  function mfaCodesView(d, codes, title) {
+    d.onclose = null;
+    // A stray click outside must not lose codes shown only once.
+    d.onclick = null;
+    const text = () => 'Signalith recovery codes for ' + location.host + '\nEach code signs you in once.\n\n' + codes.join('\n') + '\n';
+    const copyLabel = el('span', {}, 'Copy');
+    const copy = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('copy'), copyLabel);
+    copy.addEventListener('click', async () => { if (await copyText(text())) copyLabel.textContent = 'Copied'; });
+    const download = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('download'), 'Download');
+    download.addEventListener('click', () => {
+      const a = el('a', { href: URL.createObjectURL(new Blob([text()], { type: 'text/plain' })), download: 'signalith-recovery-codes.txt' });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    const saved = el('input', { type: 'checkbox', id: 'u-mfa-saved' });
+    const done = el('button', { type: 'button', class: 'btn btn--primary', disabled: '', onclick: () => d.close() }, 'Done');
+    saved.addEventListener('change', () => { done.disabled = !saved.checked; });
+    fill(d,
+      modalHead('u-mfa-dialog', title, 'If you lose your passkey or phone, each recovery code signs you in once. Keep them somewhere safe, such as a password manager. This is the only time they are shown. Your older recovery codes no longer work.', () => d.close()),
+      el('div', { class: 'modal__body' },
+        el('ul', { class: 'mfa-codes', 'aria-label': 'Recovery codes' }, ...codes.map((c) => el('li', {}, c))),
+        el('div', { class: 'mfa-codes__actions' }, copy, download),
+        el('label', { class: 'check' }, saved, 'I saved my recovery codes')),
+      footer(done));
+    copy.focus();
+  }
+
+  // mfaCodeStep asks for a code, or a passkey, before making new recovery
+  // codes or turning the authenticator app off.
+  function mfaCodeStep(d, st, what) {
+    const close = () => d.close();
+    const err = formAlert();
+    const code = codeInput('u-mfa-check', true);
+    const renew = what === 'renew';
+    const submit = el('button', { type: 'submit', class: renew ? 'btn btn--primary' : 'btn btn--danger' }, renew ? 'Make new codes' : 'Turn off');
+    const back = el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => mfaView(d, st) }, 'Back');
+    const keysLeft = (st.passkeys || []).length > 0;
+    const note = renew ? 'Your current recovery codes stop working.'
+      : keysLeft ? 'Your passkeys still sign you in.'
+        : st.required ? 'Your Signalith admin requires two-step sign-in, so you will set it up again right away.' : 'After this, your password alone signs you in.';
+    const usePasskey = passkeysHere(st).length && PK && PK.supported()
+      ? el('button', { type: 'button', class: 'btn btn--secondary btn--block' }, icon('fingerprint'), 'Use your passkey') : null;
+    const finish = async (body, restore) => {
+      let res;
+      try {
+        res = await api(renew ? 'api/me/mfa/recovery' : 'api/me/mfa/off', body);
+      } catch (e) {
+        restore();
+        if (e.code === 'mfa_wrong') { markField(code, 'that code isn’t right, or was used already'); code.select(); return; }
+        showAlert(err, renew ? 'No new recovery codes were made.' : 'The app is still on.', sentence(e.message));
+        return;
+      }
+      if (renew) { mfaCodesView(d, res.recovery_codes || [], 'New recovery codes'); return; }
+      toast(keysLeft ? 'Your passkeys still sign you in.' : st.required ? 'Set it up again now: your admin requires it.' : 'Your password alone signs you in now.', null,
+        { title: keysLeft ? 'Authenticator app turned off' : 'Two-step sign-in is off' });
+      refreshMe();
+      if (!res.mfa.on && st.required) { close(); toSignIn(false, true); return; }
+      mfaView(d, res.mfa);
+    };
+    if (usePasskey) {
+      usePasskey.addEventListener('click', async () => {
+        err.classList.add('hidden');
+        const restore = busy(usePasskey, 'Waiting for your passkey…');
+        let ans;
+        try {
+          const opts = await api('api/me/passkeys/challenge', {});
+          ans = await PK.get(opts);
+        } catch (e) {
+          restore();
+          const why = e.name ? PK.problem(e) : sentence(e.message);
+          if (why) showAlert(err, 'No passkey was used.', why);
+          return;
+        }
+        finish({ passkey: ans }, restore);
+      });
+    }
+    code.addEventListener('input', () => clearField(code));
+    const form = el('form', { novalidate: '' },
+      modalHead('u-mfa-dialog', renew ? 'Make new recovery codes' : 'Turn off the authenticator app', note, close),
+      el('div', { class: 'modal__body' }, err,
+        usePasskey, usePasskey ? el('div', { class: 'auth__or u-mfa-or', role: 'separator' }, el('span', {}, 'or enter a code')) : null,
+        field(st.app ? 'Code from your app' : 'Recovery code', code, st.app ? 'Or one of your recovery codes.' : 'One of the recovery codes you saved.')),
+      footer(back, submit));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.classList.add('hidden');
+      clearFields(form);
+      if (!code.value.trim()) { markField(code, st.app ? 'enter the code your app shows' : 'enter a recovery code'); code.focus(); return; }
+      const restore = busy(submit, renew ? 'Making…' : 'Turning off…');
+      finish({ code: code.value.trim() }, restore);
+    });
+    fill(d, form);
+    (usePasskey || code).focus();
+  }
+
+  // refreshMe updates the account menu after a change.
+  function refreshMe() {
+    api('api/me').then(showUser).catch(() => {});
+  }
+
+  // confirmIdentity asks for a passkey, the password or a two-step code again before
+  // a sensitive change (the server answered recheck_required, see api()).
+  // It resolves to true once the server took it; requests that need it at
+  // the same moment share one dialog.
+  let rechecking = null;
+  function confirmIdentity(data) {
+    if (rechecking) return rechecking;
+    const d = modalDialog('u-recheck');
+    rechecking = new Promise((resolve) => {
+      let ok = false;
+      const close = () => d.close();
+      d.onclose = () => { rechecking = null; resolve(ok); };
+      const minutes = data.minutes || 15;
+      if (data.with === 'sign_in') {
+        const again = el('button', { type: 'button', class: 'btn btn--primary', onclick: () => { close(); toSignIn(); } }, 'Sign in again');
+        fill(d, modalHead('u-recheck', 'Sign in again to continue', 'This change needs a recent sign-in. Sign in again, then make the change.', close),
+          footer(el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), again));
+        d.showModal();
+        again.focus();
+        return;
+      }
+      const err = formAlert();
+      const pass = el('input', { id: 'u-recheck-password', class: 'input', type: 'password', autocomplete: 'current-password' });
+      const code = codeInput('u-recheck-code', true);
+      const passField = field('Password', pass);
+      const codeField = field('Code from your app', code, 'Or one of your recovery codes.');
+      codeField.hidden = true;
+      let useCode = false;
+      const swap = el('button', { type: 'button', class: 'link-btn', hidden: data.with === 'password_or_code' ? null : '' }, 'Use a code from your app instead');
+      swap.addEventListener('click', () => {
+        useCode = !useCode;
+        passField.hidden = useCode;
+        codeField.hidden = !useCode;
+        swap.textContent = useCode ? 'Use your password instead' : 'Use a code from your app instead';
+        (useCode ? code : pass).focus();
+      });
+      const submit = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Continue');
+      [pass, code].forEach((n) => n.addEventListener('input', () => clearField(n)));
+      // A passkey made at this address is the quickest way.
+      const usePasskey = data.passkey && PK && PK.supported()
+        ? el('button', { type: 'button', class: 'btn btn--secondary btn--block' }, icon('fingerprint'), 'Use your passkey') : null;
+      if (usePasskey) {
+        usePasskey.addEventListener('click', async () => {
+          err.classList.add('hidden');
+          const restore = busy(usePasskey, 'Waiting for your passkey…');
+          try {
+            const r1 = await apiRaw('api/me/passkeys/challenge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            const opts = await r1.json().catch(() => ({}));
+            if (!r1.ok) { restore(); showAlert(err, 'Your passkey can’t be used here.', sentence(opts.error || r1.statusText)); return; }
+            let ans;
+            try {
+              ans = await PK.get(opts);
+            } catch (e) {
+              restore();
+              const why = PK.problem(e);
+              if (why) showAlert(err, 'No passkey was used.', why);
+              return;
+            }
+            const resp = await apiRaw('api/me/recheck', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passkey: ans }) });
+            const res = await resp.json().catch(() => ({}));
+            if (!resp.ok) { restore(); showAlert(err, 'That passkey didn’t work.', sentence(res.error || resp.statusText)); return; }
+          } catch (e) {
+            restore();
+            showAlert(err, 'Signalith couldn’t check it.', sentence(e.message));
+            return;
+          }
+          ok = true;
+          close();
+        });
+      }
+      const form = el('form', { novalidate: '', class: 'u-recheck' },
+        modalHead('u-recheck', 'Confirm it’s you', usePasskey
+          ? `This is a sensitive change, so use your passkey or enter your password again. You won’t be asked again for ${minutes} minutes.`
+          : `This is a sensitive change, so enter your password again. You won’t be asked again for ${minutes} minutes.`, close),
+        el('div', { class: 'modal__body' }, err,
+          usePasskey, usePasskey ? el('div', { class: 'auth__or', role: 'separator' }, el('span', {}, 'or')) : null,
+          passField, codeField, el('p', { class: 'u-recheck__swap' }, swap)),
+        footer(el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), submit));
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        err.classList.add('hidden');
+        clearFields(form);
+        const input = useCode ? code : pass;
+        const value = useCode ? code.value.trim() : pass.value;
+        if (!value) { markField(input, useCode ? 'enter the code your app shows' : 'enter your password'); input.focus(); return; }
+        const restore = busy(submit, 'Checking…');
+        try {
+          // Straight to the server: api() would ask again on an error.
+          const resp = await apiRaw('api/me/recheck', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(useCode ? { code: value } : { password: value }) });
+          const res = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            restore();
+            if (res.code === 'wrong_password') { markField(pass, 'that password isn’t right'); pass.select(); return; }
+            if (res.code === 'mfa_wrong') { markField(code, 'that code isn’t right, or was used already'); code.select(); return; }
+            showAlert(err, 'Signalith couldn’t check it.', sentence(res.error || resp.statusText));
+            return;
+          }
+        } catch (e) {
+          restore();
+          showAlert(err, 'Signalith couldn’t check it.', sentence(e.message));
+          return;
+        }
+        ok = true;
+        close();
+      });
+      fill(d, form);
+      d.showModal();
+      (usePasskey || pass).focus();
+    });
+    return rechecking;
+  }
+  window.confirmIdentity = confirmIdentity;
 }());

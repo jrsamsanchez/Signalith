@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package nlq turns plain-English questions into Signalith queries, such
 // as "failed logins from 203.0.113.9 in the last 24 hours" or "top 10 users
 // with failed logins". It works offline with a vocabulary of security
@@ -357,6 +360,7 @@ type translator struct {
 	vulnCategory string // category=: vulnerability or open_port
 	vulnSeverity string // severity=
 	vulnKEV      bool   // known_exploited=true
+	vulnLikely   bool   // known_exploited=false epss>=0.1
 }
 
 func (t *translator) low(k int) string {
@@ -735,11 +739,21 @@ func (t *translator) distinctAfter(k int) int {
 	return t.note(k+1+nk, "count distinct %ss", nn.name)
 }
 
+// sameWords before a noun ask for one row per value of it, as in "from
+// the same source" or "by a single user".
+var sameWords = set("same", "single")
+
 func (t *translator) ruleGroup() int {
 	w := t.low(0)
 	k := 0
 	switch {
 	case w == "by" || w == "per" || w == "across":
+		k = 1
+	case sameWords[w]:
+		// "from the same source", "a single user": one row per source.
+		if _, nk := t.nounAt(1); nk == 0 {
+			return 0
+		}
 		k = 1
 	case (w == "for" && (t.low(1) == "each" || t.low(1) == "every")) || ((w == "grouped" || w == "split" || w == "broken") && t.low(1) == "by"):
 		k = 2
@@ -879,8 +893,12 @@ func (t *translator) rulePreposition() int {
 		return 0
 	}
 	k := 1
-	if t.low(k) == "the" {
+	if t.low(k) == "the" || (t.low(k) == "a" && sameWords[t.low(k+1)]) {
 		k++
+	}
+	if sameWords[t.low(k)] {
+		// "from the same source" groups; ruleGroup takes "same source".
+		return k
 	}
 	nt, ok := t.tok(k)
 	if !ok || !t.looksLikeValue(nt) || nouns[nt.low].field != "" || modelWords[nt.low] != "" {
@@ -1651,6 +1669,10 @@ func (t *translator) ruleVulns() int {
 		t.setModel("Vulnerabilities")
 		t.vulnCategory, t.vulnKEV = "vulnerability", true
 		return t.note(2, "vulnerabilities attackers are known to use (CISA KEV)")
+	case "likely exploited":
+		t.setModel("Vulnerabilities")
+		t.vulnCategory, t.vulnLikely = "vulnerability", true
+		return t.note(2, "vulnerabilities not yet known exploited with an EPSS of 10%% or more")
 	case "open port", "open ports":
 		t.setModel("Vulnerabilities")
 		if t.vulnCategory == "" {
@@ -1690,7 +1712,7 @@ func (t *translator) ruleVulns() int {
 }
 
 // vulnTerms returns the vulnerability filters, in a fixed order:
-// category, severity, known_exploited.
+// category, severity, known_exploited, epss.
 func (t *translator) vulnTerms() []query.Expr {
 	var out []query.Expr
 	if t.vulnCategory != "" {
@@ -1701,6 +1723,10 @@ func (t *translator) vulnTerms() []query.Expr {
 	}
 	if t.vulnKEV {
 		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "true"})
+	}
+	if t.vulnLikely && !t.vulnKEV {
+		out = append(out, &query.Compare{Field: "known_exploited", Op: "=", Value: "false"},
+			&query.Compare{Field: "epss", Op: ">=", Value: "0.1"})
 	}
 	return out
 }

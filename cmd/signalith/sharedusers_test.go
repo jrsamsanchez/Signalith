@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -100,7 +103,7 @@ func TestPasswdOnAMember(t *testing.T) {
 	path := filepath.Join(a.dir, "signalith.yaml")
 	hashFile := config.AdminHashFileIn(a.dir)
 	localFile := config.AdminLocalHashFileIn(a.dir)
-	t.Setenv("SIGNALITH_NEW_PASSWORD", "a-new-admin-pass")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "a-new-break-glass-pass")
 	out, err := capture(t, func() error { return cmdPasswd([]string{"-c", path}) })
 	if err != nil || !strings.Contains(out, "every server of the cluster") || !strings.Contains(out, "no restart needed") {
 		t.Fatalf("passwd: %v\n%s", err, out)
@@ -110,12 +113,12 @@ func TestPasswdOnAMember(t *testing.T) {
 	}
 	eventually(t, "B reads the new password", func() bool {
 		_, h, ok := b.r.sharedContent.users.docs.Builtin()
-		return ok && bcrypt.CompareHashAndPassword([]byte(h), []byte("a-new-admin-pass")) == nil
+		return ok && bcrypt.CompareHashAndPassword([]byte(h), []byte("a-new-break-glass-pass")) == nil
 	})
 	if code := b.signInAs("admin", "s3cret-pass"); code != http.StatusUnauthorized {
 		t.Errorf("the old password on B: %d", code)
 	}
-	if code := b.signInAs("admin", "a-new-admin-pass"); code != http.StatusOK {
+	if code := b.signInAs("admin", "a-new-break-glass-pass"); code != http.StatusOK {
 		t.Errorf("the new password on B: %d", code)
 	}
 
@@ -192,7 +195,8 @@ func TestSwitchKeepsALateSignIn(t *testing.T) {
 	t.Setenv(clusterKeyFileEnv, "")
 	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
 	eventually(t, "the users are shared", func() bool {
-		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil &&
+			strings.Contains(rs.logs.String(), "users loaded from the shared settings")
 	})
 	token := rs.r.sessions.Start(auth.NewSession{User: "admin", Method: users.SourceBuiltin})
 	if rs.r.sessions.Len() != 0 {
@@ -201,5 +205,61 @@ func TestSwitchKeepsALateSignIn(t *testing.T) {
 	rs.cookie = "signalith_session=" + token
 	if code, out, err := rs.call("", "GET", "/api/me", ""); err != nil || code != http.StatusOK || out["username"] != "admin" {
 		t.Fatalf("the late session: %d %v %v\n%s", code, out, err, rs.logs.String())
+	}
+}
+
+// A change of the first password that reached a server in its own files
+// while its users moved into the shared settings is carried there, once:
+// only while the cluster's built-in admin still has this server's first
+// password and was never changed since.
+func TestKeepFirstPasswordChange(t *testing.T) {
+	t.Setenv(clusterKeyFileEnv, "")
+	rs := startRunnerWith(t, runOptions{scheduler: true, server: plainHTTP})
+	eventually(t, "the users are shared", func() bool {
+		return rs.r.sharedContent.users.on.Load() && rs.r.sharedContent.users.cur.Load() != nil
+	})
+	docs := rs.r.sharedContent.users.cur.Load().sessions.Docs
+	c, err := config.LoadFile(filepath.Join(rs.dir, "signalith.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newHash := func(pw string) string {
+		h, err := users.HashPassword(pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(c.AdminHashFile(), []byte(h+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	ctx := t.Context()
+	log := newLogger(rs.logs)
+	h := newHash("chosen-by-the-owner")
+	if got := keepFirstPasswordChange(ctx, docs, c, log); got != "" {
+		t.Fatal("a password Signalith did not make was replaced")
+	}
+	// The test server's password stands in for the first one Signalith made.
+	file, _ := c.InitialPasswordFile()
+	if err := os.WriteFile(file, []byte("s3cret-pass\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := keepFirstPasswordChange(ctx, docs, c, log); got != h {
+		t.Fatalf("the change was not carried: %q", got)
+	}
+	u, _, _ := docs.BuiltinUser()
+	if u.PasswordHash != h || u.SessionEpoch != 2 {
+		t.Fatalf("the cluster's built-in admin: epoch %d, new hash %v", u.SessionEpoch, u.PasswordHash == h)
+	}
+	if got := keepFirstPasswordChange(ctx, docs, c, log); got != "" {
+		t.Fatal("carried twice")
+	}
+	// Once the cluster's password changed, an older one here never replaces it.
+	newHash("another-older-choice")
+	if got := keepFirstPasswordChange(ctx, docs, c, log); got != "" {
+		t.Fatal("the cluster's password was replaced")
+	}
+	if !strings.Contains(rs.logs.String(), "kept the built-in admin's new password") {
+		t.Error("the change was not logged")
 	}
 }

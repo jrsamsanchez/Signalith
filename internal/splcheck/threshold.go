@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package splcheck
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"regexp"
@@ -51,11 +55,11 @@ var (
 	bucketRe     = regexp.MustCompile(`(?i)^(?:bucket|bin)\s+(?:_time\s+span\s*=\s*(\d+)([smh])|span\s*=\s*(\d+)([smh])\s+_time)$`)
 	limitRe      = regexp.MustCompile(`^(\w+)\s*(>=|>)\s*(\d+)$`)
 	statsSplitRe = regexp.MustCompile(`(?is)^(?:\|\s*)?(?:stats|tstats)\s+(.*?)\s+(?:by|BY)\s+(.*)$`)
-	// The aggregations a threshold search reads: count, and distinct
-	// counts with a name. values(), min(_time) and max(_time) only add
-	// columns.
-	aggRe      = regexp.MustCompile(`(?i)^(count|(?:dc|distinct_count)\(\s*([\w.]+)\s*\)\s+as\s+(\w+))\s*,?\s*`)
-	columnsRe  = regexp.MustCompile(`(?i)^(?:values|min|max|latest|earliest)\(\s*[\w.]+\s*\)\s+as\s+\w+\s*,?\s*`)
+	// The aggregations a threshold search reads: count, by its own name
+	// or another (count as failures), and distinct counts with a name.
+	// values(), min(_time) and max(_time) only add columns.
+	aggRe      = regexp.MustCompile(`(?i)^(count(?:\s+as\s+(\w+))?|(?:dc|distinct_count)\(\s*([\w.]+)\s*\)\s+as\s+(\w+))\s*,?\s*`)
+	columnsRe  = regexp.MustCompile(`(?i)^(?:values|min|max|latest|earliest)\(\s*[\w.]+\s*\)(?:\s+as\s+\w+)?\s*,?\s*`)
 	summaryRe  = regexp.MustCompile("^`security_content_summariesonly`\\s*")
 	byFieldsRe = regexp.MustCompile(`[\s,]+`)
 )
@@ -86,20 +90,20 @@ func parseAggs(s string, field func(string) (string, error)) ([]Agg, error) {
 			return nil, fmt.Errorf("stats aggregation %s is not supported", firstWords(s))
 		}
 		s = s[len(m[0]):]
-		if strings.EqualFold(m[1], "count") {
-			aggs = append(aggs, Agg{Name: "count", Func: "count"})
+		if m[3] == "" {
+			aggs = append(aggs, Agg{Name: cmp.Or(m[2], "count"), Func: "count"})
 			continue
 		}
-		if m[2] == "_raw" {
+		if m[3] == "_raw" {
 			// Each event's raw text is its own: this counts events.
-			aggs = append(aggs, Agg{Name: m[3], Func: "count"})
+			aggs = append(aggs, Agg{Name: m[4], Func: "count"})
 			continue
 		}
-		f, err := field(m[2])
+		f, err := field(m[3])
 		if err != nil {
 			return nil, err
 		}
-		aggs = append(aggs, Agg{Name: m[3], Func: "dc", Field: f})
+		aggs = append(aggs, Agg{Name: m[4], Func: "dc", Field: f})
 	}
 	return aggs, nil
 }
@@ -236,6 +240,10 @@ func (t *Threshold) Fields() []string {
 // clause, over node's fields.
 func tstatsThreshold(node, head, by string, limits []Limit) (*Threshold, error) {
 	field := func(f string) (string, error) {
+		if f == "sourcetype" && IsOktaTstatsNode(node) {
+			// One sourcetype: grouping by it adds no groups.
+			return f, nil
+		}
 		name, ok := strings.CutPrefix(f, nodePrefix(node)+".")
 		if !ok || !slices.Contains(Nodes[node], name) && name != "dest" {
 			return "", fmt.Errorf("field %s has no Signalith mapping", f)
@@ -281,6 +289,11 @@ func rawThreshold(node, stats string, span time.Duration, limits []Limit) (*Thre
 	}
 	if spanRe.MatchString(m[2]) {
 		return nil, fmt.Errorf("a raw count's span must come from bucket")
+	}
+	if !timeRe.MatchString(m[2]) {
+		// A bucket only rounds each event's _time: a count not by _time
+		// is over the rule's whole search, bucketed or not.
+		span = 0
 	}
 	by, _, err := parseBy(m[2], span > 0, func(f string) (string, bool, error) { return rawGroupField(node, f) })
 	if err != nil {

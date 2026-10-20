@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package mcp is a read-only Model Context Protocol server for Signalith.
 // AI tools such as Claude Desktop start it (signalith mcp) and talk to it
 // over standard input and output; it answers their tool calls by reading

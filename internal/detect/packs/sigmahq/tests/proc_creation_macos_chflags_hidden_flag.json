@@ -1,0 +1,5 @@
+{"rule": "3b2c1059-ae5f-40b6-b5d4-6106d3ac20fe", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"hidden x","path":"/chflags"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/chflags","path":"/chflags"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"hidden x","path":"/usr/local/bin/helper"}}
+]}

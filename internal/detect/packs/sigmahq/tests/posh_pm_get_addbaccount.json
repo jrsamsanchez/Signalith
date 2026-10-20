@@ -1,0 +1,4 @@
+{"rule": "b140afd9-474b-4072-958e-2ebb435abd68", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{"Payload":"DatabasePath  BootKey  Get-ADDBAccount"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-PowerShell/Operational","event_id":"4103","data":{}}
+]}

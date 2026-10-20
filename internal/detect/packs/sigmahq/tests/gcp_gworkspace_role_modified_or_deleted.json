@@ -1,0 +1,5 @@
+{"rule": "6aef64e3-60c6-4782-8db3-8448759c714e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"UPDATE_ROLE","eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"UPDATE_ROLE"}}
+]}

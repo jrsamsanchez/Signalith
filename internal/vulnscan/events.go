@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package vulnscan
 
 import (
@@ -67,6 +70,16 @@ func Events(sc *Scan, scanner string, hosts []*Host, at time.Time) []ingest.Even
 				f["severity"] = v.Severity
 				f["cvss"] = v.CVSS
 				f["known_exploited"] = strconv.FormatBool(v.KEV)
+				if v.KEV {
+					f["known_ransomware"] = strconv.FormatBool(v.Ransomware)
+					if v.KEVDue != "" {
+						f["kev_due"] = v.KEVDue
+					}
+				}
+				if v.EPSS > 0 || v.EPSSPercentile > 0 {
+					f["epss"] = v.EPSS
+					f["epss_percentile"] = v.EPSSPercentile
+				}
 				if v.CVE != "" {
 					f["cve"] = v.CVE
 					f["url"] = "https://nvd.nist.gov/vuln/detail/" + v.CVE

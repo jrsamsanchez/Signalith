@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -488,6 +491,12 @@ func CloudTrailRecord(host string, t time.Time, data map[string]string) map[stri
 				m[p] = next
 			}
 			m = next
+		}
+		if l, ok := testList(data[k]); ok {
+			// A whole list (a bucket's grants, a scan's findings),
+			// written as JSON.
+			m[parts[len(parts)-1]] = l
+			continue
 		}
 		m[parts[len(parts)-1]] = data[k]
 	}

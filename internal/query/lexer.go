@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package query parses the Signalith query language: a pipe-based search
 // language that reads like SPL. A query is a search expression followed by
 // zero or more commands separated by "|":
@@ -25,7 +28,8 @@ const (
 	tokLParen
 	tokRParen
 	tokComma
-	tokRaw // the unlexed text of an eval or where command
+	tokRaw       // the unlexed text of an eval or where command
+	tokSubsearch // the text inside a [ ] in a search, without the brackets
 )
 
 func (k tokenKind) String() string {
@@ -48,6 +52,8 @@ func (k tokenKind) String() string {
 		return ","
 	case tokRaw:
 		return "expression"
+	case tokSubsearch:
+		return "subsearch"
 	}
 	return "?"
 }
@@ -141,6 +147,11 @@ func lex(src string) ([]token, error) {
 				return nil, errorf(start, "unterminated quoted string")
 			}
 			toks = append(toks, token{tokString, b.String(), start})
+		case c == '[' && (len(toks) == 0 || toks[len(toks)-1].kind != tokOp && toks[len(toks)-1].kind != tokComma) && bracketEnd(src, i) > 0:
+			// A subsearch: its results become terms of the search.
+			end := bracketEnd(src, i)
+			toks = append(toks, token{tokSubsearch, src[i+1 : end-1], i + 1})
+			i = end
 		default:
 			start := i
 			for i < len(src) {
@@ -159,8 +170,21 @@ func lex(src string) ([]token, error) {
 			// (eval's quoted 'field names', + and - between values), so
 			// their text is kept whole and parsed by the command.
 			if w := src[start:i]; len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
-				(strings.EqualFold(w, "eval") || strings.EqualFold(w, "where")) {
+				(strings.EqualFold(w, "eval") || strings.EqualFold(w, "where") || strings.EqualFold(w, "fieldformat")) {
 				end := rawEnd(src, i)
+				toks = append(toks, token{tokRaw, src[i:end], i})
+				i = end
+			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe &&
+				(strings.EqualFold(w, "join") || strings.EqualFold(w, "append") || strings.EqualFold(w, "appendpipe") || strings.EqualFold(w, "foreach")) {
+				// A subsearch holds pipes of its own: the command runs
+				// to the ] that closes its [.
+				end := subsearchEnd(src, i)
+				toks = append(toks, token{tokRaw, src[i:end], i})
+				i = end
+			} else if len(toks) >= 2 && toks[len(toks)-2].kind == tokPipe && (strings.EqualFold(w, "union") || strings.EqualFold(w, "multisearch") || strings.EqualFold(w, "set")) {
+				// union, multisearch and set take several subsearches, one
+				// [ ] after another.
+				end := unionEnd(src, i)
 				toks = append(toks, token{tokRaw, src[i:end], i})
 				i = end
 			}
@@ -216,4 +240,77 @@ func quoteEnd(src string, i int, q byte, stopAtPipe bool) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// subsearchEnd returns where a command with a subsearch, starting at i,
+// ends: just past the ] that closes its first [, counting brackets outside
+// double quotes; at the next | when a | comes first; or at the end.
+func subsearchEnd(src string, i int) int {
+	depth := 0
+	for i < len(src) {
+		switch src[i] {
+		case '|':
+			if depth == 0 {
+				return i
+			}
+		case '"':
+			if end, ok := quoteEnd(src, i, '"', false); ok {
+				i = end
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return i
+}
+
+// bracketsBalance reports whether s, read as subsearchEnd reads it, holds
+// no ] that closes nothing and no [ left open.
+func bracketsBalance(s string) bool {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '"':
+			if end, ok := quoteEnd(s, i, '"', false); ok {
+				i = end - 1
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0
+}
+
+// bracketEnd returns the index just past the ] that closes the [ at i,
+// counting brackets outside double quotes, or -1 when none does.
+func bracketEnd(src string, i int) int {
+	depth := 0
+	for i < len(src) {
+		switch src[i] {
+		case '"':
+			if end, ok := quoteEnd(src, i, '"', false); ok {
+				i = end
+				continue
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		}
+		i++
+	}
+	return -1
 }

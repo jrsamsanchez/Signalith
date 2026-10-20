@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -279,7 +282,11 @@ func (r *runner) prepare(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("agents need an agent token in credentials.token_file: %w", err)
 		}
-		r.fleet = newFleet(r.run, token, s.Targets, &http.Client{Transport: r.tr}, r.m)
+		agentTargets := s.AgentTargets
+		if len(agentTargets) == 0 {
+			agentTargets = s.Targets
+		}
+		r.fleet = newFleet(r.run, token, agentTargets, &http.Client{Transport: r.tr}, r.m)
 	}
 	return nil
 }
@@ -574,6 +581,11 @@ func (r *runner) measure(c Criterion) (float64, string) {
 			return 0, "no agents in the scenario"
 		}
 		return float64(r.fleet.undelivered.Load()), ""
+	case "events_dropped":
+		if r.fleet == nil {
+			return 0, "no agents in the scenario"
+		}
+		return float64(r.fleet.dropped.Load()), ""
 	case "ingest_error_rate":
 		n := m.Count(ph, "ingest_requests")
 		if n == 0 {

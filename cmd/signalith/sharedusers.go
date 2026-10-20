@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
 	"cmp"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -59,6 +65,7 @@ type usersParts struct {
 	locks    *clusterauth.Locks
 	seen     *clusterauth.LastSeen
 	recheck  *clusterauth.Recheck
+	spent    *clusterauth.Spent
 	browsers *auth.BrowserKey
 	node     *cluster.Node
 }
@@ -74,6 +81,7 @@ func newSharedUsers(log *slog.Logger) *sharedUsers {
 // through.
 func (ua *sharedUsers) follow(rt *shared.Runtime) {
 	ua.docs.Cluster = rt.Cluster
+	ua.docs.Tenants = rt.Tenants
 	rt.OnMode(func(_, m shared.Mode) {
 		if m != shared.ModeMember {
 			return
@@ -111,6 +119,7 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 		},
 		Confirmed: func() time.Time { return rt.Hub().Confirmed() }, Log: log}
 	sess.SetIdle(c.SessionIdle())
+	sess.SetMaxAge(c.SessionMaxAge())
 	sess.Listen()
 	// The limiter reports its locks through the runner (reportLock), which
 	// it was given once for the process.
@@ -118,12 +127,16 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 	locks.Follow()
 	jobs.Go(func() { locks.Run(ctx) })
 	p := &usersParts{store: st, dir: dir, sessions: sess, locks: locks, seen: seen, node: node, browsers: legacyBrowsers,
+		spent:   &clusterauth.Spent{Docs: ua.docs, Client: client, Node: node.ID()},
 		recheck: &clusterauth.Recheck{Docs: ua.docs, Store: st, Users: ub, Directory: dir, Sessions: sess, Log: log}}
 	// A browser known on one server is known on every one.
 	if k := rt.Hub().Keys().Active(); k != nil {
 		p.browsers = auth.NewBrowserKeyFrom(k.KnownBrowserKey())
 	}
-	if name := ua.docs.BuiltinName(); name != "" && !strings.EqualFold(name, c.Auth.AdminUser) {
+	if name := ua.docs.BuiltinName(); config.KeptLegacyAdmin(name, c.Auth.AdminUser) {
+		log.Info("the built-in admin keeps the name it had before this version; new installs name it "+config.DefaultAdminUser,
+			"builtin", name, "admin_user", c.Auth.AdminUser)
+	} else if name != "" && !strings.EqualFold(name, c.Auth.AdminUser) {
 		log.Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
 			"builtin", name, "admin_user", c.Auth.AdminUser)
 	}
@@ -199,11 +212,78 @@ func carried(held []auth.Held, people *users.Store, c *config.Config) []clustera
 	return list
 }
 
+// firstPasswordMu keeps keepFirstPasswordChange from running twice at
+// once (at the switch and from a late change on the page).
+var firstPasswordMu sync.Mutex
+
+// keepFirstPasswordChange carries into the shared settings a change of
+// the first password Signalith made that this server kept in its own
+// files while its users moved into the shared settings: the change on
+// the page lands there when it reaches the server between the import and
+// the switch, and the cluster's built-in admin would keep the first
+// password. It does so only while the cluster's built-in admin still has
+// this server's first password and was never changed since the import
+// (session epoch 1), so a password set on the cluster is never replaced
+// with an older one. It returns the hash it set, or "".
+func keepFirstPasswordChange(ctx context.Context, docs *clusterauth.Docs, c *config.Config, log *slog.Logger) string {
+	firstPasswordMu.Lock()
+	defer firstPasswordMu.Unlock()
+	b, err := os.ReadFile(c.AdminHashFile())
+	if err != nil {
+		return ""
+	}
+	h := strings.TrimSpace(string(b))
+	if _, err := bcrypt.Cost([]byte(h)); err != nil {
+		return ""
+	}
+	u, _, ok := docs.BuiltinUser()
+	if !ok || u.SessionEpoch != 1 || u.PasswordHash == h || !isFirstPassword(c, u.PasswordHash) {
+		return ""
+	}
+	if err := docs.SetBuiltinHash(ctx, u.Username, h); err != nil {
+		log.Warn("the built-in admin's new password reached this server while its users moved into the shared settings and could not be kept there; "+
+			"change it again on the page or with signalith passwd", "user", u.Username, "err", err)
+		return ""
+	}
+	log.Info("kept the built-in admin's new password, changed while the users moved into the shared settings", "audit", true, "user", u.Username)
+	return h
+}
+
+// isFirstPassword reports whether hash is that of the first password
+// Signalith made for the built-in admin of this server (see
+// config.FirstPassword).
+func isFirstPassword(c *config.Config, hash string) bool {
+	if fh := c.FirstPasswordHash(); fh != "" && subtle.ConstantTimeCompare([]byte(fh), []byte(hash)) == 1 {
+		return true
+	}
+	file, _ := c.InitialPasswordFile()
+	if file == "" {
+		return false
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	pw := strings.TrimSpace(string(b))
+	return pw != "" && users.ComparePassword(hash, pw)
+}
+
+// builtinSetHere is api.Server.BuiltinSetHere for a server whose API keeps
+// the users in its own files: once the users are shared (the change
+// finished after the switch), the change is carried there.
+func (ua *sharedUsers) builtinSetHere(c *config.Config) func(context.Context) {
+	return func(ctx context.Context) {
+		if p := ua.cur.Load(); p != nil {
+			keepFirstPasswordChange(ctx, p.sessions.Docs, c, ua.log)
+		}
+	}
+}
+
 // api is what the API needs of p.
 func (p *usersParts) api(c *config.Config) *api.SharedUsers {
 	local := &localHash{dir: c.StateDir()}
 	return &api.SharedUsers{Docs: p.sessions.Docs, Seen: p.seen, LocalHash: local.get,
-		WritesRefused: p.node.WritesRefused, MayDegrade: p.sessions.MayDegrade}
+		WritesRefused: p.node.WritesRefused, MayDegrade: p.sessions.MayDegrade, Spent: p.spent}
 }
 
 // localHashFor is how long the hash signalith passwd -local wrote is used
@@ -250,6 +330,9 @@ func (p *usersParts) housekeep(ctx context.Context, log *slog.Logger) {
 	}
 	if _, err := p.locks.Housekeep(ctx); err != nil {
 		log.Debug("could not delete sign-in lockouts that ended", "err", err)
+	}
+	if _, err := p.spent.Housekeep(ctx); err != nil {
+		log.Debug("could not delete the records of used sign-ins that ended", "err", err)
 	}
 	// The last sign-ins of deleted users; the built-in admin is a user
 	// document too.

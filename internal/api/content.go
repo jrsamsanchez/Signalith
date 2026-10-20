@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -17,7 +20,7 @@ func (s *Server) routeContent(api *router) {
 	api.viewer("GET /api/detections/content", s.handleContentStatus)
 	api.admin("POST /api/detections/content/check", s.handleContentCheck)
 	api.admin("POST /api/detections/content/upload", s.handleContentUpload)
-	api.admin("DELETE /api/detections/content", s.handleContentRemove)
+	api.sensitive("DELETE /api/detections/content", s.handleContentRemove)
 }
 
 // RunContentUpdates checks for content updates every day while

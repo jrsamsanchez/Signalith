@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs a network sensor on this CI machine with the line the Add data
 # page makes, sends it traffic, and checks what reaches Signalith; then
 # runs the line again and uninstalls. Signalith runs at $SIGNALITH (the

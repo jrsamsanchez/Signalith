@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: the upgrade checklist (multi-server design 4.9). A card
 // under the list of servers says whether the next server may be upgraded
 // now, as signalith cluster upgrade-check does, and gives each server its
@@ -198,7 +200,7 @@
     const body = [];
     const nextText = busy ? `Finish ${busy.name} first: it does not run the new version yet. (If it is gone for good, remove it on its panel.)` : v.next;
     body.push(el('div', { class: 'alert', 'data-tone': safe ? 'success' : 'warning', role: 'status' }, icon(safe ? 'circle-check' : 'hourglass'),
-      el('div', {}, el('b', {}, safe ? 'Safe to upgrade the next server' : 'Not safe yet'), nextText ? el('p', {}, nextText) : null)));
+      el('div', {}, el('b', {}, !safe ? 'Not safe yet' : v.current && !single ? `Every server runs ${v.current}: safe to start an upgrade` : 'Safe to upgrade the next server'), nextText ? el('p', {}, nextText) : null)));
     body.push(notes('Wait for this first', v.blockers, 'danger'), notes('Good to know', v.warnings, 'warning'));
     if (S.failed) body.push(el('p', { class: 'sv-panel__text sv-warn' }, 'Couldn’t read the checklist: ' + (S.failed.message || 'no answer') + '. Trying again.'));
     body.push(el('ol', { class: 'sv-upgrade__servers', role: 'list' }, ...servers.map((s, i) => {

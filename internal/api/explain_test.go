@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -15,7 +18,9 @@ func TestExplainNewCommands(t *testing.T) {
 | dedup 2 host keepempty=true
 | fillnull value=none user
 | eventstats count by host
-| rare limit=5 process_name`)
+| rare limit=5 process_name
+| lookup owners host AS dest OUTPUTNEW owner, team AS owner_team
+| inputlookup append=true max=5 hosts`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +33,8 @@ func TestExplainNewCommands(t *testing.T) {
 		"Fill missing values in user with none.",
 		"Add the number of events for each host to every row, keeping the rows.",
 		"List the 5 least common values of process_name",
+		"Look up dest (as the table's host) in the lookup table owners and add owner, team as owner_team from the matching rows, only where the field is not already set.",
+		"Add the rows of the lookup table hosts, at most 5, after the rows so far.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Explain is missing %q in:\n%s", want, got)

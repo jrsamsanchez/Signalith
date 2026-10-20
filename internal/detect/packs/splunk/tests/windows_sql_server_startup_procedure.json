@@ -1,0 +1,4 @@
+{"rule": "7bec7c5c-2262-4adb-ba56-c8028512bc58", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Application","event_id":"17135","data":{"EventCode":"test-eventcode","Provider_Name":"MSSQLSERVER","dest":"test-dest","risk_message":"test-risk_message","risk_score":"test-risk_score","startup_procedure":"test-startup_procedure"}},
+  {"expect":false,"source":"synthesized","channel":"Application","event_id":"17135","data":{"Provider_Name":"MSSQLSERVER"}}
+]}

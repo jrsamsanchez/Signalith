@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -7,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -28,6 +32,23 @@ func threeNodes(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"persistent":{"cluster.routing.allocation.disk.watermark.low":"87%"},"transient":{},"defaults":{"cluster.routing.allocation.disk.watermark.low":"85%","cluster.routing.allocation.disk.watermark.high":"90%","cluster.routing.allocation.disk.watermark.flood_stage":"95%"}}`)
 	case strings.HasPrefix(r.URL.Path, "/_cat/indices/"):
 		io.WriteString(w, `[{"index":"signalith-authentication-2026.10.14","rep":"0"},{"index":"signalith_config","rep":"1"}]`)
+	case strings.HasPrefix(r.URL.Path, "/_cat/shards/"):
+		// Today's other index has both primaries on os-2, its network
+		// index one on each node, and its dns index one primary only.
+		day := time.Now().UTC().Format("2006.01.02")
+		if !strings.Contains(r.URL.Path, "signalith-*-"+day+"*") {
+			http.NotFound(w, r)
+			return
+		}
+		strings.NewReplacer("DAY", day).WriteString(w, `[
+			{"index":"signalith-other-DAY","shard":"0","prirep":"p","node":"os-2"},
+			{"index":"signalith-other-DAY","shard":"1","prirep":"p","node":"os-2"},
+			{"index":"signalith-other-DAY","shard":"0","prirep":"r","node":"os-1"},
+			{"index":"signalith-other-DAY","shard":"1","prirep":"r","node":"os-3"},
+			{"index":"signalith-network-DAY","shard":"0","prirep":"p","node":"os-1"},
+			{"index":"signalith-network-DAY","shard":"1","prirep":"p","node":"os-3"},
+			{"index":"signalith-dns-DAY","shard":"0","prirep":"p","node":"os-3"},
+			{"index":"signalith-dns-DAY","shard":"0","prirep":"r","node":null}]`)
 	default:
 		http.NotFound(w, r)
 	}
@@ -64,8 +85,15 @@ func TestClusterOpenSearchCard(t *testing.T) {
 	if nr := out["no_replicas"].([]any); len(nr) != 1 || nr[0] != "signalith-authentication-2026.10.14" {
 		t.Errorf("no replicas %v", nr)
 	}
+	if pt := toStrings(out["primaries_together"]); len(pt) != 1 || pt[0] != "signalith-other-"+time.Now().UTC().Format("2006.01.02") {
+		t.Errorf("primaries together %v", pt)
+	}
+	if out["prefer_primary"] != nil {
+		t.Errorf("prefer_primary %v, not in the settings", out["prefer_primary"])
+	}
 	warnings := strings.Join(toStrings(out["warnings"]), "\n")
-	for _, want := range []string{"Only 2 cluster-manager-eligible", "2 shards are on no node", "os-2's disk is 88% full", "1 Signalith index has no copy"} {
+	for _, want := range []string{"Only 2 cluster-manager-eligible", "2 shards are on no node", "os-2's disk is 88% full", "1 Signalith index has no copy",
+		"Every primary shard of 1 of today's event indices is on one OpenSearch node", "prefer_primary to true"} {
 		if !strings.Contains(warnings, want) {
 			t.Errorf("warnings lack %q:\n%s", want, warnings)
 		}
@@ -110,4 +138,25 @@ func toStrings(v any) []string {
 		out = append(out, x.(string))
 	}
 	return out
+}
+
+// With prefer_primary on, the warning about primaries on one node does
+// not suggest it again; it suggests rebalance.primary.enable when that is
+// off.
+func TestPrimariesTogetherWarning(t *testing.T) {
+	on := true
+	c := osCard{PrimariesTogether: []string{"a", "b"}, PreferPrimary: &on}
+	w := strings.Join(osWarnings(c), "\n")
+	if !strings.Contains(w, "2 of today's event indices are on one OpenSearch node") || strings.Contains(w, "prefer_primary") {
+		t.Errorf("warnings: %s", w)
+	}
+	off := false
+	c.RebalancePrimary = &off
+	if w := strings.Join(osWarnings(c), "\n"); !strings.Contains(w, "rebalance.primary.enable to true") {
+		t.Errorf("rebalance off, warnings: %s", w)
+	}
+	layers := map[string]map[string]any{"persistent": {"cluster.routing.allocation.balance.prefer_primary": "false"}, "defaults": {"cluster.routing.allocation.balance.prefer_primary": "true"}}
+	if b := clusterBool(layers, "cluster.routing.allocation.balance.prefer_primary"); b == nil || *b {
+		t.Errorf("persistent false over default true: %v", b)
+	}
 }

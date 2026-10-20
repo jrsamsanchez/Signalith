@@ -1,0 +1,4 @@
+{"rule": "413d4a81-6c98-4479-9863-014785fd579c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"group.privilege.grant"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{}}
+]}

@@ -1,7 +1,6 @@
 {"rule": "15838756-f425-43fa-9d88-a7f88063e81a", "cases": [
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"403","url":"x /api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark x"}},
   {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"403","url":"x /api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark y"}},
-  {"expect":true,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"403","url":"x /api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark x"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"403"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GEU","status":"403","url":"x /api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark x"}},
   {"expect":false,"source":"synthesized","channel":"web:access","event_id":"access","data":{"http_method":"GET","status":"404","url":"x /api/v1/configuration/users/user-roles/user-role/rest-userrole1/web/web-bookmarks/bookmark x"}},

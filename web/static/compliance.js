@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Compliance page (every role): for each framework, the controls Signalith
 // gives evidence for and how well, with what to fix; a CSV export and a
 // printable report for auditors; and, for admins, a note on a control that

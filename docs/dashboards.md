@@ -5,10 +5,28 @@ The **Dashboards** tab has four built-in dashboards, **Security posture**,
 range, and optionally turn on auto-refresh (every minute, 5 or 15 minutes; it pauses
 while the browser tab is hidden).
 
+## Click a number to see its events
+
+Every number on a dashboard opens **Search** on the events behind it, in one click
+or tap: a single value, a count in a table, a bar, a column (or one colour within
+it), a point on a line chart, or a series in the legend. The search is the panel's
+query up to its `stats`, `top` or `timechart`, plus that row's values (for example
+`dest=web-01`) and the panel's time range; a column or a point narrows it to that
+time bucket. Numbers you can click show a pointer and turn the accent colour on
+hover. A row of a table of events (such as **Malware not removed**) opens that
+event in Search: its values at its exact time.
+
+A filter goes into the search itself when it can, so it runs in OpenSearch. When
+the query makes or changes fields before it summarises them (`eval`, `rex`,
+`dedup`, `head` and so on), the filter is added at the end as `| where`. Columns
+that `eval` or a second `stats` made after the summary don't name event values, so
+those only keep the time range. On **Security posture**, **Events ingested**, the
+**Events by data model** columns, source types and ATT&CK tactics open Search (a
+tactic opens its risk events); the findings numbers open the findings queue.
+
 ## Security posture
 
-The built-in dashboard, like the Splunk ES Security Posture and executive summary
-dashboards. Every key number is compared with the previous period of the same
+The built-in summary dashboard for analysts and managers. Every key number is compared with the previous period of the same
 length, so "Last 24 hours" compares today with the 24 hours before.
 
 | Panel | What it shows |
@@ -34,6 +52,20 @@ Raise the setting for hosts that send in bursts:
 dashboards:
   stale_after: 6h
 ```
+
+The built-in detection **Data source stopped sending** (`data-source-stopped`)
+raises a finding when a source that sent steadily goes quiet for that long, so
+you hear about it without opening the dashboard. Steady means it sent something
+in each six-hour block of the day before, so a workstation that is off at night
+or a weekly scan never fires it. Signalith checks every 15 minutes, on the server
+that runs the background jobs, and writes one `sourcetype=source:health` event per
+silence for the detection to read (`stopped_sourcetype` names the source type that
+stopped). The detection believes only events Signalith wrote itself
+(`signalith_intake=signalith`), so a sender cannot raise it for hosts it names.
+Sample data, Signalith's own events and its vulnerability scans are left out of
+the check. A broken agent, a full disk, a firewall change and an attacker who turned
+logging off all look the same from here, so the finding's guidance says where to
+look first.
 
 Each section loads on its own: if one part fails (for example, OpenSearch rejects a
 query), that card shows the error and the rest of the dashboard still works. Cards
@@ -202,7 +234,7 @@ Every endpoint needs the admin sign-in, like the rest of the API.
 | `PUT /api/dashboards/{id}` | Replace a dashboard (save edits, reorder panels) |
 | `DELETE /api/dashboards/{id}` | Delete its file |
 | `POST /api/dashboards/{id}/panels` | Append one panel (`{"title", "query", "viz", ...}`) |
-| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, or `error` |
+| `POST /api/dashboards/{id}/run` | Run every panel; body `{"range": "7d"}` is optional. Returns one result per panel, each with `result`, `value` and `previous` for single values, `drill` (how to find the events behind its numbers), or `error` |
 | `POST /api/panels/run` | Run an unsaved panel: `{"range": "24h", "panel": {...}}` |
 
 Validation errors return 400 with a `problems` list naming each field to fix.

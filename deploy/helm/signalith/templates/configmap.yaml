@@ -1,0 +1,14 @@
+{{- /* signalith.yaml for the servers, and for the scanners. No secrets: they
+reach the pods as files from the setup Job's Secrets. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "signalith.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+data:
+  signalith.yaml: |
+    {{- include "signalith.config" (dict "ctx" . "role" "") | nindent 4 }}
+  scanner.yaml: |
+    {{- include "signalith.config" (dict "ctx" . "role" "scanner") | nindent 4 }}

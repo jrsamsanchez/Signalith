@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # The config (/etc/signalith) and the state folder with the master key,
 # certificates and settings (/var/lib/signalith) are kept, so reinstalling
 # picks up where it left off. Delete them by hand to remove everything;

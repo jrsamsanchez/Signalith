@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
@@ -95,7 +98,8 @@ func TestOTelWindows(t *testing.T) {
 		dig(m, "receivers", "windowseventlog/certificates", "channel") != "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational" ||
 		dig(m, "receivers", "windowseventlog/openssh") != nil ||
 		dig(m, "receivers", "windowseventlog/sysmon", "channel") != "Microsoft-Windows-Sysmon/Operational" ||
-		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" {
+		dig(m, "receivers", "windowseventlog/powershell", "channel") != "Microsoft-Windows-PowerShell/Operational" ||
+		dig(m, "receivers", "windowseventlog/powershell_classic", "channel") != "Windows PowerShell" {
 		t.Errorf("receivers = %v", m["receivers"])
 	}
 	if dig(m, "exporters", "otlphttp/signalith", "tls", "ca_file") != OTelWindowsCAPath {

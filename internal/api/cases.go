@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -601,6 +604,9 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		i := slices.IndexFunc(c.Entries, func(e cases.Entry) bool { return e.ID == id })
 		if i >= 0 && c.Entries[i].Kind == cases.KindFinding {
 			return false, badRequest{errors.New("remove the finding from the case instead")}
+		}
+		if i >= 0 && c.Entries[i].Kind == cases.KindNotebook {
+			return false, badRequest{errors.New("unlink the case from the hunting notebook instead")}
 		}
 		if i >= 0 && c.Entries[i].Kind == cases.KindAction {
 			return false, badRequest{errors.New("a response action stays on the timeline: it is the record of what was done")}

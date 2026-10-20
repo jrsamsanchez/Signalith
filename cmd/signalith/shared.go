@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -13,6 +16,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clustercomp"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
 	"github.com/jrsamsanchez/signalith/internal/clusterlib"
+	"github.com/jrsamsanchez/signalith/internal/clusterparsers"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -60,6 +64,8 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 	ct.join.Writable = rt.Writable
 	// Notes on compliance controls are changed by a member only.
 	ct.comp.Writable = rt.Writable
+	// Custom parsers are changed by a member only.
+	ct.parsers.Writable = rt.Writable
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
@@ -91,13 +97,16 @@ type sharedDocs struct {
 	osca *clusterpki.OSCA
 	// comp holds the notes on compliance controls (see sharedcompliance.go).
 	comp *clustercomp.Notes
+	// parsers holds the custom parsers (see sharedparsers.go).
+	parsers *clusterparsers.Parsers
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
 // users' documents.
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
 	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil), reports: clustercfg.NewReports(),
-		lib: clusterlib.NewDocs(), osca: clusterpki.New(), comp: clustercomp.New(nil)}
+		lib: clusterlib.NewDocs(), osca: clusterpki.New(), comp: clustercomp.New(nil),
+		parsers: clusterparsers.New(nil)}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -123,6 +132,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.lib,
 		d.osca,
 		d.comp,
+		d.parsers,
 		// Append a new shared collection here.
 	}
 }
@@ -159,6 +169,8 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		clusterlib.LookupImporters(d.lib, libraryFiles(f)),
 		// The notes on compliance controls (sharedcompliance.go).
 		[]shared.Importer{complianceImporter(d.comp, f)},
+		// The custom parsers (sharedparsers.go).
+		[]shared.Importer{parsersImporter(d.parsers, f)},
 		// Append a new shared feature's importers here.
 	)
 }
@@ -177,6 +189,8 @@ func sharedResealers(d sharedDocs, client func() (*store.Client, string)) []shar
 		d.tls.tls.Resealer(),
 		// OpenSearch's certificate authority key.
 		d.osca.Resealer(),
+		// The scan logins OpenVAS signs in with (vulnkeys.go).
+		vulnLoginsResealer(d.docs, client),
 		// Append a new shared feature's resealer here.
 	}
 }

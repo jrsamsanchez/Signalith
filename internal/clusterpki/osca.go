@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package clusterpki gives each Signalith server of a cluster its own
 // OpenSearch client certificate, CN=signalith-server-<name>, when
 // Signalith made OpenSearch's certificates (internal/ospki). The OpenSearch

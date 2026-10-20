@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -70,7 +73,8 @@ func readSecret(path string) (string, error) {
 	return line, nil
 }
 
-// readLogin reads "user:password", or a password for admin.
+// readLogin reads "user:password", or a password for the built-in admin
+// of a new install, signalithadmin.
 func readLogin(path string) (user, password string, err error) {
 	s, err := readSecret(path)
 	if err != nil {
@@ -79,7 +83,7 @@ func readLogin(path string) (user, password string, err error) {
 	if u, p, ok := strings.Cut(s, ":"); ok && u != "" && !strings.ContainsAny(u, " \t") {
 		return u, p, nil
 	}
-	return "admin", s, nil
+	return "signalithadmin", s, nil
 }
 
 // readUsers reads a CSV of username,password.

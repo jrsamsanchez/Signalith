@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -9,7 +12,8 @@ import (
 // every event it receives; a sender can never set them (see reserved).
 const (
 	// IntakeField is how the event arrived: agent (an agent's POST to
-	// /api/ingest), otlp, osquery, syslog, scanner (Signalith's own
+	// /api/ingest), otlp, hec (a sender built for Splunk's HTTP Event
+	// Collector), osquery, syslog, scanner (Signalith's own
 	// vulnerability scans) or signalith (what Signalith notices itself,
 	// such as a network sensor gone silent).
 	IntakeField = "signalith_intake"
@@ -34,6 +38,7 @@ const (
 const (
 	IntakeAgent   = "agent"
 	IntakeOTLP    = "otlp"
+	IntakeHEC     = "hec"
 	IntakeOsquery = "osquery"
 	IntakeSyslog  = "syslog"
 	IntakeScanner = "scanner"

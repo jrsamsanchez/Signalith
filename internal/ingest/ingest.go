@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ingest turns raw records from agents (Fluent Bit) into normalized
 // events and writes them to OpenSearch. Each source type has a parser that
 // maps the record onto a data model; unrecognized events land in "Other"
@@ -11,7 +14,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,13 +85,28 @@ type Pipeline struct {
 	// MaxEventAge is how old an event's own time may be and still be its
 	// event time (zero: DefaultMaxEventAge); see TimeUsable.
 	MaxEventAge time.Duration
+	// Limits, when set, are the ingest slots and receive budget this
+	// pipeline shares with others, such as every tenant's pipeline; then
+	// MaxConcurrent and MaxReceiving are not used. nil gives the pipeline
+	// Limits of its own.
+	Limits *Limits
+	// Tenant is the tenant whose events this pipeline takes, "" for the
+	// default tenant: what its requests are counted under in Limits.
+	Tenant string
 	// MaxConcurrent caps the ingest requests Admit lets in at once
-	// (default 8), which bounds the memory decoding and writing use.
+	// (default DefaultMaxConcurrent) when Limits is nil. Memory is capped
+	// by MaxReceiving; this bounds how many bulk writes run against
+	// OpenSearch together.
 	MaxConcurrent int
 	// MaxReceiving caps the memory request bodies hold, from their first
-	// byte until they have been written (default DefaultMaxReceiving); one
-	// sender may hold a quarter of it. See ReadBody.
+	// byte until they have been written (default DefaultMaxReceiving),
+	// when Limits is nil; one sender may hold a quarter of it. See
+	// ReadBody.
 	MaxReceiving int64
+	// Custom parses the records sent under a custom parser's tag
+	// (CustomTagPrefix); nil leaves them to the built-in parsers. Set it
+	// before the pipeline takes records.
+	Custom CustomParsers
 	// Log, when set, gets a warning (at most once a minute per kind) when
 	// events are refiled under their arrival time or lose fields.
 	Log *slog.Logger
@@ -98,6 +115,9 @@ type Pipeline struct {
 	// loader sets it, on a pipeline of its own: every other pipeline
 	// removes the marker from what senders send (see Reserved).
 	SampleMark string
+	// Rollover, when set, picks the part of a busy day's index events go
+	// to (see Rollover); nil writes every event to its day's index.
+	Rollover *Rollover
 	// Servers returns how many servers share each day's field-name
 	// budgets: those that stored events in the last 10 minutes (see
 	// cluster.Node.IndexingServers). nil is this server alone.
@@ -114,21 +134,17 @@ type Pipeline struct {
 
 	stats   Stats
 	names   fieldBudget
+	procs   ProcessTracker
 	counter fieldCounter
-	slots   chan struct{}
-	slotsMu sync.Mutex
-	warnMu  sync.Mutex
-	warned  map[string]time.Time
+	// ownLimits are the pipeline's own Limits, when Limits is nil.
+	ownLimitsOnce sync.Once
+	ownLimits     *Limits
+	warnMu        sync.Mutex
+	warned        map[string]time.Time
 
 	// plaintext lists the agents that sent over plain HTTP, and refused
 	// the ones whose batches were turned away.
 	plaintext, refused senderLog
-
-	// recvUsed is the receive budget in use, and recvBy each sender's
-	// part of it (see ReadBody).
-	recvMu   sync.Mutex
-	recvUsed int64
-	recvBy   map[netip.Addr]int64
 }
 
 // Stats counts what the pipeline has processed since start, for the health page.
@@ -281,7 +297,12 @@ func (p *Pipeline) Ingest(ctx context.Context, tag string, records []map[string]
 		end := min(start+batchEvents, len(records))
 		events := make([]Event, 0, end-start)
 		for _, r := range records[start:end] {
-			events = append(events, Normalize(tag, r, p.now()))
+			if ev, drop := p.normalize(tag, r, p.now()); !drop {
+				events = append(events, ev)
+			}
+		}
+		if len(events) == 0 {
+			continue
 		}
 		res, err := p.write(ctx, events, nil)
 		if err != nil {
@@ -328,6 +349,16 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
 	ctxOrigin := OriginFrom(ctx)
+	// Linux program starts, joined from their audit records, are stored
+	// too. Each takes its ID from its EXECVE record's.
+	for i := range min(len(ids), len(events)) {
+		if events[i].ID == "" && isAuditRecord(&events[i], "EXECVE") {
+			events[i].ID = ids[i]
+		}
+	}
+	if starts := p.procs.Starts(events); len(starts) > 0 {
+		events = append(events, starts...)
+	}
 	// Each server's share of the day's new field names, and the indices
 	// whose mapping is near OpenSearch's limit, asked once per index.
 	budget := namesBudget(p.servers())
@@ -341,13 +372,18 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		nReserved := p.dropReserved(ev.Fields, &reserved)
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
-		// carries its own marker instead.
+		// carries its own marker instead, and the origin an event of it
+		// names (as a sensor's token would send it), so detections that
+		// believe only such events fire on the sample too.
 		if p.SampleMark == "" {
-			if o := ev.Origin; !o.IsZero() {
-				o.stamp(ev.Fields)
-			} else {
-				ctxOrigin.stamp(ev.Fields)
+			o := ev.Origin
+			if o.IsZero() {
+				o = ctxOrigin
 			}
+			o.stamp(ev.Fields)
+			setSource(ev.Fields, o.Intake)
+		} else {
+			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
 			ev.Time = recv
@@ -362,7 +398,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Model = "Other"
 		}
 		day := dayOf(ev.Time)
-		index := datamodel.IndexName(prefix, ev.Model, day)
+		index := p.Rollover.Index(datamodel.IndexName(prefix, ev.Model, day))
 		isFull, asked := full[index]
 		if !asked && hasUnknown(ev.Fields) {
 			isFull = p.mappingFull(ctx, index)
@@ -578,39 +614,13 @@ func (p *Pipeline) warn(kind, msg string, args ...any) {
 // sender should retry shortly (Fluent Bit does on a 503).
 var ErrBusy = errors.New("Signalith is busy writing other events; send again in a few seconds")
 
-// Admit waits up to wait for one of MaxConcurrent ingest slots and returns
-// the function that frees it, or ErrBusy. Take a slot once the request
-// body has arrived (see ReadBody) and hold it while the body is decoded
-// and written: that bounds the memory and OpenSearch writes ingest uses
-// however many agents send at once, and a slow sender cannot hold a slot.
-func (p *Pipeline) Admit(ctx context.Context, wait time.Duration) (func(), error) {
-	p.slotsMu.Lock()
-	if p.slots == nil {
-		n := p.MaxConcurrent
-		if n <= 0 {
-			n = 8
-		}
-		p.slots = make(chan struct{}, n)
-	}
-	slots := p.slots
-	p.slotsMu.Unlock()
-	release := func() { <-slots }
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	default:
-	}
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	select {
-	case slots <- struct{}{}:
-		return release, nil
-	case <-t.C:
-		return nil, ErrBusy
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
+// DefaultMaxConcurrent is how many ingest requests are decoded and written
+// at once when Pipeline.MaxConcurrent is not set. Each request waits on its
+// bulk write to OpenSearch, so too few slots leave both the server's CPU
+// and OpenSearch idle: in the lab load test 8 slots held one 2-core server
+// to about 11,000 events a second with OpenSearch mostly idle. The bodies
+// those requests hold stay capped by MaxReceiving whatever this is.
+const DefaultMaxConcurrent = 32
 
 // Document returns the OpenSearch document for an event, dropping empty
 // values so searches like user=* only match real values. The event time,
@@ -646,37 +656,7 @@ func (e Event) Document() map[string]any {
 // Normalize maps one record to an event. tag is the Fluent Bit tag, which
 // says what kind of source the record came from.
 func Normalize(tag string, r map[string]any, now time.Time) Event {
-	var ev Event
-	switch {
-	case tag == SensorStatusTag:
-		ev = parseSensorStatus(r)
-	case isWazuhTag(tag) || IsWazuhAlert(r):
-		ev = parseWazuhRecord(r)
-	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
-		ev = parseZeekRecord(tag, r)
-	case isSuricataTag(tag) || IsSuricataEVE(r):
-		ev = parseSuricataRecord(r)
-	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
-		ev = ParseCloudTrail(r)
-	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
-		ev = ParseAzure(r)
-	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
-		ev = ParseO365(r)
-	case isWindowsRecord(tag, r):
-		ev = parseWindows(r)
-	case strings.HasPrefix(tag, "linux.clamav"):
-		ev = parseClamAVRecord(r)
-	case strings.HasPrefix(tag, WebTag):
-		ev = parseWebRecord(r)
-	case strings.HasPrefix(tag, "linux.audit"):
-		ev = parseAuditdRecord(r)
-	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
-		ev = parseJournal(r)
-	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
-		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
-	default:
-		ev = parseGeneric(r)
-	}
+	ev := parseRecord(tag, r, now)
 	if ev.Time.IsZero() {
 		ev.Time = recordTime(r, now)
 	}
@@ -690,7 +670,37 @@ func Normalize(tag string, r map[string]any, now time.Time) Event {
 		raw, _ := json.Marshal(r)
 		ev.Fields["message"] = string(raw)
 	}
+	if !hasSource(ev.Fields) {
+		// Where the agent read it: the file (the tail inputs' Path_Key),
+		// or the journal.
+		if f := str(r, "file"); f != "" {
+			ev.Fields["source"] = truncateUTF8(CapValue(f), maxSourceLen)
+		} else if strings.HasPrefix(tag, "linux.journal") {
+			ev.Fields["source"] = "journald"
+		}
+	}
 	return ev
+}
+
+// maxSourceLen caps a source taken from a file path.
+const maxSourceLen = 1024
+
+func hasSource(f map[string]any) bool {
+	s, ok := f["source"].(string)
+	return ok && s != ""
+}
+
+// setSource gives an event without a source one, as Splunk's source field
+// reads: a Windows event's log (WinEventLog:Security), else how it arrived.
+func setSource(f map[string]any, intake string) {
+	if hasSource(f) {
+		return
+	}
+	if st, _ := f["sourcetype"].(string); strings.HasPrefix(st, "WinEventLog:") {
+		f["source"] = st
+	} else if intake != "" {
+		f["source"] = intake
+	}
 }
 
 func sourcetypeForTag(tag string) string {
@@ -818,3 +828,65 @@ func baseName(p string) string {
 	}
 	return p
 }
+
+// parseRecord runs the parser for a record's kind of source. A parser that
+// panics on a crafted record stores the record as a generic event instead,
+// so one bad record cannot fail the batch it came in or stop the server.
+func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
+	defer func() {
+		if p := recover(); p != nil {
+			parserPanics.Add(1)
+			if last := lastParserPanicLog.Load(); now.Unix()-last >= 60 && lastParserPanicLog.CompareAndSwap(last, now.Unix()) {
+				slog.Warn("a record stopped its parser; stored it as a generic event (logged once a minute)", "tag", tag, "panic", fmt.Sprint(p))
+			}
+			ev = parseGeneric(r)
+		}
+	}()
+	switch {
+	case tag == SensorStatusTag:
+		ev = parseSensorStatus(r)
+	case isWazuhTag(tag) || IsWazuhAlert(r):
+		ev = parseWazuhRecord(r)
+	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
+		ev = parseZeekRecord(tag, r)
+	case isSuricataTag(tag) || IsSuricataEVE(r):
+		ev = parseSuricataRecord(r)
+	case tag == CloudTrailTag || strings.HasPrefix(tag, CloudTrailTag+".") || IsCloudTrailRecord(r):
+		ev = ParseCloudTrail(r)
+	case tag == AzureTag || strings.HasPrefix(tag, AzureTag+".") || IsAzureRecord(r):
+		ev = ParseAzure(r)
+	case tag == O365Tag || strings.HasPrefix(tag, O365Tag+".") || IsO365Record(r):
+		ev = ParseO365(r)
+	case tag == GCPTag || strings.HasPrefix(tag, GCPTag+".") || IsGCPRecord(r):
+		ev = ParseGCP(r)
+	case tag == OktaTag || strings.HasPrefix(tag, OktaTag+".") || IsOktaRecord(r):
+		ev = ParseOkta(r)
+	case isKubernetesTag(tag) || IsKubernetesRecord(r):
+		ev = ParseKubernetes(kubeLine(r))
+	case tag == GitHubTag || strings.HasPrefix(tag, GitHubTag+".") || githubSniffTag(tag) && IsGitHubRecord(r):
+		ev = ParseGitHub(r)
+	case isWindowsRecord(tag, r):
+		ev = parseWindows(r)
+	case strings.HasPrefix(tag, "linux.clamav"):
+		ev = parseClamAVRecord(r)
+	case strings.HasPrefix(tag, WebTag):
+		ev = parseWebRecord(r)
+	case strings.HasPrefix(tag, "linux.audit"):
+		ev = parseAuditdRecord(r)
+	case strings.HasPrefix(tag, "linux.journal") || has(r, "MESSAGE"):
+		ev = parseJournal(r)
+	case strings.HasPrefix(tag, "linux.") || strings.HasPrefix(tag, "syslog") || has(r, "log"):
+		ev = parseSyslogLine(str(r, "log", "message"), sourcetypeForTag(tag), now)
+	default:
+		ev = parseGeneric(r)
+	}
+	return ev
+}
+
+var (
+	// parserPanics counts records whose parser panicked.
+	parserPanics atomic.Int64
+	// lastParserPanicLog is when a parser panic was last logged, in Unix
+	// seconds.
+	lastParserPanicLog atomic.Int64
+)

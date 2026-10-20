@@ -1,3 +1,5 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds Signalith's Windows installer with the WiX Toolset v5:
 #   .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Out dist
 # Needs the .NET SDK (dotnet). WiX v5 is used rather than later versions,

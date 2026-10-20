@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
@@ -41,19 +44,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		res.Rows = out
 	case *query.Sort:
-		sort.SliceStable(res.Rows, func(i, j int) bool {
-			for _, k := range c.Keys {
-				cmp := compareValues(res.Rows[i][k.Field], res.Rows[j][k.Field])
-				if cmp == 0 {
-					continue
-				}
-				if k.Desc {
-					return cmp > 0
-				}
-				return cmp < 0
-			}
-			return false
-		})
+		sortRows(res.Rows, c.Keys)
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -85,18 +76,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		if res.Kind == "events" {
 			res.Kind = "table"
 		}
+	case *query.Transaction:
+		return transaction(ctx, res, c)
 	case *query.Rename:
 		for _, p := range c.Pairs {
-			for i, col := range res.Columns {
-				if col == p[0] {
-					res.Columns[i] = p[1]
-				}
-			}
-			for _, r := range res.Rows {
-				if v, ok := r[p[0]]; ok {
-					delete(r, p[0])
-					r[p[1]] = v
-				}
+			if err := applyRename(ctx, res, p); err != nil {
+				return err
 			}
 		}
 	case *query.Stats:
@@ -120,14 +105,14 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			}
 			g, exists := groups[k]
 			if !exists {
-				g = Row{"count": int64(0)}
+				g = Row{topCount: int64(0)}
 				for _, f := range keys {
 					g[f] = r[f]
 				}
 				groups[k] = g
 				counted = append(counted, g)
 			}
-			g["count"] = g["count"].(int64) + 1
+			g[topCount] = g[topCount].(int64) + 1
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
@@ -136,11 +121,116 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	case *query.Rex:
 		return applyRex(ctx, res, c)
 	case *query.Dedup:
-		return applyDedup(ctx, res, c)
+		if err := applyDedup(ctx, res, c); err != nil {
+			return err
+		}
+		sortRows(res.Rows, c.SortBy)
 	case *query.Fillnull:
 		applyFillnull(res, c)
 	case *query.EventStats:
 		return applyEventStats(ctx, res, c)
+	case *query.StreamStats:
+		return applyStreamStats(ctx, res, c)
+	case *query.Bin:
+		return applyBin(ctx, res, c)
+	case *query.Regex:
+		return applyRegex(ctx, res, c)
+	case *query.FieldsRemove:
+		return applyFieldsRemove(ctx, res, c)
+	case *query.Chart:
+		for _, cc := range chartCommands(c) {
+			if err := applyCommand(ctx, res, cc); err != nil {
+				return err
+			}
+		}
+	case *query.XYSeries:
+		return applyXYSeries(ctx, res, c)
+	case *query.Untable:
+		return applyUntable(ctx, res, c)
+	case *query.Spath:
+		return applySpath(ctx, res, c)
+	case *query.FromJSON:
+		return applyFromJSON(ctx, res, c)
+	case *query.NoMV:
+		return applyNoMV(ctx, res, c)
+	case *query.MVCombine:
+		return applyMVCombine(ctx, res, c)
+	case *query.StrCat:
+		return applyStrCat(ctx, res, c)
+	case *query.RangeMap:
+		return applyRangeMap(ctx, res, c)
+	case *query.ForEach:
+		return applyForEach(ctx, res, c)
+	case *query.Replace:
+		return applyReplace(ctx, res, c)
+	case *query.XMLKV:
+		return applyXMLKV(ctx, res, c)
+	case *query.Accum:
+		return applyAccum(ctx, res, c)
+	case *query.Delta:
+		return applyDelta(ctx, res, c)
+	case *query.AutoRegress:
+		return applyAutoRegress(ctx, res, c)
+	case *query.FieldSummary:
+		return applyFieldSummary(ctx, res, c)
+	case *query.Transpose:
+		return applyTranspose(ctx, res, c)
+	case *query.FillDown:
+		return applyFillDown(ctx, res, c)
+	case *query.Trendline:
+		return applyTrendline(ctx, res, c)
+	case *query.Concurrency:
+		return applyConcurrency(ctx, res, c)
+	case *query.Contingency:
+		return applyContingency(ctx, res, c)
+	case *query.Format:
+		return applyFormat(ctx, res, c)
+	case *query.Return:
+		return applyReturn(ctx, res, c)
+	case *query.MakeContinuous:
+		return applyMakeContinuous(ctx, res, c)
+	case *query.Geostats:
+		return applyGeostats(ctx, res, c)
+	case *query.Extract:
+		return applyExtract(ctx, res, c)
+	case *query.Outlier:
+		return applyOutlier(ctx, res, c)
+	case *query.Gauge:
+		return applyGauge(ctx, res, c)
+	case *query.Timewrap:
+		return applyTimewrap(ctx, res, c)
+	case *query.Cluster:
+		return applyCluster(ctx, res, c)
+	case *query.XPath:
+		return applyXPath(ctx, res, c)
+	case *query.Abstract:
+		return applyAbstract(ctx, res, c)
+	case *query.AnomalyDetection:
+		return applyAnomalyDetection(ctx, res, c)
+	case *query.Correlate:
+		return applyCorrelate(ctx, res, c)
+	case *query.Predict:
+		return applyPredict(ctx, res, c)
+	case *query.SetFields:
+		return applySetFields(ctx, res, c)
+	case *query.KMeans:
+		return applyKMeans(ctx, res, c)
+	case *query.Highlight:
+		// The results view marks terms itself; the rows stay as they are.
+	case *query.MVExpand:
+		return applyMVExpand(ctx, res, c)
+	case *query.MakeMV:
+		return applyMakeMV(ctx, res, c)
+	case *query.Reverse:
+		applyReverse(res)
+	case *query.Tail:
+		applyTail(res, c)
+	case *query.Uniq:
+		return applyUniq(ctx, res)
+	case *query.Convert:
+		return applyConvert(ctx, res, c)
+	case *query.AddTotals:
+		return applyAddTotals(ctx, res, c)
 	case *query.Timechart:
 		return fmt.Errorf("timechart must come before other commands that change results")
 	default:
@@ -149,8 +239,12 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	return nil
 }
 
+// topCount holds a value's count in the rows topRows takes; a name no
+// field can have, so it never clashes with one of top's fields.
+const topCount = "\x00count"
+
 // topRows turns per-value counts into a top table with percentages,
-// limited per by-group.
+// limited per by-group, with an other row for the rest when asked.
 func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 	groupTotals := map[string]int64{}
 	byGroup := map[string][]Row{}
@@ -161,30 +255,66 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 			order = append(order, k)
 		}
 		byGroup[k] = append(byGroup[k], r)
-		n, _ := r["count"].(int64)
-		groupTotals[k] += n
+		groupTotals[k] += topN(r)
 	}
+	countCol, percentCol := top.CountColumn(), top.PercentColumn()
 	var out []Row
 	for _, k := range order {
 		g := byGroup[k]
 		sort.SliceStable(g, func(i, j int) bool {
 			if top.Rare {
-				return g[i]["count"].(int64) < g[j]["count"].(int64)
+				return topN(g[i]) < topN(g[j])
 			}
-			return g[i]["count"].(int64) > g[j]["count"].(int64)
+			return topN(g[i]) > topN(g[j])
 		})
+		var rest int64
 		if top.Limit > 0 && len(g) > top.Limit {
+			for _, r := range g[top.Limit:] {
+				rest += topN(r)
+			}
 			g = g[:top.Limit]
 		}
+		if top.UseOther && rest > 0 {
+			other := Row{topCount: rest}
+			for _, f := range top.By {
+				other[f] = g[0][f]
+			}
+			for _, f := range top.Fields {
+				other[f] = top.Other()
+			}
+			g = append(g, other)
+		}
 		for _, r := range g {
-			if t := groupTotals[k]; t > 0 {
-				r["percent"] = math.Round(float64(r["count"].(int64))*10000/float64(t)) / 100
+			n := topN(r)
+			delete(r, topCount)
+			if !top.NoCount {
+				r[countCol] = n
+			}
+			if t := groupTotals[k]; t > 0 && !top.NoPercent {
+				r[percentCol] = math.Round(float64(n)*10000/float64(t)) / 100
 			}
 			out = append(out, r)
 		}
 	}
-	cols := append(append(append([]string{}, top.By...), top.Fields...), "count", "percent")
+	cols := append(append([]string{}, top.By...), top.Fields...)
+	if !top.NoCount {
+		cols = append(cols, countCol)
+	}
+	if !top.NoPercent {
+		cols = append(cols, percentCol)
+	}
 	return out, cols
+}
+
+// topN is a row's count in topRows.
+func topN(r Row) int64 {
+	switch n := r[topCount].(type) {
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	}
+	return 0
 }
 
 func groupKey(r Row, fields []string) (string, bool) {
@@ -393,6 +523,11 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		case "=~":
 			return m.regex(e.Value, fmt.Sprint(v))
 		}
+		if e.Field == "_time" {
+			if _, isNum := asFloat(e.Value); isNum {
+				v = timeNumber(v)
+			}
+		}
 		cmp := compareValues(v, e.Value)
 		switch e.Op {
 		case "<":
@@ -549,8 +684,13 @@ type shiftAnd struct {
 
 func newShiftAnd(p string) *shiftAnd {
 	rs := []rune(p)
-	words := (len(rs) + 63) / 64
-	sa := &shiftAnd{n: len(rs), any: make([]uint64, words), exact: map[rune][]uint64{}, state: make([]uint64, words)}
+	// One word of bits per 64 characters, grown without a size sum that
+	// could overflow.
+	words := []uint64{0}
+	for i := 64; i < len(rs); i += 64 {
+		words = append(words, 0)
+	}
+	sa := &shiftAnd{n: len(rs), any: words, exact: map[rune][]uint64{}, state: make([]uint64, len(words))}
 	for k, r := range rs {
 		if r == '?' {
 			sa.any[k/64] |= 1 << (k % 64)
@@ -681,4 +821,24 @@ func checkPatterns(q *query.Query) error {
 		}
 	}
 	return err
+}
+
+// sortRows sorts rows by keys, keeping the order of rows that tie.
+func sortRows(rows []Row, keys []query.SortKey) {
+	if len(keys) == 0 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		for _, k := range keys {
+			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			if cmp == 0 {
+				continue
+			}
+			if k.Desc {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+		return false
+	})
 }

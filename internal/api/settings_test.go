@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -126,7 +129,7 @@ func TestSettingsRoutesAreAdminOnly(t *testing.T) {
 	ts, _, _ := newSettingsServer(t, "", nil)
 	for _, rt := range []struct{ method, path string }{
 		{"GET", "/api/settings"}, {"PUT", "/api/settings"}, {"POST", "/api/settings/test/opensearch"},
-		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/test/m365"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
+		{"POST", "/api/settings/test/assistant"}, {"POST", "/api/settings/test/m365"}, {"POST", "/api/settings/test/okta"}, {"POST", "/api/settings/assistant/models"}, {"POST", "/api/settings/restart"}, {"POST", "/api/settings/restart/confirm"},
 		{"GET", "/api/settings/export"},
 	} {
 		if code, out := doAs(t, ts, "andy", "role-password", rt.method, rt.path, "{}"); code != 403 || out["code"] != "forbidden" {
@@ -160,7 +163,7 @@ func TestGetSettings(t *testing.T) {
 	if strings.Contains(raw, "hunter2-secret") {
 		t.Fatal("GET /api/settings returned a secret")
 	}
-	if n := len(view["sections"].([]any)); n != 11 {
+	if n := len(view["sections"].([]any)); n != 12 {
 		t.Errorf("sections %d", n)
 	}
 	pw := field(t, view, "opensearch.password")
@@ -182,7 +185,7 @@ func TestGetSettings(t *testing.T) {
 		t.Errorf("skip verify %v", f)
 	}
 	about := view["about"].(map[string]any)
-	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 11 {
+	if about["ingest_tokens"] != float64(1) || len(about["paths"].([]any)) != 12 {
 		t.Errorf("about %v", about)
 	}
 	restart := view["restart"].(map[string]any)
@@ -265,7 +268,7 @@ func TestSaveSettings(t *testing.T) {
 	}
 	// Reset goes back to signalith.yaml.
 	code, out = put(`{"reset":["server.listen","auth.session_timeout"]}`)
-	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != 12*time.Hour {
+	if code != 200 || field(t, out, "server.listen")["source"].(map[string]any)["kind"] != "file" || srv.Sessions.Idle != config.DefaultSessionIdle {
 		t.Errorf("reset %d %v idle %v", code, field(t, out, "server.listen"), srv.Sessions.Idle)
 	}
 	// The listen address is back to the one in use, so it needs no restart.
@@ -551,7 +554,7 @@ func TestExportSettings(t *testing.T) {
 	// for one, turn on a second job runner; shared ones are not. The
 	// public address is marked too: another server set up on its own has
 	// its own.
-	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:8080  # this server's own address\n",
+	for _, want := range []string{"syslog:\n", "  udp: 0.0.0.0:514  # this server's own address\n", "  allow: [10.0.0.0/8]\n", "  # password: left out; set it here or with SIGNALITH_OPENSEARCH_PASSWORD\n", "  listen: 127.0.0.1:9000  # this server's own address\n", "  agent_listen: \"\"  # this server's own address\n",
 		"  public_url: \"\"  # this server's own address\n", "  scheduler: true  # this server only\n", "  ca_file: \"\"  # a file on this server\n", "  max_events: 10000\n",
 		"    mode: auto  # this server only\n", "  trusted_proxies: []\n"} {
 		if !strings.Contains(text, want) {

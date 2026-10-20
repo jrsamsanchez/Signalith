@@ -6,7 +6,7 @@ one OpenSearch. The walkthrough, the settings and troubleshooting are in
 
 | File | What it is |
 | --- | --- |
-| `haproxy.cfg` | HAProxy passing the web port (8443), syslog over TLS (6514) and syslog over TCP (514) through to the servers, with PROXY protocol v2 and `/readyz` health checks |
+| `haproxy.cfg` | HAProxy passing the web port (8443 to each server's 9000), the agent port (7779), syslog over TLS (6514) and syslog over TCP (514) through to the servers, with PROXY protocol v2 and `/readyz` health checks |
 | `nginx-stream.conf` | The same with nginx's stream module (passive health checks only) |
 | `keepalived.conf` | A virtual IP shared by two balancers, and syslog over UDP |
 
@@ -14,11 +14,13 @@ In Signalith, on every server:
 
 1. List the balancers' own addresses under **Trusted reverse proxies**
    (`server.trusted_proxies`), on the Settings page or in `signalith.yaml`.
-2. Turn on **PROXY protocol from load balancers** for the web port
+2. Turn on **PROXY protocol from load balancers** for the web and agent ports
    (`server.proxy_protocol`) and for syslog (`syslog.proxy_protocol`), then
    restart.
 3. Set the public address (`server.public_url`) to the balancer's name, such as
-   `https://siem.example.com:8443`, so Add data gives agents that address.
+   `https://siem.example.com:8443`. Add data gives agents the same name on the
+   agent port (`https://siem.example.com:7779`), so the balancer passes 7779
+   through as well.
 
 Only the trusted proxies may send a PROXY header: a header from any other address
 closes the connection, and the Health page counts it.
@@ -30,7 +32,7 @@ closes the connection, and the Health page counts it.
   "Single" affinity for syslog over TCP so a device stays on one server.
 - **AWS Network Load Balancer**: use TCP listeners (not TLS) and turn on the target
   group attribute "Proxy protocol v2". List the balancer's subnets under
-  `server.trusted_proxies`. Health check: HTTP `/readyz` on the traffic port.
+  `server.trusted_proxies`. Health check: HTTP `/readyz` on the traffic port (the web port and the agent port both answer it).
 - **Azure Load Balancer** keeps the client's address and has no PROXY protocol:
   leave both settings off and list nothing for it. Health probe: HTTP `/readyz`.
 - **F5 BIG-IP, Citrix ADC** and others: a TCP (layer 4) virtual server that adds a

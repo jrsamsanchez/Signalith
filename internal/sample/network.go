@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sample
 
 import (
@@ -513,7 +516,7 @@ func (g *gen) sensorUpkeep() {
 	failed := g.day(3, 3, 45)
 	g.sensorStatus(failed, "up", []string{"rules_failed"}, "failed")
 	silent := g.day(1, 22, 30)
-	g.b.generic(silent, "sensor:health", map[string]any{
+	g.b.signalith(silent, "sensor:health", map[string]any{
 		"vendor_product": "Signalith sensor", "signature": "Sensor silent", "host": "nsm-02", "dvc": "nsm-02",
 		"sensor_warnings": []string{"silent"},
 		"message":         "nsm-02 has sent nothing for 16 minutes (last heard " + silent.Add(-16*time.Minute).Format("2006-01-02 15:04") + " UTC): parts of the network go unwatched",

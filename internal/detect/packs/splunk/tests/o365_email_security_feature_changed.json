@@ -1,0 +1,19 @@
+{"rule": "4d28013d-3a0f-4d65-a33f-4e8009fee0ae", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x AntiPhish x","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x SafeLink x","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"New- x x SafeAttachment x","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x Malware x","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x AntiPhish y","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x SafeLink y","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"New- x x SafeAttachment y","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x Malware y","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x AntiPhish x","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Set- x x AntiPhish x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchange","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","RecordType":"1","UserId":"admin@example.com","Workload":"Exchange"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x SafeLink x","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Disable- x x SafeLink x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"New- x x SafeAttachment x","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"New- x x SafeAttachment x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"Exchangf","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x Malware x","UserId":"admin@example.com","Workload":"Exchangf"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Remove- x x Malware x","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

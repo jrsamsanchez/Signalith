@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package splcheck
 
 import (
@@ -23,7 +26,7 @@ var cloudTrailCIM = map[string]string{
 	"src_ip": "src", "signature": "signature", "command": "command", "dest": "dest", "app": "app",
 	"user_agent": "user_agent", "vendor_account": "vendor_account", "vendor_region": "vendor_region",
 	"vendor_product": "vendor_product", "reason": "reason", "user_type": "userIdentity.type",
-	"aws_account_id": "vendor_account",
+	"aws_account_id": "vendor_account", "user_arn": "userIdentity.arn",
 }
 
 // cloudTrailField is the stored field of a CloudTrail search's field.

@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Signalith runs as its own system account, signalith, which owns its
 # config and state folders. Made once; an upgrade keeps it.
 set -e

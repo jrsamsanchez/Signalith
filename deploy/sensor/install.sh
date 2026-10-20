@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Builds a Signalith network sensor: Zeek and Suricata watch a copy of
 # your network's traffic (a switch's mirror port, or a TAP) and the Fluent
 # Bit agent sends what they log to Signalith.
@@ -6,9 +8,9 @@
 # Add data > Network sensor > Set up a new sensor gives one line that
 # downloads this script from Signalith, checks its SHA-256, and runs it:
 #
-#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:8080/api/sensor/install.sh -o "$f" &&
+#    f=$(mktemp) && curl -fsSk --proto '=https' https://siem:7779/api/sensor/install.sh -o "$f" &&
 #   echo '<sha-256>  '"$f" | sha256sum -c --quiet &&
-#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:8080 \
+#   echo 'sgl_...' | sudo sh "$f" --role sensor --from https://siem:7779 \
 #     --ca-sha256 <hex> --version 1.6.0 --token -
 #
 # "--token -" reads the sensor's agent token from the standard input, so it
@@ -140,7 +142,7 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:8080
+Usage: echo '<token>' | sudo sh install.sh --role sensor --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
          [--name <name>] [--interface <port>] [--networks <cidr,...>]
          [--no-zeek | --no-suricata] [--suricata-protocols] [--local-rules <file>]
@@ -268,7 +270,7 @@ common_args() {
   esac
   hostport=${from#https://}
   case "$hostport" in
-    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:8080 (no path)." ;;
+    '' | */* | *[!A-Za-z0-9.:[\]-]*) fail "--from must be Signalith's address and nothing else, like https://siem.example.com:7779 (no path)." ;;
   esac
   [ -z "$ca_sha" ] || ca_sha=$(hex64 --ca-sha256 "$ca_sha")
   [ -z "$next_ca_sha" ] || next_ca_sha=$(hex64 --next-ca-sha256 "$next_ca_sha")
@@ -441,6 +443,16 @@ put_file() {
     *" $5 "*) ;;
     *) changed="$changed $5" ;;
   esac
+  # A put at the end of a pipeline runs in a subshell, where $changed is
+  # lost: the group is noted in a file too (see note_changed).
+  printf '%s\n' "$5" >>"$tmp/changed"
+}
+# note_changed adds the groups put_file noted in $tmp/changed to $changed.
+note_changed() {
+  [ -f "$tmp/changed" ] || return 0
+  while read -r _g; do
+    case " $changed " in *" $_g "*) ;; *) changed="$changed $_g" ;; esac
+  done <"$tmp/changed"
 }
 # put writes standard input to a file with put_file.
 put() {
@@ -684,6 +696,8 @@ rx_packets() {
 }
 link_of() {
   l=$(cat "$sysfs/class/net/$1/operstate" 2>/dev/null) || l=unknown
+  # A virtual port (VXLAN, tun) reports unknown: with a carrier it is up.
+  if [ "${l:-unknown}" = unknown ] && [ "$(cat "$sysfs/class/net/$1/carrier" 2>/dev/null)" = 1 ]; then l=up; fi
   echo "${l:-unknown}"
 }
 # sample counts the packets each port in $@ receives in $sample seconds,
@@ -908,7 +922,7 @@ common_repos() {
     fi
     key_add "Fluent Bit" https://packages.fluentbit.io/fluentbit.key "$KEY_FPR_FLUENTBIT" /etc/apt/keyrings/signalith-fluentbit.gpg
     repo_list /etc/apt/sources.list.d/signalith-fluent-bit.list "deb [signed-by=/etc/apt/keyrings/signalith-fluentbit.gpg] https://packages.fluentbit.io/$fb_repo $codename main"
-    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+    apt_update_repos
   else
     pkg_tools ca-certificates gnupg2 ethtool iproute
     if [ "$os_id" = rhel ]; then
@@ -942,6 +956,45 @@ gpgkey=file:///etc/pki/rpm-gpg/signalith-fluentbit.asc
 enabled=1
 REPO
   fi
+}
+
+# apt_update_repos reads the repositories again, with the new ones. apt
+# only warns when a repository cannot be read (a mirror answering 503),
+# and would then install the system's own, older packages instead: on
+# Ubuntu, Suricata 7 without suricata-update, so no rules ever load. So it
+# tries three times until OISF's PPA offers Suricata, then stops.
+apt_update_repos() {
+  tries=0
+  while :; do
+    tries=$((tries + 1))
+    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+    if [ -n "$dryrun" ] || [ "$suricata" != yes ] || [ "$os_id" != ubuntu ] || suricata_from_ppa; then
+      return 0
+    fi
+    if [ "$tries" -ge 3 ]; then
+      fail "OISF's Suricata repository (ppa.launchpadcontent.net) could not be read, so only Ubuntu's older Suricata is offered, which cannot update its rules." \
+        "Run the line again later; if it fails again, check that this machine reaches ppa.launchpadcontent.net, or install with --docker."
+    fi
+    printf '    OISF'"'"'s Suricata repository could not be read; trying again.\n'
+    sleep $((tries * 10))
+  done
+}
+
+# suricata_from_ppa says whether apt would install Suricata from OISF's
+# PPA, or a Suricata with suricata-update is here already (run again while
+# the PPA is down, it keeps that one).
+suricata_from_ppa() {
+  if pkg_has suricata && command -v suricata-update >/dev/null 2>&1; then return 0; fi
+  apt-cache policy suricata 2>/dev/null | grep -q 'ppa.launchpadcontent.net/oisf/suricata-stable'
+}
+
+# suricata_check stops when the Suricata installed has no suricata-update,
+# without which no rules ever load.
+suricata_check() {
+  [ -z "$dryrun" ] || return 0
+  command -v suricata-update >/dev/null 2>&1 && return 0
+  fail "Suricata $(pkg_version suricata) was installed without suricata-update, so it cannot download any rules." \
+    "Run the line again later, so the publisher's Suricata is installed; or install with --docker."
 }
 
 # mask_vendor stops and masks a package's own unit, so there is never a
@@ -1004,6 +1057,9 @@ sensor_packages() {
     else
       pkg_upgrade suricata suricata
     fi
+    # After the upgrade: run again once the PPA is back, a Suricata 7
+    # installed from Ubuntu is upgraded to OISF's.
+    suricata_check
   fi
   pkg_upgrade agent fluent-bit
 }
@@ -1803,6 +1859,8 @@ sensor_helper() {
     capture-up.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Prepares the capture port named on the command line, for
 # signalith-sensor-capture.service: up and listening to every packet
@@ -1904,6 +1962,8 @@ HELPER
     status.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # The sensor's status line, every 5 minutes (signalith-sensor-status.timer):
 # appends one JSON line to /var/log/signalith-sensor/status.json, which the
@@ -2029,6 +2089,9 @@ fi
 net=$sysfs/class/net/$iface
 link=$(safe "$(cat "$net/operstate" 2>/dev/null)")
 [ -n "$link" ] || link=missing
+# Virtual ports (VXLAN, tun) and some drivers report no state: an up
+# port with a carrier is up.
+if [ "$link" = unknown ] && [ "$(cat "$net/carrier" 2>/dev/null)" = 1 ]; then link=up; fi
 rxp=$(num "$(cat "$net/statistics/rx_packets" 2>/dev/null)")
 rxd=$(num "$(cat "$net/statistics/rx_dropped" 2>/dev/null)")
 kd=$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')
@@ -2089,6 +2152,8 @@ HELPER
     rules-update.sh)
       cat <<'HELPER'
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # Updates the Suricata rules and applies the rule tuning set on Signalith
 # (Settings > Network sensors). suricata-update has Suricata test the
@@ -2790,6 +2855,7 @@ sensor_test_configs() {
 
 # is_changed says whether group $1 changed in this run.
 is_changed() {
+  note_changed
   case " $changed " in *" $1 "*) return 0 ;; esac
   return 1
 }
@@ -3004,6 +3070,7 @@ sensor_units
 sensor_tuning_files
 sensor_test_configs
 say ""
+note_changed
 if [ -z "$changed" ] && [ -z "$installed" ] && [ -z "$upgraded" ]; then
   say "Nothing to change: the sensor is set up as the line says."
   if [ -z "$dryrun" ]; then

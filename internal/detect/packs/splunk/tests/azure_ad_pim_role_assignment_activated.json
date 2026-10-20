@@ -1,7 +1,5 @@
 {"rule": "952e80d0-e343-439b-83f4-808c3e6fbf2e", "cases": [
   {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role completed (PIM activation)","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
-  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role completed (PIM activation)","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
-  {"expect":true,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role completed (PIM activation)","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
   {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"operationName":"Add member to role completed (PIM activatioo)","properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}},
   {"expect":false,"source":"synthesized","channel":"azure","event_id":"auditlogs","data":{"properties.initiatedBy.user.userPrincipalName":"admin@example.com","properties.result":"success","properties.targetResources{}.displayName":"Tester App"}}
 ]}

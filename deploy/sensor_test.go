@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package deploy
 
 import (
@@ -673,6 +676,22 @@ func TestSensorStatusLine(t *testing.T) {
 		t.Errorf("warnings: %v", warnings)
 	}
 
+	// A virtual port (VXLAN) says unknown: with a carrier it is up, and
+	// without one it stays unknown and is warned about.
+	mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth1/operstate"), "unknown\n", 0o644)
+	mustWrite(t, filepath.Join(m.dir, "sys/class/net/eth1/carrier"), "1\n", 0o644)
+	v = runStatus()
+	if iface, _ := v["interface"].(map[string]any); iface["link"] != "up" || strings.Contains(jsonString(t, v["warnings"]), "capture_link") {
+		t.Errorf("unknown with a carrier: %v %v", iface, v["warnings"])
+	}
+	if err := os.Remove(filepath.Join(m.dir, "sys/class/net/eth1/carrier")); err != nil {
+		t.Fatal(err)
+	}
+	v = runStatus()
+	if iface, _ := v["interface"].(map[string]any); iface["link"] != "unknown" || !strings.Contains(jsonString(t, v["warnings"]), "capture_link") {
+		t.Errorf("unknown without a carrier: %v %v", iface, v["warnings"])
+	}
+
 	// The same keys as the ingest parser's test line.
 	golden := readFile(t, filepath.Join("..", "internal", "ingest", "testdata", "sensor", "status.json"))
 	var g map[string]any
@@ -954,6 +973,30 @@ func TestSensorStatusNoStatsLine(t *testing.T) {
 
 // Run again with another capture port: the capture service stops as
 // written for the old port, which puts that port back as it was.
+// A run again with other networks restarts Zeek and Suricata, which read
+// them only when they start; their files are written at the end of a
+// pipeline, in a subshell.
+func TestSensorScriptNewNetworks(t *testing.T) {
+	m := newSensorMachine(t)
+	root, _ := m.install(t, "4")
+	out, err := m.run(t, "4", testToken, "--role", "sensor", "--from", "https://siem.example.com:8443", "--ca-sha256", m.caSHA,
+		"--version", "1.6.0", "--token", "-", "--networks", "10.0.0.0/8,203.0.113.7/32", "--dry-run", root)
+	if err != nil {
+		t.Fatalf("again: %v\n%s", err, out)
+	}
+	for _, want := range []string{"would run: systemctl restart signalith-zeek.service", "would run: systemctl restart signalith-suricata.service"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output has no %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Nothing to change") || strings.Contains(out, "restart signalith-fluent-bit.service") {
+		t.Errorf("new networks:\n%s", out)
+	}
+	if got := readFile(t, filepath.Join(root, "opt/zeek/etc/networks.cfg")); !strings.Contains(got, "203.0.113.7/32") {
+		t.Errorf("networks.cfg:\n%s", got)
+	}
+}
+
 func TestSensorScriptNewPort(t *testing.T) {
 	m := newSensorMachine(t, "eth0", "eth1", "eth2")
 	root, _ := m.install(t, "4", "--interface", "eth1")

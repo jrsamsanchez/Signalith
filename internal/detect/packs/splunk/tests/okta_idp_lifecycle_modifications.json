@@ -1,0 +1,11 @@
+{"rule": "e0be2c83-5526-4219-a14f-c3db2e763d15", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.activate","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.create","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.delete","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.deactivate","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.activatf","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.creatf","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.deletf","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"eventType":"system.idp.lifecycle.deactivatf","target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}

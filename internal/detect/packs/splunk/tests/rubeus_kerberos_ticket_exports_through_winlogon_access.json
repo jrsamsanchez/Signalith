@@ -1,7 +1,5 @@
 {"rule": "5ed8c50a-8869-11ec-876f-acde48001122", "cases": [
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceProcessId":"4242","TargetImage":"x :\\Windows\\system32\\winlogon.exe","TargetProcessId":"640"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceProcessId":"4242","TargetImage":"x :\\Windows\\system32\\winlogon.exe","TargetProcessId":"640"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceProcessId":"4242","TargetImage":"x :\\Windows\\system32\\winlogon.exe","TargetProcessId":"640"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceProcessId":"4242","TargetImage":"x :\\Windows\\system32\\winlogon.exf","TargetProcessId":"640"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceProcessId":"4242","TargetProcessId":"640"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"10","data":{"GrantedAccess":"0BFBFFF","SourceImage":"C:\\Windows\\system32\\LogonUI.exe","SourceProcessId":"4242","TargetImage":"x :\\Windows\\system32\\winlogon.exe","TargetProcessId":"640"}},

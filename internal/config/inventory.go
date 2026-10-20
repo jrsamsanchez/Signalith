@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package config
 
 import (
@@ -10,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/ticketing"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -37,10 +41,12 @@ type SecretFile struct {
 func (c *Config) SecretFiles() []SecretFile {
 	files := []SecretFile{
 		{Path: c.Path(), Reseal: ResealFile},
+		{Path: c.UsersFile(), Reseal: users.ResealUsersFile, Server: true},
 		{Path: c.DirectoryFile(), Reseal: users.ResealDirectoryFile, Server: true},
 		{Path: c.IntelFeedsFile(), Reseal: intel.ResealFeedsFile, Server: true},
 		{Path: c.NotifyFile(), Reseal: notify.Reseal, Server: true},
 		{Path: c.ResponseFile(), Reseal: respond.ResealFile, Server: true},
+		{Path: c.TicketingFile(), Reseal: ticketing.Reseal, Server: true},
 		{Path: c.SettingsFile(), Reseal: ResealSettingsFile, Server: true, Replace: true},
 	}
 	state := c.StateDir()

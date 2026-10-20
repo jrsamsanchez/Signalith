@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -262,6 +265,10 @@ func (s *Server) indexPage(next http.Handler) http.Handler {
 		if err != nil {
 			next.ServeHTTP(w, r)
 			return
+		}
+		if s.demo() {
+			// The public demo's banner, on every page.
+			b = bytes.Replace(b, []byte(`id="demo-banner" hidden`), []byte(`id="demo-banner"`), 1)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if r.Method == http.MethodHead {

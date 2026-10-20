@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
@@ -28,6 +31,10 @@ const (
 	// The environment file the Linux packages' service reads.
 	otelLinuxEnv     = "/etc/otelcol-contrib/otelcol-contrib.conf"
 	otelWindowsState = `C:\ProgramData\OpenTelemetry Collector\signalith`
+	// Where the Google Cloud option has the service account's key file
+	// put, next to the config.
+	otelLinuxGCPKey   = "/etc/otelcol-contrib/" + gcpKeyFile
+	otelWindowsGCPKey = OTelWindowsDir + `\` + gcpKeyFile
 )
 
 // OTelPath is the path, under the server's address, where Collectors send
@@ -50,10 +57,19 @@ func generateOTel(o Options) (*Agent, error) {
 	trail := o.OS == "aws"
 	// Entra ID and Azure: a Collector that reads their event hub alone.
 	hub := o.OS == "azure"
-	cloud := trail || hub
+	// Google Cloud: a Collector that reads their Pub/Sub subscription
+	// alone.
+	gcp := o.OS == "gcp"
+	cloud := trail || hub || gcp
 	var src cloudTrailSource
 	if trail {
 		if src, err = cloudTrailOptions(o); err != nil {
+			return nil, err
+		}
+	}
+	var sub gcpSource
+	if gcp {
+		if sub, err = gcpOptions(o); err != nil {
 			return nil, err
 		}
 	}
@@ -153,6 +169,10 @@ func generateOTel(o Options) (*Agent, error) {
 		if o.PowerShell {
 			b.WriteString("  windowseventlog/powershell:\n    channel: Microsoft-Windows-PowerShell/Operational\n    storage: file_storage/signalith\n")
 			receivers = append(receivers, "windowseventlog/powershell")
+			// Windows PowerShell's classic log: engines starting, with
+			// the command line that started them.
+			b.WriteString("  windowseventlog/powershell_classic:\n    channel: Windows PowerShell\n    storage: file_storage/signalith\n")
+			receivers = append(receivers, "windowseventlog/powershell_classic")
 		}
 	default:
 		return nil, fmt.Errorf("unknown collector os %q; use linux or windows", host)
@@ -168,6 +188,13 @@ func generateOTel(o Options) (*Agent, error) {
 		// The messages Entra ID and Azure send to the event hub.
 		b.WriteString("\nreceivers:\n" + azureReceiver())
 		receivers = append(receivers, "azure_event_hub/signalith")
+	} else if gcp {
+		// The log entries the log sink publishes to the topic, each
+		// message's data as it is.
+		b.WriteString(sub.extension())
+		extensions += ", text_encoding/signalith"
+		b.WriteString("\nreceivers:\n" + sub.receiver())
+		receivers = append(receivers, "googlecloudpubsub/signalith")
 	} else {
 		b.WriteString("  # Apps and SDKs on this host can send OTLP logs here too.\n" +
 			"  otlp:\n    protocols:\n      grpc:\n        endpoint: 127.0.0.1:4317\n      http:\n        endpoint: 127.0.0.1:4318\n")
@@ -211,6 +238,12 @@ func generateOTel(o Options) (*Agent, error) {
 		version = "0.145"
 		a.Steps = azureSteps()
 	}
+	if gcp {
+		// The first without the receiver's own text encoding, which the
+		// text encoding extension replaces.
+		version = "0.132"
+		a.Steps = sub.steps()
+	}
 	if host == "linux" {
 		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib package (otelcol-contrib, "+version+" or later, .deb or .rpm) from https://opentelemetry.io/docs/collector/installation/")
 		if useCA {
@@ -233,6 +266,12 @@ func generateOTel(o Options) (*Agent, error) {
 				"Give the Collector the event hub's connection string: add it to the Collector's environment file, "+otelLinuxEnv+", as one line, "+azureHubEnv+"=Endpoint=sb://..., then keep the file private: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
 				"Restart the Collector: sudo systemctl restart otelcol-contrib",
 				"Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
+		} else if gcp {
+			a.Steps = append(a.Steps,
+				"Not on a Compute Engine VM with the service account attached? From the folder you saved the key file in, put it in place, readable only by root and the Collector: sudo install -m 640 -o root -g otelcol-contrib "+gcpKeyFile+" "+otelLinuxGCPKey+
+					". Then tell the Collector where it is: add it to the Collector's environment file, "+otelLinuxEnv+", as one line, GOOGLE_APPLICATION_CREDENTIALS="+otelLinuxGCPKey+", and keep that file private too: sudo chmod 640 "+otelLinuxEnv+" && sudo chgrp otelcol-contrib "+otelLinuxEnv,
+				"Restart the Collector: sudo systemctl restart otelcol-contrib",
+				"Google Cloud publishes audit log entries within a minute or two, so events appear in Search within about 5 minutes; check the Health page if they do not, and the Collector's own log with journalctl -u otelcol-contrib.")
 		} else {
 			read := "Let the Collector read the system logs, then restart it"
 			if o.LinuxSource != "journal" {
@@ -248,7 +287,7 @@ func generateOTel(o Options) (*Agent, error) {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
 		}
 		if o.PowerShell && !cloud {
-			a.Steps = append(a.Steps, scriptBlockLoggingStep)
+			a.Steps = append(a.Steps, scriptBlockLoggingStep, moduleLoggingStep)
 		}
 		a.Steps = append(a.Steps, "Install the OpenTelemetry Collector Contrib for Windows (the otelcol-contrib .msi, "+version+" or later) from https://github.com/open-telemetry/opentelemetry-collector-releases/releases")
 		files := "config.yaml"
@@ -264,6 +303,9 @@ func generateOTel(o Options) (*Agent, error) {
 		}
 		if hub {
 			queue = "Entra ID and Azure records"
+		}
+		if gcp {
+			queue = "Google Cloud audit log entries"
 		}
 		a.Steps = append(a.Steps,
 			"In an elevated PowerShell, put them in place from your Downloads folder, and let only SYSTEM and Administrators read the configuration, which holds the agent token, and the Collector's queue, which holds "+queue+": "+
@@ -282,11 +324,21 @@ func generateOTel(o Options) (*Agent, error) {
 				"Give the Collector's service the event hub's connection string, in an elevated PowerShell (paste the connection string in place of the dots, inside the quotes): "+
 					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value '`+azureHubEnv+`=...'`)
 		}
+		if gcp {
+			a.Steps = append(a.Steps,
+				"Not on a Compute Engine VM with the service account attached? In an elevated PowerShell, put the key file in place from your Downloads folder, readable only by SYSTEM and Administrators, and tell the Collector's service where it is: "+
+					`cd "$env:USERPROFILE\Downloads"`+"\n"+
+					"Copy-Item "+gcpKeyFile+` '`+otelWindowsGCPKey+`' -Force`+"\n"+
+					`icacls '`+otelWindowsGCPKey+`' /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'`+"\n"+
+					`Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\otelcol-contrib' -Name Environment -Type MultiString -Value 'GOOGLE_APPLICATION_CREDENTIALS=`+otelWindowsGCPKey+`'`)
+		}
 		a.Steps = append(a.Steps, "Restart the Collector in an elevated PowerShell: Set-Service otelcol-contrib -StartupType Automatic; Restart-Service otelcol-contrib")
 		if trail {
 			a.Steps = append(a.Steps, "CloudTrail writes a file every few minutes, so events appear in Search within about 15 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
 		} else if hub {
 			a.Steps = append(a.Steps, "Entra ID and Azure send their logs within a few minutes, so events appear in Search within about 10 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
+		} else if gcp {
+			a.Steps = append(a.Steps, "Google Cloud publishes audit log entries within a minute or two, so events appear in Search within about 5 minutes; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
 		} else {
 			a.Steps = append(a.Steps, "Events appear in Search within a minute; check the Health page if they do not, and the Collector's events in the Application log of Event Viewer.")
 		}

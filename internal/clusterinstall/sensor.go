@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterinstall
 
 import (
@@ -15,7 +18,7 @@ import (
 // data > Network sensor > Set up a new sensor).
 type SensorLine struct {
 	// URL is the address the sensor sends to and downloads the script
-	// from (https://siem:8080).
+	// from (https://siem:7779).
 	URL string
 	// Version is this server's version, which the script reports in the
 	// sensor's status line.

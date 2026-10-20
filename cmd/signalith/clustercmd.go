@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -275,6 +278,7 @@ func (x *clusterCLI) runtime(readOnly bool, name string) *shared.Runtime {
 	})
 	made.Store(rt)
 	x.auth.Cluster = rt.Cluster
+	x.auth.Tenants = rt.Tenants
 	rt.Use(x.cl, x.prefix(), x.c.Keyring())
 	return rt
 }

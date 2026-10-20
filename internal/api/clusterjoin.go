@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -75,10 +78,10 @@ func (s *Server) routeJoinPublic(mux *http.ServeMux) {
 func (s *Server) routeClusterJoin(api *router) {
 	// Who may join the cluster is the admin's to decide.
 	api.admin("GET /api/cluster/join/tokens", s.handleJoinTokens)
-	api.admin("POST /api/cluster/tokens", s.handleJoinTokenNew)
+	api.sensitive("POST /api/cluster/tokens", s.handleJoinTokenNew)
 	api.admin("DELETE /api/cluster/tokens/{id}", s.handleJoinTokenRevoke)
 	api.admin("GET /api/cluster/pending", s.handleJoinPending)
-	api.admin("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
+	api.sensitive("POST /api/cluster/servers/{id}/approve", s.handleJoinApprove)
 }
 
 var errNoJoin = errors.New("this server cannot add servers to a cluster: it does not keep shared settings")

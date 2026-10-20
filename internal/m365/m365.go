@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package m365 reads Microsoft 365's audit log from the Office 365
 // Management Activity API and hands its records to the ingest pipeline.
 //

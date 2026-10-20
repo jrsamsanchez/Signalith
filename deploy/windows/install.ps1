@@ -1,6 +1,19 @@
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs or upgrades Signalith as a Windows service.
 # Run in an elevated PowerShell from the folder that contains signalith.exe:
-#   .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+#   .\install.ps1
+# A new install also installs OpenSearch on this computer (signalith
+# opensearch install): the official release for Windows, checked against
+# the SHA-512 Signalith pins, as the SignalithOpenSearch service, which
+# runs as its own account and listens on this computer only, over HTTPS,
+# with certificates from a CA of its own. Signalith signs in to it with a
+# certificate; no password is made. -OpenSearchZip uses a copy of the
+# release's .zip instead of downloading it (a computer without internet
+# access). To use an OpenSearch you run yourself instead, give its address:
+#   .\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200
+# An upgrade upgrades the OpenSearch Signalith installed, keeping its data;
+# an OpenSearch of your own is left as it is.
 # To upgrade, put the new signalith.exe next to this script and run it
 # again: it stops the service, replaces the program, keeps the config and
 # data, encrypts passwords and keys still stored as plain text, and starts
@@ -15,11 +28,13 @@
 # share one OpenSearch (node.id, and cluster\lock while it runs).
 #
 # A new config serves the web UI over HTTPS with a certificate Signalith
-# makes for itself, and receives syslog on UDP and TCP 514 and over TLS on
-# 6514; pass -SyslogUdp "", -SyslogTcp "" or -SyslogTls "" to leave one
-# off, or other addresses such as 0.0.0.0:1514.
-# The firewall rules for syslog admit only the syslog.allow senders when the
-# config lists any.
+# makes for itself, and receives syslog over TLS on 6514 (-SyslogTls ""
+# leaves it off). Plain syslog over UDP and TCP is off, since it is
+# unencrypted and can be forged: pass -SyslogUdp 0.0.0.0:514 and
+# -SyslogTcp 0.0.0.0:514 (or other addresses) to turn it on, or use
+# Add data > Syslog later. An upgrade keeps the config as it is.
+# Firewall rules are added only for the syslog listeners the config turns
+# on, and admit only the syslog.allow senders when the config lists any.
 #
 # To add this computer to the servers of an existing Signalith (a cluster),
 # use the line from Servers > Add a server, which downloads this script,
@@ -34,10 +49,14 @@
 # -Sha256 the SHA-256 it must have (also for -Binary, a program file to use
 # instead of the signalith.exe next to this script).
 param(
-  [string]$OpenSearchUrl = "http://127.0.0.1:9200",
-  [string]$Listen = "0.0.0.0:8080",
-  [string]$SyslogUdp = "0.0.0.0:514",
-  [string]$SyslogTcp = "0.0.0.0:514",
+  # Empty: a new install installs OpenSearch on this computer.
+  [string]$OpenSearchUrl = "",
+  [string]$OpenSearchZip = "",
+  # The web page and API; agents send to 7779 (server.agent_listen).
+  [string]$Listen = "0.0.0.0:9000",
+  # Plain, unencrypted syslog: off unless an address is given.
+  [string]$SyslogUdp = "",
+  [string]$SyslogTcp = "",
   [string]$SyslogTls = "0.0.0.0:6514",
   [string]$InstallDir = "$env:ProgramFiles\Signalith",
   [string]$ConfigDir = "$env:ProgramData\Signalith",
@@ -227,8 +246,10 @@ foreach ($item in @(Get-Item -LiteralPath $ConfigDir -Force) + @(Get-ChildItem -
   }
 }
 # A new install starts from an empty folder: files someone left there
-# before Signalith was installed are not trusted.
-if (-not (Test-Path -LiteralPath $config) -and @(Get-ChildItem -LiteralPath $ConfigDir -Force).Count -gt 0) {
+# before Signalith was installed are not trusted. The opensearch folder is
+# Signalith's certificate for the OpenSearch it installs, which a new
+# install that stopped part way may have made already.
+if (-not (Test-Path -LiteralPath $config) -and @(Get-ChildItem -LiteralPath $ConfigDir -Force | Where-Object { $_.Name -ne "opensearch" }).Count -gt 0) {
   throw "$ConfigDir already has files in it but no signalith.yaml, so it was not made by this script. Check what is in it, move it aside (or delete it if you don't need it), and run this script again."
 }
 
@@ -261,6 +282,22 @@ if (-not $InstallDir.StartsWith($env:ProgramFiles, [StringComparison]::OrdinalIg
 if ([IO.Path]::GetFullPath($source) -ne [IO.Path]::GetFullPath($exe)) { Copy-Item -Force $source $exe }
 if ($download) { Remove-Item -Force -LiteralPath $download -ErrorAction SilentlyContinue }
 
+# OpenSearch on this computer: on a new install unless another one was
+# given (or this computer joins a cluster, which has its own), and on
+# every upgrade of an install that has it.
+$osDir = Join-Path $env:ProgramData "SignalithOpenSearch"
+$osState = Join-Path $osDir "installed.json"
+$osClient = Join-Path $ConfigDir "opensearch"
+$managed = (Test-Path -LiteralPath $osState) -or (-not $Join -and -not $OpenSearchUrl -and -not (Test-Path -LiteralPath $config))
+if ($managed) {
+  Write-Host ""
+  Write-Host "OpenSearch"
+  $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
+  if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
+  Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
+}
+if (-not $OpenSearchUrl) { $OpenSearchUrl = "http://127.0.0.1:9200" }
+
 if ($Join) {
   # Writes this server's settings and keys (and signalith.yaml when there
   # is none); the service is installed and started below.
@@ -284,7 +321,16 @@ if ($Join) {
   }
 } elseif (-not (Test-Path -LiteralPath $config)) {
   # -flag=value keeps an empty value, which PowerShell would otherwise drop.
-  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-opensearch", $OpenSearchUrl, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  $initArgs = @("init", "-c", $config, "-listen", $Listen, "-syslog-udp=$SyslogUdp", "-syslog-tcp=$SyslogTcp", "-syslog-tls=$SyslogTls")
+  if ($managed) {
+    $port = (Get-Content -Raw -LiteralPath $osState | ConvertFrom-Json).port
+    $initArgs += @("-opensearch", "https://127.0.0.1:$port",
+      "-opensearch-ca", (Join-Path $osClient "opensearch-ca.pem"),
+      "-opensearch-cert", (Join-Path $osClient "opensearch-client.pem"),
+      "-opensearch-key", (Join-Path $osClient "opensearch-client-key.pem"))
+  } else {
+    $initArgs += @("-opensearch", $OpenSearchUrl)
+  }
   if ($SavePassword) { $initArgs += "-save-password" }
   Invoke-Checked "signalith init" { & $exe @initArgs }
 } else {
@@ -310,9 +356,31 @@ Invoke-Checked "signalith service install" { & $exe service install -c $config }
 # Waits until the service runs, and stops here, naming the log, if it
 # stops again instead.
 Invoke-Checked "signalith service start" { & $exe service start -c $config }
-# One rule for the web page, API and agents, replaced on each run.
+# One rule for the web page and API, and one for agents, replaced on each
+# run, for the ports the config uses: an upgrade keeps the ones it had. A
+# port that listens on loopback only (scope local) gets no rule.
+$webPort = ($Listen.Split(":")[-1])
+$listenHost = $Listen.Substring(0, [Math]::Max(0, $Listen.LastIndexOf(":"))).Trim("[", "]")
+$webScope = if ($listenHost -eq "localhost" -or $listenHost -eq "::1" -or $listenHost -like "127.*") { "local" } else { "any" }
+$agentPort = ""
+$agentScope = "any"
+$listeners = @(& $exe validate -c $config -web-ports)
+if ($LASTEXITCODE -eq 0) {
+  foreach ($line in $listeners) {
+    $kind, $port, $scope = $line -split ' '
+    if (-not $scope) { $scope = "any" }
+    if ($kind -eq "web" -and $port) { $webPort = $port; $webScope = $scope }
+    if ($kind -eq "agents" -and $port) { $agentPort = $port; $agentScope = $scope }
+  }
+}
 Remove-NetFirewallRule -DisplayName "Signalith" -ErrorAction SilentlyContinue
-New-NetFirewallRule -DisplayName "Signalith" -Direction Inbound -Protocol TCP -LocalPort ($Listen.Split(":")[-1]) -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+if ($webScope -ne "local") {
+  New-NetFirewallRule -DisplayName "Signalith" -Direction Inbound -Protocol TCP -LocalPort $webPort -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+}
+Remove-NetFirewallRule -DisplayName "Signalith agents" -ErrorAction SilentlyContinue
+if ($agentPort -and $agentScope -ne "local") {
+  New-NetFirewallRule -DisplayName "Signalith agents" -Direction Inbound -Protocol TCP -LocalPort $agentPort -Program $exe -Action Allow -ErrorAction SilentlyContinue | Out-Null
+}
 
 # Open the syslog ports the config turns on (syslog.udp, syslog.tcp,
 # syslog.tls), only to the senders in syslog.allow when it lists any.
@@ -337,7 +405,9 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Syslog: receiving on $protocol port $port ($kind) from $from."
   }
 }
-Write-Host "Signalith is running. Open https://localhost:$($Listen.Split(':')[-1])"
+Write-Host "Signalith is running. Open https://localhost:$webPort"
+if ($managed) { Write-Host "OpenSearch runs on this computer as the SignalithOpenSearch service; its data is in $osDir." }
+if ($agentPort) { Write-Host "Agents send to port $agentPort; set them up from the Add data page." }
 Write-Host "Your browser warns about the certificate until you trust Signalith's own CA ($ConfigDir\tls\ca.pem); docs\https.md says how."
 Write-Host "The master key for the passwords and keys Signalith stores is in $ConfigDir\keys, protected for this computer only."
 Write-Host "This server's identity, shown on the Servers page, is in $ConfigDir\node.id; never copy it to another server."

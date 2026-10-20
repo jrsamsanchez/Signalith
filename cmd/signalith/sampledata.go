@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -108,7 +111,7 @@ func buildSampleLoader(ctx context.Context, c *config.Config, log *slog.Logger) 
 		return nil, err
 	}
 	tctx, tcancel := context.WithTimeout(ctx, 30*time.Second)
-	terr := ingest.PutIndexTemplate(tctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.Replicas.IndexSettings(), log)
+	terr := ingest.PutIndexTemplate(tctx, cl, c.OpenSearch.IndexPrefix, c.OpenSearch.EventIndexSettings(), log)
 	tcancel()
 	if terr != nil {
 		return nil, fmt.Errorf("could not install the index template: %w", terr)

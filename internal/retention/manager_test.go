@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package retention
 
 import (
@@ -10,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/datamodel"
 )
 
 type fixture struct {
@@ -698,4 +703,25 @@ func TestBackgroundRunShowsAsRunningAtOnce(t *testing.T) {
 			t.Errorf("history not written before Wait returned: %v", err)
 		}
 	}
+}
+
+// A busy day split into parts by rollover is still one day on the page,
+// and every part's events and size count.
+func TestOverviewCountsDayPartsOnce(t *testing.T) {
+	f := newFixture(t, Config{Days: 30})
+	day := f.add("endpoint", 3, 2*GB, 10)
+	f.mem.AddIndex(datamodel.PartName(day, 2), GB, testDocs(5)...)
+	f.mem.AddIndex(datamodel.PartName(day, 3), GB, testDocs(5)...)
+	f.add("endpoint", 4, GB, 7)
+	ov := f.m.Overview(context.Background())
+	for _, cv := range ov.Categories {
+		if cv.ID != "endpoint" {
+			continue
+		}
+		if cv.Days != 2 || cv.Docs != 27 || cv.Bytes != 5*GB {
+			t.Errorf("endpoint: %d days, %d events, %d bytes", cv.Days, cv.Docs, cv.Bytes)
+		}
+		return
+	}
+	t.Fatal("no endpoint category")
 }

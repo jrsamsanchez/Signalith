@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build integration && linux
 
 package integration
@@ -63,7 +66,7 @@ func TestClusterAuditAndArchives(t *testing.T) {
 	})
 
 	// A change on siem-a is on siem-b's Audit page.
-	a.addUser("auditee", "analyst", "a-long-password-for-auditee")
+	a.addUser("auditee", "analyst", "a-long-password-for-the-audit")
 	waitUntil(t, 30*time.Second, "siem-b finds siem-a's audit record", func() bool {
 		v, _ := b.audit("server=siem-a&size=200")
 		return slices.ContainsFunc(v.Events, func(e struct {

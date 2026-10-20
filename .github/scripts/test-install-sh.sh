@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Runs deploy/linux/install.sh in a fresh Linux container, as root, with
 # the program built from this commit (bin/signalith), and checks what it
 # made. systemd does not run in the container, so systemctl is a stand-in

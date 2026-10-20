@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package assistant
 
 import (
@@ -149,5 +152,22 @@ func TestErrorsHideSecretsInTheURL(t *testing.T) {
 	_, err := c.Translate(context.Background(), "cmd", "")
 	if err == nil || strings.Contains(err.Error(), "URLPASS") || strings.Contains(err.Error(), "URLKEY") || !strings.Contains(err.Error(), "127.0.0.1:1") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCleanReplyUnwrapsQuotedQuery(t *testing.T) {
+	for in, want := range map[string]string{
+		"'sourcetype=linux:audit | stats count by host'":      "sourcetype=linux:audit | stats count by host",
+		"`index=signalith-* user=root`":                       "index=signalith-* user=root",
+		"\"failed logins\"":                                   "failed logins",
+		"Query: 'action=failure'":                             "action=failure",
+		"```\n'datamodel=authentication action=failure'\n```": "datamodel=authentication action=failure",
+		"status=\"failed\" user=\"root\"":                     "status=\"failed\" user=\"root\"",
+		"\"a\" OR \"b\"":                                      "\"a\" OR \"b\"",
+		"'":                                                   "'",
+	} {
+		if got := cleanReply(in); got != want {
+			t.Errorf("cleanReply(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

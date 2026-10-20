@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sample
 
 import (
@@ -282,7 +285,14 @@ func anyMatch(d *Data, q *query.Query, indicators map[string]bool) bool {
 		if q.Datamodel != "" && !strings.EqualFold(e.Model, q.Datamodel) {
 			continue
 		}
-		if ok, err := search.MatchDoc(q.Search, e.Document()); err != nil {
+		doc := e.Document()
+		// The origin the loader stamps on the stored event.
+		for k, v := range map[string]string{ingest.IntakeField: e.Origin.Intake, ingest.TokenPurposeField: e.Origin.Purpose} {
+			if v != "" {
+				doc[k] = v
+			}
+		}
+		if ok, err := search.MatchDoc(q.Search, doc); err != nil {
 			panic(fmt.Sprintf("search %v: %v", q.Search, err))
 		} else if !ok {
 			continue
@@ -323,7 +333,7 @@ func eventHitsIntel(e ingest.Event, indicators map[string]bool) bool {
 func TestStories(t *testing.T) {
 	d := genData(t, SizeSmall)
 	want := []string{"linux-ssh-intrusion", "phishing-to-c2", "ransomware-prep", "domain-persistence", "benign-lookalikes",
-		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep"}
+		"malware-outbreak", "antivirus-housekeeping", "vulnerability-scan", "dns-tunnel-and-scan", "network-hygiene", "sensor-upkeep", "source-stopped"}
 	if len(d.Stories) != len(want) {
 		t.Errorf("%d stories, want %d", len(d.Stories), len(want))
 	}

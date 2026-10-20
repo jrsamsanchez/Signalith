@@ -64,6 +64,7 @@ disk guard leave audit records alone.
 | **Keep** (`keep_days`) | Days a category stays searchable. `0` keeps it forever. A day is deleted once it is more than `keep_days` days old, so `90` keeps today and the 90 days before it |
 | **Size cap** (`max_size_gb`) | Largest the category may be, in GB (1 GB = 2^30 bytes) of disk, replicas included. Over the cap, its oldest days are deleted until it fits. `0` means no cap |
 | **Compact after** (`compact_after_days`) | Days after which a day is made read-only and force-merged to one segment. `0` never compacts. Must be less than `keep_days` |
+| **Move to cold storage after** (`cold_after_days`) | Days after which a day moves to the cold storage repository, such as an S3 bucket, and leaves OpenSearch's disks, still searchable. `0` never moves it. Must be less than `keep_days`. See [Cold storage](cold-storage.md) |
 | **Archive before deleting** (`archive`) | Write each day to a compressed file before deleting it, so it can be restored later |
 
 A category without its own policy uses the **default policy**. Until you save a
@@ -82,7 +83,9 @@ offline. For laptops that may be away for a week, use 14 or more.
 **Size caps** are checked after `keep_days`. They never delete today's data or a
 restored day, and restored days do not count toward the cap, so restoring days for
 an investigation never pushes live days out. If only today's or restored data is
-left and the category is still over its cap, the page says so.
+left and the category is still over its cap, the page says so. Days in
+[cold storage](cold-storage.md) take no space on OpenSearch's disks, so they neither
+count toward a cap nor are deleted by it or by the disk guard.
 
 A day that OpenSearch cannot read, because a primary shard is missing (a red index,
 for example while its node is down), is left alone: it is not deleted, archived or
@@ -404,7 +407,7 @@ retention:
 | `retention.interval` | `1h` | How often policies are enforced (5m to 24h) |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Archive folder; relative paths are relative to signalith.yaml. `SIGNALITH_ARCHIVE_DIR` overrides it |
 | `retention.encrypt_archives` | `true` | Encrypt archive files ([Encryption](#encryption)); only signalith.yaml can turn it off |
-| `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `archive` |
+| `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `cold_after_days`, `archive` |
 | `retention.policies.<id>` | none | Policy for one category (IDs above). Findings and cases accept only `keep_days` |
 | `retention.guard.enabled` | `true` | Disk guard on or off |
 | `retention.guard.max_disk_percent` | `85` | Disk use the guard keeps OpenSearch under (50 to 94) |

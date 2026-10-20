@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 // "signalith secrets" shows where the master key is and how each stored
@@ -20,6 +23,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"golang.org/x/term"
 )
 
 const secretsUsage = `Usage:
@@ -27,13 +31,15 @@ const secretsUsage = `Usage:
   signalith secrets encrypt        [-c file]   encrypt the passwords and keys stored as plain text
   signalith secrets set <setting>  [-c file]   store a password or key, encrypted; asks for it without
                                                showing it, or reads one line from a pipe
+                                               (all of it for okta.private_key)
   signalith secrets rotate-master  [-c file]   make a new master key and encrypt everything again with it
   signalith secrets rotate-master -prune [-c file]   remove the previous master key once nothing uses it
   signalith secrets decrypt        [-c file]   write every stored password and key as plain text again,
                                                before going back to a version older than this one
 
 Settings for "set": opensearch.password, assistant.api_key, auth.ldap.bind_password,
-and ingest.tokens (adds a shared agent token; leave it empty to have one made).
+auth.oidc.client_secret and ingest.tokens (adds a shared agent token; leave it empty to
+have one made).
 New agents get a token of their own instead: signalith tokens create, or the
 Add data page.
 "encrypt" and "set" make the master key if there is none. If the files hold values
@@ -51,6 +57,9 @@ var secretEnv = map[string]string{
 	"vulns.openvas_password":  "SIGNALITH_OPENVAS_PASSWORD",
 	"auth.ldap.bind_password": "SIGNALITH_LDAP_BIND_PASSWORD",
 	"m365.client_secret":      "SIGNALITH_M365_CLIENT_SECRET",
+	"okta.private_key":        "SIGNALITH_OKTA_PRIVATE_KEY",
+	"okta.api_token":          "SIGNALITH_OKTA_API_TOKEN",
+	"auth.oidc.client_secret": "SIGNALITH_OIDC_CLIENT_SECRET",
 	"ingest.tokens":           "SIGNALITH_INGEST_TOKEN",
 }
 
@@ -698,7 +707,13 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 	if field == "ingest.tokens" {
 		label = "New shared agent token (press Enter to have one made): "
 	}
-	value, err := readSecret(in, out, label, field == "ingest.tokens")
+	var value string
+	if field == "okta.private_key" && !term.IsTerminal(int(in.Fd())) {
+		// A PEM key is several lines: all of a pipe is the key.
+		value, err = readKey(in)
+	} else {
+		value, err = readSecret(in, out, label, field == "ingest.tokens")
+	}
 	if err != nil {
 		return err
 	}
@@ -747,6 +762,22 @@ func secretsSet(c *config.Config, field string, newKey bool, in *os.File, out io
 		fmt.Fprintln(out, n)
 	}
 	return nil
+}
+
+// readKey reads a private key from a pipe, all of it up to 16 KB.
+func readKey(in io.Reader) (string, error) {
+	b, err := io.ReadAll(io.LimitReader(in, 16<<10+1))
+	if err != nil {
+		return "", err
+	}
+	if len(b) > 16<<10 {
+		return "", errors.New("the key is longer than any RSA or EC key Okta makes; nothing was changed")
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "" {
+		return "", errors.New("nothing entered; nothing was changed")
+	}
+	return v, nil
 }
 
 // envOverrides says, when an environment variable that replaces field is

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
@@ -18,6 +21,15 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 	field := a.Field
 	if field == "_time" {
 		field = TimeField
+	}
+	if field == IndexField {
+		// _index is not in an event's _source and holds no numbers.
+		switch a.Func {
+		case "count", "dc", "values", "mode":
+			field = indexMeta
+		default:
+			return nil, fmt.Errorf("%s(index) is not supported; index works with count, dc, values and mode", a.Func)
+		}
 	}
 	byTime := func(order string, size int) map[string]any {
 		return map[string]any{
@@ -65,6 +77,33 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 // aggValue reads one stats function's result from the aggregation named
 // name inside container (the response's aggregations or a bucket).
 func aggValue(a query.Agg, container map[string]any, name string) any {
+	v := rawAggValue(a, container, name)
+	if a.Field == "_time" {
+		return timeSeconds(a, v)
+	}
+	return v
+}
+
+// timeSeconds converts a number OpenSearch computed over event times,
+// in milliseconds since 1970, to seconds, as Splunk gives _time: min,
+// max, avg and the rest are epoch seconds, var is in seconds squared.
+// Other values (values(), first() and so on) pass through.
+func timeSeconds(a query.Agg, v any) any {
+	f, ok := asFloat(v)
+	if !ok {
+		return v
+	}
+	switch {
+	case a.Func == "var":
+		return numOut(f / 1e6)
+	case a.Func == "min", a.Func == "max", a.Func == "avg", a.Func == "sum", a.Func == "range",
+		a.Func == "median", a.Func == "stdev", query.Percentile(a.Func) > 0:
+		return numOut(f / 1e3)
+	}
+	return v
+}
+
+func rawAggValue(a query.Agg, container map[string]any, name string) any {
 	m, _ := container[name].(map[string]any)
 	if m == nil {
 		return nil
@@ -90,8 +129,12 @@ func aggValue(a query.Agg, container map[string]any, name string) any {
 	case "stdev", "var":
 		n, ok1 := num(m["count"])
 		v, ok2 := num(m["variance"])
-		if !ok1 || !ok2 || n < 2 {
+		if !ok1 || !ok2 || n < 1 {
 			return nil
+		}
+		if n == 1 {
+			// One value varies by nothing; Splunk gives 0.
+			return int64(0)
 		}
 		sample := v * n / (n - 1) // OpenSearch reports the population variance
 		if a.Func == "stdev" {
@@ -163,7 +206,14 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 			}
 		}
 	}
-	if f, ok := asFloat(v); ok {
+	f, ok := asFloat(v)
+	if !ok && a.Field == "_time" {
+		// Events carry _time as text; its number is epoch seconds.
+		if t, isTime := toTime(v); isTime {
+			f, ok = float64(t.Unix())+float64(t.Nanosecond())/1e9, true
+		}
+	}
+	if ok {
 		s.numeric++
 		s.sum += f
 		s.min = math.Min(s.min, f)
@@ -218,8 +268,12 @@ func (s *aggState) result(a query.Agg) any {
 		return percentile(s.nums, 50)
 	case "stdev", "var":
 		n := float64(len(s.nums))
-		if n < 2 {
+		if n < 1 {
 			return nil
+		}
+		if n == 1 {
+			// One value varies by nothing; Splunk gives 0.
+			return int64(0)
 		}
 		mean := 0.0
 		for _, f := range s.nums {

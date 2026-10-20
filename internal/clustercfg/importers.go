@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clustercfg
 
 import (
@@ -24,6 +27,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -115,8 +119,9 @@ const (
 // differed), which are always written, even empty, so every member finds
 // them; then, once the cluster's level keeps users in the shared settings
 // and when d has the users' documents (UseAuth), the users and the
-// directory sign-in settings; and once its level keeps the settings of the
-// Settings page there, those every server shares.
+// directory sign-in settings, and once it keeps tenants, the list of
+// tenants; and once its level keeps the settings of the Settings page
+// there, those every server shares.
 func Importers(d *Docs, f Files) []shared.Importer {
 	out := []shared.Importer{
 		{Name: ImportFeeds, Source: func() (string, error) {
@@ -142,7 +147,14 @@ func Importers(d *Docs, f Files) []shared.Importer {
 		}, Run: func(ctx context.Context, by string) error { return importUsers(ctx, a, f, by) }},
 			shared.Importer{Name: shared.ImportDirectory, MinLevel: shared.LevelSharedUsers, Source: func() (string, error) {
 				return directorySource(f.Config())
-			}, Run: func(ctx context.Context, by string) error { return importDirectory(ctx, a, f, by) }})
+			}, Run: func(ctx context.Context, by string) error { return importDirectory(ctx, a, f, by) }},
+			shared.Importer{Name: shared.ImportTenants, MinLevel: shared.LevelTenants, Source: func() (string, error) {
+				p := f.Config().TenantsFile()
+				if _, err := os.Stat(p); errors.Is(err, fs.ErrNotExist) {
+					return "", nil
+				}
+				return hashOf([]string{p})
+			}, Run: func(ctx context.Context, by string) error { return importTenants(ctx, a, f, by) }})
 	}
 	return append(out, shared.Importer{Name: shared.ImportSettings, MinLevel: shared.LevelSharedSettings, Source: func() (string, error) {
 		return settingsSource(d, f.Config())
@@ -304,8 +316,9 @@ func importRetention(ctx context.Context, d *Docs, f Files, by string) error {
 // step safe to run again (what is there counts as done): the built-in
 // admin with the password in use here (the one signalith passwd wrote to
 // the state folder included); every user of users.json with their
-// password hash, flags and session epoch 1 (one with the built-in admin's
-// name is left out: it could never sign in); and their last sign-ins.
+// password hash, flags, two-step sign-in and session epoch 1 (one with
+// the built-in admin's name is left out: it could never sign in); their
+// last sign-ins; and the built-in admin's two-step sign-in.
 // It records what this server's files say of auth.*.
 func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
 	c := f.Config()
@@ -314,7 +327,7 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(builtin, c.Auth.AdminUser) {
+	if !strings.EqualFold(builtin, c.Auth.AdminUser) && !config.KeptLegacyAdmin(builtin, c.Auth.AdminUser) {
 		f.log().Warn("the cluster's built-in admin has another name than auth.admin_user on this server; the cluster's name is used",
 			"builtin", builtin, "admin_user", c.Auth.AdminUser)
 	}
@@ -346,6 +359,20 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 			return err
 		}
 	}
+	// The built-in admin's two-step sign-in, unless the cluster's has one
+	// already.
+	if m, err := users.ReadFileBuiltinMFA(c.UsersFile()); err != nil {
+		return err
+	} else if m.On() {
+		if err := ub.ChangeBuiltinMFA(ctx, by, func(cur *users.MFA) (*users.MFA, bool, error) {
+			if cur != nil {
+				return nil, false, users.ErrNoChange
+			}
+			return m, false, nil
+		}); err != nil {
+			return fmt.Errorf("the built-in admin's two-step sign-in: %w", err)
+		}
+	}
 	return recordAuth(ctx, f, a)
 }
 
@@ -371,6 +398,20 @@ func directorySource(c *config.Config) (string, error) {
 // page, the service account password sealed again with the cluster key.
 // A password that cannot be opened here is left out, and the Users page
 // asks for it.
+// importTenants adds the tenants of this server's list (tenants.json) to
+// the shared one.
+func importTenants(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
+	reg, err := tenants.Open(f.Config().TenantsFile())
+	if err != nil {
+		return err
+	}
+	list, err := reg.List()
+	if err != nil {
+		return err
+	}
+	return a.ImportTenants(ctx, by, list)
+}
+
 func importDirectory(ctx context.Context, a *clusterauth.Docs, f Files, by string) error {
 	c := f.Config()
 	var s users.LDAPSettings

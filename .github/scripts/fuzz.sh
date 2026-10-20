@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Runs every Go fuzz target in the repository (each func Fuzz... in a
 # _test.go file) for FUZZTIME (10s by default), one after another, and
 # fails when any finds a crash or a hang. Go writes the input that failed

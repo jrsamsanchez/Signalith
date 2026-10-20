@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package query
 
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,6 +38,47 @@ var fuzzSeeds = []string{
 	`x | where name=O'Brien | where (a) = 1 | eval n=-x * 2 - -3 % 4, s=substr(cmd, -5, 2), t=strftime(_time, "%Y-%m-%d")`,
 	`* | eval a=`, `* | rex "(?<x"`, `* | dedup`, `* | where NOT`, `* | eval 'x|y'=1 | head 2`,
 	`* | where substr("abc", 1, "NaN") = "" OR replace(s, "", s) != s`,
+	`* | lookup owners host AS dest, "output" OUTPUTNEW owner AS "as", team | lookup t a`,
+	`* | transaction host, "a b" maxspan=5m maxpause=1h maxevents=3 startswith="x y" endswith=(NOT a=1 OR b IN (2, 3))`,
+	`* | join type=left max=0 user, "a b" [search datamodel=Change "x [y]" | stats count by user | join user [search | inputlookup t]] | head 3`,
+	`| inputlookup max=20 owners | where isnull(owner) | lookup owners user OUTPUT team`,
+	`* | streamstats current=f window=5 count, avg(bytes) as a, dc(user) by src | bin span=1h _time | bucket bytes span=0.5 AS "as"`,
+	`* | regex process!="(?i)-enc\s" | regex "x]" | regex "a b"=y | fields - _raw, tmp_* | fields + a`,
+	`| makeresults count=3 | append [search datamodel=Change | stats count by user] | appendpipe [| stats count by user | eval user="TOTAL" | appendpipe [head 1]]`,
+	`| tstats summariesonly=t count, values(Processes.process) as p from datamodel=Endpoint.Processes where Processes.process_name IN (a, b) NOT Processes.user=x earliest=-1d by Processes.dest, _time span=1h | where count > 1`,
+	`| tstats count where index=* by index, sourcetype | chart limit=3 sum(count) over index by sourcetype | untable index st c | xyseries index, st, c`,
+	`| tstats fillnull_value=null count from datamodel=Web by Web.user | search *`,
+	`"a.b"=x "c{}" IN (a, b,) | rename "P".* as * | sort - count | eval s=if(t IN ("A"), 1, 0) | inputlookup append=t max=2 owners`,
+	`user=x NOT [inputlookup t | fields a] | search [| makeresults | eval user="b"] | tstats count from datamodel=Web where [search a=1 | fields Web.user] by Web.user`,
+	`* | spath | spath input=body output="a b" path="x.y{}.z" | chart count, dc(user) by "by"`,
+	`search index=* user=adm* | search count>2 OR "a b" | top 3 countfield=n percentfield="p c" showperc=f useother=t otherstr=rest user by host`,
+	`* | rename *_ip as * a as b "x y" as z | rename Processes.* as * | rare showcount=f limit=0 src`,
+	`* | rex field=u mode=sed "s|^CORP\\\\|\\1&|g" | rex mode=sed "y/ab/cd/" | convert timeformat="%Y" ctime(*Time), dur2sec(d) AS secs, none(lastTime) | tail 3 | uniq`,
+	`* | makemv delim=", " allowempty=t r | makemv tokenizer="(\w+)@" r | mvexpand r limit=5 | reverse | addtotals col=t fieldname=sum labelfield=host label=All bytes_* | addcoltotals`,
+	`* | map maxsearches=3 search="search user=$user$ host=\"$h$\" | eval x='$y$' | head 2" | map search="| tstats count from datamodel=Authentication by Authentication.user"`,
+	`* | accum bytes | accum b AS "t b" | delta count AS d p=3 | delta x | autoregress c p=2-4 | autoregress c AS prev p=2 | fieldsummary maxvals=5 user "src ip" | fieldsummary`,
+	`* | transpose | transpose 7 column_name="c n" header_field=h include_empty=f | filldown | filldown a, "b c" d* | addinfo | trendline sma5(x) ema10("a b") AS "e m", wma2(y) AS w`,
+	`* | concurrency duration=d | concurrency duration="d s" start=t output="c n" | contingency maxrows=5 maxcols=3 usetotal=f totalstr="All" a "b c" | contingency x y | format | format maxresults=3 mvsep=and "[" "{" "&&" "}" "||" "]"`,
+	`* | return src | return 3 ip=dest "5" "$a" $user, b | return 5=x | makecontinuous span=1h | makecontinuous "c n" span=10`,
+	`* | iplocation src | iplocation prefix="s c" allfields=t lang=zh-CN "src ip" | iplocation prefix=~x dest`,
+	`* | eval u=userIdentity.userName . "@" . a.b | where a != 'b' | stats count(eval(x>1)) AS n, values(eval(mvzip(a, b, "="))) AS v by h | fromjson body prefix="b c" | fromjson x`,
+	`* | mvcombine delim="," host | nomv "a b" | strcat allrequired=t src ":" port addr | rangemap field=n low=-10--1 hi=0-1.5 default=x | fieldformat t=strftime(t, "%F") | foreach b_* c [eval <<FIELD>>=<<FIELD>>*2 | eval m_<<MATCHSTR>>=1]`,
+	`* | eval a=printf("%-5s %05.1f", u, n), b=relative_time(now(), "-1d@d"), c=json_object("k", spath(j, "a.b{}")), d=mvrange(0, 5), e=validate(isint(n), "x")`,
+	`* | replace "::ffff:*" WITH *, "a", WITH "b" IN src, "x y" | replace a WITH b | xmlkv | xmlkv Message maxinputs=5 | eval b=bit_and(a, 3), c=bit_shift_left(1, 4)`,
+	`* | geostats | geostats latfield="l a" longfield=lo binspanlat=0.5 binspanlong=1e1 globallimit=3 avg(x) AS a by "s c" | geostats dc(u), sum(b) AS "s b"`,
+	`* | extract | kv pairdelim="|;", kvdelim=":" limit=5 maxchars=100 mv_add=t clean_keys=false | outlier | outlier action=rm param=0.5 uselower=true mark=1 type=iqr bytes "a=b" c* | gauge count | gauge "a b" -5 0 1e3 2.5`,
+	`| multisearch [search a=1 | head 2] [search b="x y"] [search index=* | stats count by c] | timewrap 1d | timewrap 2h align=now series=short | cluster | cluster field="m s" t=0.5 match=ngramset showcount=t countfield="n c" labelfield=l labelonly=1`,
+	`* | xpath "//Event/System/EventID" | xpath field=m outfield="o f" default="" "/a//b[@n='x'][2]/@v" | xpath "*/c/text()" | abstract | excerpt maxterms=5 maxlines=2 | highlight a, "b c"`,
+	`* | anomalydetection | anomalydetection method=zscore action=annotate pthresh=0.05 bytes, "a=b" "c d" | anomalydetection action=summary | correlate | correlate a "b c"`,
+	`* | timechart count | predict count | predict count AS p, "a b" algorithm=llt future_timespan=0 holdback=3 period=7 | predict x upper90=hi lower80="lo w" | setfields a=1, b="c d" e=""`,
+	`| set diff [search a=1 | fields user] [search b="]" | stats count by user] | setfields x=y`, `| set union [x] [y]`, `| SET Intersect [search z | head 1] [w]`,
+	`| eventcount index=signalith-* index="signalith-x-*" summarize=f report_size=false list_vix=0 | head 5`,
+	`| from datamodel:Authentication.Failed_Authentication | stats count by user | append [| from datamodel:"Web"] | append [| from lookup:owners.csv] | append [| from datamodel Endpoint.Processes]`,
+	`* | stats count by user | outputlookup users | outputlookup append=t create_empty=f override_if_empty=0 max=10 "users.csv"`,
+	`* | stats avg(b) as b, count by h | kmeans | kmeans k=5 reps=3 maxiters=50 t=0.001 dt=cos showcentroid=f cfield="c n" b, "a=b" count`,
+	`* | lookup local=t update=0 tools path AS p OUTPUT note | lookup LOCAL=true owners "local" OUTPUTNEW team`,
+	`* | union [search a=1 | head 2] [b="]" | stats count] | union [union [c]]`,
+	`* | appendpipe [where x="]"]`, `* | append [inputlookup t]`, `* | appendpipe []`, `* | bin _time`, `* | streamstats median(x)`,
 }
 
 // FuzzParse checks that Parse never panics, that its errors carry a
@@ -88,5 +133,27 @@ func FuzzParse(f *testing.F) {
 		if s3, ok := FromQuery(q3); !ok || !reflect.DeepEqual(s3, want) {
 			t.Fatalf("builder round trip for %q via %q:\n got %+v (%v)\nwant %+v", src, btext, s3, ok, want)
 		}
+	})
+}
+
+// FuzzParseSed reads any rex mode=sed expression: it fails with an error
+// or gives a regular expression that compiles and a template.
+func FuzzParseSed(f *testing.F) {
+	for _, s := range []string{`s/a/b/`, `s/(\w+)@(\S+)/\2 \1/g`, `s|x\|y|&&|3`, `y/abc/xyz/`, `s/a/\\\&$/`, `s#é#ü#`} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, expr string) {
+		s, err := ParseSed(expr)
+		if err != nil {
+			return
+		}
+		if s.Y {
+			return
+		}
+		re, err := regexp.Compile(s.Find)
+		if err != nil {
+			t.Fatalf("ParseSed(%q) gave a pattern that does not compile: %v", expr, err)
+		}
+		_ = re.ExpandString(nil, s.GoTemplate(), "ab", []int{0, 2})
 	})
 }

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package retention decides how long each kind of data is kept and
 // enforces it. Daily event indices are compacted, archived and deleted by
 // per-category policies, resolved and closed findings and cases are
@@ -135,6 +138,11 @@ type Policy struct {
 	CompactAfterDays int `yaml:"compact_after_days,omitempty" json:"compact_after_days"`
 	// Archive exports a day to the archive folder before it is deleted.
 	Archive bool `yaml:"archive,omitempty" json:"archive"`
+	// ColdAfterDays moves days older than this to cold storage: they are
+	// snapshotted to the cold storage repository (an S3 bucket, say),
+	// deleted from the nodes' disks and mounted back from the snapshot, so
+	// they stay searchable. 0 never moves them.
+	ColdAfterDays int `yaml:"cold_after_days,omitempty" json:"cold_after_days"`
 }
 
 // CapBytes returns the size cap in bytes, 0 for none.
@@ -161,7 +169,8 @@ func (p Policy) Problems(kind string) []string {
 		for _, f := range []struct {
 			name string
 			set  bool
-		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive && kind == KindRecords}} {
+		}{{"max_size_gb", p.MaxSizeGB != 0}, {"compact_after_days", p.CompactAfterDays != 0}, {"archive", p.Archive && kind == KindRecords},
+			{"cold_after_days", p.ColdAfterDays != 0}} {
 			if f.set {
 				out = append(out, f.name+" does not apply to "+what)
 			}
@@ -184,6 +193,14 @@ func (p Policy) Problems(kind string) []string {
 		out = append(out, "compact_after_days must be less than keep_days, or days are deleted before they are compacted")
 	case p.CompactAfterDays > MaxKeepDays:
 		out = append(out, fmt.Sprintf("compact_after_days must be at most %d", MaxKeepDays))
+	}
+	switch {
+	case p.ColdAfterDays < 0:
+		out = append(out, "cold_after_days cannot be negative (0 never moves days to cold storage)")
+	case p.KeepDays > 0 && p.ColdAfterDays >= p.KeepDays:
+		out = append(out, "cold_after_days must be less than keep_days, or days are deleted before they move to cold storage")
+	case p.ColdAfterDays > MaxKeepDays:
+		out = append(out, fmt.Sprintf("cold_after_days must be at most %d", MaxKeepDays))
 	}
 	return out
 }

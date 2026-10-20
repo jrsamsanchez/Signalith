@@ -1,0 +1,5 @@
+{"rule": "04e2a23a-9b29-4a5c-be3a-3542e3f982ba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"AUTHORIZE_API_CLIENT_ACCESS","eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventService":"admin.googleapis.com"}},
+  {"expect":false,"source":"synthesized","channel":"gworkspace","event_id":"activity","data":{"eventName":"AUTHORIZE_API_CLIENT_ACCESS"}}
+]}

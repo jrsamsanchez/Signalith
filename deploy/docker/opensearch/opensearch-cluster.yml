@@ -17,13 +17,21 @@ cluster.initial_cluster_manager_nodes: ["opensearch", "opensearch-2", "opensearc
 # resets on every restart.
 node.store.allow_mmap: false
 
+# Spread each index's primary shards over the nodes, not only the number
+# of shards: the primaries do most of the indexing work, and OpenSearch
+# may otherwise put every primary of a day's index on one node.
+cluster.routing.allocation.balance.prefer_primary: true
+# Move primaries back over the nodes after one restarts: its primaries
+# were promoted on the others and would otherwise stay there.
+cluster.routing.allocation.rebalance.primary.enable: true
+
 # Each node has its own certificate from Signalith's OpenSearch CA, made by
 # the setup service with -nodes 3: node.pem for the first node, node-2.pem
 # and node-3.pem for the others.
 plugins.security.ssl.transport.pemcert_filepath: certs/${NODE_CERT}.pem
 plugins.security.ssl.transport.pemkey_filepath: certs/${NODE_CERT}-key.pem
 plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
-plugins.security.ssl.transport.enforce_hostname_verification: false
+transport.ssl.enforce_hostname_verification: false
 plugins.security.ssl.transport.enabled_protocols: ["TLSv1.3", "TLSv1.2"]
 plugins.security.ssl.http.enabled: true
 plugins.security.ssl.http.pemcert_filepath: certs/${NODE_CERT}.pem
@@ -36,4 +44,8 @@ plugins.security.authcz.admin_dn: ["CN=signalith-admin,O=Signalith"]
 plugins.security.nodes_dn: ["CN=opensearch,O=Signalith", "CN=opensearch-2,O=Signalith", "CN=opensearch-3,O=Signalith"]
 plugins.security.allow_default_init_securityindex: true
 plugins.security.allow_unsafe_democertificates: false
-plugins.security.audit.type: noop
+plugins.security.audit.type: log4j
+plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+plugins.security.audit.config.log_request_body: false
+plugins.security.audit.config.exclude_sensitive_headers: true

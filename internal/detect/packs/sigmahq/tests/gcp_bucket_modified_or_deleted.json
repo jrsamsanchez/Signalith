@@ -1,0 +1,4 @@
+{"rule": "4d9f2ee2-c903-48ab-b9c1-8c0f474913d0", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"storage.buckets.patch"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

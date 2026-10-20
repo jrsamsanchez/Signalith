@@ -42,8 +42,9 @@ systemd unit or a container, on one server or several.</p>
 
     ---
 
-    Fluent Bit agents for Windows and Linux, syslog and CEF from network devices,
-    OpenTelemetry logs, web server access logs, osquery, Wazuh and antivirus.
+    The Signalith Agent for Windows, Linux and macOS, Fluent Bit set up by hand, syslog
+    and CEF from network devices, OpenTelemetry logs, web server access logs, osquery,
+    Wazuh and antivirus.
 
     [:octicons-arrow-right-24: Agents and syslog](sending-data.md)
 
@@ -141,12 +142,12 @@ systemd unit or a container, on one server or several.</p>
 ## How it fits together
 
 ```text
-Fluent Bit agents ──HTTPS──▶ signalith (Go) ──REST──▶ OpenSearch
- (Windows, Linux)            ingest, parse,          events by data model and day
-network sensors ───HTTPS───▶ query compiler,
-syslog devices ─UDP/TCP/TLS▶ detections,
-OTLP collectors ──HTTPS────▶ web UI and API ◀── analyst browser
-                             (one server or several)
+Signalith Agent ──HTTPS────▶ signalith (Go) ──REST──▶ OpenSearch
+ (Fluent Bit, osquery;       ingest, parse,          events by data model and day
+  Windows, Linux, macOS)     query compiler,
+network sensors ───HTTPS───▶ detections,
+syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
+OTLP collectors ──HTTPS────▶ (one server or several)
 ```
 
 Signalith is a personal open-source project by Samuel Sanchez Jr., licensed under
@@ -156,3 +157,16 @@ bug reports and ideas are welcome on
 [Contributing](https://github.com/jrsamsanchez/Signalith/blob/main/CONTRIBUTING.md) to help
 out, and the [security policy](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md)
 to report a weakness privately.
+
+## Trademarks
+
+Signalith is an independent project. It is not affiliated with, endorsed by or sponsored
+by Splunk or Cisco, and contains no Splunk software code. Its optional Splunk Security
+Content pack ships detection rules from Splunk's open-source
+[security_content](https://github.com/splunk/security_content) project under the Apache
+License 2.0 (see
+[NOTICE](https://github.com/jrsamsanchez/Signalith/blob/main/NOTICE)). Splunk, Splunk
+Enterprise Security and SPL are trademarks or registered trademarks of Splunk LLC, a Cisco
+company, in the United States and other countries; they are named here only to describe the
+rules Signalith can run and its search syntax. OpenSearch, Fluent Bit, Sigma and MITRE
+ATT&CK are trademarks of their respective owners.

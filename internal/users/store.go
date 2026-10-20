@@ -1,8 +1,14 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package users
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -10,10 +16,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/text/unicode/norm"
+
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 )
 
 // Where a user's password is checked.
@@ -23,6 +33,10 @@ const (
 	// SourceDirectory users sign in with their LDAP or Active Directory
 	// password; Signalith keeps a record of them from their first sign-in.
 	SourceDirectory = "directory"
+	// SourceSSO users sign in with an OpenID Connect identity provider
+	// (single sign-on); Signalith keeps a record of them from their first
+	// sign-in.
+	SourceSSO = "sso"
 	// SourceBuiltin is the admin account from signalith.yaml. It is never
 	// stored here; the API lists it so people can see it exists.
 	SourceBuiltin = "builtin"
@@ -36,6 +50,11 @@ type User struct {
 	Email    string `json:"email,omitempty"`
 	Role     Role   `json:"role"`
 	Source   string `json:"source"`
+	// Tenant is the tenant a tenant user belongs to and may only ever act
+	// in; empty for the provider's own users (the built-in admin, and
+	// directory and single sign-on users), who work in the default tenant
+	// and may switch to any (see docs/multi-tenant.md).
+	Tenant string `json:"tenant,omitempty"`
 	// Disabled users cannot sign in, and their sessions end.
 	Disabled bool `json:"disabled,omitempty"`
 	// MustChangePassword sends the user to choose a new password right
@@ -43,6 +62,20 @@ type User struct {
 	MustChangePassword bool `json:"must_change_password,omitempty"`
 	// DN is a directory user's entry, as found at their last sign-in.
 	DN string `json:"dn,omitempty"`
+	// Subject is who a single sign-on user is at their identity
+	// provider: its issuer, a space and their subject (sub) there. Only
+	// that identity can sign in as them.
+	Subject string `json:"subject,omitempty"`
+	// ExternalID is a single sign-on user's id at the identity provider
+	// that provisions them (SCIM), as it sent it. A provisioned user with
+	// no Subject yet has not signed in: their first sign-in with the same
+	// username binds the identity.
+	ExternalID string `json:"external_id,omitempty"`
+	// InactiveAtIdP is true when provisioning disabled the user (they are
+	// inactive at the identity provider). Provisioning re-enables only
+	// users it disabled: an admin's disable here stays until an admin
+	// enables them.
+	InactiveAtIdP bool `json:"inactive_at_idp,omitempty"`
 	// Refused says why a directory user has no access since the directory
 	// was last asked about them: not found there (deleted, or disabled in
 	// Active Directory), disabled or expired there, or in no mapped group.
@@ -65,6 +98,9 @@ type NewUser struct {
 	Role               Role
 	Password           string
 	MustChangePassword bool
+	// Tenant makes a tenant user (see User.Tenant); empty for a provider
+	// user.
+	Tenant string
 }
 
 // Change edits a user; nil fields stay as they are.
@@ -83,6 +119,8 @@ var (
 	ErrLastAdmin = errors.New("Signalith needs at least one enabled admin; make someone else an admin first")
 	// ErrManaged refuses edits to what the directory decides.
 	ErrManaged = errors.New("the name, email, role and password of directory users come from the directory; here you can only disable or delete them")
+	// ErrManagedSSO refuses edits to what the identity provider decides.
+	ErrManagedSSO = errors.New("the name, email and role of single sign-on users come from the identity provider at each sign-in; here you can only disable or delete them")
 	// ErrReserved refuses the built-in admin's name.
 	ErrReserved = errors.New("that name belongs to the built-in admin from signalith.yaml; choose another")
 )
@@ -118,6 +156,46 @@ func ValidUsername(name string) error {
 	return nil
 }
 
+// ErrTenantSuffix refuses a provider user whose name ends like a tenant
+// user's.
+var ErrTenantSuffix = errors.New("names ending in @ and a word with no dot, like alice@acme, are kept for tenant users; " +
+	"use a full email address or a name without @")
+
+// TenantUsername returns the name a tenant's user is kept under: what
+// was typed with "@" and the tenant ID after it, so no tenant's user
+// can take, or find out about, a name of the provider's or of another
+// tenant. A name already ending in "@<tenant>" is kept as it is; any
+// other @ is refused.
+func TenantUsername(name, tenant string) (string, error) {
+	name = NormalizeUsername(name)
+	local, found := strings.CutSuffix(name, "@"+tenant)
+	if found && local == "" {
+		found = false
+	}
+	if !found {
+		local = name
+	}
+	if strings.Contains(local, "@") {
+		return "", fmt.Errorf("a tenant user's name cannot have @ in it: Signalith adds @%s itself", tenant)
+	}
+	full := local + "@" + tenant
+	if err := ValidUsername(full); err != nil {
+		return "", fmt.Errorf("usernames are letters, digits, dots, dashes or underscores, starting with a letter or digit, and at most %d long here", 63-len(tenant))
+	}
+	return full, nil
+}
+
+// tenantLike reports whether name ends in "@" and something that could
+// be a tenant ID (TenantUsername): names the provider's users cannot take.
+func tenantLike(name string) bool {
+	i := strings.LastIndexByte(name, '@')
+	if i < 0 {
+		return false
+	}
+	suffix := name[i+1:]
+	return suffix == tenants.Default || tenants.ValidID(suffix) == nil
+}
+
 func validName(name string) error {
 	if len([]rune(name)) > 100 {
 		return errors.New("keep the name under 100 characters")
@@ -144,30 +222,104 @@ func validEmail(email string) error {
 // MinPasswordLength is the shortest password Signalith accepts.
 const MinPasswordLength = 8
 
-// HashPassword returns a bcrypt hash of a new password, after checking its
-// length. bcrypt reads at most 72 bytes, so longer passwords are refused
-// rather than silently cut.
+// HashPassword returns a bcrypt hash of a password, normalized
+// (NormalizePassword), after checking its length. A password someone is choosing goes through CheckNewPassword
+// first.
 func HashPassword(pw string) (string, error) {
-	if len([]rune(pw)) < MinPasswordLength {
-		return "", fmt.Errorf("password must be at least %d characters", MinPasswordLength)
+	pw = NormalizePassword(pw)
+	if err := checkLength(pw); err != nil {
+		return "", err
 	}
-	if len(pw) > 72 {
-		return "", errors.New("password must be at most 72 bytes (bcrypt reads no more)")
-	}
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword(bcryptInput(pw), hashCost)
 	return string(h), err
+}
+
+// hashCost is the bcrypt cost of new password hashes: always
+// bcrypt.DefaultCost, except in a test binary that asks for
+// UseFastHashesInTests.
+var hashCost = bcrypt.DefaultCost
+
+// UseFastHashesInTests makes new password hashes (and the dummy hash
+// WasteTime checks against) use bcrypt.MinCost, so a package whose tests
+// create many users finishes in time under the race detector. Call it
+// from TestMain, before m.Run. It panics outside a test binary, so a
+// production binary always hashes at bcrypt.DefaultCost.
+func UseFastHashesInTests() {
+	if !testing.Testing() {
+		panic("users: UseFastHashesInTests called outside a test binary")
+	}
+	hashCost = bcrypt.MinCost
+}
+
+// ComparePassword reports whether pw is the password hash was made from by
+// HashPassword (or by any bcrypt tool, for a password of up to 72 bytes).
+// A hash made before passwords were normalized matches the password as it
+// was typed then, so nobody whose password has such characters is locked
+// out.
+func ComparePassword(hash, pw string) bool {
+	if hash == "" {
+		return false
+	}
+	n := NormalizePassword(pw)
+	if bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(n)) == nil {
+		return true
+	}
+	return n != pw && bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(pw)) == nil
+}
+
+// NormalizePassword returns pw in Unicode normalization form NFKC, as NIST
+// SP 800-63B asks, so a password typed on another keyboard or system
+// that composes accents or full-width characters differently still
+// matches. A password over maxNormalizeBytes is returned as it is: it is
+// far over MaxPasswordLength, so it is refused or cannot match, and
+// normalizing a megabyte sent to the sign-in page would cost the server
+// half a second of work.
+func NormalizePassword(pw string) string {
+	if len(pw) > maxNormalizeBytes {
+		return pw
+	}
+	return norm.NFKC.String(pw)
+}
+
+// maxNormalizeBytes is the longest password NormalizePassword changes:
+// 16 KB, many times MaxPasswordLength in any script.
+const maxNormalizeBytes = 16 << 10
+
+// bcryptLimit is the most bytes of a password bcrypt reads.
+const bcryptLimit = 72
+
+// bcryptInput is what bcrypt hashes for pw. A password of up to 72 bytes
+// is hashed as it is, so its hash is the one every version of Signalith and
+// every bcrypt tool makes. A longer one (64 characters of a non-Latin
+// script can be 192 bytes) is first reduced to a keyed SHA-256 of all of
+// it, base64 encoded, so no part of it is cut off. The key keeps such a
+// hash from being matched against plain SHA-256 hashes leaked elsewhere.
+func bcryptInput(pw string) []byte {
+	if len(pw) <= bcryptLimit {
+		return []byte(pw)
+	}
+	m := hmac.New(sha256.New, []byte("signalith bcrypt input v1"))
+	m.Write([]byte(pw))
+	return []byte(base64.RawStdEncoding.EncodeToString(m.Sum(nil)))
 }
 
 // dummyHash is compared against when a user does not exist, so a wrong
 // username takes as long to refuse as a wrong password.
 var dummyHash = sync.OnceValue(func() []byte {
-	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), bcrypt.DefaultCost)
+	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), hashCost)
 	return h
 })
 
 // WasteTime does the work of checking a password without a user, so
 // sign-in failures take the same time whatever the reason.
-func WasteTime(pw string) { _ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(pw)) }
+// It checks twice where ComparePassword would.
+func WasteTime(pw string) {
+	n := NormalizePassword(pw)
+	_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(n))
+	if n != pw {
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), bcryptInput(pw))
+	}
+}
 
 // GeneratePassword returns a random temporary password such as
 // "kq7m-3xhp-9tvd-w2fa": 16 characters (about 79 bits) from letters and
@@ -224,6 +376,7 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*User
 	hashes map[string]string // username -> bcrypt hash, local users only
+	mfa    map[string]*MFA
 	etags  map[string]string
 
 	// recheck is how often reads look for changes to the file, checked
@@ -240,7 +393,7 @@ const recheckEvery = time.Second
 
 // New returns a store over a backend, with the users it holds now.
 func New(b Backend) (*Store, error) {
-	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, etags: map[string]string{}}
+	s := &Store{Now: time.Now, b: b, users: map[string]*User{}, hashes: map[string]string{}, mfa: map[string]*MFA{}, etags: map[string]string{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -280,7 +433,7 @@ func (s *Store) load() error {
 	if err != nil {
 		return err
 	}
-	people, hashes, etags := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs))
+	people, hashes, etags, mfa := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs)), map[string]*MFA{}
 	for name, r := range recs {
 		u := r.User
 		u.SessionEpoch = r.Epoch
@@ -289,9 +442,12 @@ func (s *Store) load() error {
 		if r.Hash != "" && u.Source == SourceLocal {
 			hashes[name] = r.Hash
 		}
+		if r.MFA != nil {
+			mfa[name] = r.MFA.clone()
+		}
 	}
 	s.mu.Lock()
-	s.users, s.hashes, s.etags = people, hashes, etags
+	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
 	return nil
 }
@@ -408,8 +564,21 @@ func (s *Store) hold() (func(), error) {
 // Create adds a local user.
 func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	name := NormalizeUsername(in.Username)
+	if in.Tenant != "" {
+		if err := tenants.ValidID(in.Tenant); err != nil {
+			return User{}, fieldError("tenant", err)
+		}
+		full, err := TenantUsername(name, in.Tenant)
+		if err != nil {
+			return User{}, fieldError("username", err)
+		}
+		name = full
+	}
 	if err := ValidUsername(name); err != nil {
 		return User{}, fieldError("username", err)
+	}
+	if in.Tenant == "" && tenantLike(name) {
+		return User{}, fieldError("username", ErrTenantSuffix)
 	}
 	if s.reserved(name) {
 		return User{}, fieldError("username", ErrReserved)
@@ -427,6 +596,9 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", in.Role))
 	}
+	if err := CheckNewPassword(name, in.Password); err != nil {
+		return User{}, fieldError("password", err)
+	}
 	hash, err := HashPassword(in.Password)
 	if err != nil {
 		return User{}, fieldError("password", err)
@@ -437,7 +609,7 @@ func (s *Store) Create(ctx context.Context, in NewUser) (User, error) {
 	}
 	defer release()
 	now := s.now()
-	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Name: in.Name, Email: in.Email, Role: in.Role, Source: SourceLocal,
+	r, err := s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Name: in.Name, Email: in.Email, Role: in.Role, Source: SourceLocal, Tenant: in.Tenant,
 		MustChangePassword: in.MustChangePassword, Created: now, Updated: now}, Hash: hash, Epoch: 1})
 	if errors.Is(err, ErrExists) {
 		return User{}, fieldError("username", ErrExists)
@@ -475,8 +647,10 @@ func (s *Store) adminsLeft(name string, role Role, disabled bool) int {
 			r, off = role, disabled
 		}
 		// Directory users' roles depend on groups that may have changed
-		// since they last signed in, so only local admins count.
-		if u.Source == SourceLocal && r == Admin && !off {
+		// since they last signed in, so only local admins count, and
+		// only the provider's own: a tenant's admins manage only their
+		// tenant.
+		if u.Source == SourceLocal && r == Admin && !off && u.Tenant == "" {
 			n++
 		}
 	}
@@ -517,16 +691,26 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if cur.Source == SourceDirectory && (u.Name != cur.Name || u.Email != cur.Email || u.Role != cur.Role) {
 			return ErrManaged
 		}
-		if err := validName(u.Name); err != nil {
-			return fieldError("name", err)
+		if cur.Source == SourceSSO && (u.Name != cur.Name || u.Email != cur.Email || u.Role != cur.Role) {
+			return ErrManagedSSO
 		}
-		if err := validEmail(u.Email); err != nil {
-			return fieldError("email", err)
+		// Only what changes is checked: a name or email the directory or
+		// identity provider set may not pass, and must not stop an admin
+		// from disabling the user.
+		if u.Name != cur.Name {
+			if err := validName(u.Name); err != nil {
+				return fieldError("name", err)
+			}
+		}
+		if u.Email != cur.Email {
+			if err := validEmail(u.Email); err != nil {
+				return fieldError("email", err)
+			}
 		}
 		if !u.Role.Valid() {
 			return fieldError("role", fmt.Errorf("role %q must be viewer, analyst or admin", u.Role))
 		}
-		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled
+		wasAdmin := cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == ""
 		if wasAdmin && (u.Role != Admin || u.Disabled) && s.adminsLeft(name, u.Role, u.Disabled) == 0 {
 			return ErrLastAdmin
 		}
@@ -536,6 +720,10 @@ func (s *Store) UpdateIf(ctx context.Context, name, etag string, ch Change) (Use
 		if u.Disabled && !cur.Disabled {
 			// Their sessions end everywhere.
 			r.Epoch++
+		}
+		if u.Disabled != cur.Disabled {
+			// The admin decides now, not provisioning.
+			u.InactiveAtIdP = false
 		}
 		u.Updated = s.now()
 		r.User = u
@@ -563,7 +751,7 @@ func (s *Store) DeleteIf(ctx context.Context, name, etag string) (User, error) {
 	var gone User
 	err = s.b.Delete(ctx, Actor(ctx), name, etag, func(r Record) error {
 		cur := r.User
-		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && s.adminsLeft(name, Viewer, true) == 0 {
+		if cur.Source == SourceLocal && cur.Role == Admin && !cur.Disabled && cur.Tenant == "" && s.adminsLeft(name, Viewer, true) == 0 {
 			return ErrLastAdmin
 		}
 		gone = recordUser(r)
@@ -589,6 +777,9 @@ func (s *Store) SetPasswordIf(ctx context.Context, name, etag, password string, 
 		return User{}, ErrNotFound
 	} else if u.Source != SourceLocal {
 		return User{}, ErrManaged
+	}
+	if err := CheckNewPassword(name, password); err != nil {
+		return User{}, fieldError("password", err)
 	}
 	hash, err := HashPassword(password)
 	if err != nil {
@@ -626,7 +817,7 @@ func (s *Store) CheckPassword(name, password string) bool {
 		WasteTime(password)
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	return ComparePassword(hash, password)
 }
 
 // PasswordVersion changes whenever the user's password does, so a cache
@@ -727,6 +918,9 @@ func (s *Store) SeeDirectoryUser(ctx context.Context, d DirectoryUser) (User, er
 			return recordUser(r), nil
 		}
 		// Their first sign-in.
+		if tenantLike(name) {
+			return User{}, ErrTenantSuffix
+		}
 		r, err = s.b.Create(ctx, Actor(ctx), Record{User: User{Username: name, Source: SourceDirectory, Name: d.Name, Email: d.Email,
 			Role: d.Role, DN: d.DN, Created: now, Updated: now, LastSignIn: &now}, Epoch: 1})
 		if errors.Is(err, ErrExists) && try < 3 {
@@ -816,7 +1010,7 @@ func (s *Store) Count() map[string]int {
 	s.fresh()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := map[string]int{SourceLocal: 0, SourceDirectory: 0}
+	out := map[string]int{SourceLocal: 0, SourceDirectory: 0, SourceSSO: 0}
 	for _, u := range s.users {
 		out[u.Source]++
 	}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -311,6 +314,10 @@ func (s *Server) otherServerView(ctx context.Context, sv sharedServer) (map[stri
 	}
 	sections := make([]settingsSection, 0, len(config.Sections))
 	for _, sec := range config.Sections {
+		if sec.Tab != "" {
+			// A tab of its own shows it.
+			continue
+		}
 		out := settingsSection{ID: sec.ID, Title: sec.Title, Help: sec.Help, Fields: []settingField{}}
 		for i := range config.Registry {
 			set := &config.Registry[i]

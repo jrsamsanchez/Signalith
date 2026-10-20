@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Servers page: Add a server, and servers waiting for approval.
 //
 // Add a server opens a dialog that first asks what is being added: a
@@ -506,7 +508,7 @@
     const until = r.expires_at ? timeText(r.expires_at) : '';
     const once = h('p', { class: 'sj-muted sj-once' }, icon('clock', 'icon--xs'), `Works once, until ${until || 'it expires in 60 minutes'}. Anyone with it can join a server, so don’t share it.`);
     if (D.platform === 'docker') {
-      const env = c.docker || `SIGNALITH_JOIN=${r.token}\nSIGNALITH_NODE_NAME=signalith-2\nSIGNALITH_NODE_URL=https://<this computer's address>:8080\n`;
+      const env = c.docker || `SIGNALITH_JOIN=${r.token}\nSIGNALITH_NODE_NAME=signalith-2\nSIGNALITH_NODE_URL=https://<this computer's address>:9000\n`;
       return [
         h('p', {}, 'In the Signalith folder on the new computer, save this as ', h('code', {}, 'deploy/docker/join.env'), '. Change SIGNALITH_NODE_URL to that computer’s address, so the other servers can reach it:'),
         fileBlock('deploy/docker/join.env', env),

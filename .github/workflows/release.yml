@@ -28,6 +28,7 @@ jobs:
     uses: ./.github/workflows/packages.yml
     with:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+      sign: ${{ github.event_name == 'push' }}
     secrets:
       SIGNALITH_GPG_PRIVATE_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
       SIGNALITH_GPG_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
@@ -35,6 +36,8 @@ jobs:
   image:
     needs: packages
     runs-on: ubuntu-latest
+    # For the agent release key, as in packages.yml.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
       contents: read
       packages: write
@@ -70,6 +73,8 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ env.VERSION }}
+          secrets: |
+            agent_key=${{ secrets.SIGNALITH_AGENT_KEY }}
           tags: ${{ steps.tags.outputs.tags }}
           push: ${{ env.PUBLISH == 'true' }}
           sbom: true
@@ -91,6 +96,47 @@ jobs:
           subject-name: ${{ steps.tags.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+  # The Helm chart (deploy/helm/signalith), versioned as the release and
+  # running its image: a .tgz on the release page, and an OCI chart on
+  # GHCR (oci://ghcr.io/<owner>/charts/signalith), signed with Sigstore.
+  chart:
+    needs: [packages, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.packages.outputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Package the chart
+        run: |
+          helm version
+          helm lint --strict --kube-version 1.30.0 deploy/helm/signalith
+          mkdir chart
+          helm package deploy/helm/signalith --version "$VERSION" --app-version "$VERSION" -d chart
+          ls -l chart
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: helm-chart
+          path: chart/
+      - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: Push the chart to GHCR and sign it
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push "chart/signalith-$VERSION.tgz" "oci://ghcr.io/$owner/charts" 2>&1 | tee "$RUNNER_TEMP/push.log"
+          digest=$(sed -n 's/^Digest: //p' "$RUNNER_TEMP/push.log")
+          [ -n "$digest" ] || { echo "no digest from helm push" >&2; exit 1; }
+          printf '%s' "$GH_TOKEN" | cosign login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          cosign sign --yes "ghcr.io/$owner/charts/signalith@$digest"
 
   # Authenticode signing of the .msi and signalith.exe through SignPath
   # Foundation (docs/code-signing.md). It runs for a tag once the repository
@@ -149,9 +195,9 @@ jobs:
           path: signed/
 
   publish:
-    needs: [packages, image, windows-signing]
+    needs: [packages, image, chart, windows-signing]
     # Also when windows-signing is skipped (no SignPath set up, or a dry run).
-    if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.windows-signing.result != 'failure' }}
+    if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.chart.result == 'success' && needs.windows-signing.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -164,7 +210,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: '{binaries,linux-packages,windows-packages}'
+          pattern: '{binaries,linux-packages,windows-packages,helm-chart}'
           path: release
           merge-multiple: true
       - name: Use the signed Windows files
@@ -232,6 +278,19 @@ jobs:
         with:
           name: release
           path: release/
+      - name: Write the release notes
+        run: |
+          # This version's own notes (.github/releases/0.3.0.md, also used
+          # for its -rc versions) when there are any, then how to install
+          # and check it. The GPG lines only when the checksums were signed
+          # with GPG. A dry run shows the notes in its summary.
+          notes=".github/releases/${VERSION%%-*}.md"
+          gpg_line='s/^{GPG}//'
+          [ -f release/SHA256SUMS.asc ] || gpg_line='/^{GPG}/d'
+          { [ ! -f "$notes" ] || cat "$notes"
+            sed -e "s/{VERSION}/$VERSION/g" -e "$gpg_line" .github/release-notes.md
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish the release
         if: env.PUBLISH == 'true'
         env:
@@ -240,10 +299,5 @@ jobs:
         run: |
           pre=""
           case "$VERSION" in *-*) pre=--prerelease ;; esac
-          # How to install and check this release, then the changes.
-          # The GPG line only when the checksums were signed with GPG.
-          gpg_line='s/^{GPG}//'
-          [ -f release/SHA256SUMS.asc ] || gpg_line='/^{GPG}/d'
-          sed -e "s/{VERSION}/$VERSION/g" -e "$gpg_line" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" release/* --repo "$GITHUB_REPOSITORY" --verify-tag $pre \
             --title "Signalith $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes

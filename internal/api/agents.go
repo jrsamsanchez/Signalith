@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -61,7 +64,7 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // forwards other computers' events is told apart by address and token.
 func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
 	name := r.Header.Get(agentinv.AgentHeader)
-	if name == "" && intake == ingest.IntakeOTLP {
+	if name == "" && (intake == ingest.IntakeOTLP || intake == ingest.IntakeHEC) {
 		if len(hosts) != 1 && events == 0 {
 			return // nothing to tell it by, and nothing stored
 		}
@@ -177,10 +180,10 @@ func (s *Server) agentFlags(a agentinv.Agent, current, next string, now time.Tim
 			v.NeedsConfig = append(v.NeedsConfig, needsRevoked)
 		}
 	}
-	// OpenTelemetry Collectors send no name of their own: one without a
+	// OpenTelemetry Collectors and HEC senders send no name of their own: one without a
 	// name forwards other computers' events, and a new configuration
 	// would not change that.
-	if a.Name == "" && !a.Refusing && a.Intake != ingest.IntakeOTLP {
+	if a.Name == "" && !a.Refusing && a.Intake != ingest.IntakeOTLP && a.Intake != ingest.IntakeHEC {
 		v.Notes = append(v.Notes, needsOld)
 	}
 	slices.Sort(v.NeedsConfig)

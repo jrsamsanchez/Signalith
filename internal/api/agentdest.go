@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -13,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/config"
 )
 
 // agentRecycle is how many batches an agent sends on one kept-alive
@@ -58,7 +62,7 @@ func (s *Server) handleAgentDestinations(w http.ResponseWriter, r *http.Request)
 	if s.Cluster != nil {
 		st = s.Cluster.Status()
 	}
-	choices, warning := destinationsOf(ctx, s.conf().Server.PublicURL, st)
+	choices, warning := destinationsOf(ctx, s.agentURL(s.conf().Server.PublicURL), st)
 	out := map[string]any{"choices": choices}
 	if warning != "" {
 		out["warning"] = warning
@@ -83,7 +87,7 @@ func destinationsOf(ctx context.Context, publicURL string, st cluster.Status) ([
 	servers := agentServers(st)
 	var rest []destination
 	for _, sv := range servers {
-		d := destination{Kind: "server", ID: sv.NodeID, Name: sv.Name, URL: sv.Detail.NodeURL}
+		d := destination{Kind: "server", ID: sv.NodeID, Name: sv.Name, URL: config.AgentURLOn(sv.Detail.NodeURL, sv.Detail.AgentListen)}
 		if sv.Self {
 			d.Kind = "self"
 		}
@@ -142,7 +146,7 @@ func destinationsOf(ctx context.Context, publicURL string, st cluster.Status) ([
 	return append([]destination{shared}, rest...), warning
 }
 
-// hostOf returns the host of an address such as https://siem:8080.
+// hostOf returns the host of an address such as https://siem:9000.
 func hostOf(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -184,14 +188,14 @@ var errUnknownDestination = errors.New("no such server: choose shared, self or a
 // server, whose certificate this one cannot check names against.
 func (s *Server) agentDestination(to string) (string, bool, error) {
 	if to == "shared" {
-		return s.conf().Server.PublicURL, false, nil
+		return s.agentURL(s.conf().Server.PublicURL), false, nil
 	}
 	if s.Cluster == nil {
 		return "", false, errUnknownDestination
 	}
 	for _, sv := range agentServers(s.Cluster.Status()) {
 		if (to == "self" && sv.Self) || to == sv.NodeID {
-			return sv.Detail.NodeURL, !sv.Self, nil
+			return config.AgentURLOn(sv.Detail.NodeURL, sv.Detail.AgentListen), !sv.Self, nil
 		}
 	}
 	return "", false, errUnknownDestination

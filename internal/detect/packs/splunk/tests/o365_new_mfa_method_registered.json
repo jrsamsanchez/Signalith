@@ -1,0 +1,7 @@
+{"rule": "4e12db1f-f7c7-486d-8152-a221cad6ac2b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"Name\":\"StrongAuthenticationMethod\",\"NewValue\":\"DeviceName\",\"OldValue\":\"test-oldvalue\"}]","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectorz","data":{"ClientIP":"203.0.113.7","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectorz"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","Operation":"Update uses.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}},
+  {"expect":false,"source":"synthesized","channel":"o365","event_id":"AzureActiveDirectory","data":{"ClientIP":"203.0.113.7","ModifiedProperties":"[{\"Name\":\"StrongAuthenticationMethoe\",\"NewValue\":\"DeviceName\",\"OldValue\":\"test-oldvalue\"}]","Operation":"Update user.","UserId":"admin@example.com","Workload":"AzureActiveDirectory"}}
+]}

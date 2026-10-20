@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package splcheck
 
 import (
@@ -91,6 +94,8 @@ func ParseWhere(s, node string, macros map[string]*Macro) (Expr, error) {
 type token struct {
 	kind byte // w word, s quoted string, o operator or punctuation
 	text string
+	// macro marks the parentheses lex puts around a macro's tokens.
+	macro bool
 }
 
 // lex splits a where clause into tokens, replacing each `macro` by its
@@ -126,9 +131,9 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			if err != nil {
 				return nil, fmt.Errorf("macro %s: %w", name, err)
 			}
-			out = append(out, token{'o', "("})
+			out = append(out, token{kind: 'o', text: "(", macro: true})
 			out = append(out, sub...)
-			out = append(out, token{'o', ")"})
+			out = append(out, token{kind: 'o', text: ")", macro: true})
 			i = j + 1
 		case c == '"':
 			var b strings.Builder
@@ -146,16 +151,16 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			if j == len(rs) {
 				return nil, errors.New("unclosed quote")
 			}
-			out = append(out, token{'s', b.String()})
+			out = append(out, token{kind: 's', text: b.String()})
 			i = j + 1
 		case c == '(' || c == ')' || c == ',':
-			out = append(out, token{'o', string(c)})
+			out = append(out, token{kind: 'o', text: string(c)})
 			i++
 		case c == '!' && i+1 < len(rs) && rs[i+1] == '=':
-			out = append(out, token{'o', "!="})
+			out = append(out, token{kind: 'o', text: "!="})
 			i += 2
 		case c == '=':
-			out = append(out, token{'o', "="})
+			out = append(out, token{kind: 'o', text: "="})
 			i++
 		case c == '!':
 			// Not a word either: the loop below would never move on.
@@ -164,11 +169,12 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 			return nil, errors.New("comparisons with < or > are not supported")
 		default:
 			// Unquoted, as quoted, \\ is one backslash in Splunk's search
-			// syntax: *\\users\\public\\* matches C:\Users\Public\x.
+			// syntax: *\\users\\public\\* matches C:\Users\Public\x. And
+			// \" is a quote inside the word: *\"privileged\":true*.
 			var b strings.Builder
 			j := i
 			for j < len(rs) && !unicode.IsSpace(rs[j]) && !strings.ContainsRune("()=,\"`!<>", rs[j]) {
-				if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '\\' {
+				if rs[j] == '\\' && j+1 < len(rs) && (rs[j+1] == '\\' || rs[j+1] == '"') {
 					j++
 				} else if rs[j] == '\\' && j+1 < len(rs) && rs[j+1] == '/' {
 					return nil, errUnsureEscape
@@ -176,7 +182,7 @@ func lex(s string, macros map[string]*Macro, depth int) ([]token, error) {
 				b.WriteRune(rs[j])
 				j++
 			}
-			out = append(out, token{'w', b.String()})
+			out = append(out, token{kind: 'w', text: b.String()})
 			i = j
 		}
 	}
@@ -296,32 +302,65 @@ func (p *parser) primary() (Expr, error) {
 		return &Cmp{Field: field, Neg: op.text == "!=", Values: []string{v.text}}, nil
 	case p.keyword("IN"):
 		p.i++
-		if p.peek().text != "(" {
+		// A macro in the list stands for its text, as in Splunk, which
+		// expands macros before it reads the search: IN (`names`) is the
+		// list of the macro's values, not a group of terms.
+		macros := 0
+		skip := func(opens bool) {
+			for t := p.peek(); t.macro && (opens && t.text == "(" || t.text == ")" && macros > 0); t = p.peek() {
+				if t.text == "(" {
+					macros++
+				} else {
+					macros--
+				}
+				p.i++
+			}
+		}
+		skip(true)
+		if p.peek().text != "(" || p.peek().macro {
 			return nil, fmt.Errorf("%s IN needs a list", t.text)
 		}
 		p.i++
+		skip(true)
+		if p.peek().text == "," && !p.peek().macro {
+			// Splunk's content writes IN (,"a","b",) and Splunk runs it;
+			// a comma right after "(" adds no value, as one before ")".
+			p.i++
+		}
 		var vals []string
 		for {
+			skip(true)
 			v := p.peek()
 			if v.kind != 'w' && v.kind != 's' {
 				return nil, fmt.Errorf("%s IN: expected a value, found %q", t.text, v.text)
 			}
 			vals = append(vals, v.text)
 			p.i++
+			skip(true)
 			if p.peek().text == "," {
 				p.i++
+				skip(true)
 				// SPL allows a trailing comma.
-				if p.peek().text == ")" {
+				if p.peek().text == ")" && !p.peek().macro {
 					break
 				}
 				continue
 			}
 			break
 		}
-		if p.peek().text != ")" {
+		if p.peek().text != ")" || p.peek().macro {
+			if n := p.peek(); n.kind == 'w' || n.kind == 's' {
+				// Splunk's documentation lists IN's values with commas
+				// between them, and says nothing of two side by side.
+				return nil, fmt.Errorf("%s IN: no comma between two values", t.text)
+			}
 			return nil, fmt.Errorf("%s IN: missing )", t.text)
 		}
 		p.i++
+		skip(false)
+		if macros != 0 {
+			return nil, fmt.Errorf("%s IN: a macro that is not a list of values", t.text)
+		}
 		return &Cmp{Field: field, Values: vals}, nil
 	}
 	return nil, fmt.Errorf("a bare term %s is not supported", t.text)
@@ -340,8 +379,8 @@ func (p *parser) field(name string) (string, error) {
 				return f, nil
 			}
 		}
-		if _, ok := azureSources[source]; ok {
-			// Resolved once the renames before are known (resolveAzure).
+		if _, ok := cloudSourceOf(source); ok {
+			// Resolved once the renames before are known (resolveCloud).
 			return rawFieldPrefix + name, nil
 		}
 		if source == "cloudtrail" {
@@ -362,6 +401,10 @@ func (p *parser) field(name string) (string, error) {
 			}
 		}
 		return "", fmt.Errorf("field %s has no Signalith mapping", name)
+	}
+	if name == "sourcetype" && IsOktaTstatsNode(p.node) {
+		// The rule names Okta's own sourcetype.
+		return name, nil
 	}
 	f, ok := strings.CutPrefix(name, nodePrefix(p.node)+".")
 	if !ok {
@@ -442,6 +485,11 @@ func dropPlatform(e Expr, linux bool) (Expr, error) {
 			e = &And{Kids: kids}
 		}
 	}
+	return e, refusePlatform(e)
+}
+
+// refusePlatform refuses a where clause that tests a platform field.
+func refusePlatform(e Expr) error {
 	var bad error
 	var walk func(Expr)
 	walk = func(e Expr) {
@@ -463,14 +511,15 @@ func dropPlatform(e Expr, linux bool) (Expr, error) {
 		}
 	}
 	walk(e)
-	return e, bad
+	return bad
 }
 
 // Eval reports whether an event, as field values, matches a where clause
 // the way Splunk reads it: a field compared with = or IN must be present
 // and match one of the values, and != needs the field present and
 // matching none. A missing field never matches =, and NOT turns the
-// result around.
+// result around. A field with several values (View's mvKey) matches when
+// one of them does.
 func Eval(e Expr, ev map[string]string) bool {
 	switch x := e.(type) {
 	case *And:
@@ -494,9 +543,13 @@ func Eval(e Expr, ev map[string]string) bool {
 		if !ok {
 			return false
 		}
+		vals := []string{v}
+		if mv, ok := ev[x.Field+mvKey]; ok {
+			vals = strings.Split(mv, "\x00")
+		}
 		any := false
 		for _, p := range x.Values {
-			if x.matches(p, v) {
+			if slices.ContainsFunc(vals, func(v string) bool { return x.matches(p, v) }) {
 				any = true
 				break
 			}
@@ -505,6 +558,9 @@ func Eval(e Expr, ev map[string]string) bool {
 	}
 	return false
 }
+
+// mvKey marks the values of a field with several (View).
+const mvKey = "\x00values"
 
 // Glob matches a Splunk pattern: * is any run of characters, case is
 // ignored, everything else (? and \ too) is literal.

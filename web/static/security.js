@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Security page (admins): whether Signalith is set up safely, and what to
 // fix first. The checks run on the server (internal/security), the same
 // ones `signalith security` prints; this page only draws api/security: a

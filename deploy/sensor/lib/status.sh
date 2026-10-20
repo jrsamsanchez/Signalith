@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Written by the Signalith sensor install script (deploy/sensor/install.sh).
 # The sensor's status line, every 5 minutes (signalith-sensor-status.timer):
 # appends one JSON line to /var/log/signalith-sensor/status.json, which the
@@ -124,6 +126,9 @@ fi
 net=$sysfs/class/net/$iface
 link=$(safe "$(cat "$net/operstate" 2>/dev/null)")
 [ -n "$link" ] || link=missing
+# Virtual ports (VXLAN, tun) and some drivers report no state: an up
+# port with a carrier is up.
+if [ "$link" = unknown ] && [ "$(cat "$net/carrier" 2>/dev/null)" = 1 ]; then link=up; fi
 rxp=$(num "$(cat "$net/statistics/rx_packets" 2>/dev/null)")
 rxd=$(num "$(cat "$net/statistics/rx_dropped" 2>/dev/null)")
 kd=$(printf '%s\n' "$eve" | grep '"event_type":"stats"' | tail -n 1 | sed -n 's/.*"kernel_drops":\([0-9]*\).*/\1/p')

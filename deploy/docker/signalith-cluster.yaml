@@ -3,13 +3,15 @@
 # the trusted proxy that sends PROXY protocol headers, and its address as
 # the public one.
 server:
-  listen: 0.0.0.0:8080
-  # HAProxy's address: agents and browsers reach either server through it.
-  # Agents on other machines need this computer's address instead.
+  listen: 0.0.0.0:9000
+  agent_listen: 0.0.0.0:7779
+  # HAProxy's address: browsers reach either server through it on 8443,
+  # and agents on 7779. Agents on other machines need this computer's
+  # address instead.
   public_url: https://localhost:8443
   # HAProxy, the only address that may send PROXY protocol headers.
   trusted_proxies: [172.30.11.10]
-  # Read the header on the web port, so sign-in limits, the audit log and
+  # Read the header on the web and agent ports, so sign-in limits, the audit log and
   # agent limits see each client's own address.
   proxy_protocol: true
   tls:
@@ -41,7 +43,10 @@ search:
 retention:
   days: 90
 auth:
-  admin_user: admin
+  # The built-in admin's name on a new install. An install made before
+  # 0.3.1 keeps the name it has (admin): the name its servers share is
+  # used, so it signs in as before.
+  admin_user: signalithadmin
 cluster:
   # May run the background jobs (detections, threat intel downloads,
   # retention). Servers that share one OpenSearch take turns; turn it off
@@ -57,18 +62,24 @@ lookups:
 dashboards:
   dir: /var/lib/signalith/dashboards
   stale_after: 2h
-# Syslog from firewalls, switches and servers without an agent. The
-# container cannot open ports below 1024, so it listens on 5514 and
-# docker-compose.yml publishes it as port 514 on the host. public_port is
-# the port devices send to, which the Add data page shows; change it if
-# you change the port in docker-compose.yml. Syslog over TLS uses port 6514
-# on both.
+# Syslog from firewalls, switches and servers without an agent, over TLS
+# on port 6514, which the load balancer passes to both servers.
+#
+# Plain syslog over UDP and TCP is off on a new install: it is unencrypted,
+# and anyone who can reach the port can send fake events. A lab set up
+# before keeps it on, on 5514 (decided once by each server, see
+# signalith.yaml). For devices that cannot send
+# over TLS, set udp and tcp below to 0.0.0.0:5514 (the container cannot
+# open ports below 1024; the load balancer takes TCP on port 514 and
+# passes it to 5514), or turn it on with "Turn on plain syslog" on each
+# server's Add data page (Syslog). public_port is the port devices send
+# plain syslog to, which the Add data page shows.
 syslog:
   # The same for syslog over TCP and TLS, so syslog.allow and each event's
   # host see the device.
   proxy_protocol: true
-  udp: 0.0.0.0:5514
-  tcp: 0.0.0.0:5514
+  udp: ""
+  tcp: ""
   tls: 0.0.0.0:6514
   public_port: 514
   allow: []

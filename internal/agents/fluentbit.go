@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package agents generates Fluent Bit and OpenTelemetry Collector
 // configurations, and osquery setups, so nobody has to write agent config
 // by hand: pick the OS, copy the file, restart the agent.
@@ -34,7 +37,7 @@ const TokenPlaceholder = "@@AGENT_TOKEN@@"
 
 // Options select what an agent collects.
 type Options struct {
-	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail), "azure" (a Collector reading Entra ID's and Azure's event hub) or "osquery"
+	OS        string // "linux", "windows", "otel" (an OpenTelemetry Collector), "aws" (a Collector reading AWS CloudTrail), "azure" (a Collector reading Entra ID's and Azure's event hub), "gcp" (a Collector reading Google Cloud's audit logs from Pub/Sub) or "osquery"
 	ServerURL string // Signalith public URL
 	Token     string // agent token (TokenPlaceholder for the Add data page)
 	// LinuxSource is "file" (tail /var/log/auth.log and /var/log/secure),
@@ -48,6 +51,9 @@ type Options struct {
 	// PowerShell adds Windows PowerShell's operational channel, where
 	// script block logging writes the scripts that run (event 4104).
 	PowerShell bool
+	// NoWebLogs and NoAuditLog leave out web servers' access logs and the
+	// audit log on Linux, which are read by default.
+	NoWebLogs, NoAuditLog bool
 	// CollectorOS is where the OpenTelemetry Collector runs, for OS
 	// "otel": "linux" (the default) or "windows".
 	CollectorOS string
@@ -99,6 +105,10 @@ type Options struct {
 	// the S3 bucket CloudTrail writes to and the URL of the SQS queue S3
 	// tells about each new file. Examples stand in for them until given.
 	AWSBucket, AWSQueueURL string
+	// For OS "gcp" (an OpenTelemetry Collector that reads Google Cloud's
+	// audit logs): the project and the Pub/Sub subscription a log sink's
+	// topic feeds. Examples stand in for them until given.
+	GCPProject, GCPSubscription string
 	// SensorLayout is how a sensor built by the sensor install script
 	// (deploy/sensor/install.sh) lays out its files: SensorPackages or
 	// SensorDocker. "" is a box the admin set up (Add data's "I already
@@ -108,7 +118,23 @@ type Options struct {
 	// Heartbeat also sends the sensor's status line, written every 5
 	// minutes by the install script's timer (tag SensorStatusTag).
 	Heartbeat bool
+	// Managed is a configuration the Signalith Agent runs: its files are
+	// in the agent's own folders (ManagedLinuxConfDir and the like), the token
+	// comes from the agent (EnvToken), and there are no steps, since the
+	// agent puts the configuration in place itself. Linux and Windows.
+	Managed bool
 }
+
+// Where the Signalith Agent keeps Fluent Bit's files (Options.Managed):
+// the configuration and certificate authority in its configuration
+// folder, the buffer and read positions in its state folder.
+const (
+	ManagedLinuxConfDir     = "/etc/signalith-agent"
+	ManagedLinuxStateDir    = "/var/lib/signalith-agent"
+	ManagedWindowsDataDir   = `C:\ProgramData\Signalith Agent`
+	managedLinuxFluentBit   = ManagedLinuxStateDir + "/fluent-bit"
+	managedWindowsFluentBit = ManagedWindowsDataDir + `\fluent-bit`
+)
 
 // Sensor layouts (Options.SensorLayout).
 const (
@@ -134,6 +160,8 @@ type sensorFiles struct {
 // Fluent Bit's own package's on a box the admin set up ("").
 func layoutFiles(layout string) sensorFiles {
 	switch layout {
+	case layoutManaged:
+		return sensorFiles{ca: ManagedLinuxConfDir + "/ca.pem", storage: managedLinuxFluentBit + "/buffer", db: managedLinuxFluentBit}
 	case SensorPackages:
 		// Suricata writes in a folder of its own there, which only the
 		// script's log rotation handles (the package's own rotates
@@ -147,6 +175,10 @@ func layoutFiles(layout string) sensorFiles {
 	return sensorFiles{ca: LinuxCAPath, storage: "/var/lib/fluent-bit/signalith-buffer", db: "/var/lib/fluent-bit",
 		zeekDir: SensorZeekDir, eve: SensorEVEPath, status: "/var/log/signalith-sensor/status.json"}
 }
+
+// layoutManaged is the files of a configuration the Signalith Agent runs
+// (Options.Managed), as layoutFiles names them.
+const layoutManaged = "managed"
 
 // SensorZeekDir and SensorEVEPath are where Zeek's packages and Suricata
 // write by default.
@@ -284,7 +316,7 @@ var ErrNoNameToCheck = errors.New("agents can't check that the certificate belon
 // fluentBitLinuxInstall says where to install Fluent Bit on Linux from:
 // its packages are signed, while piping a script from a moving branch
 // into a root shell runs whatever that branch holds at the time.
-const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/linux " +
+const fluentBitLinuxInstall = "follow the steps for your distribution at https://docs.fluentbit.io/manual/installation/downloads/linux " +
 	"(they add packages.fluentbit.io with its signing key, then install the fluent-bit package)"
 
 // Where the agent keeps the CA certificate it checks the server with.
@@ -326,7 +358,7 @@ var hostLabel = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_
 // because the host and port are written into a config file.
 func ParseServerURL(raw string) (*url.URL, error) {
 	if raw == "" {
-		return nil, errors.New("address is empty; use one such as https://192.168.1.20:8080")
+		return nil, errors.New("address is empty; use one such as https://192.168.1.20:7779")
 	}
 	if len(raw) > 300 {
 		return nil, errors.New("address is too long")
@@ -344,13 +376,13 @@ func ParseServerURL(raw string) (*url.URL, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, errors.New("address is not valid; use one such as https://192.168.1.20:8080")
+		return nil, errors.New("address is not valid; use one such as https://192.168.1.20:7779")
 	}
 	if u.User != nil {
 		return nil, errors.New("address must not include a user name or password")
 	}
 	if u.Host == "" {
-		return nil, errors.New("address needs a host name or IP address, such as https://192.168.1.20:8080")
+		return nil, errors.New("address needs a host name or IP address, such as https://192.168.1.20:7779")
 	}
 	if u.Path != "" && u.Path != "/" {
 		return nil, errors.New("address must not include a path; agents always send to /api/ingest")
@@ -404,7 +436,7 @@ func IsLoopback(u *url.URL) bool {
 // Generate returns a Fluent Bit config and install steps.
 func Generate(o Options) (*Agent, error) {
 	switch o.OS {
-	case "otel", "aws", "azure":
+	case "otel", "aws", "azure", "gcp":
 		return generateOTel(o)
 	case "osquery":
 		return generateOsquery(o)
@@ -468,8 +500,11 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString("# Signalith agent for Linux, generated by Signalith.\n")
 		}
 		files := layoutFiles("")
-		if sensor {
+		switch {
+		case sensor:
 			files = layoutFiles(o.SensorLayout)
+		case o.Managed:
+			files = layoutFiles(layoutManaged)
 		}
 		b.WriteString(section("SERVICE", [][2]string{
 			{"Flush", "5"}, {"Log_Level", "info"},
@@ -541,7 +576,7 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "wazuh"},
 				{"Path", WazuhAlertsPath},
-				{"DB", "/var/lib/fluent-bit/signalith-wazuh.db"},
+				{"DB", files.db + "/signalith-wazuh.db"},
 				{"Buffer_Chunk_Size", "64k"},
 				{"Buffer_Max_Size", "1M"},
 				{"Skip_Long_Lines", "On"},
@@ -550,7 +585,7 @@ func Generate(o Options) (*Agent, error) {
 		} else if o.LinuxSource == "journal" {
 			journal := [][2]string{
 				{"Name", "systemd"}, {"Tag", "linux.journal"},
-				{"DB", "/var/lib/fluent-bit/signalith-journal.db"},
+				{"DB", files.db + "/signalith-journal.db"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=sshd"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=sudo"},
 				{"Systemd_Filter", "SYSLOG_IDENTIFIER=su"},
@@ -583,7 +618,7 @@ func Generate(o Options) (*Agent, error) {
 				// its events are read from there.
 				b.WriteString(section("INPUT", [][2]string{
 					{"Name", "systemd"}, {"Tag", "linux.journal"},
-					{"DB", "/var/lib/fluent-bit/signalith-sysmon.db"},
+					{"DB", files.db + "/signalith-sysmon.db"},
 					{"Systemd_Filter", "SYSLOG_IDENTIFIER=sysmon"},
 					{"Read_From_Tail", "On"},
 					{"storage.type", "filesystem"},
@@ -592,7 +627,8 @@ func Generate(o Options) (*Agent, error) {
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.auth"},
 				{"Path", "/var/log/auth.log,/var/log/secure"},
-				{"DB", "/var/lib/fluent-bit/signalith-auth.db"},
+				{"Path_Key", "file"},
+				{"DB", files.db + "/signalith-auth.db"},
 				{"storage.type", "filesystem"},
 			}))
 			// ClamAV's own log files (clamd, clamonacc, freshclam). Path_Key
@@ -603,7 +639,7 @@ func Generate(o Options) (*Agent, error) {
 				{"Name", "tail"}, {"Tag", "linux.clamav"},
 				{"Path", "/var/log/clamav/*.log"},
 				{"Path_Key", "file"},
-				{"DB", "/var/lib/fluent-bit/signalith-clamav.db"},
+				{"DB", files.db + "/signalith-clamav.db"},
 				{"storage.type", "filesystem"},
 			}))
 			b.WriteString(section("FILTER", [][2]string{
@@ -615,7 +651,7 @@ func Generate(o Options) (*Agent, error) {
 				{"Exclude", "log SelfCheck"},
 			}))
 		}
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoWebLogs {
 			// Web servers' access logs (Apache, Nginx), whichever source the
 			// auth logs come from. Path_Key says which server wrote a line,
 			// and the host name is added because the lines carry none. A
@@ -624,7 +660,7 @@ func Generate(o Options) (*Agent, error) {
 				{"Name", "tail"}, {"Tag", "linux.web"},
 				{"Path", strings.Join(WebAccessLogs, ",")},
 				{"Path_Key", "file"},
-				{"DB", "/var/lib/fluent-bit/signalith-web.db"},
+				{"DB", files.db + "/signalith-web.db"},
 				{"Skip_Long_Lines", "On"},
 				{"storage.type", "filesystem"},
 			}))
@@ -633,14 +669,15 @@ func Generate(o Options) (*Agent, error) {
 				{"hostname_key", "hostname"},
 			}))
 		}
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoAuditLog {
 			// The Linux audit log, whichever source the auth logs come
 			// from: auditd writes it as a file. Its records carry no host
 			// name, so it is added. A host without auditd has no such file.
 			b.WriteString(section("INPUT", [][2]string{
 				{"Name", "tail"}, {"Tag", "linux.audit"},
 				{"Path", AuditLogPath},
-				{"DB", "/var/lib/fluent-bit/signalith-audit.db"},
+				{"Path_Key", "file"},
+				{"DB", files.db + "/signalith-audit.db"},
 				{"Buffer_Chunk_Size", "64k"},
 				{"Buffer_Max_Size", "1M"},
 				{"Skip_Long_Lines", "On"},
@@ -729,8 +766,14 @@ func Generate(o Options) (*Agent, error) {
 		a.Steps = append(a.Steps,
 			"Restart the agent: sudo systemctl enable --now fluent-bit && sudo systemctl restart fluent-bit",
 			done)
-		if o.LinuxSource != "wazuh" && !sensor {
+		if o.LinuxSource != "wazuh" && !sensor && !o.NoAuditLog {
 			a.Steps = append(a.Steps, auditdStep)
+		}
+		// The Signalith Agent puts the files in place and runs Fluent Bit
+		// itself.
+		if o.Managed {
+			a.ConfigPath = ManagedLinuxConfDir + "/fluent-bit.conf"
+			a.Steps, a.ConfigStep, a.CAStep = nil, 0, 0
 		}
 		// The install script writes the files and starts the agent
 		// itself.
@@ -761,12 +804,20 @@ func Generate(o Options) (*Agent, error) {
 			channels += ",Microsoft-Windows-Sysmon/Operational"
 		}
 		if o.PowerShell {
-			channels += ",Microsoft-Windows-PowerShell/Operational"
+			// And Windows PowerShell's classic log: engines starting,
+			// with the command line that started them.
+			channels += ",Microsoft-Windows-PowerShell/Operational,Windows PowerShell"
+		}
+		// Fluent Bit's buffer and read positions: in the agent's own
+		// folder when the Signalith Agent runs it.
+		state := `C:\ProgramData\fluent-bit`
+		if o.Managed {
+			state = managedWindowsFluentBit
 		}
 		b.WriteString("# Signalith agent for Windows, generated by Signalith.\n")
 		b.WriteString(section("SERVICE", [][2]string{
 			{"Flush", "5"}, {"Log_Level", "info"},
-			{"storage.path", `C:\ProgramData\fluent-bit\signalith-buffer`},
+			{"storage.path", state + `\signalith-buffer`},
 		}))
 		b.WriteString(section("INPUT", [][2]string{
 			{"Name", "winevtlog"}, {"Tag", "win.events"},
@@ -777,14 +828,14 @@ func Generate(o Options) (*Agent, error) {
 			{"Ignore_Missing_Channels", "On"},
 			{"Interval_Sec", "1"},
 			{"String_Inserts", "On"},
-			{"DB", `C:\ProgramData\fluent-bit\signalith-winevtlog.sqlite`},
+			{"DB", state + `\signalith-winevtlog.sqlite`},
 			{"storage.type", "filesystem"},
 		}))
 		if o.Sysmon {
 			a.Steps = append(a.Steps, "Install Sysmon with a config such as SwiftOnSecurity's sysmon-config, so process and network events are recorded")
 		}
 		if o.PowerShell {
-			a.Steps = append(a.Steps, scriptBlockLoggingStep)
+			a.Steps = append(a.Steps, scriptBlockLoggingStep, moduleLoggingStep)
 		}
 		a.Steps = append(a.Steps, "Install Fluent Bit for Windows, 3.1 or later (64-bit installer), from https://docs.fluentbit.io/manual/installation/windows")
 		files := "fluent-bit.conf"
@@ -811,6 +862,13 @@ func Generate(o Options) (*Agent, error) {
 				`icacls 'C:\ProgramData\fluent-bit' /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'`,
 			`Register and start the service in an elevated PowerShell (if the agent is already installed, run Restart-Service fluent-bit instead): New-Service fluent-bit -BinaryPathName '"C:\Program Files\fluent-bit\bin\fluent-bit.exe" -c "C:\Program Files\fluent-bit\conf\fluent-bit.conf"' -StartupType Automatic; Start-Service fluent-bit`,
 			"Events appear in Search within a minute; check the Health page if they do not.")
+		if o.Managed {
+			if useCA {
+				a.CAPath = ManagedWindowsDataDir + `\ca.pem`
+			}
+			a.ConfigPath = ManagedWindowsDataDir + `\fluent-bit.conf`
+			a.Steps, a.ConfigStep, a.CAStep = nil, 0, 0
+		}
 	default:
 		return nil, fmt.Errorf("unknown os %q; use linux or windows", o.OS)
 	}
@@ -908,3 +966,9 @@ func section(name string, kv [][2]string) string {
 // scriptBlockLoggingStep turns on PowerShell script block logging, which
 // is off by default, so the scripts that run are recorded.
 const scriptBlockLoggingStep = `Turn on PowerShell script block logging, so the scripts that run are recorded (or use Group Policy: Administrative Templates > Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging). In an elevated PowerShell: $k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging'; New-Item -Path $k -Force | Out-Null; Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`
+
+// moduleLoggingStep turns on PowerShell module logging, also off by
+// default, which records each command a pipeline runs with its
+// parameters' values (event 4103), for the module logging rules. It logs
+// much more than script block logging, so it is optional.
+const moduleLoggingStep = `Optional, for the PowerShell module logging rules: turn on module logging for all modules, so each command that runs is recorded with its parameters (it logs much more than script block logging, including the values passed to commands, so plain-text passwords and keys too: name only the modules you need instead of *, and give search access only to people who may see such values; or use Group Policy: Administrative Templates > Windows Components > Windows PowerShell > Turn on Module Logging, module names *). In an elevated PowerShell: $k = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging'; New-Item -Path "$k\ModuleNames" -Force | Out-Null; Set-ItemProperty -Path $k -Name EnableModuleLogging -Value 1; Set-ItemProperty -Path "$k\ModuleNames" -Name '*' -Value '*'`

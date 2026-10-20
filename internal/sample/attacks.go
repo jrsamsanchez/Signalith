@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package sample
 
 import (
@@ -21,6 +24,7 @@ func (g *gen) attacks() {
 	g.antivirusHousekeeping()
 	g.vulnerabilityScan()
 	g.sensorUpkeep()
+	g.sourceStopped()
 	g.dnsTunnel()
 	g.networkHygiene()
 }

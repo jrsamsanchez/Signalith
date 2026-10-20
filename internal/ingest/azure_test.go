@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -95,6 +98,16 @@ func TestAzureAuditAndActivity(t *testing.T) {
 	if s, _ := ev.Fields["properties.targetResources"].(string); !strings.Contains(s, "Global Administrator") {
 		t.Errorf("properties.targetResources = %q", s)
 	}
+	// An empty value keeps its place, so the next entry's is still the
+	// third (mvindex 2), as in Splunk.
+	ev = Normalize(AzureTag, decode(t, `{"time": "2026-10-11T11:00:00Z", "category": "AuditLogs", "operationName": "Consent to application",
+		"tenantId": "t1", "properties": {"targetResources": [{"modifiedProperties": [
+			{"displayName": "ConsentContext.IsAdminConsent", "newValue": "\"False\""},
+			{"displayName": "ConsentContext.Tags", "newValue": ""},
+			{"displayName": "ConsentAction.Permissions", "newValue": "Scope: Mail.Read"}]}]}}`), now)
+	expectLists(t, ev, map[string][]any{
+		"properties.targetResources{}.modifiedProperties{}.newValue": {`"False"`, "", "Scope: Mail.Read"},
+	})
 
 	ev = Normalize("", decode(t, azureActivityRecord), now)
 	expect(t, ev.Document(), map[string]any{

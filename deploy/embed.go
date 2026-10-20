@@ -1,6 +1,10 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package deploy holds the install scripts a Signalith server hands to a
-// new server joining it (Servers > Add a server), and to a new network
-// sensor (Add data > Network sensor > Set up a new sensor).
+// new server joining it (Servers > Add a server), to a new network sensor
+// (Add data > Network sensor > Set up a new sensor), and to a computer
+// that gets the Signalith Agent (Add data > Signalith Agent).
 package deploy
 
 import (
@@ -29,6 +33,24 @@ var SystemdUnit []byte
 //
 //go:embed sensor/install.sh
 var SensorInstallSH []byte
+
+// AgentInstallSH is deploy/agent/install.sh, the Signalith Agent's Linux
+// install script.
+//
+//go:embed agent/install.sh
+var AgentInstallSH []byte
+
+// AgentInstallPS1 is deploy/agent/install.ps1, the Signalith Agent's
+// Windows install script.
+//
+//go:embed agent/install.ps1
+var AgentInstallPS1 []byte
+
+// AgentInstallMacOS is deploy/agent/install-macos.sh, the Signalith
+// Agent's macOS install script.
+//
+//go:embed agent/install-macos.sh
+var AgentInstallMacOS []byte
 
 // SensorUnits are the systemd units deploy/sensor/install.sh writes, and
 // SensorCompose the Docker Compose file of its --docker option; the

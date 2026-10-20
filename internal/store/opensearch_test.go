@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package store
 
 import (
@@ -9,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -268,5 +272,34 @@ func TestReplicateMissingIndex(t *testing.T) {
 	}
 	if len(paths) == 0 || paths[0] != "GET /gone/_settings" {
 		t.Errorf("requests %v", paths)
+	}
+}
+
+func TestTransportKeepsIdleConnections(t *testing.T) {
+	tr, err := Transport(Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.MaxIdleConnsPerHost < 32 || tr.MaxIdleConns < tr.MaxIdleConnsPerHost {
+		t.Errorf("idle connections: %d per host, %d in all", tr.MaxIdleConnsPerHost, tr.MaxIdleConns)
+	}
+}
+
+// WithMaxResponse fails a request whose answer is larger, before it is
+// decoded, and leaves other requests alone.
+func TestWithMaxResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"hits":{"total":{"value":1}},"pad":%q}`, strings.Repeat("x", 4096))
+	}))
+	defer srv.Close()
+	c := New(Config{URL: srv.URL})
+	if _, err := c.Search(WithMaxResponse(context.Background(), 1024), "x", map[string]any{}); !errors.Is(err, ErrResponseTooLarge) {
+		t.Errorf("capped search: %v", err)
+	}
+	if _, err := c.Search(WithMaxResponse(context.Background(), 1<<20), "x", map[string]any{}); err != nil {
+		t.Errorf("search under the cap: %v", err)
+	}
+	if _, err := c.Search(context.Background(), "x", map[string]any{}); err != nil {
+		t.Errorf("search without a cap: %v", err)
 	}
 }

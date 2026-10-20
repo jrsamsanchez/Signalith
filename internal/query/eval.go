@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package query
 
 import (
@@ -46,7 +49,10 @@ type Assign struct {
 }
 
 // Eval computes new fields: eval ratio=round(bytes_out/bytes_in, 2), kind=lower(kind).
-type Eval struct{ Assigns []Assign }
+type Eval struct {
+	Assigns []Assign
+	Format  bool // written as fieldformat, which Signalith runs as eval
+}
 
 func (*Eval) Name() string { return "eval" }
 
@@ -55,7 +61,41 @@ func (*Eval) Name() string { return "eval" }
 // the condition is not a plain field-against-value filter.
 type Cond struct{ X EvalExpr }
 
-func (c *Cond) String() string { return c.X.String() }
+// String writes the condition so that it reads back as the same
+// condition: where it would read as a plain filter (user != other, which
+// compares user with the text "other"), its fields are put in single
+// quotes ('user' != 'other').
+func (c *Cond) String() string {
+	s := c.X.String()
+	if _, err := parseClassicWhere(s, 0); err != nil {
+		return s
+	}
+	return quoteFields(c.X).String()
+}
+
+// quotedField is a field written in single quotes whatever its name.
+type quotedField struct{ name string }
+
+func (f *quotedField) String() string { return quoteSingle(f.name) }
+
+// quoteFields returns x with each field written in single quotes.
+func quoteFields(x EvalExpr) EvalExpr {
+	switch x := x.(type) {
+	case *Field:
+		return &quotedField{x.Name}
+	case *Call:
+		c := &Call{Func: x.Func, Args: make([]EvalExpr, len(x.Args))}
+		for i, a := range x.Args {
+			c.Args[i] = quoteFields(a)
+		}
+		return c
+	case *Unary:
+		return &Unary{Op: x.Op, X: quoteFields(x.X)}
+	case *Binary:
+		return &Binary{Op: x.Op, L: quoteFields(x.L), R: quoteFields(x.R)}
+	}
+	return x
+}
 
 // EvalFuncs lists the functions eval and where accept, with how many
 // arguments each takes (max -1 for any number).
@@ -71,6 +111,12 @@ var EvalFuncs = map[string][2]int{
 	"split": {2, 2}, "sqrt": {1, 1}, "strftime": {2, 2}, "strptime": {2, 2}, "substr": {2, 3},
 	"time": {0, 0}, "tonumber": {1, 2}, "tostring": {1, 2}, "trim": {1, 2}, "true": {0, 0},
 	"typeof": {1, 1}, "upper": {1, 1}, "urldecode": {1, 1},
+	"mvfilter": {1, 1}, "mvmap": {2, 2}, "mvfind": {2, 2}, "mvzip": {2, 3},
+	"spath": {2, 2}, "json_extract": {1, 2}, "json_keys": {1, 1}, "json_valid": {1, 1}, "json_array_to_mv": {1, 1},
+	"json_object": {0, -1}, "json_array": {0, -1}, "relative_time": {2, 2}, "mvrange": {2, 3},
+	"printf": {1, -1}, "isint": {1, 1}, "validate": {2, -1},
+	"bit_and": {2, -1}, "bit_or": {2, -1}, "bit_xor": {2, -1}, "bit_not": {1, 2},
+	"bit_shift_left": {2, 2}, "bit_shift_right": {2, 2},
 }
 
 // maxEvalDepth bounds how deeply an expression may nest, so a hostile
@@ -203,6 +249,9 @@ func evalString(c *Eval) string {
 	for i, a := range c.Assigns {
 		parts[i] = (&Field{Name: a.Field}).String() + "=" + a.Expr.String()
 	}
+	if c.Format {
+		return "fieldformat " + strings.Join(parts, ", ")
+	}
 	return "eval " + strings.Join(parts, ", ")
 }
 
@@ -245,7 +294,8 @@ func lexEval(src string, base int) ([]evalTok, error) {
 		case c == ',':
 			toks = append(toks, evalTok{etComma, ",", base + i})
 			i++
-		case c >= '0' && c <= '9':
+		case c >= '0' && c <= '9', c == '.' && i+1 < len(src) && src[i+1] >= '0' && src[i+1] <= '9' && !afterValue(toks):
+			// .25 is a number where a value starts; after a value, . joins.
 			start := i
 			for i < len(src) && src[i] >= '0' && src[i] <= '9' {
 				i++
@@ -271,7 +321,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			if i < len(src) && isEvalIdentRune(src[i]) {
 				return nil, errorf(base+start, "%q is not a number or a field name; quote field names that start with a digit, like '%s'", src[start:i+1], src[start:i+1])
 			}
-			toks = append(toks, evalTok{etNum, src[start:i], base + start})
+			text := src[start:i]
+			if text[0] == '.' {
+				text = "0" + text
+			}
+			toks = append(toks, evalTok{etNum, text, base + start})
 		case c == '"' || c == '\'':
 			start := i
 			i++
@@ -304,7 +358,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			return nil, errorf(base+i, "unexpected %q; quote field names with other characters, like 'my field'", string(r))
 		case isEvalIdentRune(c):
 			start := i
-			for i < len(src) && (isEvalIdentRune(src[i]) || src[i] >= '0' && src[i] <= '9') {
+			for i < len(src) && (isEvalIdentRune(src[i]) || src[i] >= '0' && src[i] <= '9' ||
+				// A dot between name characters is part of the name, as in
+				// Splunk: userIdentity.userName is one field. With spaces
+				// around it, . joins values.
+				src[i] == '.' && i+1 < len(src) && (isEvalIdentRune(src[i+1]) || src[i+1] >= '0' && src[i+1] <= '9')) {
 				i++
 			}
 			toks = append(toks, evalTok{etIdent, src[start:i], base + start})
@@ -320,6 +378,11 @@ func lexEval(src string, base int) ([]evalTok, error) {
 			}
 			switch op {
 			case "+", "-", "*", "/", "%", ".", "=", "==", "!=", "<", "<=", ">", ">=":
+			case "!":
+				// !x is NOT x, as Splunk's eval takes it.
+				toks = append(toks, evalTok{etIdent, "NOT", base + start})
+				i++
+				continue
 			default:
 				return nil, errorf(base+start, "unexpected %q in expression", op)
 			}
@@ -379,7 +442,23 @@ func describeEval(t evalTok) string {
 	if t.kind == etQIdent {
 		return quoteSingle(t.text)
 	}
-	return `"` + t.text + `"`
+	return quote(t.text)
+}
+
+// afterValue reports whether the last token ends a value, so a . that
+// follows joins strings rather than starting a number.
+func afterValue(toks []evalTok) bool {
+	if len(toks) == 0 {
+		return false
+	}
+	t := toks[len(toks)-1]
+	switch t.kind {
+	case etNum, etStr, etQIdent, etRParen:
+		return true
+	case etIdent:
+		return !evalKeywords[strings.ToUpper(t.text)]
+	}
+	return false
 }
 
 // ParseEvalExpr parses a value expression on its own.
@@ -409,6 +488,11 @@ func parseEvalCommand(src string, base int) (*Eval, error) {
 	c := &Eval{}
 	for {
 		t := p.next()
+		if n := p.peek(); t.kind == etOp && t.text == "-" && n.kind == etIdent && n.pos == t.pos+1 {
+			// -time=_time: Splunk takes a name that starts with -.
+			p.next()
+			t = evalTok{etQIdent, "-" + n.text, t.pos}
+		}
 		if t.kind != etIdent && t.kind != etQIdent && t.kind != etStr || t.text == "" {
 			return nil, errorf(t.pos, "eval expects name=expression, for example: eval kb=bytes/1024")
 		}
@@ -483,6 +567,31 @@ func (p *evalParser) binary(prec int) (EvalExpr, error) {
 		return nil, err
 	}
 	for {
+		if prec == precCompare && p.keyword("IN") && p.toks[p.i+1].kind == etLParen {
+			// x IN (a, b) is in(x, a, b).
+			if err := p.node(); err != nil {
+				return nil, err
+			}
+			p.next()
+			p.next() // (
+			c := &Call{Func: "in", Args: []EvalExpr{l}}
+			for {
+				a, err := p.expr()
+				if err != nil {
+					return nil, err
+				}
+				c.Args = append(c.Args, a)
+				t := p.next()
+				if t.kind == etRParen {
+					break
+				}
+				if t.kind != etComma {
+					return nil, errorf(t.pos, `expected "," or ")" in IN list`)
+				}
+			}
+			l = c
+			continue
+		}
 		op, opPrec := p.binaryOp()
 		if op == "" || opPrec != prec {
 			return l, nil

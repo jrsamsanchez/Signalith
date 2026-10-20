@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package syslog
 
 import (
@@ -136,6 +139,10 @@ type Sink interface {
 // message is dropped and counted. TCP readers wait for room instead, which
 // slows the sender down rather than losing its messages.
 type Receiver struct {
+	// Custom, when set, may parse a message again with a custom parser
+	// an admin saved (onboard.Registry.Syslog). Set it before Start.
+	Custom func(m *Message, ev *ingest.Event)
+
 	cfg  Config
 	sink Sink
 	log  *slog.Logger
@@ -761,6 +768,14 @@ func (r *Receiver) SetMaxAge(d time.Duration) {
 // wait for room in the queue (TCP) or drop the message when it is full
 // (UDP).
 func (r *Receiver) handle(ctx context.Context, data []byte, from netip.Addr, proto string, wait bool) {
+	// A message that stops the parser is dropped rather than crashing the
+	// server: handle runs on its own goroutine, where a panic is fatal.
+	defer func() {
+		if p := recover(); p != nil {
+			r.dropped.Add(1)
+			r.warn("parse", "dropped a syslog message that stopped the parser (logged once a minute)", "sender", from.String(), "panic", fmt.Sprint(p))
+		}
+	}()
 	now := r.now()
 	m := Parse(data, now)
 	if m.Raw == "" {
@@ -768,6 +783,9 @@ func (r *Receiver) handle(ctx context.Context, data []byte, from netip.Addr, pro
 	}
 	maxAge := time.Duration(r.maxAge.Load())
 	ev := m.Event(from, now, maxAge)
+	if r.Custom != nil {
+		r.Custom(&m, &ev)
+	}
 	r.names.limit(ev, from, now, maxAge)
 	r.received.Add(1)
 	r.lastMessage.Store(now.UnixNano())

@@ -1,7 +1,11 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package detect
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -16,6 +20,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jrsamsanchez/signalith/internal/endpoint"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
@@ -287,6 +292,12 @@ var sigmaEventFields = func() map[string]map[string]string {
 			"scriptblocktext": "script_block_text", "path": "script_path", "scriptblockid": "script_block_id",
 			"computer": "host", "computername": "host", "eventid": "signature_id",
 		},
+		// A pipeline module logging recorded (4103): its payload is kept
+		// as the text that ran, its context as the event's data.
+		"ps_module": {
+			"payload": "script_block_text", "contextinfo": "event_data",
+			"computer": "host", "computername": "host", "eventid": "signature_id",
+		},
 	}
 }()
 
@@ -311,7 +322,12 @@ var sigmaWindowsEvents = map[string][]string{
 	"process_access":       {"10"},
 	"create_remote_thread": {"8"},
 	"ps_script":            {"4104"},
-	"system":               {"7045"},
+	"ps_module":            {"4103"},
+	// The Windows PowerShell log's engine (400) and provider (600)
+	// starting.
+	"ps_classic_start":          {"400"},
+	"ps_classic_provider_start": {"600"},
+	"system":                    {"7045"},
 	"windefend": {"1006", "1007", "1008", "1009", "1015", "1116", "1117", "1118", "1119", "1121", "1122", "1123", "1124",
 		"1125", "1126", "1127", "1128", "1150", "1151", "2000", "2001", "2002", "2003", "2004", "2006", "3002", "5000",
 		"5001", "5004", "5007", "5008", "5009", "5010", "5011", "5012", "5013", "5101"},
@@ -374,8 +390,25 @@ func (c *sigmaConv) anyModel() bool {
 	case "m365":
 		// So are Microsoft 365's, and its alerts Alerts.
 		return true
+	case ingest.GCPService:
+		// And Google Cloud's: changes are Change events, sign-ins
+		// Authentication and reads Other.
+		return true
+	case ingest.OktaService:
+		// And Okta's: sign-ins are Authentication events, admin changes
+		// Change, threats Alerts and the rest Other.
+		return true
+	case ingest.KubernetesService:
+		// And Kubernetes's: changes to objects are Change events,
+		// requests without credentials Authentication and reads Other.
+		return true
+	case ingest.GitHubService:
+		// And GitHub's: changes are Change events, sign-ins
+		// Authentication and the rest Other.
+		return true
 	}
-	return false
+	// And Google Workspace's, which are Google Cloud's in all but name.
+	return slices.Contains(ingest.WorkspaceServices, c.category)
 }
 
 // sigmaEventIDs returns the event IDs a rule's selections name (EventID
@@ -482,6 +515,10 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 		case "codeintegrity-operational":
 			// Code Integrity's log, each rule naming its events.
 			category = "code_integrity"
+		case "powershell-classic":
+			// The Windows PowerShell log, whatever the event, searching
+			// its data (Data).
+			category = "powershell_classic"
 		case "sysmon":
 			// Sysmon's own events, by event ID: its file blocks (27, 28,
 			// 29) are file events, the rest (a configuration change)
@@ -531,6 +568,37 @@ func ConvertSigmaWith(src []byte, opt SigmaOptions) (*SigmaResult, error) {
 			// Entra ID's and Azure's logs, by Sigma's service
 			// (signinlogs), each field by Microsoft Sentinel's name.
 			category = strings.ToLower(service)
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "gcp") {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, ingest.GCPService) {
+			// Google Cloud's audit logs, each field by the log entry's
+			// name.
+			category = ingest.GCPService
+		}
+		if service, _ := r.Logsource["service"].(string); slices.Contains(ingest.WorkspaceServices, strings.ToLower(service)) {
+			// Google Workspace's audit logs, as Google Cloud has them
+			// when the organization shares them: each field by the log
+			// entry's name, or the Reports API's (eventName, new_value).
+			category = strings.ToLower(service)
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); strings.EqualFold(product, ingest.KubernetesService) {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "audit") && (category == "" || strings.EqualFold(category, "application")) {
+			// Kubernetes audit events (service: audit; some rules also
+			// name the generic category application), each field by the
+			// Event's name.
+			category = ingest.KubernetesService
+		}
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.OktaService) {
+		// Okta's System Log, each field by the LogEvent's name.
+		category = ingest.OktaService
+	}
+	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, ingest.GitHubProduct) {
+		if service, _ := r.Logsource["service"].(string); strings.EqualFold(service, "audit") {
+			// GitHub's audit log, each field by GitHub's name.
+			category = ingest.GitHubService
 		}
 	}
 	if product, _ := r.Logsource["product"].(string); category == "" && strings.EqualFold(product, "m365") {
@@ -671,10 +739,15 @@ func (c *sigmaConv) approx(format string, args ...any) {
 // Fluent Bit and from the OpenTelemetry Collector alike.
 const windowsSourcetypes = "WinEventLog:*"
 
+// macProcessSourcetype is macOS program starts, which osquery reads from
+// EndpointSecurity for Signalith (see internal/endpoint).
+const macProcessSourcetype = endpoint.ProcessStartSourcetype
+
 // productScope limits a rule to its operating system's events: a Windows
-// rule to Windows events of its log source's event IDs, and a Linux or
-// macOS rule away from Windows events, since data models such as Endpoint
-// hold events from every system and several kinds of event.
+// rule to Windows events of its log source's event IDs, a Linux or macOS
+// rule away from Windows events, and a process creation rule to its own
+// system's program starts (macOS's are osquery's), since data models such
+// as Endpoint hold events from every system and several kinds of event.
 func productScope(ls map[string]any, category string) query.Expr {
 	if scope := sigmaNetworkScope(category); scope != nil {
 		return scope
@@ -689,6 +762,12 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.ApplicationChannel}
 		case "code_integrity":
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.CodeIntegrityChannel}
+		case "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
+			st := &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ingest.WindowsPowerShellChannel}
+			if ids := sigmaWindowsEvents[category]; len(ids) > 0 {
+				return and([]query.Expr{st, &query.In{Field: "signature_id", Values: ids}})
+			}
+			return st
 		}
 		if ch, ok := sigmaNamedChannels[category]; ok {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
@@ -712,6 +791,26 @@ func productScope(ls map[string]any, category string) query.Expr {
 		if category == "m365" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.O365Sourcetype}
 		}
+	case ingest.OktaService:
+		if category == ingest.OktaService {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.OktaSourcetype}
+		}
+	case ingest.KubernetesService:
+		if category == ingest.KubernetesService {
+			// What Splunk's kube_audit macro searches.
+			return and([]query.Expr{
+				&query.Compare{Field: "sourcetype", Op: "=", Value: ingest.KubernetesSourcetype},
+				&query.Compare{Field: "source", Op: "=", Value: ingest.KubernetesSource},
+			})
+		}
+	case ingest.GitHubProduct:
+		if category == ingest.GitHubService {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GitHubSourcetype}
+		}
+	case "gcp":
+		if category == ingest.GCPService || slices.Contains(ingest.WorkspaceServices, category) {
+			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.GCPSourcetype}
+		}
 	case "azure":
 		if category == "activitylogs" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AzureActivitySourcetype}
@@ -722,6 +821,17 @@ func productScope(ls map[string]any, category string) query.Expr {
 	case "linux", "macos":
 		if category == "auditd" {
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: ingest.AuditdSourcetype}
+		}
+		if category == "process_creation" {
+			// macOS program starts are osquery's (EndpointSecurity), and
+			// only macOS rules read them.
+			mac := &query.Compare{Field: "sourcetype", Op: "=", Value: macProcessSourcetype}
+			if strings.EqualFold(p, "macos") {
+				return mac
+			}
+			return &query.Not{Child: &query.Or{Children: []query.Expr{
+				&query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}, mac,
+			}}}
 		}
 		return &query.Not{Child: &query.Compare{Field: "sourcetype", Op: "=", Value: windowsSourcetypes}}
 	}
@@ -754,11 +864,12 @@ func (c *sigmaConv) datamodel(ls map[string]any) string {
 		return "Image_Load"
 	case "process_access", "create_remote_thread", "pipe_created", "raw_access_thread":
 		return "Endpoint"
-	case "ps_script":
+	case "ps_script", "ps_module":
 		return "Script"
 	case "system":
 		return "Change"
-	case "system_event", "application", "code_integrity", "sysmon_event", "security_named":
+	case "system_event", "application", "code_integrity", "sysmon_event", "security_named",
+		"powershell_classic", "ps_classic_start", "ps_classic_provider_start":
 		return "Other"
 	case "sysmon_file_block":
 		return "Filesystem"
@@ -799,6 +910,11 @@ func (c *sigmaConv) field(name string) string {
 		}
 		if !ingest.CloudTrailField(name) {
 			c.approx("field %s is not a CloudTrail field Signalith keeps", name)
+		} else if list := ingest.CloudTrailList(name); !ingest.KnownField(cmp.Or(list, name)) {
+			// Kept, but not mapped up front: a day's budget of new names
+			// can leave it out of the index (TestCloudRuleFieldsMapped).
+			// A field inside a list is searched as the list's text.
+			c.approx("field %s is not a CloudTrail field the index template maps", name)
 		}
 		return name
 	}
@@ -806,6 +922,46 @@ func (c *sigmaConv) field(name string) string {
 		f, ok := ingest.O365SigmaField(name)
 		if !ok {
 			c.approx("field %s is not a Microsoft 365 field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.KubernetesService {
+		f, ok := ingest.KubernetesSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Kubernetes audit field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.GitHubService {
+		f, ok := ingest.GitHubField(name)
+		if !ok {
+			c.approx("field %s is not a GitHub field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.OktaService {
+		f, ok := ingest.OktaSigmaField(name)
+		if !ok {
+			c.approx("field %s is not an Okta field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if c.category == ingest.GCPService {
+		f, ok := ingest.GCPSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Google Cloud field Signalith keeps", name)
+			return name
+		}
+		return f
+	}
+	if slices.Contains(ingest.WorkspaceServices, c.category) {
+		f, ok := ingest.WorkspaceSigmaField(name)
+		if !ok {
+			c.approx("field %s is not a Google Workspace field Signalith keeps", name)
 			return name
 		}
 		return f
@@ -821,7 +977,8 @@ func (c *sigmaConv) field(name string) string {
 	if c.category == "system_event" {
 		return c.systemField(name)
 	}
-	if c.category == "application" || c.category == "code_integrity" {
+	switch c.category {
+	case "application", "code_integrity", "powershell_classic", "ps_classic_start", "ps_classic_provider_start":
 		return c.eventDataField(name)
 	}
 	if ch, ok := sigmaNamedChannels[c.category]; ok {
@@ -1119,6 +1276,11 @@ func (c *sigmaConv) selection(name string, v any) (query.Expr, error) {
 	if c.category == "webserver" {
 		return c.webSelection(name, v)
 	}
+	if c.category == ingest.GCPService {
+		if e, ok, err := c.gcpKeywords(name, v); ok {
+			return e, err
+		}
+	}
 	switch s := v.(type) {
 	case map[string]any:
 		return c.fieldMap(s)
@@ -1190,6 +1352,32 @@ func (c *sigmaConv) webSelection(name string, v any) (query.Expr, error) {
 		return nil, fmt.Errorf("selection %s is empty", name)
 	}
 	return or(kids), nil
+}
+
+// gcpKeywords is a Google Cloud rule's selection of keywords, which are
+// searched in the call's request (ingest.GCPKeywordField), where the
+// rules look for an object's annotations. It is false for a selection of
+// fields.
+func (c *sigmaConv) gcpKeywords(name string, v any) (query.Expr, bool, error) {
+	var keywords []any
+	switch s := v.(type) {
+	case string:
+		keywords = append(keywords, s)
+	case []any:
+		for _, item := range s {
+			if _, ok := item.(map[string]any); ok {
+				return nil, false, nil
+			}
+			keywords = append(keywords, item)
+		}
+	default:
+		return nil, false, nil
+	}
+	if len(keywords) == 0 {
+		return nil, true, fmt.Errorf("selection %s is empty", name)
+	}
+	e, err := c.fieldCond(ingest.GCPKeywordField+"|contains", keywords)
+	return e, true, err
 }
 
 func (c *sigmaConv) fieldMap(m map[string]any) (query.Expr, error) {

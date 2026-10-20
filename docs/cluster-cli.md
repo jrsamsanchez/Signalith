@@ -392,15 +392,22 @@ Server  Version  State  Jobs       Caught up
 siem-a  0.2.0    ready  runs them  yes
 siem-b  0.2.0    ready             yes
 
-Safe to upgrade the next server.
+Every server runs 0.2.0. Safe to start an upgrade.
 
-Upgrade siem-b next: it does not run the jobs. Upgrade siem-a, which runs them, last.
+To upgrade, start with siem-b: it does not run the jobs. Upgrade siem-a, which runs them, last.
 ```
+
+Once a server runs the new version it says `Upgrade siem-a next` instead. It promises
+that the server running the jobs hands them to the first upgraded server only when that
+will happen: the server is not a scanner, and both versions are releases the old one can
+tell apart. Builds named by a commit, such as a lab's, keep the jobs where they are
+until that server is drained or upgraded.
 
 With `-json` it prints `safe`, `servers` (each with `name`, `version`, `state`, `live`,
 `jobs`, `caught_up` as `yes`, `no` or `unknown`, and `level_max`), `versions`,
 `cluster_level`, `blockers` and `warnings` (each with a `code`, the `server` and the
-`text`) and `next`. A server that is the only one using its OpenSearch prints that
+`text`), `next`, and `current` when every server runs one version or `newest` while
+they run two. A server that is the only one using its OpenSearch prints that
 it can simply be stopped, upgraded and started, and exits 0.
 
 ## token
@@ -460,7 +467,7 @@ token made on **Servers → Add a server** of a server of the cluster. Run it as
 `.msi` or the Docker image:
 
 ```
-sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:8080
+sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:9000
 ```
 
 The token may also come from the standard input (`signalith join -`), or be left out

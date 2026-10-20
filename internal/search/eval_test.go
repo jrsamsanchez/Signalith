@@ -1,8 +1,12 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -212,6 +216,11 @@ func TestDedupCommand(t *testing.T) {
 	res, _ = runEvents(t, `* | dedup host consecutive=true | table host`)
 	if !reflect.DeepEqual(res.Rows, []Row{{"host": "h1"}, {"host": "h2"}}) {
 		t.Errorf("consecutive rows = %v", res.Rows)
+	}
+	// sortby sorts the rows dedup keeps, as in Splunk.
+	res, _ = runEvents(t, `* | dedup user sortby +user | table user, host`)
+	if !reflect.DeepEqual(res.Rows, []Row{{"user": "amy", "host": "h1"}, {"user": "bob", "host": "h1"}}) {
+		t.Errorf("sortby rows = %v", res.Rows)
 	}
 }
 
@@ -424,6 +433,7 @@ func FuzzEvalCommands(f *testing.F) {
 		`* | eval r=replace(s, "(a)(b)?", "\2\1$1"), p=pow(a, b), l=log(a, b), q=tonumber(s, 36)`,
 		`* | eval x=substr("abc", 1, "NaN"), y=substr(s, a), z=mvindex(s, "NaN"), w=substr(s, 1e300, -1e300)`,
 		`* | eval x=replace(s, "", s) | eval y=mvjoin(mvappend(x, x, x), x)`,
+		`* | eval p=printf("%-5s|%05.1f|%x|%c|%%", s, a, a, a), r=relative_time(a, s), m=mvrange(a, b, 0.5), j=json_object(s, a, "m", mvrange(0, b)), k=json_keys(j), v=spath(j, s), w=json_array_to_mv(json_array(s, a)), i=validate(isint(a), s)`,
 	} {
 		f.Add(s, "a,b,10.1.2.3", 3.5)
 	}
@@ -452,4 +462,77 @@ func FuzzEvalCommands(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestEvalChargesCopiedValues(t *testing.T) {
+	// Copying a field builds nothing new, but every copy is written out
+	// with the result, so it counts against the search's budget.
+	s := strings.Repeat("x", 900<<10)
+	rows := make([]Row, 40)
+	for i := range rows {
+		rows[i] = Row{"s": s}
+	}
+	res := &Result{Rows: rows}
+	assigns := make([]query.Assign, 10)
+	for i := range assigns {
+		assigns[i] = query.Assign{Field: fmt.Sprintf("c%d", i), Expr: mustEval(t, `if(true(), s, s)`)}
+	}
+	err := applyCommand(withEvaluator(context.Background()), res, &query.Eval{Assigns: assigns})
+	if err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Errorf("err = %v, want the search budget", err)
+	}
+	// A value the expression built is counted once, with the new field t.
+	ev := newEvaluator(context.Background())
+	res = &Result{Rows: []Row{{"s": "abc"}}}
+	if err := applyEval(context.WithValue(context.Background(), evaluatorKey{}, ev), res, &query.Eval{Assigns: []query.Assign{{Field: "t", Expr: mustEval(t, `s."def"`)}}}); err != nil || ev.produced != 6+1+fieldOverhead {
+		t.Errorf("err = %v, produced = %d, want %d", err, ev.produced, 6+1+fieldOverhead)
+	}
+}
+
+func TestEventStatsChargesEachRow(t *testing.T) {
+	// 300 rows of 20 KB: values() gives every row 100 of them, 600 MB in
+	// all, past the search's budget.
+	rows := make([]Row, 300)
+	for i := range rows {
+		rows[i] = Row{"m": fmt.Sprint(i) + strings.Repeat("x", 20<<10)}
+	}
+	res := &Result{Rows: rows}
+	c := &query.EventStats{Aggs: []query.Agg{{Func: "values", Field: "m", Alias: "v"}}}
+	err := applyCommand(withEvaluator(context.Background()), res, c)
+	if err == nil || !strings.Contains(err.Error(), "MB of values") {
+		t.Errorf("err = %v, want the search budget", err)
+	}
+	// Small results are unchanged.
+	res = &Result{Rows: []Row{{"m": "a"}, {"m": "b"}}}
+	if err := applyCommand(withEvaluator(context.Background()), res, c); err != nil || !reflect.DeepEqual(res.Rows[0]["v"], []any{"a", "b"}) {
+		t.Errorf("err = %v, rows = %v", err, res.Rows)
+	}
+}
+
+func TestCommandsCannotGrowResultsWithoutLimit(t *testing.T) {
+	// Each command shares one 4 KB value among 10,000 rows, which costs
+	// nothing to build but 40 MB to write out; ten of them pass the limit.
+	wide := strings.Repeat("x", 4000)
+	for name, cmd := range map[string]string{
+		"fillnull": `fillnull value="` + wide + `" a%d`,
+		"rex":      `rex field=s "(?<a%d>.*)"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			q := `| makeresults count=10000 | eval s="` + wide + `"`
+			for i := range 10 {
+				q += " | " + fmt.Sprintf(cmd, i)
+			}
+			e := &Engine{Store: &fakeStore{}}
+			_, err := e.Run(context.Background(), q)
+			var qe *QueryError
+			if !errors.As(err, &qe) || !strings.Contains(err.Error(), "MB") {
+				t.Fatalf("err = %v", err)
+			}
+			// Fewer of them are fine.
+			q = `| makeresults count=10000 | eval s="` + wide + `" | ` + fmt.Sprintf(cmd, 0)
+			if _, err := e.Run(context.Background(), q); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

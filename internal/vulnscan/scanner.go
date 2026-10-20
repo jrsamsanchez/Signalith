@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package vulnscan
 
 import (
@@ -43,6 +46,9 @@ type Scanner struct {
 	Log *slog.Logger
 	// Runner runs Nmap; nil finds it.
 	Runner *Runner
+	// Exploits ranks the CVEs found by CISA's KEV catalog and FIRST's EPSS
+	// scores; nil leaves them as the NVD has them.
+	Exploits *ExploitFeeds
 	// OpenVAS runs the deeper scans of the networks that ask for them;
 	// nil or not configured is not set up on this server.
 	OpenVAS *OpenVAS
@@ -204,6 +210,26 @@ func (s *Scanner) CheckNow(ctx context.Context) *Report {
 	return r
 }
 
+// sweepOpenVAS removes what earlier scans left in OpenVAS, such as the
+// logins of a scan cut off when this server stopped. The objects of
+// scans still queued or running, here or on another server sharing the
+// same OpenVAS, are kept.
+func (s *Scanner) sweepOpenVAS(ctx context.Context, ov *OpenVAS) {
+	scans, err := s.Store.Scans(ctx)
+	if err != nil {
+		return
+	}
+	live := map[string]bool{}
+	for _, sc := range scans {
+		if sc.State == StateQueued || sc.State == StateRunning {
+			live[sc.ID] = true
+		}
+	}
+	if _, err := ov.Sweep(ctx, func(id string) bool { return live[id] }); err != nil {
+		s.log().Warn("vulnerability scans: could not look for what earlier scans left in OpenVAS", "err", err)
+	}
+}
+
 func (s *Scanner) openVAS() *OpenVAS {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -289,6 +315,7 @@ func (s *Scanner) Step(ctx context.Context) error {
 	if leader {
 		s.prune(ctx, targets, false)
 	}
+	s.exploits(ctx, leader && len(set.Targets) > 0)
 	if s.busy() {
 		return nil
 	}
@@ -392,6 +419,45 @@ func (s *Scanner) failUnclaimed(ctx context.Context, scans []*Scan, targets map[
 		}
 		s.finish(ctx, sc, StateFailed, msg)
 		s.log().Warn("vulnerability scan not picked up by its scanner", "network", t.Name, "scanner", t.Scanner)
+	}
+}
+
+// exploits keeps the exploit feeds current: every server reads the
+// stored copy when it changes, and the server running the jobs downloads
+// them once a day while there are networks to scan, then ranks the hosts
+// kept again.
+func (s *Scanner) exploits(ctx context.Context, download bool) {
+	if s.Exploits == nil {
+		return
+	}
+	if err := s.Exploits.Load(ctx, false); err != nil && ctx.Err() == nil {
+		s.log().Debug("exploit intelligence: could not read the stored copy", "err", err)
+	}
+	if !download {
+		return
+	}
+	run := func() {
+		kept, err := s.Exploits.Refresh(ctx)
+		if err != nil && ctx.Err() == nil {
+			s.log().Debug("exploit intelligence: refresh incomplete", "err", err)
+		}
+		if !kept {
+			return
+		}
+		n, err := s.Store.Reprioritize(ctx, s.Exploits.Current())
+		if err != nil && ctx.Err() == nil {
+			s.log().Warn("exploit intelligence: could not rank the hosts kept again", "err", err)
+		} else if n > 0 {
+			s.log().Info("exploit intelligence: hosts ranked again", "hosts", n)
+		}
+	}
+	s.mu.Lock()
+	async := s.async
+	s.mu.Unlock()
+	if async {
+		go run()
+	} else {
+		run()
 	}
 }
 
@@ -528,9 +594,18 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 		case !ov.Configured():
 			ovErr = "OpenVAS is not set up on " + s.Server + ", so only Nmap ran. Settings > Scanners says how to set it up."
 		default:
-			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID)
+			logins, lerr := s.Store.loginsFor(ctx, t)
+			if lerr != nil {
+				ovErr = "OpenVAS did not run: " + lerr.Error()
+				s.log().Warn("vulnerability scan: OpenVAS scan skipped; the Nmap results are kept", "network", t.Name, "scan", sc.ID, "err", lerr)
+				break
+			}
+			s.sweepOpenVAS(ctx, ov)
+			s.log().Info("vulnerability scan: OpenVAS scan started", "network", t.Name, "scan", sc.ID,
+				"ssh_login", logins.SSH != nil, "windows_login", logins.SMB != nil,
+				"esxi_login", logins.ESXi != nil, "snmp_login", logins.SNMP != nil)
 			var oerr error
-			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, func(p float64) {
+			deep, oerr = ov.Scan(ctx, t, "Signalith "+t.Name+" "+sc.ID, logins, func(p float64) {
 				pmu.Lock()
 				prog.Task, prog.Percent, prog.ETA = "OpenVAS", p, time.Time{}
 				pmu.Unlock()
@@ -573,6 +648,10 @@ func (s *Scanner) runScan(parent context.Context, sc *Scan, t Target, set Settin
 	hosts, counts, cveErr := s.assess(parent, sc, t, found, set.CVELookup, finished)
 	if len(deep) > 0 {
 		hosts = MergeOpenVAS(hosts, deep, t, sc.ID, finished)
+		counts = Recount(hosts)
+	}
+	if x := s.Exploits.Current(); x != nil {
+		x.Apply(hosts)
 		counts = Recount(hosts)
 	}
 	if err := s.Store.SaveHosts(parent, t.ID, hosts); err != nil {

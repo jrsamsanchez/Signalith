@@ -19,7 +19,7 @@
 # to auto, so new days get a copy on a second node.
 
 x-node: &node
-  image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+  image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
   restart: unless-stopped
   depends_on:
     setup: { condition: service_completed_successfully }
@@ -79,6 +79,7 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
 
   opensearch-3:
     <<: *node
@@ -97,6 +98,7 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
 
   signalith:
     environment:

@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Add data > Network sensor > Set up a new sensor.
 //
 // The Network sensor option has two tabs: "I already run Zeek or

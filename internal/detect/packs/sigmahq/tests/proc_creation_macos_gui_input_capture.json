@@ -1,0 +1,5 @@
+{"rule": "60f1ce20-484e-41bd-85f4-ac4afec2c541", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"dialog answer -e unlock display","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/osascript","path":"/osascript"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"dialog answer -e unlock display","path":"/usr/local/bin/helper"}}
+]}

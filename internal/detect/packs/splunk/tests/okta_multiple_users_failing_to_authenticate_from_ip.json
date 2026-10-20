@@ -1,0 +1,6 @@
+{"rule": "de365ffa-42f5-46b5-b43f-fa72290b8218", "cases": [
+  {"expect":true,"source":"synthesized","channel":"okta","event_id":"log","data":{"actor.alternateId":"CORP\\tester","eventType":"user.session.start","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"actor.alternateId":"CORP\\tester","eventType":"user.session.start","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"actor.alternateId":"CORP\\tester","eventType":"user.session.staru","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}},
+  {"expect":false,"source":"synthesized","channel":"okta","event_id":"log","data":{"actor.alternateId":"CORP\\tester","outcome.result":"FAILURE","target{}.displayName":"Example App","target{}.type":"AppInstance"}}
+]}

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package datamodel defines Signalith's common field model. Field names
 // follow Splunk's CIM so ES analysts recognize them, and every parser maps
 // its source onto one of these models.
@@ -5,7 +8,9 @@ package datamodel
 
 import (
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // SampleField marks every event, risk event and finding the "Load sample
@@ -35,6 +40,7 @@ var Common = []Field{
 	{Name: "_time", Type: "time", Description: "When the event happened"},
 	{Name: "host", Type: "string", Description: "Host that reported the event"},
 	{Name: "sourcetype", Type: "string", Description: "Source format, for example WinEventLog:Security or linux:auth"},
+	{Name: "source", Type: "string", Description: "Where the event was read from: a log file, a Windows event log, journald, or how it arrived (syslog, otlp, osquery, agent)"},
 	{Name: "datamodel", Type: "string", Description: "Data model the event was mapped to"},
 	{Name: "vendor_product", Type: "string", Description: "Product that produced the event"},
 	{Name: "signature_id", Type: "string", Description: "Vendor event code, such as a Windows event ID"},
@@ -70,7 +76,7 @@ var Models = []Model{
 	},
 	{
 		Name:        "Endpoint",
-		Description: "Process launches on hosts (Windows 4688, Sysmon)",
+		Description: "Process launches on hosts (Windows 4688, Sysmon, Sysmon for Linux, Linux auditd, osquery on macOS)",
 		Fields: []Field{
 			{Name: "action", Type: "string", Description: "What happened", Examples: []string{"allowed"}},
 			{Name: "user", Type: "string", Description: "Account that started the process"},
@@ -390,9 +396,10 @@ var Models = []Model{
 	},
 	{
 		Name:        "Script",
-		Description: "PowerShell script blocks run on Windows hosts (event 4104)",
+		Description: "PowerShell script blocks (event 4104) and pipelines (4103, module logging) run on Windows hosts",
 		Fields: []Field{
-			{Name: "script_block_text", Type: "text", Description: "The script text that ran"},
+			{Name: "script_block_text", Type: "text", Description: "The script text that ran; for a pipeline, its command and the values bound to its parameters"},
+			{Name: "event_data", Type: "text", Description: "For a pipeline, its context: host program, command and account, as Windows writes them"},
 			{Name: "script_path", Type: "string", Description: "File the script came from, when it came from one"},
 			{Name: "script_block_id", Type: "string", Description: "ID that ties together the parts of a long script"},
 			{Name: "user", Type: "string", Description: "Account that ran the script"},
@@ -469,6 +476,10 @@ var Models = []Model{
 			{Name: "cvss", Type: "number", Description: "CVSS base score, from 0 to 10", Examples: []string{"9.8"}},
 			{Name: "severity", Type: "string", Description: "Severity from the score: critical, high, medium, low, or informational for an open port", Examples: []string{"critical", "high"}},
 			{Name: "known_exploited", Type: "string", Description: "true when the CVE is in CISA's Known Exploited Vulnerabilities catalog: attackers are using it", Examples: []string{"true", "false"}},
+			{Name: "known_ransomware", Type: "string", Description: "For a known exploited CVE: true when CISA says ransomware gangs use it", Examples: []string{"true", "false"}},
+			{Name: "kev_due", Type: "string", Description: "For a known exploited CVE: the date CISA tells U.S. agencies to fix it by", Examples: []string{"2021-11-17"}},
+			{Name: "epss", Type: "number", Description: "EPSS score from FIRST: the probability, from 0 to 1, that the CVE is exploited in the next 30 days", Examples: []string{"0.944"}},
+			{Name: "epss_percentile", Type: "number", Description: "Share of all CVEs with a lower EPSS score, from 0 to 1", Examples: []string{"0.9997"}},
 			{Name: "url", Type: "string", Description: "Where to read about the vulnerability", Examples: []string{"https://nvd.nist.gov/vuln/detail/CVE-2023-38408"}},
 			{Name: "scan_id", Type: "string", Description: "Scan that found it"},
 			{Name: "scan_network", Type: "string", Description: "Network the scan covered, as named on the Vulnerabilities page", Examples: []string{"Office LAN"}},
@@ -551,4 +562,45 @@ const RiskModel = "Risk"
 // IndexName returns the daily index an event of a model goes to.
 func IndexName(prefix, model, day string) string {
 	return prefix + "-" + strings.ToLower(model) + "-" + day
+}
+
+// MaxPart is the most parts one day's index of a model may be split into
+// by rollover (see ingest.Rollover).
+const MaxPart = 999
+
+// PartName returns part n of a day's index: the index itself for 1, else
+// the index name with -n after the day, as in signalith-network-2026.10.17-2.
+func PartName(dayIndex string, n int) string {
+	if n <= 1 {
+		return dayIndex
+	}
+	return dayIndex + "-" + strconv.Itoa(n)
+}
+
+// SplitPart returns the day's index a part belongs to and the part's
+// number (1 for the day's index itself), or ok false for a name that does
+// not end in a day (YYYY.MM.DD) or a day and a part number from 2 to
+// MaxPart.
+func SplitPart(name string) (dayIndex string, n int, ok bool) {
+	dayIndex, n = name, 1
+	if i := strings.LastIndexByte(name, '-'); i > 0 && i+1 < len(name) && name[i+1] != '0' {
+		if v, err := strconv.Atoi(name[i+1:]); err == nil && v >= 2 && v <= MaxPart && endsInDay(name[:i]) {
+			dayIndex, n = name[:i], v
+		}
+	}
+	if !endsInDay(dayIndex) {
+		return "", 0, false
+	}
+	return dayIndex, n, true
+}
+
+// endsInDay reports whether name ends in -YYYY.MM.DD, a real date.
+func endsInDay(name string) bool {
+	const layout = "2006.01.02"
+	if len(name) < len(layout)+2 || name[len(name)-len(layout)-1] != '-' {
+		return false
+	}
+	ds := name[len(name)-len(layout):]
+	d, err := time.Parse(layout, ds)
+	return err == nil && d.Format(layout) == ds
 }

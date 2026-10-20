@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package config
 
 import (
@@ -263,7 +266,7 @@ func TestLoadSharedPrecedence(t *testing.T) {
 	}
 	// A shared value taken away gives the default.
 	delete(sh.Cluster, "auth.session_timeout")
-	if c, err := LoadShared(path, sh); err != nil || c.Auth.SessionTimeout != "" || c.SessionIdle() != 12*time.Hour {
+	if c, err := LoadShared(path, sh); err != nil || c.Auth.SessionTimeout != "" || c.SessionIdle() != DefaultSessionIdle {
 		t.Errorf("without the shared value: %v %q", err, c.Auth.SessionTimeout)
 	}
 

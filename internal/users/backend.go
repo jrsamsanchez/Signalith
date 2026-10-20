@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package users
 
 import (
@@ -20,12 +23,13 @@ import (
 // Record is a user as a Backend keeps it: the user, their password hash
 // (local users only), their session epoch, which a password change, a
 // disable or a directory refusal moves on so their sessions end on every
-// server, and the version read (ETag), for a change that must not undo
-// another made since.
+// server, their two-step sign-in (nil for none), and the version read
+// (ETag), for a change that must not undo another made since.
 type Record struct {
 	User
 	Hash  string
 	Epoch int64
+	MFA   *MFA
 	ETag  string
 }
 
@@ -79,14 +83,16 @@ func Actor(ctx context.Context) string {
 // the session epoch.
 type storedUser struct {
 	User
-	PasswordHash string `json:"password_hash,omitempty"`
-	SessionEpoch int64  `json:"session_epoch,omitempty"`
+	PasswordHash string     `json:"password_hash,omitempty"`
+	SessionEpoch int64      `json:"session_epoch,omitempty"`
+	MFA          *StoredMFA `json:"mfa,omitempty"`
 }
 
 type storeFile struct {
 	Version           int          `json:"version"`
 	Users             []storedUser `json:"users"`
 	BuiltinLastSignIn *time.Time   `json:"builtin_last_sign_in,omitempty"`
+	BuiltinMFA        *StoredMFA   `json:"builtin_mfa,omitempty"`
 }
 
 // fileBackend keeps users in a JSON file, or in memory only when it has
@@ -111,6 +117,7 @@ type fileBackend struct {
 	mu          sync.RWMutex
 	recs        map[string]Record
 	builtinLast *time.Time
+	builtinMFA  *MFA
 	// sum is the SHA-256 of the file as last read or written. The content
 	// is compared, not the modification time, which some file systems
 	// keep only to the second or two.
@@ -139,8 +146,25 @@ func ReadFile(path string) (map[string]Record, *time.Time, error) {
 // ReadFile (signalith cluster export --to-files), with each user's
 // password hash and session epoch as given.
 func WriteFile(path string, recs map[string]Record, builtinLast *time.Time) error {
+	return WriteFileMFA(path, recs, builtinLast, nil)
+}
+
+// ReadFileBuiltinMFA returns the built-in admin's two-step sign-in in
+// the users file at path, nil when there is none, as a cluster's import
+// carries it over.
+func ReadFileBuiltinMFA(path string) (*MFA, error) {
 	f := newFileBackend(path)
-	f.recs, f.builtinLast = recs, builtinLast
+	if _, err := f.reloadLocked(); err != nil {
+		return nil, err
+	}
+	return f.builtinMFA, nil
+}
+
+// WriteFileMFA is WriteFile with the built-in admin's two-step sign-in
+// (nil for none).
+func WriteFileMFA(path string, recs map[string]Record, builtinLast *time.Time, builtinMFA *MFA) error {
+	f := newFileBackend(path)
+	f.recs, f.builtinLast, f.builtinMFA = recs, builtinLast, builtinMFA
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.saveLocked()
@@ -228,20 +252,20 @@ func (f *fileBackend) applyLocked(data []byte) (bool, error) {
 		if _, dup := recs[u.Username]; u.Username == "" || dup {
 			return false, fmt.Errorf("users file %s lists an empty or repeated username %q", f.path, su.Username)
 		}
-		if u.Source != SourceDirectory {
+		if u.Source != SourceDirectory && u.Source != SourceSSO {
 			u.Source = SourceLocal
 		}
 		if !u.Role.Valid() {
 			// An unknown role grants nothing.
 			u.Role = Viewer
 		}
-		r := Record{User: u, Epoch: su.SessionEpoch}
+		r := Record{User: u, Epoch: su.SessionEpoch, MFA: su.MFA.Open(fileKeys(), MFAField(u.Username))}
 		if u.Source == SourceLocal {
 			r.Hash = su.PasswordHash
 		}
 		recs[u.Username] = r
 	}
-	f.recs, f.builtinLast, f.sum = recs, sf.BuiltinLastSignIn, sum
+	f.recs, f.builtinLast, f.builtinMFA, f.sum = recs, sf.BuiltinLastSignIn, sf.BuiltinMFA.Open(fileKeys(), BuiltinMFAField), sum
 	return true, nil
 }
 
@@ -386,11 +410,40 @@ func (f *fileBackend) saveLocked() error {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	sf := storeFile{Version: 1, Users: make([]storedUser, 0, len(f.recs)), BuiltinLastSignIn: f.builtinLast}
+	keys := fileKeys()
+	builtinMFA, err := SealMFA(keys, BuiltinMFAField, f.builtinMFA)
+	if err != nil {
+		return err
+	}
+	sf := storeFile{Version: 1, Users: make([]storedUser, 0, len(f.recs)), BuiltinLastSignIn: f.builtinLast, BuiltinMFA: builtinMFA}
+	// What was encrypted is remembered, so the next write keeps it.
+	sealed := map[string]string{}
 	for _, n := range names {
 		r := f.recs[n]
-		sf.Users = append(sf.Users, storedUser{User: r.User, PasswordHash: r.Hash, SessionEpoch: r.Epoch})
+		m, err := SealMFA(keys, MFAField(n), r.MFA)
+		if err != nil {
+			return err
+		}
+		if m != nil && r.MFA.Secret != "" && r.MFA.Sealed != m.Secret {
+			sealed[n] = m.Secret
+		}
+		sf.Users = append(sf.Users, storedUser{User: r.User, PasswordHash: r.Hash, SessionEpoch: r.Epoch, MFA: m})
 	}
+	defer func() {
+		if err != nil {
+			return
+		}
+		for n, v := range sealed {
+			r := f.recs[n]
+			r.MFA = r.MFA.clone()
+			r.MFA.Sealed = v
+			f.recs[n] = r
+		}
+		if builtinMFA != nil && f.builtinMFA.Secret != "" {
+			f.builtinMFA = f.builtinMFA.clone()
+			f.builtinMFA.Sealed = builtinMFA.Secret
+		}
+	}()
 	data, err := json.MarshalIndent(sf, "", "  ")
 	if err != nil {
 		return err
@@ -556,4 +609,44 @@ func (f *fileBackend) builtinLastSignIn() *time.Time {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.builtinLast
+}
+
+// BuiltinMFA returns the built-in admin's two-step sign-in, or nil.
+func (f *fileBackend) BuiltinMFA() *MFA {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.builtinMFA.clone()
+}
+
+// ChangeBuiltinMFA changes the built-in admin's two-step sign-in with fn,
+// as it is in the file now. Its sessions are kept in memory, so ending
+// them is left to the caller.
+func (f *fileBackend) ChangeBuiltinMFA(_ context.Context, _ string, fn MFAChange) error {
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	release, err := f.begin()
+	if err != nil {
+		return err
+	}
+	defer release()
+	f.mu.Lock()
+	next, _, err := fn(f.builtinMFA.clone())
+	if errors.Is(err, ErrNoChange) {
+		f.mu.Unlock()
+		return nil
+	}
+	if err != nil {
+		f.mu.Unlock()
+		return err
+	}
+	prev := f.builtinMFA
+	f.builtinMFA = next
+	if err := f.saveLocked(); err != nil {
+		f.builtinMFA = prev
+		f.mu.Unlock()
+		return err
+	}
+	f.mu.Unlock()
+	f.notify()
+	return nil
 }

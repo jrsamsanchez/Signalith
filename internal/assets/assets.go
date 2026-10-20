@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package assets holds the asset and identity lists that give events
 // business context, like the Splunk ES asset and identity framework: who
 // owns a host, how critical it is, who a username belongs to, and whether

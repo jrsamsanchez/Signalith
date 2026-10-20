@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package search
 
 import (
@@ -86,5 +89,70 @@ func TestPercentileNames(t *testing.T) {
 		if got := query.Percentile(in); got != want {
 			t.Errorf("Percentile(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+// Stats over _time give epoch seconds, as in Splunk, whether OpenSearch
+// computes them (in milliseconds) or they run over rows in memory.
+func TestTimeStatsInSeconds(t *testing.T) {
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":2}},"aggregations":{"m0":{"value":1760700000000,"value_as_string":"2025-10-17T11:20:00.000Z"},"m1":{"value":1760700060500},"m2":{"min":1760700000000,"max":1760700060000}}}`}}
+	e := &Engine{Store: fs}
+	res, err := e.Run(context.Background(), `* | stats min(_time) as first max(_time) as last range(_time) as span`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["first"] != int64(1760700000) || r["last"] != 1760700060.5 || r["span"] != int64(60) {
+		t.Errorf("in OpenSearch: %v", r)
+	}
+	fs = &fakeStore{responses: []string{`{"hits":{"total":{"value":2},"hits":[{"_source":{"@timestamp":"2025-10-17T11:21:00Z","dest":"a"}},{"_source":{"@timestamp":"2025-10-17T11:20:00.250Z","dest":"a"}}]}}`}}
+	e = &Engine{Store: fs}
+	res, err = e.Run(context.Background(), `* | eval x=1 | stats min(_time) as first max(_time) as last by dest | convert timeformat="%H:%M:%S" ctime(last)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Rows[0]; r["first"] != 1760700000.25 || r["last"] != "11:21:00" {
+		t.Errorf("in memory: %v", r)
+	}
+}
+
+// In expressions _time is epoch seconds, as in Splunk, so it compares with
+// numbers such as addinfo's info_min_time; stdev of one value is 0.
+func TestTimeIsANumberAndStdevOfOne(t *testing.T) {
+	rows := `{"hits":{"total":{"value":2},"hits":[` +
+		`{"_source":{"@timestamp":"2026-01-01T12:00:00Z","dest":"a","n":5}},` +
+		`{"_source":{"@timestamp":"2026-01-01T11:00:00Z","dest":"b","n":7}}]}}`
+	run := func(q string) []Row {
+		t.Helper()
+		e := &Engine{Store: &fakeStore{responses: []string{rows}}}
+		res, err := e.Run(context.Background(), q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Rows
+	}
+	// 1767268800 is 2026-01-01T12:00:00Z.
+	if got := run(`* | eval x=1 | where _time >= 1767268800`); len(got) != 1 || got[0]["dest"] != "a" {
+		t.Errorf("where = %v", got)
+	}
+	if got := run(`* | eval x=1 | search _time>=1767268801`); len(got) != 0 {
+		t.Errorf("search = %v", got)
+	}
+	if got := run(`* | eval t=_time+60 | table dest t`); got[0]["t"] != int64(1767268860) {
+		t.Errorf("eval = %v", got)
+	}
+	got := run(`* | eval x=1 | stats stdev(n) as sd var(n) as v by dest`)
+	if len(got) != 2 || got[0]["sd"] != int64(0) || got[0]["v"] != int64(0) {
+		t.Errorf("stdev of one value = %v", got)
+	}
+	e := &Engine{Store: &fakeStore{responses: []string{`{"hits":{"total":{"value":1}},"aggregations":{"m0":{"count":1,"variance":0}}}`}}}
+	res, err := e.Run(context.Background(), `* | stats stdev(n) as sd`)
+	if err != nil || res.Rows[0]["sd"] != int64(0) {
+		t.Errorf("stdev of one value in OpenSearch = %v %v", res.Rows, err)
+	}
+	// The base search reads a number for _time as seconds too, so a
+	// bound means the same before and after the first pipe.
+	p := compile(t, `_time>=1767268800 _time<1767268800.5`)
+	if got := asJSON(p.Body["query"]); !strings.Contains(got, `"gte":1767268800000`) || !strings.Contains(got, `"lt":1767268800500`) {
+		t.Errorf("base search = %s", got)
 	}
 }

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -30,6 +33,12 @@ func ago(d time.Duration) *time.Time {
 func server(name string, t *cluster.Traffic) cluster.ServerStatus {
 	return cluster.ServerStatus{NodeID: "n_" + name, Name: name, State: cluster.StateReady, HeartbeatAt: hbAt,
 		StartedAt: hbAt.Add(-time.Hour), Uptime: time.Hour, Detail: &cluster.Heartbeat{Name: name, Traffic: t}}
+}
+
+func scannerServer(name string, t *cluster.Traffic) cluster.ServerStatus {
+	sv := server(name, t)
+	sv.Detail.Role = cluster.RoleScanner
+	return sv
 }
 
 func traffic(batches, events int64, lastAgent *time.Time, syslog int64) *cluster.Traffic {
@@ -102,6 +111,8 @@ func TestAgentTrafficWarnings(t *testing.T) {
 			server("siem-a", traffic(0, 0, nil, 0)), server("siem-b", traffic(0, 0, nil, 0))}, nil},
 		{"one server", []cluster.ServerStatus{server("siem-a", traffic(1, 1, ago(time.Minute), 0))}, nil},
 		{"older version", []cluster.ServerStatus{server("siem-a", traffic(1, 1, ago(time.Minute), 0)), server("siem-b", nil)}, nil},
+		{"a scanner", []cluster.ServerStatus{
+			server("siem-a", traffic(1, 1, ago(time.Minute), 0)), server("siem-b", traffic(1, 1, ago(time.Minute), 0)), scannerServer("scan-1", traffic(0, 0, nil, 0))}, nil},
 	} {
 		got := agentTrafficWarnings(cluster.Status{Servers: tc.servers})
 		if len(got) != len(tc.want) {

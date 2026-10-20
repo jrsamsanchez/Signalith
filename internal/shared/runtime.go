@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -96,6 +99,10 @@ type Runtime struct {
 	boot          string
 	started       bool
 	keyFileWarned bool
+	// newerKID is the newer cluster key afterCycle last looked for the
+	// cluster with, so a cluster document that does not verify with it
+	// is looked at once, not on every cycle.
+	newerKID string
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
 	// approval is a waiting server's request to join (approval.go).
@@ -858,6 +865,39 @@ func (rt *Runtime) markContact() {
 // holds the job lease, and otherwise works out which legacy mode it is
 // in.
 func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
+	rt.look(ctx, mayFound, nil)
+}
+
+// newerKey is the cluster key kid when this server keeps it in its state
+// folder and kept it after the key the hub signs with.
+func (rt *Runtime) newerKey(kid string) *ClusterKey {
+	active := rt.Hub().Keys().Active()
+	if active == nil {
+		return nil
+	}
+	keys, err := rt.readKeys()
+	if err != nil {
+		return nil
+	}
+	k := keys.get(kid)
+	if k == nil || slices.IndexFunc(keys.stored, func(s *ClusterKey) bool { return s.ID() == kid }) < 0 {
+		return nil
+	}
+	ks := rt.keyStore()
+	added, err := ks.ClusterKeyCreated(kid)
+	if err != nil {
+		return nil
+	}
+	was, err := ks.ClusterKeyCreated(active.ID())
+	if err != nil || !added.After(was) {
+		return nil
+	}
+	return k
+}
+
+// look is evaluate, verifying the cluster document with only the key
+// when one is given.
+func (rt *Runtime) look(ctx context.Context, mayFound bool, only *ClusterKey) {
 	c, prefix := rt.target()
 	keys, kerr := rt.readKeys()
 	if kerr != nil {
@@ -903,12 +943,20 @@ func (rt *Runtime) evaluate(ctx context.Context, mayFound bool) {
 		rt.notMember(ctx)
 		return
 	}
+	candidates := keys.all
+	if only != nil {
+		candidates = []*ClusterKey{only}
+	}
 	var active *ClusterKey
-	for _, k := range keys.all {
+	for _, k := range candidates {
 		if Verify(NewKeySet(k), ClusterDocID, &e) == nil && e.ID == ClusterDocID {
 			active = k
 			break
 		}
+	}
+	if active == nil && only != nil {
+		rt.setMode(ModeKeyMissing, "the cluster document does not verify with cluster key "+only.ID())
+		return
 	}
 	if active == nil {
 		err := Verify(NewKeySet(keys.all[0], keys.all[1:]...), ClusterDocID, &e)
@@ -1168,6 +1216,21 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	if cdoc.Missing() {
 		rt.setMode(ModeGone, "")
 		return
+	}
+	// A copy of the shared settings (cache.enc) written before this
+	// server kept a new cluster key gives the hub only the key it was
+	// signed with: with the cluster document signed with a newer key this
+	// server keeps, it joins with that key. An older one, such as a key a
+	// rotation retired, never takes the cluster back.
+	if p := h.problemOf(ClusterDocID); p != nil && p.unknownKID != "" && h.Keys().Get(p.unknownKID) == nil {
+		rt.mu.Lock()
+		tried := rt.newerKID == p.unknownKID
+		rt.newerKID = p.unknownKID
+		rt.mu.Unlock()
+		if k := rt.newerKey(p.unknownKID); k != nil && !tried {
+			rt.look(ctx, false, k)
+			return
+		}
 	}
 	body, ok := cdoc.Get()
 	if !ok {

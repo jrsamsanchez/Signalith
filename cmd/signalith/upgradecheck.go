@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -71,7 +74,9 @@ func printUpgrade(x *clusterCLI, v upgradeVerdict) {
 		fmt.Fprintln(x.out, v.Next)
 		return
 	}
-	if v.Safe {
+	if v.Safe && v.Current != "" {
+		fmt.Fprintf(x.out, "Every server runs %s. Safe to start an upgrade.\n", upgradecheck.VersionText(v.Current))
+	} else if v.Safe {
 		fmt.Fprintln(x.out, "Safe to upgrade the next server.")
 	} else {
 		fmt.Fprintln(x.out, "Not safe yet:")

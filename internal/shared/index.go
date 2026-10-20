@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package shared keeps the configuration that every Signalith server of a
 // cluster shares in OpenSearch, in the <prefix>_config index: one signed
 // document per setting group (Doc) or per item of a list that grows

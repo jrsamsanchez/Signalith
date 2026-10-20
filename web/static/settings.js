@@ -1,3 +1,5 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
 // Settings page (admins): how the server runs. The sections, the settings
 // in them and what each one does come from api/settings (the registry in
 // internal/config/settings.go); this page only draws them. Changes wait in
@@ -30,7 +32,7 @@
   // admin's yes, when saving, to a web address only the server reaches.
   const S = {
     view: null, seq: 0, drafts: {}, replacing: {}, fields: {}, sections: {}, controls: {},
-    saveErr: null, tests: {}, restart: null, restartErr: '', pinned: '', pinnedY: 0, focusKey: '', localOK: false,
+    saveErr: null, tests: {}, restart: null, restartErr: '', pinned: '', pinnedY: 0, focusKey: '', focusRestart: false, localOK: false,
     // With shared settings: server is the node id of the server shown ('' for
     // the one answering), cards the section cards of each group, and cluster
     // the restart of servers asked for here, as GET api/requests/<id> has it.
@@ -94,6 +96,11 @@
       keys: ['m365.cloud', 'm365.tenant_id', 'm365.client_id', 'm365.client_secret'],
       path: 'api/settings/test/m365', button: 'Test', icon: 'cloud', busy: 'Signing in to Microsoft…',
       lead: 'Signs in to Microsoft with the settings above, saved or not, and checks the app can read the audit log.',
+    },
+    okta: {
+      keys: ['okta.domain', 'okta.client_id', 'okta.private_key', 'okta.key_id', 'okta.api_token'],
+      path: 'api/settings/test/okta', button: 'Test', icon: 'cloud', busy: 'Signing in to Okta…',
+      lead: 'Signs in to Okta with the settings above, saved or not, and reads the last hour of the System Log.',
     },
   };
 
@@ -371,6 +378,16 @@
     S.focusKey = key;
     showPage('settings');
   };
+  // openRestart opens the page at its Restart now banner, for the Add
+  // data page once it saved a change that waits for a restart.
+  window.openRestart = () => {
+    S.focusKey = '';
+    S.focusRestart = true;
+    // This server's own page, which has the banner for its restart.
+    if (S.server) window.openServerSettings('');
+    else if (currentPage === 'settings') load();
+    else showPage('settings');
+  };
   // openServerSettings opens the page of one server (a node id; '' for
   // this one), for the Servers page.
   window.openServerSettings = (id) => {
@@ -384,6 +401,15 @@
     if (currentPage === 'settings') load(); else showPage('settings');
   };
   function focusSetting() {
+    if (S.focusRestart) {
+      S.focusRestart = false;
+      const banner = $('st-restart');
+      if (banner) {
+        window.scrollTo({ top: 0 });
+        banner.focus({ preventScroll: true });
+      }
+      return;
+    }
     const key = S.focusKey;
     S.focusKey = '';
     const row = key && document.querySelector(`#st-main .st-field[data-key="${CSS.escape(key)}"]`);
@@ -482,7 +508,83 @@
       TESTS[sec.sid] ? testBlock(sec.sid) : null,
       // The certificate in use is this server's, so it goes with its own
       // HTTPS settings.
-      sec.sid === 'https' && selfShown() && sec.group !== 'cluster' ? certificateBlock() : null);
+      sec.sid === 'https' && selfShown() && sec.group !== 'cluster' ? certificateBlock() : null,
+      sec.sid === 'search' ? summaryBlock() : null);
+  }
+
+  // summaryBlock shows how far each data model's summaries reach and
+  // their gaps, read from api/summaries after the page is drawn.
+  function summaryBlock() {
+    const box = el('div', { class: 'st-test st-sum', id: 'st-sum', 'aria-live': 'polite' },
+      el('h4', { class: 'section-title' }, 'Summaries now'),
+      el('p', { class: 'st-test__lead muted' }, 'Reading the summaries…'));
+    loadSummaries(box);
+    return box;
+  }
+  async function loadSummaries(box) {
+    let r;
+    try {
+      r = await api('api/summaries');
+    } catch (e) {
+      box.replaceChildren(el('h4', { class: 'section-title' }, 'Summaries now'),
+        el('p', { class: 'st-test__lead' }, 'Couldn’t read the summaries: ' + sentence(e.message)));
+      return;
+    }
+    const tenants = r.tenants || [];
+    const lead = !r.enabled
+      ? 'Summaries are off, so every search reads the events themselves.'
+      : 'The server that runs the background jobs builds them every minute. Searches read events for gaps and for anything not yet summarized.';
+    const parts = [el('h4', { class: 'section-title' }, 'Summaries now'), el('p', { class: 'st-test__lead' }, lead)];
+    if (r.enabled) {
+      for (const t of tenants) {
+        if (tenants.length > 1) parts.push(el('h5', { class: 'st-sum__tenant' }, t.name || t.tenant));
+        if (t.error) parts.push(el('p', { class: 'st-field__note' }, icon('triangle-alert', 'icon--xs'), t.error + ' Searches read events until it can.'));
+        const models = t.models || [];
+        const states = models.map(summaryState);
+        const count = (tone) => states.filter((x) => x.tone === tone).length;
+        const bits = [];
+        if (count('ok')) bits.push(count('ok') + ' up to date');
+        if (count('info')) bits.push(count('info') + ' building');
+        if (count('warn')) bits.push(count('warn') + ' behind');
+        if (count('danger')) bits.push(count('danger') + ' failing');
+        if (count('muted')) bits.push(count('muted') + ' not built yet');
+        const open = count('warn') + count('danger') > 0;
+        parts.push(el('details', Object.assign({ class: 'st-sum__details' }, open ? { open: '' } : {}),
+          el('summary', {}, models.length + ' data models: ' + listWords(bits)),
+          summaryTable(models, states)));
+      }
+    }
+    box.replaceChildren(...parts);
+  }
+  const sumDay = (t) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const sumTime = (t) => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  // summaryState says how one model's summaries are doing. A first build
+  // works forward from the oldest day, so far behind means still building.
+  function summaryState(m) {
+    if (m.last_error) return { tone: 'danger', text: 'Last build failed: ' + m.last_error };
+    if (!m.built) return { tone: 'muted', text: 'Not built yet' };
+    if (m.behind_s > 86400) return { tone: 'info', text: 'Building, reached ' + sumDay(m.through) };
+    if (m.behind_s > 1800) return { tone: 'warn', text: 'Behind by ' + uptime(m.behind_s) };
+    return { tone: 'ok', text: 'Up to date' + (m.last_build ? ', built ' + ago(m.last_build) : '') };
+  }
+  function summaryTable(models, states) {
+    const rows = models.map((m, i) => {
+      const { tone, text: state } = states[i];
+      const gaps = m.gaps || [];
+      const gapText = gaps.length
+        ? el('span', { title: gaps.map((g) => sumTime(g.from) + ' to ' + sumTime(g.to)).join('\n') },
+          gaps.length === 1 ? sumTime(gaps[0].from) + ' to ' + sumTime(gaps[0].to) : gaps.length + ' gaps')
+        : el('span', { class: 'muted' }, 'None');
+      return el('tr', {},
+        el('td', {}, m.model),
+        el('td', {}, m.built ? sumDay(m.from) + ' to ' + sumTime(m.through) : el('span', { class: 'muted' }, '–')),
+        el('td', {}, gapText),
+        el('td', { class: 'num' }, m.built ? Number(m.rows).toLocaleString() : ''),
+        el('td', { class: 'st-sum__state', 'data-tone': tone }, state));
+    });
+    return el('div', { class: 'table-wrap st-sum__wrap' }, el('table', { class: 'table st-sum__table' },
+      el('thead', {}, el('tr', {}, ...['Data model', 'Covers', 'Gaps', 'Rows', 'State'].map((h) => el('th', h === 'Rows' ? { scope: 'col', class: 'num' } : { scope: 'col' }, h)))),
+      el('tbody', {}, ...rows)));
   }
 
   // certificateBlock says how Signalith serves HTTPS now: the mode in use,
@@ -1440,6 +1542,9 @@
     } else if (id === 'm365') {
       if (r.ok) kids.push(dxAlert('success', 'Signed in to Microsoft 365', r.message));
       else kids.push(dxAlert('danger', 'Couldn’t read the audit log', r.message, settingLink(r.field || '')));
+    } else if (id === 'okta') {
+      if (r.ok) kids.push(dxAlert('success', 'Signed in to Okta', r.message, r.dpop ? el('p', {}, 'The app requires DPoP: Signalith proves each token with a key of its own.') : null));
+      else kids.push(dxAlert('danger', 'Couldn’t read the System Log', r.message, settingLink(r.field || '')));
     } else if (r.ok) {
       const took = r.took_ms < 1000 ? 'in under a second' : `in ${(r.took_ms / 1000).toFixed(1)} seconds`;
       kids.push(dxAlert('success', 'The model answered ' + took, null, el('div', { class: 'st-test__qa' },

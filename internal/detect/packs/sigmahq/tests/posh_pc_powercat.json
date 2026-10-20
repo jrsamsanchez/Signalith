@@ -1,0 +1,4 @@
+{"rule": "c5b20776-639a-49bf-94c7-84f912b91c15", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{"Data":"powercat x"}},
+  {"expect":false,"source":"synthesized","channel":"Windows PowerShell","event_id":"400","data":{}}
+]}

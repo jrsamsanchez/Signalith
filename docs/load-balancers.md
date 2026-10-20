@@ -13,7 +13,8 @@ on, and nothing changes while they are off.
 ## How it fits together
 
 ```
-agents, browsers ──► 8443 ┐               ┌─► siem-a  :8080 web, :6514/:5514 syslog
+browsers ──────────► 8443 ┐               ┌─► siem-a  :9000 web, :7779 agents,
+agents ────────────► 7779 ┤               │           :6514/:5514 syslog
 syslog TLS ────────► 6514 ├─ load balancer┤
 syslog TCP ────────► 514  ┘ (PROXY v2)    └─► siem-b
 syslog UDP ────────► virtual IP (keepalived) or one server
@@ -36,9 +37,9 @@ On every server (the Settings page, or `signalith.yaml`):
 | Setting | Where on the Settings page | What to set |
 | --- | --- | --- |
 | `server.trusted_proxies` | HTTPS: Trusted reverse proxies | The balancers' own addresses, such as `10.0.0.20` and `10.0.0.21` |
-| `server.proxy_protocol` | Web server: PROXY protocol from load balancers | On. Applies after a restart; `SIGNALITH_PROXY_PROTOCOL=true` sets it too |
+| `server.proxy_protocol` | Web server: PROXY protocol from load balancers | On. It covers the web port and the agent port. Applies after a restart; `SIGNALITH_PROXY_PROTOCOL=true` sets it too |
 | `syslog.proxy_protocol` | Syslog: PROXY protocol from load balancers | On, when syslog over TCP or TLS goes through the balancer. Applies after a restart; `SIGNALITH_SYSLOG_PROXY_PROTOCOL=true` sets it too |
-| `server.public_url` | Web server: Public address | The balancer's address, such as `https://siem.example.com:8443`, so Add data gives it to agents |
+| `server.public_url` | Web server: Public address | The balancer's address, such as `https://siem.example.com:8443`. Add data gives agents its host on the agent port, `https://siem.example.com:7779` |
 
 ```yaml
 server:
@@ -66,8 +67,8 @@ trusts every address (`0.0.0.0/0` or `::/0`).
 
 ## The samples
 
-- **`haproxy.cfg`**: HAProxy in TCP mode for the web port (8443), syslog over TLS
-  (6514) and syslog over TCP (514), with `send-proxy-v2`, `/readyz` checks and
+- **`haproxy.cfg`**: HAProxy in TCP mode for the web port (8443), the agent port (7779), syslog over TLS
+  (6514) and plain syslog over TCP (514, once `syslog.tcp` is turned on), with `send-proxy-v2`, `/readyz` checks and
   `balance leastconn`. Change the `server` lines to your servers' addresses.
 - **`nginx-stream.conf`**: the same with nginx's stream module and `proxy_protocol on`.
   Open source nginx only notices a stopped server when a connection to it fails; it
@@ -90,7 +91,7 @@ docker compose -f deploy/docker/docker-compose.cluster.yml up -d
 docker compose -f deploy/docker/docker-compose.cluster.yml exec signalith-a signalith initial-password
 ```
 
-Open `https://localhost:8443` and sign in as `admin`. The Servers page lists both
+Open `https://localhost:8443` and sign in as `signalithadmin`. The Servers page lists both
 servers, and the Health page's **All servers** card shows what each received. Stop one
 (`docker compose -f deploy/docker/docker-compose.cluster.yml stop signalith-b`) and
 keep working. Each server still has its own certificate authority there, so the
@@ -103,6 +104,11 @@ On Add data, **Where do agents send?** offers the shared address and each server
 and says which servers the shared address reaches (see
 [Where agents send](servers.md#several-servers-behind-one-address)). Use the shared
 address: agents then carry on with another server when one stops.
+
+Agents send to the [agent port](sending-data.md#the-agent-port), 7779 by default, not the
+web port. The balancer must forward port 7779 to each server's agent port as well as the
+web port, or agents can't reach any server through it. The agent port answers `/readyz`
+too, so the balancer can check it the same way.
 
 ## Checking it works
 

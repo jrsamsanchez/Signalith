@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterauth
 
 import (
@@ -263,5 +266,28 @@ func TestBuiltinRenameAcceptsBothNames(t *testing.T) {
 	}
 	if a.docs.BuiltinName() != "root" {
 		t.Errorf("built-in admin = %q", a.docs.BuiltinName())
+	}
+}
+
+// A user provisioned (SCIM) on A is on B with its external id, and their
+// first sign-in on B binds their identity for A too.
+func TestProvisionedUserIsShared(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	if _, err := a.store.Provision(ctx, users.Provisioned{Username: "pat@example.com", Name: "Pat", ExternalID: "E9", Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	u, ok := b.store.Get("pat@example.com")
+	if !ok || u.ExternalID != "E9" || !u.Pending() {
+		t.Fatalf("B's pat: %+v %v", u, ok)
+	}
+	sub := users.SSOSubject("https://idp.example.com", "9")
+	if _, err := b.store.SeeSSOUser(ctx, users.SSOUser{Username: "pat@example.com", Role: users.Analyst, Subject: sub, IDs: []string{"9", "E9"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	if u, _ := a.store.Get("pat@example.com"); u.Subject != sub || u.ExternalID != "E9" || u.Name != "Pat" {
+		t.Errorf("A's pat: %+v", u)
 	}
 }

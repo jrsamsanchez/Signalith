@@ -1,0 +1,5 @@
+{"rule": "ae9d710f-dcd1-4f75-a0a5-93a73b5dda0e", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"submit","path":"/launchctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/launchctl","path":"/launchctl"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"submit","path":"/usr/local/bin/helper"}}
+]}

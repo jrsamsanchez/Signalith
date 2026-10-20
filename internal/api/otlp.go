@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -30,6 +33,14 @@ const otlpLogsRoute = "POST /api/otlp/v1/logs"
 func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	isJSON := ct == "application/json"
+	if t, wait := s.agentTenant(r); wait {
+		w.Header().Set("Retry-After", tenantAgentRetry)
+		writeOTLPStatus(w, isJSON, http.StatusServiceUnavailable, tenantAgentWait)
+		return
+	} else if t != nil {
+		t.handleOTLPLogs(w, r)
+		return
+	}
 	fail := func(status int, retry string, err error) {
 		if retry != "" {
 			w.Header().Set("Retry-After", retry)
@@ -90,7 +101,7 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		defer releaseRaw()
 	}
-	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait)
+	slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "token:"+who.ID)
 	if err != nil {
 		fail(http.StatusServiceUnavailable, "5", err)
 		return

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ldaptest runs a small LDAP server in the same process, for tests
 // and demos. It answers simple binds and searches with the filters
 // directory sign-in uses (and, or, not, equality, presence, substrings,

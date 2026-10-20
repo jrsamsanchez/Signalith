@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs Signalith on Linux as a systemd service, and joins it to the
 # servers of an existing Signalith (a cluster) or sets it up as a first
 # server.
@@ -6,7 +8,7 @@
 # The Servers page's "Add a server" dialog gives one line that downloads
 # this script from a server of the cluster, checks it, and runs it:
 #
-#   echo 'SJ1....' | sudo sh install.sh --from https://siem-a:8080 \
+#   echo 'SJ1....' | sudo sh install.sh --from https://siem-a:9000 \
 #     --version 1.5.0 --sha256 <program's SHA-256> --join -
 #
 # "--join -" reads the token from the standard input, so it is never on a
@@ -55,10 +57,10 @@ fail() {
 }
 usage() {
   cat <<'USAGE'
-Usage: sudo sh install.sh [--join - --from https://<server>:8080]
+Usage: sudo sh install.sh [--join - --from https://<server>:9000]
                           [--version <v>] [--sha256 <hex>] [--binary <file>]
                           [--name <server name>] [--listen <addr:port>]
-                          [--node-url https://<this server>:8080]
+                          [--node-url https://<this server>:9000]
 
   --join      The token from Servers > Add a server, or - to read it from
               the standard input. Without it this machine becomes a first
@@ -69,7 +71,7 @@ Usage: sudo sh install.sh [--join - --from https://<server>:8080]
   --sha256    The SHA-256 the program must have.
   --binary    Use this file as the program instead of downloading it.
   --name      This server's name on the Servers page (default: the host name).
-  --listen    Address and port for the web page, API and agents.
+  --listen    Address and port for the web page and API (agents send to port 7779 on its host).
   --node-url  The address the other servers reach this one at.
 USAGE
 }
@@ -242,6 +244,10 @@ Wants=network-online.target
 Type=simple
 User=signalith
 Group=signalith
+# Run as root ("+"), and never stopping the start ("-"): notes next to the
+# config file that the built-in admin still has the first password, which
+# only root can read, so the server asks for a new one at the next sign-in.
+ExecStartPre=-+/usr/local/bin/signalith initial-password -c /etc/signalith/signalith.yaml -note
 ExecStart=/usr/local/bin/signalith serve -c /etc/signalith/signalith.yaml
 Restart=on-failure
 RestartSec=5
@@ -262,7 +268,7 @@ TimeoutStopSec=100
 # LoadCredential=master.key:/etc/credstore/signalith-master.key
 
 # Lets the signalith user open the syslog port 514 (ports below 1024 are
-# privileged on Linux) and nothing else.
+# privileged on Linux) and nothing else, for when plain syslog is turned on.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
@@ -387,8 +393,10 @@ systemctl enable --now signalith >/dev/null 2>&1 || fail "Signalith is installed
 say "Signalith is installed and its service is running."
 cat <<'MSG'
 
-  Sign in:   https://<this server>:8080 as admin
+  Sign in:   https://<this server>:9000 as signalithadmin
   Password:  sudo signalith initial-password
+  Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
+             in this server's firewall for other machines.
   OpenSearch: Signalith expects it at http://127.0.0.1:9200. To use another
              one, change it on the Settings page (OpenSearch > Address).
 

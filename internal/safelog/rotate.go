@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package safelog
 
 import (
@@ -98,10 +101,14 @@ func (r *RotatingFile) rotate() {
 	}
 	r.retryAt = time.Now().Add(time.Minute)
 	if r.size >= 2*r.maxSize {
-		if r.f.Truncate(0) == nil {
-			n, _ := fmt.Fprintf(r.f, "%s log rotation failed (%v), so the earlier log was discarded\n", time.Now().Format(time.RFC3339), renameErr)
-			r.size = int64(n)
-		}
+		// The file is written again from the start rather than truncated
+		// through the open handle: on Windows a handle opened to append
+		// cannot truncate.
+		r.f.Close()
+		r.f = nil
+		msg := fmt.Sprintf("%s log rotation failed (%v), so the earlier log was discarded\n", time.Now().Format(time.RFC3339), renameErr)
+		_ = os.WriteFile(r.path, []byte(msg), 0o640)
+		r.open()
 	}
 }
 

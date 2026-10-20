@@ -1,0 +1,7 @@
+{"rule": "5a773226-ebd7-480c-a819-fccacfeddcd9", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.disable_two_factor_requirement"}},
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"business.disable_two_factor_requirement"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"org.disable_two_factor_requiremenu"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"business.disable_two_factor_requiremenu"}}
+]}

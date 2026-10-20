@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -29,7 +32,7 @@ token's or the user's role decides what it can see, and it has no tool that
 changes anything. See docs/ai-tools.md.
 
 Settings, as flags or environment variables:
-  -url            SIGNALITH_URL            the server's web address, such as https://siem.example.com:8080
+  -url            SIGNALITH_URL            the server's web address, such as https://siem.example.com:9000
                   SIGNALITH_TOKEN          an API token made on Settings > API tokens (best)
   -token-file     SIGNALITH_TOKEN_FILE     or a file holding it
   -user           SIGNALITH_USER           or the Signalith user to read as (a viewer or analyst account is best)
@@ -111,7 +114,7 @@ func newMCPClient(addr, user, pass, token, caFile string) (*mcp.Client, error) {
 	}
 	u, err := url.Parse(addr)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return nil, fmt.Errorf("the Signalith address %q is not a web address such as https://siem.example.com:8080", addr)
+		return nil, fmt.Errorf("the Signalith address %q is not a web address such as https://siem.example.com:9000", addr)
 	}
 	if u.User != nil {
 		return nil, errors.New("put the username and password in SIGNALITH_USER and SIGNALITH_PASSWORD, not in the address")

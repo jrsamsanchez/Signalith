@@ -1,0 +1,15 @@
+{"rule": "297ae038-edc2-4b2e-bb3e-7c5fc94dd5c7", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"x","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files (x86)\\Avant Browser\\ \\avant.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files\\BraveSoftware\\ \\brave.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Users\\ \\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\ \\MsSense.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"cdn.discordapp.com","Image":"\\AppData\\Local\\Discord\\\\Discord.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"dropbox.com","Image":"C:\\Program Files\\Dropbox\\Client\\\\Dropbox.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"\\WindowsApps\\MicrosoftEdge.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files (x86)\\Microsoft\\EdgeCore\\ \\msedge.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files (x86)\\Falkon\\\\falkon.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationHostname":"pages.dev","Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","Initiated":"true"}}
+]}

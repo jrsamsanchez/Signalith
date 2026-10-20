@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 //go:build greenbone
 
 package vulnscan
@@ -22,6 +25,10 @@ import (
 //	SIGNALITH_GREENBONE_USER     default admin
 //	SIGNALITH_GREENBONE_PASSWORD default admin
 //	SIGNALITH_GREENBONE_TARGETS  default 172.29.0.50,172.29.0.51
+//	SIGNALITH_GREENBONE_SSH_KEY  the private key the SSH target lets
+//	                             signalith-scan sign in with; unset skips
+//	                             the signed-in scan
+//	SIGNALITH_GREENBONE_SSH      the SSH target (default 172.29.0.52)
 //	SIGNALITH_GREENBONE_REPORT   a Markdown file to write the findings to
 func TestGreenbone(t *testing.T) {
 	env := func(k, def string) string {
@@ -68,7 +75,7 @@ func TestGreenbone(t *testing.T) {
 
 	start := time.Now()
 	last := -1.0
-	found, err := ov.Scan(ctx, Target{Networks: targets, Ports: "80,6379"}, "Signalith Greenbone check", func(p float64) {
+	found, err := ov.Scan(ctx, Target{Networks: targets, Ports: "80,6379"}, "Signalith Greenbone check", ScanLogins{}, func(p float64) {
 		if p >= last+10 {
 			t.Logf("scan %.0f%% after %s", p, time.Since(start).Round(time.Second))
 			last = p
@@ -98,6 +105,63 @@ func TestGreenbone(t *testing.T) {
 	// What Signalith shows: merged into the hosts and counted.
 	hosts := MergeOpenVAS(nil, found, Target{ID: "gb", Name: "Greenbone check"}, "s1", time.Now())
 	t.Logf("as hosts: %+v", Recount(hosts))
+
+	// Signed in over SSH with a key, OpenVAS reads the installed packages
+	// and reports the ones with security advisories, which it cannot see
+	// from outside.
+	keyFile := env("SIGNALITH_GREENBONE_SSH_KEY", "")
+	if keyFile == "" {
+		t.Log("SIGNALITH_GREENBONE_SSH_KEY is not set: no signed-in scan")
+		return
+	}
+	key, err := os.ReadFile(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sshHost := env("SIGNALITH_GREENBONE_SSH", "172.29.0.52")
+	start = time.Now()
+	login := &Login{Kind: LoginSSH, Username: "signalith-scan", Auth: AuthKey, Port: 22, Secret: string(key)}
+	signed, err := ov.Scan(ctx, Target{Networks: []string{sshHost}, Ports: "22"}, "Signalith Greenbone signed-in check", ScanLogins{SSH: login}, func(float64) {})
+	if err != nil {
+		t.Fatalf("signed-in scan: %v", err)
+	}
+	advisories := 0
+	for _, f := range signed {
+		if strings.Contains(f.Vuln.Name, "Security Advisory") {
+			advisories++
+		}
+	}
+	t.Logf("signed-in scan done in %s with %d findings, %d from security advisories", time.Since(start).Round(time.Second), len(signed), advisories)
+	appendReport(t, env("SIGNALITH_GREENBONE_REPORT", ""), sshHost, signed, advisories)
+	if advisories == 0 {
+		t.Errorf("the signed-in scan of %s found no package advisories: OpenVAS did not sign in", sshHost)
+	}
+	if left, err := leftovers(ctx, ov, "Signalith Greenbone signed-in check"); err != nil || left != 0 {
+		t.Errorf("tasks, targets and logins left behind = %d, %v", left, err)
+	}
+}
+
+// appendReport adds the signed-in scan's findings to the report.
+func appendReport(t *testing.T, path, host string, found []Finding, advisories int) {
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		t.Errorf("report: %v", err)
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "\n## Signed-in scan over SSH (%s)\n\n%d findings, %d from package security advisories.\n\n", host, len(found), advisories)
+	n := 0
+	for _, x := range found {
+		if n == 15 {
+			fmt.Fprintf(f, "\nand %d more.\n", len(found)-n)
+			break
+		}
+		fmt.Fprintf(f, "- %s %.1f: %s\n", x.Vuln.Severity, x.Vuln.CVSS, strings.ReplaceAll(x.Vuln.Name, "|", "/"))
+		n++
+	}
 }
 
 // waitFor calls ok until it reports true, logging its note now and then.
@@ -122,18 +186,14 @@ func waitFor(ctx context.Context, t *testing.T, limit time.Duration, what string
 	}
 }
 
-type gmpGetByFilter struct {
-	XMLName xml.Name
-	Filter  string `xml:"filter,attr"`
-}
-
 type gmpList struct {
 	gmpStatus
-	Tasks   []gmpRef `xml:"task"`
-	Targets []gmpRef `xml:"target"`
+	Tasks       []gmpRef `xml:"task"`
+	Targets     []gmpRef `xml:"target"`
+	Credentials []gmpRef `xml:"credential"`
 }
 
-// leftovers counts the tasks and targets named name.
+// leftovers counts the tasks, targets and logins named name.
 func leftovers(ctx context.Context, ov *OpenVAS, name string) (int, error) {
 	g, err := ov.open(ctx)
 	if err != nil {
@@ -141,12 +201,17 @@ func leftovers(ctx context.Context, ov *OpenVAS, name string) (int, error) {
 	}
 	defer g.Close()
 	n := 0
-	for _, cmd := range []string{"get_tasks", "get_targets"} {
+	for _, cmd := range []string{"get_tasks", "get_targets", "get_credentials"} {
 		var l gmpList
-		if err := g.do(ctx, gmpGetByFilter{XMLName: xml.Name{Local: cmd}, Filter: fmt.Sprintf("name=%q rows=-1", name)}, &l); err != nil {
+		filter := fmt.Sprintf("name=%q rows=-1", name)
+		if cmd == "get_credentials" {
+			// Logins are named for the scan and their kind.
+			filter = fmt.Sprintf("name~%q rows=-1", name)
+		}
+		if err := g.do(ctx, gmpGetByFilter{XMLName: xml.Name{Local: cmd}, Filter: filter}, &l); err != nil {
 			return 0, err
 		}
-		n += len(l.Tasks) + len(l.Targets)
+		n += len(l.Tasks) + len(l.Targets) + len(l.Credentials)
 	}
 	return n, nil
 }

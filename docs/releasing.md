@@ -20,22 +20,31 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
    provenance. (Between releases, the **Image (main)** workflow publishes the same kind
    of signed image as `:main` on every push to `main`; the Docker quick start runs it.)
-4. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
+4. Packages the Helm chart (`deploy/helm/signalith`) with the release's version, which
+   also picks the image it runs, pushes it to `oci://ghcr.io/jrsamsanchez/charts/signalith`
+   and signs it with Sigstore. Its `.tgz` goes on the release page with the other files.
+   (The **Helm chart** workflow installs the chart on kind for pull requests that change
+   it, and weekly; see [Kubernetes](kubernetes.md).)
+5. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
    the key is set up (below), and GitHub build provenance for every file.
-5. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
-   with install and verify steps (`.github/release-notes.md`) above the generated
-   list of changes. A version with a `-` suffix is marked as a pre-release.
-6. Once it has published, the **Website** workflow adds the new packages to the apt and
+6. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
+   with the version's own notes (`.github/releases/<version>.md`, such as `0.3.0.md`,
+   when there is one), install and verify steps (`.github/release-notes.md`) and the
+   generated list of changes. A version with a `-` suffix is marked as a pre-release
+   and uses the notes of the version it leads to.
+7. Once it has published, the **Website** workflow adds the new packages to the apt and
    dnf repositories on signalith.io (below), so `apt upgrade` and `dnf upgrade` find them.
 
 **Run workflow** on the Release workflow's page (Actions > Release) is a dry run: it
 builds and tests everything for the version you enter and keeps the files as a workflow
-artifact named `release`, and publishes nothing.
+artifact named `release`, and publishes nothing. Its summary shows the release notes the
+version would get.
 
 ## Making a release
 
-1. Make sure CI is green on `main`.
+1. Make sure CI is green on `main`, and `.github/releases/<version>.md` says what's new
+   and what to do before upgrading.
 2. Tag and push:
 
     ```sh
@@ -104,6 +113,36 @@ Add the public key line to `internal/content/trusted.keys` (the workflow log als
 it, and warns while it is missing). Keep a copy of the private key somewhere safe and
 offline. To replace a key, add the new public key next to the old one, release, switch
 the secret, and remove the old key in a later release.
+
+### Agent updates
+
+[Signalith Agents](signalith-agent.md#updates) update themselves only to agent programs
+listed in a manifest signed with the release key, an Ed25519 key of the same kind as the
+content key. With the `SIGNALITH_AGENT_KEY` secret set, the **Release** workflow, run
+from a version tag, signs the agent programs in the `.deb` and `.rpm` packages and in the container
+image (`signalith agent-programs sign -version <version> -dir <folder of agent
+programs>`, which reads the key from the environment only; the image build gets it as a
+build secret, so it stays out of the image). Agents trust the public keys in
+`internal/agentproto/release.keys`; `sign` refuses a key that is not listed there, so a
+release with the secret set but its public key missing fails instead of shipping
+updates no agent would take. Without the secret, nothing is signed and agents do not
+update themselves. CI never gets the key.
+
+The key is a secret of the `release` environment, not of the whole repository, so that
+only a run of a version tag can read it: no branch, pull request or dry run can. To set
+it up, on GitHub open **Settings** > **Environments** > **New environment**, name it
+`release`, and under **Deployment branches and tags** choose **Selected branches and
+tags** and add a rule of type **Tag** with the pattern `v*`. Then, in the environment,
+**Add environment secret** named `SIGNALITH_AGENT_KEY` with the private key. If the key
+is also a repository secret, delete that one.
+
+To set it up, make a new key the same way as the content key (or with
+`signalith agent-programs keygen`); use a key of its own, never the content key, so each
+key signs one kind of thing, add the private key line as the `SIGNALITH_AGENT_KEY`
+repository secret, and add the public key line to `internal/agentproto/release.keys`.
+Agents built with that file trust the key from then on, so keep a copy of the private
+key somewhere safe and offline. To replace it, add the new public key next to the old
+one, release, switch the secret, and remove the old key in a later release.
 
 ### Windows code signing
 

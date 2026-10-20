@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -25,11 +28,15 @@ type Vulns struct {
 	report *vulnscan.Report
 }
 
-// useNVD puts a CVE database address and API key saved on the Settings
-// page into use, and has the next setup check look again.
-func (v *Vulns) useNVD(url, key string) {
+// useNVD puts a CVE database address and API key, and the exploit feeds'
+// addresses, saved on the Settings page into use, and has the next setup
+// check look again.
+func (v *Vulns) useNVD(url, key, kevURL, epssURL string) {
 	if v.Scanner != nil && v.Scanner.NVD != nil {
 		v.Scanner.NVD.Set(url, key)
+	}
+	if v.Scanner != nil && v.Scanner.Exploits != nil {
+		v.Scanner.Exploits.Set(kevURL, epssURL)
 	}
 	v.mu.Lock()
 	v.report = nil
@@ -45,7 +52,10 @@ func (s *Server) routeVulns(api *router) {
 	// what to scan, and scanning, are for admins.
 	api.admin("GET /api/vulns/setup", s.handleVulnSetup)
 	api.admin("GET /api/vulns/scanners", s.handleVulnScanners)
-	api.admin("PUT /api/vulns/settings", s.handleSaveVulnSettings)
+	// What is scanned, and which logins are sent to it: the password is
+	// asked again, as a login sent to a host someone added hands that
+	// host the login.
+	api.sensitive("PUT /api/vulns/settings", s.handleSaveVulnSettings)
 	api.admin("POST /api/vulns/networks/{id}/scan", s.handleVulnScanNow)
 	api.admin("POST /api/vulns/scans/{id}/stop", s.handleVulnStop)
 }
@@ -162,6 +172,7 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		total.Medium += h.Counts.Medium
 		total.Low += h.Counts.Low
 		total.KEV += h.Counts.KEV
+		total.Likely += h.Counts.Likely
 	}
 	recent := scans
 	if len(recent) > 30 {
@@ -170,6 +181,10 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"settings": set, "version": v.String(), "targets": targets, "hosts": rows, "totals": total, "scans": recent,
 		"scans_here": s.scansHere(),
+	}
+	if x := s.Vulns.Scanner; x != nil && x.Exploits != nil {
+		kev, epss := x.Exploits.Status(ctx)
+		out["exploits"] = map[string]any{"kev": kev, "epss": epss, "likely_epss": vulnscan.LikelyEPSS}
 	}
 	reports, err := s.Vulns.Store.Reports(ctx)
 	if err != nil {
@@ -428,6 +443,15 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if err := s.Vulns.Store.CheckLogins(r.Context(), req.Settings); err != nil {
+		var bad *vulnscan.InputError
+		if errors.As(err, &bad) {
+			writeError(w, http.StatusBadRequest, err)
+		} else {
+			writeError(w, http.StatusBadGateway, err)
+		}
+		return
+	}
 	set, err := s.Vulns.Store.SaveSettings(r.Context(), req.Settings, cur, userOf(r))
 	if err != nil {
 		var bad *vulnscan.InputError
@@ -445,7 +469,7 @@ func (s *Server) handleSaveVulnSettings(w http.ResponseWriter, r *http.Request) 
 	for _, t := range set.Targets {
 		nets = append(nets, t.Name)
 	}
-	s.audit(r, "vulnerability scan settings saved", "networks", nets, "cve_lookup", set.CVELookup)
+	s.audit(r, "vulnerability scan settings saved", "networks", nets, "cve_lookup", set.CVELookup, "changes", vulnChanges(saved, set))
 	s.handleVulns(w, r)
 }
 
@@ -558,4 +582,55 @@ func (s *Server) handleVulnStop(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "vulnerability scan stopped", "network", sc.TargetName, "scan", sc.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"stopping": sc.ID})
+}
+
+// vulnChanges says what a save changed in each network: what it scans
+// and skips, its scanner and the logins it sends, for the audit log.
+func vulnChanges(before, after vulnscan.Settings) []string {
+	old := map[string]vulnscan.Target{}
+	for _, t := range before.Targets {
+		old[t.ID] = t
+	}
+	list := func(v []string) string {
+		if len(v) == 0 {
+			return "none"
+		}
+		return strings.Join(v, ",")
+	}
+	or := func(v string) string {
+		if v == "" {
+			return "none"
+		}
+		return v
+	}
+	var out []string
+	for _, t := range after.Targets {
+		p, ok := old[t.ID]
+		delete(old, t.ID)
+		if !ok {
+			out = append(out, fmt.Sprintf("%s added: scans %s, skips %s, scanner %s, SSH login %s, Windows login %s, ESXi login %s, SNMP login %s",
+				t.Name, list(t.Networks), list(t.Exclude), or(t.Scanner), or(t.SSHLogin), or(t.SMBLogin), or(t.ESXiLogin), or(t.SNMPLogin)))
+			continue
+		}
+		for _, d := range []struct{ what, was, now string }{
+			{"addresses", list(p.Networks), list(t.Networks)},
+			{"skipped addresses", list(p.Exclude), list(t.Exclude)},
+			{"scanner", or(p.Scanner), or(t.Scanner)},
+			{"OpenVAS", fmt.Sprint(p.OpenVAS), fmt.Sprint(t.OpenVAS)},
+			{"SSH login", or(p.SSHLogin), or(t.SSHLogin)},
+			{"Windows login", or(p.SMBLogin), or(t.SMBLogin)},
+			{"ESXi login", or(p.ESXiLogin), or(t.ESXiLogin)},
+			{"SNMP login", or(p.SNMPLogin), or(t.SNMPLogin)},
+		} {
+			if d.was != d.now {
+				out = append(out, fmt.Sprintf("%s: %s %s -> %s", t.Name, d.what, d.was, d.now))
+			}
+		}
+	}
+	for _, t := range before.Targets {
+		if _, gone := old[t.ID]; gone {
+			out = append(out, t.Name+" removed")
+		}
+	}
+	return out
 }

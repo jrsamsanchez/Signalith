@@ -1,0 +1,4 @@
+{"rule": "02cf536a-cf21-4876-8842-4159c8aee3cc", "cases": [
+  {"expect":true,"source":"synthesized","channel":"github","event_id":"audit","data":{"action":"secret_scanning_push_protection.bypass"}},
+  {"expect":false,"source":"synthesized","channel":"github","event_id":"audit","data":{}}
+]}

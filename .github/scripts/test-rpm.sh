@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Installs, upgrades and removes Signalith's .rpm in Rocky Linux 9 and
 # Fedora containers (no systemd there, so the service is not started).
 #   test-rpm.sh PREVIOUS.rpm NEW.rpm NEW_VERSION

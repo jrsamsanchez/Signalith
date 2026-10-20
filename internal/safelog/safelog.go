@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package safelog keeps the server log bounded when its contents come from
 // other people: values in log lines are cut to a sensible length, and the
 // log file on Windows rotates by size, so nobody can fill the disk through

@@ -1,0 +1,7 @@
+{"rule": "9ad44dce-7291-47f8-84a7-e343a5147242", "cases": [
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -l  x x  JavaScript x x ObjC. x","parent":"4000","path":"/usr/bin/osascript","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":true,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -l  x x  JavaScript x x ObjC. y","parent":"4000","path":"/usr/bin/osascript","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -l  x x  JavaScript x x ObjC. x","parent":"4000","path":"/usr/bin/osascripu","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"x -l  x x  JavaScript x x ObjC. x","parent":"4000","path":"/usr/local/bin/helper","pid":"4242","uid":"501","username":"tester"}},
+  {"expect":false,"source":"synthesized","channel":"osquery:process_start","event_id":"exec","data":{"cmdline":"/usr/bin/osascript","parent":"4000","path":"/usr/bin/osascript","pid":"4242","uid":"501","username":"tester"}}
+]}

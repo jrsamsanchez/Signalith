@@ -9,7 +9,7 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'docs/**', 'mkdocs.yml', 'deploy/repos/**', '.github/scripts/repo-packages.sh', '.github/workflows/pages.yml']
+    paths: ['site/**', 'docs/**', 'mkdocs.yml', 'deploy/repos/**', '.github/scripts/repo-packages.sh', '.github/scripts/llms-full.sh', '.github/workflows/pages.yml']
   workflow_run:
     workflows: [Release]
     types: [completed]
@@ -41,6 +41,10 @@ jobs:
           "$RUNNER_TEMP/mkdocs/bin/python" -m pip install --disable-pip-version-check -r docs/requirements.txt
           cp -R site "$RUNNER_TEMP/pages"
           "$RUNNER_TEMP/mkdocs/bin/mkdocs" build --strict -d "$RUNNER_TEMP/pages/docs"
+      # llms.txt (in site/) is a short summary for AI assistants and search
+      # tools; llms-full.txt adds every docs page to it as one Markdown file.
+      - name: Build llms-full.txt
+        run: .github/scripts/llms-full.sh "$RUNNER_TEMP/pages/llms-full.txt"
       # apt and dnf need the repositories signed, so they are left out until
       # the GPG key is set up (docs/releasing.md).
       - name: Build the apt and dnf repositories into the website

@@ -91,10 +91,42 @@ When the NVD cannot be reached, a scan still lists hosts, ports and software, us
 answers kept from the last 30 days, and says on the **Scans** tab that lookups failed.
 Turn lookups off altogether in **Scanner setup**.
 
-The NVD also says which CVEs are in CISA's
-[Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
-catalog. Those are marked **Exploited** on the page, counted on their own, and raise
-their own finding: attackers are using them now, so patch them first.
+### Which vulnerabilities to fix first: KEV and EPSS
+
+A scan of a few hundred hosts can find thousands of CVEs, and most will never be used
+against anyone. Signalith ranks them with two free public feeds, so the few that matter
+come first everywhere: on the host list, inside each host and in Search.
+
+- **Known exploited.** CISA's
+  [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
+  (KEV) catalog lists the CVEs attackers are using now. Signalith marks them **Exploited**,
+  adds **Ransomware** when CISA knows of ransomware campaigns using one, and shows the date
+  CISA gave US federal agencies to fix it. Patch these first.
+- **Likely exploited.** FIRST's
+  [Exploit Prediction Scoring System](https://www.first.org/epss/) (EPSS) gives every CVE a
+  daily chance, from 0 to 100%, of being exploited in the next 30 days. Most CVEs score well
+  under 1%. Each CVE shows its **EPSS** score, and one that is not known exploited but has
+  an EPSS of 10% or more is counted as **Likely exploited**: the next to fix.
+
+Hosts and CVEs are sorted known exploited first, then likely exploited, then by CVSS. The
+host list has a **Likely exploited** count next to **Known exploited**.
+
+One server downloads both feeds once a day and keeps them in OpenSearch for the others,
+and results already found are re-ranked with no new scan. The download asks for the whole
+catalog and the whole score list, so nothing about your network is sent. If it fails, it
+is tried again every hour, the last good copy stays in use, and **Scanner setup** shows
+what went wrong. Signalith also ships with a copy of the KEV catalog, so known exploited
+CVEs are marked even on a server that has never reached the internet. EPSS scores have no
+built-in copy: they change every day.
+
+On a network with no internet, download
+`https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` and
+`https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` elsewhere every day, copy
+them to the server, and enter their full paths as **Known exploited catalog address** and
+**EPSS scores address** in [Settings](settings.md), on the **Server** tab under
+**Vulnerability scans** (or set `SIGNALITH_KEV_URL` and `SIGNALITH_EPSS_URL`, or
+`vulns.kev_url` and `vulns.epss_url` in `signalith.yaml`). A file must end in `.json`,
+`.csv` or `.gz`. The same settings take the address of a mirror on your own network.
 
 ## Networks
 
@@ -160,6 +192,8 @@ To set it up on a scanning server:
 
 4. Restart Signalith. **Settings > Scanners** shows whether OpenVAS answered.
 5. Edit a network on the Vulnerabilities page and turn on **Also scan with OpenVAS**.
+6. Optional but worth it: give OpenVAS logins to sign in to the hosts with
+   ([Credentialed OpenVAS scans](#credentialed-openvas-scans)).
 
 Signalith makes a target and a task in OpenVAS for each scan and removes both when the
 scan ends; stopping the scan in Signalith stops it in OpenVAS too. OpenVAS findings are
@@ -187,28 +221,188 @@ scan covers that case: it reads the version and matches it to the NVD's CVEs, wh
 CVE-2021-41773 for Apache 2.4.49. The two find different things, which is why a network
 can use both.
 
+### Credentialed OpenVAS scans
+
+From outside, OpenVAS sees only what a host's open ports show. Signed in, it reads the
+installed packages, patches and settings, and finds far more: missing security updates,
+old kernels, weak configuration. Give it a login for each kind of host on a network: Linux
+and Unix (SSH), Windows (SMB), VMware ESXi, and network devices such as switches, routers,
+firewalls and industrial gateways (SNMP):
+
+1. Make a scan account on the hosts, with the least access it needs (below).
+2. Open **Settings > Scanners**, find **Scan logins for OpenVAS** and click **Add a login**.
+   Pick the kind, enter a name, the user name and the key or passwords, and save.
+3. On **Vulnerabilities > Networks**, edit the network, keep **Also scan with OpenVAS** on,
+   and pick the logins under **Sign in to Linux hosts with**, **Sign in to Windows hosts
+   with**, **Sign in to VMware ESXi hosts with** and **Sign in to network devices (SNMP)
+   with**. Leave any you don't need at None.
+4. Click **Scan now**. In the results, OpenVAS findings from the signed-in checks are named
+   for the package or patch, such as "Ubuntu: Security Advisory (USN-…)".
+
+#### A Linux scan account (SSH key)
+
+A plain user is enough: the package checks read `dpkg`, `rpm` and `uname` output, which
+any user can. Do not add it to `wheel`, `sudo` or `adm`. If a check you need does want
+more, allow only those exact read-only commands in a `sudoers` file, never `ALL`.
+
+```sh
+# On the scanning server, make a key pair just for scanning.
+ssh-keygen -t ed25519 -f signalith-scan -C signalith-scan -N ''
+
+# On each Linux host (or with your configuration tool):
+sudo useradd --create-home --shell /bin/sh signalith-scan
+sudo install -d -m 700 -o signalith-scan -g signalith-scan ~signalith-scan/.ssh
+echo 'from="10.0.5.20",no-port-forwarding,no-agent-forwarding,no-X11-forwarding '"$(cat signalith-scan.pub)" |
+  sudo tee ~signalith-scan/.ssh/authorized_keys
+sudo chown signalith-scan: ~signalith-scan/.ssh/authorized_keys
+sudo chmod 600 ~signalith-scan/.ssh/authorized_keys
+```
+
+`useradd` gives the account no password, so it cannot sign in with one. Put the scanning
+server's address in `from=`, so the key works from there only. Paste the
+private key file, `signalith-scan`, into the login and then delete that file: Signalith
+keeps it encrypted. An `ed25519` key is best; RSA keys of 3072 bits or more work too. A key
+with a passphrase works; enter the passphrase with it. An SSH password works where keys
+cannot be used, but avoid it: OpenVAS sends the login to every host it scans, so a host
+in the range that is not what it seems (a compromised one, or one an attacker put there)
+can keep a password and use it on the others. It only ever sees a key's signature.
+
+#### A Windows scan account (SMB)
+
+Windows keeps the patch and software lists that OpenVAS checks in the registry and WMI,
+which only members of the local Administrators group can read remotely. So the account must
+be a local administrator on the hosts it scans, and nothing more:
+
+1. In Active Directory, make a user such as `svc-signalith-scan` with a long random
+   password, and a group such as `Signalith scanners` with only that user in it. Do not add
+   it to Domain Admins or any other admin group. On the account, tick **Account is
+   sensitive and cannot be delegated**. Do not put it in **Protected Users**: that turns
+   off NTLM, which the scan signs in with.
+2. With a Group Policy Object linked to the computers to scan (not to the domain
+   controllers), add `Signalith scanners` to the local Administrators group
+   (**Computer Configuration > Preferences > Control Panel Settings > Local Users and Groups**).
+3. In the same GPO, under **User Rights Assignment**, add the group to **Deny log on
+   locally**, **Deny log on through Remote Desktop Services**, **Deny log on as a batch
+   job** and **Deny log on as a service**: it signs in over the network only.
+4. Under **Security Options**, set **Microsoft network server: Digitally sign
+   communications (always)** to Enabled, and **Network security: LAN Manager
+   authentication level** to **Send NTLMv2 response only. Refuse LM & NTLM**.
+5. Allow **File and Printer Sharing (SMB-In)** (TCP 445) in Windows Defender Firewall
+   from the scanning server's address only, and set the **Remote Registry** service to
+   Manual so it can start when asked.
+
+Every Windows host the scan reaches receives this account's sign-in, so a host that is
+not what it seems can try to relay it to another host or crack it offline. The settings
+above make both much harder; also make one account per network zone, each an
+administrator only on that zone's computers, rather than one for the whole domain, so a
+captured sign-in reaches no further. Change its password after any sign that one of the
+hosts was compromised.
+
+Enter the user name as `CORP\svc-signalith-scan`. For a computer outside a domain, a
+local account works too (its name alone), but Windows then also needs
+`LocalAccountTokenFilterPolicy` set to 1 for remote admin access, which weakens that
+computer's defenses; prefer a domain account. Change the password every few months: edit
+the login and enter the new one.
+
+#### A VMware ESXi scan account
+
+OpenVAS reads the ESXi version and build over the vSphere API (HTTPS, TCP 443) and matches
+them to VMware's advisories. A read-only account is enough; never use `root`:
+
+1. In the ESXi Host Client, open **Host > Manage > Security & users > Users** and add a
+   user such as `signalith-scan` with a long random password.
+2. Right-click **Host**, choose **Permissions**, and add the user with the **Read-only**
+   role.
+3. If the host is in lockdown mode, add the user to its **Exception Users** list.
+4. Allow TCP 443 to the host from the scanning server.
+
+Every ESXi host the scan reaches receives this password, so use one account per network
+zone, and change its password after any sign that a host was compromised.
+
+#### An SNMP scan account (network devices)
+
+OpenVAS reads a device's model, firmware version and settings over SNMP (UDP 161). A network
+with an SNMP login is scanned on all TCP ports and Nmap's top 100 UDP ports (161 among
+them) instead of the usual TCP list, or on your own ports plus UDP 161, so its scans take
+longer.
+
+Use **SNMPv3** wherever the device supports it. Signalith signs in with SHA authentication
+and AES privacy (encryption), so neither the password nor what the device sends can be
+read on the way. On the device, make a v3 user that can only read, at the `authPriv`
+security level, and allow it from the scanning server's address only. On Cisco IOS, for
+example (put your own passwords in place of the two values; the scanning server here is
+10.0.5.20):
+
+```text
+access-list 10 permit 10.0.5.20
+snmp-server view SIGNALITH-RO iso included
+snmp-server group SIGNALITH v3 priv read SIGNALITH-RO access 10
+snmp-server user signalith-scan SIGNALITH v3 auth sha AUTH-PASSWORD priv aes 128 PRIVACY-PASSWORD
+```
+
+Both passwords must be at least 8 characters and different from each other; use long
+random ones.
+
+**SNMPv1/v2c communities** are for older devices that have nothing better. A community
+crosses the network unencrypted to every device scanned, so anyone on the path can read it,
+and on many devices a community can also change settings. If you must use one: make a
+read-only community just for scanning (long and random: Signalith refuses `public`,
+`private` and other well-known defaults), allow it from the scanning server's address only,
+and put the devices that need it on a network of their own in Signalith, so the community
+is sent to them alone.
+
+#### How Signalith keeps the logins
+
+- Keys, passphrases, passwords and SNMP communities are encrypted (AES-256-GCM) before they are stored, each
+  bound to its login, and never sent back to the browser, written to a log or put in an
+  event. Editing a login keeps the saved key or password unless you enter a new one.
+- Only admins can see the list of logins, add, change or remove them, or pick them for a
+  network. Each change is in the audit log (`vulnerability scan login saved` or
+  `removed`), with the login's name, user name and whether its key or passwords changed.
+- A login is decrypted only on the server that scans the network, when a scan starts. It is
+  handed to OpenVAS for that scan alone and removed from OpenVAS when the scan ends, on a
+  connection of its own. If that fails (OpenVAS restarted, or the server stopped
+  mid-scan), the next scan removes what was left, and the server log says so.
+- Saving or changing a login, and saving the networks to scan, asks for your password
+  again (see [Confirming it's you](users.md#confirming-its-you)). The audit log records
+  each network's addresses, scanner and logins as they change.
+- Servers that share their settings encrypt the logins with the cluster key, so every
+  scanner can use them; every server of the cluster can therefore decrypt every login.
+  Rotating the cluster key, or removing a server, encrypts them again with the new key. A login saved on a single server, before it joined a cluster, is
+  encrypted with that server's own key: the list then marks it **Enter again**, and scans
+  run without OpenVAS until you edit it and enter its key or password again.
+- A login in use by a network cannot be removed: pick another one, or None, for the network
+  first. Remove the account from your hosts as well when you no longer need it.
+
 ## Results in Search, detections and assets
 
 Each finished scan writes events to the **Vulnerabilities** data model: one per open port
 (`category=open_port`) and one per CVE (`category=vulnerability`), with `dest`, `dest_ip`,
 `dest_port`, `app`, `product`, `product_version`, `cve`, `cvss`, `severity`,
 `known_exploited` and a `url` to the CVE in the NVD. They carry `signalith_intake=scanner`.
+Known exploited CVEs add `known_ransomware` (`true` or `false`) and `kev_due` (CISA's
+fix-by date), and CVEs with an EPSS score add `epss` (0 to 1) and `epss_percentile`.
 For example:
 
 ```
 datamodel=Vulnerabilities category=vulnerability known_exploited=true | stats dc(cve) as cves by dest | sort -cves
+datamodel=Vulnerabilities category=vulnerability epss>=0.5 | table dest, cve, epss, cvss
 datamodel=Vulnerabilities category=open_port app=rdp | table dest, dest_ip, product_version
 ```
 
 The built-in **Vulnerabilities** dashboard ([dashboards.md](dashboards.md#vulnerabilities))
 sums them up over the last 7 days.
 
-The Ask box understands questions such as "hosts with known exploited vulnerabilities" or
-"top CVEs".
+The Ask box understands questions such as "hosts with known exploited vulnerabilities",
+"likely exploited vulnerabilities" or "top CVEs".
 
-Three built-in detections use them (see [detections.md](detections.md)): a CVE in the Known
-Exploited Vulnerabilities catalog (high), a critical CVE (CVSS 9.0 or more, medium), and
-Telnet open (low). Each fires once a week at most for the same host and CVE.
+Five built-in detections use them (see [detections.md](detections.md)): a known exploited
+CVE (high), a known exploited CVE on a critical or high priority asset (critical), a likely
+exploited CVE (medium), a critical CVE (CVSS 9.0 or more, medium), and Telnet open (low).
+Each fires once a week at most for the same host and CVE, and each adds risk to the host,
+so a host with exploitable vulnerabilities climbs the risk list. Risk on an asset you
+marked critical or high priority in the asset list ([detections.md](detections.md#risk)) counts double or one and
+a half times.
 
 Hosts the scans find are added to the asset list as `category=scanned`, so searches and
 findings show them with asset context, unless your own list or the
@@ -229,6 +423,12 @@ it and let that server scan it:
 2. Install Nmap on it, as above.
 3. On **Vulnerabilities > Networks**, edit the network and pick that server under
    **Scanned by**. The list shows each server's state: ready, needs setup, or offline.
+   Once a scanner exists, a new network is scanned by it unless you pick another.
+
+With more than one server, **Vulnerabilities > Networks** starts with a **Scanners** list:
+each server, whether it is ready, the networks it scans, and **Scan now** to scan them all,
+or **Add a network** for a scanner with none yet. A server that no network uses shows
+**Not needed**: it does not need Nmap until you pick it to scan something.
 
 Networks that name no scanner are scanned by the server that runs the background jobs.
 Every server runs the scans of its own networks and writes the results to the shared

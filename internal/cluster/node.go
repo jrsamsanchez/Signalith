@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package cluster
 
 import (
@@ -41,7 +44,10 @@ type Settings struct {
 	Role    string
 	NodeURL string
 	Listen  string
-	Syslog  Syslog
+	// AgentListen is server.agent_listen, "" when agents send to the web
+	// port.
+	AgentListen string
+	Syslog      Syslog
 	// Fingerprints works out the files fingerprints; nil has none.
 	Fingerprints func() Fingerprints
 	// Indexed returns the last time this server stored an event (zero
@@ -83,6 +89,14 @@ type Settings struct {
 	// OSIdentity says who this server signs in to OpenSearch as, for its
 	// heartbeat; nil has none. It must not call the node.
 	OSIdentity func() *OSIdentityStatus
+	// DetTenants returns, per tenant this server runs, the fingerprint of
+	// the files its detections use, for its heartbeat; nil has none. It
+	// must not call the node.
+	DetTenants func() map[string]string
+	// DetReleased returns, per tenant, the detection buckets this server
+	// released (see Heartbeat.DetReleased); nil has none. It must not
+	// call the node.
+	DetReleased func() map[string]map[int]int64
 	// Busy names a step of the background jobs that must not be cut
 	// short, such as "retention run", while one runs, for the hand-over
 	// of the jobs to a newer version and for upgrade-check; nil is never
@@ -223,6 +237,10 @@ type heartbeatState struct {
 	checked bool
 	ver     store.Version
 	next    time.Duration
+	// good is when the last heartbeat that was written was sent, on the
+	// monotonic clock, and goodState the state it said.
+	good      time.Duration
+	goodState string
 }
 
 // member is another server's heartbeat as this one last saw it.
@@ -751,7 +769,7 @@ func (n *Node) firstHeartbeat(ctx context.Context, c *store.Client, prefix strin
 		n.mu.Lock()
 		// The next heartbeat, at once, says it is ready, and the other
 		// servers are read with it.
-		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono()}
+		n.hb = heartbeatState{checked: true, ver: nv, next: n.clock.Mono(), good: sent, goodState: StateStarting}
 		n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
 		n.lastRead = n.clock.Mono()
 		if probation {
@@ -860,8 +878,16 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 		}
 	}
 	n.mu.Lock()
-	trafficFn := n.settings.Traffic
+	trafficFn, detFn, relFn := n.settings.Traffic, n.settings.DetTenants, n.settings.DetReleased
 	n.mu.Unlock()
+	var detTenants map[string]string
+	if detFn != nil {
+		detTenants = detFn()
+	}
+	var detReleased map[string]map[int]int64
+	if relFn != nil {
+		detReleased = relFn()
+	}
 	var restartNeeded, refused []string
 	if pendingFn != nil {
 		restartNeeded, refused = pendingFn()
@@ -871,10 +897,10 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	hb := Heartbeat{Kind: "node", NodeID: n.ID(), Name: n.Name(), BootID: n.local.BootID, PrevBoot: n.local.LastBoot, State: state,
 		Version: n.opts.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Deployment: n.opts.Deployment,
 		StartedAt: n.started, HeartbeatAt: n.clock.Now().UTC(), NodeURL: n.settings.NodeURL, Listen: n.settings.Listen,
-		Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
+		AgentListen: n.settings.AgentListen, Syslog: n.settings.Syslog, Role: n.settings.Role, LeaderEligible: eligible, NotEligible: why, Leader: view.Mine && view.Valid,
 		Frozen: view.State == frozen.String(), FilesFingerprint: n.fp, MachineMoved: n.local.Moved, Problems: []string{},
 		OpenSearch: OSInfo{OK: n.contacted && n.lastErr == "", Endpoint: n.endpoint, LatencyMS: n.osLatency.Milliseconds()},
-		Features:   features}
+		Features:   features, DetTenants: detTenants, DetReleased: detReleased}
 	if n.lastErr != "" {
 		hb.OpenSearch.Problem = store.Problem(n.lastErrRaw)
 	}
@@ -952,6 +978,7 @@ func (n *Node) writeHeartbeat(ctx context.Context, state string) {
 	switch {
 	case err == nil:
 		n.hb.ver, n.contacted, n.lastContact, n.osLatency, n.lastErr, n.lastErrRaw, n.writesRefused = nv, true, n.clock.Mono(), n.clock.Mono()-sent, "", nil, false
+		n.hb.good, n.hb.goodState = sent, state
 		n.errLogged = ""
 	case store.IsClusterBlock(err):
 		// OpenSearch answers, but its disk is full.

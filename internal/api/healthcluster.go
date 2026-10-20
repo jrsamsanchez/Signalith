@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -6,7 +9,6 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
-	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // How the Health page decides that a server gets no agent traffic: agents
@@ -55,7 +57,7 @@ func (s *Server) addClusterHealth(r *http.Request, out map[string]any) {
 		return
 	}
 	p := principalOf(r)
-	out["cluster"] = clusterHealthOf(s.Cluster.Status(), p != nil && p.Role.AtLeast(users.Admin))
+	out["cluster"] = clusterHealthOf(s.Cluster.Status(), p.runsServer())
 }
 
 // running reports whether a server in st is up now: offline and stopped
@@ -102,7 +104,7 @@ func later(a, b *time.Time) *time.Time {
 // they reach another: with two or more ready servers, some server had an
 // agent batch in the last 10 minutes, and a server running for 15 minutes
 // or more had none in that time. That server is missing from the load
-// balancer or the DNS name agents send to. Times are compared on each
+// balancer or the DNS name agents send to. Scanners are left out. Times are compared on each
 // server's own clock (its heartbeat time), so clocks that differ between
 // servers do not matter.
 func agentTrafficWarnings(st cluster.Status) []string {
@@ -115,7 +117,8 @@ func agentTrafficWarnings(st cluster.Status) []string {
 	anyRecent := false
 	for _, sv := range st.Servers {
 		d := sv.Detail
-		if sv.State != cluster.StateReady || d == nil || d.Traffic == nil {
+		// A scanner only scans its zone: agents never send to it.
+		if sv.State != cluster.StateReady || d == nil || d.Traffic == nil || d.Role == cluster.RoleScanner {
 			continue
 		}
 		t := d.Traffic

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -97,5 +100,37 @@ func TestAgentsCommand(t *testing.T) {
 	}
 	if sent != stored.Load() {
 		t.Errorf("report says %d stored, server stored %d", sent, stored.Load())
+	}
+}
+
+// agent_targets sends the agents to the servers' agent port, and only
+// there.
+func TestAgentTargets(t *testing.T) {
+	var onWeb, onAgentPort atomic.Int64
+	web, agentPort := standIn(t, &onWeb), standIn(t, &onAgentPort)
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "ca.pem")
+	// httptest's servers share one certificate.
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: web.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "token.txt"), []byte("tok\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "admin.txt"), []byte("admin:pw\n"), 0o600)
+	scenario := filepath.Join(dir, "s.yaml")
+	_ = os.WriteFile(scenario, []byte(`name: agent-port
+targets: [`+web.URL+`]
+agent_targets: [`+agentPort.URL+`]
+ca_file: `+ca+`
+credentials: {admin_file: `+filepath.Join(dir, "admin.txt")+`, token_file: `+filepath.Join(dir, "token.txt")+`}
+drain: 2s
+phases:
+  - {name: load, for: 500ms, agents: {n: 2, rate: 200}}
+`), 0o600)
+	var out, errOut strings.Builder
+	if code := run(context.Background(), []string{"run", "-q", "-f", scenario}, &out, &errOut); code != exitPass {
+		t.Fatalf("exit %d\n%s\n%s", code, out.String(), errOut.String())
+	}
+	if onAgentPort.Load() == 0 || onWeb.Load() != 0 {
+		t.Errorf("stored on the agent port %d, on the web port %d", onAgentPort.Load(), onWeb.Load())
 	}
 }

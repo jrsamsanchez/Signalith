@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -65,7 +68,7 @@ func (s *Server) routeClusterServers(api *router) {
 	api.admin("POST /api/cluster/servers/{id}/resume", s.handleServerResume)
 	api.admin("DELETE /api/cluster/servers/{id}", s.handleServerRemove)
 	api.admin("POST /api/cluster/jobs/move", s.handleJobsMove)
-	api.admin("POST /api/cluster/rotate-key", s.handleRotateKey)
+	api.sensitive("POST /api/cluster/rotate-key", s.handleRotateKey)
 }
 
 // clusterServersOff is why servers cannot be drained or removed here.

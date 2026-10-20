@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package archivecrypt encrypts archive files as they are written and
 // decrypts them as they are read, as retention.Archive's Seal and Unseal.
 //

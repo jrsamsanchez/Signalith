@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Downloads the .deb and .rpm packages of the newest Signalith releases (up
 # to five, newest first, drafts and pre-releases left out) into OUTDIR, for
 # the apt and dnf repositories. Needs the GitHub CLI and GH_TOKEN.

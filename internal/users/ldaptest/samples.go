@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ldaptest
 
 // Sample directories for tests and demos. Every person's password is

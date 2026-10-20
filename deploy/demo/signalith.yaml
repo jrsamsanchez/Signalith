@@ -1,0 +1,59 @@
+# Settings for a public Signalith demo (docker-compose.demo.yml,
+# docs/demo.md), in place of the Docker quick start's signalith.yaml. No
+# secrets are kept here: the quick start's setup service makes them.
+server:
+  # The web page and API, for Caddy only: nothing publishes this port.
+  listen: 0.0.0.0:9000
+  # Demo mode takes no events in; no agent port.
+  agent_listen: "off"
+  # SIGNALITH_PUBLIC_URL in docker-compose.demo.yml sets the demo's name.
+  public_url: https://localhost
+  tls:
+    # Caddy serves HTTPS with a Let's Encrypt certificate and passes
+    # requests on over the private network between them, which never
+    # leaves this computer.
+    mode: "off"
+  # Caddy's address on that network (docker-compose.demo.yml): only it may
+  # say a request came over HTTPS, and whose it is.
+  trusted_proxies: [172.31.250.2]
+  client_header: x-forwarded-for
+opensearch:
+  url: https://opensearch:9200
+  ca_file: /run/signalith-secrets/opensearch-ca.pem
+  cert_file: /run/signalith-secrets/opensearch-client.pem
+  key_file: /run/signalith-secrets/opensearch-client-key.pem
+  index_prefix: signalith
+  replicas: auto
+search:
+  default_earliest: -24h
+  max_events: 10000
+retention:
+  # The sample is a week; it is loaded again every day.
+  days: 14
+auth:
+  admin_user: signalithadmin
+  # Visitors' own sessions last at most 2 hours whatever these say; these
+  # are for the admin, from demo.admin_networks.
+  session_timeout: 30m
+  session_max_age: 8h
+cluster:
+  leader_eligible: true
+detections:
+  dir: /var/lib/signalith/detections
+  max_findings_per_run: 100
+  catch_up: 6h
+lookups:
+  dir: /var/lib/signalith/lookups
+dashboards:
+  dir: /var/lib/signalith/dashboards
+  stale_after: 2h
+# Demo mode opens no syslog port whatever is set here.
+syslog:
+  udp: ""
+  tcp: ""
+  tls: ""
+demo:
+  enabled: true
+  # Where password sign-in still works (SIGNALITH_DEMO_ADMIN_NETWORKS
+  # overrides it): none, so the demo is managed from this computer's shell.
+  admin_networks: []

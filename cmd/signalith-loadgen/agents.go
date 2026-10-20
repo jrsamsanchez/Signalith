@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -70,7 +73,11 @@ type simAgent struct {
 	id     int
 	host   string
 	target int
-	queue  chan *agentBatch
+	// home is the target the agent starts on, and left is when it last
+	// switched away from it (see homeAfter).
+	home  int
+	left  time.Time
+	queue chan *agentBatch
 	// next is the next sequence number; only the scheduler uses it.
 	next int64
 	mu   sync.Mutex
@@ -81,6 +88,16 @@ type simAgent struct {
 // agentQueue is how many batches one agent buffers before the generator
 // drops new ones, as Fluent Bit stops reading when its buffer is full.
 const agentQueue = 256
+
+// homeAfter is how long an agent that switched targets on an error
+// stays away before it tries its own target again, as an agent behind
+// DNS round robin resolves the name again once its answer expires. So a
+// server that restarts gets its agents back rather than leaving their
+// load on the others for the rest of the run.
+var homeAfter = time.Minute
+
+// defaultBufferMB is AgentLoad.BufferMB when it is not set.
+const defaultBufferMB = 512
 
 // Fleet is the simulated Fluent Bit agents of a run. Each agent numbers
 // its events from 1 and keeps the numbers across retries, so verify can
@@ -108,6 +125,7 @@ type Fleet struct {
 	undelivered atomic.Int64 // events still unsent when the drain ended
 	dropped     atomic.Int64 // events the generator could not queue
 	pending     atomic.Int64 // events queued or being sent
+	buffered    atomic.Int64 // bytes of batches queued or being sent
 
 	switchOnError atomic.Bool
 }
@@ -128,7 +146,7 @@ func (f *Fleet) agent(i int) *simAgent {
 	for len(f.agents) <= i {
 		id := len(f.agents)
 		a := &simAgent{id: id, host: fmt.Sprintf("agent-%04d", id), target: id % len(f.targets),
-			queue: make(chan *agentBatch, agentQueue), next: 1}
+			home: id % len(f.targets), queue: make(chan *agentBatch, agentQueue), next: 1}
 		f.agents = append(f.agents, a)
 		f.wg.Add(1)
 		go f.sender(a)
@@ -148,12 +166,19 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 	}
 	batch = min(batch, 20000)
 	f.switchOnError.Store(load.SwitchOnError)
+	bufferMB := load.BufferMB
+	if bufferMB <= 0 {
+		bufferMB = defaultBufferMB
+	}
+	limit := int64(bufferMB) << 20
 	for i := range load.N {
 		f.agent(i)
 	}
 	pace(ctx, load.Rate/float64(batch), f.m, func(n int64) {
 		a := f.agent(int(n % int64(load.N)))
-		if len(a.queue) >= cap(a.queue) {
+		// When the server falls behind, unsent batches pile up; without
+		// a cap the generator runs out of memory before the run ends.
+		if len(a.queue) >= cap(a.queue) || f.buffered.Load() >= limit {
 			f.dropped.Add(int64(batch))
 			f.m.Add("agent_events_dropped", int64(batch))
 			return
@@ -161,6 +186,7 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 		b := f.build(a, batch, load.EventBytes)
 		f.sent.Add(b.events())
 		f.pending.Add(b.events())
+		f.buffered.Add(int64(len(b.body)))
 		f.m.Add("agent_events_sent", b.events())
 		a.queue <- b
 	})
@@ -211,6 +237,7 @@ func (f *Fleet) sender(a *simAgent) {
 	for b := range a.queue {
 		f.deliver(a, b)
 		f.pending.Add(-b.events())
+		f.buffered.Add(-int64(len(b.body)))
 	}
 }
 
@@ -227,6 +254,9 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			f.undelivered.Add(b.events())
 			f.m.Add("agent_events_undelivered", b.events())
 			return
+		}
+		if a.target != a.home && time.Since(a.left) >= homeAfter {
+			a.target = a.home
 		}
 		target := a.target
 		status, ans, err := f.send(a, b)
@@ -253,6 +283,9 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			return
 		}
 		if len(f.targets) > 1 && f.switchOnError.Load() {
+			if a.target == a.home {
+				a.left = time.Now()
+			}
 			a.target = (a.target + 1) % len(f.targets)
 		}
 		// Like Fluent Bit's scheduler: a growing wait with jitter.

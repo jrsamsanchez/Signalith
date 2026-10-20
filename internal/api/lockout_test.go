@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -69,7 +72,7 @@ func newLockoutServer(t *testing.T, change func(*Server)) (*Server, string, *htt
 		now := time.Now()
 		s.Limiter.Now = func() time.Time { return now }
 		for _, u := range []string{"vera", "walt"} {
-			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: u, Role: users.Analyst, Password: u + "-password"}); err != nil {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: u, Role: users.Analyst, Password: "the-" + u[:1] + "-password"}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -116,7 +119,7 @@ func TestSharedAddressUsersDoNotLockEachOtherOut(t *testing.T) {
 			for i := 0; i < 6; i++ {
 				signInWith(t, cl, base, attempt{user: "vera", pass: "guess"})
 			}
-			r := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password"})
+			r := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password"})
 			if !shared {
 				// Without the setting the address is one client, and locked.
 				if r.code != http.StatusTooManyRequests || !strings.Contains(logs.String(), "server.shared_addresses") {
@@ -127,7 +130,7 @@ func TestSharedAddressUsersDoNotLockEachOtherOut(t *testing.T) {
 			if r.code != http.StatusOK {
 				t.Errorf("walt behind a shared address = %d %v", r.code, r.body)
 			}
-			if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password"}); r.code != http.StatusOK {
+			if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password"}); r.code != http.StatusOK {
 				t.Errorf("vera after 6 wrong guesses at her password behind a shared address = %d %v", r.code, r.body)
 			}
 			if strings.Contains(logs.String(), "locked_out=true") {
@@ -154,10 +157,10 @@ func TestAttackerBehindTrustedProxyIsKeyedOnForwardedAddress(t *testing.T) {
 			t.Fatalf("guess %d = %d %v", i+1, r.code, r.body)
 		}
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "198.51.100.7"}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "198.51.100.7"}); r.code != http.StatusTooManyRequests {
 		t.Errorf("the attacker's address after 10 guesses = %d", r.code)
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "203.0.113.20"}); r.code != http.StatusOK {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "203.0.113.20"}); r.code != http.StatusOK {
 		t.Errorf("vera from her own address behind the proxy = %d %v", r.code, r.body)
 	}
 	want := `user=vera client=198.51.100.7 peer=127.0.0.1 method=session reason="wrong password"`
@@ -180,7 +183,7 @@ func TestForwardedHeadersFromUntrustedPeerAreIgnored(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		signInWith(t, cl, base, attempt{user: "vera", pass: "guess", xff: fmt.Sprintf("198.51.100.%d", i)})
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "203.0.113.99"}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "203.0.113.99"}); r.code != http.StatusTooManyRequests {
 		t.Errorf("a new X-Forwarded-For from an untrusted peer got a fresh allowance: %d", r.code)
 	}
 	if strings.Contains(logs.String(), "198.51.100.") || strings.Contains(logs.String(), "peer=") {
@@ -196,7 +199,7 @@ func TestKnownBrowserSignsInDuringAnAttack(t *testing.T) {
 		s.Config.Server.TrustedProxies = []string{"127.0.0.1", "::1"}
 		s.Config.Server.ClientHeader = config.ClientHeaderXFF
 	})
-	first := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.50"})
+	first := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.50"})
 	known := knownCookies(first.cookies)
 	if first.code != 200 || len(known) != 1 {
 		t.Fatalf("first sign-in = %d, known-browser cookies %v", first.code, first.cookies)
@@ -218,14 +221,14 @@ func TestKnownBrowserSignsInDuringAnAttack(t *testing.T) {
 		t.Errorf("%d of 60 guesses from many addresses were checked", checked)
 	}
 	// A stranger with the right password is slowed down and told why.
-	r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.99"})
+	r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.99"})
 	msg, _ := r.body["error"].(string)
 	if r.code != http.StatusTooManyRequests || r.body["code"] != "locked_out" || r.retry == "" ||
 		!strings.Contains(msg, "use a browser you have signed in to this account with before") {
 		t.Errorf("a stranger during the attack = %d %v (Retry-After %q)", r.code, r.body, r.retry)
 	}
 	// vera's browser, from a new address, is let in.
-	r = signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.77", cookies: known})
+	r = signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.77", cookies: known})
 	if r.code != http.StatusOK {
 		t.Fatalf("vera's known browser during the attack = %d %v", r.code, r.body)
 	}
@@ -234,19 +237,19 @@ func TestKnownBrowserSignsInDuringAnAttack(t *testing.T) {
 		t.Errorf("a typo from the known browser = %d", r.code)
 	}
 	// The cookie is for vera only.
-	walt := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password", xff: "192.0.2.51"})
+	walt := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password", xff: "192.0.2.51"})
 	for i := 0; i < 31; i++ {
 		signInWith(t, cl, base, attempt{user: "walt", pass: "guess", xff: fmt.Sprintf("10.2.0.%d", i)})
 	}
-	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password", xff: "192.0.2.78", cookies: known}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password", xff: "192.0.2.78", cookies: known}); r.code != http.StatusTooManyRequests {
 		t.Errorf("vera's cookie let a stranger past walt's slow-down: %d", r.code)
 	}
-	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password", xff: "192.0.2.78", cookies: knownCookies(walt.cookies)}); r.code != http.StatusOK {
+	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password", xff: "192.0.2.78", cookies: knownCookies(walt.cookies)}); r.code != http.StatusOK {
 		t.Errorf("walt's own browser = %d %v", r.code, r.body)
 	}
 	// A forged or changed cookie is a stranger's.
 	forged := []*http.Cookie{{Name: known[0].Name, Value: known[0].Value[:20] + strings.Repeat("A", len(known[0].Value)-20)}}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.79", cookies: forged}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.79", cookies: forged}); r.code != http.StatusTooManyRequests {
 		t.Errorf("a changed cookie got past the slow-down: %d", r.code)
 	}
 	if _, ok := s.knownBrowser(cookieRequest(known), "vera"); !ok {
@@ -278,17 +281,17 @@ func TestBasicAuthFromAKnownAddressDuringAnAttack(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if code := basic("192.0.2.60", "walt-password"); code != 200 {
+	if code := basic("192.0.2.60", "the-w-password"); code != 200 {
 		t.Fatalf("the script's first request = %d", code)
 	}
 	s.creds = credCache{} // its next request checks the password again
 	for i := 0; i < 10; i++ {
 		basic(fmt.Sprintf("10.3.0.%d", i), "guess")
 	}
-	if code := basic("192.0.2.61", "walt-password"); code != http.StatusTooManyRequests {
+	if code := basic("192.0.2.61", "the-w-password"); code != http.StatusTooManyRequests {
 		t.Errorf("a stranger with the right password = %d", code)
 	}
-	if code := basic("192.0.2.60", "walt-password"); code != 200 {
+	if code := basic("192.0.2.60", "the-w-password"); code != 200 {
 		t.Errorf("the script at its known address = %d", code)
 	}
 }
@@ -299,7 +302,7 @@ func TestBasicAuthFromAKnownAddressDuringAnAttack(t *testing.T) {
 func TestKnownBrowserCookieEndsWithThePassword(t *testing.T) {
 	t.Parallel()
 	s, base, cl, _ := newLockoutServer(t, nil)
-	first := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password"})
+	first := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password"})
 	old := knownCookies(first.cookies)
 	session := sessionCookieOf(first.cookies)
 	if len(old) != 1 || session == nil {
@@ -308,7 +311,7 @@ func TestKnownBrowserCookieEndsWithThePassword(t *testing.T) {
 	if id, ok := s.knownBrowser(cookieRequest(old), "vera"); !ok || id == "" {
 		t.Fatal("the fresh cookie is not recognized")
 	}
-	req, _ := http.NewRequest("POST", base+"/api/me/password", strings.NewReader(`{"current_password":"vera-password","new_password":"vera-new-password"}`))
+	req, _ := http.NewRequest("POST", base+"/api/me/password", strings.NewReader(`{"current_password":"the-v-password","new_password":"a-new-v-password"}`))
 	req.AddCookie(session)
 	resp, err := cl.Do(req)
 	if err != nil {
@@ -329,7 +332,7 @@ func TestKnownBrowserCookieEndsWithThePassword(t *testing.T) {
 		t.Error("the renewed cookie is not recognized")
 	}
 	// An admin's reset ends it too.
-	if _, err := s.Users.SetPassword(context.Background(), "vera", "vera-reset-password", true); err != nil {
+	if _, err := s.Users.SetPassword(context.Background(), "vera", "a-reset-v-password", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.knownBrowser(cookieRequest(renewed), "vera"); ok {
@@ -346,7 +349,7 @@ func TestChangePasswordDuringAnAttack(t *testing.T) {
 		s.Config.Server.ClientHeader = config.ClientHeaderXFF
 		s.Limiter.MaxPerAccount = 8 // fewer password checks
 	})
-	first := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.10"})
+	first := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.10"})
 	session := sessionCookieOf(first.cookies)
 	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "guess", xff: "10.4.1.1"}); r.code != http.StatusUnauthorized {
 		t.Fatalf("first guess = %d", r.code)
@@ -354,7 +357,7 @@ func TestChangePasswordDuringAnAttack(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		signInWith(t, cl, base, attempt{user: "vera", pass: "guess", xff: fmt.Sprintf("10.4.0.%d", i)})
 	}
-	req, _ := http.NewRequest("POST", base+"/api/me/password", strings.NewReader(`{"current_password":"vera-password","new_password":"vera-new-password"}`))
+	req, _ := http.NewRequest("POST", base+"/api/me/password", strings.NewReader(`{"current_password":"the-v-password","new_password":"a-new-v-password"}`))
 	req.Header.Set("X-Forwarded-For", "192.0.2.11")
 	req.AddCookie(session)
 	resp, err := cl.Do(req)
@@ -365,7 +368,7 @@ func TestChangePasswordDuringAnAttack(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("change password while the account is attacked = %d", resp.StatusCode)
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-new-password", xff: "192.0.2.12"}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "a-new-v-password", xff: "192.0.2.12"}); r.code != http.StatusTooManyRequests {
 		t.Errorf("the account was not slowed down for strangers: %d", r.code)
 	}
 }
@@ -387,7 +390,7 @@ func TestTrustedProxyWithoutClientHeaderIgnoresForwardedFor(t *testing.T) {
 			t.Fatalf("guess %d = %d", i+1, r.code)
 		}
 	}
-	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password", xff: "10.0.0.12"}); r.code != http.StatusOK {
+	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password", xff: "10.0.0.12"}); r.code != http.StatusOK {
 		t.Errorf("walt at the address the attacker named = %d %v", r.code, r.body)
 	}
 	if strings.Contains(logs.String(), "10.0.0.12") || strings.Contains(logs.String(), "peer=") {
@@ -425,7 +428,7 @@ func TestForwardedHeaderFromTheClientChangesNothing(t *testing.T) {
 			t.Fatalf("guess %d = %d", i+1, code)
 		}
 	}
-	if code := send("walt", "walt-password"); code != http.StatusTooManyRequests {
+	if code := send("walt", "the-w-password"); code != http.StatusTooManyRequests {
 		t.Errorf("after 10 made-up accounts from one address with Forwarded: for=unknown = %d, want the address paused", code)
 	}
 }
@@ -440,7 +443,7 @@ func TestKnownBrowserAtAPausedAddress(t *testing.T) {
 		s.Config.Server.ClientHeader = config.ClientHeaderXFF
 		s.Limiter.Max, s.Limiter.MaxPerAddress = 5, 10
 	})
-	first := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "10.0.0.12"})
+	first := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "10.0.0.12"})
 	known := knownCookies(first.cookies)
 	if first.code != 200 || len(known) != 1 {
 		t.Fatalf("first sign-in = %d %v", first.code, first.cookies)
@@ -448,10 +451,10 @@ func TestKnownBrowserAtAPausedAddress(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		signInWith(t, cl, base, attempt{user: fmt.Sprint("nobody", i), pass: "guess", xff: "10.0.0.12"})
 	}
-	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "walt-password", xff: "10.0.0.12"}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "walt", pass: "the-w-password", xff: "10.0.0.12"}); r.code != http.StatusTooManyRequests {
 		t.Errorf("walt at the paused address = %d", r.code)
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "10.0.0.12", cookies: known}); r.code != http.StatusOK {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "10.0.0.12", cookies: known}); r.code != http.StatusOK {
 		t.Errorf("vera's known browser at the paused address = %d %v", r.code, r.body)
 	}
 }
@@ -465,9 +468,9 @@ func TestKnownAddressCannotTurnTheBrowserIntoAStranger(t *testing.T) {
 		s.Config.Server.ClientHeader = config.ClientHeaderXFF
 		s.Limiter.Max, s.Limiter.MaxPerAccount = 20, 8 // fewer password checks
 	})
-	home := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "192.0.2.50"})
+	home := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "192.0.2.50"})
 	known := knownCookies(home.cookies)
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "203.0.113.5"}); r.code != 200 || len(known) != 1 {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "203.0.113.5"}); r.code != 200 || len(known) != 1 {
 		t.Fatalf("sign-ins = %d, %d %v", home.code, r.code, home.cookies)
 	}
 	// The office address, then strangers, guess.
@@ -477,10 +480,10 @@ func TestKnownAddressCannotTurnTheBrowserIntoAStranger(t *testing.T) {
 	for i := 0; i < s.limiter().MaxPerAccount; i++ {
 		signInWith(t, cl, base, attempt{user: "vera", pass: "guess", xff: fmt.Sprintf("10.6.0.%d", i)})
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "203.0.113.5"}); r.code != http.StatusTooManyRequests {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "203.0.113.5"}); r.code != http.StatusTooManyRequests {
 		t.Errorf("the office address past its budget = %d, want slowed", r.code)
 	}
-	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "vera-password", xff: "198.51.100.30", cookies: known}); r.code != http.StatusOK {
+	if r := signInWith(t, cl, base, attempt{user: "vera", pass: "the-v-password", xff: "198.51.100.30", cookies: known}); r.code != http.StatusOK {
 		t.Errorf("vera's own browser = %d %v", r.code, r.body)
 	}
 }

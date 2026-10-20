@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package ingest
 
 import (
@@ -273,6 +276,8 @@ var knownFields = func() map[string]string {
 		// Vulnerability scans: a CVSS score has a decimal (9.8), which a
 		// long would cut to 9 in sorts, charts and stats.
 		"cvss": double,
+		// An EPSS score and percentile are fractions (0.944).
+		"epss": double, "epss_percentile": double,
 		// A connection's length in seconds (Zeek, Suricata): 0.4 s would
 		// be 0 as a long.
 		"duration": double,
@@ -326,6 +331,23 @@ var knownFields = func() map[string]string {
 	// Microsoft 365 audit records (o365.go): the record's own fields, and
 	// its record type by name.
 	for _, k := range o365Mapped {
+		m[k] = kw
+	}
+	// Google Cloud log entries (gcp.go): the entry's own fields.
+	for _, k := range gcpMapped {
+		m[k] = kw
+	}
+	// Okta System Log events (okta.go): the event's own fields.
+	for _, k := range oktaMapped {
+		m[k] = kw
+	}
+	// GitHub audit log events (github.go): the event's own fields.
+	for _, k := range githubMapped {
+		m[k] = kw
+	}
+	// Kubernetes audit events (kubernetes.go): the event's own fields,
+	// some deeper than a sender's names may go.
+	for _, k := range kubernetesMapped {
 		m[k] = kw
 	}
 	// The fields the shipped cloud rules read (rulefields.go).
@@ -577,3 +599,11 @@ func onlyKnown(f map[string]any) int {
 
 // dayOf is the index day of a time.
 func dayOf(t time.Time) string { return t.UTC().Format("2006.01.02") }
+
+// FieldType returns the OpenSearch type the index template maps a field
+// Signalith produces to (keyword, long, double, ip, date, text or
+// wildcard), and false for a name it leaves to dynamic mapping.
+func FieldType(name string) (string, bool) {
+	t, ok := knownFields[name]
+	return t, ok
+}

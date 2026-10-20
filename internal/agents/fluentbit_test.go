@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package agents
 
 import (
@@ -371,10 +374,11 @@ func TestFluentBitWindowsPowerShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode,Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational") {
+	if !strings.Contains(a.Config, "Channels             Security,System,Application,Microsoft-Windows-Windows Defender/Operational,Microsoft-Windows-CodeIntegrity/Operational,Microsoft-Windows-Windows Firewall With Advanced Security/Firewall,Microsoft-Windows-Bits-Client/Operational,Microsoft-Windows-AppXDeploymentServer/Operational,Microsoft-Windows-WMI-Activity/Operational,Microsoft-Windows-TerminalServices-LocalSessionManager/Operational,Microsoft-Windows-Shell-Core/Operational,Microsoft-Windows-SmbClient/Security,Microsoft-Windows-Security-Mitigations/KernelMode,Microsoft-Windows-DNS-Client/Operational,Microsoft-Windows-TaskScheduler/Operational,Microsoft-Windows-NTLM/Operational,Microsoft-Windows-LSA/Operational,Microsoft-Windows-CAPI2/Operational,Microsoft-Windows-DriverFrameworks-UserMode/Operational,Microsoft-Windows-AppModel-Runtime/Admin,Microsoft-Windows-AppxPackaging/Operational,Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational,OpenSSH/Operational,DNS Server,Microsoft-IIS-Configuration/Operational,Microsoft-Windows-Sysmon/Operational,Microsoft-Windows-PowerShell/Operational,Windows PowerShell") {
 		t.Errorf("config:\n%s", a.Config)
 	}
-	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) {
+	if !strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableScriptBlockLogging -Value 1`) ||
+		!strings.Contains(strings.Join(a.Steps, "\n"), `Set-ItemProperty -Path $k -Name EnableModuleLogging -Value 1`) {
 		t.Errorf("steps: %q", a.Steps)
 	}
 }
@@ -443,7 +447,7 @@ func TestFluentBitLinuxInstallStep(t *testing.T) {
 			t.Fatal(err)
 		}
 		steps := strings.Join(a.Steps, "\n")
-		if strings.Contains(steps, "| sh") || !strings.Contains(steps, "docs.fluentbit.io/manual/installation/linux") {
+		if strings.Contains(steps, "| sh") || !strings.Contains(steps, "docs.fluentbit.io/manual/installation/downloads/linux") {
 			t.Errorf("%s: install step %q", source, a.Steps[0])
 		}
 	}

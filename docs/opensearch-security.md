@@ -267,15 +267,23 @@ change `index_patterns` in `opensearch-security/roles.yml` to match before step 
    sudo chown -R opensearch:opensearch /etc/opensearch/certs
    sudo chmod 700 /etc/opensearch/certs && sudo chmod 600 /etc/opensearch/certs/*
    ```
-2. Copy the four files in `opensearch/opensearch-security/` into
+2. Delete the demo certificates OpenSearch put directly in `<config>` (`esnode.pem`,
+   `kirk.pem`, `root-ca.pem` and their keys), but not your new `certs` folder. OpenSearch
+   refuses to start while they are there (`Demo certificates found`), and the Linux
+   packages put them there even when the demo setup is skipped. On Linux:
+   ```sh
+   sudo rm -f /etc/opensearch/*.pem
+   ```
+   On Windows, delete the `.pem` files in `C:\opensearch\config` (not in its `certs` folder).
+3. Copy the four files in `opensearch/opensearch-security/` into
    `<config>/opensearch-security/`, replacing the ones there (keep a copy of the old ones).
-3. Edit `<config>/opensearch.yml`: delete the block from
+4. Edit `<config>/opensearch.yml`: delete the block from
    `######## Start OpenSearch Security Demo Configuration ########` to
    `######## End OpenSearch Security Demo Configuration ########` if there is one, and any
    other line starting with `plugins.security.`. Then paste in the contents of
    `opensearch/add-to-opensearch.yml`. Leave `network.host` as it is when Signalith runs on
    the same machine (OpenSearch then listens on this machine only).
-4. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
+5. Restart OpenSearch: `sudo systemctl restart opensearch`, or on Windows restart its
    service (or `opensearch.bat`).
 
 ### 3. Load the security settings
@@ -350,6 +358,45 @@ certificate (use the first one). `add-to-opensearch.yml` lists every node in
 Node names may not be `signalith` or start with `signalith-`: those are for Signalith's own
 certificates.
 
+## OpenSearch's own audit log
+
+Signalith keeps its own audit log of what people do (see [audit.md](audit.md)). OpenSearch
+keeps one too, of who tried to reach it: failed sign-ins, requests refused for missing
+permissions, TLS and certificate errors, and every change to its security settings.
+Successful requests are left out, since they are Signalith's own searches and writes.
+These records go to OpenSearch's log rather than an index, so Signalith's certificate,
+which can write to the indices, cannot change them.
+
+The Docker quick start, the Helm chart and the files `signalith opensearch-certs` makes
+turn it on. To read it:
+
+- Docker: `docker compose -f deploy/docker/docker-compose.yml logs opensearch | grep -i audit`
+- Linux: `grep -i audit /var/log/opensearch/*.log`
+- Windows: the `logs` folder of the OpenSearch install.
+
+On OpenSearch set up before this, do these two steps in this order.
+
+1. Load Signalith's `audit.yml`. Once the security settings are loaded, OpenSearch takes
+   what it logs from `audit.yml` in its `opensearch-security` folder rather than from
+   `opensearch.yml`, and the one that comes with OpenSearch logs request bodies. Signalith's
+   makes the same choices as the lines below. The Docker quick start and the Helm chart load
+   it for you. Without Docker, copy `opensearch/opensearch-security/audit.yml` from the files
+   `signalith opensearch-certs` makes into the `opensearch-security` folder and load it with
+   `securityadmin.sh -f audit.yml -t audit` (the certificates and host as when you loaded the
+   other files). This changes nothing yet while the audit type is still `noop`.
+2. Add these lines to `opensearch.yml` in place of `plugins.security.audit.type: noop`, and
+   restart OpenSearch:
+
+    ```yaml
+    plugins.security.audit.type: log4j
+    plugins.security.audit.config.disabled_rest_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.disabled_transport_categories: ["AUTHENTICATED", "GRANTED_PRIVILEGES"]
+    plugins.security.audit.config.log_request_body: false
+    plugins.security.audit.config.exclude_sensitive_headers: true
+    ```
+
+Loading `audit.yml` first means OpenSearch never logs request bodies, even for a moment.
+
 ## Renewing
 
 The CA and the certificates last 10 years. In the Docker quick start, the setup step makes
@@ -361,6 +408,40 @@ Without Docker, make new certificates under the same CA with
 repeat steps 2 and 4, then restart OpenSearch and Signalith. Without the `ca` folder, run
 `signalith opensearch-certs` into a new folder instead and repeat steps 2 and 4 (step 3
 too if you changed the security files): the CA is then new as well.
+
+## Moving to OpenSearch 3.x
+
+The Docker quick start uses OpenSearch 3.9 from Signalith 0.3.0 on; earlier versions used
+2.17. Signalith works with both, and the security settings on this page are the same for
+each. An OpenSearch 2.17 data volume starts directly on 3.9 and keeps its events, findings
+and security settings, so a quick start updated with `git pull` moves on its next `up`.
+
+OpenSearch can't go back to 2.17 on the same data once 3.9 has started on it, so copy the
+OpenSearch volume first, from the Signalith folder (PowerShell or a terminal):
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml stop
+docker run --rm -v docker_opensearch-data:/data -v "${PWD}:/backup" alpine tar czf /backup/opensearch-data-2.17.tgz -C /data .
+```
+
+Then update and start as in
+[Upgrading the Docker quick start](https://github.com/jrsamsanchez/Signalith#upgrading-the-docker-quick-start).
+The step that loads the security settings loads them once more after the move (3.x has no
+`whitelist.yml`), which is expected. To stay on 2.17 for now, put the 2.17 image on the
+`opensearch` and `opensearch-security` services in an override file and add
+`-f deploy/docker/docker-compose.override.yml` to each command:
+
+```yaml
+# deploy/docker/docker-compose.override.yml
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+  opensearch-security:
+    image: opensearchproject/opensearch:2.17.1
+```
+
+On OpenSearch installed without Docker, follow OpenSearch's own upgrade steps and keep the
+`opensearch.yml` lines from [step 2](#2-put-the-files-in-place-on-the-opensearch-machine).
 
 ## Other setups
 

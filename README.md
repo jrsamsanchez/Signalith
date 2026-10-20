@@ -1,24 +1,66 @@
 # Signalith
 
-An open-source SIEM for Windows and Linux, inspired by Splunk Enterprise Security.
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15694/badge)](https://www.bestpractices.dev/projects/15694)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/jrsamsanchez/Signalith)](https://github.com/jrsamsanchez/Signalith/releases/latest)
+
+**A free, open-source SIEM for Windows and Linux: easy to set up, easy to query, ready for AI.**
+
+![The findings queue: open findings ranked by urgency, with ATT&CK techniques, evidence and an Investigate with AI button](site/assets/shots/findings.webp)
+
+Signalith collects your logs, runs thousands of tested detections over them, and gives
+you one queue of findings to triage, investigate and respond to. It is built for small
+security teams and anyone who wants a real SIEM without a big budget or weeks of setup.
+
+- **Collect** Windows, Linux and macOS logs with one install line per computer, plus
+  syslog, OpenTelemetry, cloud audit logs (AWS, Azure, Microsoft 365, Google) and more.
+- **Detect** with 2,638 SigmaHQ rules and 1,330 rules from Splunk's open-source
+  security_content, each tested in CI against sample events. High and critical rules
+  turn on in one click.
+- **Triage** with risk-based alerting, a findings queue, cases, an attack storyline and
+  an optional *Investigate with AI* step that also works with a local model.
+- **Search** with a pipe-style language familiar to SPL users, a click-to-build query
+  builder, or a question in plain English.
+- **Run it your way**: Docker, `.deb`/`.rpm` packages with signed apt and dnf
+  repositories, a Windows installer, or a Helm chart. HTTPS by default, no default
+  passwords, and two-step sign-in with passkeys.
+
+| Try it | |
+| --- | --- |
+| On your own computer, with Docker | [Quick start](#docker-evaluation), two commands after `git clone` |
+| With made-up data that has attacks hidden in it | [Sample data](#try-it-with-sample-data), one click |
+| On a Linux or Windows server | [Linux](#linux), [Windows](#windows), [Kubernetes](#kubernetes-helm) |
+
+**Learn more:** [website](https://signalith.io) ·
+[documentation](https://signalith.io/docs/) ·
+[how it compares](https://signalith.io/docs/comparison/) with Wazuh, Security Onion,
+Elastic Security and others, including where it is weaker ·
+[roadmap](https://signalith.io/docs/roadmap/)
+
+> Signalith is a personal project by Samuel Sanchez Jr., written with Claude Code, and
+> it is early software: it has not had an independent security audit yet, and the
+> Windows installer is not code signed yet. Issues and feedback are welcome.
+
+## What's inside
+
 Signalith stores events in [OpenSearch](https://opensearch.org), collects them with
-[Fluent Bit](https://fluentbit.io), and adds the security layer on top: a pipe-based
-query language that reads like SPL, plain-English questions that become queries, a
+the [Signalith Agent](docs/signalith-agent.md) (which installs and runs
+[Fluent Bit](https://fluentbit.io) and [osquery](https://osquery.io) on Windows, Linux and
+macOS) and syslog, and adds the security layer on top: a pipe-based
+query language, plain-English questions that become queries, a
 visual query builder, CIM-style data models, scheduled detections with a findings
 queue for triage, Sigma rule import, a MITRE ATT&CK coverage map, risk-based
 alerting with asset and identity context, threat intel feeds matched against your
 events, a security posture dashboard plus dashboards you build from queries, and
 investigation cases that collect findings, notes, searches and evidence in one place,
-and response actions (block an IP, disable an account, isolate a host) run from a
-finding or a case. Playbooks come next.
+response actions (block an IP, disable an account, isolate a host) run from a
+finding or a case, and playbooks that run those steps for you.
 
-Website: **https://signalith.io** (its source is in [`site/`](site/)). Documentation:
-**https://signalith.io/docs/** (built from [`docs/`](docs/)).
+The website's source is in [`site/`](site/) and the documentation is built from
+[`docs/`](docs/). The server is a single Go binary with the web UI embedded. It runs as
+a Windows service or a systemd unit.
 
-The server is a single Go binary with the web UI embedded. It runs as a Windows
-service or a systemd unit.
-
-> Status: Phase 3 (ES depth) is complete; Phase 4 has started with investigation cases. See the [roadmap](#roadmap).
+> Status: the first four phases are complete, and work on hardening for 1.0 has started. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -26,7 +68,9 @@ service or a systemd unit.
 
 It needs Docker Compose 2.20 or newer (Docker Desktop has it). Check with
 `docker compose version`; on Linux, update the `docker-compose-plugin` package if it is
-older. Then, from the folder you cloned Signalith into:
+older. Get the code with
+`git clone https://github.com/jrsamsanchez/Signalith.git` and, from the `Signalith`
+folder it makes, run:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml up -d
@@ -41,8 +85,9 @@ files. Once OpenSearch is up, a second step loads OpenSearch's security settings
 sign in, and what each may do), and Signalith starts after it. If the first command ends
 with `service "opensearch-security" didn't complete successfully`, see
 [If OpenSearch's security settings aren't loaded](docs/opensearch-security.md#if-opensearchs-security-settings-arent-loaded).
-The second command shows the admin password. Open https://localhost:8080 and sign
-in as `admin` with it. Signalith serves HTTPS with a certificate it makes for itself, so
+The second command shows the admin password. Open https://localhost:9000 and sign
+in as `signalithadmin` with it; since Signalith made that password, you then choose your own
+before anything else. Signalith serves HTTPS with a certificate it makes for itself, so
 the browser warns until you trust it; the sign-in page has a **Download the server
 certificate** link, and [docs/https.md](docs/https.md) says how to trust it.
 
@@ -62,10 +107,12 @@ install no agent has it, so you can choose **Stop accepting** straight away. See
 Coming from an older version? See
 [Upgrading the Docker quick start](#upgrading-the-docker-quick-start).
 
-Port 8080 is open on every network this computer is on. To take agents and browsers from
-one network only, put this computer's address on that network in front of it in
-`docker-compose.yml`, for example `- "192.168.1.20:8080:8080"`, then run the first command
-again.
+Ports 9000 (the web page) and 7779 (agents) are open on every network this computer is
+on, and so is 6514 for syslog over TLS. Plain syslog on port 514 is unencrypted and can be
+forged, so nothing answers there until you turn it on (**Add data** > **Syslog**, **Turn on
+plain syslog**). To take agents and browsers from one network only, put this computer's address on that
+network in front of each in `docker-compose.yml`, for example `- "192.168.1.20:9000:9000"`
+and `- "192.168.1.20:7779:7779"`, then run the first command again.
 
 OpenSearch runs with its security plugin on: it answers only over HTTPS, publishes no
 port, and lets in only Signalith's certificate, which may use only Signalith's own
@@ -92,7 +139,7 @@ plain `http://` and the old example token may be accepted again. After a reboot
 everything starts again by itself once Docker is running; in Docker Desktop turn on
 Settings > General > "Start Docker Desktop when you sign in". If the computer restarted
 while the first command was still waiting for the step that loads OpenSearch's security
-settings, Signalith had not started yet and does not start by itself: https://localhost:8080
+settings, Signalith had not started yet and does not start by itself: https://localhost:9000
 doesn't answer. Run `docker compose -f deploy/docker/docker-compose.yml up -d` again then.
 
 Signalith stops within a few seconds when an update replaces it, and Docker stops it by
@@ -138,6 +185,11 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 
 #### Upgrading the Docker quick start
 
+From 0.3.0 on, the quick start runs OpenSearch 3.9 instead of 2.17. Your data moves over
+by itself on the next start, but OpenSearch can't go back to 2.17 afterwards, so copy the
+OpenSearch volume first as in
+[Moving to OpenSearch 3.x](docs/opensearch-security.md#moving-to-opensearch-3x).
+
 Earlier versions of the quick start served plain HTTP, ran OpenSearch without security,
 and took the admin password and ingest token from `docker-compose.yml`
 (`change-me-please` and `change-this-ingest-token` unless you changed them). To upgrade,
@@ -169,8 +221,10 @@ same):
    docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password
    ```
    The old one no longer works. People you added on the **Users** page keep theirs.
-4. Open **https**://localhost:8080 (old `http://` bookmarks are redirected) and sign in as
-   `admin`. Trust the certificate as described in [docs/https.md](docs/https.md).
+4. Open **https**://localhost:9000 (old `http://` bookmarks are redirected) and sign in as
+   before: `admin` on an install made before 0.3.1, `signalithadmin` on a newer one. You are asked to choose your own password before anything else (an install
+   that still uses the first password Signalith made is asked once, after any upgrade,
+   however often it was used before). Trust the certificate as described in [docs/https.md](docs/https.md).
 5. Update the agents. Agents you set up before keep sending for now: on its first start
    Signalith sees that OpenSearch already holds events from before the upgrade, so it
    still accepts agents over plain `http://`, with the old example token. (A new install
@@ -192,6 +246,39 @@ same):
    it gets a new configuration; it keeps its events and sends them then, and Health names
    it. Until then the **Security** page shows the old token as a risk.
 
+#### Upgrading to 0.3.1: syslog over TLS only
+
+A new install takes syslog over TLS (port 6514) only: plain syslog over UDP and TCP 514 is
+unencrypted and can be forged, so it is off until you turn it on. An upgrade keeps plain
+syslog as it was, so devices that send to port 514 need no change: package, Windows and
+hand-made installs keep their `signalith.yaml`; a Docker quick start that was set up before
+keeps it on although the new `signalith.yaml` has it off (decided once, at its first start
+with this version, and noted in `plain-syslog.json` in the `signalith-data` volume); and a
+Helm upgrade keeps it when the release's syslog Service takes port 514. Once every device
+sends over TLS, turn plain syslog off on the **Settings** page (Syslog), or with
+`server.syslog.plain=false` on Helm.
+
+#### Upgrading to 0.3: the agent port
+
+From 0.3 agents send to a port of their own, 7779, and the web page of a new install is on
+port 9000.
+In the Docker quick start, `git pull` and the first command bring files that publish
+9000 and 7779 and set `server.agent_listen`: open https://localhost:9000 after the
+update, and set up each agent again from **Add data**: agents set up before send to port
+8080, which the quick start no longer publishes.
+
+A server set up by hand, from packages or with the installers keeps its web port (such as
+8080), since it is in its `signalith.yaml`. It also listens on port 7779, and keeps taking
+agents on the web port, with a warning in the log for each one, so nothing stops. Then:
+
+1. Allow port 7779 through the firewall, and through any load balancer in front of the
+   servers.
+2. Set up each agent again from **Add data**: its new configuration sends to port 7779.
+3. Set `server.agent_listen` (for example `0.0.0.0:7779`) so the web port stops taking
+   agents. The next release stops taking agents on the web port anyway.
+
+See [The agent port](docs/sending-data.md#the-agent-port).
+
 This version encrypts the passwords and keys it keeps in the `signalith-data` volume
 (`directory.json`, `intel_feeds.yaml` and `settings.yaml`), which older versions cannot
 read. Before going back to one, run `secrets decrypt` in a container of its own (see
@@ -211,6 +298,20 @@ fictional and kept apart from your own data, and one click removes all of it. Se
 docker compose -f deploy/docker/docker-compose.yml exec signalith signalith sample-data load
 ```
 
+### Kubernetes (Helm)
+
+Each release also publishes a Helm chart, which runs Signalith, a secured OpenSearch and
+optional scanners, with no default passwords and pods that meet the restricted Pod
+Security Standard:
+
+```sh
+helm install signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <release> \
+  --namespace signalith --create-namespace
+```
+
+See [docs/kubernetes.md](docs/kubernetes.md) for the first password, exposing it,
+several servers and an OpenSearch of your own.
+
 ### Packages (.deb, .rpm, .msi)
 
 Each [release](https://github.com/jrsamsanchez/Signalith/releases) has signed packages
@@ -229,7 +330,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
 
 ### Linux
 
-1. Install OpenSearch 2.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
+1. Install OpenSearch 2.x or 3.x ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
 2. Install Signalith:
    ```sh
    sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -242,7 +343,7 @@ what the packages set up, upgrades, and how to check a download's signature and 
    `init` prints the admin password once, and where it put the master key that
    encrypts the passwords and keys Signalith stores (`/var/lib/signalith/keys/master.key`).
    Back that file up, apart from the config; see [Encryption](#encryption). Open
-   `https://<server>:8080`: Signalith serves HTTPS with a certificate it makes for itself
+   `https://<server>:9000`: Signalith serves HTTPS with a certificate it makes for itself
    (see [HTTPS](#https)).
 3. Replace OpenSearch's demo security setup, whose passwords and certificates are public,
    and have Signalith sign in with a certificate of its own:
@@ -268,13 +369,21 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
 
 ### Windows
 
-1. Install OpenSearch 2.x for Windows ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/windows/)).
-2. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
+The `.msi` installer from the [latest release](https://github.com/jrsamsanchez/Signalith/releases/latest)
+is the easy way ([docs/install-packages.md](docs/install-packages.md#windows)). From the next
+release (0.3.1) on, it installs OpenSearch too; with 0.3.0 and older, install OpenSearch first and
+give its address. To install by hand:
+
+1. In an elevated PowerShell, from the folder holding `signalith.exe` and `deploy\windows\install.ps1`:
    ```powershell
-   .\install.ps1 -OpenSearchUrl http://127.0.0.1:9200
+   .\install.ps1
    ```
-   This writes `C:\ProgramData\Signalith\signalith.yaml`, installs the **Signalith** service and starts it.
-   Open https://localhost:8080 (see [HTTPS](#https) to stop the certificate warning).
+   This installs OpenSearch on this computer (listening on this computer only, over HTTPS, with
+   Signalith signing in with a certificate), writes `C:\ProgramData\Signalith\signalith.yaml`, installs
+   the **Signalith** service and starts it. To use an OpenSearch of your own instead, add
+   `-OpenSearchUrl https://<its address>:9200` and secure it as
+   [docs/opensearch-security.md](docs/opensearch-security.md) says.
+   Open https://localhost:9000 (see [HTTPS](#https) to stop the certificate warning).
    The service runs as its own account, `NT SERVICE\Signalith`, and only SYSTEM, Administrators and
    that account can read `C:\ProgramData\Signalith`. To upgrade, put the new `signalith.exe` next to
    the script and run it again: it stops the service, replaces the program, encrypts passwords an
@@ -286,12 +395,16 @@ read encrypted values: before going back to one, run `sudo signalith secrets dec
    again, as Administrator, so the service may read it. Before going back
    to an older version, run `signalith secrets decrypt` (see
    [docs/encryption.md](docs/encryption.md#going-back-to-an-older-version)).
-3. Secure OpenSearch and have Signalith sign in with a certificate:
-   [docs/opensearch-security.md](docs/opensearch-security.md).
 
 ### Send data
 
-Open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
+The simplest way is the [Signalith Agent](docs/signalith-agent.md): open **Add data**, pick
+**Signalith Agent**, choose Linux, Windows or macOS, and paste the one line it shows on each
+computer. It installs Fluent Bit and osquery (and Sysmon on Windows if you choose), and what
+each group of computers collects is chosen on the **Endpoints** page, so nobody edits a
+configuration.
+
+To set up Fluent Bit by hand instead, open **Add data** in the UI, pick Linux or Windows, and follow the steps: install
 Fluent Bit, save Signalith's CA certificate and the generated configuration, restart it.
 The configuration already contains the server address and a token of its own for this group
 of agents (made when you copy or download it; see [docs/agent-tokens.md](docs/agent-tokens.md)), and sends over
@@ -299,7 +412,7 @@ HTTPS, checking the server's certificate with that CA. For firewalls, switches a
 devices, pick **Syslog** (see [Syslog](#syslog)). Hosts that run an OpenTelemetry Collector, and
 apps with an OpenTelemetry SDK, can send logs over OTLP instead: pick **OpenTelemetry** (see
 [docs/opentelemetry.md](docs/opentelemetry.md)). To watch files, take inventory and check
-configuration on Windows, Linux and macOS hosts, pick **osquery**: Signalith becomes
+configuration on Windows, Linux and macOS hosts (and see every program a Mac starts), pick **osquery**: Signalith becomes
 osquery's management server and the hosts appear on the **Endpoints** page (see
 [docs/endpoints.md](docs/endpoints.md)).
 If you run Wazuh, pick **Wazuh** to send the alerts your Wazuh manager raises, through
@@ -309,13 +422,19 @@ their connections, DNS lookups, web requests, certificates and TLS fingerprints 
 files, sign-ins (SSH, RDP, Kerberos, NTLM), file share activity and IDS alerts; the hosts
 it sees join the asset list (see
 [docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)).
+For a log Signalith has no parser for, pick **Any other log**: paste a sample, check the
+format, fields and data model Signalith suggests (an AI model can help with free text),
+see which detections can use it, and save it as a parser that agents and syslog use (see
+[docs/custom-logs.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/custom-logs.md)).
 
 Agents on other machines must send to an address they can reach, such as
-`https://192.168.1.20:8080`, not `localhost`. Enter it under **Agents send to** on that page
-(or set `server.public_url` or `SIGNALITH_PUBLIC_URL`), and allow the port, 8080 by default,
-through this computer's firewall.
+`https://192.168.1.20:7779`, not `localhost`. Enter it under **Agents send to** on that page
+(or set `server.public_url` or `SIGNALITH_PUBLIC_URL`; agents use its host on the agent port).
+Agents send to a port of their own, 7779 by default, not to the web page's port (9000).
+Allow both ports through this computer's firewall. See
+[The agent port](docs/sending-data.md#the-agent-port).
 
-Supported sources in Phase 1:
+Supported sources:
 
 | Source | Data model |
 | --- | --- |
@@ -324,6 +443,7 @@ Supported sources in Phase 1:
 | Windows Security log: 4720, 4726 accounts; 4728, 4732, 4756 group changes | Change |
 | Sysmon: 1 process create, 8 remote thread, 10 process access; 3 network connection; 6 driver and 7 DLL load; 11 file create, 23 and 26 file delete; 12, 13, 14 registry; 22 DNS query | Endpoint, Network_Traffic, Image_Load, Filesystem, Registry, Network_Resolution |
 | PowerShell script block logging: 4104 (Microsoft-Windows-PowerShell/Operational; see [Detections](docs/detections.md#powershell-script-blocks)) | Script |
+| PowerShell module logging: 4103 (same channel), and the Windows PowerShell log: 400, 403, 600, 800 (see [Detections](docs/detections.md#powershell-module-logging-and-the-windows-powershell-log)) | Script; Other |
 | Linux sshd, sudo, su (auth.log, secure, or journald) | Authentication |
 | Linux useradd, userdel, usermod, gpasswd | Change |
 | Syslog from any device (see below), including CEF and LEEF | Authentication, Change, Network_Traffic or Other |
@@ -338,6 +458,10 @@ Supported sources in Phase 1:
 | AWS CloudTrail sign-ins and API calls, through the OpenTelemetry Collector ([docs/aws-cloudtrail.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/aws-cloudtrail.md)) | Authentication, Change or Other |
 | Microsoft Entra ID sign-ins, audit log and risk detections, and the Azure activity log, through an Event Hub and the OpenTelemetry Collector ([docs/azure.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/azure.md)) | Authentication, Change or Alerts |
 | Microsoft 365 audit log (Exchange, SharePoint, OneDrive, Teams, admin activity and alerts), read from Microsoft's Management Activity API with no agent ([docs/microsoft-365.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/microsoft-365.md)) | Authentication, Change, Alerts or Other |
+| Okta System Log (sign-ins, MFA, account, app and policy changes, admin roles, API tokens and ThreatInsight threats), read from Okta's System Log API with no agent ([docs/okta.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/okta.md)) | Authentication, Change, Alerts or Other |
+| Kubernetes audit logs (who created, changed, deleted, read or exec'd into which object, refused requests), posted by the API server's audit webhook or tailed from its audit log ([docs/kubernetes-audit.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/kubernetes-audit.md)) | Change, Authentication or Other |
+| GitHub Enterprise Cloud and Server audit log (repositories, members, branch protection, secret scanning, Dependabot, runners and audit log streams), streamed through an Azure event hub and the OpenTelemetry Collector, or sent by a script that reads GitHub's audit log API ([docs/github-audit-log.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/github-audit-log.md)) | Change, Authentication or Other |
+| Google Cloud audit logs (Admin Activity, Data Access, System Event, Policy Denied), and Google Workspace admin and sign-in audit logs shared with Google Cloud, through a log sink, Pub/Sub and the OpenTelemetry Collector ([docs/google-cloud.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/google-cloud.md)) | Change, Authentication or Other |
 | Zeek and Suricata on a network sensor, or Suricata EVE over syslog from pfSense and OPNsense ([docs/network-sensor.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection, Authentication, Filesystem or Other |
 | Anything else | Other (searchable by text and fields) |
 
@@ -392,19 +516,52 @@ a record has both, its `@timestamp` is not used.
 #### Syslog
 
 Firewalls, switches, routers, appliances and servers without an agent can send syslog.
-Point them at this server's address on **UDP or TCP port 514**, or over **TLS on port
-6514**. `signalith init` turns all three on; the Docker quick start publishes port 514.
-Syslog over TLS uses the web UI's certificate (see [docs/https.md](docs/https.md#agents-and-syslog)).
+Point them at this server's address over **TLS on port 6514**, or, once it is turned on,
+as plain syslog on **UDP or TCP port 514**. Syslog over TLS uses the web UI's certificate
+(see [docs/https.md](docs/https.md#agents-and-syslog)).
+
+A new install takes **syslog over TLS only**. Plain syslog over UDP and TCP is
+unencrypted, and anyone who can reach the port can send fake events, so it is off by
+default: `signalith init`, the packages, the Windows installer, the Docker quick start
+and the Helm chart all leave it off. Many network devices can only send plain syslog;
+for them, turn it on as below, and limit who may send with
+**Allowed senders** (below).
 
 Open **Add data** and pick **Syslog** for copy-ready setup for rsyslog, syslog-ng, Cisco IOS
 and ASA, Palo Alto, FortiGate, pfSense and OPNsense, UniFi and Windows, with this server's
-address filled in; rsyslog and syslog-ng send over TLS when it is on, with the CA certificate
-to save. Send the test message it shows and watch it arrive on the same page.
-When syslog is off, the page gives the steps to turn it on for this system: the
-UDP and TCP address on the **Settings** page, then **Restart now**, plus the port
-permission for a Linux service or the Windows Firewall rules.
-By hand, forwarding a Linux server's logs with rsyslog is one line in
-`/etc/rsyslog.d/90-signalith.conf`, then a restart of rsyslog:
+address filled in; rsyslog and syslog-ng send over TLS, with the CA certificate
+to save. Send the test message it shows (over TLS while plain syslog is off) and watch it
+arrive on the same page.
+
+##### Turning on plain syslog
+
+On **Add data** > **Syslog**, an admin chooses **Turn on plain syslog (UDP and TCP)**.
+The page warns first that plain syslog is unencrypted and can be forged. The button saves
+**UDP address** and **TCP address** (`syslog.udp` and `syslog.tcp`) the way the
+**Settings** page does: `0.0.0.0:514`, or `0.0.0.0:5514` in a container, which the Docker
+quick start publishes as port 514. Plain syslog starts with the next restart: **Restart
+now** opens the Settings page at its restart banner. Where the system needs more, the page
+says so after the click: on Linux, the command that lets a service open port 514 (it
+restarts Signalith too), and on Windows the firewall rules for UDP and TCP 514.
+
+When the server's environment sets these settings (`SIGNALITH_SYSLOG_UDP` and
+`SIGNALITH_SYSLOG_TCP`), the page says so instead of offering the button. The Helm chart
+sets them from `server.syslog.plain` (see [docs/kubernetes.md](docs/kubernetes.md)). To turn plain
+syslog on in signalith.yaml instead:
+
+```yaml
+syslog:
+  udp: 0.0.0.0:514
+  tcp: 0.0.0.0:514
+  tls: 0.0.0.0:6514
+```
+
+or give `signalith init` `-syslog-udp 0.0.0.0:514 -syslog-tcp 0.0.0.0:514` on a new
+install (`install.ps1 -SyslogUdp 0.0.0.0:514 -SyslogTcp 0.0.0.0:514` on Windows).
+
+By hand, forwarding a Linux server's logs with rsyslog over plain TCP is one line in
+`/etc/rsyslog.d/90-signalith.conf`, then a restart of rsyslog (Add data gives the TLS
+setup, which needs a few more):
 
 ```
 *.* @@siem.example.com:514
@@ -439,8 +596,8 @@ rules to the `syslog.allow` senders.
 Ports below 1024 need extra permission on Linux. The systemd unit grants it; when
 running Signalith another way, use a port such as `0.0.0.0:1514`. When devices send to a
 different port than Signalith listens on, because Docker or a firewall forwards it, set
-`syslog.public_port` so Add data shows the right one (the Docker quick start listens on
-5514 and sets it to 514). The **Health** page (and `/api/health`, under `syslog`) shows the
+`syslog.public_port` so Add data shows the right one (the Docker quick start's plain syslog
+listens on 5514 and sets it to 514). The **Health** page (and `/api/health`, under `syslog`) shows the
 listeners, how many messages were received, dropped, not written and rejected, and the
 most recent senders.
 
@@ -458,13 +615,16 @@ search, change nothing), **Analyst** (also triage findings, work investigations,
 dashboards) or **Admin** (also detections, feeds, lists, data collection and users).
 New users get a temporary password they replace at their first sign-in. People can
 also sign in with their **Active Directory or LDAP** account, with their role coming
-from their groups; set it up and test it on the same page. The `admin` account from
-`signalith.yaml` stays as a break-glass account that always works. See
+from their groups; set it up and test it on the same page. Single sign-on with
+**Microsoft Entra ID, Okta, Google, Keycloak** or another OpenID Connect provider is set
+up under **Settings > Single sign-on** (see [docs/sso.md](docs/sso.md)). The built-in admin from
+`signalith.yaml` (`signalithadmin`) stays as a break-glass account that always works. See
 [docs/users.md](docs/users.md).
 
 ### HTTPS
 
-The web UI, API and agent ingest use HTTPS by default, on the same port as before (8080).
+The web UI, API and agent ingest use HTTPS by default: the web page and API on port 9000,
+agents on port 7779 ([the agent port](docs/sending-data.md#the-agent-port)).
 On first start Signalith makes a small certificate authority of its own and a server
 certificate signed by it, and renews the certificate by itself; nothing has to be set up.
 Browsers warn until the CA is trusted: download it from the sign-in page (**Download the
@@ -481,6 +641,11 @@ them. All of this, with the commands to trust the CA on Windows, macOS and Linux
 [docs/https.md](docs/https.md).
 
 ### Hardening built in
+
+> Signalith has not had an independent security audit yet; one is planned.
+> Every security-sensitive change is reviewed before it is merged. What Signalith
+> protects, what it trusts and what it leaves to you is in the
+> [threat model](https://github.com/jrsamsanchez/Signalith/blob/main/docs/threat-model.md).
 
 - **Security check**: the Security page (**Settings > Security**) and `signalith security`
   check how this server is set up and what to fix first. See
@@ -579,8 +744,9 @@ are counted for each person's own address, not the proxy's. See
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `server.listen` | `127.0.0.1:8080` | Address the UI and API bind to |
-| `server.public_url` | `https://` and the `listen` host and port | URL agents use (scheme, host and port); goes into generated agent configs. With HTTPS on it must be `https://` |
+| `server.listen` | `127.0.0.1:9000` | Address the UI and API bind to |
+| `server.agent_listen` | `listen`'s host on port 7779 | Address agents send to (Fluent Bit, OTLP, osquery, network sensors), with the same certificate as the web page; or `SIGNALITH_AGENT_LISTEN`. `off` sends agents to the web port, as before 0.3. See [The agent port](docs/sending-data.md#the-agent-port) |
+| `server.public_url` | `https://` and the `listen` host and port | This server's address (scheme, host and port). Generated agent configs use its scheme and host on the agent port. With HTTPS on it must be `https://` |
 | `server.tls.mode` | `auto` | `auto`: HTTPS with a certificate Signalith makes and renews itself; `files`: `server.tls_cert` and `tls_key`; `off`: plain HTTP behind a reverse proxy that adds HTTPS. See [docs/https.md](docs/https.md) |
 | `server.tls.names` | none | Extra host names or IP addresses for the `auto` certificate (this machine's names and addresses, `public_url` and addresses entered on Add data are always in it) |
 | `server.tls.ca_scope` | `standard` | How far a certificate authority Signalith makes may vouch: `standard` (this server and private network names) or `strict` (only this server's own names and addresses). Used on the first start and when you make a new one on the Security page. See [docs/https.md](docs/https.md#how-far-the-certificate-authority-reaches) |
@@ -600,21 +766,24 @@ are counted for each person's own address, not the proxy's. See
 | `opensearch.tls_skip_verify` | `false` | Skip OpenSearch certificate checks. Lab use only: anyone on the path can read and change traffic; Signalith warns while it is on |
 | `opensearch.proxy` | none | Proxy for OpenSearch traffic (`http://`, `https://` or `socks5://`; or `SIGNALITH_OPENSEARCH_PROXY`). `HTTP_PROXY` and `HTTPS_PROXY` are never used for OpenSearch; when one is set and OpenSearch cannot be reached, the error says so |
 | `opensearch.allow_insecure_http` | `false` | Allow `username`/`password` over plain http to another machine. Off, such a config is refused with an explanation |
-| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD` |
+| `opensearch.index_prefix` | `signalith` | Indices are `<prefix>-<datamodel>-YYYY.MM.DD`, with `-2` and so on after the day for the parts of a busy day |
 | `opensearch.replicas` | `auto` | Extra copies of each new day's events on other OpenSearch nodes: `auto` (one copy once OpenSearch has more than one node, none on one node) or a whole number such as `0`. Days already stored keep theirs; applies after a restart |
+| `opensearch.shards` | automatic | Primary shards for each new day's events, per data model. Automatic (`0` or unset) is one per OpenSearch data node, up to 8, and one while OpenSearch holds more than half the shards it allows. A number fixes it, up to 64 and at most one per data node. Days already stored keep theirs; applies after a restart |
+| `opensearch.rollover_gb` | `40` | GB per primary shard after which a day's index of a data model continues in a new one (`<prefix>-<datamodel>-YYYY.MM.DD-2`, and so on), from 10 to 200. Applies after a restart |
 | `search.default_earliest` | `-24h` | Time range when a query sets none |
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Folder for archived days |
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](#data-retention) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
-| `auth.admin_user`, `auth.admin_password_hash` | `admin` | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
+| `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
 | `auth.session_timeout` | `12h` | Sign the web UI out after this long without activity ("Keep me signed in" lasts up to 7 days) |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](docs/users.md#setting-it-in-signalithyaml) |
+| `auth.oidc` | off | Single sign-on with an OpenID Connect provider, usually set up under **Settings > Single sign-on**; see [docs/sso.md](docs/sso.md#setting-it-in-signalithyaml) |
 | `ingest.tokens` | none | Shared tokens (legacy) agents send as `Authorization: Bearer`; still accepted. New agents get their own token on **Add data** (see [docs/agent-tokens.md](docs/agent-tokens.md)) |
 | `ingest.max_event_age` | `7d` (or the shortest retention period if shorter) | Events older than this, or more than an hour ahead, are filed under the time they arrived, with their own time in `device_time`. See [Ingest limits](#ingest-limits) |
-| `syslog.udp`, `syslog.tcp` | off (`init` sets `0.0.0.0:514`) | Addresses to receive syslog on; empty turns a listener off. See [Syslog](#syslog) |
+| `syslog.udp`, `syslog.tcp` | off, also on a new install (plain syslog is unencrypted; **Add data** > **Syslog** turns them on) | Addresses to receive plain syslog on; empty turns a listener off. See [Syslog](#syslog) |
 | `syslog.tls` | off (`init` sets `0.0.0.0:6514`) | Address for syslog over TLS, such as `0.0.0.0:6514`; uses the web UI's certificate |
 | `syslog.allow` | any sender | Sender IPs or CIDRs allowed to send syslog; others are dropped and counted |
 | `syslog.public_port` | the listen port | Port devices send UDP and TCP syslog to, when it is forwarded to the listen port; shown on Add data |
@@ -637,9 +806,11 @@ are counted for each person's own address, not the proxy's. See
 | `intel.feeds[].tags`, `.description`, `.enabled` | none, `true` | Labels added to every indicator, and on/off |
 | `intel.feeds_file` | `<lookups.dir>/intel_feeds.yaml` | Where feeds added on the page are saved, with their API keys encrypted (file mode 0600) |
 | `notify.file` | `<lookups.dir>/notifications.yaml` | Where notification channels and rules set on the **Notifications** page are saved, with their webhook URLs, header values and passwords encrypted (file mode 0600). See [docs/notifications.md](docs/notifications.md) |
+| `ticketing.file` | `<lookups.dir>/tickets.yaml` | Where Jira and ServiceNow connections set on the **Ticketing** page are saved, with their API tokens, passwords and client secrets encrypted (file mode 0600). See [docs/ticketing.md](docs/ticketing.md) |
 | `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
+| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a viewer, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
@@ -651,14 +822,15 @@ are counted for each person's own address, not the proxy's. See
 
 Secrets can come from the environment instead: `SIGNALITH_OPENSEARCH_PASSWORD`,
 `SIGNALITH_ADMIN_PASSWORD`, `SIGNALITH_INGEST_TOKEN`, `SIGNALITH_LDAP_BIND_PASSWORD` (for
-`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own) (also
+`auth.ldap` in this file only; directory sign-in set up on the Users page keeps its own),
+`SIGNALITH_OIDC_CLIENT_SECRET` (also
 `SIGNALITH_OPENSEARCH_URL`, `SIGNALITH_OPENSEARCH_URLS`, `SIGNALITH_OPENSEARCH_USERNAME`, `SIGNALITH_OPENSEARCH_PROXY`, `SIGNALITH_OPENSEARCH_CRL_FILE`, `SIGNALITH_LISTEN`,
 `SIGNALITH_PUBLIC_URL`, `SIGNALITH_DETECTIONS_DIR`, `SIGNALITH_LOOKUPS_DIR`, `SIGNALITH_DASHBOARDS_DIR`,
-`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
+`SIGNALITH_USERS_FILE`, `SIGNALITH_INTEL_FEEDS_FILE`, `SIGNALITH_NOTIFY_FILE`, `SIGNALITH_TICKETING_FILE`, `SIGNALITH_PLAYBOOKS_FILE`, `SIGNALITH_ARCHIVE_DIR`, `SIGNALITH_ASSISTANT_API_KEY`, and
 `SIGNALITH_SYSLOG_UDP` and `SIGNALITH_SYSLOG_TCP`, where `off` turns the listener off, `SIGNALITH_NODE_NAME`,
 `SIGNALITH_NODE_URL`, and `SIGNALITH_LEADER_ELIGIBLE`, `true` or `false`, for `cluster.leader_eligible`). Secrets can also be read
 from a file, as Docker and Kubernetes secrets are: set `SIGNALITH_OPENSEARCH_PASSWORD_FILE`,
-`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE` or
+`SIGNALITH_ADMIN_PASSWORD_FILE`, `SIGNALITH_INGEST_TOKEN_FILE`, `SIGNALITH_LDAP_BIND_PASSWORD_FILE`, `SIGNALITH_OIDC_CLIENT_SECRET_FILE` or
 `SIGNALITH_ASSISTANT_API_KEY_FILE` to the file's path. Setting both forms of one is an error, except for the
 ingest token, where both are accepted as shared tokens (agents set up on Add data get a token of their own). A setting set by an
 environment variable, or by a file one names, is shown locked on the Settings page. When the admin password
@@ -732,7 +904,8 @@ Load balancers and container platforms can ask `GET /readyz` (200
 `opensearch`, `identity`, `degraded`, `gone`, `key_missing` or `stopping`) and `GET /livez` (200 while the process
 runs). Both answer without signing in and say nothing else, over HTTPS and also over
 plain `http://` on the same port, where everything else is sent to HTTPS, so a
-health check works either way.
+health check works either way. The agent port (7779) answers them too, so a load balancer
+can check it on its own.
 
 The servers also share their users, the built-in admin's password, the directory
 sign-in settings and the sign-in sessions, once every server runs this version: a user
@@ -819,7 +992,7 @@ confidential VMs. HTTPS is in [docs/https.md](docs/https.md).
 ## Detections and findings
 
 A detection is a query that runs on a schedule. Each row it returns becomes a
-**finding** in the queue, like a notable event in Splunk ES. Signalith ships 21
+**finding** in the queue. Signalith ships 21
 detections mapped to MITRE ATT&CK (brute force, password spray, encoded PowerShell,
 Office spawning shells, shadow copy deletion, credential dumping, privileged group
 changes and more, plus two risk incident rules); 19 are on by default.
@@ -835,9 +1008,9 @@ changes and more, plus two risk incident rules); 19 are on by default.
 - **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to a
   Signalith query and lists anything it had to approximate. Imported rules start
   disabled so you can test them first.
-- **Content packs** add community rules, off until you turn them on: 2,455 tested
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, web server, network, AWS CloudTrail, Azure and Microsoft 365 rules and 1,092
-  Windows, Linux, web, network, AWS CloudTrail and Entra ID detections
+- **Content packs** add community rules, off until you turn them on: 2,638 tested
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows, Linux, macOS, web server, network, AWS CloudTrail, Azure, Microsoft 365, Google Cloud, Google Workspace, Okta, Kubernetes and GitHub rules and 1,330
+  Windows, Linux, macOS, web, network, AWS CloudTrail, Entra ID, Microsoft 365, Okta, Kubernetes and GitHub detections
   from Splunk's open source
   [security_content](https://github.com/splunk/security_content) (Apache 2.0). With
   both packs on, detections cover 160 ATT&CK techniques. Newer tested rules arrive as
@@ -851,8 +1024,8 @@ Detections are YAML files, so they can live in Git. See
 
 ## Investigations
 
-A **case** groups the findings that belong to one incident with the work done on it,
-like an investigation in Splunk ES. Open the **Investigations** tab to see open cases.
+A **case** groups the findings that belong to one incident with the work done on it.
+Open the **Investigations** tab to see open cases.
 
 - Start a case with **New case**, or select findings on the Findings page and choose
   **Add to case**. A finding belongs to one case; adding it to another moves it. The
@@ -867,6 +1040,16 @@ like an investigation in Splunk ES. Open the **Investigations** tab to see open 
 
 Cases are stored in OpenSearch in the `<prefix>_cases` index, and every change is
 recorded with who made it.
+
+### Hunting notebooks
+
+**Hunting notebooks** (under **Hunt**) are saved hunts: Markdown notes and searches in
+order, each search with what it found when it last ran, tagged to ATT&CK techniques.
+Re-run a notebook over any time range, turn a search into a detection, link the hunt
+to a case with its results, share it with the team, or download it as Markdown. Seven
+starter hunts come built in (password spraying, living off the land, PowerShell,
+persistence, beaconing, DNS tunneling and discovery). See
+[docs/hunting-notebooks.md](https://github.com/jrsamsanchez/Signalith/blob/main/docs/hunting-notebooks.md).
 
 ### Investigate with AI
 
@@ -909,7 +1092,7 @@ See [docs/notifications.md](docs/notifications.md) for setting up each kind of c
 
 ## Risk and context
 
-Signalith does risk-based alerting the way Splunk ES does. Most detections add
+Signalith does risk-based alerting. Most detections add
 **risk** to the users and systems in their results instead of (or as well as)
 raising a finding. Risk adds up per object, and two risk incident detections raise
 one finding when an object crosses a total of 100 in 24 hours, or trips three ATT&CK
@@ -917,11 +1100,16 @@ tactics from three detections in a week. Many weak signals about one user become
 one alert, and noisy rules (new services, scheduled tasks, discovery commands) stop
 flooding the queue.
 
+- **Behavior baselines** learn what each user and host usually does and add risk
+  for what is new or rare: a sign-in from a new country or network or at an odd
+  hour, a program almost no host has run, a new kind of change, an unusual hour of
+  uploads. Tune them, or add exceptions, under Settings > Behavior baselines. See
+  [docs/baselines.md](https://github.com/jrsamsanchez/signalith/blob/main/docs/baselines.md).
 - **Risk** lists the users and systems with the most risk, with a bar per score, the
   number of detections and tactics, and the asset or identity context. Click one to
   see every detection that added risk, oldest first.
-- **Assets & identities** takes two CSV files, like the ES asset and identity
-  lookups. Upload them on that page, or put them in `lookups.dir` (they reload within
+- **Assets & identities** takes two CSV files, one for assets and one for
+  identities. Upload them on that page, or put them in `lookups.dir` (they reload within
   a minute). Every bad line is reported and nothing is saved until the file is clean.
   Download the current file from the same page to edit it.
 
@@ -978,7 +1166,7 @@ using only control numbers for frameworks whose text is copyrighted. See
 
 ## Threat intel
 
-Like the ES threat intelligence framework, Signalith matches events against
+Signalith matches events against threat intel
 **indicators**: IP addresses and IPv4 networks, domains, URLs, MD5/SHA-1/SHA-256
 file hashes and email addresses.
 
@@ -1066,8 +1254,8 @@ and the API.
 
 ## Dashboards
 
-The **Dashboards** tab opens on the built-in **Security posture** dashboard, like the
-Splunk ES Security Posture and executive summary views. Pick a time range (last hour
+The **Dashboards** tab opens on the built-in **Security posture** dashboard, a summary
+for analysts and managers alike. Pick a time range (last hour
 to 30 days) and, if you like, auto-refresh. It shows:
 
 - **Key indicators** compared with the previous period of the same length: open
@@ -1218,10 +1406,10 @@ From the shell: `signalith query "datamodel=Authentication | top user"` or add
 ## Architecture
 
 ```
-Fluent Bit agents ──HTTPS──▶ signalith (Go) ──REST──▶ OpenSearch
- (Windows, Linux)            ingest, parse,          events by data model and day
-syslog devices ─UDP/TCP/TLS▶ query compiler,
-                             web UI and API ◀── analyst browser
+Signalith Agent ──HTTPS────▶ signalith (Go) ──REST──▶ OpenSearch
+ (Fluent Bit, osquery;       ingest, parse,          events by data model and day
+  Windows, Linux, macOS)     query compiler,
+syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 ```
 
 | Path | What it holds |
@@ -1257,9 +1445,18 @@ syslog devices ─UDP/TCP/TLS▶ query compiler,
 | `web/static` | Browser UI (plain JavaScript, no build step) |
 | `deploy/` | Docker Compose, systemd unit, Windows installer script |
 
+In a lab, one Signalith server with 2 CPU cores and two 8-core OpenSearch nodes stored
+events at a rate of about 21,500 a second (about 1 TB a day) in 4-hour runs on two days
+in a row, with no late
+detections and searches answered in under a second. Three 2-core Signalith servers stored
+all 25,000 events a second offered for 4 hours with 1,520 detections running and none
+late ([sizing](https://signalith.io/docs/performance/#lab-sizes)).
+
 ## Building
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests, code style and how to send changes, and
+[GOVERNANCE.md](GOVERNANCE.md) for who maintains the project. The
+[architecture](https://signalith.io/docs/architecture/) page gives the high-level design.
 
 Requires the Go version in `go.mod` (1.26.9) or newer.
 
@@ -1283,11 +1480,10 @@ share one OpenSearch, and stop them with kill -9 and SIGSTOP (Linux only). Witho
 
 1. **Search foundation**: agents, parsing, data models, query language, builder, installers.
 2. **Detect and triage**: scheduled detections in Sigma or Signalith queries, throttling, a findings queue, ATT&CK coverage.
-3. **ES depth**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
+3. **Context and risk**: risk-based alerting, asset and identity context, threat intel feeds, posture dashboards, and plain-English to query.
 4. **Respond and scale**: investigation cases, response actions, playbooks, multi-node deployments.
 
-What is being built now and what comes next, from detection content and osquery endpoint
-visibility to alerts, response actions and signed packages, is on the
+What is done, what is being built now and what comes next is on the
 [public roadmap](https://signalith.io/docs/roadmap/) ([source](docs/roadmap.md)).
 
 ## License
@@ -1300,6 +1496,7 @@ Signalith is an independent open-source project. It is not affiliated with,
 endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code.
 Its optional Splunk Security Content pack ships detection rules from Splunk's open
 source security_content project under the Apache License 2.0 (see NOTICE).
-Splunk, Splunk Enterprise Security and SPL are trademarks of Splunk LLC; they are
-named here only to describe what Signalith works like. OpenSearch, Fluent Bit,
+Splunk, Splunk Enterprise Security and SPL are trademarks or registered trademarks
+of Splunk LLC, a Cisco company, in the United States and other countries; they are
+named here only to describe the rules Signalith can run and its search syntax. OpenSearch, Fluent Bit,
 Sigma and MITRE ATT&CK are trademarks of their respective owners.

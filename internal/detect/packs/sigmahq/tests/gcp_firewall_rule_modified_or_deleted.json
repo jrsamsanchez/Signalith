@@ -1,0 +1,4 @@
+{"rule": "fe513c69-734c-4d4a-8548-ac5f609be82b", "cases": [
+  {"expect":true,"source":"synthesized","channel":"gcp","event_id":"activity","data":{"gcp.audit.method_name":"v.Compute.Firewalls.Update"}},
+  {"expect":false,"source":"synthesized","channel":"gcp","event_id":"activity","data":{}}
+]}

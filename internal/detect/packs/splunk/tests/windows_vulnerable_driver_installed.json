@@ -1,0 +1,11 @@
+{"rule": "1dda7586-57be-4a1b-8de1-a9ad802b9a7f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\ADV64DRV.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\Agent64.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\ALSysIO64.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\amifldrv64.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\AsIO.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":true,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"x \\AsIO64.sys","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"kernel mode driver","StartType":"auto start"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"kernel mode drives","StartType":"auto start"}},
+  {"expect":false,"source":"synthesized","channel":"System","event_id":"7045","data":{"AccountName":"LocalSystem","ImagePath":"\"C:\\Program Files\\Example\\updater.exe\" --service","ServiceName":"ExampleUpdater","ServiceType":"user mode service","StartType":"auto start"}}
+]}

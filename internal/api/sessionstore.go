@@ -1,7 +1,11 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
@@ -19,6 +23,8 @@ type SessionStore interface {
 	// SetVersion records which password a session's user has now (see
 	// auth.Session.Version).
 	SetVersion(ctx context.Context, token, version string)
+	// SetTenant moves a session to another tenant (auth.Session.Tenant).
+	SetTenant(ctx context.Context, token, tenant string) error
 	// Delete ends a session.
 	Delete(ctx context.Context, token string)
 	// EndUser ends every session of a user except the one with token keep
@@ -28,6 +34,9 @@ type SessionStore interface {
 	Users(ctx context.Context) []string
 	// SetIdle changes how long a session lasts without a request.
 	SetIdle(d time.Duration)
+	// SetMaxAge changes how long any session lasts after sign-in,
+	// remembered or not.
+	SetMaxAge(d time.Duration)
 	// MaxAge is how long any session lasts after sign-in.
 	MaxAge() time.Duration
 }
@@ -53,6 +62,13 @@ func (m memorySessions) SetVersion(_ context.Context, token, version string) {
 	m.s.SetVersion(token, version)
 }
 
+func (m memorySessions) SetTenant(_ context.Context, token, tenant string) error {
+	if !m.s.SetTenant(token, tenant) {
+		return errors.New("the session has ended")
+	}
+	return nil
+}
+
 func (m memorySessions) Delete(_ context.Context, token string) { m.s.Delete(token) }
 
 func (m memorySessions) EndUser(_ context.Context, user, keep string) int {
@@ -63,4 +79,6 @@ func (m memorySessions) Users(context.Context) []string { return m.s.Users() }
 
 func (m memorySessions) SetIdle(d time.Duration) { m.s.SetIdle(d) }
 
-func (m memorySessions) MaxAge() time.Duration { return m.s.MaxAge }
+func (m memorySessions) SetMaxAge(d time.Duration) { m.s.SetMaxAge(d) }
+
+func (m memorySessions) MaxAge() time.Duration { return m.s.MaxAgeNow() }

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package clusterjoin
 
 import (
@@ -37,6 +40,9 @@ type Bundle struct {
 	PublicURL string `json:"public_url,omitempty"`
 	NodeName  string `json:"node_name"`
 	Listen    string `json:"listen,omitempty"`
+	// AgentListen is the issuer's server.agent_listen as it was set, ""
+	// when it was not (the new server's --agent-listen wins).
+	AgentListen string `json:"agent_listen,omitempty"`
 	// Role is the role the token gives the new server: "" a cluster
 	// server, or RoleScanner (cluster.role).
 	Role string `json:"role,omitempty"`

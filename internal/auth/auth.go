@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package auth keeps sign-in sessions for the web UI and limits password
 // guessing. Sessions live in memory: a restart from the Settings page keeps
 // them, but stopping the server signs everyone out; API clients can keep
@@ -19,8 +22,8 @@ type Session struct {
 	User     string
 	Created  time.Time
 	LastSeen time.Time
-	// Remember keeps the session through idle periods up to MaxAge, for a
-	// "keep me signed in" sign-in.
+	// Remember keeps the session through idle periods, for a "keep me
+	// signed in" sign-in. It still ends MaxAge after sign-in.
 	Remember bool
 	// Version identifies the password the user signed in with ("" when
 	// there is none to follow), so a session can end when the password
@@ -34,6 +37,9 @@ type Session struct {
 	// Degraded marks a session made while OpenSearch could not be
 	// reached, kept by one server only until it can be written through.
 	Degraded bool
+	// Tenant is the tenant the session works in: a tenant user's own,
+	// or the one a provider user switched to ("" is the default tenant).
+	Tenant string
 }
 
 // NewSession is what a session starts with.
@@ -46,6 +52,8 @@ type NewSession struct {
 	Method  string
 	// Client is the address the user signed in from.
 	Client string
+	// Tenant is as in Session.
+	Tenant string
 }
 
 // Sessions stores sessions by a hash of their token, so the tokens
@@ -67,10 +75,15 @@ type Sessions struct {
 	forward func(Held)
 }
 
-// NewSessions returns a store with the given idle timeout and a 7 day
+// DefaultMaxAge is how long a session lasts after sign-in, remembered or
+// not, until SetMaxAge says otherwise: NIST SP 800-63B asks for a new
+// sign-in at least every 24 hours at AAL2.
+const DefaultMaxAge = 24 * time.Hour
+
+// NewSessions returns a store with the given idle timeout and the default
 // maximum age.
 func NewSessions(idle time.Duration) *Sessions {
-	return &Sessions{Idle: idle, MaxAge: 7 * 24 * time.Hour, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
+	return &Sessions{Idle: idle, MaxAge: DefaultMaxAge, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
 }
 
 func hash(token string) [32]byte { return sha256.Sum256([]byte(token)) }
@@ -88,7 +101,7 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
-	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method}
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method, Tenant: n.Tenant}
 	s.mu.Lock()
 	if f := s.forward; f != nil {
 		s.mu.Unlock()
@@ -148,6 +161,21 @@ func (s *Sessions) SetIdle(idle time.Duration) {
 	s.Idle = idle
 }
 
+// SetMaxAge changes how long a session lasts after sign-in, remembered or
+// not, for every session, the current ones included.
+func (s *Sessions) SetMaxAge(maxAge time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.MaxAge = maxAge
+}
+
+// MaxAgeNow returns MaxAge, safe to call while SetMaxAge may run.
+func (s *Sessions) MaxAgeNow() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.MaxAge
+}
+
 // SetVersion records which password a session's user has now (see
 // Session.Version).
 func (s *Sessions) SetVersion(token, version string) {
@@ -159,6 +187,21 @@ func (s *Sessions) SetVersion(token, version string) {
 	if ss, ok := s.byID[hash(token)]; ok {
 		ss.Version = version
 	}
+}
+
+// SetTenant moves a session to another tenant (see Session.Tenant), and
+// reports whether the session exists.
+func (s *Sessions) SetTenant(token, tenant string) bool {
+	if token == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ss, ok := s.byID[hash(token)]
+	if ok {
+		ss.Tenant = tenant
+	}
+	return ok
 }
 
 // Delete ends a session.

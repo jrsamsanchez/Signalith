@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright 2026 The Signalith authors
+# SPDX-License-Identifier: Apache-2.0
 # Smoke test of the load balancer lab (docker-compose.cluster.yml), run
 # weekly by .github/workflows/cluster-smoke.yml: agents and syslog through
 # HAProxy reach both servers, each client is seen by its own address, and
@@ -22,16 +24,34 @@ until_ok() {
 }
 
 until_ok 600 "HAProxy passes /readyz on" sh -c "curl -sfk $LB/readyz | grep -q '\"ready\":true'"
-PW=$($COMPOSE exec -T signalith-a signalith initial-password | tail -n 1)
+FIRST=$($COMPOSE exec -T signalith-a signalith initial-password | tail -n 1)
 TOKEN=$($COMPOSE exec -T signalith-a cat /run/signalith-secrets/ingest-token)
-api() { curl -sfk -u "admin:$PW" "$LB$1"; }
-until_ok 120 "both servers are listed" sh -c "curl -sfk -u 'admin:$PW' $LB/api/cluster | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if sum(s[\"state\"]==\"ready\" for s in v[\"servers\"])==2 else 1)'"
+# The first password Signalith made allows only choosing a new one. Until
+# the servers share their users each keeps its own, so each try first
+# replaces it on whichever server still has it.
+PW=$(head -c 18 /dev/urandom | od -An -tx1 | tr -d ' \n')
+change="curl -sfk -o /dev/null -u 'signalithadmin:$FIRST' -H 'Content-Type: application/json' -d '{\"current_password\":\"$FIRST\",\"new_password\":\"$PW\"}' $LB/api/me/password || true"
+api() { curl -sfk -u "signalithadmin:$PW" "$LB$1"; }
+until_ok 120 "both servers are listed" sh -c "$change; curl -sfk -u 'signalithadmin:$PW' $LB/api/cluster | python3 -c 'import json,sys; v=json.load(sys.stdin); sys.exit(0 if sum(s[\"state\"]==\"ready\" for s in v[\"servers\"])==2 else 1)'"
+# Both servers have the new password: each answers it.
+until_ok 60 "the new password works on both servers" sh -c "$change; for i in 1 2 3 4 5 6; do curl -sfk -o /dev/null -u 'signalithadmin:$PW' $LB/api/health || exit 1; done"
 
 batch() {
   curl -sfk -o /dev/null -H "Authorization: Bearer $TOKEN" -H "X-Signalith-Agent: smoke" \
     "$LB/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$1 port 22 ssh2\"}]"
 }
-syslog() { printf '<13>Oct 14 12:00:00 smokefw app: smoke %s\n' "$1" | nc -q 1 localhost 514; }
+# Syslog over TLS (port 6514), which the lab turns on; plain syslog is off.
+# The servers' own CA is not checked: this only tests the way through HAProxy.
+syslog() {
+  python3 -c '
+import socket, ssl, sys
+c = ssl.create_default_context()
+c.check_hostname = False
+c.verify_mode = ssl.CERT_NONE
+s = c.wrap_socket(socket.create_connection(("localhost", 6514), 10))
+s.sendall(("<13>Oct 14 12:00:00 smokefw app: smoke %s\n" % sys.argv[1]).encode())
+s.close()' "$1"
+}
 
 # Agent batches and syslog spread over both servers, by HAProxy's leastconn.
 i=0

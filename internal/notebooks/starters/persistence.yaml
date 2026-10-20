@@ -1,0 +1,37 @@
+id: starter-persistence
+title: New persistence
+description: Review scheduled tasks, services and accounts created recently, and accounts added to admin groups.
+techniques: [T1053.005, T1543.003, T1136, T1098]
+time_range: 7d
+cells:
+  - kind: markdown
+    text: |
+      ## Hypothesis
+      After getting in, attackers make sure they can come back: a **scheduled task**, a **new service**, a **new account**, or an existing account added to an **admin group**.
+
+      Each of these is rare in day-to-day work, so a short list to review by hand is the goal.
+  - kind: search
+    title: Scheduled tasks created
+    query: |
+      datamodel=Endpoint process_name=schtasks.exe process="*/create*"
+      | stats count, values(process) as commands by dest, user
+  - kind: search
+    title: Services created
+    query: |
+      datamodel=Endpoint process_name=sc.exe process="* create *"
+      | table _time, dest, user, process
+  - kind: search
+    title: Accounts created or deleted
+    query: |
+      datamodel=Change object_category=user action IN (created, deleted)
+      | table _time, dest, user, action, object
+  - kind: search
+    title: Accounts added to admin groups
+    query: |
+      datamodel=Change object_category=group action=modified
+      object IN (Administrators, "Domain Admins", "Enterprise Admins", "Schema Admins", "Backup Operators", sudo, wheel, admin, root)
+      | table _time, dest, user, object, member
+  - kind: markdown
+    text: |
+      ## If something is not explained by a change ticket
+      Find who made it and from where, then check that account's sign-ins in **Authentication** for the hours before. Remove the task, service or group membership once the investigation has what it needs.

@@ -7,7 +7,7 @@
 #   2. Show the admin password:
 #        docker compose -f deploy/docker/docker-compose.cluster.yml exec signalith-a signalith initial-password
 #   3. Open https://localhost:8443 (HAProxy, which passes each connection on
-#      to signalith-a or signalith-b) and sign in as admin. The Servers page
+#      to signalith-a or signalith-b) and sign in as signalithadmin. The Servers page
 #      lists both; the Health page totals what each received.
 #   4. Stop one server and keep working; agents and syslog carry on with the
 #      other:
@@ -76,7 +76,7 @@ services:
     restart: "no"
 
   opensearch:
-    image: opensearchproject/opensearch:2.17.1@sha256:1193b7c29c5d63028523728243cc4da047ac49f697a8f8105e5aeee2f89bcc4c
+    image: opensearchproject/opensearch:3.9.0@sha256:adfa61f85025d06b4aeb562e7e74fde7e31c437039c93c3862c17e9acebd6c7c
     restart: unless-stopped
     depends_on:
       setup: { condition: service_completed_successfully }
@@ -96,6 +96,7 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem --cert /usr/share/opensearch/config/certs/admin.pem --key /usr/share/opensearch/config/certs/admin-key.pem https://localhost:9200/_cluster/health && curl -sf -o /dev/null --cacert /usr/share/opensearch/config/certs/root-ca.pem https://localhost:9200/_plugins/_security/health || exit 1"]
       interval: 10s
@@ -106,7 +107,7 @@ services:
       options: { max-size: "10m", max-file: "5" }
 
   opensearch-security:
-    image: opensearchproject/opensearch:2.17.1
+    image: opensearchproject/opensearch:3.9.0
     depends_on:
       setup: { condition: service_completed_successfully }
       opensearch: { condition: service_started }
@@ -121,10 +122,13 @@ services:
       - ./opensearch/security/internal_users.yml:/usr/share/opensearch/config/opensearch-security/internal_users.yml:ro
       - ./opensearch/security/roles.yml:/usr/share/opensearch/config/opensearch-security/roles.yml:ro
       - ./opensearch/security/roles_mapping.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro
+      - ./opensearch/security/audit.yml:/usr/share/opensearch/config/opensearch-security/audit.yml:ro
       - opensearch-security-loaded:/usr/share/opensearch/data
+    # /tmp allows running files: from OpenSearch 3, securityadmin.sh
+    # unpacks a native library of its FIPS crypto provider there.
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:exec
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -140,7 +144,7 @@ services:
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
       - SIGNALITH_NODE_NAME=siem-a
-      - SIGNALITH_NODE_URL=https://siem-a:8080
+      - SIGNALITH_NODE_URL=https://siem-a:9000
     volumes:
       - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-a-data:/var/lib/signalith
@@ -157,14 +161,14 @@ services:
       - SIGNALITH_INGEST_TOKEN_FILE=/run/signalith-secrets/ingest-token
       - SIGNALITH_CLUSTER_KEY_FILE=/run/signalith-cluster/cluster-key
       - SIGNALITH_NODE_NAME=siem-b
-      - SIGNALITH_NODE_URL=https://siem-b:8080
+      - SIGNALITH_NODE_URL=https://siem-b:9000
     volumes:
       - ./signalith-cluster.yaml:/etc/signalith/signalith.yaml:ro
       - signalith-b-data:/var/lib/signalith
       - signalith-secrets:/run/signalith-secrets:ro
       - cluster-key:/run/signalith-cluster:ro
 
-  # Passes the web port and syslog through to both servers with a PROXY
+  # Passes the web port, the agent port and syslog through to both servers with a PROXY
   # protocol v2 header. Its address (172.30.11.10) is the one trusted proxy
   # in signalith-cluster.yaml.
   haproxy:
@@ -177,6 +181,7 @@ services:
       default: { ipv4_address: 172.30.11.10 }
     ports:
       - "8443:8443"
+      - "7779:7779"
       - "514:514/tcp"
       - "6514:6514"
     volumes:

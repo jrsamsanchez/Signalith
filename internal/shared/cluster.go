@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package shared
 
 import (
@@ -41,7 +44,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = LevelAPITokens
+	LevelMax = LevelDetectionEpochs
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared
@@ -150,7 +153,14 @@ type ClusterBody struct {
 	// that refuses to start can name the version to install. Versions
 	// before it keep it through Extra.
 	LevelVersions map[string]string `json:"level_versions,omitempty"`
-	Extra         `json:"-"`
+	// AuditSigned holds, per node id, when that server first signed its
+	// audit records (RFC 3339). It is kept here, out of the audit records
+	// anyone who can write to OpenSearch could change, so the integrity
+	// check knows a server's later records must be signed (see
+	// audit.VerifyQuery.SignedSince). Versions before it keep it through
+	// Extra.
+	AuditSigned map[string]string `json:"audit_signed,omitempty"`
+	Extra       `json:"-"`
 }
 
 // ErrClusterExists is a founding that found a cluster already there.

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 // Package sample generates a realistic week of security activity for a
 // fictional company, with attacks hidden in it, so an evaluator can try
 // Signalith on data that makes detections fire, fills the findings queue,

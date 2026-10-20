@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package api
 
 import (
@@ -208,6 +211,11 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 	st.Warnings = append(st.Warnings, agentTrafficClusterWarnings(st)...)
 	out := map[string]any{"self": st.Self, "servers": servers, "lease": lease, "warnings": st.Warnings,
 		"writes_refused": st.WritesRefused, "opensearch": osOut}
+	if s.DetectionSpread != nil {
+		if views := s.DetectionSpread(ctx); len(views) > 0 {
+			out["detections"] = views
+		}
+	}
 	// The join tokens and the servers waiting for approval.
 	for k, v := range s.clusterJoinView(ctx) {
 		out[k] = v

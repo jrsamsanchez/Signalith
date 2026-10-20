@@ -1,0 +1,21 @@
+id: data-source-stopped
+title: $host$ stopped sending $stopped_sourcetype$
+name: Data source stopped sending
+description: A host and source type that sent events all day went quiet for longer than the "Quiet data source after" setting (2 hours by default). A broken agent, a full disk, a changed firewall or an attacker who turned logging off all look like this, and detections that need the data go blind until it is back.
+query: |
+  sourcetype="source:health" signalith_intake="signalith"
+  | stats count, max(_time) as last_seen, max(quiet_minutes) as quiet_minutes by host, stopped_sourcetype
+schedule: 15m
+lookback: 30m
+severity: medium
+mitre: [T1562]
+throttle:
+  fields: [host, stopped_sourcetype]
+  window: 24h
+risk:
+  score: 20
+  objects:
+    - {field: host, type: system}
+enabled: true
+tags: [health, nist-800-53:AU-5, pci-dss:10.7.2]
+guidance: Open Endpoints and check the host's agent, then the host itself (is the service running, is the disk full, did a firewall change). If the host is a domain controller or a server nobody touched, check whether someone stopped its logging on purpose. A source that is quiet on schedule can be left out by turning this detection off or raising Settings > Search > Quiet data source after.

@@ -1,3 +1,6 @@
+// Copyright 2026 The Signalith authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -103,6 +106,15 @@ type runner struct {
 	// sharedContent links the shared settings' content (feeds, retention
 	// policies) to the components of each start; nil with shared.
 	sharedContent *sharedContent
+	// detPrints is, per tenant, the fingerprint of the files its
+	// detections use, for the heartbeat (see detspread.go).
+	detPrints *detPrints
+	// detPool is the detection workers every tenant's spread scheduler
+	// shares (see detpool.go).
+	detPool *detPool
+	// detViews is how each tenant's detections are spread, for the
+	// Servers page.
+	detViews *detViews
 	// audit is the process's audit spool (see sharedaudit.go); nil in
 	// some tests.
 	audit *processAudit
@@ -114,6 +126,12 @@ type runner struct {
 	agents atomic.Pointer[agentinv.Inventory]
 
 	front *front
+	// agentFront is the handler the agent port serves, held back during a
+	// restart as front is; agentSrv is that port, nil when agents send to
+	// the web port (see agentport.go).
+	agentFront *front
+	agentMu    sync.Mutex
+	agentSrv   *agentServer
 	// prepared is the HTTPS certificate a restart's checks loaded or made
 	// for the new settings, which starting with them then uses, and
 	// preparedKey the settings it was made for. It lasts only for that
@@ -192,8 +210,9 @@ type move struct {
 func newRunner(path string, log *slog.Logger) *runner {
 	r := &runner{
 		path: path, log: log, started: time.Now(),
-		sessions: auth.NewSessions(12 * time.Hour), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
-		front: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
+		sessions: auth.NewSessions(config.DefaultSessionIdle), limiter: auth.NewLimiter(), browsers: auth.NewBrowserKey(),
+		front: &front{}, agentFront: &front{}, requests: make(chan restartRequest, 1), confirmed: make(chan *move, 1),
+		detPrints: newDetPrints(), detPool: newDetPool(log), detViews: newDetViews(),
 	}
 	r.front.ready = r.ready
 	r.front.confirmMove = r.confirmProbe
@@ -505,7 +524,7 @@ func (r *runner) run(ctx context.Context, c *config.Config) error {
 		return err
 	}
 	r.cur, r.good = in, c
-	r.front.resume(in.handler, in.plain)
+	r.resumeWith(in)
 	r.web = r.serveWeb(c, ln, in.certs)
 	go r.followShared(ctx)
 	if r.shared != nil && r.node != nil {
@@ -798,6 +817,7 @@ func (r *runner) shutdown() error {
 	if r.web != nil {
 		err = r.web.close(10 * time.Second)
 	}
+	r.closeAgents(10 * time.Second)
 	sampleWait.Wait()
 	var wg sync.WaitGroup
 	for _, w := range r.retired {
@@ -898,7 +918,7 @@ func (r *runner) done(res *api.RestartResult, req restartRequest, start time.Tim
 	// so the page sees it at once.
 	r.finish(res, m)
 	if r.cur != nil {
-		r.front.resume(r.cur.handler, r.cur.plain)
+		r.resumeWith(r.cur)
 	}
 	if m == nil {
 		// A restart another server asked for ends here, unless it moved the
@@ -1007,7 +1027,7 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 
 	// Switch: hold new requests back, stop the old components, start new ones.
 	old := r.cur
-	r.front.pause(drainWait)
+	r.pauseAll(drainWait)
 	old.stop()
 	in, err := r.start(ctx, next)
 	if err == nil && plan.moveWeb && plan.ln == nil && plan.reuse == nil {
@@ -1041,6 +1061,9 @@ func (r *runner) switchTo(ctx context.Context, prev, next *config.Config, res *a
 			r.log.Error("Signalith could not start with the new settings or the previous ones; it tries again every 30 seconds", "new", err, "previous", err2)
 			r.cur = nil
 			r.front.resume(downHandler, downHandler)
+			if r.agentFront != nil {
+				r.agentFront.resume(downHandler, downHandler)
+			}
 			if r.node != nil {
 				// Another server that shares the OpenSearch runs the jobs
 				// meanwhile.
@@ -1110,7 +1133,7 @@ func (r *runner) recover(ctx context.Context) bool {
 		// The result is in place before the requests held back go through,
 		// as after a restart (done).
 		r.finish(&api.RestartResult{At: time.Now().UTC(), By: "Signalith", OK: true, Keys: []string{}}, nil)
-		r.front.resume(in.handler, in.plain)
+		r.resumeWith(in)
 		return true
 	}
 	// The saved settings, unless they move the web page: that is checked
@@ -1206,11 +1229,18 @@ func (r *runner) check(ctx context.Context, old, next *config.Config) (*plan, er
 		}
 		return nil, err
 	}
+	// A new agent port must be free; the one in use is freed by the
+	// switch.
+	if a := next.Server.AgentAddr(); a != "" && !next.AgentListenDerived() && !overlaps(old.Server.AgentAddr(), a) {
+		if err := tryListen("tcp", a); err != nil {
+			return fail(keyed(refuse("Signalith cannot listen for agents on %s (%v). Choose another address or port.", a, opError(err)), "server.agent_listen"))
+		}
+	}
 	// New syslog addresses must be free; one that takes a port Signalith
 	// holds now, with the same protocol, is freed by the switch. Another
 	// program may hold the same port number with the other protocol.
 	type listener struct{ network, addr string }
-	inUse := []listener{{"udp", old.Syslog.UDP}, {"tcp", old.Syslog.TCP}, {"tcp", old.Syslog.TLS}, {"tcp", old.Server.Listen}}
+	inUse := []listener{{"udp", old.Syslog.UDP}, {"tcp", old.Syslog.TCP}, {"tcp", old.Syslog.TLS}, {"tcp", old.Server.Listen}, {"tcp", old.Server.AgentAddr()}}
 	for _, l := range []struct{ setting, network, addr string }{
 		{"syslog.udp", "udp", next.Syslog.UDP}, {"syslog.tcp", "tcp", next.Syslog.TCP}, {"syslog.tls", "tcp", next.Syslog.TLS},
 	} {
@@ -1740,6 +1770,28 @@ func (f *front) pause(wait time.Duration) {
 	select {
 	case <-idle:
 	case <-t.C:
+	}
+}
+
+// pauseAll holds new requests back on the web port and the agent port,
+// and waits up to wait for those in progress to finish.
+func (r *runner) pauseAll(wait time.Duration) {
+	if r.agentFront == nil {
+		r.front.pause(wait)
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() { r.agentFront.pause(wait) })
+	r.front.pause(wait)
+	wg.Wait()
+}
+
+// resumeWith serves the web port and the agent port with in's handlers,
+// letting the requests held back through.
+func (r *runner) resumeWith(in *instance) {
+	r.front.resume(in.handler, in.plain)
+	if r.agentFront != nil {
+		r.agentFront.resume(in.agentHandler, in.agentPlain)
 	}
 }
 
