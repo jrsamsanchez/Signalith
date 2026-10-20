@@ -345,3 +345,31 @@ func TestPostureHealthOnAnotherServer(t *testing.T) {
 		t.Errorf("one skipped = %+v", g)
 	}
 }
+
+// The noisiest detections are those whose findings closed in the period
+// were most often false positives (AW-4).
+func TestNoisiestDetections(t *testing.T) {
+	c := now.Add(-2 * time.Hour)
+	closed := func(id, det, disp string) *findings.Finding {
+		f := mkFinding(id, det, "low", "closed", c, nil, change("status", "new", "closed", c.Add(time.Hour)))
+		f.Disposition = disp
+		return f
+	}
+	list := []*findings.Finding{
+		closed("1", "noisy", "false_positive"), closed("2", "noisy", "false_positive"), closed("3", "noisy", "true_positive"),
+		closed("4", "rare", "false_positive"),
+		closed("5", "good", "true_positive"), closed("6", "good", ""),
+		mkFinding("7", "open", "low", "new", c, nil),
+	}
+	fs := computeFindingStats(list, now.Add(-24*time.Hour), now, now.Add(-48*time.Hour), 24*time.Hour)
+	got := noisiest(fs, func(id string) string { return "T " + id })
+	if len(got) != 2 {
+		t.Fatalf("noisiest = %+v", got)
+	}
+	if n := got[0]; n.ID != "noisy" || n.Title != "T noisy" || n.Judged != 3 || n.FalsePositive != 2 || n.Rate < 0.66 || n.Rate > 0.67 {
+		t.Errorf("first = %+v", n)
+	}
+	if n := got[1]; n.ID != "rare" || n.Judged != 1 || n.Rate != 1 {
+		t.Errorf("second = %+v", n)
+	}
+}
