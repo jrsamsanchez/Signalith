@@ -674,8 +674,8 @@ jobs to take that step, and answers `202` with a `request_id` that
 `GET /api/requests/{id}` follows; `409` when the step doesn't fit the state, or a server
 isn't ready (the error names it); `503` when the shared settings can't be changed now.
 `GET /api/cluster/tls` has the state in `rotation`: `state` (`none`, `prepared` or
-`switched`), `next` or `previous` with its fingerprint, date and `key_lost`, and
-`blockers`.
+`switched`), `next` or `previous` with its fingerprint, date and `key_lost`,
+`blockers`, and `agents` (`managed`, `reporting` and `have_new`).
 
 ### Backing up the cluster's CA
 

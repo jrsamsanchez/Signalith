@@ -45,11 +45,18 @@ func (x *clusterCLI) tlsReport(ctx context.Context) (*shared.Runtime, *clustertl
 	cb, _ := rt.Cluster().Get()
 	in := clustertls.ReportInput{Heartbeats: hbs, Founder: cb.CreatedByID, Now: time.Now()}
 	unread := ""
-	if b, ok := x.tls.tls.Get(); ok {
+	b, ok := x.tls.tls.Get()
+	if ok {
 		in.Body = b
-	} else {
+	}
+	// The agents count while none is published (which to choose), and
+	// while the published one is replaced (who has the new one).
+	if !ok || b.Rotation() != clustertls.RotationNone {
 		var err error
 		in.Agents, _, err = (&agentinv.Inventory{Client: x.cl, Prefix: x.prefix()}).List(ctx)
+		if in.Agents == nil {
+			in.Agents = []agentinv.Agent{}
+		}
 		if err != nil {
 			unread = err.Error()
 		}
@@ -250,6 +257,12 @@ func (x *clusterCLI) tlsRotate(ctx context.Context, step string, yes bool) error
 	if strings.Contains(q, "%s") {
 		q = fmt.Sprintf(q, fp)
 	}
+	// Not a blocker: an agent that is offline, or of an older version,
+	// can't say, and one that never fetches needs the file by hand anyway.
+	if step == clustertls.StepSwitch && st.Rotation != nil && st.Rotation.Agents.Waiting() > 0 {
+		fmt.Fprintf(x.errOut, "warning: managed agents: %s. Those without it refuse the servers after the switch until they fetch it, or you give them the file with both CAs.\n",
+			agentsText(st.Rotation.Agents))
+	}
 	if err := x.confirm(q, yes); err != nil {
 		return err
 	}
@@ -324,7 +337,20 @@ func printRotation(w *tabwriter.Writer, r *clustertls.RotationView) {
 	default:
 		return
 	}
+	if a := r.Agents; a != nil {
+		fmt.Fprintf(w, "\tmanaged agents: %s\n", agentsText(a))
+	}
 	for _, b := range r.Blockers {
 		fmt.Fprintf(w, "\twaiting: %s\n", b)
 	}
+}
+
+// agentsText says how many managed agents have the new certificate
+// authority.
+func agentsText(a *clustertls.RotationAgents) string {
+	t := fmt.Sprintf("%d of %d have the new certificate authority", a.HaveNew, a.Managed)
+	if old := a.Managed - a.Reporting; old > 0 {
+		t += fmt.Sprintf(" (%d run a version that doesn't say)", old)
+	}
+	return t
 }

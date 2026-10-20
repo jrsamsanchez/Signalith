@@ -103,7 +103,7 @@ func TestClusterCARotation(t *testing.T) {
 		}
 	}
 	out, err = a.clusterCmd("tls")
-	if err != nil || !strings.Contains(out, "prepared on") || !strings.Contains(out, fpN) {
+	if err != nil || !strings.Contains(out, "prepared on") || !strings.Contains(out, fpN) || !strings.Contains(out, "managed agents: 0 of 0 have the new") {
 		t.Fatalf("cluster tls: %v\n%s", err, out)
 	}
 	if out, err := a.clusterCmd("tls", "rotate-ca", "retire", "-yes"); err == nil {

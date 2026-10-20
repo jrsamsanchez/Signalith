@@ -52,6 +52,49 @@ type RotationView struct {
 	// Blockers are the servers running that are not ready for the next
 	// step (switch, or retire), with why; empty when they all are.
 	Blockers []string `json:"blockers"`
+	// Agents counts the managed agents that have the new certificate
+	// authority (the next one, or the one in use after a switch), nil
+	// with none under way or the agents unread.
+	Agents *RotationAgents `json:"agents,omitempty"`
+}
+
+// RotationAgents counts the Signalith Agents in the inventory: how many
+// there are, how many report the certificate authorities they trust
+// (older versions don't), and how many of those have the new one.
+type RotationAgents struct {
+	Managed   int `json:"managed"`
+	Reporting int `json:"reporting"`
+	HaveNew   int `json:"have_new"`
+}
+
+// countAgents counts agents for a rotation to the certificate
+// authority fp.
+func countAgents(agents []agentinv.Agent, fp string) *RotationAgents {
+	want := strings.ToLower(strings.ReplaceAll(fp, ":", ""))
+	c := &RotationAgents{}
+	for _, a := range agents {
+		if a.Managed == nil {
+			continue
+		}
+		c.Managed++
+		if len(a.Managed.CAs) == 0 {
+			continue
+		}
+		c.Reporting++
+		if slices.ContainsFunc(a.Managed.CAs, func(h string) bool { return strings.EqualFold(h, want) }) {
+			c.HaveNew++
+		}
+	}
+	return c
+}
+
+// Waiting is how many managed agents don't have the new certificate
+// authority, or don't say.
+func (c *RotationAgents) Waiting() int {
+	if c == nil {
+		return 0
+	}
+	return c.Managed - c.HaveNew
 }
 
 // OtherView is the cluster's next or previous certificate authority. At
@@ -144,7 +187,9 @@ type ReportInput struct {
 	// Founder is the node id of the server that founded the cluster, and
 	// Self this server's.
 	Founder, Self string
-	// Agents is the agent inventory, read only while none is published.
+	// Agents is the agent inventory, read while none is published or
+	// while the published one is being replaced (Body.Rotation); nil
+	// when unread.
 	Agents []agentinv.Agent
 	Now    time.Time
 }
@@ -172,6 +217,13 @@ func BuildReport(in ReportInput) *Report {
 			Blockers: Blockers(b, in.Heartbeats, now)}
 		if r.Rotation.Blockers == nil {
 			r.Rotation.Blockers = []string{}
+		}
+		switch {
+		case in.Agents == nil:
+		case b.Next != nil:
+			r.Rotation.Agents = countAgents(in.Agents, b.Next.CASHA256)
+		case b.Previous != nil:
+			r.Rotation.Agents = countAgents(in.Agents, b.CASHA256)
 		}
 		for i := len(b.Retired) - 1; i >= 0; i-- {
 			old := b.Retired[i]

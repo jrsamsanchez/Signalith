@@ -398,8 +398,10 @@ then says its key is lost, and `switch` and `prepare` are refused: run `abort`, 
 
 Each asks first unless you add `-yes`, then asks the server that runs the background
 jobs to take the step, and waits for it. A step that isn't ready is refused with the
-servers it waits for. `tls` shows which step the cluster is at, and its date. Each step
-is written to the audit log.
+servers it waits for. `tls` shows which step the cluster is at, and its date, and how
+many managed agents have the new certificate authority (agents of older versions don't
+say). `switch` warns when some don't have it yet, but doesn't wait for them: an agent
+that is offline can't fetch it. Each step is written to the audit log.
 
 ## upgrade-check
 

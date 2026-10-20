@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -425,5 +427,33 @@ func TestAbortRotation(t *testing.T) {
 	}
 	if b, _ := tl.Get(); !strings.Contains(fmt.Sprint(CheckStep(b, nil, StepAbort)), "retire") {
 		t.Error("CheckStep allowed an abort after a switch")
+	}
+}
+
+// While a rotation is under way the report counts the managed agents
+// that have the new certificate authority.
+func TestRotationCountsAgents(t *testing.T) {
+	next := strings.Repeat("AB:", 31) + "AB"
+	cur := strings.Repeat("CD:", 31) + "CD"
+	hex := func(fp string) string { return strings.ToLower(strings.ReplaceAll(fp, ":", "")) }
+	managed := func(cas ...string) agentinv.Agent {
+		return agentinv.Agent{Managed: &agentinv.ManagedStatus{Status: agentproto.Status{CAs: cas}}}
+	}
+	agents := []agentinv.Agent{managed(hex(cur), hex(next)), managed(hex(cur)), managed(), {}}
+	b := &Body{CASHA256: cur, Next: &OtherCA{CASHA256: next}}
+	r := BuildReport(ReportInput{Body: b, Agents: agents})
+	if a := r.Rotation.Agents; a == nil || *a != (RotationAgents{Managed: 3, Reporting: 2, HaveNew: 1}) || a.Waiting() != 2 {
+		t.Errorf("prepared: %+v", a)
+	}
+	// After the switch the new one is the one in use.
+	b = &Body{CASHA256: next, Previous: &OtherCA{CASHA256: cur}}
+	if a := BuildReport(ReportInput{Body: b, Agents: agents}).Rotation.Agents; a == nil || a.HaveNew != 1 {
+		t.Errorf("switched: %+v", a)
+	}
+	if a := BuildReport(ReportInput{Body: &Body{CASHA256: cur}, Agents: agents}).Rotation.Agents; a != nil {
+		t.Errorf("none under way: %+v", a)
+	}
+	if a := BuildReport(ReportInput{Body: &Body{CASHA256: cur, Next: &OtherCA{CASHA256: next}}}).Rotation.Agents; a != nil {
+		t.Errorf("agents unread: %+v", a)
 	}
 }

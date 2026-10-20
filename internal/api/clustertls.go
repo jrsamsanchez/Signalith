@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -101,13 +102,20 @@ func (s *Server) clusterTLSReport(ctx context.Context) clusterTLSReport {
 		}
 	}
 	out := clusterTLSReport{On: true}
-	if b, ok := s.ClusterTLS.CA(); ok {
+	b, ok := s.ClusterTLS.CA()
+	if ok {
 		in.Body = b
-	} else if s.Agents != nil {
+	}
+	// The agents count while none is published (which to choose), and
+	// while the published one is replaced (who has the new one).
+	if s.Agents != nil && (!ok || b.Rotation() != clustertls.RotationNone) {
 		actx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		agents, _, err := s.Agents.List(actx)
 		cancel()
 		in.Agents = agents
+		if in.Agents == nil {
+			in.Agents = []agentinv.Agent{}
+		}
 		if err != nil {
 			out.AgentsUnread = "The agents couldn't all be read from OpenSearch, so the counts may be short: " + err.Error()
 		}

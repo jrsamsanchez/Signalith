@@ -205,13 +205,13 @@
       info = [facts([
         ['New certificate authority', el('span', { class: 'mono ca-fp--full' }, r.next.ca_sha256)],
         ['Prepared', `${r.next.by ? 'by ' + r.next.by + ' ' : ''}on ${dayText(r.next.at)}, valid until ${dayText(r.next.not_after)}`],
-      ]), el('p', { class: 'ca-text' }, 'Every server hands out both. Managed agents take the new one by themselves. Give other agents, browsers and syslog devices the file with both before you switch.')];
+      ].concat(r.agents ? [['Managed agents', agentsText(r.agents)]] : [])), el('p', { class: 'ca-text' }, 'Every server hands out both. Managed agents that are online take the new one at their next configuration fetch. Give other agents, browsers and syslog devices the file with both before you switch.')];
     } else if (r.state === 'switched' && r.previous) {
       step = 'retire';
       info = [facts([
         ['Old certificate authority', el('span', { class: 'mono ca-fp--full' }, r.previous.ca_sha256)],
         ['Switched', `${r.previous.by ? 'by ' + r.previous.by + ' ' : ''}on ${dayText(r.previous.at)}`],
-      ]), el('p', { class: 'ca-text' }, 'Every server issues its certificate from the new one and still hands out the old one. Retire it once every server’s certificate comes from the new one.')];
+      ].concat(r.agents ? [['Managed agents', agentsText(r.agents)]] : [])), el('p', { class: 'ca-text' }, 'Every server issues its certificate from the new one and still hands out the old one. Retire it once every server’s certificate comes from the new one.')];
     }
     const lost = step === 'switch' && r.next.key_lost;
     const go = el('button', { type: 'button', class: 'btn btn--' + (step === 'prepare' ? 'secondary' : 'primary') + ' btn--sm', 'data-focus': 'ca-rotate', onclick: () => confirmStep(step) }, STEPS[step].button);
@@ -221,6 +221,7 @@
     if (abort) abort.disabled = !!S.asking;
     return [
       info,
+      info && rep.agents_unread ? alertBox('warning', 'The agent counts may be short', rep.agents_unread) : null,
       lost ? alertBox('danger', 'The new certificate authority’s key is lost', 'The cluster key was reset, so no server can issue from it. Abort, then replace it again.') : null,
       blockers.length && !lost ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
       S.asking ? el('p', { class: 'ca-progress', role: 'status' }, icon('clock', 'icon--sm'), S.asking) : null,
@@ -229,8 +230,21 @@
     ];
   }
 
+  // agentsText says how many managed agents have the new certificate
+  // authority.
+  function agentsText(a) {
+    let t = `${a.have_new} of ${a.managed} have the new certificate authority`;
+    if (a.managed > a.reporting) t += ` (${a.managed - a.reporting} run a version that doesn’t say)`;
+    return t;
+  }
+
   function confirmStep(step) {
     const st = STEPS[step];
+    const r = S.rep && S.rep.rotation;
+    // Not a blocker: an agent that is offline or older can't say.
+    const behind = step === 'switch' && r && r.agents && r.agents.managed > r.agents.have_new
+      ? alertBox('warning', 'Not every managed agent has the new certificate authority', `Managed agents: ${agentsText(r.agents)}. Those without it refuse the servers after the switch until they fetch it, or you give them the file with both.`)
+      : null;
     const d = modalDialog('ca-rotate');
     const ok = el('button', { type: 'button', class: 'btn btn--primary', 'data-focus': 'ca-rotate-ok' }, st.ok);
     const err = el('div', { class: 'alert hidden', 'data-tone': 'danger', role: 'alert' });
@@ -248,7 +262,7 @@
       }
     });
     fill(d, modalHead('ca-rotate', st.title, st.text, () => d.close()),
-      el('div', { class: 'modal__body' }, err),
+      el('div', { class: 'modal__body' }, behind, err),
       el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
     d.showModal();
     ok.focus();
