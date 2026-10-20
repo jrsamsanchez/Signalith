@@ -22,15 +22,19 @@
 # security settings aren't loaded") has more:
 #   docker compose -f deploy/docker/docker-compose.yml logs opensearch-security
 #
-# To update: git pull, then step 1 again; it downloads the new Signalith
-# image. Coming from a version without these steps? See "Upgrading the Docker
-# quick start" in README.md.
+# It runs the newest release of Signalith, the version in the image: lines
+# below. To update, git pull, then step 1 again:
+# when a new release is out, the pull brings this file with its version and
+# step 1 downloads that image. Coming from a version without these steps?
+# See "Upgrading the Docker quick start" in README.md.
 #
-# Signalith's image comes ready-made from GitHub (ghcr.io): the one built from
-# main, or a release's with SIGNALITH_VERSION, for example in PowerShell
-# $env:SIGNALITH_VERSION="0.1.0" or in a shell SIGNALITH_VERSION=0.1.0 before
-# step 1 (use the same version as the code you checked out: git checkout
-# v0.1.0). To build it from the code you checked out instead, add
+# Signalith's image comes ready-made from GitHub (ghcr.io). To run another
+# version, set SIGNALITH_VERSION before step 1, for example in PowerShell
+# $env:SIGNALITH_VERSION="main" or in a shell SIGNALITH_VERSION=main, or put
+# SIGNALITH_VERSION=main in a .env file next to this file so every "up"
+# keeps it. "main" is the image built from every change to main: newer, but
+# not yet released, so for trying what's coming and for development. To
+# build it from the code you checked out instead, add
 # -f deploy/docker/docker-compose.build.yml to every command.
 # Everything starts again by itself after a reboot once Docker is running
 # (Docker Desktop: Settings > General > Start Docker Desktop when you sign in).
@@ -48,7 +52,7 @@ services:
   # (docs/opensearch-security.md), for example:
   #   docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
   setup:
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
     pull_policy: always
     # Root, to give each file to the user that reads it: OpenSearch (1000)
     # or Signalith (65532), and allowed nothing else. It needs no network.
@@ -192,12 +196,12 @@ services:
       options: { max-size: "10m", max-file: "5" }
 
   signalith:
-    # The image GitHub builds from this branch (main), or a release when
-    # SIGNALITH_VERSION is set (for example 0.1.0). It is downloaded again on
-    # every `up`, so after `git pull` the same command runs the new version.
+    # The newest release's image, or the one SIGNALITH_VERSION names (main
+    # for the newest build of main). It is checked for a newer copy on every
+    # `up`, so after `git pull` the same command runs the version it names.
     # To build it from the checked-out code instead, add
     # -f deploy/docker/docker-compose.build.yml (see that file).
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
     pull_policy: always
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
@@ -296,7 +300,7 @@ services:
   # OpenSearch. Only open the port to the other servers in the firewall.
   opensearch-port:
     profiles: ["cluster"]
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
     pull_policy: always
     command: ["tcp-forward", "-listen", "0.0.0.0:9200", "-to", "opensearch:9200"]
     restart: unless-stopped

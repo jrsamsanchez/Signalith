@@ -199,9 +199,9 @@ docker pull ghcr.io/jrsamsanchez/signalith:0.3.0
 ```
 
 The [Docker quick start](getting-started.md#docker-quick-start) runs this image with
-OpenSearch: the newest code on `main` by default (the `:main` image, rebuilt on every
-change), or a release when you set `SIGNALITH_VERSION`, for example
-`SIGNALITH_VERSION=0.3.0`.
+OpenSearch: the newest release by default, or another version when you set
+`SIGNALITH_VERSION`, for example `SIGNALITH_VERSION=main` for the `:main` image, rebuilt on
+every change to `main` and not yet released.
 
 ## Check a download
 

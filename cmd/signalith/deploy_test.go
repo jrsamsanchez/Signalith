@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -75,6 +76,23 @@ func readCompose(t *testing.T) (map[string]composeService, map[string]any, strin
 		t.Fatalf("docker-compose.yml: %v", err)
 	}
 	return f.Services, f.Volumes, string(raw)
+}
+
+// quickStartImage checks that a Docker quick start file runs a release by
+// default, one with release notes, and SIGNALITH_VERSION for another (main
+// for the newest build of main), and returns the image it names.
+func quickStartImage(t *testing.T, image string) string {
+	t.Helper()
+	const prefix, suffix = "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-", "}"
+	version, ok := strings.CutPrefix(image, prefix)
+	version, ok2 := strings.CutSuffix(version, suffix)
+	if !ok || !ok2 || !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
+		t.Fatalf("image %q, want %sX.Y.Z%s: the quick start runs a release by default", image, prefix, suffix)
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", ".github", "releases", version+".md")); err != nil {
+		t.Errorf("image %q names %s, which has no release notes: %v", image, version, err)
+	}
+	return image
 }
 
 func flagValue(args []string, name string) string {
@@ -142,11 +160,11 @@ func TestDockerCompose(t *testing.T) {
 	if !slices.Equal(setup.CapDrop, []string{"ALL"}) || !slices.Equal(setup.CapAdd, []string{"CHOWN", "DAC_OVERRIDE", "FOWNER"}) {
 		t.Errorf("setup capabilities: drop %v add %v", setup.CapDrop, setup.CapAdd)
 	}
-	// setup and signalith run the same image: the one GitHub built, fetched
-	// again on every `up`, or with docker-compose.build.yml the one built
-	// from the checked-out code on every `up`.
-	const image = "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}"
-	for _, name := range []string{"setup", "signalith"} {
+	// setup and signalith run the same image: a release GitHub built,
+	// fetched again on every `up`, or with docker-compose.build.yml the one
+	// built from the checked-out code on every `up`.
+	image := quickStartImage(t, svc["signalith"].Image)
+	for _, name := range []string{"setup", "signalith", "opensearch-port"} {
 		if s := svc[name]; s.Image != image || s.PullPolicy != "always" || len(s.Build) != 0 {
 			t.Errorf("%s: image %q pull %q build %v", name, s.Image, s.PullPolicy, s.Build)
 		}
@@ -755,5 +773,41 @@ func TestComposeOpenSearchEntrypointNeedsTheCRL(t *testing.T) {
 				t.Errorf("%v: %s", err, out)
 			}
 		})
+	}
+}
+
+// The other Docker files run the quick start's release, except the public
+// demo, which shows the newest build of main.
+func TestDockerFilesRunTheQuickStartRelease(t *testing.T) {
+	svc, _, _ := readCompose(t)
+	image := quickStartImage(t, svc["signalith"].Image)
+	version := strings.TrimSuffix(strings.TrimPrefix(image, "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-"), "}")
+	read := func(path string) map[string]composeService {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct {
+			Services map[string]composeService `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(raw, &f); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return f.Services
+	}
+	if got := read(filepath.Join(dockerDir, "docker-compose.server.yml"))["signalith"].Image; got != image {
+		t.Errorf("docker-compose.server.yml runs %q, want %q", got, image)
+	}
+	for name, s := range read(filepath.Join(dockerDir, "docker-compose.cluster.yml")) {
+		if strings.Contains(s.Image, "signalith:") && s.Image != "${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:"+version+"}" {
+			t.Errorf("docker-compose.cluster.yml %s runs %q, want release %s", name, s.Image, version)
+		}
+	}
+	demo := read(filepath.Join("..", "..", "deploy", "demo", "docker-compose.demo.yml"))
+	for _, name := range []string{"setup", "signalith"} {
+		if got := demo[name].Image; got != "ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}" {
+			t.Errorf("demo %s runs %q, want the newest build of main", name, got)
+		}
 	}
 }

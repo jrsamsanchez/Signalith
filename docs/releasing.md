@@ -44,7 +44,11 @@ version would get.
 ## Making a release
 
 1. Make sure CI is green on `main`, and `.github/releases/<version>.md` says what's new
-   and what to do before upgrading.
+   and what to do before upgrading. In the same change, set the Docker quick start's
+   version (`${SIGNALITH_VERSION:-<version>}` in `deploy/docker/docker-compose.yml` and
+   `docker-compose.server.yml`) to the new one, so the tagged code runs its own image and
+   `git pull` moves quick-start users to it. Until then the quick start runs the previous
+   release, so a change to those files that needs a newer image waits for the release.
 2. Tag and push:
 
     ```sh
