@@ -215,6 +215,11 @@ func BaseTitle(title string) string {
 	return string(unicode.ToUpper(r)) + t[n:]
 }
 
+// titleValueMax caps each value put into a title, so a values() list
+// cannot make a finding's title (and its Slack, Teams or Jira message)
+// run on.
+const titleValueMax = 120
+
 // RenderTitle replaces $field$ tokens with values from a result row.
 // Characters in the result that hide or disguise text are written as
 // visible markers (see ShowHidden), since the values come from events.
@@ -224,6 +229,10 @@ func RenderTitle(title string, row map[string]any) string {
 		if !ok || v == nil {
 			return "unknown"
 		}
-		return fmt.Sprint(v)
+		s := fmt.Sprint(v)
+		if r := []rune(s); len(r) > titleValueMax {
+			s = string(r[:titleValueMax-1]) + "…"
+		}
+		return s
 	}))
 }
