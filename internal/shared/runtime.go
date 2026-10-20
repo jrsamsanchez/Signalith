@@ -103,6 +103,8 @@ type Runtime struct {
 	// cluster with, so a cluster document that does not verify with it
 	// is looked at once, not on every cycle.
 	newerKID string
+	// retiredSig is the keyring's key list retireUnlisted last checked.
+	retiredSig string
 	// fingerprint is this server's node key's, once read or made.
 	fingerprint string
 	// approval is a waiting server's request to join (approval.go).
@@ -947,15 +949,26 @@ func (rt *Runtime) look(ctx context.Context, mayFound bool, only *ClusterKey) {
 	if only != nil {
 		candidates = []*ClusterKey{only}
 	}
-	var active *ClusterKey
+	var active, retired *ClusterKey
 	for _, k := range candidates {
 		if Verify(NewKeySet(k), ClusterDocID, &e) == nil && e.ID == ClusterDocID {
+			if rt.isRetired(k.ID()) {
+				retired = k
+				continue
+			}
 			active = k
 			break
 		}
 	}
 	if active == nil && only != nil {
 		rt.setMode(ModeKeyMissing, "the cluster document does not verify with cluster key "+only.ID())
+		return
+	}
+	if active == nil && retired != nil {
+		// A key a rotation retired (often because it leaked) never takes
+		// the cluster back, though it stays on disk for the archives.
+		rt.log.Error("config.tamper: the cluster document in OpenSearch is signed with a retired cluster key", "audit", true, "doc", ClusterDocID, "kid", retired.ID())
+		rt.setMode(ModeKeyMissing, "the cluster document is signed with cluster key "+retired.ID()+", which a rotation retired")
 		return
 	}
 	if active == nil {
@@ -1264,6 +1277,7 @@ func (rt *Runtime) afterCycle(ctx context.Context) {
 	kr, kok := kdoc.Get()
 	if kok {
 		rt.useListed(kr.KIDs())
+		rt.retireUnlisted(kr)
 	}
 	// A key rotation in progress hands this server a copy of the new key.
 	picked := kok && rt.pickUpKey(kr)
