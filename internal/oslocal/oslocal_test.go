@@ -129,7 +129,7 @@ func TestFetchLocal(t *testing.T) {
 	sum := sha512.Sum512(b)
 	setPin(t, hex.EncodeToString(sum[:]))
 	dir := filepath.Join(t.TempDir(), "download")
-	got, err := Fetch(context.Background(), z, dir, io.Discard)
+	got, err := Fetch(context.Background(), z, dir, http.DefaultClient, io.Discard)
 	if err != nil || filepath.Dir(got) != dir {
 		t.Fatalf("Fetch = %q, %v: want a copy in %s", got, err, dir)
 	}
@@ -138,7 +138,7 @@ func TestFetchLocal(t *testing.T) {
 	}
 	os.Remove(got)
 	setPin(t, strings.Repeat("0", 128))
-	if _, err := Fetch(context.Background(), z, dir, io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
+	if _, err := Fetch(context.Background(), z, dir, http.DefaultClient, io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
 		t.Fatalf("a file with another SHA-512 was taken, or the error does not name its SHA-512: %v", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
