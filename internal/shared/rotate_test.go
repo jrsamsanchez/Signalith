@@ -7,10 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
 // rotationCluster is three members on the fake: siem-a runs the
@@ -528,5 +533,62 @@ func TestRetiredKeyDoesNotTakeTheClusterBack(t *testing.T) {
 	}
 	if m, why := rc.a.rt.Mode(); m != ModeKeyMissing {
 		t.Errorf("mode %v (%s)", m, why)
+	}
+}
+
+// A server restarted without its copy of the shared settings does not
+// join a cluster document signed with a key a rotation it saw finish
+// retired, though it keeps that key on disk.
+func TestRestartRefusesARetiredKey(t *testing.T) {
+	rc := newRotationCluster(t)
+	old := rc.a.key()
+	if _, err := rc.rotate(RotateOptions{By: "admin", Reason: "rotate-key"}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		rc.a.step()
+	}
+	if !rc.a.rt.isRetired(old.ID()) {
+		t.Fatal("siem-a did not mark the old key retired")
+	}
+	if rc.a.rt.isRetired(rc.a.key().ID()) {
+		t.Fatal("siem-a marked the key it signs with retired")
+	}
+	env, _ := clusterBody(t, rc.e)
+	rc.e.putSigned(old, ClusterDocID, env.Kind, env.Format, env.Rev+1, env.Body, nil)
+
+	if err := os.Remove(CachePath(rc.a.dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	rt := NewRuntime(rc.a.rt.opts)
+	rt.Use(rc.e.c, testPrefix, rc.a.master)
+	rt.step(context.Background(), false)
+	if m, why := rt.Mode(); m != ModeKeyMissing {
+		t.Errorf("mode %v (%s)", m, why)
+	}
+	if k := rt.Hub().Keys().Active(); k != nil && k.ID() == old.ID() {
+		t.Error("the restarted server signs with the retired key")
+	}
+}
+
+// A keyring the server verified that lists a marked key unmarks it: a
+// keyring forged with a key before its rotation cannot keep the new key
+// marked for good.
+func TestKeyringUnmarksAListedKey(t *testing.T) {
+	rc := newRotationCluster(t)
+	k := rc.a.key()
+	p := retiredPath(rc.a.dir, k.ID())
+	if err := securefile.MkdirPrivate(filepath.Dir(p)); err != nil {
+		t.Fatal(err)
+	}
+	if err := securefile.WriteFile(p, nil); err != nil {
+		t.Fatal(err)
+	}
+	rc.a.rt.mu.Lock()
+	rc.a.rt.retiredSig = ""
+	rc.a.rt.mu.Unlock()
+	rc.a.step()
+	if rc.a.rt.isRetired(k.ID()) {
+		t.Fatal("the key the keyring lists is still marked retired")
 	}
 }
