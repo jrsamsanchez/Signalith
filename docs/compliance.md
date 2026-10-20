@@ -123,8 +123,9 @@ in part) are left out. National laws that transpose NIS2 can add to it; check yo
 
 Lawful basis, records of processing activities (Article 30), data subject requests and the
 notifications themselves are outside what Signalith can see, so they are not listed. Your
-data protection officer decides what is enough. Signalith does not pseudonymize events,
-and its audit trail records changes and sign-ins, not every search.
+data protection officer decides what is enough. Signalith does not pseudonymize events.
+Its [audit trail](audit.md#searches) records every search, so you can show who read which
+events.
 
 ## Controls handled elsewhere
 

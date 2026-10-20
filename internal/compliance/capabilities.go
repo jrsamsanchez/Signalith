@@ -305,7 +305,7 @@ var capabilities = []Capability{
 			return Partial, "The two-step sign-in setting could not be read."
 		}},
 	builtin("siem-audit", "Audit trail of Signalith itself", "health",
-		"Signalith writes an audit line for every sign-in, failed sign-in and change to users, roles, settings, agent tokens, response actions and retention, with who did it, when and from where. With several servers the lines are kept in OpenSearch, chained and signed so changes show."),
+		"Signalith writes an audit line for every sign-in, failed sign-in, search and change to users, roles, settings, agent tokens, response actions and retention, with who did it, when and from where. With several servers the lines are kept in OpenSearch, chained and signed so changes show."),
 	builtin("siem-secrets", "Secrets are encrypted at rest", "security",
 		"Passwords, API keys and tokens Signalith keeps are encrypted on disk. Encrypt the data disk itself (BitLocker or LUKS) to protect stored events too."),
 }
