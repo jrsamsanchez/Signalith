@@ -855,7 +855,7 @@ use the shared settings, saving a note there answers `503`.
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and Signalith lets one index hold at
-most 2,400 fields. Signalith's own fields always fit; the names senders choose (JSON
+most 2,500 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 

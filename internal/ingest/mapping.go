@@ -25,10 +25,10 @@ import (
 // leaves room under the template's limit (totalFieldsLimit); past that,
 // write keeps events with their known fields only (see retryable). It sits
 // above the known fields plus a whole day's budget of new names (about
-// 1,800 since the cloud rules' fields), so a server alone always gets
+// 1,900 since the industrial protocols' fields), so a server alone always gets
 // its budget, and 400 below the limit for a burst from several servers.
 const (
-	mappingStop    = 2000
+	mappingStop    = 2100
 	mappingTTL     = 30 * time.Second
 	mappingTimeout = 2 * time.Second
 )

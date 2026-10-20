@@ -568,7 +568,8 @@ func checkSensorEvent(t *testing.T, ev Event) {
 }
 
 func FuzzZeekRecord(f *testing.F) {
-	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats", "smb_mapping"} {
+	for _, log := range []string{"conn", "dns", "http", "ssl", "x509", "files", "notice", "capture_loss", "stats", "smb_mapping",
+		"modbus", "dnp3", "s7comm", "cip", "cip_identity", "bacnet", "bacnet_device_control", "modbus_detailed"} {
 		b, err := os.ReadFile(filepath.Join("testdata", "zeek", log+".json"))
 		if err != nil {
 			f.Fatal(err)
@@ -580,6 +581,8 @@ func FuzzZeekRecord(f *testing.F) {
 		}
 	}
 	f.Add("weird", `{"ts":"x","uid":7,"id.orig_h":{"a":1},"answers":[[[1]]],"TTLs":"x","duration":"NaN","percent_lost":1e309}`)
+	f.Add("s7comm", `{"ts":1,"uid":"C","is_orig":"F","source_h":1,"destination_p":"x","function_name":"Ünïcödé  Stop","error_code":{}}`)
+	f.Add("dnp3", `{"ts":1,"uid":"C","fc_request":["READ"],"fc_reply":1e309}`)
 	f.Add("conn", `{"ts":1e30,"id.orig_h":"::ffff:1.2.3.4","conn_state":"OTH","resp_bytes":-1,"service":","}`)
 	f.Fuzz(func(t *testing.T, log, line string) {
 		ev := Normalize("zeek.opt.zeek.logs.current."+log+".log", map[string]any{"log": line, "hostname": "nsm-01"}, now)
@@ -592,15 +595,19 @@ func FuzzZeekRecord(f *testing.F) {
 }
 
 func FuzzSuricataEVE(f *testing.F) {
-	b, err := os.ReadFile(filepath.Join("testdata", "suricata", "eve.json"))
-	if err != nil {
-		f.Fatal(err)
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if l != "" {
-			f.Add(l)
+	for _, name := range []string{"eve.json", "industrial.json"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "suricata", name))
+		if err != nil {
+			f.Fatal(err)
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" {
+				f.Add(l)
+			}
 		}
 	}
+	f.Add(`{"event_type":"modbus","modbus":{"request":[],"response":{"function_raw":"x","exception":"y"}}}`)
+	f.Add(`{"event_type":"enip","enip":{"request":{"cip":"x","command":{"a":1}}}}`)
 	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"dns","src_ip":"192.0.2.1","src_port":53,"dns":{"answers":[1,{"rdata":{}}],"grouped":{"A":[[]]},"queries":"x"}}`)
 	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"alert","src_ip":1,"alert":{"severity":"x","metadata":[]},"http":"x","flow_id":-1}`)
 	f.Add(`{"timestamp":"2026-10-11T12:00:00Z","event_type":"weird.type-$","src_ip":"192.0.2.1","weird.type-$":{"a":[1,2]}}`)
@@ -935,5 +942,25 @@ func FuzzGitHubEvent(f *testing.F) {
 				t.Fatalf("event from text %v", e)
 			}
 		}
+	})
+}
+
+func FuzzIndustrialFunction(f *testing.F) {
+	for _, s := range []string{"PLC Stop", "ListIdentity", "who-is", "Get_Attribute_Single", "READ_WRITE_MULTIPLE_REGISTERS", "0x83", "Ünï Çödé", ""} {
+		f.Add("modbus", s)
+	}
+	f.Add("dnp3", "131")
+	f.Fuzz(func(t *testing.T, proto, s string) {
+		name := otName(s)
+		if len(name) > maxOTValue+4 || strings.Trim(name, "_") != name || strings.Contains(name, "__") || strings.ToUpper(name) != name {
+			t.Fatalf("otName(%q) = %q", s, name)
+		}
+		switch otCategory(name) {
+		case otProgram, otControl, otWrite, otDiagnostic, otDiscovery, otRead, otOther:
+		default:
+			t.Fatalf("otCategory(%q)", name)
+		}
+		_ = otFunctionName(proto, s)
+		_ = otMessage(s)
 	})
 }
