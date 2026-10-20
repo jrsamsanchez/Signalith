@@ -33,51 +33,52 @@ func DocsURL(version, file, anchor string) string {
 // The sections of the docs the report links to. Every link the checks
 // make is one of these, so a test can check that each still exists.
 var (
-	docHTTPSUpgrade    = DocLink{File: "https.md", Anchor: "upgrading-from-plain-http"}
-	docHTTPSProxy      = DocLink{File: "https.md", Anchor: "behind-a-reverse-proxy"}
-	docHTTPSOwn        = DocLink{File: "https.md", Anchor: "use-your-own-certificate"}
-	docHTTPSNames      = DocLink{File: "https.md", Anchor: "names-the-certificate-can-cover"}
-	docHTTPSSwitch     = DocLink{File: "https.md", Anchor: "switching-to-a-new-certificate-authority"}
-	docHTTPSReach      = DocLink{File: "https.md", Anchor: "how-far-the-certificate-authority-reaches"}
-	docHTTPSAgents     = DocLink{File: "https.md", Anchor: "agents-and-syslog"}
-	docHTTPSTrust      = DocLink{File: "https.md", Anchor: "trust-the-certificate"}
-	docHTTPSOldToken   = DocLink{File: "https.md", Anchor: "the-docker-quick-starts-old-example-token"}
-	docOSPoint         = DocLink{File: "opensearch-security.md", Anchor: "4-point-signalith-at-it"}
-	docOSLinux         = DocLink{File: "opensearch-security.md", Anchor: "opensearch-on-linux-or-windows"}
-	docOSCerts         = DocLink{File: "opensearch-security.md", Anchor: "1-make-the-certificates"}
-	docOSDocker        = DocLink{File: "opensearch-security.md", Anchor: "docker-quick-start"}
-	docOSNotLoaded     = DocLink{File: "opensearch-security.md", Anchor: "if-opensearchs-security-settings-arent-loaded"}
-	docOSRoles         = DocLink{File: "opensearch-security.md", Anchor: "3-load-the-security-settings"}
-	docEncDocker       = DocLink{File: "encryption.md", Anchor: "docker"}
-	docEncElsewhere    = DocLink{File: "encryption.md", Anchor: "keeping-the-key-elsewhere"}
-	docEncKey          = DocLink{File: "encryption.md", Anchor: "the-master-key"}
-	docEncChange       = DocLink{File: "encryption.md", Anchor: "changing-the-key"}
-	docEncBackup       = DocLink{File: "encryption.md", Anchor: "backing-up-the-key"}
-	docEncWhat         = DocLink{File: "encryption.md", Anchor: "what-signalith-encrypts"}
-	docEncNot          = DocLink{File: "encryption.md", Anchor: "not-encrypted-by-the-master-key"}
-	docEncLosing       = DocLink{File: "encryption.md", Anchor: "losing-the-key"}
-	docEncDisk         = DocLink{File: "encryption.md", Anchor: "disk-encryption"}
-	docEncInUse        = DocLink{File: "encryption.md", Anchor: "in-use"}
-	docEncCommands     = DocLink{File: "encryption.md", Anchor: "commands"}
-	docRetArchives     = DocLink{File: "retention.md", Anchor: "archives"}
-	docUsersBuiltin    = DocLink{File: "users.md", Anchor: "the-built-in-admin"}
-	docUsersLocal      = DocLink{File: "users.md", Anchor: "managing-local-users"}
-	docUsersDirectory  = DocLink{File: "users.md", Anchor: "set-it-up"}
-	docUsersMFA        = DocLink{File: "users.md", Anchor: "two-step-sign-in"}
-	docReadmeLinux     = DocLink{File: "README.md", Anchor: "linux"}
-	docReadmeWindows   = DocLink{File: "README.md", Anchor: "windows"}
-	docReadmeDocker    = DocLink{File: "README.md", Anchor: "docker-evaluation"}
-	docServersIdentity = DocLink{File: "servers.md", Anchor: "identity"}
-	docServersCRL      = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
-	docSecSyslog       = DocLink{File: "security.md", Anchor: "syslog"}
-	docAgentPortUp     = DocLink{File: "sending-data.md", Anchor: "upgrading-to-03"}
-	docSecDisk         = DocLink{File: "security.md", Anchor: "disk-encryption"}
-	docSecOSDisk       = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
-	docSecFiles        = DocLink{File: "security.md", Anchor: "file-permissions"}
-	docSecNotChecked   = DocLink{File: "security.md", Anchor: "not-checked-here"}
-	docTokensHow       = DocLink{File: "agent-tokens.md", Anchor: "how-tokens-work"}
-	docTokensReplace   = DocLink{File: "agent-tokens.md", Anchor: "replace-a-shared-token"}
-	docAPITokens       = DocLink{File: "ai-tools.md", Anchor: "api-tokens"}
+	docHTTPSUpgrade       = DocLink{File: "https.md", Anchor: "upgrading-from-plain-http"}
+	docHTTPSProxy         = DocLink{File: "https.md", Anchor: "behind-a-reverse-proxy"}
+	docHTTPSOwn           = DocLink{File: "https.md", Anchor: "use-your-own-certificate"}
+	docHTTPSNames         = DocLink{File: "https.md", Anchor: "names-the-certificate-can-cover"}
+	docHTTPSSwitch        = DocLink{File: "https.md", Anchor: "switching-to-a-new-certificate-authority"}
+	docHTTPSReach         = DocLink{File: "https.md", Anchor: "how-far-the-certificate-authority-reaches"}
+	docHTTPSAgents        = DocLink{File: "https.md", Anchor: "agents-and-syslog"}
+	docHTTPSTrust         = DocLink{File: "https.md", Anchor: "trust-the-certificate"}
+	docHTTPSOldToken      = DocLink{File: "https.md", Anchor: "the-docker-quick-starts-old-example-token"}
+	docOSPoint            = DocLink{File: "opensearch-security.md", Anchor: "4-point-signalith-at-it"}
+	docOSLinux            = DocLink{File: "opensearch-security.md", Anchor: "opensearch-on-linux-or-windows"}
+	docOSCerts            = DocLink{File: "opensearch-security.md", Anchor: "1-make-the-certificates"}
+	docOSDocker           = DocLink{File: "opensearch-security.md", Anchor: "docker-quick-start"}
+	docOSNotLoaded        = DocLink{File: "opensearch-security.md", Anchor: "if-opensearchs-security-settings-arent-loaded"}
+	docOSRoles            = DocLink{File: "opensearch-security.md", Anchor: "3-load-the-security-settings"}
+	docEncDocker          = DocLink{File: "encryption.md", Anchor: "docker"}
+	docEncElsewhere       = DocLink{File: "encryption.md", Anchor: "keeping-the-key-elsewhere"}
+	docEncKey             = DocLink{File: "encryption.md", Anchor: "the-master-key"}
+	docEncChange          = DocLink{File: "encryption.md", Anchor: "changing-the-key"}
+	docEncBackup          = DocLink{File: "encryption.md", Anchor: "backing-up-the-key"}
+	docEncWhat            = DocLink{File: "encryption.md", Anchor: "what-signalith-encrypts"}
+	docEncNot             = DocLink{File: "encryption.md", Anchor: "not-encrypted-by-the-master-key"}
+	docEncLosing          = DocLink{File: "encryption.md", Anchor: "losing-the-key"}
+	docEncDisk            = DocLink{File: "encryption.md", Anchor: "disk-encryption"}
+	docEncInUse           = DocLink{File: "encryption.md", Anchor: "in-use"}
+	docEncCommands        = DocLink{File: "encryption.md", Anchor: "commands"}
+	docRetArchives        = DocLink{File: "retention.md", Anchor: "archives"}
+	docUsersBuiltin       = DocLink{File: "users.md", Anchor: "the-built-in-admin"}
+	docUsersLocal         = DocLink{File: "users.md", Anchor: "managing-local-users"}
+	docUsersDirectory     = DocLink{File: "users.md", Anchor: "set-it-up"}
+	docUsersMFA           = DocLink{File: "users.md", Anchor: "two-step-sign-in"}
+	docReadmeLinux        = DocLink{File: "README.md", Anchor: "linux"}
+	docReadmeWindows      = DocLink{File: "README.md", Anchor: "windows"}
+	docReadmeDocker       = DocLink{File: "README.md", Anchor: "docker-evaluation"}
+	docServersIdentity    = DocLink{File: "servers.md", Anchor: "identity"}
+	docServersCRL         = DocLink{File: "servers.md", Anchor: "ending-a-servers-opensearch-access-at-once"}
+	docSecSyslog          = DocLink{File: "security.md", Anchor: "syslog"}
+	docAgentPortUp        = DocLink{File: "sending-data.md", Anchor: "upgrading-to-03"}
+	docSecDisk            = DocLink{File: "security.md", Anchor: "disk-encryption"}
+	docSecOSDisk          = DocLink{File: "security.md", Anchor: "where-opensearch-keeps-events"}
+	docSecFiles           = DocLink{File: "security.md", Anchor: "file-permissions"}
+	docSecNotChecked      = DocLink{File: "security.md", Anchor: "not-checked-here"}
+	docTokensHow          = DocLink{File: "agent-tokens.md", Anchor: "how-tokens-work"}
+	docTokensReplace      = DocLink{File: "agent-tokens.md", Anchor: "replace-a-shared-token"}
+	docAPITokens          = DocLink{File: "ai-tools.md", Anchor: "api-tokens"}
+	docKubernetesSecurity = DocLink{File: "kubernetes.md", Anchor: "security"}
 )
 
 // AllDocs lists every section of the docs the report may link to.
@@ -87,7 +88,7 @@ func AllDocs() []DocLink {
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docReadmeLinux,
 		docReadmeWindows, docReadmeDocker, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
-		docAPITokens, docSecNotChecked}
+		docAPITokens, docSecNotChecked, docKubernetesSecurity}
 }
 
 // NotCheckedDocs is the section that says how to check by hand what the

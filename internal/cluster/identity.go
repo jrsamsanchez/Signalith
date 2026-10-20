@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/incontainer"
 )
 
 // errLockUnsupported is a filesystem that does not lock files, as some
@@ -269,15 +270,9 @@ func (l *Local) Close() {
 	})
 }
 
-// InContainer reports whether Signalith runs in Docker or Podman.
-func InContainer() bool {
-	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(f); err == nil {
-			return true
-		}
-	}
-	return false
-}
+// InContainer reports whether Signalith runs in a container (Docker,
+// Podman, Kubernetes).
+func InContainer() bool { return incontainer.Here() }
 
 // writeFileAtomic replaces a file through a temporary file and a rename,
 // so it is never seen half written.

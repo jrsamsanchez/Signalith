@@ -88,6 +88,18 @@ func checkService(f *Facts) *Check {
 		}
 	}
 	switch {
+	case f.Kubernetes:
+		// A pod's spec can't set the core dump limit, so it isn't asked
+		// for.
+		add(p.NoNewPrivs, "no new privileges")
+		add(p.NoCapsAtAll, "no capabilities")
+		add(p.ReadOnlyRoot, "a read-only system")
+		if len(missing) > 0 {
+			return &Check{State: Attention, Line: "Signalith's pod is missing protections the Helm chart sets up: " + joinAnd(missing) + ".",
+				Fix: &Fix{Steps: []string{"Keep the chart's securityContext for the signalith container: readOnlyRootFilesystem: true, allowPrivilegeEscalation: false and capabilities: drop: [ALL]."},
+					Docs: doc(docKubernetesSecurity)}}
+		}
+		return &Check{State: Good, Line: "Signalith's pod runs read-only, without extra privileges or capabilities."}
 	case f.InContainer:
 		add(p.NoNewPrivs, "no new privileges")
 		add(p.NoCapsAtAll, "no capabilities")

@@ -726,7 +726,8 @@ covers the service.
 **Looks at:** the protections the systemd unit in `deploy/systemd` sets up, as the
 process sees them: no new privileges, a system-call filter, no extra capabilities, a
 read-only system, hidden processes, a private `/dev` and private new files. In a
-container: no new privileges, no capabilities, a read-only system and no core dumps.
+container: no new privileges, no capabilities, a read-only system and no core dumps. In a
+Kubernetes pod, the same except core dumps, which a pod's spec can't turn off.
 
 - Good: all of them are in place. Linux before 5.8 can't hide processes, so there it
   isn't counted as missing.
@@ -735,7 +736,8 @@ container: no new privileges, no capabilities, a read-only system and no core du
 **To fix:** install the current unit and restart, as in [Linux](getting-started.md#linux). If
 you changed the unit on purpose, compare it with `systemctl cat signalith`. In Docker,
 keep `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]` and
-`ulimits: core: 0` in `docker-compose.yml`.
+`ulimits: core: 0` in `docker-compose.yml`. In Kubernetes, keep the Helm chart's
+`securityContext` (see [Kubernetes](kubernetes.md#security)).
 
 **How to check by hand:** `systemd-analyze security signalith`.
 

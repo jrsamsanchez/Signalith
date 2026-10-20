@@ -30,8 +30,9 @@ type Facts struct {
 	// that variable.
 	SettingEnv map[string]string
 	// InContainer is true when Signalith runs in a container, and Docker
-	// when that container is the Docker quick start's.
-	InContainer, Docker bool
+	// when that container is the Docker quick start's. Kubernetes is true
+	// when the container is a Kubernetes pod's.
+	InContainer, Docker, Kubernetes bool
 	// PublicTokenAccepted is true when the server accepts the old example
 	// ingest token over plain HTTP: a Docker quick start upgraded from a
 	// version whose agents send it, with HTTPS on and agents on plain HTTP

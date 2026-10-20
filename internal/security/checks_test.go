@@ -1568,6 +1568,23 @@ func TestService(t *testing.T) {
 			line: "Signalith's container runs read-only, without extra privileges or capabilities."},
 		{name: "container missing", set: func(f *Facts) { f.InContainer = true; f.Process.ReadOnlyRoot = false }, state: Attention,
 			line: "Signalith's container is missing protections from the quick start: no capabilities and a read-only system."},
+		// A pod: not told to install a systemd unit, nor to turn off crash
+		// dumps, which its spec can't.
+		{name: "kubernetes", set: func(f *Facts) {
+			f.InContainer, f.Kubernetes = true, true
+			f.Process.Systemd, f.Process.NoCapsAtAll = false, true
+			f.Memory.Known, f.Memory.CoreOff = true, false
+		}, state: Good, line: "Signalith's pod runs read-only, without extra privileges or capabilities."},
+		{name: "kubernetes missing", set: func(f *Facts) {
+			f.InContainer, f.Kubernetes = true, true
+			f.Process.Systemd, f.Process.NoCapsAtAll = false, true
+			f.Process.ReadOnlyRoot = false
+		}, state: Attention, line: "Signalith's pod is missing protections the Helm chart sets up: a read-only system.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Docs == nil || c.Fix.Docs.File != "kubernetes.md" || len(c.Fix.Commands) != 0 {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
 	})
 }
 
