@@ -149,9 +149,6 @@ func (c *SecurityChecker) once(ctx context.Context, gather func(context.Context)
 		}
 		if r != nil {
 			c.logChange(r)
-			if c.OnReport != nil {
-				c.OnReport(r)
-			}
 		}
 		c.mu.Lock()
 		if r != nil {
@@ -160,6 +157,10 @@ func (c *SecurityChecker) once(ctx context.Context, gather func(context.Context)
 		c.ended = run
 		c.running = nil
 		c.mu.Unlock()
+		// Told once the report is kept, so Report already returns it.
+		if r != nil && c.OnReport != nil {
+			c.OnReport(r)
+		}
 		close(done)
 	}()
 	r = gather(ctx)
