@@ -193,8 +193,77 @@ func TestHTTPS(t *testing.T) {
 		{name: "auto", state: Good, line: "The web page, the API and agents use HTTPS, with Signalith's own certificate."},
 		{name: "files", set: func(f *Facts) { f.Config.Server.TLS.Mode = "files" }, state: Good,
 			line: "The web page, the API and agents use HTTPS, with your own certificate."},
-		{name: "off on loopback", set: func(f *Facts) { f.Config.Server.TLS.Mode = "off"; f.Config.Server.Listen = "127.0.0.1:8080" }, state: Good,
+		{name: "off on loopback", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "127.0.0.1:7779"
+		}, state: Good,
 			line: "HTTPS is off, but Signalith only answers on this computer (127.0.0.1:8080), so nothing it sends crosses the network."},
+		{name: "off on loopback, agents on the web port", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "off"
+		}, state: Good,
+			line: "HTTPS is off, but Signalith only answers on this computer (127.0.0.1:8080), so nothing it sends crosses the network."},
+		// The web port answers only this computer, but the agent port
+		// answers the network over plain HTTP.
+		{name: "off on loopback, agent port open", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen = "127.0.0.1:8080"
+		}, state: Attention,
+			line: "HTTPS is off, and agents send to 0.0.0.0:7779, which other computers can reach, so agent tokens and events cross the network unencrypted.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "server.agent_listen" || len(c.Fix.Steps) != 2 || !strings.Contains(c.Fix.Steps[1], "127.0.0.1:7779") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "off on loopback, agents on the open agent port", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", ":7779"
+			f.Runtime.DirectPlainAgents = []string{"web-1 (10.0.0.4)"}
+		}, state: Risk,
+			line: "HTTPS is off, and agents send to :7779, which other computers can reach, so agent tokens and events cross the network unencrypted.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "web-1 (10.0.0.4)") {
+					t.Errorf("%q", c.Details)
+				}
+			}},
+		// A reverse proxy on this computer that takes sign-ins over plain
+		// HTTP and says so.
+		{name: "off on loopback, proxy takes plain HTTP", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "127.0.0.1:7779"
+			f.Config.Server.TrustedProxies = []string{"127.0.0.1"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+		}, state: Attention,
+			line: "Signalith only answers on this computer, but 1 computer signed in through the reverse proxy over plain HTTP in the last day: 10.0.0.77.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 1 || !strings.Contains(c.Fix.Steps[0], "redirect http:// to https://") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "proxy takes plain HTTP", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.TrustedProxies = []string{"127.0.0.1"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+			f.Runtime.ProxiedPlainAgents = []string{"10.0.0.80"}
+		}, state: Attention,
+			line: "A reverse proxy at 127.0.0.1 serves Signalith, but 1 computer signed in through the reverse proxy over plain HTTP in the last day: 10.0.0.77.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "1 agent sent events through the reverse proxy") || len(c.Fix.Steps) != 2 {
+					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
+		{name: "proxy, direct and proxied sign-ins", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.TrustedProxies = []string{"10.0.0.5"}
+			f.Runtime.DirectPlain = []string{"10.0.0.7"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+		}, state: Attention,
+			line: "A reverse proxy serves HTTPS, but 1 computer signed in to Signalith directly over plain HTTP in the last day: 10.0.0.7.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "through the reverse proxy") || len(c.Fix.Steps) != 3 {
+					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
 		{name: "proxy, direct sign-ins", set: func(f *Facts) {
 			f.Config.Server.TLS.Mode = "off"
 			f.Config.Server.TrustedProxies = []string{"10.0.0.5"}

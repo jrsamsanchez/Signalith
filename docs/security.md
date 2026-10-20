@@ -66,20 +66,27 @@ Whether data is encrypted as it crosses the network.
 ### HTTPS
 
 **Looks at:** the **HTTPS** setting (`server.tls.mode`), the listen address
-(`server.listen`) and **Trusted reverse proxies** (`server.trusted_proxies`). While HTTPS
-is off behind a proxy, the server also notes computers that signed in, and agents that
-sent events, directly over plain HTTP in the last day, not through the proxy. It keeps
-up to 50 addresses of each, in memory only. Computers and agents on the server itself
-aren't counted: what they send doesn't cross the network.
+(`server.listen`), the agent address (`server.agent_listen`) and **Trusted reverse
+proxies** (`server.trusted_proxies`). While HTTPS is off behind a proxy, the server also
+notes computers that signed in, and agents that sent events, directly over plain HTTP in
+the last day, not through the proxy; and those the proxy says reached it over plain
+HTTP (`X-Forwarded-Proto: http`), wherever the proxy runs. It keeps up to 50 addresses
+of each, in memory only. Computers and agents on the server itself aren't counted: what
+they send doesn't cross the network.
 
 - Good: HTTPS is on; or HTTPS is off but Signalith answers only on this computer
-  (such as `127.0.0.1:9000`); or a trusted reverse proxy serves HTTPS.
+  (such as `127.0.0.1:9000`, with agents on `127.0.0.1:7779` or the web port); or a
+  trusted reverse proxy serves HTTPS.
 - Needs attention: a proxy serves HTTPS, but people signed in, or agents sent events,
-  to Signalith directly over plain HTTP; or HTTPS is left to a reverse proxy that
+  to Signalith directly over plain HTTP; or the proxy took sign-ins or events over
+  plain HTTP itself (have it redirect `http://` to `https://`); or the web page answers
+  only this computer, but the agent address answers others over plain HTTP; or HTTPS is
+  left to a reverse proxy that
   Signalith believes only because `signalith.yaml` was written before HTTPS was the
   default (an `https://` public address and no `server.tls` section). List that proxy
   under **Trusted reverse proxies**.
-- At risk: HTTPS is off, and Signalith answers other computers directly.
+- At risk: HTTPS is off, and Signalith answers other computers directly, or agents on
+  other computers sent events to the agent address over plain HTTP.
 
 **To fix:** turn on HTTPS, as in
 [Upgrading from plain HTTP](https.md#upgrading-from-plain-http). Behind a proxy, set

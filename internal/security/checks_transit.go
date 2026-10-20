@@ -45,13 +45,12 @@ func checkHTTPS(f *Facts) *Check {
 	if port == "" {
 		port = c.Server.Listen
 	}
-	if host != "" && isLoopback(host) {
-		return &Check{State: Good, Line: "HTTPS is off, but Signalith only answers on this computer (" + c.Server.Listen + "), so nothing it sends crosses the network."}
-	}
 	// What reached Signalith over plain HTTP, not through the proxy, in
-	// the last day: sign-ins and agents.
-	var direct []string
-	var signIns, agents []string
+	// the last day: sign-ins and agents. And what a reverse proxy said it
+	// took over plain HTTP (X-Forwarded-Proto: http): HTTPS between the
+	// proxy and Signalith, or both on this computer, doesn't help then.
+	var direct, proxied []string
+	var signIns, agents, proxiedAgents []string
 	if f.Runtime != nil {
 		signIns, agents = f.Runtime.DirectPlain, f.Runtime.DirectPlainAgents
 		if n := len(signIns); n > 0 {
@@ -60,6 +59,47 @@ func checkHTTPS(f *Facts) *Check {
 		if n := len(agents); n > 0 {
 			direct = append(direct, itoa(n)+plural(n, " agent", " agents")+" sent events to Signalith directly over plain HTTP in the last day: "+shorten(agents, 5)+".")
 		}
+		proxiedAgents = f.Runtime.ProxiedPlainAgents
+		if n := len(f.Runtime.ProxiedPlain); n > 0 {
+			proxied = append(proxied, itoa(n)+plural(n, " computer", " computers")+" signed in through the reverse proxy over plain HTTP in the last day: "+shorten(f.Runtime.ProxiedPlain, 5)+".")
+		}
+		if n := len(proxiedAgents); n > 0 {
+			proxied = append(proxied, itoa(n)+plural(n, " agent", " agents")+" sent events through the reverse proxy over plain HTTP in the last day: "+shorten(proxiedAgents, 5)+".")
+		}
+	}
+	proxiedSteps := func() []string {
+		steps := []string{"Have the reverse proxy redirect http:// to https://, or stop it serving Signalith over plain HTTP."}
+		if len(proxiedAgents) > 0 {
+			steps = append(steps, "Give those agents a new configuration from Add data, with Public address set to the proxy's https:// address.")
+		}
+		return steps
+	}
+	if host != "" && isLoopback(host) {
+		// The web port answers only this computer, but agents have a port
+		// of their own, which may not.
+		if addr := c.Server.AgentAddr(); addr != "" {
+			if aHost, aPort := listenHost(addr); !isLoopback(aHost) {
+				state, details := Attention, []string(nil)
+				if len(agents) > 0 {
+					state, details = Risk, direct[len(direct)-1:]
+				}
+				if aPort == "" {
+					aPort = config.DefaultAgentPort
+				}
+				return &Check{State: state, Line: "HTTPS is off, and agents send to " + addr + ", which other computers can reach, so agent tokens and events cross the network unencrypted.",
+					Details: append(details, proxied...), Fix: &Fix{
+						Steps: []string{
+							"Turn HTTPS on with Automatic, and restart when the Settings page asks.",
+							"Or, if a reverse proxy on this computer serves HTTPS for agents, set Agent address to 127.0.0.1:" + aPort + ".",
+						},
+						Setting: "server.agent_listen", LockedBy: f.SettingEnv["server.agent_listen"], Docs: doc(docHTTPSProxy)}}
+			}
+		}
+		if len(proxied) > 0 {
+			return &Check{State: Attention, Line: "Signalith only answers on this computer, but " + proxied[0], Details: proxied[1:],
+				Fix: &Fix{Steps: proxiedSteps(), Docs: doc(docHTTPSProxy)}}
+		}
+		return &Check{State: Good, Line: "HTTPS is off, but Signalith only answers on this computer (" + c.Server.Listen + "), so nothing it sends crosses the network."}
 	}
 	directFix := func() *Fix {
 		var steps []string
@@ -70,6 +110,9 @@ func checkHTTPS(f *Facts) *Check {
 			steps = append(steps, "Give those agents a new configuration from Add data, with Public address set to the proxy's https:// address.")
 		}
 		steps = append(steps, "Set Listen address so only the proxy can reach Signalith, such as 127.0.0.1:"+port+" when the proxy runs on this computer.")
+		if len(proxied) > 0 {
+			steps = append(steps, proxiedSteps()...)
+		}
 		return &Fix{Steps: steps, Setting: "server.listen", Docs: doc(docHTTPSProxy)}
 	}
 	if c.Server.LegacyProxied() {
@@ -78,7 +121,7 @@ func checkHTTPS(f *Facts) *Check {
 			where = "the reverse proxy at " + shorten(f.Runtime.LegacyProxies, 3)
 		}
 		return &Check{State: Attention, Line: "HTTPS is left to " + where + ", which Signalith trusts only because signalith.yaml was written before HTTPS was the default.",
-			Details: direct, Fix: &Fix{
+			Details: append(direct, proxied...), Fix: &Fix{
 				Steps: []string{
 					"List the proxy's address under Trusted reverse proxies.",
 					"If no reverse proxy serves HTTPS for Signalith, turn HTTPS on with Automatic instead.",
@@ -87,7 +130,11 @@ func checkHTTPS(f *Facts) *Check {
 	}
 	if proxies := c.Server.TrustedProxyList(); len(proxies) > 0 {
 		if len(direct) > 0 {
-			return &Check{State: Attention, Line: "A reverse proxy serves HTTPS, but " + direct[0], Details: direct[1:], Fix: directFix()}
+			return &Check{State: Attention, Line: "A reverse proxy serves HTTPS, but " + direct[0], Details: append(direct[1:], proxied...), Fix: directFix()}
+		}
+		if len(proxied) > 0 {
+			return &Check{State: Attention, Line: "A reverse proxy at " + shorten(prefixList(proxies), 3) + " serves Signalith, but " + proxied[0],
+				Details: proxied[1:], Fix: &Fix{Steps: proxiedSteps(), Docs: doc(docHTTPSProxy)}}
 		}
 		return &Check{State: Good, Line: "A reverse proxy at " + shorten(prefixList(proxies), 3) + " serves HTTPS for Signalith.",
 			Tip: &Fix{Steps: []string{"Signalith also answers plain HTTP from any computer that can reach port " + port +
