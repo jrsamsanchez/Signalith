@@ -147,7 +147,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
     Windows needs no separate install step. Signalith Agents update themselves from
     signed releases and roll back if an update fails. With several servers,
-    [detections are spread over them](servers.md#the-background-jobs) by default.
+    [detections are spread over them](servers.md#the-background-jobs) by default. New
+    installs take syslog over TLS on port 6514 only, and
+    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) is one click away.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 
