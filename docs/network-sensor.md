@@ -607,6 +607,13 @@ datamodel=Industrial category=write | stats dc(dest) as devices, count by src
 datamodel=Industrial reason=* | stats count by app, reason, dest
 ```
 
+**Dashboards > Industrial network** shows this traffic, and seven built-in detections
+watch it: controller stops and restarts, program uploads and downloads, commands from
+outside the network, device discovery, bursts of protocol errors, Modbus devices forced
+into listen-only mode, and (off by default) hosts commanding a device for the first time.
+They are mapped to MITRE ATT&CK for ICS, which **Detections > Coverage** shows next to
+the Enterprise matrix. See [Industrial detections](detections.md#industrial-detections).
+
 ### The Network dashboard
 
 **Dashboards > Network** shows, for the last 24 hours by default: IDS alerts and hosts with

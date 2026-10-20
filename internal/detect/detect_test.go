@@ -27,8 +27,8 @@ func TestBuiltinsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ds) != 52 {
-		t.Fatalf("%d built-in detections, want 52", len(ds))
+	if len(ds) != 59 {
+		t.Fatalf("%d built-in detections, want 59", len(ds))
 	}
 	eng := &search.Engine{Intel: intel.NewStore(intel.NewMemory())}
 	for _, d := range ds {

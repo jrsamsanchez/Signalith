@@ -1,0 +1,26 @@
+id: ot-exception-burst
+title: Industrial devices refused $count$ requests from $src$
+name: Burst of industrial protocol errors
+description: Industrial devices answered 25 or more requests from one host with an error or exception (illegal address, illegal function) in a short time. Someone probing a controller for its registers, points or tags makes these errors; a misconfigured HMI can too.
+query: |
+  datamodel=Industrial reason=*
+  | stats count, dc(dest) as devices, values(reason) as reasons, values(app) as protocols, min(_time) as first_seen by src
+  | where count >= 25
+schedule: 10m
+lookback: 15m
+severity: low
+mitre: [T0861, T0846]
+throttle:
+  fields: [src]
+  window: 4h
+risk:
+  score: 20
+  objects:
+    - {field: src, type: system}
+enabled: true
+tags: [network, ot, discovery, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  src is the host whose requests failed (the device's reply carries the error, but the
+  connection's originator is src). An HMI or historian polling an address that no longer
+  exists errors steadily all day: fix its configuration or add an exception. A burst from
+  a host that normally does not talk to the devices is someone exploring them.

@@ -27,6 +27,8 @@ func (g *gen) attacks() {
 	g.sourceStopped()
 	g.dnsTunnel()
 	g.networkHygiene()
+	g.plantIntrusion()
+	g.exposedPLC()
 }
 
 // day returns a working-hour time n days before the end of the range.
