@@ -1361,6 +1361,14 @@ See [docs/retention.md](docs/retention.md) for more:
 - running more than one server,
 - the API.
 
+## Backup and restore
+
+Back up OpenSearch (events, findings, cases, users) and Signalith's own files (config,
+master key, certificates, lists, detections) together. `signalith backup` copies the
+files into one zip and `signalith restore` puts them back; OpenSearch snapshots cover the
+data, with a ready-made script for the Docker quick start. The steps for Docker, Linux
+and Windows are in [docs/backup.md](docs/backup.md).
+
 ## Writing queries
 
 ```
