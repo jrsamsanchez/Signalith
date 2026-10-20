@@ -21,7 +21,7 @@ Limits to know (October 2026):
 - New project: first release October 2026, one maintainer, built with heavy help from an AI coding assistant (Claude Code), small community, no paid support.
 - No outside security review yet (planned before 1.0).
 - No EDR of its own (the Signalith Agent runs Fluent Bit and osquery rather than collecting itself); no full packet capture.
-- Sizing: one 2-core server stored about 21,500 events a second (about 1 TB a day) in two 4-hour lab runs on consecutive days with two OpenSearch nodes; a three-server lab run kept detections evenly shared. Windows installer not yet code-signed.
+- Sizing: one 2-core server stored about 21,500 events a second (about 1 TB a day) in two 4-hour lab runs on consecutive days with two OpenSearch nodes; three 2-core servers stored all 25,000 events a second (about 1 TB a day) for 4 hours with 1,520 detections, none late. Windows installer not yet code-signed.
 
 Signalith is an independent project, not affiliated with, endorsed by or sponsored by Splunk or Cisco. Splunk and SPL are trademarks of Splunk LLC, a Cisco company.
 

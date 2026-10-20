@@ -1213,6 +1213,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if f := c.AdminPasswordChanged(); f != "" {
 		log.Info("the built-in admin's password was set with signalith passwd and is kept in a file of its own", "file", f)
 	}
+	logDemo(c, log)
 	// The HTTPS certificate, which syslog over TLS uses too. A restart
 	// keeps the one in use when its settings did not change, and its own
 	// certificate authority in any case.
@@ -1282,7 +1283,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// create the day's first indices with the wrong field types.
 	templateReady := make(chan struct{})
 	var receiver *syslog.Receiver
-	if c.Syslog.Enabled() {
+	// A public demo takes no events in, so it opens no syslog port.
+	if c.Syslog.Enabled() && !c.DemoOn() {
 		sc := syslog.Config{
 			UDP: c.Syslog.UDP, TCP: c.Syslog.TCP, TLS: c.Syslog.TLS,
 			Allow: c.Syslog.AllowList(), Ready: templateReady,
@@ -1500,6 +1502,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	blStore := baselines.NewStore(cl, c.OpenSearch.IndexPrefix)
 	behavior := &baselines.Engine{Store: blStore, Search: eng, Risk: &risk.Store{Client: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Assets: lists, HTTP: newDownloadClient(c), FileDir: filepath.Join(c.LookupsDir(), "ipdb"), Log: log}
+	if c.DemoOn() {
+		// A public demo downloads nothing an admin names: IP database
+		// files in the ipdb folder still work.
+		behavior.HTTP = nil
+	}
 	if saved, err := ret.Store.Get(); err != nil {
 		if sharedOn {
 			log.Error("the shared retention policies cannot be read from OpenSearch yet; retention is paused until they can", "err", err)
@@ -1835,7 +1842,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// Networks can be added on the page at any time, so the scanner runs
 	// even with none yet.
 	in.jobs.Go(func() {
-		if !ready(ctx) || !vulnsOK {
+		// A public demo scans no networks.
+		if !ready(ctx) || !vulnsOK || c.DemoOn() {
 			return
 		}
 		scanner.Run(ctx)
@@ -1979,6 +1987,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	in.retention = ret
 	srv.Audit = r.auditAPI(c, cl)
+	in.jobsList = demoJobs(c, in.jobsList, sampleLoader, log)
 	if hook := jobStarting; hook != nil {
 		in.jobsList = watchJobs(in.jobsList, c, hook)
 	}
@@ -2052,14 +2061,18 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.Install = clusterInstall()
 	// The tenants of a multi-tenant install. A list that cannot be read
 	// leaves every tenant's users unable to sign in, rather than guess.
-	if reg, err := tenants.Open(c.TenantsFile()); err != nil {
-		log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
-	} else {
-		if parts != nil {
-			// Which tenants exist and are on is the same on every server.
-			reg.UseShared(r.sharedContent.users.docs.TenantList())
+	// A public demo has the default tenant only: another tenant's server
+	// would take its agents' events in.
+	if !c.DemoOn() {
+		if reg, err := tenants.Open(c.TenantsFile()); err != nil {
+			log.Error("the list of tenants cannot be read; tenants' users cannot sign in until it is fixed", "file", c.TenantsFile(), "err", err)
+		} else {
+			if parts != nil {
+				// Which tenants exist and are on is the same on every server.
+				reg.UseShared(r.sharedContent.users.docs.TenantList())
+			}
+			srv.Tenants = reg
 		}
-		srv.Tenants = reg
 	}
 	tokenSrv.Store(srv)
 	in.srv, in.handler = srv, srv.Handler()
@@ -2075,7 +2088,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(tr.startAll)
 	}
 	r.srv.Store(srv)
-	if c.Server.AgentAddr() != "" {
+	if c.Server.AgentAddr() != "" && !c.DemoOn() {
 		in.agentHandler = srv.AgentHandler()
 		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
 	}

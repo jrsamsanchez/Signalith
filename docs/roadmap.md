@@ -88,8 +88,10 @@ The first four phases are complete, and work on hardening for 1.0 has started.
 - A load test with [sizing numbers](performance.md), including a
   [lab run](performance.md#lab-sizes) of about 21,500 events a second (about 1 TB a day)
   on one 2-core Signalith server and two OpenSearch nodes, in two 4-hour runs on
-  consecutive days with no late detections, and a three-server lab run in which
-  detections stayed evenly shared through a restart and a crash.
+  consecutive days with no late detections; a 4-hour run on three Signalith servers that
+  stored all 25,000 events a second (about 1 TB a day) with 1,520 detections and none
+  late; and a three-server run in which detections stayed evenly shared through a
+  restart and a crash.
 
 **More data**
 
@@ -147,7 +149,9 @@ The first four phases are complete, and work on hardening for 1.0 has started.
     [OpenSearch on the same computer](install-packages.md#opensearch-on-windows), so
     Windows needs no separate install step. Signalith Agents update themselves from
     signed releases and roll back if an update fails. With several servers,
-    [detections are spread over them](servers.md#the-background-jobs) by default.
+    [detections are spread over them](servers.md#the-background-jobs) by default. New
+    installs take syslog over TLS on port 6514 only, and
+    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) is one click away.
 
 ## Next <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next" }
 

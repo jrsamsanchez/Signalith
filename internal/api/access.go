@@ -5,6 +5,8 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -181,6 +183,16 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 			s.unauthorized(w, r)
 			return
 		}
+		// The public demo's visitor only reads, and some features are off
+		// for everyone there (demo.go).
+		if p.Source == sourceDemo && !demoMayUse(rt, r) {
+			writeDemoReadOnly(w)
+			return
+		}
+		if s.demo() && demoOff(rt, r.Method) {
+			writeDemoOff(w)
+			return
+		}
 		if p.MustChangePassword && !rt.Anytime {
 			if !strings.HasPrefix(r.URL.Path, "/api/") && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 				// The sign-in page asks for the new password.
@@ -271,7 +283,7 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 		s.noteName(r)
 		// Searches the request runs count against the user's share of
 		// the search slots.
-		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), p.Username)
+		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), searchUser(p))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -285,8 +297,19 @@ func background(r *http.Request) bool { return r.Header.Get(backgroundHeader) ==
 
 // authenticate checks an API token, the session cookie, then Basic
 // credentials. It returns nil without an error when the request is not
-// signed in.
+// signed in. In demo mode it checks a visitor's session first, and the
+// others only from demo.admin_networks.
 func (s *Server) authenticate(r *http.Request) (*principal, error) {
+	if s.demo() {
+		// A public demo's visitors have sessions of their own; anyone else
+		// signs in only from demo.admin_networks (demo.go).
+		if p := s.demoVisitor(r); p != nil {
+			return p, nil
+		}
+		if !s.demoAdminClient(r) {
+			return nil, nil
+		}
+	}
 	if tok := bearerAPIToken(r); tok != "" {
 		// A token that is not accepted never falls back to the cookie: a
 		// program sending one wants to know it was refused.
@@ -963,8 +986,23 @@ func (s *Server) credentialKey(user, pass string) ([32]byte, time.Duration) {
 	default:
 		version, ttl = fmt.Sprintf("directory:%d", s.dir().Revision()), basicCacheDirectory
 	}
-	return sha256.Sum256([]byte(user + "\x00" + pass + "\x00" + version)), ttl
+	mac := hmac.New(sha256.New, credKeySecret())
+	mac.Write([]byte(user + "\x00" + pass + "\x00" + version))
+	var key [32]byte
+	copy(key[:], mac.Sum(nil))
+	return key, ttl
 }
+
+// credKeySecret keys the credential cache's HMAC. It is random per
+// process and never stored, so a cache key seen in a memory dump cannot
+// be used to guess the password offline.
+var credKeySecret = sync.OnceValue(func() []byte {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
+})
 
 // checkBasic checks HTTP Basic credentials, from the cache when it can.
 func (s *Server) checkBasic(r *http.Request, user, pass string) (*principal, error) {

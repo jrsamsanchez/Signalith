@@ -15,13 +15,16 @@ can stop, and how Signalith keeps working when one does.
   each new day's indices then get one copy on another node once OpenSearch has more
   than one node. Days already stored keep the copies they have.
 - **Primary shards spread over the nodes**: `cluster.routing.allocation.balance.prefer_primary: true`
-  in each node's `opensearch.yml`, or set once with `PUT _cluster/settings`. The primary
-  copy of a shard does most of the indexing work, and without this setting OpenSearch
+  and `cluster.routing.allocation.rebalance.primary.enable: true` in each node's
+  `opensearch.yml`, or set once with `PUT _cluster/settings`. The primary
+  copy of a shard does most of the indexing work, and without the first setting OpenSearch
   only balances how many shards each node holds: it may put every primary of a busy day
   on one node and its replicas on another, and that one node's disk then limits how fast
-  events are stored. The settings that `signalith opensearch-certs -peer` prints, the
+  events are stored. The second setting moves primaries back after a node restarts:
+  while it was down its primaries were promoted on the other nodes, and without it they
+  stay there. The settings that `signalith opensearch-certs -peer` prints, the
   three-node Docker quick start and the Helm chart with more than one OpenSearch node
-  include it.
+  include both.
 - **A certificate for each node**, from the same CA (see below).
 - Enough disk on each node for its share plus a node's worth more: when a node stops,
   OpenSearch makes new copies of its shards on the others.
@@ -111,7 +114,7 @@ Its warnings mean:
 | Shards on no node | OpenSearch could not place them, often for lack of disk or of nodes. `GET _cluster/allocation/explain` says why |
 | A disk past the low watermark | OpenSearch puts no new shards on that node. Free or add disk |
 | Signalith indices with no copy on another node | Set Replicas to `auto`. New days get a copy; to give an old day one too, set `index.number_of_replicas: 1` on it in OpenSearch |
-| Every primary shard of today's event indices on one node | Set `cluster.routing.allocation.balance.prefer_primary` to `true` (see above). OpenSearch then moves primaries to other nodes as it rebalances |
+| Every primary shard of today's event indices on one node | Set `cluster.routing.allocation.balance.prefer_primary` and `cluster.routing.allocation.rebalance.primary.enable` to `true` (see above). OpenSearch then moves primaries to other nodes as it rebalances |
 
 When OpenSearch has more than one data node and **Replicas** is `0`, the card offers
 **Use automatic replicas**, which sets it to `auto` for every server.

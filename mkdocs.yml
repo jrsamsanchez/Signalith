@@ -167,6 +167,7 @@ nav:
       - Load balancers: load-balancers.md
       - OpenSearch with several nodes: opensearch-failover.md
       - Cloud test lab: cloud-lab.md
+      - Public demo: demo.md
       - Performance and sizing: performance.md
       - Summary indexes: summaries.md
       - Data retention: retention.md

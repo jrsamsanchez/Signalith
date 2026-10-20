@@ -810,6 +810,7 @@ are counted for each person's own address, not the proxy's. See
 | `playbooks.file` | `<lookups.dir>/playbooks.yaml` | Where playbooks set on the **Playbooks** page are saved (file mode 0600; they hold no secrets). See [docs/playbooks.md](docs/playbooks.md) |
 | `intel.allow_loopback_feeds` | `false` | Allow feed downloads from this machine (`127.0.0.1`, `::1`), for a feed server on the same host |
 | `cluster.node_name` | the name kept in the state folder, else this computer's name | This server's name in the list of servers and on every log line (`node=`). 1 to 63 letters, digits, dots, dashes or underscores. In Docker, set it (or `SIGNALITH_NODE_NAME`), since a container's name is random. Set in signalith.yaml or the environment only |
+| `demo.enabled`, `demo.admin_networks` | `false`, none | Runs a public, read-only demo with the sample data: visitors sign in with one click as a viewer, password sign-in works only from `admin_networks`, and event intake, the AI assistant and everything that reaches other systems are off. Set in signalith.yaml or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS` only. See [docs/demo.md](docs/demo.md) |
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
@@ -1447,8 +1448,9 @@ syslog devices ─UDP/TCP/TLS▶ web UI and API ◀── analyst browser
 In a lab, one Signalith server with 2 CPU cores and two 8-core OpenSearch nodes stored
 events at a rate of about 21,500 a second (about 1 TB a day) in 4-hour runs on two days
 in a row, with no late
-detections and searches answered in under a second
-([sizing](https://signalith.io/docs/performance/#lab-sizes)).
+detections and searches answered in under a second. Three 2-core Signalith servers stored
+all 25,000 events a second offered for 4 hours with 1,520 detections running and none
+late ([sizing](https://signalith.io/docs/performance/#lab-sizes)).
 
 ## Building
 
