@@ -48,6 +48,10 @@ type Message struct {
 	Entities    map[string]string `json:"entities,omitempty"`
 	RiskScore   *float64          `json:"risk_score,omitempty"`
 	Created     time.Time         `json:"created"`
+	// Credit names the rule's author and licence, as in "Rule by Florian
+	// Roth, from Sigma (DRL-1.1, ...)", for a rule whose licence asks
+	// for it; "" for built-in rules.
+	Credit string `json:"credit,omitempty"`
 	// Link opens the Findings page; "" when server.public_url is not
 	// known.
 	Link   string `json:"link,omitempty"`
@@ -73,6 +77,7 @@ const (
 	maxTitle  = 300
 	maxEntity = 200
 	maxMITRE  = 20
+	maxCredit = 500
 )
 
 // FindingsLink returns the link to the Findings page of the Signalith at
@@ -90,7 +95,7 @@ func NewMessage(f *findings.Finding, link string) Message {
 	m := Message{
 		Kind: KindFinding, FindingID: clean(f.ID, 100), Title: clean(f.Title, maxTitle),
 		Urgency: clean(f.EffectiveUrgency(), 20), Severity: clean(f.Severity, 20), DetectionID: clean(f.DetectionID, 200),
-		Created: f.Created.UTC(), Link: link, Sample: f.Sample != "",
+		Created: f.Created.UTC(), Credit: clean(f.Credit, maxCredit), Link: link, Sample: f.Sample != "",
 	}
 	if m.Title == "" {
 		m.Title = m.DetectionID
@@ -274,6 +279,9 @@ func (m Message) text(channel string) string {
 		}
 		b.WriteString("\n")
 	}
+	if m.Credit != "" {
+		b.WriteString(m.Credit + "\n\n")
+	}
 	if m.Link != "" && m.Kind == KindApproval {
 		b.WriteString("Approve or reject: " + m.Link + "\n\n")
 	} else if m.Link != "" {
@@ -323,6 +331,8 @@ type WebhookFinding struct {
 	Created   time.Time         `json:"created"`
 	Link      string            `json:"link"`
 	Sample    bool              `json:"sample"`
+	// Credit names the rule's author and licence; "" for built-in rules.
+	Credit string `json:"credit"`
 	// Late is true when the finding is sent again because nobody picked
 	// it up by its due time.
 	Late bool `json:"late,omitempty"`
@@ -351,7 +361,8 @@ func (m Message) webhookBody(sent time.Time) WebhookBody {
 		ent[k] = v
 	}
 	b.Finding = &WebhookFinding{ID: m.FindingID, Title: m.Title, Urgency: m.Urgency, Severity: m.Severity, Detection: m.DetectionID,
-		MITRE: mitre, Entities: ent, RiskScore: m.RiskScore, Created: m.Created, Link: m.Link, Sample: m.Sample, Late: m.Late}
+		MITRE: mitre, Entities: ent, RiskScore: m.RiskScore, Created: m.Created, Link: m.Link, Sample: m.Sample,
+		Credit: m.Credit, Late: m.Late}
 	if m.Kind == KindApproval {
 		b.Approval = &WebhookApproval{Text: m.Ask, Link: m.Link}
 	}
@@ -407,6 +418,9 @@ func (m Message) slackBody(c Channel) map[string]any {
 		if len(fields) > 0 {
 			blocks = append(blocks, map[string]any{"type": "section", "fields": fields})
 		}
+	}
+	if m.Credit != "" {
+		blocks = append(blocks, map[string]any{"type": "context", "elements": []any{plain(m.Credit, 2000)}})
 	}
 	var elements []any
 	for _, b := range buttons {
@@ -488,6 +502,9 @@ func (m Message) teamsCard(c Channel) map[string]any {
 		if len(facts) > 0 {
 			body = append(body, map[string]any{"type": "FactSet", "facts": facts})
 		}
+	}
+	if m.Credit != "" {
+		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(m.Credit), "size": "Small", "isSubtle": true, "wrap": true})
 	}
 	card := map[string]any{
 		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",

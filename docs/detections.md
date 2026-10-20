@@ -4,6 +4,30 @@ A detection is a Signalith query that runs on a schedule. Every row the query
 returns becomes a finding, unless the throttle says the same thing was already
 raised recently.
 
+Signalith ships 59 built-in detections mapped to MITRE ATT&CK: brute force, password
+spray, encoded PowerShell, Office spawning shells, shadow copy deletion, credential
+dumping, privileged group changes, malware and more, plus two risk incident rules. 54
+are on by default. With both [content packs](#content-packs) on, rules are tagged with
+181 ATT&CK techniques.
+
+## The pages
+
+- **Findings** is the triage queue. Filter by status, severity, owner or entity;
+  assign, change status and disposition, comment, and update many at once. Each
+  finding shows the result that fired, its entities, triage guidance, its full
+  history, and a **View contributing events** link that opens the exact search (see
+  [What a finding contains](#what-a-finding-contains)). Findings that belong to one
+  incident can be grouped in a [case](cases.md).
+- **Detections** lists every rule with its last run. Edit one in the form, **Test**
+  it to see which findings it would raise, or **Run now**. Editing a built-in saves
+  your version and keeps the original to revert to. Any search can become a
+  detection with **Save as detection** on the Search page.
+- **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to
+  a Signalith query and lists anything it had to approximate (see
+  [Sigma rules](#sigma-rules)).
+- **ATT&CK coverage** shows the Enterprise matrix with the techniques covered by
+  enabled detections, those covered only by disabled ones, and the gaps.
+
 ## Where detections live
 
 - **Built-in detections** ship inside the binary (`internal/detect/builtin`).
@@ -99,7 +123,7 @@ Rules of thumb:
   example "Signalith was not running detections from 02:10 to 09:40; 90 runs of this
   detection were skipped." Search that time by hand if it matters. Set
   `detections.catch_up` on the Settings page, or see the
-  [configuration table](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#configuration).
+  [configuration table](configuration.md#all-settings).
 - **Failed runs.** A run that failed because OpenSearch did not answer, or was too
   busy, is tried again: the detection waits until it works. A run whose query has an
   error is not tried again; fix the query and the next run uses it. A run that times
@@ -164,7 +188,45 @@ Write your own the same way, for example
 The **Risk** page lists the users and systems with the most risk. Open one to see
 what added its risk: each entry opens the detection that added it, with a link to
 the finding raised with it (or, for a risk-only detection, to the risk event in
-Search). Click an ATT&CK tactic to show only the entries for that tactic.
+Search). Click an ATT&CK tactic to show only the entries for that tactic. Each user
+or system in the list has a bar for its score, the number of detections and tactics,
+and its asset or identity context.
+
+Risk events are stored under the Risk data model (`datamodel=Risk`) in
+`<prefix>-risk-YYYY.MM.DD` indices, which ordinary searches leave out.
+
+## Assets and identities
+
+The **Assets & identities** page takes two CSV files, one for assets and one for
+identities. Upload them on that page, or put them in `lookups.dir` as `assets.csv` and
+`identities.csv`; they reload within a minute. Every bad line is reported, and nothing
+is saved until the file is clean. Download the current file from the same page to
+edit it.
+
+```csv
+host,ip,cidr,owner,priority,category,bunit,location
+web1|web1.corp.local,10.0.1.10,,web team,critical,web|pci,ecommerce,dc1
+,,10.20.0.0/16,it,low,workstation,,office
+```
+
+```csv
+identity,name,email,manager,priority,category,bunit,watchlist
+alice|CORP\alice|alice@corp.local,Alice Ng,alice@corp.local,bob,high,admin,it,true
+```
+
+Use `|` between several values in one cell. Hosts match by short name or FQDN, IPs
+exactly or by the most specific CIDR, and users with or without `DOMAIN\` or
+`@domain`. Priority is `low`, `medium`, `high` or `critical`.
+
+This context changes three things:
+
+- **Risk scores** are multiplied by the object's priority: critical ×2, high ×1.5,
+  medium ×1, low ×0.5. A watchlisted user counts at least ×1.5.
+- **Urgency** on each finding starts at its severity. It goes up one level when a
+  critical asset or watchlisted user is involved, and down one level when every
+  known entity is low priority. The Findings queue shows and filters by urgency.
+- **`| enrich`** in any search adds `<field>_priority`, `_owner`, `_category` and more
+  next to each user, host and IP field (see [enrich](query-language.md#commands)).
 
 ## Exceptions
 
@@ -224,7 +286,7 @@ aggregates exist.
 
 ## Antivirus detections
 
-Eight built-in detections read the Malware data model (see
+Ten built-in detections read the Malware data model (see
 [antivirus.md](antivirus.md#detections) for what each means and what to do). All
 are on by default and raise findings:
 
