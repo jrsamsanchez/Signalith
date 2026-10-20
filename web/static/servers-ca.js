@@ -186,6 +186,11 @@
       text: 'No server hands it out any more, and its key is deleted from the shared settings. Agents that trust only it need a new configuration.',
       done: 'The old certificate authority is retired.',
     },
+    abort: {
+      button: 'Abort…', title: 'Abort replacing the certificate authority?', ok: 'Abort it',
+      text: 'The prepared certificate authority and its key are deleted from the shared settings, and every server hands out only the one in use again. Nothing changes for agents and browsers. To replace it later, start again.',
+      done: 'Replacing the certificate authority is aborted.',
+    },
   };
 
   function rotation(rep) {
@@ -208,13 +213,18 @@
         ['Switched', `${r.previous.by ? 'by ' + r.previous.by + ' ' : ''}on ${dayText(r.previous.at)}`],
       ]), el('p', { class: 'ca-text' }, 'Every server issues its certificate from the new one and still hands out the old one. Retire it once every server’s certificate comes from the new one.')];
     }
+    const lost = step === 'switch' && r.next.key_lost;
     const go = el('button', { type: 'button', class: 'btn btn--' + (step === 'prepare' ? 'secondary' : 'primary') + ' btn--sm', 'data-focus': 'ca-rotate', onclick: () => confirmStep(step) }, STEPS[step].button);
-    go.disabled = !!S.asking || blockers.length > 0;
+    go.disabled = !!S.asking || blockers.length > 0 || lost;
+    // Abort is never held back by the servers: it only drops the new one.
+    const abort = step === 'switch' ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm', 'data-focus': 'ca-abort', onclick: () => confirmStep('abort') }, STEPS.abort.button) : null;
+    if (abort) abort.disabled = !!S.asking;
     return [
       info,
-      blockers.length ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
+      lost ? alertBox('danger', 'The new certificate authority’s key is lost', 'The cluster key was reset, so no server can issue from it. Abort, then replace it again.') : null,
+      blockers.length && !lost ? el('div', { class: 'ca-alerts' }, ...blockers.map((b) => alertBox('warning', 'Waiting for a server', cap(b) + '.'))) : null,
       S.asking ? el('p', { class: 'ca-progress', role: 'status' }, icon('clock', 'icon--sm'), S.asking) : null,
-      el('div', { class: 'ca-actions' }, download, go,
+      el('div', { class: 'ca-actions' }, download, go, abort,
         step === 'prepare' ? el('span', { class: 'ca-muted' }, 'Replace it when its key may have leaked, or a server you removed may still hold it.') : null),
     ];
   }

@@ -48,6 +48,11 @@ const (
 	StepPrepare = "prepare"
 	StepSwitch  = "switch"
 	StepRetire  = "retire"
+	// StepAbort drops a next certificate authority not switched to yet,
+	// with its key: for one whose key cannot be opened any more (reset-key
+	// emptied it, or a key rotation could not seal it again), or one a
+	// removed server may hold.
+	StepAbort = "abort"
 )
 
 // States of replacing the cluster's certificate authority.
@@ -78,6 +83,12 @@ type RotateResult struct {
 // ErrRetireFirst: a new certificate authority cannot be prepared while
 // the one a switch replaced is still kept.
 var ErrRetireFirst = errors.New("the certificate authority the last switch replaced is still trusted: retire it first (signalith cluster tls rotate-ca retire)")
+
+// ErrNextUnusable: the next certificate authority's key cannot be opened,
+// so no server could issue from it.
+var ErrNextUnusable = errors.New("the prepared certificate authority's key cannot be opened with the cluster's keys " +
+	"(reset-key emptied it, or a key rotation could not seal it again), so no server could issue from it: " +
+	"abort the rotation (signalith cluster tls rotate-ca abort) and prepare a new one")
 
 // errNoCA: the cluster has no certificate authority to replace.
 var errNoCA = errors.New("the cluster has no certificate authority yet, so there is none to replace")
@@ -140,6 +151,9 @@ func (t *TLS) PrepareNext(ctx context.Context, by, cur string) (fp string, alrea
 		return "", false, fmt.Errorf("the cluster's certificate authority changed (it is now %s); look again", b.CASHA256)
 	}
 	if b.Next != nil {
+		if !t.nextOpens(b.Next) {
+			return "", false, ErrNextUnusable
+		}
 		return b.Next.CASHA256, true, nil
 	}
 	if b.Previous != nil {
@@ -217,13 +231,9 @@ func (t *TLS) SwitchNext(ctx context.Context, by, node, fp string) (already bool
 	if fp != "" && !SameFingerprint(b.Next.CASHA256, fp) {
 		return false, fmt.Errorf("the prepared certificate authority is %s, not %s; look again", b.Next.CASHA256, fp)
 	}
-	nc, err := b.Next.Cert()
-	if err != nil {
-		return false, err
-	}
 	// Its key must open here, or no server could issue from it.
-	if _, _, err := t.openSealed(nc, b.Next.CASHA256, b.Next.CAKey); err != nil {
-		return false, fmt.Errorf("the prepared certificate authority's key cannot be used, so the switch would leave every server unable to renew: %w", err)
+	if !t.nextOpens(b.Next) {
+		return false, ErrNextUnusable
 	}
 	want := b.Next.CASHA256
 	now := time.Now().UTC()
@@ -270,7 +280,7 @@ func (t *TLS) RetirePrevious(ctx context.Context, by, fp string) (already bool, 
 	}
 	if b.Previous == nil {
 		if b.Next != nil {
-			return false, errors.New("a new certificate authority is prepared but not switched to yet: switch first (signalith cluster tls rotate-ca switch)")
+			return false, errors.New("a new certificate authority is prepared but not switched to yet: switch first, or abort the rotation (signalith cluster tls rotate-ca abort)")
 		}
 		return true, nil
 	}
@@ -297,6 +307,62 @@ func (t *TLS) RetirePrevious(ctx context.Context, by, fp string) (already bool, 
 	return false, err
 }
 
+// nextOpens reports whether o's key opens with the cluster's keys.
+func (t *TLS) nextOpens(o *OtherCA) bool {
+	c, err := o.Cert()
+	if err != nil {
+		return false
+	}
+	_, _, err = t.openSealed(c, o.CASHA256, o.CAKey)
+	return err == nil
+}
+
+// AbortNext drops the next certificate authority, whose fingerprint is
+// fp ("" for any), with its sealed key, as the user by asked: every
+// server then hands out only the one in use again. It is refused after a
+// switch (retire, then replace it again). With none prepared it changes
+// nothing and reports already.
+func (t *TLS) AbortNext(ctx context.Context, by, fp string) (already bool, err error) {
+	_, d, err := t.parts()
+	if err != nil {
+		return false, err
+	}
+	b, ok := d.Get()
+	if !ok || b.CASHA256 == "" {
+		return false, errNoCA
+	}
+	if b.Next == nil {
+		if b.Previous != nil {
+			return false, errAbortSwitched
+		}
+		return true, nil
+	}
+	if fp != "" && !SameFingerprint(b.Next.CASHA256, fp) {
+		return false, fmt.Errorf("the prepared certificate authority is %s, not %s; look again", b.Next.CASHA256, fp)
+	}
+	want := b.Next.CASHA256
+	_, err = d.Mutate(ctx, by, func(c *Body) error {
+		switch {
+		case c.Next == nil && c.Previous != nil:
+			return errAbortSwitched
+		case c.Next == nil:
+			return errUnchanged
+		case !SameFingerprint(c.Next.CASHA256, want):
+			return errors.New("the prepared certificate authority changed meanwhile; look again")
+		}
+		c.Next = nil
+		return nil
+	})
+	if errors.Is(err, errUnchanged) {
+		return true, nil
+	}
+	return false, err
+}
+
+// errAbortSwitched: a rotation cannot be aborted once switched.
+var errAbortSwitched = errors.New("the cluster already switched to the new certificate authority, so the rotation can't be aborted: " +
+	"retire the old one (signalith cluster tls rotate-ca retire), then replace it again if needed")
+
 // addRetired lists ca among b's retired certificate authorities, once.
 func addRetired(b *Body, ca *x509.Certificate, server string, at time.Time) {
 	fp := tlsauto.Fingerprint(ca.Raw)
@@ -311,7 +377,7 @@ func addRetired(b *Body, ca *x509.Certificate, server string, at time.Time) {
 }
 
 // ErrBadStep: a step that is not prepare, switch or retire.
-var ErrBadStep = errors.New("the step must be prepare, switch or retire")
+var ErrBadStep = errors.New("the step must be prepare, switch, retire or abort")
 
 // CheckStep checks that step of replacing b, the cluster's certificate
 // authority, can be asked for now, with blockers the servers not ready
@@ -336,8 +402,19 @@ func CheckStep(b *Body, blockers []string, step string) (string, error) {
 			return "", fmt.Errorf("not every server is ready to switch: %s", strings.Join(blockers, "; "))
 		}
 		return b.Next.CASHA256, nil
+	case StepAbort:
+		if b.Next == nil {
+			if b.Previous != nil {
+				return "", errAbortSwitched
+			}
+			return "", errors.New("no rotation is in progress, so there is nothing to abort")
+		}
+		return b.Next.CASHA256, nil
 	case StepRetire:
 		if b.Previous == nil {
+			if b.Next != nil {
+				return "", errors.New("the cluster hasn't switched to the new certificate authority yet: switch, or abort the rotation (signalith cluster tls rotate-ca abort)")
+			}
 			return "", errors.New("no certificate authority is waiting to be retired")
 		}
 		if len(blockers) > 0 {
@@ -473,8 +550,14 @@ func RotateHandler(t *TLS, servers func(context.Context) ([]cluster.Heartbeat, e
 				return err
 			}
 			res.CASHA256, res.Already = a.CASHA256, already
+		case StepAbort:
+			already, err := t.AbortNext(ctx, by, a.CASHA256)
+			if err != nil {
+				return err
+			}
+			res.CASHA256, res.Already = a.CASHA256, already
 		default:
-			return fmt.Errorf("unknown step %q: it is prepare, switch or retire", a.Step)
+			return fmt.Errorf("unknown step %q: it is prepare, switch, retire or abort", a.Step)
 		}
 		_ = req.SetResult(res)
 		if !res.Already {

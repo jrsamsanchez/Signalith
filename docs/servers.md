@@ -617,7 +617,7 @@ Replace the cluster's CA when its key may have leaked, when a server you removed
 still hold it, or when its 10 years are nearly up. It takes three steps, like a change
 of a server's own CA on its Security page, but for every server at once. Each step is on
 the **Certificate authority** card of the Servers page, and in
-`signalith cluster tls rotate-ca prepare|switch|retire` (see
+`signalith cluster tls rotate-ca prepare|switch|retire|abort` (see
 [cluster-cli.md](cluster-cli.md#tls)). The card and `signalith cluster tls` show which
 step the cluster is at, with its date, and what each step waits for.
 
@@ -639,6 +639,12 @@ step the cluster is at, with its date, and what each step waits for.
    certificate from the new CA. The old CA is no longer handed out, and its key is
    deleted from the shared settings.
 
+Before the switch, **Abort** drops the new CA and its key. Every server then hands out
+only the one in use again. Abort when the new CA's key is lost (`reset-key` empties it,
+and only an abort and a new **Prepare** fix that), or when you'd rather start again. After
+the switch there is nothing to abort: retire the old CA, then replace the new one if
+needed.
+
 A server that is stopped or offline isn't waited for: it takes the new CA when it
 starts. Servers with your own certificate files, or that don't serve HTTPS themselves,
 never use the cluster's CA. **Prepare** is refused while a running server is on a
@@ -656,12 +662,13 @@ certificates that agents trusting only the new CA accept. Make a new offline cop
 CA afterwards (below).
 
 From a script, as an admin: `POST /api/cluster/tls/rotate-ca` with
-`{"step": "prepare"}`, `"switch"` or `"retire"` asks the server that runs the background
+`{"step": "prepare"}`, `"switch"`, `"retire"` or `"abort"` asks the server that runs the background
 jobs to take that step, and answers `202` with a `request_id` that
 `GET /api/requests/{id}` follows; `409` when the step doesn't fit the state, or a server
 isn't ready (the error names it); `503` when the shared settings can't be changed now.
 `GET /api/cluster/tls` has the state in `rotation`: `state` (`none`, `prepared` or
-`switched`), `next` or `previous` with its fingerprint and date, and `blockers`.
+`switched`), `next` or `previous` with its fingerprint, date and `key_lost`, and
+`blockers`.
 
 ### Backing up the cluster's CA
 

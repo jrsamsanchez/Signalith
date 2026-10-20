@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -345,5 +346,84 @@ func TestResealKeepsWhatItCannotOpen(t *testing.T) {
 	}
 	if out := logs.String(); !strings.Contains(out, "audit=true") || !strings.Contains(out, "old sealed value is kept") || !strings.Contains(out, b.Next.CASHA256) {
 		t.Errorf("log: %s", out)
+	}
+}
+
+// A next certificate authority whose key reset-key emptied can't be
+// switched to or prepared over: abort drops it, audit-logged, and a new
+// prepare then works. Abort is refused once switched.
+func TestAbortRotation(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ca := makeCA(t, "a", time.Now().Add(-time.Hour))
+	ta, _ := e.server("siem-a")
+	if err := ta.Publish(ctx, "admin", "siem-a", ca.pem, ca.key, nil); err != nil {
+		t.Fatal(err)
+	}
+	if already, err := ta.AbortNext(ctx, "admin", ""); err != nil || !already {
+		t.Errorf("abort with none prepared: %v %v", already, err)
+	}
+	if b, _ := ta.Get(); !strings.Contains(fmt.Sprint(CheckStep(b, nil, StepAbort)), "nothing to abort") {
+		t.Error("CheckStep allowed an abort with none prepared")
+	}
+	lost, _, err := ta.PrepareNext(ctx, "admin", ca.fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl := e.resetKey("siem-a")
+	if _, err := tl.ImportKey(ctx, "admin", nil, ca.key); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := tl.Get()
+	if b.Next == nil || b.Next.CAKey != "" {
+		t.Fatalf("after reset-key: %+v", b.Next)
+	}
+	if r := BuildReport(ReportInput{Body: b}); r.Rotation == nil || r.Rotation.Next == nil || !r.Rotation.Next.KeyLost {
+		t.Error("the report does not say the next key was lost")
+	}
+	if _, err := tl.SwitchNext(ctx, "admin", "siem-a", lost); !errors.Is(err, ErrNextUnusable) {
+		t.Errorf("switch to a lost key: %v", err)
+	}
+	if _, _, err := tl.PrepareNext(ctx, "admin", ca.fp); !errors.Is(err, ErrNextUnusable) {
+		t.Errorf("prepare over a lost key: %v", err)
+	}
+	if !strings.Contains(ErrNextUnusable.Error(), "rotate-ca abort") || strings.Contains(ErrNextUnusable.Error(), "tls import") {
+		t.Errorf("the error points elsewhere: %v", ErrNextUnusable)
+	}
+	if fp, err := CheckStep(b, []string{"siem-b doesn't hand out"}, StepAbort); err != nil || fp != lost {
+		t.Errorf("CheckStep abort: %s %v", fp, err)
+	}
+
+	// Through the handler on the server that runs the jobs.
+	var logged strings.Builder
+	log := slog.New(slog.NewJSONHandler(&logged, nil))
+	run := RotateHandler(tl, func(context.Context) ([]cluster.Heartbeat, error) { return nil, nil }, "siem-a", log)
+	raw, _ := json.Marshal(RotateArgs{Step: StepAbort, CASHA256: lost})
+	if err := run(ctx, &shared.Request{ID: "rq_1", RequestedBy: "admin", Args: raw}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logged.String(), `"audit":true`) || !strings.Contains(logged.String(), `"step":"abort"`) {
+		t.Errorf("not audit-logged: %s", logged.String())
+	}
+	if b, _ := tl.Get(); b.Rotation() != RotationNone || b.Next != nil {
+		t.Fatalf("after abort %+v", b.Next)
+	}
+
+	fp, already, err := tl.PrepareNext(ctx, "admin", ca.fp)
+	if err != nil || already || SameFingerprint(fp, lost) {
+		t.Fatalf("prepare again: %s %v %v", fp, already, err)
+	}
+	b, _ = tl.Get()
+	if !tl.nextOpens(b.Next) {
+		t.Fatal("the new next key does not open")
+	}
+	if _, err := tl.SwitchNext(ctx, "admin", "siem-a", fp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tl.AbortNext(ctx, "admin", ""); !errors.Is(err, errAbortSwitched) {
+		t.Errorf("abort after a switch: %v", err)
+	}
+	if b, _ := tl.Get(); !strings.Contains(fmt.Sprint(CheckStep(b, nil, StepAbort)), "retire") {
+		t.Error("CheckStep allowed an abort after a switch")
 	}
 }

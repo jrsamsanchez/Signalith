@@ -51,7 +51,7 @@ const clusterUsage = `usage:
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
   signalith cluster tls import     [-c file] [-cert ca.pem] [-yes] <ca.key>   give the cluster its certificate authority's key again, from an export
-  signalith cluster tls rotate-ca  [-c file] [-yes] prepare|switch|retire   replace the cluster's certificate authority, one step at a time
+  signalith cluster tls rotate-ca  [-c file] [-yes] prepare|switch|retire|abort   replace the cluster's certificate authority, one step at a time
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
   signalith cluster token          [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
                                    a join token, which adds a server with signalith join

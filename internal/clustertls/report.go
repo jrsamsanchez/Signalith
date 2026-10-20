@@ -62,13 +62,16 @@ type OtherView struct {
 	NotAfter time.Time `json:"not_after"`
 	By       string    `json:"by,omitempty"`
 	At       time.Time `json:"at"`
+	// KeyLost is true when its key was emptied (reset-key): a next one
+	// must then be aborted and prepared again.
+	KeyLost bool `json:"key_lost,omitempty"`
 }
 
 func otherView(o *OtherCA) *OtherView {
 	if o == nil {
 		return nil
 	}
-	v := &OtherView{CASHA256: o.CASHA256, By: o.By, At: o.At}
+	v := &OtherView{CASHA256: o.CASHA256, By: o.By, At: o.At, KeyLost: o.CAKey == ""}
 	if c, err := o.Cert(); err == nil {
 		v.Subject, v.NotAfter = c.Subject.CommonName, c.NotAfter.UTC()
 	}

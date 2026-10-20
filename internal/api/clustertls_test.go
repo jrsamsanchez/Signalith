@@ -250,6 +250,9 @@ func TestClusterTLSRotate(t *testing.T) {
 	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict {
 		t.Errorf("switch with nothing prepared: %d %v", code, out)
 	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"abort"}`, true); code != http.StatusConflict {
+		t.Errorf("abort with nothing prepared: %d %v", code, out)
+	}
 	code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`, true)
 	if code != http.StatusAccepted || out["request_id"] != "rq_2" || len(ct.asked) != 2 || ct.asked[0] != "prepare" || ct.asked[1] != b.Fingerprint() {
 		t.Fatalf("prepare %d %v %v", code, out, ct.asked)
@@ -267,6 +270,10 @@ func TestClusterTLSRotate(t *testing.T) {
 	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict ||
 		!strings.Contains(out["error"].(string), "siem-b doesn't hand out") {
 		t.Errorf("switch before siem-b is ready: %d %v", code, out)
+	}
+	// Abort is never held back by the servers.
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"abort"}`, true); code != http.StatusAccepted || out["ca_sha256"] != a.Fingerprint() {
+		t.Errorf("abort: %d %v", code, out)
 	}
 	cl.b.NextCASHA256 = a.Fingerprint()
 	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusAccepted || out["ca_sha256"] != a.Fingerprint() {

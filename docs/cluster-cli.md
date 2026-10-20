@@ -341,7 +341,7 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 signalith cluster tls        [-c file] [-json]
 signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
 signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>
-signalith cluster tls rotate-ca [-c file] [-yes] prepare|switch|retire
+signalith cluster tls rotate-ca [-c file] [-yes] prepare|switch|retire|abort
 ```
 
 Once every server runs a version that shares one, the servers of a cluster share one certificate
@@ -387,7 +387,14 @@ Servers page does (see [Replacing the cluster's CA](servers.md#replacing-the-clu
 - `switch` makes every server issue its certificate from the new one, once every running
   server hands it out. The old one is still handed out;
 - `retire` stops handing out the old one and deletes its key, once every running
-  server's certificate comes from the new one.
+  server's certificate comes from the new one;
+- `abort` drops the prepared one and its key, before the switch. Every server then hands
+  out only the one in use again. After a switch there is nothing to abort: retire the
+  old one, then replace the new one if needed.
+
+`reset-key` empties the prepared one's key too, and `tls import` can't give it back. `tls`
+then says its key is lost, and `switch` and `prepare` are refused: run `abort`, then
+`prepare` again.
 
 Each asks first unless you add `-yes`, then asks the server that runs the background
 jobs to take the step, and waits for it. A step that isn't ready is refused with the
