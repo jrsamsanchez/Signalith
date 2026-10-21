@@ -125,7 +125,7 @@ func TestLoadStateRefuses(t *testing.T) {
 
 func TestFetchAndDownloadProblems(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Fetch(context.Background(), filepath.Join(dir, "missing.zip"), dir, io.Discard); err == nil {
+	if _, err := Fetch(context.Background(), filepath.Join(dir, "missing.zip"), dir, http.DefaultClient, io.Discard); err == nil {
 		t.Error("fetched a missing file")
 	}
 	file := filepath.Join(dir, "file")

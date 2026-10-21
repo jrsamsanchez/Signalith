@@ -161,6 +161,21 @@ func recordID(seed [sha256.Size]byte, pos int) string {
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
 
+// subRecordID is the document ID of the event at sub among those the
+// record at pos expands into (an Event Hub message carries many). The first
+// takes the record's own ID; the others are longer, so they can't be
+// another record's.
+func subRecordID(seed [sha256.Size]byte, pos, sub int) string {
+	if sub == 0 {
+		return recordID(seed, pos)
+	}
+	var b [22]byte
+	copy(b[:14], seed[:14])
+	binary.BigEndian.PutUint32(b[14:], uint32(pos))
+	binary.BigEndian.PutUint32(b[18:], uint32(sub))
+	return base64.RawURLEncoding.EncodeToString(b[:])
+}
+
 // checkBody reads a body without keeping what it decodes and returns how
 // many records it has, or a *BodyError saying which limit it breaks.
 func checkBody(body []byte) (int, error) {

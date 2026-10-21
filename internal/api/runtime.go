@@ -10,7 +10,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
+
+	"github.com/jrsamsanchez/signalith/internal/incontainer"
 )
 
 // Runtime describes where the server runs, so the UI can give setup steps
@@ -18,7 +19,7 @@ import (
 // opened, and the addresses devices can send to.
 type Runtime struct {
 	OS string `json:"os"` // linux, windows, ...
-	// Container is true in Docker or Podman, where the host's addresses
+	// Container is true in Docker, Podman or Kubernetes, where the host's addresses
 	// and paths are not this program's.
 	Container bool `json:"container"`
 	// Systemd is true when systemd started the server (a service).
@@ -52,7 +53,7 @@ func (s *Server) runtimeInfo() Runtime {
 	return r
 }
 
-// inContainer reports whether the server runs in Docker or Podman.
+// inContainer reports whether the server runs in a container.
 func (s *Server) inContainer() bool {
 	if s.Runtime != nil {
 		return s.Runtime.Container
@@ -60,16 +61,9 @@ func (s *Server) inContainer() bool {
 	return detectContainer()
 }
 
-// detectContainer looks for the files Docker and Podman put in every
-// container, once.
-var detectContainer = sync.OnceValue(func() bool {
-	return runtime.GOOS == "linux" && (exists("/.dockerenv") || exists("/run/.containerenv"))
-})
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
+// detectContainer tells whether the server runs in a container (Docker,
+// Podman, Kubernetes), once.
+var detectContainer = incontainer.Here
 
 // linuxLowPorts reports whether this process may open ports below 1024:
 // the kernel lets everyone (net.ipv4.ip_unprivileged_port_start), or the

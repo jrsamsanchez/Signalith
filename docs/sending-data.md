@@ -146,6 +146,14 @@ under the time it arrived and its own time is kept in `device_time`, so a wrong 
 a forged date cannot create indices for other days. Search `device_time=*` to find these
 events.
 
+A syslog line with no time zone, such as `Oct 11 09:15:02` in an RFC 3164 auth.log, could
+be in any zone, and reading it as the server's would file the event hours off. Such an
+event takes the collector's time instead (Fluent Bit's `date`, the OpenTelemetry record's
+time, the HEC event's `time`, or when Signalith received it), and the time as the host
+wrote it is kept in `device_clock` (for example `2026-10-11T09:15:02`, with the year
+guessed). A time with a zone name other than UTC or GMT that the server's own zone doesn't
+use, such as `2026-10-11 09:15:02 XYZ`, is not trusted either: the receive time is used.
+
 Field names that senders choose (JSON keys, syslog structured data, CEF extensions) are
 limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, names of
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
@@ -236,7 +244,14 @@ syslog (including the usual variations, such as Cisco IOS, IOS XR, NX-OS and ASA
 `dest`, `dest_port`, `user` and `action`. Forwarded sshd, sudo, su and user-management messages
 land in Authentication and Change like agent data, so the built-in detections apply.
 Events have `sourcetype=syslog` (or `cef`), `host` from the message, `dvc` set to the
-sender's address, and `facility` and `severity`. The event time is the one in the message,
+sender's address, and `facility` and `severity`. A message time without a zone (RFC 3164's
+`Oct 11 09:15:02`, or an ISO 8601 time without an offset, in the header or in a CEF `rt`,
+`end` or `start` or a LEEF `devTime`) is not used, since the device's clock may be in another
+zone than the server: the event takes the time Signalith received it, and the device's time
+is kept in `device_clock`. A CEF or LEEF time with a zone name other than UTC or GMT (`CST`
+is three different zones) is not used either. Set the device to send RFC 5424 or
+to write its timestamps in UTC with the zone shown
+to keep its own times. Otherwise the event time is the one in the message,
 unless it is older than `ingest.max_event_age` (a week by default, or the shortest time any
 event category is kept when that is shorter) or more than an hour
 ahead; then it is the time Signalith received the message, and the device's own time is

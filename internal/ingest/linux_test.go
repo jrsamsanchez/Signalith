@@ -3,7 +3,57 @@
 
 package ingest
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// An RFC 3164 line has no zone, so its time could be in any: the event
+// takes the collector's time (Fluent Bit's date, the OTLP record's, else
+// the receive time), and the line's own is kept in device_clock.
+func TestSyslogLineWithoutZoneTakesCollectorTime(t *testing.T) {
+	n := time.Now().UTC().Truncate(time.Second)
+	stated := n.Add(-time.Hour)
+	line := stated.Format("Jan _2 15:04:05") + " web1 sshd[811]: Failed password for bob from 192.0.2.4 port 50022 ssh2"
+	clock := FormatDeviceClock(GuessYear(time.Date(0, stated.Month(), stated.Day(), stated.Hour(), stated.Minute(), stated.Second(), 0, time.UTC), n))
+	collected := n.Add(-time.Minute)
+
+	ev := Normalize("linux.auth", map[string]any{"log": line, "date": float64(collected.Unix())}, n)
+	if !ev.Time.Equal(collected) || ev.Fields[DeviceClockField] != clock || ev.Fields["user"] != "bob" {
+		t.Errorf("with date: %v %v", ev.Time, ev.Fields)
+	}
+	if ev := Normalize("linux.auth", map[string]any{"log": line}, n); !ev.Time.Equal(n) || ev.Fields[DeviceClockField] != clock {
+		t.Errorf("without date: %v %v", ev.Time, ev.Fields[DeviceClockField])
+	}
+	evs := otlpEvents(&otlpLog{body: line, observed: uint64(collected.UnixNano())}, n)
+	if len(evs) != 1 || !evs[0].Time.Equal(collected) || evs[0].Fields[DeviceClockField] != clock {
+		t.Errorf("OTLP: %+v", evs)
+	}
+	if ev := hecLine(line, "linux_secure", "", n); !ev.Time.IsZero() || ev.Fields[DeviceClockField] != clock {
+		t.Errorf("HEC: %v %v", ev.Time, ev.Fields[DeviceClockField])
+	}
+	// A line with a zone keeps its own time.
+	withZone := stated.Format(time.RFC3339) + " web1 sshd[811]: Failed password for bob from 192.0.2.4 port 50022 ssh2"
+	if ev := Normalize("linux.auth", map[string]any{"log": withZone, "date": float64(collected.Unix())}, n); !ev.Time.Equal(stated) || ev.Fields[DeviceClockField] != nil {
+		t.Errorf("RFC 3339: %v %v", ev.Time, ev.Fields[DeviceClockField])
+	}
+}
+
+// A zone name Go doesn't know would be read as UTC, possibly hours off:
+// such a time is not used.
+func TestParseTimeUnknownZone(t *testing.T) {
+	n := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	if got, ok := parseTime(n.Format("2006-01-02 15:04:05") + " UTC"); !ok || !got.Equal(n) {
+		t.Errorf("UTC: %v %v", got, ok)
+	}
+	if got, ok := parseTime(n.Format("2006-01-02 15:04:05") + " XYZ"); ok {
+		t.Errorf("XYZ read as %v", got)
+	}
+	ev := Normalize("app", map[string]any{"msg": "x", "date": n.Format("2006-01-02 15:04:05") + " XYZ"}, n.Add(time.Hour))
+	if !ev.Time.Equal(n.Add(time.Hour)) {
+		t.Errorf("record time %v", ev.Time)
+	}
+}
 
 // TestSSHUserNameCannotChooseSource: sshd prints the user name a client
 // sent as it was sent, so an attacker can put " from <addr> port <n>" in
