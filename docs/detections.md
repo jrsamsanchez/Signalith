@@ -1622,10 +1622,11 @@ go test ./internal/detect/ ./internal/splcheck/
 
 ### Content updates
 
-Pack rules can be updated without a new Signalith release. Every week the Signalith
-project rebuilds both packs from the newest SigmaHQ and Splunk rules, runs every check
-above on them (in memory and against a real OpenSearch), and publishes the ones that
-pass as one signed bundle. A server only installs a bundle that:
+Pack rules can be updated without a new Signalith release. A Signalith maintainer
+rebuilds both packs from newer SigmaHQ and Splunk rules and opens the change as a pull
+request, pinned to the upstream commits, so the new and changed rules
+are reviewed before anything ships. Once it merges, every check above runs on them (in
+memory and against a real OpenSearch), and the packs are published as one signed bundle. A server only installs a bundle that:
 
 - is signed by a key built into Signalith (Ed25519; the keys are in
   `internal/content/trusted.keys`), so a copy from anywhere else is as good as the

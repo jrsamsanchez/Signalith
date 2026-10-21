@@ -1,15 +1,19 @@
 name: Content
-# Content updates: every week, rebuild the SigmaHQ and Splunk content packs
-# from the newest upstream rules, run every pack check (in memory and
-# against a real OpenSearch), and publish the packs as a signed bundle on
-# the "content" release, which Signalith servers check for (Detections
-# page, or detections.content_updates: daily). Only rules that pass ship.
-# Nothing is published when the packs did not change, or without the
-# SIGNALITH_CONTENT_KEY secret (see docs/releasing.md); running it by hand
-# with "publish" off is a dry run.
+# Content updates: when a change to the SigmaHQ or Splunk content packs
+# (internal/detect/packs) is merged to main, run every pack check (in
+# memory and against a real OpenSearch) and publish the packs as a signed
+# bundle on the "content" release, which Signalith servers check for
+# (Detections page, or detections.content_updates: daily). The packs come
+# from this repository, at the upstream commits their pack.yaml pins, so
+# only rules merged here after review are ever signed; newer upstream
+# rules arrive as a pull request a maintainer opens. Nothing is published when the packs
+# did not change, or without the SIGNALITH_CONTENT_KEY secret (see
+# docs/releasing.md); running it by hand with "publish" off is a dry run.
 on:
-  schedule:
-    - cron: '17 6 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - internal/detect/packs/**
   workflow_dispatch:
     inputs:
       publish:
@@ -27,6 +31,9 @@ concurrency:
 jobs:
   content:
     runs-on: ubuntu-latest
+    # Only main is signed, whatever the signing environment allows: a run by
+    # hand on another branch would otherwise sign that branch's packs.
+    if: github.ref == 'refs/heads/main'
     # The content key is a secret of the signing environment, which only
     # main can use (docs/releasing.md).
     environment: signing
@@ -47,15 +54,6 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Get the newest upstream rules
-        run: |
-          git clone --depth 1 https://github.com/SigmaHQ/sigma "$RUNNER_TEMP/sigma"
-          git clone --depth 1 https://github.com/splunk/security_content "$RUNNER_TEMP/security_content"
-      - name: Rebuild the packs
-        run: |
-          go run ./internal/detect/packgen -sigma "$RUNNER_TEMP/sigma"
-          go run ./internal/detect/splunkgen -splunk "$RUNNER_TEMP/security_content"
-          git status --short internal/detect/packs | tail -5
       - name: Check every pack rule
         run: go test ./internal/detect/ ./internal/sigmacheck/ ./internal/splcheck/ ./internal/content/
       - name: Check every pack rule against OpenSearch
@@ -90,7 +88,8 @@ jobs:
           pub=$("$RUNNER_TEMP/signalith" content pubkey)
           echo "Signed with public key $pub"
           if ! grep -qxF "$pub" internal/content/trusted.keys; then
-            echo "::warning::The signing key's public key $pub is not in internal/content/trusted.keys, so Signalith refuses this bundle until it is added there and released."
+            echo "::error::The signing key's public key $pub is not in internal/content/trusted.keys, so Signalith would refuse this bundle. Add it there and release before publishing with this key."
+            exit 1
           fi
           echo "signed=true" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -98,7 +97,7 @@ jobs:
           name: signalith-content
           path: dist/
       - name: Publish on the content release
-        if: steps.bundle.outputs.signed == 'true' && steps.bundle.outputs.changed == 'true' && (github.event_name == 'schedule' || inputs.publish)
+        if: steps.bundle.outputs.signed == 'true' && steps.bundle.outputs.changed == 'true' && (github.event_name == 'push' || inputs.publish)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

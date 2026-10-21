@@ -124,10 +124,16 @@ make a new one before then.
 
 ### Content updates
 
-The weekly **Content** workflow (`.github/workflows/content.yml`) rebuilds the SigmaHQ
-and Splunk packs from the newest upstream rules, runs every pack check, and publishes
-them as a signed bundle on the `content` release, which servers check for (see
-[Content updates](detections.md#content-updates)). It signs with an Ed25519 key in the
+To take in newer upstream rules, a maintainer rebuilds the SigmaHQ and Splunk packs
+from checkouts of the upstream repositories
+(`go run ./internal/detect/packgen -sigma <checkout>` and
+`go run ./internal/detect/splunkgen -splunk <checkout>`) and opens the result as a
+pull request, which is reviewed like any other and never auto-merged. The packs' `pack.yaml` pins the upstream commit, and the diff and
+`REPORT.md` show what changed. When a pack change merges to main, the **Content**
+workflow (`.github/workflows/content.yml`) runs every pack check and publishes the
+packs as a signed bundle on the `content` release, which servers check for (see
+[Content updates](detections.md#content-updates)). Nothing from upstream is signed
+before it is reviewed and merged. It signs with an Ed25519 key in the
 `SIGNALITH_CONTENT_KEY` secret; without the secret it builds and tests but publishes
 nothing. Servers only take bundles signed by a key listed in
 `internal/content/trusted.keys`, so a new key reaches them with the next release.
@@ -142,7 +148,7 @@ docker run --rm alpine:3.20 sh -c 'apk add -q openssl && openssl genpkey -algori
 line as the secret `SIGNALITH_CONTENT_KEY` of the `signing` environment (see [Where the
 keys are kept](#where-the-keys-are-kept)).
 Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
-it, and warns while it is missing). Keep a copy of the private key somewhere safe and
+it, and the publish fails while it is missing). Keep a copy of the private key somewhere safe and
 offline. To replace a key, add the new public key next to the old one, release, switch
 the secret, and remove the old key in a later release.
 
