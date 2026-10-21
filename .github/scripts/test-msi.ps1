@@ -99,6 +99,18 @@ if ((& $exe initial-password).Trim() -ne $password) { throw "the first password 
 Test-SignIn $password
 $installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
 if ($installed.Count -ne 1) { throw "$($installed.Count) Signalith products are installed after the upgrade" }
+# The server hands Windows computers the agent program the .msi carries.
+if (-not (Test-Path "$env:ProgramFiles\Signalith\agents\signalith-agent-windows-amd64.exe")) { throw "the .msi did not install the Windows agent program" }
+
+Write-Host "== Windows PowerShell 5.1 downloads the agent install script as the install line does"
+$want = Join-Path $env:RUNNER_TEMP "agent-install-7.ps1"
+$got51 = Join-Path $env:RUNNER_TEMP "agent-install-51.ps1"
+Invoke-WebRequest "https://127.0.0.1:7779/api/agent/install.ps1" -OutFile $want -SkipCertificateCheck -MaximumRedirection 0
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command ("`$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol='Tls12'; " +
+  "[Net.ServicePointManager]::ServerCertificateValidationCallback={`$true}; " +
+  "Invoke-WebRequest 'https://127.0.0.1:7779/api/agent/install.ps1' -OutFile '$got51' -UseBasicParsing -MaximumRedirection 0")
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $got51)) { throw "Windows PowerShell 5.1 could not download the agent install script" }
+if ((Get-FileHash $got51).Hash -ne (Get-FileHash $want).Hash) { throw "Windows PowerShell 5.1 got another agent install script" }
 
 Write-Host "== Uninstall"
 Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall.log"
