@@ -1,5 +1,5 @@
 Signalith security report for siem-1
-Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.9). Linux, systemd
+Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.10). Linux, systemd
 service.
 
 Summary: 1 at risk, 3 need attention, 15 good, 2 Signalith can't check from
