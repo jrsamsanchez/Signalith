@@ -176,6 +176,7 @@ for f in $(sudo find /var/lib/signalith-sensor/suricata/update/cache -name '*.ta
 done
 
 step "Uninstall, with the copy of the script the sensor keeps"
+# shellcheck disable=SC2024 # the runner, not root, writes uninstall.txt
 sudo sh /usr/lib/signalith-sensor/install.sh --uninstall >uninstall.txt 2>&1 || { cat uninstall.txt; exit 1; }
 cat uninstall.txt
 left=''
