@@ -289,7 +289,8 @@ func TestAgentScriptDryRun(t *testing.T) {
 	}
 	unit := readFile(t, filepath.Join(root, "etc/systemd/system/signalith-agent.service"))
 	for _, want := range []string{"ExecStart=/usr/local/sbin/signalith-agent run\n", "CapabilityBoundingSet=CAP_DAC_READ_SEARCH\n", "NoNewPrivileges=yes\n",
-		"ProtectSystem=strict\n", "ReadWritePaths=/etc/signalith-agent /var/lib/signalith-agent\n"} {
+		"ProtectSystem=strict\n", "ReadWritePaths=/etc/signalith-agent /var/lib/signalith-agent\n",
+		"MemoryMax=512M\n", "CPUQuota=200%\n", "TasksMax=256\n"} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit has no %q", want)
 		}
@@ -374,7 +375,7 @@ func TestAgentScriptDryRunOsquery(t *testing.T) {
 			for _, want := range []string{"ConditionPathExists=/etc/signalith-agent/osquery.flags\n",
 				"ExecStartPre=/usr/local/sbin/signalith-agent osquery-flags /etc/signalith-agent/osquery.flags /run/signalith-osquery/osquery.flags\n",
 				"ExecStart=/opt/osquery/bin/osqueryd --flagfile=/run/signalith-osquery/osquery.flags --disable_extensions=true\n",
-				"RuntimeDirectoryMode=0700\n", "NoNewPrivileges=yes\n", "Restart=always\n"} {
+				"RuntimeDirectoryMode=0700\n", "NoNewPrivileges=yes\n", "Restart=always\n", "MemoryMax=512M\n", "CPUQuota=100%\n"} {
 				if !strings.Contains(unit, want) {
 					t.Errorf("osquery unit has no %q:\n%s", want, unit)
 				}

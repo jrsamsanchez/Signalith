@@ -35,6 +35,10 @@ var (
 	jobErr  error
 )
 
+// collectorMemory is the most memory each collector may commit, as the
+// Linux service's MemoryMax.
+const collectorMemory = 512 << 20
+
 func agentJob() (windows.Handle, error) {
 	jobOnce.Do(func() {
 		h, err := windows.CreateJobObject(nil, nil)
@@ -43,7 +47,11 @@ func agentJob() (windows.Handle, error) {
 			return
 		}
 		info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		// Each collector may commit at most collectorMemory: a fault
+		// then stops it, and the agent starts it again, rather than
+		// take the computer's memory.
+		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY
+		info.ProcessMemoryLimit = collectorMemory
 		if _, err := windows.SetInformationJobObject(h, windows.JobObjectExtendedLimitInformation,
 			uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 			windows.CloseHandle(h)
@@ -51,8 +59,58 @@ func agentJob() (windows.Handle, error) {
 			return
 		}
 		job = h
+		watchMemory(h)
 	})
 	return job, jobErr
+}
+
+// memoryHit holds the IDs of the collectors Windows told the agent
+// reached collectorMemory, until they exit.
+var memoryHit sync.Map
+
+// jobMsgProcessMemoryLimit is JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT.
+const jobMsgProcessMemoryLimit = 9
+
+// watchMemory asks Windows to say when a collector in job h reaches
+// collectorMemory, so a collector stopped by it does not look like a
+// crash. Without it the limit still holds; only the reason is missing.
+func watchMemory(h windows.Handle) {
+	port, err := windows.CreateIoCompletionPort(windows.InvalidHandle, 0, 0, 1)
+	if err != nil {
+		return
+	}
+	assoc := struct {
+		CompletionKey  uintptr
+		CompletionPort windows.Handle
+	}{0, port}
+	if _, err := windows.SetInformationJobObject(h, windows.JobObjectAssociateCompletionPortInformation,
+		uintptr(unsafe.Pointer(&assoc)), uint32(unsafe.Sizeof(assoc))); err != nil {
+		windows.CloseHandle(port)
+		return
+	}
+	go func() {
+		for {
+			var msg uint32
+			var key uintptr
+			var ov *windows.Overlapped
+			if err := windows.GetQueuedCompletionStatus(port, &msg, &key, &ov, windows.INFINITE); err != nil {
+				return
+			}
+			if msg == jobMsgProcessMemoryLimit {
+				// The message's "overlapped" is the process ID.
+				memoryHit.Store(uint32(uintptr(unsafe.Pointer(ov))), true)
+			}
+		}
+	}()
+}
+
+// memoryHint says why the collector pid stopped when it reached its
+// memory limit; "" otherwise.
+func memoryHint(pid int) string {
+	if _, hit := memoryHit.LoadAndDelete(uint32(pid)); hit {
+		return "it reached the 512 MB of memory the agent allows each collector"
+	}
+	return ""
 }
 
 // keepWithAgent puts the collector in the agent's job object.

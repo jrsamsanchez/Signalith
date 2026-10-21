@@ -93,6 +93,9 @@ Rules of thumb:
 - Make `lookback` at least as long as `schedule`, or events between runs are missed.
   A little overlap is fine; throttling keeps overlapping runs from raising duplicates.
 - Without `throttle.fields`, the whole result row is the throttle key.
+- Without `throttle.window`, a rule whose `lookback` is longer than its `schedule`
+  holds each row back for `lookback`, so a row that overlapping runs both see raises
+  one finding.
 - Views that count a detection across many findings, such as **Top detections firing**
   on the posture dashboard, show `name`. Without one, they show `title` with each
   `$field$` and the word that leads to it left out ("Brute force against $dest$ from
@@ -245,6 +248,28 @@ window.
   one with its bin icon, or add one by hand with **Add**: one `field=value` per line,
   where `*` and `?` are wildcards and case is ignored. Leave the values empty, with a
   start time and how long, to silence every result for a maintenance window.
+
+### Proposing an exception
+
+Analysts know which findings are noise, but exceptions change what a detection
+raises, so an admin adds them. From a finding, an analyst chooses **More actions** (⋯)
+> **Propose an exception**, ticks the values, picks how long and says why. The
+finding can be closed in the same step. The request waits on the **Approvals** page,
+where an admin approves or declines it with an optional note; only an approval adds
+the exception, and its time starts then. The decision is noted on the finding, the
+exception records who proposed and who approved it, and the audit log records the
+proposal and the decision. A request nobody decides in 14 days expires. Up to 200
+requests can wait at once, 50 of them from one person.
+
+The values come from the finding, so the exception matches them **exactly**
+(ignoring case): a logged `*` or `adm?` is taken as those characters, never as a
+wildcard. An admin who proposes an exception cannot approve it; another admin does,
+or they add the exception on the detection directly.
+
+If saving an approved exception fails and Signalith cannot tell whether it was
+saved, the request stays approved and the audit log records **detection exception
+approval unconfirmed**. Check the detection's exceptions then, and add the exception
+by hand if it is missing: the request cannot be approved again.
 
 Each run counts the results exceptions matched; **Last run** on the Detections page
 shows them. An exception that has ended stays listed, greyed out, until it is
@@ -455,6 +480,53 @@ Findings move through `new`, `in_progress`, `pending`, `resolved` and `closed`, 
 an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positive`,
 `undetermined`), comments, and a history of every change. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
+
+Resolving or closing a finding asks for a disposition, so the false positive rate
+of each detection stays honest. **Resolve** on selected findings opens the edit
+dialog with the status set; pick the disposition there. Closing a case with its
+findings asks for one disposition for them all. Playbooks set their own. To turn the check off, set `detections.require_disposition: false`
+(Settings > Detections).
+
+### The findings queue
+
+The **Findings** page lists findings most urgent first. Click **Urgency** or **Age** to
+sort the other way or by time; the server sorts, so the order covers every finding that
+matches, not only those on screen. The queue loads 200 at a time; **Load more** at the
+bottom adds the next 200. The urgency pills count every finding the other filters let
+through. **Unassigned** shows findings nobody owns.
+
+The filters are kept in the address, such as `#findings?owner=__none&urgency=critical`
+for unassigned critical findings, so a bookmark or a link to a colleague opens the same
+queue.
+
+**Views** next to the pills switches between saved filters. Common queues, such as
+**Assigned to me** and **Unassigned critical and high**, are there for everyone. **Save these filters as a view** keeps the filters on screen under a name of
+your own (up to 30). Your views are yours alone and follow you from browser to browser;
+they keep filters only, never findings.
+
+**Group by detection** or **Group by entity** shows, instead of findings, the detections
+or the hosts, users and addresses the matching findings share, largest first, each with
+its highest urgency. Pick one to see its findings.
+
+Keys: **J** and **K** move through the list, **X** selects the open finding, **A**
+assigns it to you (and moves a new one to In progress), **R** picks Resolved in its form
+and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search box.
+
+### Due times
+
+Each urgency has two targets: how soon someone should pick a finding up (change its
+status or owner) and how soon it should be resolved, both timed from when it was raised.
+They start at 15 minutes and 4 hours for critical, 1 hour and 24 hours for high, 4 hours
+and 3 days for medium, and 24 hours and 7 days for low; informational findings have none.
+Change them under **Settings > Detections** (`detections.sla.critical_respond`,
+`detections.sla.critical_resolve` and so on; `0` means no target).
+
+The queue shows when each open finding is next due (**Due 12m**, amber within the hour)
+or how late it is (**Late 2h**, red), and the finding shows both times. **Due** filters to
+findings late now or due within 1, 4 or 24 hours. With **Unassigned** and **Critical** it
+shows unowned critical findings about to breach; **Views** has **Unassigned, due within the
+hour** and **Late now** built in. Changes a playbook makes do not count as picking a finding
+up, so a playbook that assigns findings does not stop the clock.
 
 ## Content packs
 
@@ -1681,13 +1753,17 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `DELETE /api/detections/content` | Remove the update and use the rules built into Signalith (admin) |
 | `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
+| `POST /api/findings/{id}/propose-exception` | Propose an exception for an admin to approve: the same body as suppress, with a `comment` saying why (analyst) |
+| `GET /api/exception-requests` | Proposed exceptions, newest first, with `pending` (analyst) |
+| `POST /api/exception-requests/{id}/approve`, `/decline` | Decide a proposal, with an optional `{"note"}`; approving adds the exception (admin) |
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin); with `"scope": "all"` (or `pack:<name>`, `tag:<tag>`) the exception is one for many detections |
 | `GET /api/detections/exceptions` | The [exceptions for many detections](#exceptions-for-many-detections) and their `etag` |
 | `POST /api/detections/exceptions` | Add one: `{"scope": "all", "match": {"user": "svc-ansible"}, "for": "30d", "from", "until", "comment"}`; `If-Match` with the `etag` refuses it when someone changed them since (admin) |
 | `DELETE /api/detections/exceptions/{exception}` | Remove one (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
 | `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
-| `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |
+| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&entity=&q=&since=7d&limit=&sort=&after=&counts=urgency&group=` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter. `group=detection` or `group=entity` adds `groups`: up to 100 of `{key, count, urgency}`, largest first. `due=overdue` or `due=1h` keeps open findings late now or due within that time; the answer's `due` gives each finding's `respond_by`, `resolve_by`, `respond_late` and `resolve_late` |
+| `GET`, `PUT /api/me/finding-views` | Your saved views: `{"views": [{"id", "name", "query"}]}`; a PUT replaces the list |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |
 | `POST /api/findings` | Raise a finding by hand |

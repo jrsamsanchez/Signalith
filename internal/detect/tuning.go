@@ -6,6 +6,7 @@ package detect
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -33,6 +34,9 @@ type Exception struct {
 	// Scope is set only on an exception for many detections (see
 	// ScopedExceptions): "all", "pack:<name>" or "tag:<tag>".
 	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	// ProposedBy is the analyst who asked for the exception, when an admin
+	// (By) approved their request.
+	ProposedBy string `yaml:"proposed_by,omitempty" json:"proposed_by,omitempty"`
 	// Exact makes Match compare values whole (ignoring case), with * and ?
 	// as plain characters. An exception made from a finding is exact: its
 	// values come from the logs, so a logged "*" must not match everything.
@@ -132,6 +136,15 @@ func wildcard(pattern, s string) bool {
 		pi++
 	}
 	return pi == len(p)
+}
+
+// Validate checks one exception on its own, as a detection's checks
+// would.
+func (e *Exception) Validate() error {
+	if p := e.problems(); len(p) > 0 {
+		return errors.New(strings.Join(p, "; "))
+	}
+	return nil
 }
 
 func (e *Exception) problems() []string {
