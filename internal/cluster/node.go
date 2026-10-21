@@ -102,6 +102,11 @@ type Settings struct {
 	// of the jobs to a newer version and for upgrade-check; nil is never
 	// busy. It must not call the node.
 	Busy func() string
+	// Problems are this server's problems that need an admin, such as a
+	// removal of the shared library its folders refused, for its
+	// heartbeat and the Servers page; nil has none. It must not call the
+	// node, and must not wait.
+	Problems func() []string
 }
 
 // SharedStatus is how a server uses the shared configuration in
@@ -923,6 +928,9 @@ func (n *Node) heartbeatDoc(state string) Heartbeat {
 	sec := n.security
 	hb.Security = &sec
 	hb.Problems = append(hb.Problems, n.local.Warnings...)
+	if f := n.settings.Problems; f != nil {
+		hb.Problems = append(hb.Problems, f()...)
+	}
 	if n.paused != "" {
 		hb.Problems = append(hb.Problems, n.paused+". Its log says why.")
 	}
@@ -1906,6 +1914,11 @@ func (n *Node) localWarningsLocked(st Status) []Warning {
 	var w []Warning
 	for _, msg := range n.local.Warnings {
 		w = append(w, Warning{Level: "amber", Text: msg})
+	}
+	if f := n.settings.Problems; f != nil {
+		for _, msg := range f() {
+			w = append(w, Warning{Level: "amber", Text: msg})
+		}
 	}
 	names := map[string]int{}
 	for _, s := range st.Servers {
