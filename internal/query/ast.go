@@ -132,8 +132,9 @@ func FormatValue(v string) string {
 	case "AND", "OR", "NOT", "IN", "AS", "BY":
 		needs = true
 	}
-	// Brackets would end or open a join's subsearch.
-	needs = needs || strings.ContainsAny(v, "[]")
+	// Brackets would end or open a join's subsearch, and a leading ' would
+	// read as a field name in where.
+	needs = needs || strings.ContainsAny(v, "[]") || strings.HasPrefix(v, "'")
 	if !needs {
 		return v
 	}
