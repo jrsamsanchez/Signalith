@@ -277,7 +277,18 @@ func OtherLinks(path string) int { return otherLinks(path) }
 // made private too when this account may change it, but it must be a
 // folder itself, not a link to one: following a link someone else made
 // could change the permissions of any folder.
-func MkdirPrivate(dir string) error {
+func MkdirPrivate(dir string) error { return mkdirWith(dir, privateDir, false) }
+
+// MkdirAdminOnly is MkdirPrivate for a folder Signalith's own service
+// account must not reach either, such as the one that holds another
+// service's CA key: on Windows only SYSTEM and Administrators may use it
+// and what is inside it, and it is given to Administrators first, so a
+// folder someone else made before cannot keep its own access list. On
+// other systems it is MkdirPrivate. Unlike MkdirPrivate, it fails when the
+// access list of a folder that was there already cannot be set.
+func MkdirAdminOnly(dir string) error { return mkdirWith(dir, adminDir, true) }
+
+func mkdirWith(dir string, restrict func(dir, parent string, created bool) error, strict bool) error {
 	parent := filepath.Dir(dir)
 	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return err
@@ -296,7 +307,7 @@ func MkdirPrivate(dir string) error {
 			return fmt.Errorf("%s is not a folder of its own (it is a link or another kind of file); move it away so Signalith can make the folder", dir)
 		}
 	}
-	if perr := privateDir(dir, parent, created); perr != nil && created {
+	if perr := restrict(dir, parent, created); perr != nil && (created || strict) {
 		return fmt.Errorf("could not make %s private: %w", dir, perr)
 	}
 	return nil

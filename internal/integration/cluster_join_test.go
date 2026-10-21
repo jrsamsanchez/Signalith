@@ -274,19 +274,22 @@ func TestClusterJoinByApproval(t *testing.T) {
 	a.joinToken() // the cluster is founded
 	e := addJoinServer(h, o, "siem-e", true)
 	e.start()
-	var fp string
+	// siem-a lists only the start of the fingerprint: the admin types the
+	// whole one siem-e shows.
+	var listed string
 	waitUntil(t, 60*time.Second, "siem-e waits for approval", func() bool {
 		out, code := a.runCode("cluster", "approve")
 		for _, line := range strings.Split(out, "\n") {
 			if f := strings.Fields(line); code == 0 && len(f) > 1 && f[0] == "siem-e" {
-				fp = f[1]
+				listed = f[1]
 			}
 		}
-		return fp != ""
+		return listed != ""
 	})
 	st, ok := e.clusterStatus()
-	if !ok || st.Shared.Fingerprint != fp {
-		t.Fatalf("siem-e shows fingerprint %q, siem-a lists %q", st.Shared.Fingerprint, fp)
+	fp := st.Shared.Fingerprint
+	if first, _, _ := strings.Cut(fp, "-"); !ok || fp == "" || listed != first+"-…" {
+		t.Fatalf("siem-e shows fingerprint %q, siem-a lists %q", fp, listed)
 	}
 	// A wrong fingerprint approves nothing.
 	if out, code := a.runCode("cluster", "approve", "0000-0000-0000-0000-0000-0000-0000-0000"); code == 0 {
