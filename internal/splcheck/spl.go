@@ -42,6 +42,8 @@ type Rule struct {
 		SecurityDomain string   `yaml:"security_domain"`
 	} `yaml:"tags"`
 	AnalyticStory []string `yaml:"analytic_story"`
+	// CVE lists the vulnerabilities a rule detects the exploitation of.
+	CVE []string `yaml:"cve"`
 	// MitreAttackID is where newer rules list their techniques (older
 	// ones use tags.mitre_attack_id).
 	MitreAttackID []string `yaml:"mitre_attack_id"`

@@ -1184,8 +1184,13 @@ when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
 `a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
 syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
 (`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
-add risk, as their authors intend. Severity follows the rule's risk score
-(TTP: 80 and up critical, 64 high, 30 medium; anomalies low). Each is tagged
+add risk, as their authors intend. Anomalies are low. security_content now gives
+nearly every TTP the same risk score (50), so a TTP is ranked by the ATT&CK
+techniques it detects: critical for ransomware, recovery inhibited, wiping and the
+exploitation of a named CVE; high for credential theft, defenses disabled,
+exploitation, injection, lateral movement and domain-wide changes; medium for the
+rest. A TTP scored under 50 stays medium (30 and up) or low, and one scored 80 and up
+is critical. Each is tagged
 `splunk`, the pack name, `ttp` or `anomaly`, and the node, and keeps the rule's
 known false positives as triage guidance.
 

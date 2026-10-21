@@ -1414,6 +1414,8 @@ async function toggleField(f) {
 // ---------- autocomplete ----------
 let suggestions = [];
 let suggestIndex = 0;
+// suggestPicked is set once the arrow keys move through the suggestions.
+let suggestPicked = false;
 
 function currentWord() {
   const ta = queryBox;
@@ -1441,6 +1443,7 @@ function updateSuggestions() {
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
   suggestIndex = 0;
+  suggestPicked = false;
   renderSuggestions();
 }
 function renderSuggestions() {
@@ -1490,13 +1493,22 @@ function acceptSuggestion(i) {
   ta.focus();
   onQueryInput();
 }
+// Enter runs the search, as in other search tools; Shift+Enter starts a
+// new line. With suggestions open, Tab takes the highlighted one, and so
+// does Enter once the arrow keys picked one.
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
+  const enter = ev.key === 'Enter' && !ev.isComposing && !ev.altKey;
+  if (enter && !ev.shiftKey && (ev.ctrlKey || ev.metaKey || !(suggestions.length && suggestPicked))) {
+    ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return;
+  }
   if (!suggestions.length) return;
-  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'Tab' || ev.key === 'Enter') { ev.preventDefault(); acceptSuggestion(suggestIndex); }
-  else if (ev.key === 'Escape') { ev.preventDefault(); suggestions = []; renderSuggestions(); }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'Tab' || (enter && !ev.shiftKey)) { ev.preventDefault(); acceptSuggestion(suggestIndex); }
+  else if (enter || ev.key === 'Escape') {
+    if (ev.key === 'Escape') ev.preventDefault();
+    suggestions = []; renderSuggestions();
+  }
 });
 queryBox.addEventListener('blur', () => setTimeout(() => { suggestions = []; renderSuggestions(); }, 100));
 
@@ -1711,7 +1723,7 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// runSearch runs the query box's search. Only Run and Enter pass
 // writeLookups, so an outputlookup in the query writes its table when the
 // user runs it, not again when a time change, sort, filter or drilldown
 // re-runs it, nor when the Ask box runs a query it wrote.
@@ -4970,7 +4982,7 @@ function healthPageError(e) {
 // ---------- startup ----------
 (async function init() {
   document.querySelectorAll('.mod-key').forEach((k) => { k.textContent = isMac ? '⌘' : 'Ctrl'; });
-  $('run').title = `Search (${isMac ? '⌘' : 'Ctrl'}+Enter)`;
+  $('run').title = 'Search (Enter; Shift+Enter starts a new line)';
   renderGuide();
   renderEditor();
   try { if (localStorage.getItem('signalith.builder') === 'open') $('builder').open = true; } catch (_) { /* ignore */ }

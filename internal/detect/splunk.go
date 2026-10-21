@@ -387,22 +387,78 @@ func splunkGlobRegex(v string) string {
 	return "(?is)^" + strings.Join(parts, ".*") + "$"
 }
 
-// splunkSeverity is a rule's severity: TTPs by their risk score, and
-// anomalies low, since Splunk's risk-based alerting only counts them
-// towards risk.
+// splunkSeverity is a rule's severity. Anomalies are low, since Splunk's
+// risk-based alerting only counts them towards risk. TTPs once had risk
+// scores from 0 to 100 that gave their severity; security_content now
+// gives nearly every TTP a score of 50, so a TTP with that score is
+// ranked by what it detects (DQ-01): critical for ransomware, wiping and
+// the exploitation of a named vulnerability, high for credential theft,
+// defense tampering, lateral movement and privilege escalation, else
+// medium. A rule that still has an older score keeps its band.
 func splunkSeverity(r *splcheck.Rule) string {
 	if !strings.EqualFold(r.Type, "TTP") {
 		return "low"
 	}
-	switch s := r.Score(); {
+	s := r.Score()
+	switch {
 	case s >= 80:
 		return "critical"
-	case s >= 64:
-		return "high"
-	case s >= 30:
+	case s < 30:
+		return "low"
+	case s < 50:
 		return "medium"
 	}
-	return "low"
+	has := func(set map[string]bool) bool {
+		for _, t := range append(r.MitreAttackID, r.Tags.MitreAttackID...) {
+			t, _, _ = strings.Cut(strings.ToUpper(strings.TrimSpace(t)), ".")
+			if set[t] {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case has(splunkCritical), len(r.CVE) > 0 && has(splunkExploit):
+		return "critical"
+	case s >= 64, has(splunkHigh):
+		return "high"
+	}
+	return "medium"
+}
+
+// splunkCritical are the ATT&CK techniques of a TTP that makes it
+// critical: data encrypted, recovery inhibited, data or disks destroyed.
+var splunkCritical = map[string]bool{"T1485": true, "T1486": true, "T1490": true, "T1561": true}
+
+// splunkExploit are the exploitation techniques that make a TTP naming a
+// CVE critical.
+var splunkExploit = map[string]bool{"T1190": true, "T1203": true, "T1210": true, "T1211": true, "T1212": true, "T1068": true}
+
+// splunkHigh are the techniques that make a TTP high: credential theft,
+// defenses disabled, exploitation, injection, lateral movement and
+// domain-wide changes.
+var splunkHigh = map[string]bool{
+	"T1003": true, // OS credential dumping
+	"T1055": true, // process injection
+	"T1068": true, // exploitation for privilege escalation
+	"T1134": true, // access token manipulation
+	"T1190": true, // exploit public-facing application
+	"T1207": true, // rogue domain controller
+	"T1210": true, // exploitation of remote services
+	"T1212": true, // exploitation for credential access
+	"T1484": true, // domain or tenant policy modification
+	"T1505": true, // server software component (web shells)
+	"T1550": true, // alternate authentication material
+	"T1552": true, // unsecured credentials
+	"T1555": true, // credentials from password stores
+	"T1556": true, // modify authentication process
+	"T1557": true, // adversary in the middle
+	"T1558": true, // Kerberos tickets
+	"T1562": true, // impair defenses
+	"T1570": true, // lateral tool transfer
+	"T1611": true, // escape to host
+	"T1649": true, // authentication certificates
+	"T1685": true, // disable or modify tools (T1562.001 before ATT&CK 19)
 }
 
 var splunkTechnique = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)

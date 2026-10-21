@@ -241,10 +241,11 @@ func otherText(o OtherServer) string {
 
 // pageTitles name the pages a fix may point to.
 var pageTitles = map[string]string{
-	"data":      "Add data",
-	"users":     "Users",
-	"intel":     "Threat intel",
-	"retention": "Data retention",
+	"data":            "Add data",
+	"users":           "Users",
+	"intel":           "Threat intel",
+	"retention":       "Data retention",
+	"change-password": "Account menu, Change password",
 }
 
 // fixText renders a fix, indented by pad, with the commands for family.

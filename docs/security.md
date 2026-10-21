@@ -497,7 +497,11 @@ how strongly it is hashed.
   an older, weaker hash.
 - At risk: the example password `change-me-please`, which anyone can look up.
 
-**To fix:** `sudo signalith passwd`, then restart Signalith; see
+**To fix:** sign in as the built-in admin and choose **Change password** in the account
+menu. On a server whose users are the cluster's (a server makes its own cluster the
+first time it runs, so the Docker quick start's too) the new password is in use at once
+on every server, and so is one set with `signalith passwd`, with no restart. A server
+that keeps its own users takes `sudo signalith passwd` and a restart. See
 [The built-in admin](users.md#the-built-in-admin).
 
 ### Everyday sign-in
