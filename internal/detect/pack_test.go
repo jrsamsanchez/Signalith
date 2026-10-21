@@ -294,3 +294,24 @@ func TestStarterSet(t *testing.T) {
 		}
 	}
 }
+
+// TestMitigationsRulesReadBothLogs checks that the exploit protection
+// rules read the user mode log as well as the kernel mode one (BUY-05).
+func TestMitigationsRulesReadBothLogs(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, d := range ds {
+		if strings.HasPrefix(d.ID, "sigma-win-security-mitigations-") {
+			found++
+			if !strings.Contains(d.Query, "sourcetype=WinEventLog:Microsoft-Windows-Security-Mitigations/* ") {
+				t.Errorf("%s reads one log only: %s", d.ID, d.Query)
+			}
+		}
+	}
+	if found == 0 {
+		t.Error("no exploit protection rules in the Sigma pack")
+	}
+}
