@@ -207,9 +207,10 @@ var ipProtocols = map[string]string{"1": "icmp", "6": "tcp", "17": "udp", "47": 
 
 // cefFieldsFor maps a CEF record onto CIM fields. Well-known keys get CIM
 // names; other keys are kept as cef_<key>, at most extra of them. It also
-// returns the event time from rt, end or start, when one parses; now gives
-// times without a year the right one.
-func cefFieldsFor(c *CEF, f map[string]any, extra *int, now time.Time) time.Time {
+// returns the event time from rt, end or start, when one parses with a
+// zone; else, as clock, the first one without a zone (see cefTime). now
+// gives times without a year the right one.
+func cefFieldsFor(c *CEF, f map[string]any, extra *int, now time.Time) (t, clock time.Time) {
 	f["sourcetype"] = "cef"
 	f["vendor_product"] = vendorProduct(c.Vendor, c.Product)
 	f["signature"] = c.Name
@@ -224,7 +225,6 @@ func cefFieldsFor(c *CEF, f map[string]any, extra *int, now time.Time) time.Time
 			f["severity_id"] = id
 		}
 	}
-	var t time.Time
 	times := map[string]string{}
 	for _, p := range c.Extension {
 		v := p.Value
@@ -283,13 +283,16 @@ func cefFieldsFor(c *CEF, f map[string]any, extra *int, now time.Time) time.Time
 	}
 	for _, k := range []string{"rt", "deviceReceiptTime", "end", "endTime", "start", "startTime"} {
 		if v, ok := times[k]; ok {
-			if t2, ok := cefTime(v, now); ok {
-				t = t2
-				break
+			t2, zoneless, ok := cefTime(v, now)
+			switch {
+			case ok && !zoneless:
+				return t2, time.Time{}
+			case ok && clock.IsZero():
+				clock = t2
 			}
 		}
 	}
-	return t
+	return time.Time{}, clock
 }
 
 // addExtra stores a vendor-specific field under prefix plus a cleaned-up
@@ -373,50 +376,53 @@ var (
 
 // cefTime reads a CEF timestamp: milliseconds (or seconds) since 1970,
 // "MMM dd [yyyy] HH:mm:ss[.SSS] [zone]" or ISO 8601. The zone may be UTC,
-// GMT, Z or an offset such as +0200 or -07:00; other zone names are
-// ambiguous and ignored, and the time is taken as local, like syslog
-// headers. Times without a year get the one ingest.GuessYear picks.
-func cefTime(v string, now time.Time) (time.Time, bool) {
+// GMT, Z or an offset such as +0200 or -07:00. Other zone names are
+// ambiguous (CST is three zones), so such a time is not read at all. A
+// time without a zone is read as local time and reported as zoneless:
+// like a syslog header's, it could be in any zone, so the caller keeps it
+// only as the device's clock. Times without a year get the one
+// ingest.GuessYear picks.
+func cefTime(v string, now time.Time) (t time.Time, zoneless, ok bool) {
 	v = strings.Join(strings.Fields(v), " ")
 	if v == "" {
-		return time.Time{}, false
+		return time.Time{}, false, false
 	}
 	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 		if len(v) >= 12 {
-			return time.UnixMilli(n).UTC(), true
+			return time.UnixMilli(n).UTC(), false, true
 		}
-		return time.Unix(n, 0).UTC(), true
+		return time.Unix(n, 0).UTC(), false, true
 	}
 	if isDigit(v[0]) {
-		if t, n, ok := parseISO(v); ok && n == len(v) {
-			return t, true
+		if t, n, zoneless, ok := parseISO(v); ok && n == len(v) {
+			return t, zoneless, true
 		}
-		return time.Time{}, false
+		return time.Time{}, false, false
 	}
-	loc := time.Local
+	loc, zoneless := time.Local, true
 	if i := strings.LastIndexByte(v, ' '); i > 0 {
 		zone := v[i+1:]
 		if zone == "UTC" || zone == "GMT" || zone == "Z" {
-			loc = time.UTC
+			loc, zoneless = time.UTC, false
 			v = v[:i]
 		} else if off, ok := zoneOffset(zone); ok {
-			loc = time.FixedZone("", off)
+			loc, zoneless = time.FixedZone("", off), false
 			v = v[:i]
 		} else if strings.Trim(zone, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "" {
-			v = v[:i]
+			return time.Time{}, false, false
 		}
 	}
 	for _, l := range cefTimeLayouts {
 		if t, err := time.ParseInLocation(l, v, loc); err == nil {
-			return t.UTC(), true
+			return t.UTC(), zoneless, true
 		}
 	}
 	for _, l := range cefYearless {
 		if t, err := time.ParseInLocation(l, v, loc); err == nil {
-			return ingest.GuessYear(t, now), true
+			return ingest.GuessYear(t, now), zoneless, true
 		}
 	}
-	return time.Time{}, false
+	return time.Time{}, false, false
 }
 
 // zoneOffset reads "+0200", "-07:00" and the like as seconds east of UTC.

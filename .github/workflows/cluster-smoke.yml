@@ -1,13 +1,21 @@
 name: Cluster smoke
-# Weekly, and by hand: builds the image from this code, starts the load
-# balancer lab (deploy/docker/docker-compose.cluster.yml: two servers behind
-# HAProxy with PROXY protocol, one OpenSearch) and runs
-# deploy/docker/cluster-smoke.sh: agents and syslog reach both servers, each
-# client is seen by its own address, and one server carries on when the
-# other stops.
+# Weekly, by hand and for changes to the lab: builds the image from this
+# code, starts the load balancer lab (deploy/docker/docker-compose.cluster.yml:
+# two servers behind HAProxy with PROXY protocol, one OpenSearch) and runs
+# deploy/docker/cluster-smoke.sh: agents and syslog reach both servers and
+# their events can be searched, each client is seen by its own address, and
+# one server carries on when the other stops.
 on:
   schedule:
     - cron: '17 5 * * 1'
+  # And on pull requests that change the lab or its smoke test.
+  pull_request:
+    paths:
+      - 'deploy/docker/docker-compose.cluster.yml'
+      - 'deploy/docker/cluster-smoke.sh'
+      - 'deploy/docker/signalith-cluster.yaml'
+      - 'deploy/loadbalancer/**'
+      - '.github/workflows/cluster-smoke.yml'
   workflow_dispatch:
 
 permissions:
