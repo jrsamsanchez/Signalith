@@ -1089,7 +1089,7 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
 `DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
 
-**Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
+**Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/me/finding-views`, `PUT /api/me/finding-views` (your own [saved views](detections.md#the-findings-queue) of the findings queue), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
@@ -1127,7 +1127,8 @@ or deletes one), `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
 [response actions](response-actions.md)), `GET /api/playbooks/runs`,
 `POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
-(the Approvals page; see [playbooks.md](playbooks.md)), `GET /api/agent-tokens` (the names,
+(the Approvals page; see [playbooks.md](playbooks.md)), `POST /api/findings/{id}/propose-exception`,
+`GET /api/exception-requests` ([proposing an exception](detections.md#proposing-an-exception) for an admin to approve), `GET /api/agent-tokens` (the names,
 status and use of the [agent tokens](agent-tokens.md), never a secret), `GET /api/agents` (the
 agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api/investigate`,
 `POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
@@ -1149,7 +1150,7 @@ Signalith Agents of an install line collect; see
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
