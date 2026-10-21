@@ -535,7 +535,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = enc.Encode(v)
 }
 
+// writeError answers with an error. A failure on the server (5xx) shows
+// only a message meant to be shown; see serverErrorBody.
 func writeError(w http.ResponseWriter, status int, err error) {
+	if status >= 500 {
+		writeJSON(w, status, serverErrorBody(w, status, err))
+		return
+	}
 	body := map[string]any{"error": err.Error()}
 	var qe *query.Error
 	if errors.As(err, &qe) {

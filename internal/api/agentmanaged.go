@@ -390,7 +390,7 @@ func (s *Server) handleAgentManagedManifest(w http.ResponseWriter, r *http.Reque
 	}
 	if err != nil {
 		s.Log.Warn("cannot hand out the agent manifest", "err", err)
-		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent programs' manifest"))
+		writeError(w, http.StatusInternalServerError, errUser("this server cannot read the agent programs' manifest"))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -470,7 +470,7 @@ func (s *Server) handleAgentManagedProgram(w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		s.Log.Warn("cannot hand out the agent program", "os", goos, "arch", goarch, "err", err)
-		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent program"))
+		writeError(w, http.StatusInternalServerError, errUser("this server cannot read the agent program"))
 		return
 	}
 	defer f.Close()

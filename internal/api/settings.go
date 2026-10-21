@@ -944,13 +944,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		// it held can still be looked at.
 		if _, err := pages.Read(); err != nil {
 			if backup, err = pages.Backup(); err != nil {
-				writeError(w, http.StatusInternalServerError, fmt.Errorf("could not keep a copy of the settings file before starting a new one: %w", err))
+				writeError(w, http.StatusInternalServerError, errHidden("could not keep a copy of the settings file before starting a new one", err))
 				return
 			}
 		}
 	}
 	if err := pages.Write(res.Page); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not save the settings file %s: %w", file, err))
+		writeError(w, http.StatusInternalServerError, errHidden("could not save the settings file", fmt.Errorf("%s: %w", file, err)))
 		return
 	}
 	applied := s.applyLive(res.Before, res.Config)

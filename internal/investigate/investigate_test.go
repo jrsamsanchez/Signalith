@@ -5,6 +5,7 @@ package investigate
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -300,7 +301,7 @@ func TestGuardQuery(t *testing.T) {
 		`user IN (masked-user-1) | top src`:                                         true,
 		`NOT user!=masked-user-1 | stats dc(user) by src | sort -dc(user) | head 5`: true,
 		`* | stats count by user | where count > 3`:                                 true,
-		`* | where len(process) > 200`:                                              true,
+		`* | where len(process) > 200`:                                              false,
 		`user=al*`:                                                                  false,
 		`user=alice`:                                                                false,
 		`user=~"^a"`:                                                                false,
@@ -336,6 +337,143 @@ func TestGuardQuery(t *testing.T) {
 	}
 }
 
+// TestGuardMaskedValuesOnAliases: the same value is often kept under
+// other names (TargetUserName, src_user, the message text), so a masked
+// value cannot be guessed, or spelled out a character at a time, through
+// a field that is not masked, or through free text.
+func TestGuardMaskedValuesOnAliases(t *testing.T) {
+	m := NewMasker([]string{"user"})
+	m.Value("user", "Administrator")
+	m.Value("password", "hunter22")
+	for src, ok := range map[string]bool{
+		// Guesses of the whole value, under another name or as free text.
+		`TargetUserName=administrator`:                        false,
+		`TargetUserName=ADMINISTRATOR | stats count`:          false,
+		`src_user IN (bob, administrator)`:                    false,
+		`message="logon by administrator"`:                    false,
+		`administrator`:                                       false,
+		`administrator | stats count by src`:                  false,
+		`hunter22`:                                            false,
+		`* | where TargetUserName="Administrator"`:            false,
+		`* | where in(TargetUserName, "x1", "administrator")`: false,
+		// Prefixes, substrings and wildcards that match the value.
+		`TargetUserName=adm*`:                    false,
+		`TargetUserName=*strat*`:                 false,
+		`TargetUserName=?????????????`:           false,
+		`TargetUserName=a*`:                      false,
+		`TargetUserName=x*`:                      false, // too short, whatever the value
+		`message=*logon*admin*`:                  false,
+		`admin`:                                  false,
+		`adm`:                                    false,
+		`ad`:                                     false,
+		`* | where like(TargetUserName, "adm%")`: false,
+		`* | where TargetUserName LIKE "%nis%"`:  false,
+		`* | where like(TargetUserName, "a%")`:   false,
+		// Ways around wildcards: regular expressions, ranges on text,
+		// functions that take a value apart.
+		`TargetUserName=~"^adm"`:                                    false,
+		`message=~"zzz"`:                                            false,
+		`TargetUserName>"am"`:                                       false,
+		`* | where TargetUserName < "am"`:                           false,
+		`* | where substr(TargetUserName, 1, 1) = "a"`:              false,
+		`* | where match(TargetUserName, "^a")`:                     false,
+		`* | where tonumber(substr(TargetUserName, 1, 1), 36) = 10`: false,
+		`* | where substr(TargetUserName, 1, 3) = "adm"`:            false,
+		// Values built up in an expression, and functions or orderings
+		// that test part of a value.
+		`* | where TargetUserName == "Admin" + "istrator"`:           false,
+		`* | where TargetUserName = "Admin" . "istrator"`:            false,
+		`* | where in(TargetUserName, "admi"+"nistrator")`:           false,
+		`* | where like(TargetUserName, "A" . "%")`:                  false,
+		`* | where cidrmatch("10.20" . ".0.0/16", src_ip)`:           false,
+		`* | where ltrim(TargetUserName, "Admin") = "istrator"`:      false,
+		`* | where rtrim(TargetUserName, "rotartsin") = "Adm"`:       false,
+		`* | where min(TargetUserName, "B") = "B"`:                   false,
+		`* | where max(TargetUserName, "Am") = "Am"`:                 false,
+		`* | where len(TargetUserName) == 13`:                        false,
+		`* | where if(TargetUserName = "x", 1, 0) = 0`:               false,
+		`* | where case(TargetUserName = "x", 1, true(), 0) = 0`:     false,
+		`* | where lower(TargetUserName) = "bob"`:                    false,
+		`* | where TargetUserName = "other_name"`:                    true,
+		`* | where TargetUserName = other_name`:                      false,
+		`* | where in(TargetUserName, "bob", "carol")`:               true,
+		`* | where isnotnull(TargetUserName) AND NOT dest_port = 22`: true,
+		// The stand-in works on any field, and other values still do.
+		`TargetUserName=masked-user-1 | stats count by src`: true,
+		`masked-user-1 | stats count by host`:               true,
+		`TargetUserName=bob`:                                true,
+		`process=*powershell*`:                              true,
+		`src=10.1.*`:                                        true,
+		`dest_ip=10.0.0.0/8`:                                true,
+		`* | where like(process, "%mimikatz%")`:             true,
+		`mimikatz`:                                          true,
+		// Letters the search folds like ASCII ones (long s, dotless i).
+		`TargetUserName=ADMINIſTRATOR`: false,
+		`TargetUserName=*FıNANCE*`:     false,
+		`résumé`:                       false,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		err = guardQuery(q, m)
+		if (err == nil) != ok {
+			t.Errorf("%s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
+		}
+		if err != nil && strings.Contains(strings.ToLower(err.Error()), "masked-user-1") && !strings.Contains(err.Error(), "such as masked-user-1") {
+			t.Errorf("%s: the refusal names the stand-in: %v", src, err)
+		}
+	}
+
+	// A masked address: networks could halve their way to it.
+	m2 := NewMasker([]string{"src", "uid"})
+	m2.Value("src", "10.9.8.7")
+	m2.Value("uid", "1001")
+	for src, ok := range map[string]bool{
+		`dest_ip=10.0.0.0/8`:          false,
+		`dest_ip=10.9.8.7`:            false,
+		`dest_ip=10.9.8.8`:            true,
+		`* | where account_id > 1000`: false,
+		`dest_port>1000`:              false,
+		`_time>"2026-01-01"`:          true,
+		// Ranges compare text on a text field, so on an unmasked copy of
+		// the address they would halve their way to it, whatever the
+		// literal looks like.
+		`src_ip<10.24`:               false,
+		`src_ip>=10.23 src_ip<10.24`: false,
+		`src_ip<Infinity`:            false,
+		`src_ip<1e5`:                 false,
+		`* | where src_ip >= "10.23" AND src_ip < "10.24"`: false,
+		`* | where src_ip < 10.24`:                         false,
+		`* | where 10.24 > src_ip`:                         false,
+		`bytes>1000`:                                       false,
+		`* | where _time > 1700000000`:                     true,
+		// Counts made by stats or top are numbers.
+		`* | stats count by src_ip | where count > 10`:                 true,
+		`* | stats dc(user) as users by src_ip | where users >= 3`:     true,
+		`* | top src_ip | where percent > 5`:                           true,
+		`* | stats count by src_ip | where count > 1e5`:                false,
+		`* | stats count by src_ip | where count < Infinity`:           false,
+		`* | stats count as src_ip by src_ip | where src_ip < 11`:      false,
+		`* | stats count as x, min(src) as x | where x > 10.2`:         false,
+		`* | stats count as x, values(src) as x | where x > 10`:        false,
+		`* | stats count as x, count as x | where x > 10`:              false,
+		`* | stats max(bytes) as count by host | where count > 1`:      false,
+		`* | stats count by src_ip | table src_ip | where src_ip < 11`: false,
+		`count > 10`:                     false,
+		`dest_ip=masked-src-1`:           true,
+		`* | where dest_ip = "10.9.8.7"`: false,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if err := guardQuery(q, m2); (err == nil) != ok {
+			t.Errorf("masked src: %s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
+		}
+	}
+}
+
 // TestGuardFailsClosed: a query that only parses once its stand-ins are
 // replaced is not run, and the one that runs is the one checked.
 func TestGuardFailsClosed(t *testing.T) {
@@ -357,6 +495,47 @@ func TestGuardFailsClosed(t *testing.T) {
 		if strings.Contains(q.String(), "values(") || strings.Contains(q.String(), "eval") {
 			t.Errorf("ran %s", q)
 		}
+	}
+}
+
+// TestRunStopsAtAMaskedValueSearch: a search for a value that could match
+// a masked value ends the run at once. The model is not told (that would
+// confirm the guess), the rest of its searches do not run, and nothing
+// more is sent to it.
+func TestRunStopsAtAMaskedValueSearch(t *testing.T) {
+	s := &fakeSearch{}
+	m := &fakeModel{replies: []string{
+		`{"searches":[{"why":"x","query":"src=10.1.2.3 | stats count"},{"why":"y","query":"TargetUserName=ali*"},{"why":"z","query":"dest=web1"}]}`,
+		`{"verdict":"unsure","summary":"?"}`,
+	}}
+	inv := &Investigator{Model: m, Search: s, Mask: []string{"user"}}
+	_, err := inv.Run(context.Background(), testFinding(), nil)
+	var stopped *StoppedError
+	if !errors.As(err, &stopped) || !strings.Contains(err.Error(), "masked value") {
+		t.Fatalf("run = %v", err)
+	}
+	last := stopped.Steps[len(stopped.Steps)-1]
+	if last.By != "ai" || !strings.Contains(last.Error, "could match a masked value") {
+		t.Errorf("last step %+v", last)
+	}
+	if len(m.got) != 1 || len(m.replies) != 1 {
+		t.Errorf("the model was asked %d times after the refusal", len(m.got)-1)
+	}
+	for _, q := range s.ran {
+		if strings.Contains(q.String(), "web1") || strings.Contains(q.String(), "TargetUserName") {
+			t.Errorf("ran %s after the refusal", q)
+		}
+	}
+
+	// A refusal that does not depend on the masked values (a regular
+	// expression here) is told to the model as before.
+	m = &fakeModel{replies: []string{
+		`{"searches":[{"why":"x","query":"process=~\"^cmd\""}]}`,
+		`{"verdict":"unsure","summary":"?"}`,
+	}}
+	inv = &Investigator{Model: m, Search: &fakeSearch{}, Mask: []string{"user"}}
+	if res, err := inv.Run(context.Background(), testFinding(), nil); err != nil || res.Verdict != "unsure" {
+		t.Fatalf("run = %v %v", res, err)
 	}
 }
 

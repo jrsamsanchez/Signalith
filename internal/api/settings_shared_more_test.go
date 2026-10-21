@@ -182,7 +182,8 @@ func TestSharedOtherServerView(t *testing.T) {
 		t.Errorf("an unknown server: %d %v", code, out)
 	}
 	ns.layerErr["n_a"] = errors.New("OpenSearch timed out")
-	if code, out := call("GET", "/api/settings?server=siem-a", ""); code != http.StatusInternalServerError || !strings.Contains(out["error"].(string), "the settings of siem-a cannot be read now: OpenSearch timed out") {
+	if code, out := call("GET", "/api/settings?server=siem-a", ""); code != http.StatusInternalServerError || !strings.Contains(out["error"].(string), "the settings of siem-a cannot be read now (ref ") ||
+		strings.Contains(out["error"].(string), "timed out") {
 		t.Errorf("a layer that cannot be read: %d %v", code, out)
 	}
 }
