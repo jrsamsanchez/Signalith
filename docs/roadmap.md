@@ -145,7 +145,7 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,638 from
+- Content packs of tested community rules: 2,644 from
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,330 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.

@@ -189,8 +189,11 @@ func TestPackDetections(t *testing.T) {
 		// Each rule reads only its own system's events: a network rule
 		// its Zeek log's, or its data model's (a DNS lookup, a web request
 		// or a connection from any source); a web server rule the Web
-		// data model's.
-		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
+		// data model's; an antivirus rule (category: antivirus, which
+		// names no product) the Malware data model's, any antivirus
+		// product's alerts.
+		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) ||
+			slices.Contains(d.Tags, "antivirus") && strings.HasPrefix(d.Query, "datamodel=Malware ") {
 			continue
 		}
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
