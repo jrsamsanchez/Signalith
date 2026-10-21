@@ -226,7 +226,7 @@ the command:
   "command": "docker",
   "args": ["run", "-i", "--rm",
            "-e", "SIGNALITH_URL", "-e", "SIGNALITH_TOKEN",
-           "ghcr.io/jrsamsanchez/signalith:main", "mcp"],
+           "ghcr.io/jrsamsanchez/signalith:latest", "mcp"],
   "env": {
     "SIGNALITH_URL": "https://siem.example.com:9000",
     "SIGNALITH_TOKEN": "sgl_api_..."
