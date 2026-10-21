@@ -28,8 +28,9 @@ admin=""
 signin() {
   local names=${admin:-signalithadmin admin} name
   for name in $names; do
-    if curl -skf -o /dev/null -H 'Content-Type: application/json' \
-      -d "$(jq -n --arg u "$name" --arg p "$1" '{username: $u, password: $p}')" "https://localhost:$port/api/login"; then
+    # The password goes through the environment and stdin, never argv.
+    if P="$1" jq -n --arg u "$name" '{username: $u, password: env.P}' |
+      curl -skf -o /dev/null -H 'Content-Type: application/json' -d @- "https://localhost:$port/api/login"; then
       admin=$name
       return 0
     fi
