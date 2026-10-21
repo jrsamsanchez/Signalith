@@ -337,7 +337,7 @@
             <button id="search-to-notebook" data-min-role="analyst" class="btn btn--ghost btn--sm" type="button" title="Add this search to a hunting notebook"><svg class="icon" aria-hidden="true"><use href="#i-notebook-pen"/></svg><span>Add to notebook</span></button>
             <button id="search-to-case" data-min-role="analyst" class="btn btn--ghost btn--sm" type="button" title="Save this search and a snapshot of its results to an investigation"><svg class="icon" aria-hidden="true"><use href="#i-briefcase"/></svg><span>Add to case</span></button>
             <div class="run">
-              <span class="hint" aria-hidden="true"><kbd class="mod-key">Ctrl</kbd><kbd>↵</kbd></span>
+              <span class="hint" aria-hidden="true"><kbd>↵</kbd></span>
               <select id="time" class="select" aria-label="Time range">
                 <option value="-15m">Last 15 minutes</option>
                 <option value="-1h">Last hour</option>
@@ -906,6 +906,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <p class="page-head__desc" id="d-desc">Scheduled searches that raise a finding for each result.</p>
       </div>
       <div class="page-head__actions">
+        <button class="btn btn--secondary" type="button" id="d-scoped" title="Exceptions for every detection, a content pack's rules or a tag's"><svg class="icon" aria-hidden="true"><use href="#i-bell-off"/></svg>Exceptions</button>
         <button class="btn btn--secondary" type="button" id="d-describe" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Describe a detection</button>
         <button class="btn btn--secondary" type="button" id="d-sigma" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sigma"/></svg>Import Sigma rule</button>
         <button class="btn btn--primary" type="button" id="d-new" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New detection</button>
@@ -2033,7 +2034,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
         <li>Click any cell in the results to filter, exclude, or count by that value.</li>
         <li>Use the query builder to write a query, then edit the text. The builder follows along when it can.</li>
         <li>Explain turns any query into plain English and shows the OpenSearch request it runs.</li>
-        <li>Press <kbd class="mod-key">Ctrl</kbd> <kbd>Enter</kbd> in the query box to run the search.</li>
+        <li>Press <kbd>Enter</kbd> in the query box to run the search, and <kbd>Shift</kbd> <kbd>Enter</kbd> to start a new line.</li>
       </ul>
     </article>
   </section>
