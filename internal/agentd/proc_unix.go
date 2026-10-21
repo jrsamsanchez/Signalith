@@ -24,3 +24,7 @@ func askStop(p *os.Process) error { return p.Signal(syscall.SIGTERM) }
 // keepWithAgent does nothing here: systemd stops the collector with the
 // agent's service.
 func keepWithAgent(*os.Process) error { return nil }
+
+// memoryHint says nothing here: systemd's journal says when the service
+// reached its MemoryMax.
+func memoryHint(int) string { return "" }
