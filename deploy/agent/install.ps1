@@ -793,9 +793,14 @@ function Process-Auditing {
   }
   $cmdline = (Get-ItemProperty -LiteralPath $CmdLineKey -Name ProcessCreationIncludeCmdLine_Enabled -ErrorAction SilentlyContinue).ProcessCreationIncludeCmdLine_Enabled
   if ($cmdline -ne 1) {
-    if (-not (Test-Path -LiteralPath $CmdLineKey)) { New-Item -Path $CmdLineKey -Force | Out-Null }
-    Set-ItemProperty -LiteralPath $CmdLineKey -Name ProcessCreationIncludeCmdLine_Enabled -Value 1 -Type DWord
-    $script:changed = $true
+    # A failure here only warns: the agent installs without it.
+    try {
+      if (-not (Test-Path -LiteralPath $CmdLineKey)) { New-Item -Path $CmdLineKey -Force | Out-Null }
+      Set-ItemProperty -LiteralPath $CmdLineKey -Name ProcessCreationIncludeCmdLine_Enabled -Value 1 -Type DWord
+      $script:changed = $true
+    } catch {
+      Warn "Could not turn on command lines in process creation events ($($_.Exception.Message)): 4688 events leave the command line out." "Group Policy: Administrative Templates > System > Audit Process Creation > Include command line in process creation events."
+    }
   }
   $ErrorActionPreference = "Continue"
   $out = & auditpol.exe /set "/subcategory:$ProcessCreationGuid" /success:enable 2>&1
