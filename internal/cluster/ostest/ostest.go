@@ -69,6 +69,12 @@ type Fault struct {
 	// Stall takes the request and answers nothing until the client gives
 	// up, as an OpenSearch too slow to answer in time.
 	Stall bool
+	// Unassigned answers as OpenSearch does while it starts and the
+	// index's shards are not assigned yet: a get answers 503
+	// no_shard_available_action_exception, a search 503 "all shards
+	// failed", and an mget answers 200 with that error in place of each
+	// document.
+	Unassigned bool
 }
 
 // Server is the fake OpenSearch.
@@ -504,6 +510,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, f.Text)
 				return
 			}
+			if f.Unassigned {
+				s.unassigned(w, p, body)
+				return
+			}
 			writeError(w, f.Status, f.Type, "injected by the test")
 			return
 		}
@@ -518,6 +528,32 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handle(w, r, p, body)
+}
+
+// unassigned answers a request as OpenSearch does while the index's
+// shards are not assigned yet (Fault.Unassigned).
+func (s *Server) unassigned(w http.ResponseWriter, p string, body []byte) {
+	const typ = "no_shard_available_action_exception"
+	switch {
+	case p == "/_mget":
+		var req struct {
+			Docs []struct {
+				Index string `json:"_index"`
+				ID    string `json:"_id"`
+			} `json:"docs"`
+		}
+		_ = json.Unmarshal(body, &req)
+		var docs []any
+		for _, ref := range req.Docs {
+			docs = append(docs, map[string]any{"_index": ref.Index, "_id": ref.ID,
+				"error": map[string]any{"type": typ, "reason": "No shard available for [get [" + ref.Index + "][" + ref.ID + "]: routing [null]]"}})
+		}
+		writeJSON(w, 200, map[string]any{"docs": docs})
+	case strings.HasSuffix(p, "/_search") || strings.HasSuffix(p, "/_count"):
+		writeError(w, http.StatusServiceUnavailable, "search_phase_execution_exception", "all shards failed")
+	default:
+		writeError(w, http.StatusServiceUnavailable, typ, "No shard available for "+p)
+	}
 }
 
 // drop closes the connection without an answer.
