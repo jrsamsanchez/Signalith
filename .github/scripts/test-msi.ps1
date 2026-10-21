@@ -101,6 +101,7 @@ $installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
 if ($installed.Count -ne 1) { throw "$($installed.Count) Signalith products are installed after the upgrade" }
 # The server hands Windows computers the agent program the .msi carries.
 if (-not (Test-Path "$env:ProgramFiles\Signalith\agents\signalith-agent-windows-amd64.exe")) { throw "the .msi did not install the Windows agent program" }
+if (-not (Test-Path "$env:ProgramFiles\Signalith\agents\signalith-agent-windows-arm64.exe")) { throw "the .msi did not install the Windows ARM64 agent program" }
 
 Write-Host "== Windows PowerShell 5.1 downloads the agent install script as the install line does"
 $want = Join-Path $env:RUNNER_TEMP "agent-install-7.ps1"
