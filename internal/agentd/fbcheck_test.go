@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,10 +18,20 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agents"
 )
 
+// testTail is the input testFluentBit reads, a log on this computer's
+// system.
+var testTail = func() string {
+	if runtime.GOOS == "windows" {
+		return `Name tail
+    Path C:\Logs\syslog.log`
+	}
+	return "Name tail\n    Path /var/log/syslog"
+}()
+
 // testFluentBit is a Fluent Bit configuration the agent runs, sending to
 // the test servers' host; note tells configurations apart.
 func testFluentBit(note string) string {
-	return "# " + note + "\n[INPUT]\n    Name tail\n    Path /var/log/syslog\n\n[OUTPUT]\n    Name http\n    Match *\n    Host 127.0.0.1\n    tls On\n    tls.verify On\n"
+	return "# " + note + "\n[INPUT]\n    " + testTail + "\n\n[OUTPUT]\n    Name http\n    Match *\n    Host 127.0.0.1\n    tls On\n    tls.verify On\n"
 }
 
 // testFluentBitJSON is testFluentBit as a JSON string.
@@ -227,7 +238,7 @@ func TestAgentRefusesFluentBitConfig(t *testing.T) {
 	if err := a.sync(ctx); err != nil {
 		t.Fatal(err)
 	}
-	bad, _ := json.Marshal(strings.Replace(testFluentBit("r2"), "Name tail\n    Path /var/log/syslog", "Name exec\n    Command id", 1))
+	bad, _ := json.Marshal(strings.Replace(testFluentBit("r2"), testTail, "Name exec\n    Command id", 1))
 	body = `{"revision":"r2","poll_seconds":60,"fluentbit":{"config":` + string(bad) + `}}`
 	if err := a.sync(ctx); err != nil {
 		t.Fatalf("sync = %v", err)
@@ -273,7 +284,7 @@ func TestAgentChecksFluentBitConfigAtStart(t *testing.T) {
 	if cfg.FluentBit == nil || cfg.Revision != "r1" || a.Status().ConfigError != "" {
 		t.Fatalf("good: %+v, %q", cfg, a.Status().ConfigError)
 	}
-	os.WriteFile(a.Paths.fluentBitConf(), []byte(strings.Replace(testFluentBit("r1"), "Name tail\n    Path /var/log/syslog", "Name exec\n    Command id", 1)), 0o600)
+	os.WriteFile(a.Paths.fluentBitConf(), []byte(strings.Replace(testFluentBit("r1"), testTail, "Name exec\n    Command id", 1)), 0o600)
 	a.checkLoaded(cfg)
 	if cfg.FluentBit != nil || cfg.Revision != "" || !strings.Contains(a.Status().ConfigError, "fails the agent's check") {
 		t.Errorf("bad: %+v, %q", cfg, a.Status().ConfigError)
