@@ -347,6 +347,21 @@ a program as an argument. The Security log is readable only by administrators, a
 Signalith by the roles that may search the Windows events. `-Uninstall` leaves the
 auditing on.
 
+## Logs that are off by default on Windows
+
+PowerShell rules read script block logging (event 4104), and a few rules read logs Windows
+keeps turned off: the DNS client, Task Scheduler (on clients), CryptoAPI and device driver
+logs. With `-EnableLogs` on the line (**Also turn on logs that are off by default** on
+**Add data**), the install script turns on script block logging (the
+`EnableScriptBlockLogging` policy value) and those logs (`wevtutil sl <log> /e:true`), and
+`-Uninstall` turns off what it turned on. A domain group policy wins over the script; set
+them there for every computer instead.
+
+Script block logging records the scripts that run, with any password or key written into
+them. In Signalith those events are searchable by the roles that may search the Windows
+events, so give that access only to people who may see such values. Module logging, which
+also records the values passed to each command, is not turned on.
+
 ## Sysmon on Windows
 
 Sysmon records process starts with their command lines, network connections, DNS
