@@ -27,7 +27,11 @@ type Message struct {
 	Priority int
 	// Time is the timestamp in the message; zero when it had none or the
 	// sender marked its clock as not set (Cisco "*").
-	Time     time.Time
+	Time time.Time
+	// Zoneless is set when Time had no zone (RFC 3164, or ISO 8601 without
+	// an offset) and was read as this server's local time, so it could be
+	// hours off.
+	Zoneless bool
 	Hostname string
 	AppName  string
 	ProcID   string
@@ -136,15 +140,17 @@ func parse5424(m *Message, s string) bool {
 	rest := s[i+1:]
 	stamp, rest := token(rest)
 	var t time.Time
+	zoneless := false
 	if stamp != "-" {
 		var ok bool
 		var n int
-		if t, n, ok = parseISO(stamp); !ok || n != len(stamp) {
+		if t, n, zoneless, ok = parseISO(stamp); !ok || n != len(stamp) {
 			return false
 		}
 	}
 	m.Format = "rfc5424"
 	m.Time = t
+	m.Zoneless = zoneless
 	var host, app, proc, msgid string
 	host, rest = token(rest)
 	if strings.HasPrefix(rest, "CEF:") || strings.HasPrefix(rest, "LEEF:") {
@@ -282,10 +288,10 @@ func parse3164(m *Message, s string, now time.Time) {
 		}
 		s = rest
 	}
-	t, after, hasTime := parseStamp(s, now)
+	t, after, zoneless, hasTime := parseStamp(s, now)
 	if hasTime {
 		m.Format = "rfc3164"
-		m.Time = t
+		m.Time, m.Zoneless = t, zoneless
 		s = after
 	}
 	// Host name: the first word after the timestamp, unless it is already
@@ -307,9 +313,9 @@ func parse3164(m *Message, s string, now time.Time) {
 		m.Sequence = g[1]
 		s = s[len(g[0]):]
 	}
-	if t, after, ok := parseStamp(s, now); ok {
+	if t, after, zoneless, ok := parseStamp(s, now); ok {
 		if !hasTime {
-			m.Time = t
+			m.Time, m.Zoneless = t, zoneless
 			hasTime = true
 		}
 		s = after
@@ -361,7 +367,7 @@ func ciscoPrefix(s string, now time.Time) (host, rest string, ok bool) {
 	if len(rest) == len(s) {
 		return "", s, false
 	}
-	if _, _, ok := parseStamp(rest, now); !ok {
+	if _, _, _, ok := parseStamp(rest, now); !ok {
 		return "", s, false
 	}
 	return host, rest, true
@@ -394,9 +400,10 @@ var (
 // parseStamp reads a timestamp at the start of s: "Oct 11 09:15:02",
 // "Oct 11 2026 09:15:02", "Oct 11 09:15:02.123 UTC", ISO 8601, with a
 // Cisco "*" (clock not set) or "." prefix. It returns the rest after the
-// timestamp, an optional ':' and spaces. A "*" timestamp parses but comes
-// back as the zero time, so the receive time is used instead.
-func parseStamp(s string, now time.Time) (time.Time, string, bool) {
+// timestamp, an optional ':' and spaces, and whether the timestamp had no
+// zone. A "*" timestamp parses but comes back as the zero time, so the
+// receive time is used instead.
+func parseStamp(s string, now time.Time) (time.Time, string, bool, bool) {
 	unset := false
 	p := s
 	if strings.HasPrefix(p, "*") {
@@ -407,34 +414,35 @@ func parseStamp(s string, now time.Time) (time.Time, string, bool) {
 	}
 	var t time.Time
 	var n int
-	var ok bool
+	var zoneless, ok bool
 	if p != "" && isDigit(p[0]) {
-		if t, n, ok = parseISO(p); !ok {
-			t, n, ok = parseBSD(p, now)
+		if t, n, zoneless, ok = parseISO(p); !ok {
+			t, n, zoneless, ok = parseBSD(p, now)
 		}
 	} else {
-		t, n, ok = parseBSD(p, now)
+		t, n, zoneless, ok = parseBSD(p, now)
 	}
 	if !ok {
-		return time.Time{}, s, false
+		return time.Time{}, s, false, false
 	}
 	rest := p[n:]
 	if !strings.HasPrefix(rest, ":") && rest != "" && rest[0] != ' ' {
-		return time.Time{}, s, false
+		return time.Time{}, s, false, false
 	}
 	rest = strings.TrimPrefix(rest, ":")
 	rest = strings.TrimLeft(rest, " ")
 	if unset {
-		t = time.Time{}
+		t, zoneless = time.Time{}, false
 	}
-	return t, rest, true
+	return t, rest, zoneless, true
 }
 
 // parseBSD reads "Mmm dd [yyyy] hh:mm:ss[.frac] [yyyy] [UTC|ZONE:]", or
 // "yyyy Mmm dd hh:mm:ss[.frac] [UTC|ZONE:]" as Cisco NX-OS writes it. Times
 // without a zone, or with a zone other than UTC, are taken as this server's
-// local time; times without a year get the one ingest.GuessYear picks.
-func parseBSD(s string, now time.Time) (time.Time, int, bool) {
+// local time and reported as zoneless; times without a year get the one
+// ingest.GuessYear picks.
+func parseBSD(s string, now time.Time) (time.Time, int, bool, bool) {
 	// g holds month, day, year, hours, minutes, seconds and fraction.
 	var g [7]string
 	n := 0
@@ -445,18 +453,18 @@ func parseBSD(s string, now time.Time) (time.Time, int, bool) {
 		g = [7]string{y[2], y[3], y[1], y[4], y[5], y[6], y[7]}
 		n = len(y[0])
 	} else {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
 	mon, ok := months[strings.ToLower(g[0])]
 	if !ok {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
 	day, _ := strconv.Atoi(g[1])
 	hh, _ := strconv.Atoi(g[3])
 	mm, _ := strconv.Atoi(g[4])
 	ss, _ := strconv.Atoi(g[5])
 	if day < 1 || day > 31 || hh > 23 || mm > 59 || ss > 60 {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
 	if ss == 60 {
 		ss = 59
@@ -469,11 +477,11 @@ func parseBSD(s string, now time.Time) (time.Time, int, bool) {
 		year, _ = strconv.Atoi(y[1])
 		n += 1 + len(y[1])
 	}
-	loc := time.Local
+	loc, zoneless := time.Local, true
 	if z := stampZone.FindStringSubmatch(head(s[n:])); z != nil {
 		switch {
 		case z[1] == "UTC" || z[1] == "GMT":
-			loc = time.UTC
+			loc, zoneless = time.UTC, false
 			n += 1 + len(z[1])
 		case z[2] == ":" && z[1] != "CEF" && z[1] != "LEEF":
 			// Other zone names are ambiguous (CST is three different
@@ -485,20 +493,21 @@ func parseBSD(s string, now time.Time) (time.Time, int, bool) {
 	}
 	t := time.Date(year, mon, day, hh, mm, ss, nsec, loc)
 	if t.Day() != day {
-		return time.Time{}, 0, false // Feb 30 and the like
+		return time.Time{}, 0, false, false // Feb 30 and the like
 	}
 	if year == 0 {
-		return ingest.GuessYear(t, now), n, true
+		return ingest.GuessYear(t, now), n, zoneless, true
 	}
-	return t.UTC(), n, true
+	return t.UTC(), n, zoneless, true
 }
 
 // parseISO reads an RFC 3339 or ISO 8601 timestamp at the start of s and
-// returns how many bytes it used. Without a zone it is local time.
-func parseISO(s string) (time.Time, int, bool) {
+// returns how many bytes it used, and whether it had no zone. Without a
+// zone it is local time.
+func parseISO(s string) (time.Time, int, bool, bool) {
 	g := isoPattern.FindStringSubmatch(head(s))
 	if g == nil {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
 	year, _ := strconv.Atoi(g[1])
 	mon, _ := strconv.Atoi(g[2])
@@ -507,7 +516,7 @@ func parseISO(s string) (time.Time, int, bool) {
 	mm, _ := strconv.Atoi(g[5])
 	ss, _ := strconv.Atoi(g[6])
 	if mon < 1 || mon > 12 || day < 1 || day > 31 || hh > 23 || mm > 59 || ss > 60 {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
 	if ss == 60 {
 		ss = 59
@@ -521,7 +530,7 @@ func parseISO(s string) (time.Time, int, bool) {
 		h, _ := strconv.Atoi(z[:2])
 		mi, _ := strconv.Atoi(z[2:])
 		if h > 23 || mi > 59 {
-			return time.Time{}, 0, false
+			return time.Time{}, 0, false, false
 		}
 		off := h*3600 + mi*60
 		if g[8][0] == '-' {
@@ -531,9 +540,9 @@ func parseISO(s string) (time.Time, int, bool) {
 	}
 	t := time.Date(year, time.Month(mon), day, hh, mm, ss, fraction(g[7]), loc)
 	if t.Day() != day {
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, false
 	}
-	return t.UTC(), len(g[0]), true
+	return t.UTC(), len(g[0]), g[8] == "", true
 }
 
 // fraction turns ".123" into nanoseconds.

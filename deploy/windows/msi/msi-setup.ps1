@@ -5,16 +5,18 @@
 # repair, keeping a new install's admin password for
 # "signalith initial-password". Everything it prints goes to
 # C:\Windows\Temp\signalith-install.log, since an installer shows no output.
-# The installer passes its OPENSEARCHURL and OPENSEARCHZIP properties as
-# "url:<value>" and "zip:<value>", so an empty one is still an argument.
-param([string]$OpenSearchUrl = "url:", [string]$OpenSearchZip = "zip:")
+# The installer passes its OPENSEARCHURL, OPENSEARCHZIP and OPENSEARCHPROXY
+# properties as "url:<value>", "zip:<value>" and "proxy:<value>", so an
+# empty one is still an argument.
+param([string]$OpenSearchUrl = "url:", [string]$OpenSearchZip = "zip:", [string]$OpenSearchProxy = "proxy:")
 $OpenSearchUrl = $OpenSearchUrl -replace '^url:', ''
 $OpenSearchZip = $OpenSearchZip -replace '^zip:', ''
+$OpenSearchProxy = $OpenSearchProxy -replace '^proxy:', ''
 $log = Join-Path $env:windir "Temp\signalith-install.log"
 Start-Transcript -Path $log -Force | Out-Null
 $code = 0
 try {
-  & (Join-Path $PSScriptRoot "install.ps1") -OpenSearchUrl $OpenSearchUrl -OpenSearchZip $OpenSearchZip -InstallDir $PSScriptRoot -SavePassword
+  & (Join-Path $PSScriptRoot "install.ps1") -OpenSearchUrl $OpenSearchUrl -OpenSearchZip $OpenSearchZip -OpenSearchProxy $OpenSearchProxy -InstallDir $PSScriptRoot -SavePassword
 } catch {
   Write-Host "Setup failed: $_"
   $code = 1
