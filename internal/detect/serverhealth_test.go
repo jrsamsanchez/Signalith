@@ -19,7 +19,7 @@ func TestHealthByServer(t *testing.T) {
 	for i := 1; i <= 20; i++ {
 		rs := RunState{Node: "a", LastRun: now.Add(-time.Minute), LastDuration: int64(i * 100), Lag: int64(i * 1000)}
 		if i == 20 {
-			rs.LastLate = now.Add(-10 * time.Minute)
+			rs.LastLate, rs.LateNode = now.Add(-10*time.Minute), "a"
 		}
 		states[fmt.Sprintf("a%d", i)] = rs
 	}
@@ -27,9 +27,9 @@ func TestHealthByServer(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		rs := RunState{Node: "b", LastRun: now.Add(-time.Minute), LastDuration: 50, Lag: 500}
 		if i <= 3 {
-			rs.LastLate = now.Add(-30 * time.Minute)
+			rs.LastLate, rs.LateNode = now.Add(-30*time.Minute), "b"
 		} else if i == 4 {
-			rs.LastLate = now.Add(-20 * time.Hour)
+			rs.LastLate, rs.LateNode = now.Add(-20*time.Hour), "b"
 		}
 		states[fmt.Sprintf("b%d", i)] = rs
 	}
@@ -55,6 +55,41 @@ func TestHealthByServer(t *testing.T) {
 	}
 	if c := h["c"]; c.Rules != 2 || c.Skipped != 4 || c.SkippedHour != 4 || c.TimedOut != 1 || !c.Behind {
 		t.Errorf("c: %+v", c)
+	}
+}
+
+// A late run counts for the server that ran it late, not for the server
+// the rule moved to since; one an older version recorded, without its
+// server, counts for none.
+func TestHealthLateRunsStayWithTheirServer(t *testing.T) {
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	states := map[string]RunState{}
+	for i := 1; i <= 10; i++ {
+		rs := RunState{Node: "a", LastRun: now.Add(-time.Minute), LastLate: now.Add(-20 * time.Minute)}
+		switch {
+		case i <= 4:
+			// Late on b while b ran every rule, then moved to a.
+			rs.LateNode = "b"
+		case i <= 8:
+			// Late before the upgrade, by a version that did not say where.
+		default:
+			rs.LateNode = "a"
+		}
+		states[fmt.Sprintf("r%d", i)] = rs
+	}
+	h := HealthByServer(states, now)
+	if a := h["a"]; a.Rules != 10 || a.LateHour != 2 || a.Behind {
+		t.Errorf("a: %+v", a)
+	}
+	if _, ok := h["b"]; ok {
+		t.Errorf("b runs no rule now: %+v", h["b"])
+	}
+	// Three of a's own late runs are enough.
+	rs := states["r1"]
+	rs.LateNode = "a"
+	states["r1"] = rs
+	if a := HealthByServer(states, now)["a"]; a.LateHour != 3 || !a.Behind {
+		t.Errorf("a with three late runs of its own: %+v", a)
 	}
 }
 

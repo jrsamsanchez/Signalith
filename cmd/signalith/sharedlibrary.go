@@ -41,6 +41,17 @@ type sharedLibrary struct {
 	// identity lists from there.
 	on    atomic.Bool
 	lists atomic.Bool
+	// inbox keeps the folders of the components running now in step
+	// with the library; nil while they use the folders.
+	inbox atomic.Pointer[clusterlib.Inbox]
+}
+
+// problems are the inbox's problems, for the Servers page.
+func (l *sharedLibrary) problems() []string {
+	if in := l.inbox.Load(); in != nil {
+		return in.Problems()
+	}
+	return nil
 }
 
 func newSharedLibrary(docs *clusterlib.Docs, node *cluster.Node, cfg func() *config.Config, log *slog.Logger) *sharedLibrary {
@@ -76,6 +87,7 @@ func (l *sharedLibrary) files() clusterlib.Files {
 // them in jobs until ctx ends. Off, they keep using the folders.
 func (l *sharedLibrary) start(ctx context.Context, rt *shared.Runtime, on bool, c *config.Config, lib *detect.Library, boards *dashboards.Store, jobs *sync.WaitGroup) error {
 	l.on.Store(on)
+	l.inbox.Store(nil)
 	if !on {
 		return nil
 	}
@@ -86,6 +98,7 @@ func (l *sharedLibrary) start(ctx context.Context, rt *shared.Runtime, on bool, 
 	boards.UseBackend(&clusterlib.Dashboards{Docs: l.docs, Node: name, Writable: rt.Writable})
 	in := &clusterlib.Inbox{Docs: l.docs, Files: l.files(), SeenFile: filepath.Join(c.StateDir(), clusterlib.SeenFileName),
 		Mirror: func() bool { return c.Detections.Sync == config.SyncMirror }, Writable: rt.Writable}
+	l.inbox.Store(in)
 	l.docs.OnDetections(in.Kick)
 	l.docs.OnDashboards(in.Kick)
 	jobs.Go(func() { in.Run(ctx) })

@@ -2160,6 +2160,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
+			settings.Problems = r.sharedContent.library.problems
 			settings.Restart = r.restartStatus
 			settings.Pending = func() (restart, refused []string) {
 				restart, refused, _ = r.sharedContent.settingsStatus()
