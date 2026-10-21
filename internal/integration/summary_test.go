@@ -34,12 +34,8 @@ func TestSummaries(t *testing.T) {
 	})
 	p := &ingest.Pipeline{Store: cl, Prefix: prefix}
 	now := time.Now()
-	send := func(lines []string) {
+	send := func(batch []map[string]any) {
 		t.Helper()
-		var batch []map[string]any
-		for _, l := range lines {
-			batch = append(batch, map[string]any{"log": l})
-		}
 		if res, err := p.Ingest(ctx, "linux.auth", batch); err != nil || len(res.Errors) > 0 {
 			t.Fatalf("ingest: %v %+v", err, res)
 		}
@@ -47,16 +43,16 @@ func TestSummaries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var lines []string
+	var lines []map[string]any
 	for i := 0; i < 240; i++ {
-		at := syslogTime(now.Add(-10*time.Minute - time.Duration(i)*73*time.Second))
+		at := now.Add(-10*time.Minute - time.Duration(i)*73*time.Second)
 		switch i % 4 {
 		case 0, 1:
-			lines = append(lines, fmt.Sprintf("%s web%d sshd[%d]: Failed password for invalid user u%d from 203.0.113.%d port %d ssh2", at, i%3, 100+i, i%5, i%7, 40000+i))
+			lines = append(lines, fluentBitLine(at, fmt.Sprintf("web%d sshd[%d]: Failed password for invalid user u%d from 203.0.113.%d port %d ssh2", i%3, 100+i, i%5, i%7, 40000+i)))
 		case 2:
-			lines = append(lines, fmt.Sprintf("%s web%d sshd[%d]: Accepted password for alice from 10.20.0.%d port %d ssh2", at, i%3, 100+i, i%4, 50000+i))
+			lines = append(lines, fluentBitLine(at, fmt.Sprintf("web%d sshd[%d]: Accepted password for alice from 10.20.0.%d port %d ssh2", i%3, 100+i, i%4, 50000+i)))
 		default:
-			lines = append(lines, fmt.Sprintf("%s web%d cron[%d]: (root) CMD (run-parts /etc/cron.hourly)", at, i%3, 100+i))
+			lines = append(lines, fluentBitLine(at, fmt.Sprintf("web%d cron[%d]: (root) CMD (run-parts /etc/cron.hourly)", i%3, 100+i)))
 		}
 	}
 	send(lines)
@@ -141,7 +137,7 @@ func TestSummaries(t *testing.T) {
 
 	// A late event in a slot already summarized is counted once the
 	// next check rebuilds that slot.
-	send([]string{syslogTime(now.Add(-3*time.Hour)) + " web9 sshd[999]: Failed password for root from 198.51.100.77 port 1 ssh2"})
+	send([]map[string]any{fluentBitLine(now.Add(-3*time.Hour), "web9 sshd[999]: Failed password for root from 198.51.100.77 port 1 ssh2")})
 	clock = now.Add(11 * time.Minute)
 	build()
 	cov.Refresh(ctx)

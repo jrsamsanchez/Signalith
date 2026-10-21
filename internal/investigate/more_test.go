@@ -332,6 +332,10 @@ func TestGuardMore(t *testing.T) {
 		`* | where len(src) > 3`:                     true,
 		`masked-user-1 | where user="masked-user-1"`: true,
 		`* | eval x=1`:                               false,
+		`* | where src < user`:                       false,
+		`* | where src = _raw`:                       false,
+		`* | where src < dest`:                       true,
+		`* | where src = "user"`:                     true,
 	} {
 		q, err := query.Parse(src)
 		if err != nil {
