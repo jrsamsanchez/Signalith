@@ -5,6 +5,7 @@ package baselines
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,12 @@ func TestUnlearnOneValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	brazil = false
+	// It waits for the hour it was asked in to be learned.
+	r.now = r.now.Add(time.Hour)
+	r.run()
+	if p := r.profile(NewCountry, "alice"); !p.has("BR") {
+		t.Errorf("forgotten before its hour was learned: %+v", p.Values)
+	}
 	r.now = r.now.Add(time.Hour)
 	r.run()
 	if p := r.profile(NewCountry, "alice"); p.has("BR") || !p.has("US") {
@@ -55,7 +62,7 @@ func TestUnlearnOneValue(t *testing.T) {
 		t.Errorf("bob forgot too: %+v", p.Values)
 	}
 	st, _, _, _ = r.store.State(ctx)
-	if got := st.Checks[NewCountry].Unlearned; !got.Equal(r.now.Add(-time.Hour).Add(2 * time.Minute)) {
+	if got := st.Checks[NewCountry].Unlearned; !got.Equal(r.now.Add(-2 * time.Hour).Add(2 * time.Minute)) {
 		t.Errorf("unlearned through %v", got)
 	}
 	// Brazil is news for alice again, not for bob.
@@ -146,5 +153,42 @@ func TestNewAndReturningUsers(t *testing.T) {
 	if len(got) != 2 || !strings.HasPrefix(got["carol"], "new First sign-in from the internet on record for carol in the last 42 days, from 177.0.3.4 (Brazil (BR))") ||
 		!strings.HasPrefix(got["dave"], "returning dave signed in from the internet after 42 days without a sign-in") {
 		t.Errorf("events %v", got)
+	}
+}
+
+// Sign-ins from the internet that start arriving after the check began
+// (an identity provider added later) make every user new: they add no
+// risk until they too were learned for the learning period.
+func TestArrivalsWaitForData(t *testing.T) {
+	r := newRig(t, Settings{LearningDays: 2})
+	var from time.Time
+	r.runner.rows = func(by string, start time.Time) []search.Row {
+		if by != "user,src" || from.IsZero() || start.Before(from) {
+			return nil
+		}
+		var rows []search.Row
+		for i := range 20 {
+			rows = append(rows, row("user", fmt.Sprintf("user%02d", i), "src", "5.5.1.2", "count", 1.0))
+		}
+		if start.After(from.Add(3 * 24 * time.Hour)) {
+			rows = append(rows, row("user", "carol", "src", "177.0.3.4", "count", 1.0))
+		}
+		return rows
+	}
+	r.run()
+	r.now = r.now.Add(5 * 24 * time.Hour)
+	from = r.now.Add(-time.Hour - settle).Truncate(time.Hour)
+	r.run()
+	if n := len(r.risk.of(NewCountry)); n != 0 {
+		t.Fatalf("the first internet sign-ins raised %d", n)
+	}
+	r.now = r.now.Add(4 * 24 * time.Hour)
+	r.run()
+	var who []string
+	for _, ev := range r.risk.of(NewCountry) {
+		who = append(who, ev.Object)
+	}
+	if len(who) != 1 || who[0] != "carol" {
+		t.Errorf("raised for %v", who)
 	}
 }

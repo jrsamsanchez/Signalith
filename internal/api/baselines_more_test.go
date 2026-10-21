@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/baselines"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
@@ -79,6 +80,14 @@ func TestBaselinesUnlearn(t *testing.T) {
 			t.Errorf("%s %s: %d %v", c.path, c.body, code, out)
 		}
 	}
+	// A server whose clock runs ahead applied one an hour "later": this
+	// one is still stamped after it, so it is applied too.
+	ahead := time.Now().UTC().Add(time.Hour)
+	bst, bv, _, _ := st.State(context.Background())
+	bst.Checks = map[string]*baselines.CheckState{baselines.NewCountry: {Unlearned: ahead}}
+	if _, err := st.SaveState(context.Background(), bst, bv); err != nil {
+		t.Fatal(err)
+	}
 	if code, out := do(t, ts, "POST", path, `{"entity":" alice ","value":"BR"}`, true); code != http.StatusOK {
 		t.Fatalf("unlearn: %d %v", code, out)
 	}
@@ -100,7 +109,7 @@ func TestBaselinesUnlearn(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := set.Checks[baselines.NewCountry].Unlearn
-	if len(u) != 1 || u[0].Entity != "alice" || u[0].Value != "BR" || u[0].By != "admin" || u[0].At.IsZero() {
+	if len(u) != 1 || u[0].Entity != "alice" || u[0].Value != "BR" || u[0].By != "admin" || !u[0].At.After(ahead) {
 		t.Errorf("unlearn = %+v", u)
 	}
 	// Only admins.

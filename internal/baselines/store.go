@@ -162,6 +162,9 @@ type CheckState struct {
 	// Unlearned is when the newest value asked to be forgotten was
 	// (ForgetValue.At), once it was.
 	Unlearned time.Time `json:"unlearned,omitzero"`
+	// DataFrom is the first hour the check had data to learn from (new
+	// country: sign-ins from the internet).
+	DataFrom time.Time `json:"data_from,omitzero"`
 	// Error is why it last could not learn an hour, ErrorAt when; empty
 	// once it learned one again.
 	Error   string    `json:"error,omitempty"`

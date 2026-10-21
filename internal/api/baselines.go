@@ -363,7 +363,14 @@ func (s *Server) handleUnlearnBaseline(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, errors.New("too many values wait to be forgotten; try again after the next round, within the hour"))
 			return
 		}
+		// After everything already asked and applied, even when this
+		// server's clock is behind the one that applied it.
 		at := time.Now().UTC()
+		for _, t := range []time.Time{st.Unlearned, st.Started} {
+			if !at.After(t) {
+				at = t.Add(time.Microsecond)
+			}
+		}
 		if n := len(cs.Unlearn); n > 0 && !at.After(cs.Unlearn[n-1].At) {
 			at = cs.Unlearn[n-1].At.Add(time.Microsecond)
 		}

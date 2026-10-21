@@ -70,11 +70,12 @@ What the checks leave out:
   round. Users and hosts with a history are judged from the start.
 - **The learning period.** A user or host first seen less than 14 days ago is only
   learned from, so a new employee's first week adds no risk. One thing is not held
-  back: once the check itself has learned for the learning period, the first sign-in
+  back: once the check has learned sign-ins from the internet for the learning
+  period, the first sign-in
   from the internet by a user it has none on record for (a new account, or one unused
   for longer than **Forget after**), or by a user with none for 30 days, adds half the
-  check's risk, with `baseline_value` `new` or `returning`. That is how new and unused
-  accounts are taken over.
+  check's risk, with `baseline_value` `new` or `returning`, at most 10 an hour. That is
+  how new and unused accounts are taken over.
 - **Catching up.** If the baselines fall more than 7 days behind (OpenSearch was
   down for a week), they skip to 7 days ago rather than replay every hour.
 - **One check at a time.** When one check's search fails (a field mapped two
@@ -105,8 +106,9 @@ back the other's risk until the replay is done.
 To forget **one value** for one user or host, say a country learned while an account
 was misused, click **Forget it** on the baseline risk event on the Risk page, or choose
 **Forget one value…** in the check's menu and name the user or host and the value
-(as `baseline_value` has it, such as `BR` or `03:00 UTC`). At its next round the check
-forgets that value for that user or host only, so the next time it is seen it adds
+(as `baseline_value` has it, such as `BR` or `03:00 UTC`). Once the hour you asked in
+is learned (within two hours, later while the baselines catch up) the check forgets
+that value for that user or host only, so the next time it is seen it adds
 risk as new; everything else the check learned stays. For **Unusual data volume** it
 forgets how much the host usually sends, and learns it again over the next 3 days.
 Each request is audited, and the check shows how many wait.
@@ -217,5 +219,5 @@ Admins only:
   is refused with 409.
 - `POST /api/baselines/{check}/reset`: forgets what a check learned.
 - `POST /api/baselines/{check}/unlearn` with `{"entity": "alice", "value": "BR"}`:
-  forgets one value for one user or host at the next round (the value is empty for
-  data volume). At most 100 may wait per check.
+  forgets one value for one user or host once the hour it was asked in is learned
+  (the value is empty for data volume). At most 100 may wait per check.

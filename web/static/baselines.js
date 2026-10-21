@@ -177,7 +177,7 @@
     const notes = [];
     if (c.waiting) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, c.waiting)));
     if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only ${B.view.defaults.max_raised_per_hour} of them added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
-    if (c.unlearning) notes.push(el('p', { class: 'st-warn is-info' }, icon('info'), el('span', {}, `${riNumText(c.unlearning)} ${c.unlearning === 1 ? 'value is' : 'values are'} forgotten at the next round, within the hour.`)));
+    if (c.unlearning) notes.push(el('p', { class: 'st-warn is-info' }, icon('info'), el('span', {}, `${riNumText(c.unlearning)} ${c.unlearning === 1 ? 'value is' : 'values are'} forgotten once the hour they were asked in is learned, within two hours.`)));
     if (c.full) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `It has learned the most ${many} it keeps (${riNumText(B.view.defaults.max_profiles)}); new ones are learned once old ones are forgotten.`)));
     if (c.truncated) {
       const after = c.truncated_after ? ` Those after ${c.truncated_after} in name order were not learned that hour.` : ' Some of it was not learned.';
@@ -400,7 +400,7 @@
         B.view = await api('api/baselines/' + encodeURIComponent(check) + '/unlearn', { entity: whoIn.value.trim(), value: whatIn ? whatIn.value.trim() : '' });
         render();
         d.close();
-        toast('It is forgotten at the next round, within the hour.');
+        toast('It is forgotten once this hour is learned, within two hours.');
       } catch (err) {
         restore();
         showAlert(alert, 'Nothing was forgotten', sentence(err.message));

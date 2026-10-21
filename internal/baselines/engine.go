@@ -102,6 +102,9 @@ const (
 	// dormantAfter is how long a user may go without a sign-in from the
 	// internet before the next one adds risk (arrival).
 	dormantAfter = 30 * 24 * time.Hour
+	// maxArrivals is the most arrival events one hour raises, so they
+	// never take most of MaxRaisedPerHour from new countries.
+	maxArrivals = 10
 )
 
 // Engine learns the baselines and raises their risk.
@@ -422,8 +425,10 @@ func (e *Engine) unlearn(ctx context.Context, set Settings, st *State) (bool, er
 		}
 		var todo []ForgetValue
 		for _, f := range set.Checks[id].Unlearn {
-			// One asked before a reset went with the profiles.
-			if f.At.After(state.Unlearned) && f.At.After(state.Started) {
+			// One asked before a reset went with the profiles. One waits
+			// until the hours up to when it was asked are learned, so a
+			// check catching up does not learn the value again.
+			if f.At.After(state.Unlearned) && f.At.After(state.Started) && !st.Through.Before(f.At) {
 				todo = append(todo, f)
 			}
 		}
@@ -527,8 +532,10 @@ type hourRun struct {
 	// raised counts the risk events of each check this hour.
 	raised map[string]int
 	// countryNew holds the users with a new country this hour, whose
-	// new network is not raised again.
+	// new network is not raised again; arrivals counts the arrival
+	// events this hour.
 	countryNew map[string]bool
+	arrivals   int
 }
 
 // A unit is the checks that learn from the same searches. A unit learns
@@ -943,10 +950,14 @@ func (r *hourRun) learn(ctx context.Context, check string, all map[string]*seen,
 // record, or none for dormantAfter, signing in from the internet: how a
 // new or long-unused account is taken over, which the learning period
 // would keep quiet. It adds half the check's risk, once the check itself
-// has learned for the learning period, and not on top of a new country.
+// has learned sign-ins from the internet for the learning period (so
+// sign-in data that starts arriving late does not make every user new),
+// at most maxArrivals an hour, and not on top of a new country.
 func (r *hourRun) arrival(p *Profile, key string, s *seen) (detect.RiskEvent, bool) {
 	cs := r.state(NewCountry)
-	if !r.live || r.countryNew[key] || cs.Started.IsZero() || r.start.Before(cs.Started.Add(r.set.Learning())) {
+	learning := r.set.Learning()
+	if !r.live || r.countryNew[key] || cs.Started.IsZero() || r.start.Before(cs.Started.Add(learning)) ||
+		cs.DataFrom.IsZero() || r.start.Before(cs.DataFrom.Add(learning)) {
 		return detect.RiskEvent{}, false
 	}
 	fresh := p.Hours == 0 && p.First.Equal(r.start)
@@ -971,6 +982,12 @@ func (r *hourRun) arrival(p *Profile, key string, s *seen) (detect.RiskEvent, bo
 		known := min(r.set.Forget(), r.start.Sub(cs.Started.Add(-r.e.back(r.set))))
 		value, msg = "new", fmt.Sprintf("First sign-in from the internet on record for %s in the last %d days, from %s: a new or long-unused account", s.name, int(known.Hours()/24), from)
 	}
+	if r.arrivals >= maxArrivals {
+		return detect.RiskEvent{}, false
+	}
+	r.arrivals++
+	// The new network is the same news.
+	r.countryNew[key] = true
 	f["baseline_reason"] = value
 	ev := r.event(NewCountry, "user", s.name, value, msg, sv.first, f)
 	ev.BaseScore = max(ev.BaseScore/2, 1)
@@ -1145,6 +1162,9 @@ func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) err
 			}
 			return n.Country, map[string]any{"src": src, "src_country": n.Country, "src_asn": n.AS(), "src_asn_name": n.Name}
 		})
+		if cs := r.state(NewCountry); len(users) > 0 && (cs.DataFrom.IsZero() || r.start.Before(cs.DataFrom)) {
+			cs.DataFrom = r.start
+		}
 		err := r.learn(ctx, NewCountry, users, func(p *Profile, key string, s *seen) []detect.RiskEvent {
 			var out []detect.RiskEvent
 			can := r.canRaise(p)

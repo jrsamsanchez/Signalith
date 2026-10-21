@@ -398,7 +398,8 @@ func (s *Server) complianceComputers(ctx context.Context, snap *compliance.Snaps
 	if s.Agents != nil {
 		agents, _, err := s.Agents.List(ctx)
 		if err != nil {
-			snap.HostsErr = "the agents could not be read: " + err.Error()
+			s.Log.Warn("compliance: the agents could not be read", "err", err)
+			snap.HostsErr = "the agents could not be read"
 		}
 		for _, a := range agents {
 			if a.Name != "" && snap.Now.Sub(a.LastSeen) <= compliance.DataWindow {
@@ -419,14 +420,16 @@ func (s *Server) complianceComputers(ctx context.Context, snap *compliance.Snaps
 	for _, m := range compliance.HostModels {
 		q, err := query.Parse("datamodel=" + m + " NOT " + datamodel.SampleField + "=* | stats count by host")
 		if err != nil {
-			snap.HostsErr = err.Error()
+			s.Log.Warn("compliance: the host search does not parse", "err", err)
+			snap.HostsErr = "the search failed"
 			return
 		}
 		q.Earliest = "-7d"
 		q.MaxRows = complianceHostRows
 		res, err := s.Engine.Execute(ctx, q)
 		if err != nil {
-			snap.HostsErr = err.Error()
+			s.Log.Warn("compliance: could not read which hosts sent events", "model", m, "err", err)
+			snap.HostsErr = "the search failed"
 			return
 		}
 		if res.Truncated {
@@ -518,7 +521,10 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 	}
 	snap.Hosts, snap.Platforms = len(nodes), byPlatform
 	for _, n := range nodes {
-		snap.Computers = append(snap.Computers, compliance.ShortHost(cmp.Or(n.Hostname, n.HostIdentifier)))
+		// A host gone for a week is likely retired.
+		if snap.Now.Sub(n.LastSeen) <= compliance.DataWindow {
+			snap.Computers = append(snap.Computers, compliance.ShortHost(cmp.Or(n.Hostname, n.HostIdentifier)))
+		}
 	}
 	snap.Checks = []compliance.CheckStat{}
 	for _, c := range checks.All() {
