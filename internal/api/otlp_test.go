@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // otlpProtoRequest is an ExportLogsServiceRequest with one log record per
@@ -139,6 +141,41 @@ func TestOTLPPartialSuccess(t *testing.T) {
 	writeOTLPSuccess(w2, true, 2, "x")
 	if !strings.Contains(w2.Body.String(), `"rejectedLogRecords":"2"`) {
 		t.Errorf("json partial success = %s", w2.Body)
+	}
+}
+
+// rejectingBulk turns every document away with the item error it holds, as
+// OpenSearch does per item when it is too busy or its disk is full.
+type rejectingBulk struct{ status int }
+
+func (b rejectingBulk) Bulk(_ context.Context, docs []store.IndexedDoc) ([]store.BulkItemError, error) {
+	errs := make([]store.BulkItemError, len(docs))
+	for i, d := range docs {
+		errs[i] = store.BulkItemError{Index: d.Index, Pos: i, Status: b.status, Type: "es_rejected_execution_exception", Reason: "rejected"}
+		if b.status == 400 {
+			errs[i].Type = "mapper_parsing_exception"
+		}
+	}
+	return errs, nil
+}
+
+// TestOTLPTemporaryRejections checks that records OpenSearch may take later
+// are answered with 503 and Retry-After, so the Collector sends them
+// again, while records it refuses for good are a partial success.
+func TestOTLPTemporaryRejections(t *testing.T) {
+	for _, c := range []struct {
+		status int
+		code   int
+	}{{429, http.StatusServiceUnavailable}, {503, http.StatusServiceUnavailable}, {400, http.StatusOK}} {
+		ts, _ := newTestServerWith(t, func(s *Server) { s.Pipeline = &ingest.Pipeline{Store: rejectingBulk{c.status}} })
+		resp, body := postOTLP(t, ts.URL, otlpProtoRequest("hello"), nil)
+		if resp.StatusCode != c.code {
+			t.Errorf("item status %d: answer %d %q", c.status, resp.StatusCode, body)
+			continue
+		}
+		if retry := resp.Header.Get("Retry-After"); (c.code == http.StatusServiceUnavailable) != (retry != "") {
+			t.Errorf("item status %d: Retry-After %q", c.status, retry)
+		}
 	}
 }
 

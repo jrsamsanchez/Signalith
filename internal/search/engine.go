@@ -400,7 +400,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		if !ok {
 			break
 		}
-		if _, expr := w.Expr.(*query.Cond); expr {
+		if _, expr := w.Expr.(*query.Cond); expr || comparesCatalogFields(w.Expr) {
 			break // runs in the server, over the events OpenSearch returns
 		}
 		filters = append(filters, w.Expr)

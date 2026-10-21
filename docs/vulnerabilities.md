@@ -6,6 +6,8 @@ finds the hosts that are up, their open ports and the software that answers on e
 port, then matches the software versions to known vulnerabilities (CVEs) from the U.S.
 [National Vulnerability Database](https://nvd.nist.gov) (NVD).
 
+*This product uses the NVD API but is not endorsed or certified by the NVD.*
+
 Everything is on the **Vulnerabilities** page (under **Monitor**):
 
 - **Hosts**: every host the latest scans found up, worst first. Hosts with a CVE that

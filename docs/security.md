@@ -66,20 +66,27 @@ Whether data is encrypted as it crosses the network.
 ### HTTPS
 
 **Looks at:** the **HTTPS** setting (`server.tls.mode`), the listen address
-(`server.listen`) and **Trusted reverse proxies** (`server.trusted_proxies`). While HTTPS
-is off behind a proxy, the server also notes computers that signed in, and agents that
-sent events, directly over plain HTTP in the last day, not through the proxy. It keeps
-up to 50 addresses of each, in memory only. Computers and agents on the server itself
-aren't counted: what they send doesn't cross the network.
+(`server.listen`), the agent address (`server.agent_listen`) and **Trusted reverse
+proxies** (`server.trusted_proxies`). While HTTPS is off behind a proxy, the server also
+notes computers that signed in, and agents that sent events, directly over plain HTTP in
+the last day, not through the proxy; and those the proxy says reached it over plain
+HTTP (`X-Forwarded-Proto: http`), wherever the proxy runs. It keeps up to 50 addresses
+of each, in memory only. Computers and agents on the server itself aren't counted: what
+they send doesn't cross the network.
 
 - Good: HTTPS is on; or HTTPS is off but Signalith answers only on this computer
-  (such as `127.0.0.1:9000`); or a trusted reverse proxy serves HTTPS.
+  (such as `127.0.0.1:9000`, with agents on `127.0.0.1:7779` or the web port); or a
+  trusted reverse proxy serves HTTPS.
 - Needs attention: a proxy serves HTTPS, but people signed in, or agents sent events,
-  to Signalith directly over plain HTTP; or HTTPS is left to a reverse proxy that
+  to Signalith directly over plain HTTP; or the proxy took sign-ins or events over
+  plain HTTP itself (have it redirect `http://` to `https://`); or the web page answers
+  only this computer, but the agent address answers others over plain HTTP; or HTTPS is
+  left to a reverse proxy that
   Signalith believes only because `signalith.yaml` was written before HTTPS was the
   default (an `https://` public address and no `server.tls` section). List that proxy
   under **Trusted reverse proxies**.
-- At risk: HTTPS is off, and Signalith answers other computers directly.
+- At risk: HTTPS is off, and Signalith answers other computers directly, or agents on
+  other computers sent events to the agent address over plain HTTP.
 
 **To fix:** turn on HTTPS, as in
 [Upgrading from plain HTTP](https.md#upgrading-from-plain-http). Behind a proxy, set
@@ -719,7 +726,8 @@ covers the service.
 **Looks at:** the protections the systemd unit in `deploy/systemd` sets up, as the
 process sees them: no new privileges, a system-call filter, no extra capabilities, a
 read-only system, hidden processes, a private `/dev` and private new files. In a
-container: no new privileges, no capabilities, a read-only system and no core dumps.
+container: no new privileges, no capabilities, a read-only system and no core dumps. In a
+Kubernetes pod, the same except core dumps, which a pod's spec can't turn off.
 
 - Good: all of them are in place. Linux before 5.8 can't hide processes, so there it
   isn't counted as missing.
@@ -728,7 +736,8 @@ container: no new privileges, no capabilities, a read-only system and no core du
 **To fix:** install the current unit and restart, as in [Linux](getting-started.md#linux). If
 you changed the unit on purpose, compare it with `systemctl cat signalith`. In Docker,
 keep `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]` and
-`ulimits: core: 0` in `docker-compose.yml`.
+`ulimits: core: 0` in `docker-compose.yml`. In Kubernetes, keep the Helm chart's
+`securityContext` (see [Kubernetes](kubernetes.md#security)).
 
 **How to check by hand:** `systemd-analyze security signalith`.
 
@@ -801,6 +810,30 @@ server:
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
   sending.
 - Sign-ins, sign-outs and every change to users and settings go to the audit log.
+
+## Other protections
+
+These are built in too, and are not part of the report:
+
+- **Connections**: clients get 10 seconds to send request headers and a minute to send a
+  request body (after their token or sign-in is checked, agent batches get 2 minutes, more
+  while they keep arriving, and signed-in uploads 10 minutes); idle kept-alive connections
+  close after 2 minutes, and headers are limited to 64 KB. Open connections are capped
+  (`server.max_connections`), and one client may hold a tenth of them; a client is one IPv4
+  address or one IPv6 /64 network, since an IPv6 host can pick any address in its /64. Over
+  HTTPS (HTTP/2) each request in progress counts too, at most 32 per connection, so one
+  connection cannot carry hundreds. Agent batches are also limited (see
+  [Ingest limits](sending-data.md#ingest-limits)).
+- **Browser cache**: API replies are never stored in the browser cache, and signing out
+  clears this site's cache and the last query; display preferences such as the theme stay.
+- **Disguised text**: invisible and text-reordering Unicode characters in event data are
+  shown as a marked `⟨U+202E⟩`. U+202E, for example, would otherwise make `invoice`,
+  U+202E, `fdp.exe` look like `invoiceexe.pdf`. The stored events are unchanged; finding
+  titles, which copy values from events and become the titles of new cases, are stored with
+  the marker.
+- **Logs**: values in log lines are cut to a sensible length, and the Windows service log
+  (`C:\ProgramData\Signalith\signalith.log`) rotates at 10 MB, keeping 5 old files. The Docker
+  quick start caps container logs the same way; under systemd, journald limits the log.
 
 ## Not checked here
 

@@ -74,6 +74,25 @@ The first time an image is pushed, check that the package is public: the reposit
 Every release is signed with [Sigstore](https://www.sigstore.dev) and has GitHub build
 provenance without any setup: GitHub vouches for the workflow that built it.
 
+### Where the keys are kept
+
+The signing keys are secrets of two GitHub environments, never of the whole repository,
+so no branch or pull request can read them, even one that changes a workflow:
+
+| Environment | Who may use it | Its secrets |
+| --- | --- | --- |
+| `release` | runs of a version tag (`v*`) | `SIGNALITH_GPG_PRIVATE_KEY`, `SIGNALITH_GPG_PASSPHRASE`, `SIGNALITH_AGENT_KEY`, `SIGNPATH_API_TOKEN` |
+| `signing` | runs of `main` | `SIGNALITH_GPG_PRIVATE_KEY`, `SIGNALITH_GPG_PASSPHRASE` (the apt and dnf repositories), `SIGNALITH_CONTENT_KEY` |
+
+To set them up, on GitHub open **Settings** > **Environments**, open (or make with **New
+environment**) each one, and under **Deployment branches and tags** choose **Selected
+branches and tags**: for `release` add a rule of type **Tag** with the pattern `v*`, for
+`signing` a rule of type **Branch** with the pattern `main`. Leave **Required reviewers**
+off. Then add its secrets there with **Add environment secret**, and delete any copy of
+them under **Settings** > **Secrets and variables** > **Actions** > **Repository
+secrets**. The repository's own tests (`internal/repocheck`) fail when a workflow job reads
+one of these secrets outside these environments.
+
 ### GPG (Linux packages and checksums)
 
 `apt`, `dnf` and `rpm` check packages with GPG keys. When the repository has a
@@ -93,8 +112,8 @@ To make the key (with Docker, on any computer), in an empty folder:
 docker run --rm -v "${PWD}:/out" alpine:3.20 sh -c "apk add -q gnupg && gpg --batch --passphrase '' --quick-gen-key 'Signalith releases <releases@signalith.io>' rsa4096 sign 3y && gpg --armor --export-secret-keys > /out/signalith-release-private.asc && gpg --armor --export > /out/signalith-release-key.asc"
 ```
 
-Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
-**New repository secret**, name `SIGNALITH_GPG_PRIVATE_KEY`, and paste the whole of
+Then on GitHub add it to both environments above as the secret
+`SIGNALITH_GPG_PRIVATE_KEY`: paste the whole of
 `signalith-release-private.asc` (from `-----BEGIN` to the last `-----`). Keep a copy of
 that file somewhere safe and offline, then delete it from the computer. If the key has a
 passphrase, add it as `SIGNALITH_GPG_PASSPHRASE`. The key expires after three years;
@@ -116,8 +135,9 @@ To make the key (with Docker, on any computer; the same line works in PowerShell
 docker run --rm alpine:3.20 sh -c 'apk add -q openssl && openssl genpkey -algorithm ed25519 -outform DER -out /k && echo private: $(tail -c 32 /k | base64) && echo public: $(openssl pkey -inform DER -in /k -pubout -outform DER | tail -c 32 | base64)'
 ```
 
-(`signalith content keygen` prints the same pair.) Then on GitHub: the repository's **Settings** > **Secrets and variables** > **Actions** >
-**New repository secret**, name `SIGNALITH_CONTENT_KEY`, and paste the private key line.
+(`signalith content keygen` prints the same pair.) Then on GitHub add the private key
+line as the secret `SIGNALITH_CONTENT_KEY` of the `signing` environment (see [Where the
+keys are kept](#where-the-keys-are-kept)).
 Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
 it, and warns while it is missing). Keep a copy of the private key somewhere safe and
 offline. To replace a key, add the new public key next to the old one, release, switch
@@ -137,18 +157,14 @@ release with the secret set but its public key missing fails instead of shipping
 updates no agent would take. Without the secret, nothing is signed and agents do not
 update themselves. CI never gets the key.
 
-The key is a secret of the `release` environment, not of the whole repository, so that
-only a run of a version tag can read it: no branch, pull request or dry run can. To set
-it up, on GitHub open **Settings** > **Environments** > **New environment**, name it
-`release`, and under **Deployment branches and tags** choose **Selected branches and
-tags** and add a rule of type **Tag** with the pattern `v*`. Then, in the environment,
-**Add environment secret** named `SIGNALITH_AGENT_KEY` with the private key. If the key
-is also a repository secret, delete that one.
+The key is a secret of the `release` environment (see [Where the keys are
+kept](#where-the-keys-are-kept)), so only a run of a version tag can read it: no branch,
+pull request or dry run can.
 
 To set it up, make a new key the same way as the content key (or with
 `signalith agent-programs keygen`); use a key of its own, never the content key, so each
 key signs one kind of thing, add the private key line as the `SIGNALITH_AGENT_KEY`
-repository secret, and add the public key line to `internal/agentproto/release.keys`.
+secret of the `release` environment, and add the public key line to `internal/agentproto/release.keys`.
 Agents built with that file trust the key from then on, so keep a copy of the private
 key somewhere safe and offline. To replace it, add the new public key next to the old
 one, release, switch the secret, and remove the old key in a later release.
@@ -170,8 +186,9 @@ To set it up:
    `deploy/windows/signpath/artifact-configuration.xml`, and create the signing policy
    `release-signing` with yourself as approver. Make an API token for a CI user that
    may submit requests.
-3. On GitHub, **Settings** > **Secrets and variables** > **Actions**: add the secret
-   `SIGNPATH_API_TOKEN`, and on the **Variables** tab the variable
+3. On GitHub, add the secret `SIGNPATH_API_TOKEN` to the `release` environment (see
+   [Where the keys are kept](#where-the-keys-are-kept)), and under **Settings** > **Secrets
+   and variables** > **Actions**, on the **Variables** tab, the variable
    `SIGNPATH_ORGANIZATION_ID`. (`SIGNPATH_PROJECT_SLUG` and
    `SIGNPATH_SIGNING_POLICY_SLUG` change the two names above if you chose others.)
 

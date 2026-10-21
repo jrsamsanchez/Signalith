@@ -201,6 +201,11 @@ Turn on [two-factor sign-in](users.md) for every admin.
     kubectl label namespace signalith pod-security.kubernetes.io/enforce=restricted
     ```
 
+- **Security page**: the chart sets `SIGNALITH_CONTAINER=1`, so Signalith knows it runs
+  in a container (Kubernetes' container runtimes leave none of the files Docker and Podman
+  do), and the Security page checks the pod's protections instead of asking for a systemd
+  service. Set the same variable for Signalith in any other container it doesn't
+  recognize, or `SIGNALITH_CONTAINER=0` if it takes a computer for a container.
 - **A namespace of its own**: install Signalith in a namespace used by nothing else. The
   network policies recognize Signalith's pods by their labels, so anyone who can create
   pods in the namespace could give one those labels and reach OpenSearch's port (it still

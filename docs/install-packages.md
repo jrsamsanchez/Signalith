@@ -17,7 +17,7 @@ On Linux, the [apt](#debian-and-ubuntu) and [dnf](#red-hat-rocky-alma-fedora-and
 repositories are easier than a download: they install the latest release and upgrade
 with the rest of the system.
 
-Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.x or 3.x. The
+Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.17 or newer (3.x included). The
 Windows installer sets it up for you ([OpenSearch on Windows](#opensearch-on-windows)),
 from the next release (0.3.1) on; with 0.3.0 and older, install OpenSearch first and give
 the installer its address with `OPENSEARCHURL`.
@@ -96,6 +96,18 @@ sudo dnf install ./signalith-0.3.0-1.x86_64.rpm
 
 ## Windows
 
+!!! note "Before you start"
+    - Windows Server 2019 or later, or Windows 10/11, 64-bit; 8 GB of memory or more is best
+      (OpenSearch takes a quarter of it, from 1 to 8 GB).
+    - About 3.5 GB free on the system drive for the install, plus room for your data.
+    - The installer downloads OpenSearch from `https://artifacts.opensearch.org` (port 443).
+      It uses the computer's proxy setting (`netsh winhttp show proxy`; its bypass list is not
+      used, since the download host is always the same); to name one, add
+      `OPENSEARCHPROXY=proxy.example.com:3128`. A proxy that needs a password is not supported:
+      use `OPENSEARCHZIP` instead (below).
+    - No internet access at all: download the OpenSearch `.zip` on another computer and
+      install with `OPENSEARCHZIP` (below).
+
 Double-click the `.msi` and follow the steps (it asks for administrator rights). From
 0.3.1 on, it installs OpenSearch as well, which it downloads (about 1 GB), so the first
 install takes a few minutes. With 0.3.0, install OpenSearch first and give its address
@@ -155,7 +167,7 @@ those folders by hand to remove everything.
 
 ### OpenSearch on Windows
 
-On a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
+From 0.3.1, on a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
 Signalith the same way the [Docker quick start](getting-started.md#docker-quick-start)
 does:
 
@@ -186,6 +198,15 @@ over, and install with:
 ```powershell
 msiexec /i signalith-<version>-x64.msi OPENSEARCHZIP=C:\Downloads\opensearch-3.9.0-windows-x64.zip
 ```
+
+Behind a proxy that the computer's own setting (`netsh winhttp show proxy`) does not name:
+
+```powershell
+msiexec /i signalith-0.1.0-x64.msi OPENSEARCHPROXY=proxy.example.com:3128
+```
+
+The installer first checks there is room for the download and the program, and stops
+before changing anything when there is not.
 
 `signalith opensearch status`, in PowerShell as Administrator, shows what is installed.
 OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
@@ -227,6 +248,81 @@ cosign verify ghcr.io/jrsamsanchez/signalith:0.3.2 \
   --certificate-identity-regexp '^https://github.com/jrsamsanchez/Signalith/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+## Supported upgrade paths
+
+The released versions are 0.1.0, 0.2.0 and 0.3.0. Pages that describe 0.3.1 describe
+the next release, which is not out yet.
+
+### What the project tests
+
+| Test | When it runs | What it upgrades |
+| --- | --- | --- |
+| Packages (`packages.yml`) | On every change to `main`, on pull requests that change `deploy/`, `cmd/signalith/`, `go.mod` or the package tests, and for each release | The latest release's packages to the new build: the `.deb` on an Ubuntu runner, the `.rpm` in Rocky Linux 9 and Fedora 42 containers, and the `.msi` on a Windows runner. Each is installed, upgraded, signed in to, removed and installed again |
+| Mixed versions (`mixed-version.yml`) | On every push to `main`, and on pull requests that change code | The release before the commit, built from its tag, and the commit, on two servers sharing one OpenSearch 3.9.0: a [rolling upgrade](servers.md#rolling-upgrade-one-server-at-a-time) of the pair, each version's pages against the other's API, [upgrade-check](cluster-cli.md#upgrade-check) on a pair and on a single server, and detections spreading once both are upgraded |
+| Rolling upgrade under load (`nightly-load.yml`) | Every night | Two servers of one build to a newer build of the same code, one at a time, while agents send and people work ([Performance](performance.md), scenario S7) |
+
+So the tested path is **from the latest release to the next one**, today 0.3.0 to 0.3.1.
+
+Not tested:
+
+- Upgrading from two or more releases back, such as 0.1.0 or 0.2.0 straight to 0.3.1.
+- Upgrading the [Docker quick start](getting-started.md#docker-quick-start) or a
+  [Helm](kubernetes.md#upgrading) install from one release to the next. The Helm test
+  upgrades a release to the same chart, to check that the secrets are kept.
+- Moving OpenSearch from 2.x to 3.x. CI runs OpenSearch 3.9.0 only.
+- Going back to an earlier version.
+
+### Skipping releases
+
+Nothing in Signalith refuses an upgrade that skips a release. The index template has one
+version number that only goes up, so a newer server replaces an older template whatever
+version wrote it. A one-time change tied to a cluster level runs once the cluster reaches
+that level, whichever version it came from; none are defined today. But no test upgrades
+across more than one release.
+
+If you are more than one release behind:
+
+- Read the **Before you upgrade** notes of every release you skip, on the
+  [releases page](https://github.com/jrsamsanchez/Signalith/releases), and the
+  upgrade notes in [Docker quick start](docker.md#upgrading-the-docker-quick-start). Some changes apply to every install that comes from an older
+  version, such as the agent port from 0.3 ([Upgrading to 0.3](sending-data.md#upgrading-to-03)).
+- To stay on the tested path, upgrade to each release in turn.
+
+### Going back on one server
+
+A server of an older version leaves a newer index template as it is, so days indexed by
+the newer version keep their mappings. What decides whether you can go back is the
+cluster's level, which a newer version raises once every server seen in the last 24
+hours runs it. A single server raises it as soon as it runs the new version, when that
+version has a new level.
+
+- **Before the level rose,** install the previous version again.
+- **After it rose,** the previous version refuses to start: its message says the shared
+  settings were written by a newer version. Follow
+  [Going back to the previous version](servers.md#going-back-to-the-previous-version).
+  Those steps are written for several servers and have not been tried on one.
+
+**Upgrade the servers** on the [Servers](servers.md) page shows the cluster's level and
+the version from which it has been at each level. Going
+back is not tested in CI.
+
+### OpenSearch 2.x to 3.x is one way
+
+OpenSearch can't go back to 2.x on the same data once 3.x has started on it. Copy the
+OpenSearch data first, as [Moving to OpenSearch 3.x](opensearch-security.md#moving-to-opensearch-3x)
+says. The Docker quick start moved from 2.17 to 3.9 in 0.3.0. Package installs keep the
+OpenSearch you run; upgrade it with OpenSearch's own steps. See
+[Supported platforms](platforms.md#opensearch) for the versions Signalith is tested with.
+
+### Several servers
+
+Upgrade one server at a time, as
+[Rolling upgrade, one server at a time](servers.md#rolling-upgrade-one-server-at-a-time)
+says, and run `signalith cluster upgrade-check` before each one
+([upgrade-check](cluster-cli.md#upgrade-check)). Every server must run the same version
+once the upgrade is done. Servers of a version from before the servers took turns need
+the steps in [Versions before the servers took turns](servers.md#versions-before-the-servers-took-turns).
 
 ## Check a download
 
