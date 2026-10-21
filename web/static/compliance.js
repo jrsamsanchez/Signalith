@@ -88,14 +88,14 @@
       const sel = f.id === S.fw;
       const b = el('button', {
         class: 'card cp-fw', type: 'button', role: 'tab', id: 'cp-fw-' + f.id, 'aria-selected': String(sel), tabindex: sel ? '0' : '-1',
-        'aria-controls': 'cp-body', 'aria-label': `${f.name} ${f.version}: ${f.score}% coverage, ${c.met + c.external} of ${total} controls with evidence`,
+        'aria-controls': 'cp-body', 'aria-label': `${f.name} ${f.version}: ${f.score}% evidence coverage, ${c.met} of ${total} mapped controls with evidence${c.external ? `, ${c.external} noted as handled outside` : ''}`,
       },
       el('span', { class: 'cp-fw__name' }, f.name),
       el('span', { class: 'cp-fw__ver' }, f.version),
       el('span', { class: 'cp-fw__score num' }, String(f.score), el('small', {}, '%')),
       bar(c, total),
-      el('span', { class: 'cp-fw__foot' }, `${c.met + c.external} of ${total} with evidence`),
-      el('span', { class: 'cp-fw__gaps', ...(c.missing ? {} : { 'data-none': '' }) }, c.missing ? `${c.missing} ${c.missing === 1 ? 'gap' : 'gaps'}` : 'No gaps'));
+      el('span', { class: 'cp-fw__foot' }, `${c.met} of ${total} with evidence${c.external ? ` · ${c.external} noted` : ''}`),
+      el('span', { class: 'cp-fw__gaps', ...(c.missing ? {} : { 'data-none': '' }) }, c.missing ? `${c.missing} ${c.missing === 1 ? 'gap' : 'gaps'}` : 'No gaps in mapped controls'));
       b.addEventListener('click', () => selectFramework(f.id));
       return b;
     });
@@ -139,7 +139,7 @@
     const legend = el('div', { class: 'legend cp-legend' },
       ...['met', 'partial', 'missing', 'external', 'na'].map((k) => el('span', {}, el('i', { 'data-st': k }), `${STATUS[k].label} `, el('b', { class: 'num' }, String(c[k] || 0)))));
     const summary = el('div', { class: 'cp-summary' },
-      el('div', { class: 'cp-summary__score' }, el('span', { class: 'num' }, f.score + '%'), el('small', {}, 'coverage score')),
+      el('div', { class: 'cp-summary__score' }, el('span', { class: 'num' }, f.score + '%'), el('small', {}, 'evidence coverage')),
       el('div', { class: 'cp-summary__bar' }, bar(c, f.controls.length), legend));
     const notes = (S.data.notes || []).map((n) => dxAlert('warning', 'Some evidence could not be read', n));
 
@@ -152,7 +152,7 @@
     fill($('cp-body'),
       el('div', { class: 'card cp-panel' }, head, summary, ...notes,
         f.scope ? el('p', { class: 'cp-scope' }, f.scope) : null,
-        el('p', { class: 'cp-scope' }, `Only the ${f.controls.length} controls a SIEM can give evidence for are listed. Controls with partial evidence count half toward the score${noted ? '; controls noted as not applicable are left out of it' : ''}.`),
+        el('p', { class: 'cp-scope' }, el('b', {}, 'This is not a compliance assessment.'), ` It shows what Signalith itself observed for the ${f.controls.length} controls a SIEM can give evidence for; an assessor decides what is enough. Controls with partial evidence count half toward the score, and notes never raise it${noted ? '; controls noted as not applicable are left out of it' : ''}.`),
         tabs,
         dxPanel('cp', 'controls', S.tab, S.tab === 'controls' ? controlsPanel(f) : null),
         dxPanel('cp', 'sources', S.tab, S.tab === 'sources' ? sourcesPanel() : null),
@@ -260,6 +260,7 @@
 
   function controlDetail(f, c) {
     const out = [el('ul', { class: 'cp-evs' }, ...c.evidence.map(evidenceItem))];
+    if (c.also) out.push(el('p', { class: 'hint cp-also' }, el('b', {}, 'Outside what Signalith sees: '), c.also));
     const ch = c.checks;
     if (ch && ch.failing.length) {
       out.push(el('div', { class: 'cp-sub' }, el('h5', { class: 'section-title' }, 'Failing checks', el('span', { class: 'count' }, String(ch.failing.length))),

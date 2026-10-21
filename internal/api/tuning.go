@@ -76,7 +76,8 @@ func (s *Server) handleAddException(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection exception added", "detection", d.ID, "exception", e.ID, "match", e.Describe(), "by", userOf(r))
+	s.audit(r, "detection.exception_add: detection exception added", "target", d.ID, "exception", e.ID, "match", e.Describe(),
+		"until", untilOf(e), "comment", e.Comment)
 	writeJSON(w, http.StatusOK, map[string]any{"detection": d, "exception": e})
 }
 
@@ -85,18 +86,21 @@ func (s *Server) handleDeleteException(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	exID := r.PathValue("exception")
+	var gone detect.Exception
 	d, err := s.Detections.UpdateExceptionsIf(r.Context(), userOf(r), r.PathValue("id"), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
 		i := slices.IndexFunc(es, func(e detect.Exception) bool { return e.ID == exID })
 		if i < 0 {
 			return nil, fmt.Errorf("%w: no exception %s", detect.ErrNotFound, exID)
 		}
+		gone = es[i]
 		return slices.Delete(es, i, i+1), nil
 	})
 	if err != nil {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection exception removed", "detection", d.ID, "exception", exID, "by", userOf(r))
+	s.audit(r, "detection.exception_remove: detection exception removed", "target", d.ID, "exception", exID,
+		"match", gone.Describe(), "added_by", gone.By, "until", untilOf(gone))
 	writeJSON(w, http.StatusOK, map[string]any{"detection": d})
 }
 
@@ -143,7 +147,8 @@ func (s *Server) handleAddScopedException(w http.ResponseWriter, r *http.Request
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("scoped detection exception added", "scope", e.Scope, "exception", e.ID, "match", e.Describe(), "by", userOf(r))
+	s.audit(r, "detection.scoped_exception_add: exception for many detections added", "scope", e.Scope, "exception", e.ID, "match", e.Describe(),
+		"until", untilOf(e), "comment", e.Comment)
 	body := s.scopedExceptionsBody(es)
 	body["exception"] = e
 	writeJSON(w, http.StatusOK, body)
@@ -154,20 +159,21 @@ func (s *Server) handleDeleteScopedException(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	exID := r.PathValue("exception")
-	var scope string
+	var gone detect.Exception
 	es, err := s.Detections.UpdateScopedExceptionsIf(r.Context(), userOf(r), ifMatch(r), func(es []detect.Exception) ([]detect.Exception, error) {
 		i := slices.IndexFunc(es, func(e detect.Exception) bool { return e.ID == exID })
 		if i < 0 {
 			return nil, fmt.Errorf("%w: no exception %s", detect.ErrNotFound, exID)
 		}
-		scope = es[i].Scope
+		gone = es[i]
 		return slices.Delete(es, i, i+1), nil
 	})
 	if err != nil {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("scoped detection exception removed", "scope", scope, "exception", exID, "by", userOf(r))
+	s.audit(r, "detection.scoped_exception_remove: exception for many detections removed", "scope", gone.Scope, "exception", exID,
+		"match", gone.Describe(), "added_by", gone.By, "until", untilOf(gone))
 	writeJSON(w, http.StatusOK, s.scopedExceptionsBody(es))
 }
 
@@ -239,8 +245,6 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 			writeDetectionError(w, err)
 			return
 		}
-		s.Log.Info("scoped detection exception added from a finding", "scope", e.Scope, "exception", e.ID, "finding", f.ID,
-			"match", e.Describe(), "by", userOf(r))
 		note += " in " + scopeText(e.Scope)
 		// The finding's detection as it is now, with the new exception.
 		d, _ = s.Detections.Get(f.DetectionID)
@@ -252,9 +256,9 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 			writeDetectionError(w, err)
 			return
 		}
-		s.Log.Info("detection exception added from a finding", "detection", d.ID, "exception", e.ID, "finding", f.ID,
-			"match", e.Describe(), "by", userOf(r))
 	}
+	s.audit(r, "finding.suppress: detection exception added from a finding", "target", f.DetectionID, "scope", e.Scope, "exception", e.ID, "finding", f.ID,
+		"match", e.Describe(), "until", untilOf(e), "comment", e.Comment)
 	u := findings.Update{}
 	if req.Update != nil {
 		u = *req.Update
@@ -269,7 +273,11 @@ func (s *Server) handleSuppressFinding(w http.ResponseWriter, r *http.Request) {
 		note += "\n\n" + u.Comment
 	}
 	u.Comment = note
-	updated, err := s.updateFinding(r.Context(), f.ID, u, userOf(r))
+	updated, changes, err := s.changeFinding(r.Context(), f.ID, u, userOf(r))
+	if err == nil && len(changes) > 0 {
+		s.audit(r, "finding.update: finding changed", "target", f.ID, "detection", f.DetectionID,
+			"changes", describeHistory(changes), "commented", true)
+	}
 	if err != nil {
 		// The exception is saved; say so rather than failing the request.
 		writeJSON(w, http.StatusOK, map[string]any{"detection": d, "exception": e, "finding": f, "warning": "the exception was saved, but the finding could not be updated: " + err.Error()})
@@ -287,6 +295,15 @@ func scopeText(scope string) string {
 		return "every detection tagged " + tag
 	}
 	return "every detection"
+}
+
+// untilOf is when an exception ends, for an audit line; "" when it is
+// kept until removed.
+func untilOf(e detect.Exception) string {
+	if e.Until == nil {
+		return ""
+	}
+	return e.Until.UTC().Format(time.RFC3339)
 }
 
 // findingValue is a finding's value for a field: from the result row

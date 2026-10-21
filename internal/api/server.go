@@ -45,6 +45,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/notebooks"
 	"github.com/jrsamsanchez/signalith/internal/oidc"
@@ -287,6 +288,9 @@ type Server struct {
 	// (clusterinstall.DefaultProgramsDir).
 	AgentPrograms     *clusterinstall.Programs
 	agentProgramsOnce sync.Once
+	// Revocations is the newest signing key revocation list this server
+	// has, which agents are handed with the manifest; nil hands none.
+	Revocations *keytrust.Store
 	// Tenants lists the tenants of a multi-tenant install (see
 	// docs/multi-tenant.md); nil has only the default tenant.
 	Tenants *tenants.Registry
@@ -535,7 +539,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = enc.Encode(v)
 }
 
+// writeError answers with an error. A failure on the server (5xx) shows
+// only a message meant to be shown; see serverErrorBody.
 func writeError(w http.ResponseWriter, status int, err error) {
+	if status >= 500 {
+		writeJSON(w, status, serverErrorBody(w, status, err))
+		return
+	}
 	body := map[string]any{"error": err.Error()}
 	var qe *query.Error
 	if errors.As(err, &qe) {
@@ -902,6 +912,9 @@ type searchRequest struct {
 	Query    string `json:"query"`
 	Earliest string `json:"earliest,omitempty"` // time picker; overridden by earliest= in the query
 	Latest   string `json:"latest,omitempty"`
+	// TimeZone is the viewer's IANA time zone, which @d, timechart days,
+	// bin and strftime use; empty is UTC.
+	TimeZone string `json:"time_zone,omitempty"`
 	// WriteLookups lets the query's outputlookup write, for an admin who
 	// ran it on purpose (the Search page's Run); re-runs leave it out.
 	WriteLookups bool `json:"write_lookups,omitempty"`
@@ -933,6 +946,11 @@ func (s *Server) parseSearchRequest(w http.ResponseWriter, r *http.Request) (*qu
 	if q.Latest == "" {
 		q.Latest = req.Latest
 	}
+	if err := search.ValidTimeZone(req.TimeZone); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return nil, req, false
+	}
+	q.TimeZone = req.TimeZone
 	return q, req, true
 }
 
@@ -967,9 +985,13 @@ func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	steps := Explain(q)
+	if plan.SampleLimit > 0 {
+		steps = append(steps, fmt.Sprintf("The commands after the search run over at most the newest %d matching events (search.max_events). If more match, the results cover only those and are marked Sampled; to count them all, put stats right after the search.", plan.SampleLimit))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"canonical": q.String(),
-		"steps":     Explain(q),
+		"steps":     steps,
 		"index":     plan.Index,
 		"body":      plan.Body,
 	})

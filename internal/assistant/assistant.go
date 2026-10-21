@@ -219,6 +219,9 @@ type APIError struct {
 	StatusText string
 	// Message is the service's own error message, shortened.
 	Message string
+	// Parsed is set when Message is the error message of a JSON answer,
+	// not raw text (which may be a proxy's or a web server's page).
+	Parsed bool
 }
 
 func (e *APIError) Error() string {
@@ -259,6 +262,7 @@ func (c *Client) do(ctx context.Context, method, path string, hdr http.Header, b
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode != http.StatusOK {
 		msg := strings.TrimSpace(string(data))
+		parsed := false
 		var e struct {
 			Error json.RawMessage `json:"error"`
 		}
@@ -269,15 +273,15 @@ func (c *Client) do(ctx context.Context, method, path string, hdr http.Header, b
 			}
 			var str string
 			if json.Unmarshal(e.Error, &obj) == nil && obj.Message != "" {
-				msg = obj.Message
+				msg, parsed = obj.Message, true
 			} else if json.Unmarshal(e.Error, &str) == nil && str != "" {
-				msg = str
+				msg, parsed = str, true
 			}
 		}
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
-		return nil, &APIError{Status: resp.StatusCode, StatusText: resp.Status, Message: msg}
+		return nil, &APIError{Status: resp.StatusCode, StatusText: resp.Status, Message: msg, Parsed: parsed}
 	}
 	return data, nil
 }

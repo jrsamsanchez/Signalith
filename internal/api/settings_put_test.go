@@ -61,7 +61,7 @@ func TestPutSettingsPageStoreFailures(t *testing.T) {
 		body  string
 		want  string
 	}{
-		{"check", func(f config.PageFile) failPages { return failPages{PageFile: f, checkErr: errDown} }, `{"values":{"search.max_events":5000}}`, errDown.Error()},
+		{"check", func(f config.PageFile) failPages { return failPages{PageFile: f, checkErr: errDown} }, `{"values":{"search.max_events":5000}}`, "Something went wrong on the server (ref "},
 		{"write", func(f config.PageFile) failPages { return failPages{PageFile: f, writeErr: errDown} }, `{"values":{"search.max_events":5000}}`, "could not save the settings file"},
 		{"backup", func(f config.PageFile) failPages {
 			return failPages{PageFile: f, readErr: errors.New("not laid out as Signalith writes it"), backupErr: errDown}
@@ -70,7 +70,8 @@ func TestPutSettingsPageStoreFailures(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ts, _, _ := newSettingsServer(t, "", func(s *Server) { s.Pages = c.pages(config.PageFile{Config: s.Config.Path()}) })
 			code, out := do(t, ts, "PUT", "/api/settings", c.body, true)
-			if msg, _ := out["error"].(string); code != http.StatusInternalServerError || !strings.Contains(msg, c.want) {
+			// The error from below is in the log, not the answer.
+			if msg, _ := out["error"].(string); code != http.StatusInternalServerError || !strings.Contains(msg, c.want) || strings.Contains(msg, errDown.Error()) {
 				t.Errorf("%d %v", code, out)
 			}
 		})

@@ -113,3 +113,47 @@ func TestPrivateAccessList(t *testing.T) {
 	}
 	checkPrivate(t, h)
 }
+
+// TestAdminOnlyAccessList: a folder made with MkdirAdminOnly, and what is
+// already inside it, may be used by SYSTEM and Administrators only, also
+// when it was a private folder before (an install made by an older
+// version).
+func TestAdminOnlyAccessList(t *testing.T) {
+	if !windows.GetCurrentProcessToken().IsElevated() {
+		t.Skip("giving a folder to Administrators needs an elevated test")
+	}
+	dir := filepath.Join(t.TempDir(), "SignalithOpenSearch")
+	if err := MkdirPrivate(dir); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "ca")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(sub, "root-ca-key.pem")
+	if err := os.WriteFile(key, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := aces(t, key); got[ServiceSID(ServiceName)] == 0 {
+		t.Fatalf("test setup: the key does not inherit the service's entry: %v", got)
+	}
+	if err := MkdirAdminOnly(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{dir, sub, key} {
+		got, _ := aces(t, p)
+		for _, sid := range []string{sidSystem, sidAdmins} {
+			if got[sid]&fileAllAccess != fileAllAccess {
+				t.Errorf("%s: %s lacks full control: %v", p, sid, got)
+			}
+		}
+		for sid := range got {
+			if sid != sidSystem && sid != sidAdmins {
+				t.Errorf("%s: unexpected entry for %s", p, sid)
+			}
+		}
+	}
+	if _, protected := aces(t, dir); !protected {
+		t.Errorf("%s: access list is not protected from inheritance", dir)
+	}
+}

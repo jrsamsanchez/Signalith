@@ -66,7 +66,10 @@ type Sessions struct {
 	// Limit bounds how many sessions are kept; the least recently used go
 	// first.
 	Limit int
-	Now   func() time.Time
+	// PerUser bounds the sessions of one user; that user's oldest go
+	// first, so no account can push out the sessions of others.
+	PerUser int
+	Now     func() time.Time
 
 	mu   sync.Mutex
 	byID map[[32]byte]*Session
@@ -74,6 +77,10 @@ type Sessions struct {
 	// (see Forward).
 	forward func(Held)
 }
+
+// DefaultPerUser is how many sessions one user may hold, as many as the
+// sessions shared through OpenSearch keep (clusterauth.MaxPerUser).
+const DefaultPerUser = 50
 
 // DefaultMaxAge is how long a session lasts after sign-in, remembered or
 // not, until SetMaxAge says otherwise: NIST SP 800-63B asks for a new
@@ -83,7 +90,7 @@ const DefaultMaxAge = 24 * time.Hour
 // NewSessions returns a store with the given idle timeout and the default
 // maximum age.
 func NewSessions(idle time.Duration) *Sessions {
-	return &Sessions{Idle: idle, MaxAge: DefaultMaxAge, Limit: 10000, Now: time.Now, byID: map[[32]byte]*Session{}}
+	return &Sessions{Idle: idle, MaxAge: DefaultMaxAge, Limit: 10000, PerUser: DefaultPerUser, Now: time.Now, byID: map[[32]byte]*Session{}}
 }
 
 func hash(token string) [32]byte { return sha256.Sum256([]byte(token)) }
@@ -110,6 +117,7 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	defer s.mu.Unlock()
 	s.pruneLocked(now)
+	s.trimUserLocked(n.User)
 	if len(s.byID) >= s.Limit {
 		s.evictLocked(len(s.byID) - s.Limit + 1)
 	}
@@ -300,6 +308,31 @@ func (s *Sessions) pruneLocked(now time.Time) {
 		if s.expired(ss, now) {
 			delete(s.byID, id)
 		}
+	}
+}
+
+// trimUserLocked ends the oldest sessions of user until a new one fits
+// under PerUser. Usernames ignore case.
+func (s *Sessions) trimUserLocked(user string) {
+	if s.PerUser <= 0 {
+		return
+	}
+	type entry struct {
+		id      [32]byte
+		created time.Time
+	}
+	var mine []entry
+	for id, ss := range s.byID {
+		if strings.EqualFold(ss.User, user) {
+			mine = append(mine, entry{id, ss.Created})
+		}
+	}
+	if len(mine) < s.PerUser {
+		return
+	}
+	sort.Slice(mine, func(i, j int) bool { return mine[i].created.Before(mine[j].created) })
+	for _, e := range mine[:len(mine)-s.PerUser+1] {
+		delete(s.byID, e.id)
 	}
 }
 

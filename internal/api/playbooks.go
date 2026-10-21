@@ -212,7 +212,7 @@ func (s *Server) handlePlaybookRuns(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	list, total, err := s.Playbooks.Runs.List(ctx, flt)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("playbook runs could not be read: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("playbook runs could not be read", err))
 		return
 	}
 	// The count the navigation shows.
