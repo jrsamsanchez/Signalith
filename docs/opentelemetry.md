@@ -110,5 +110,7 @@ partial success with a message saying why. A request over a limit or that does n
 decode as a whole is refused with 4xx and a message saying why, and nothing from it is
 stored; the Collector logs the message and drops the batch, so keep batches small (the generated config's batch processor sends at most 5,000
 records). When Signalith is busy or OpenSearch is down the answer is 503 with
-`Retry-After`, and the Collector keeps the batch and sends it again. Records OpenSearch
-turns away are counted in the answer's partial success.
+`Retry-After`, and the Collector keeps the batch and sends it again; so is a batch
+OpenSearch could only partly take for now (it is too busy, or its disk is full). Records
+already stored from a batch sent again are recognised and not stored twice. Records
+OpenSearch turns away for good are counted in the answer's partial success.
