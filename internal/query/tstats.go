@@ -150,6 +150,9 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := noWildcardAggs("tstats", cmd.pos, aggs); err != nil {
+		return nil, err
+	}
 	if t := ap.peek(); t.kind != tokEOF {
 		return nil, errorf(t.pos, "unexpected %s in tstats; it expects: %s", describe(t), example)
 	}
@@ -252,6 +255,9 @@ func (p *parser) parseTstats(cmd token) (Command, error) {
 			// A by field becomes a stats by field, which is written bare.
 			if t.kind != tokWord && t.kind != tokString || t.text == "" || strings.EqualFold(t.text, "by") || FormatValue(t.text) != t.text {
 				return nil, errorf(t.pos, "unexpected %s in tstats by", describe(t))
+			}
+			if strings.Contains(t.text, "*") {
+				return nil, errorf(t.pos, "by %s: wildcard field names are not supported in by; name each field", t.text)
 			}
 			bp.next()
 			by = append(by, t.text)

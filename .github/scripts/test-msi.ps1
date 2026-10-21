@@ -34,11 +34,21 @@ function Wait-Up {
   Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 50 -ErrorAction SilentlyContinue
   throw "Signalith does not answer on https://localhost:9000 (or 8080)"
 }
-# The previous release named the built-in admin admin, which the upgrade
-# keeps.
+# The built-in admin: signalithadmin from 0.3.1, admin before, which an
+# upgrade keeps. The first sign-in finds which the previous release made.
+$script:admin = ""
 function Test-SignIn([string]$Password) {
-  $body = @{ username = "admin"; password = $Password } | ConvertTo-Json
-  Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+  $names = if ($script:admin) { @($script:admin) } else { @("signalithadmin", "admin") }
+  foreach ($name in $names) {
+    $body = @{ username = $name; password = $Password } | ConvertTo-Json
+    try {
+      Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+      $script:admin = $name
+      return
+    } catch {
+      if ($name -eq $names[-1]) { throw }
+    }
+  }
 }
 
 Write-Host "== Install $Previous"

@@ -114,18 +114,26 @@ var capabilities = []Capability{
 			if f.Stale > 0 {
 				return Partial, fmt.Sprintf("%s new %s waited more than 7 days for review; %s open in all.", count(int64(f.Stale)), plural(f.Stale, "finding has", "findings have"), count(int64(f.Open)))
 			}
-			if f.Open == 0 {
-				return Met, "No open findings."
+			// An empty queue shows no review: there must be findings
+			// someone has looked at.
+			if f.Total == 0 {
+				return Missing, "No finding has been raised yet, so there is no review to show."
 			}
-			return Met, fmt.Sprintf("No new finding has waited more than 7 days; %s open, %s not looked at yet.", count(int64(f.Open)), count(int64(f.New)))
+			if f.Reviewed == 0 {
+				return Partial, fmt.Sprintf("%s %s raised, but none has been looked at yet.", count(int64(f.Total)), plural(f.Total, "finding was", "findings were"))
+			}
+			return Met, fmt.Sprintf("%s %s looked at, and no new finding has waited more than 7 days; %s open, %s not looked at yet.", count(int64(f.Reviewed)), plural(f.Reviewed, "finding was", "findings were"), count(int64(f.Open)), count(int64(f.New)))
 		}},
 	{ID: "cases", Name: "Incident investigations", Page: "cases",
 		Description: "Cases record each investigation: its findings, notes, evidence and who did what.",
-		Fix:         "Investigations are off on this server.",
+		Fix:         "Open an investigation from a finding on the Findings page; on a server where they are off, turn them on.",
 		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
 			c := s.Cases
 			if c == nil {
 				return Missing, "Investigations are off."
+			}
+			if c.Total == 0 {
+				return Partial, "Investigations are on, but none has been recorded yet."
 			}
 			return Met, fmt.Sprintf("Investigations are on: %s %s, %s open.", count(int64(c.Total)), plural(c.Total, "case", "cases"), count(int64(c.Open)))
 		}},
@@ -259,17 +267,20 @@ var capabilities = []Capability{
 			if !s.Retention.Guard {
 				return Missing, "The disk guard is off, so a full disk would stop events arriving."
 			}
+			if !s.HasData("") {
+				return Partial, "The disk guard is on, but no events arrived in the last 7 days, so there is no log storage to show yet."
+			}
 			return Met, "The disk guard is on: it frees space before the disk fills, and the Health page warns first."
 		}},
 
 	// Built into Signalith.
-	builtin("timestamps", "Consistent time stamps", "health",
+	builtinWithData("timestamps", "Consistent time stamps", "health",
 		"Every event's time is stored in UTC alongside the original text, so events from different time zones line up. Hosts still need their clocks synchronized (NTP), which their configuration checks cover."),
-	builtin("record-content", "Detailed log records", "search",
+	builtinWithData("record-content", "Detailed log records", "search",
 		"Events are mapped to data models with the same fields for every source: time, host, user, source, action and outcome, and the original text is kept."),
-	builtin("search", "Log search and reports", "search",
+	builtinWithData("search", "Log search and reports", "search",
 		"Search, dashboards and exports filter and summarize events on demand, without changing them."),
-	builtin("source-health", "Log source monitoring", "health",
+	builtinWithData("source-health", "Log source monitoring", "health",
 		"The Health page and the posture dashboard list sources that stopped sending, and the disk and OpenSearch state; the built-in detection data-source-stopped raises a finding when a host that sent all day goes quiet."),
 	{ID: "siem-access", Name: "Access to the logs is limited", Page: "users",
 		Description: "Everyone signs in with their own account and a role (Viewer, Analyst or Admin); events cannot be changed from Signalith.",
@@ -287,13 +298,16 @@ var capabilities = []Capability{
 			return Partial, "Only the built-in admin account is used, so actions cannot be traced to a person."
 		}},
 	{ID: "siem-tls", Name: "Logs are encrypted in transit", Page: "security",
-		Description: "The web UI, the API and the agents use HTTPS.",
-		Fix:         "Serve Signalith over HTTPS (it does by default); see Settings > Security.",
+		Description: "The web UI, the API, the agents and syslog use encrypted connections.",
+		Fix:         "Serve Signalith over HTTPS (it does by default), move syslog senders to syslog over TLS and turn plain syslog off on Add data > Syslog.",
 		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
-			if s.HTTPS {
-				return Met, "The web UI, the API and agent ingest use HTTPS."
+			if !s.HTTPS {
+				return Missing, "Signalith is served over plain HTTP."
 			}
-			return Missing, "Signalith is served over plain HTTP."
+			if len(s.PlainSyslog) > 0 {
+				return Partial, "The web UI, the API and agent ingest use HTTPS, but plain syslog is on (" + strings.Join(s.PlainSyslog, ", ") + "), so devices sending there do so unencrypted."
+			}
+			return Met, "The web UI, the API and agent ingest use HTTPS, and plain syslog is off."
 		}},
 	{ID: "siem-mfa", Name: "Two-step sign-in", Page: "settings",
 		Description: "People who sign in to Signalith with a password must also enter a code from an authenticator app or use a passkey.",
@@ -322,6 +336,20 @@ var capabilityByID = func() map[string]Capability {
 	}
 	return m
 }()
+
+// builtinWithData is something Signalith always does to the events it
+// receives, so it counts only once events arrive: on a server that has
+// none there is nothing to show.
+func builtinWithData(id, name, page, desc string) Capability {
+	return Capability{ID: id, Name: name, Description: desc, Page: page,
+		Fix: "Send events to Signalith (Add data); this is then done for every one of them.",
+		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
+			if !s.HasData("") {
+				return Missing, "Built in, but no events arrived in the last 7 days, so there is nothing to show yet."
+			}
+			return Met, "Built in, for the events that arrive: " + lowerFirst(desc)
+		}}
+}
 
 func builtin(id, name, page, desc string) Capability {
 	return Capability{ID: id, Name: name, Description: desc, Page: page,
@@ -479,14 +507,29 @@ func evalRetention(s *Snapshot, days int, archiveCounts bool) (Status, string) {
 	var st Status
 	var d string
 	switch {
+	case r.KeepDays == 0 && r.Guard:
+		st, d = Partial, "Event data is kept until it is deleted by hand, but the disk guard deletes the oldest days when the disk fills, so how long it is kept depends on disk space."
 	case r.KeepDays == 0:
 		st, d = Met, "Event data is kept until it is deleted by hand."
 	case r.KeepDays >= days:
 		st, d = Met, fmt.Sprintf("Event data is kept %d days.", r.KeepDays)
 	case archiveCounts && r.Archive:
-		st, d = Met, fmt.Sprintf("Event data is searchable %d days, then archived before it is deleted. Keep the archive files for the rest of the year.", r.KeepDays)
+		st, d = Partial, fmt.Sprintf("Event data is searchable %d days, then archived before it is deleted. Signalith cannot see whether the archive files are kept for the rest of the year.", r.KeepDays)
 	default:
 		return Missing, fmt.Sprintf("Event data is kept only %d days.", r.KeepDays)
+	}
+	// The policy is not the data: say how far back events really go.
+	if r.OldestRead {
+		switch {
+		case r.Oldest.IsZero():
+			st = Partial
+			d += " No event data is stored yet."
+		case s.Now.Sub(r.Oldest) < time.Duration(days-1)*24*time.Hour:
+			st = Partial
+			d += fmt.Sprintf(" The oldest events kept are from %s (%s), so %d days cannot be shown yet.", day(r.Oldest), ago(s.Now.Sub(r.Oldest)), days)
+		default:
+			d += fmt.Sprintf(" The oldest events kept are from %s.", day(r.Oldest))
+		}
 	}
 	if len(r.Shorter) > 0 {
 		st = Partial

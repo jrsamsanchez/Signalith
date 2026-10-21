@@ -140,18 +140,13 @@ var reserved = func() []netip.Prefix {
 }()
 
 // reservedNet reports whether a normalized IP address or network is
-// reserved, or too broad to be an indicator (shorter than /8, or /16 for
-// IPv6).
+// reserved, or too broad to be an indicator (see tooBroad).
 func reservedNet(v string) bool {
-	p, err := netip.ParsePrefix(v)
-	if err != nil {
-		a, err := netip.ParseAddr(v)
-		if err != nil {
-			return false
-		}
-		p = netip.PrefixFrom(a, a.BitLen())
+	p, ok := prefixOf(v)
+	if !ok {
+		return false
 	}
-	if (p.Addr().Is4() && p.Bits() < 8) || (p.Addr().Is6() && p.Bits() < 16) {
+	if tooBroad(p) {
 		return true
 	}
 	for _, r := range reserved {
@@ -160,6 +155,27 @@ func reservedNet(v string) bool {
 		}
 	}
 	return false
+}
+
+// prefixOf reads a normalized IP address (as a single-address network) or
+// network.
+func prefixOf(v string) (netip.Prefix, bool) {
+	p, err := netip.ParsePrefix(v)
+	if err != nil {
+		a, err := netip.ParseAddr(v)
+		if err != nil {
+			return netip.Prefix{}, false
+		}
+		p = netip.PrefixFrom(a, a.BitLen())
+	}
+	return p, true
+}
+
+// tooBroad reports whether a network is too broad to be an indicator:
+// shorter than /8, or /16 for IPv6. Such a network would match most of
+// the internet, so feeds skip it and a manual indicator is refused.
+func tooBroad(p netip.Prefix) bool {
+	return (p.Addr().Is4() && p.Bits() < 8) || (p.Addr().Is6() && p.Bits() < 16)
 }
 
 func isComment(line string) bool {

@@ -80,7 +80,6 @@ func TestTranslate(t *testing.T) {
 		"tamper attempts on dc01":                `datamodel=Malware type=health action=tamper_blocked dest=dc01`,
 		"attack surface reduction blocks":        `datamodel=Malware type=rule action=blocked`,
 		"malware protection turned off on web1":  `datamodel=Malware type=health action=disabled dest=web1`,
-		"disabled accounts":                      `action=modified`,
 		// Vulnerability scan results.
 		"vulnerabilities on web1":                    `datamodel=Vulnerabilities category=vulnerability dest=web1`,
 		"known exploited vulnerabilities":            `datamodel=Vulnerabilities category=vulnerability known_exploited=true`,

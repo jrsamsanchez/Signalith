@@ -107,20 +107,20 @@ func TestNarrowedPatternsMatchDayParts(t *testing.T) {
 
 func TestSearchSpan(t *testing.T) {
 	now := at("2026-10-17T12:00:00Z")
-	from, to, ok := searchSpan("-24h", "", now)
+	from, to, ok := searchSpan("-24h", "", now, time.UTC)
 	if !ok || !from.Equal(at("2026-10-16T12:00:00Z")) || !to.Equal(now.Add(ingest.MaxEventAhead)) {
 		t.Errorf("-24h = %v %v %v", from, to, ok)
 	}
-	from, to, ok = searchSpan("2026-10-01T00:00:00Z", "-7d@d", now)
+	from, to, ok = searchSpan("2026-10-01T00:00:00Z", "-7d@d", now, time.UTC)
 	if !ok || !from.Equal(at("2026-10-01T00:00:00Z")) || !to.Equal(at("2026-10-10T00:00:00Z")) {
 		t.Errorf("absolute = %v %v %v", from, to, ok)
 	}
 	for _, earliest := range []string{"", "0", "yesterday"} {
-		if _, _, ok := searchSpan(earliest, "", now); ok {
+		if _, _, ok := searchSpan(earliest, "", now, time.UTC); ok {
 			t.Errorf("%q has a span", earliest)
 		}
 	}
-	if _, _, ok := searchSpan("-24h", "tomorrow", now); ok {
+	if _, _, ok := searchSpan("-24h", "tomorrow", now, time.UTC); ok {
 		t.Error("latest=tomorrow has a span")
 	}
 }

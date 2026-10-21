@@ -37,8 +37,18 @@ func TestCapabilityWording(t *testing.T) {
 		status Status
 		text   string
 	}{
-		{"triage", base(func(s *Snapshot) { s.Findings = &Findings{} }), Met, "No open findings."},
-		{"triage", base(func(s *Snapshot) { s.Findings = &Findings{Open: 1200, New: 3} }), Met, "1,200 open, 3 not looked at"},
+		{"triage", base(func(s *Snapshot) { s.Findings = &Findings{} }), Missing, "No finding has been raised yet"},
+		{"triage", base(func(s *Snapshot) { s.Findings = &Findings{Open: 2, New: 2, Total: 2} }), Partial, "2 findings were raised, but none has been looked at yet."},
+		{"triage", base(func(s *Snapshot) { s.Findings = &Findings{Open: 1200, New: 3, Total: 1500, Reviewed: 1497} }), Met, "1,497 findings were looked at"},
+		{"cases", base(func(s *Snapshot) { s.Cases = &Cases{} }), Partial, "none has been recorded yet"},
+		{"timestamps", base(func(*Snapshot) {}), Missing, "no events arrived"},
+		{"siem-tls", base(func(s *Snapshot) { s.HTTPS = true; s.PlainSyslog = []string{"UDP 0.0.0.0:5514"} }), Partial, "plain syslog is on (UDP 0.0.0.0:5514)"},
+		{"siem-tls", base(func(s *Snapshot) { s.HTTPS = true }), Met, "plain syslog is off"},
+		{"retention-90", base(func(s *Snapshot) {
+			s.Retention = &Retention{KeepDays: 120, OldestRead: true, Oldest: now.Add(-10 * 24 * time.Hour)}
+		}), Partial, "so 90 days cannot be shown yet"},
+		{"retention-90", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 120, OldestRead: true} }), Partial, "No event data is stored yet."},
+		{"retention-90", base(func(s *Snapshot) { s.Retention = &Retention{Guard: true} }), Partial, "the disk guard deletes the oldest days"},
 		{"response", base(func(s *Snapshot) { s.Response = &Response{} }), Missing, "No response action"},
 		{"response", base(func(s *Snapshot) { s.Response = &Response{Actions: 1, Playbooks: 2} }), Met, "1 response action set up, and 2 playbooks."},
 		{"notify", base(func(s *Snapshot) { s.Notify = &Notify{Channels: 1} }), Partial, "1 channel is set up, but no enabled rule"},

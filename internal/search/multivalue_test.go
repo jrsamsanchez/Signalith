@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const round5Events = `{"hits":{"total":{"value":5},"hits":[
@@ -214,5 +215,37 @@ func TestTailAndUniq(t *testing.T) {
 	res = runRound5(t, `* | head 100 | table host | uniq`)
 	if got := rowsOf(res, "host"); !reflect.DeepEqual(got, []string{"h1", "h2", "h1"}) {
 		t.Errorf("uniq = %q", got)
+	}
+}
+
+// Multivalue by fields cannot multiply stats or top past the group cap or
+// the search's memory budget (SL483-02).
+func TestStatsGroupsAreBounded(t *testing.T) {
+	for _, src := range []string{
+		`| makeresults count=10000 | streamstats count as n | eval a=mvrange(0,100), b=mvrange(0,100) | stats count by a b n`,
+		`| makeresults count=10000 | streamstats count as n | eval a=mvrange(0,100), b=mvrange(0,100) | top a b n`,
+	} {
+		start := time.Now()
+		_, err := (&Engine{}).Run(context.Background(), src)
+		var qe *QueryError
+		if !errors.As(err, &qe) || !strings.Contains(qe.Msg, "groups") {
+			t.Errorf("%s: err = %v, want the group limit", src, err)
+		}
+		if d := time.Since(start); d > 20*time.Second {
+			t.Errorf("%s took %v", src, d)
+		}
+	}
+}
+
+// Groups charge the budget, so wide rows under values(*) end with an error
+// before they hold hundreds of megabytes.
+func TestStatsGroupsChargeTheBudget(t *testing.T) {
+	old := maxMemGroups
+	maxMemGroups = 1 << 30
+	defer func() { maxMemGroups = old }()
+	_, err := (&Engine{}).Run(context.Background(), `| makeresults count=10000 | streamstats count as n | eval a=mvrange(0,200) | stats values(n) by a n`)
+	var qe *QueryError
+	if !errors.As(err, &qe) || !strings.Contains(qe.Msg, "MB") {
+		t.Errorf("err = %v, want the memory budget", err)
 	}
 }
