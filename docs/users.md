@@ -441,7 +441,7 @@ Some changes ask for your password again when you have not entered it in the las
 - making an API token, an agent token or a token to add a server, accepting an old
   shared agent token, approving a new server, and rotating the cluster key;
 - changing what the Signalith Agents of an install line collect, since turning a log
-  off hides what happens on those computers;
+  off hides what happens on those computers, and sending a live query to endpoints;
 - changing retention policies, the default or the disk guard, and running retention
   now;
 - switching certificate authority, and saving response actions, playbooks,
