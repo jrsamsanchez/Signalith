@@ -56,13 +56,13 @@ docker compose -f deploy/docker/docker-compose.yml restart signalith
 ```
 
 Settings changed on the **Settings** page are kept in the `signalith-data` volume, so
-they survive updates. To update, run `git pull` and then the `up` command again; it
-downloads the Signalith image built from the newest code. After a reboot everything
+they survive updates. To update, run `git pull` and then the `up` command again; once a new release
+is out, it downloads that release's image (the quick start runs the newest release). After a reboot everything
 starts again by itself once Docker is running (in Docker Desktop, turn on *Start Docker
 Desktop when you sign in*).
 
 [Docker quick start](docker.md) has the rest: which ports are open and how to limit
-them, [running a release or your own build](docker.md#running-a-release-or-building-the-image-yourself),
+them, [running the newest build of `main` or your own build](docker.md#running-another-version-or-building-the-image-yourself),
 [what to do if an update gets stuck](docker.md#if-an-update-gets-stuck), and
 [step-by-step upgrades from older quick starts](docker.md#upgrading-the-docker-quick-start)
 that keep your events, findings, users and detections.

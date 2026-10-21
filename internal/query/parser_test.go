@@ -312,3 +312,28 @@ func TestWhereBareNameIsAReference(t *testing.T) {
 		t.Error("a search term's value is never a reference")
 	}
 }
+
+// sort N keeps N rows, as in Splunk, and sort keys may name how their
+// values compare (SL-09).
+func TestSortLimitAndFunctions(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | sort 5 -count`:               "*\n| sort 5 -count",
+		`* | sort limit=5 -count`:         "*\n| sort 5 -count",
+		`* | sort 0 -count`:               "*\n| sort -count",
+		`* | sort -num(count), str(user)`: "*\n| sort -num(count), str(user)",
+		`* | sort auto(x) ip(src)`:        "*\n| sort x, ip(src)",
+		`* | sort num`:                    "*\n| sort num",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if got := q.String(); got != want {
+			t.Errorf("%s = %q, want %q", src, got, want)
+		}
+	}
+	if _, err := Parse(`* | sort num(a, b)`); err == nil || !strings.Contains(err.Error(), "num() takes one field") {
+		t.Errorf("err = %v", err)
+	}
+}

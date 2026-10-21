@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +204,16 @@ type Result struct {
 	Rows      []Row    `json:"rows"`
 	Matched   int64    `json:"matched"` // events matching the search
 	Truncated bool     `json:"truncated,omitempty"`
+	// Ranked is set when there were more groups than the server keeps,
+	// so it kept those that rank first (the most events, or the order
+	// of the sort that follows) rather than the first by name.
+	Ranked bool `json:"ranked,omitempty"`
+	// Sampled is set when more events matched than the commands after
+	// the search could take: it is how many, the newest, they ran over.
+	// Their rows (counts, groups, filters) cover only those.
+	Sampled int `json:"sampled,omitempty"`
+	// TimeZone is the time zone the search ran in, when not UTC.
+	TimeZone string `json:"time_zone,omitempty"`
 	// Summaries lists the data models whose summary indexes answered
 	// whole 5-minute slots of the search.
 	Summaries []string `json:"summaries,omitempty"`
@@ -223,6 +234,10 @@ type Plan struct {
 	// reads for whole 5-minute slots.
 	Summaries []string `json:"summaries,omitempty"`
 
+	// SampleLimit is set when the commands after the search need every
+	// event it matches but run over at most this many, the newest.
+	SampleLimit int `json:"sample_limit,omitempty"`
+
 	transform query.Command
 	post      []query.Command
 	threat    *query.ThreatMatch
@@ -230,6 +245,9 @@ type Plan struct {
 	// fill is a fillnull of by fields just before stats, run in
 	// OpenSearch as buckets for events that lack those fields.
 	fill *query.Fillnull
+	// split is a timechart by a field's date histogram, run once Body
+	// has found its series.
+	split map[string]any
 }
 
 func (e *Engine) opts() Options {
@@ -445,12 +463,16 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		sum = e.summaryPlan(q, filters, first, earliest, time.Now().UTC())
 	}
+	loc := zoneOf(q.TimeZone)
 	timeRange := map[string]any{}
 	if earliest != "" && earliest != "0" {
-		timeRange["gte"] = toDateMath(earliest)
+		timeRange["gte"] = toDateMathIn(earliest, loc)
 	}
 	if q.Latest != "" {
-		timeRange["lte"] = toDateMath(q.Latest)
+		timeRange["lte"] = toDateMathIn(q.Latest, loc)
+	}
+	if len(timeRange) > 0 && loc != time.UTC {
+		timeRange["time_zone"] = loc.String()
 	}
 	switch {
 	case sum != nil:
@@ -469,7 +491,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	if from, to, ok := searchSpan(earliest, q.Latest, time.Now()); ok {
+	if from, to, ok := searchSpan(earliest, q.Latest, time.Now(), zoneOf(q.TimeZone)); ok {
 		index = narrowToDays(index, o.IndexPrefix, from, to)
 	}
 	if err := checkPatterns(q); err != nil {
@@ -495,6 +517,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		}
 		switch c := cmds[0].(type) {
 		case *query.Stats:
+			if hasWildcardAgg(c.Aggs) {
+				// Which fields values(*) covers is known only from the
+				// events, so stats runs on them in memory.
+				if fill != nil {
+					cmds = append([]query.Command{fill}, cmds...)
+				}
+				break
+			}
 			p.Mode, p.transform, p.post, p.fill = "stats", c, cmds[1:], fill
 			body["size"] = 0
 			if len(c.By) == 0 {
@@ -538,6 +568,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 				return nil, err
 			}
 			hist := map[string]any{"field": TimeField, "min_doc_count": 0}
+			if loc != time.UTC {
+				hist["time_zone"] = loc.String()
+			}
 			for k, v := range interval {
 				hist[k] = v
 			}
@@ -547,6 +580,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 			}
 			ts := map[string]any{"date_histogram": hist}
 			if c.By != "" {
+				// The series are the by field's largest values over
+				// the whole range, asked for first; then each time
+				// bucket counts those, the rest (OTHER) and events
+				// without the field (NULL). See timechartSplit.
 				size := 10
 				switch {
 				case c.Limit == query.NoTimechartLimit:
@@ -555,21 +592,25 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 					size = min(c.Limit, maxTimechartSeries)
 				}
 				terms := map[string]any{"field": storedField(c.By), "size": size}
+				series := map[string]any{"terms": terms}
 				if summed {
 					// A summary row stands for many events: the
 					// largest values are those with the most events,
 					// not the most rows.
 					terms["order"] = map[string]any{"m0": "desc"}
+					series["aggs"] = map[string]any{"m0": countAgg()}
 				}
-				by := map[string]any{"terms": terms}
 				if len(sub) > 0 {
-					by["aggs"] = sub
+					ts["aggs"] = sub // moved under the series by timechartSplit
 				}
-				ts["aggs"] = map[string]any{"by": by}
-			} else if len(sub) > 0 {
-				ts["aggs"] = sub
+				p.split = ts
+				body["aggs"] = map[string]any{"series": series}
+			} else {
+				if len(sub) > 0 {
+					ts["aggs"] = sub
+				}
+				body["aggs"] = map[string]any{"time": ts}
 			}
-			body["aggs"] = map[string]any{"time": ts}
 			addEventsAgg(body, summed)
 			return p, nil
 		}
@@ -579,6 +620,7 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	size := o.DefaultEvents
 	if needsAllEvents(cmds) {
 		size = o.MaxEvents
+		p.SampleLimit = size
 	} else if n, ok := leadingHead(cmds); ok {
 		size = min(n, o.MaxEvents)
 	}
@@ -745,6 +787,13 @@ var ErrInternal = errors.New("the search stopped on an internal error; the detai
 
 func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	start := time.Now()
+	// A search a search runs (a subsearch, map) keeps its time zone.
+	if z := zoneFrom(ctx); q.TimeZone == "" && z != time.UTC {
+		withZoneName := *q
+		withZoneName.TimeZone = z.String()
+		q = &withZoneName
+	}
+	ctx = withZone(ctx, zoneOf(q.TimeZone))
 	p, err := e.Compile(q)
 	if err != nil {
 		return nil, err
@@ -768,6 +817,9 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 		return nil, err
 	}
 	res.TookMS = time.Since(start).Milliseconds()
+	if loc := zoneOf(q.TimeZone); loc != time.UTC {
+		res.TimeZone = loc.String()
+	}
 	return res, nil
 }
 
@@ -798,6 +850,9 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	}
 	if len(p.post) == 0 {
 		return res, nil
+	}
+	if p.SampleLimit > 0 && p.Mode == "events" && res.Matched > int64(len(res.Rows)) {
+		res.Sampled = len(res.Rows)
 	}
 	before := resultBytes(res)
 	if err := e.post(ctx, res, p.post, q); err != nil {
@@ -911,6 +966,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 					}
 				} else {
 					row[a.Column()] = aggValue(a, aggs, fmt.Sprintf("m%d", i))
+					res.Truncated = res.Truncated || aggClipped(a, aggs, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = []Row{row}
@@ -921,6 +977,14 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			return nil, err
 		}
 		res.Truncated = truncated
+		if truncated && p.fill == nil && !summed {
+			if r, ok := statsRanking(st, p.post, o.MaxBuckets); ok {
+				if buckets, _, err = e.rankedBuckets(ctx, p, st.By, r); err != nil {
+					return nil, err
+				}
+				res.Ranked, res.Truncated = true, !r.complete
+			}
+		}
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
 			if p.fill != nil {
@@ -934,6 +998,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 					row[a.Column()] = toNumber(b["doc_count"])
 				default:
 					row[a.Column()] = aggValue(a, b, fmt.Sprintf("m%d", i))
+					res.Truncated = res.Truncated || aggClipped(a, b, fmt.Sprintf("m%d", i))
 				}
 			}
 			res.Rows = append(res.Rows, row)
@@ -947,6 +1012,14 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		}
 		res.Truncated = truncated
 		keys := append(append([]string{}, top.By...), top.Fields...)
+		var beyond int64
+		if truncated {
+			r := topRanking(top, o.MaxBuckets)
+			if buckets, beyond, err = e.rankedBuckets(ctx, p, keys, r); err != nil {
+				return nil, err
+			}
+			res.Ranked, res.Truncated = true, !r.complete
+		}
 		var rows []Row
 		for _, b := range buckets {
 			row := bucketKeys(b, keys)
@@ -954,11 +1027,16 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			rows = append(rows, row)
 		}
 		res.Kind = "table"
-		res.Rows, res.Columns = topRows(rows, top)
+		res.Rows, res.Columns = topRowsBeyond(rows, top, beyond)
 		return res, nil
 	case "timechart":
 		res.Kind = "timechart"
 		tc := p.transform.(*query.Timechart)
+		if p.split != nil {
+			if resp, err = e.timechartSplit(ctx, p, tc, resp); err != nil {
+				return nil, err
+			}
+		}
 		res.Rows, res.Columns = timechartRows(resp, tc, summed)
 		return res, nil
 	}
@@ -1165,17 +1243,27 @@ func timechartRows(resp map[string]any, tc *query.Timechart, summed bool) ([]Row
 		}
 		return rows, cols
 	}
-	// One column per value of the by field, ordered by overall total.
+	// One column per series: the by field's values, ordered by overall
+	// total, then OTHER and NULL when they have events.
+	names, _ := resp[seriesKey].([]string)
 	totals := map[string]float64{}
+	seen := map[string]bool{}
 	a := tc.Aggs[0]
 	for _, b := range bs {
 		bm, _ := b.(map[string]any)
 		row := Row{"_time": bm["key_as_string"]}
 		by, _ := bm["by"].(map[string]any)
-		vbs, _ := by["buckets"].([]any)
-		for _, vb := range vbs {
+		vbs, _ := by["buckets"].(map[string]any)
+		for key, vb := range vbs {
+			name := key
+			if i, err := strconv.Atoi(strings.TrimPrefix(key, "s")); err == nil && strings.HasPrefix(key, "s") && i < len(names) {
+				name = names[i]
+			}
 			vm, _ := vb.(map[string]any)
-			name := fmt.Sprint(normalize(vm["key"]))
+			n, _ := asFloat(toNumber(vm["doc_count"]))
+			if (key == otherSeries || key == nullSeries) && n == 0 {
+				continue
+			}
 			var val any
 			switch {
 			case a.Func == "count" && a.Field == "" && summed:
@@ -1186,30 +1274,31 @@ func timechartRows(resp map[string]any, tc *query.Timechart, summed bool) ([]Row
 				val = aggValue(a, vm, "m0")
 			}
 			row[name] = val
+			seen[name] = true
 			if f, ok := asFloat(val); ok {
 				totals[name] += f
-			} else if _, ok := totals[name]; !ok {
-				totals[name] = 0
 			}
 		}
 		rows = append(rows, row)
 	}
-	names := make([]string, 0, len(totals))
-	for n := range totals {
-		names = append(names, n)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if totals[names[i]] != totals[names[j]] {
-			return totals[names[i]] > totals[names[j]]
+	var series []string
+	for _, n := range names {
+		if seen[n] {
+			series = append(series, n)
 		}
-		return names[i] < names[j]
-	})
+	}
+	sort.SliceStable(series, func(i, j int) bool { return totals[series[i]] > totals[series[j]] })
+	for _, n := range []string{otherSeries, nullSeries} {
+		if seen[n] && !slices.Contains(series, n) {
+			series = append(series, n)
+		}
+	}
 	for _, r := range rows {
-		for _, n := range names {
+		for _, n := range series {
 			if _, ok := r[n]; !ok && (a.Func == "count" || a.Func == "dc") {
 				r[n] = int64(0)
 			}
 		}
 	}
-	return rows, append(cols, names...)
+	return rows, append(cols, series...)
 }

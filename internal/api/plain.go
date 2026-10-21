@@ -5,7 +5,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/netip"
@@ -226,7 +225,7 @@ func plainRefusal(w http.ResponseWriter, r *http.Request, status int, msg string
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeError(w, status, errors.New(msg))
+		writeError(w, status, errUser(msg))
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

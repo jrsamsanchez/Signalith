@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -195,9 +196,9 @@ func (x *clusterCLI) approve(ctx context.Context, who, fingerprint string, yes b
 			fmt.Fprintln(x.out, "No server waits for approval.")
 			return nil
 		}
-		fmt.Fprintln(x.out, "Servers waiting for approval (approve one with signalith cluster approve <fingerprint>):")
+		fmt.Fprintln(x.out, "Servers waiting for approval (approve one with signalith cluster approve <fingerprint>, typing the fingerprint it shows):")
 		for _, p := range list {
-			fmt.Fprintf(x.out, "  %-20s %s  %s %s/%s  %s\n", p.Name, p.Fingerprint, p.Version, p.OS, p.Arch, strings.Join(p.Addresses, ","))
+			fmt.Fprintf(x.out, "  %-20s %s  %s %s/%s  %s\n", p.Name, fingerprintStart(p.Fingerprint), p.Version, p.OS, p.Arch, strings.Join(p.Addresses, ","))
 		}
 		return nil
 	}
@@ -219,13 +220,13 @@ func (x *clusterCLI) approve(ctx context.Context, who, fingerprint string, yes b
 	default:
 		var fps []string
 		for _, p := range match {
-			fps = append(fps, p.Fingerprint)
+			fps = append(fps, fingerprintStart(p.Fingerprint))
 		}
 		return fmt.Errorf("%d waiting servers are named %q: approve one by the fingerprint it shows (%s)", len(match), who, strings.Join(fps, ", "))
 	}
 	p := match[0]
-	// The fingerprint approved: the one the admin typed, or the one shown
-	// here and confirmed at the terminal.
+	// The fingerprint approved: the one the admin typed, here or on the
+	// command line.
 	fp := strings.TrimSpace(fingerprint)
 	switch {
 	case byFingerprint:
@@ -235,12 +236,15 @@ func (x *clusterCLI) approve(ctx context.Context, who, fingerprint string, yes b
 		if yes || !x.terminal() {
 			return fmt.Errorf("approving %s by its name needs its fingerprint: compare the one it shows on its sign-in page or in its log, then run signalith cluster approve %s -fingerprint <fingerprint> (or signalith cluster approve <fingerprint>)", who, who)
 		}
-		q := fmt.Sprintf("Approve %s (%s/%s, %s) to join the cluster? Its fingerprint is %s: it must be the one %s shows on its sign-in page and in its log.",
-			p.Name, p.OS, p.Arch, cmp.Or(strings.Join(p.Addresses, ", "), "no address given"), p.Fingerprint, p.Name)
-		if err := x.confirm(q, false); err != nil {
-			return err
+		// The admin types what the new server shows: the fingerprint in
+		// the waiting list comes from OpenSearch, so confirming it would
+		// check nothing.
+		fmt.Fprintf(x.errOut, "%s (%s/%s, %s) waits to join the cluster. Type the fingerprint it shows on its sign-in page or in its log: ",
+			p.Name, p.OS, p.Arch, cmp.Or(strings.Join(p.Addresses, ", "), "no address given"))
+		line, _ := bufio.NewReader(x.in).ReadString('\n')
+		if fp = strings.TrimSpace(line); fp == "" {
+			return errors.New("nothing was changed")
 		}
-		fp = p.Fingerprint
 	}
 	got, err := a.Approve(ctx, p.NodeID, fp, x.by)
 	if err != nil {
@@ -249,6 +253,17 @@ func (x *clusterCLI) approve(ctx context.Context, who, fingerprint string, yes b
 	x.audit("server approved to join the cluster", "server", got.Name, "node_id", got.NodeID, "fingerprint", got.Fingerprint)
 	fmt.Fprintf(x.out, "Approved %s (%s). It takes the cluster key within a minute and joins; signalith cluster status then lists it.\n", got.Name, got.Fingerprint)
 	return nil
+}
+
+// fingerprintStart is the first group of a fingerprint, enough to tell
+// waiting servers apart. The whole one comes from OpenSearch, which anyone
+// who can write to it could have made, so it is not shown to be copied:
+// the admin types the one the new server shows.
+func fingerprintStart(fp string) string {
+	if first, _, ok := strings.Cut(fp, "-"); ok {
+		return first + "-…"
+	}
+	return fp
 }
 
 // terminal reports whether the standard input is a terminal one can ask

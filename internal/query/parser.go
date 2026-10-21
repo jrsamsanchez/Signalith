@@ -4,6 +4,8 @@
 package query
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,7 +15,7 @@ var Commands = []string{"search", "stats", "eventstats", "timechart", "top", "ra
 
 // AggFuncs lists the aggregation functions stats, eventstats and timechart
 // accept. perc95 stands for every percentile from perc1 to perc99.
-var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "var", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
+var AggFuncs = []string{"count", "dc", "sum", "avg", "min", "max", "median", "perc95", "stdev", "stdevp", "var", "varp", "sumsq", "range", "mode", "values", "list", "first", "last", "earliest", "latest"}
 
 // aggAliases are other names for aggregation functions.
 var aggAliases = map[string]string{"distinct_count": "dc", "mean": "avg"}
@@ -196,10 +198,15 @@ func (p *parser) parseSearch(q *Query) error {
 						return &Error{Pos: at, Msg: err.Error()}
 					}
 					q.Index = v
-				case "earliest":
-					q.Earliest = v
-				case "latest":
-					q.Latest = v
+				case "earliest", "latest":
+					if !CheckTime(v) {
+						return &Error{Pos: at, Msg: fmt.Sprintf("%s=%s is not a time; use one like -24h, -7d@d, @w1, an epoch time in seconds or 2026-10-01T08:00:00Z", strings.ToLower(t.text), v)}
+					}
+					if strings.EqualFold(t.text, "earliest") {
+						q.Earliest = v
+					} else {
+						q.Latest = v
+					}
 				}
 				continue
 			}
@@ -445,29 +452,8 @@ func (p *parser) parseCommand() (Command, error) {
 		return &Stats{Aggs: aggs, By: by}, p.endCommand()
 	case "timechart":
 		tc := &Timechart{}
-		for (p.isKeywordFold("span") || p.isKeywordFold("limit")) && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
-			if strings.EqualFold(p.next().text, "limit") {
-				p.next()
-				at := p.peek().pos
-				n, err := p.int()
-				if err != nil {
-					return nil, err
-				}
-				if n < 0 {
-					return nil, errorf(at, "timechart limit is 0 (no limit) or more")
-				}
-				tc.Limit = n
-				if n == 0 {
-					tc.Limit = NoTimechartLimit
-				}
-				continue
-			}
-			p.next()
-			v, err := p.value()
-			if err != nil {
-				return nil, err
-			}
-			tc.Span = v
+		if err := p.timechartOptions(tc); err != nil {
+			return nil, err
 		}
 		if p.peek().kind == tokEOF || p.peek().kind == tokPipe || p.isKeywordFold("by") {
 			tc.Aggs = []Agg{{Func: "count"}}
@@ -476,20 +462,34 @@ func (p *parser) parseCommand() (Command, error) {
 			if err != nil {
 				return nil, err
 			}
+			if err := noWildcardAggs("timechart", t.pos, aggs); err != nil {
+				return nil, err
+			}
 			tc.Aggs = aggs
 		}
-		by, err := p.parseBy()
-		if err != nil {
-			return nil, err
-		}
-		if len(by) > 1 {
-			return nil, errorf(t.pos, "timechart accepts one by field")
-		}
-		if len(by) == 1 {
+		if p.isKeywordFold("by") {
+			byTok := p.next()
+			f := p.peek()
+			switch {
+			case f.kind == tokWord && !(p.peekAt(1).kind == tokOp && p.peekAt(1).text == "="):
+				p.next()
+				tc.By = p.fieldSuffix(f.text)
+			case f.kind == tokString && f.text != "" && FormatValue(f.text) == f.text:
+				p.next()
+				tc.By = f.text
+			default:
+				return nil, errorf(byTok.pos, `expected a field after "by"`)
+			}
+			if n := p.peek(); n.kind == tokComma || n.kind == tokWord && !(p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=") {
+				return nil, errorf(t.pos, "timechart accepts one by field")
+			}
 			if len(tc.Aggs) > 1 {
 				return nil, errorf(t.pos, "timechart with a by field accepts one aggregation")
 			}
-			tc.By = by[0]
+		}
+		// Splunk takes the options after the by field too.
+		if err := p.timechartOptions(tc); err != nil {
+			return nil, err
 		}
 		return tc, p.endCommand()
 	case "top", "rare":
@@ -517,8 +517,24 @@ func (p *parser) parseCommand() (Command, error) {
 		return p.parseFillnull()
 	case "sort":
 		s := &Sort{}
+		if nt := p.peek(); nt.kind == tokWord && isDigits(nt.text) {
+			// sort 10 -count keeps 10 rows; sort 0 keeps them all.
+			n, err := p.int()
+			if err != nil {
+				return nil, err
+			}
+			s.Limit = n
+		} else if nt.kind == tokWord && strings.EqualFold(nt.text, "limit") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			p.next()
+			p.next()
+			n, err := p.int()
+			if err != nil {
+				return nil, err
+			}
+			s.Limit = n
+		}
 		var err error
-		if s.Keys, err = p.sortKeys(true); err != nil {
+		if s.Keys, err = p.sortKeys(false); err != nil {
 			return nil, err
 		}
 		if len(s.Keys) == 0 {
@@ -527,6 +543,11 @@ func (p *parser) parseCommand() (Command, error) {
 		return s, p.endCommand()
 	case "head", "limit":
 		h := &Head{N: 10}
+		if nt := p.peek(); nt.kind == tokWord && strings.EqualFold(nt.text, "limit") && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+			// head limit=5 is head 5.
+			p.next()
+			p.next()
+		}
 		if p.peek().kind == tokWord {
 			n, err := p.int()
 			if err != nil {
@@ -875,6 +896,18 @@ func (p *parser) parseAggs(cmdPos int) ([]Agg, error) {
 	return aggs, nil
 }
 
+// noWildcardAggs refuses sum(bytes*) in a command that cannot expand it:
+// read as one field's name it would quietly give nothing. stats and
+// eventstats expand it to every matching field.
+func noWildcardAggs(cmd string, pos int, aggs []Agg) error {
+	for _, a := range aggs {
+		if strings.Contains(a.Field, "*") {
+			return errorf(pos, "%s %s: wildcard field names work in stats and eventstats only; name each field here", cmd, a)
+		}
+	}
+	return nil
+}
+
 func (p *parser) parseBy() ([]string, error) {
 	if !p.isKeywordFold("by") {
 		return nil, nil
@@ -898,6 +931,11 @@ func (p *parser) parseBy() ([]string, error) {
 	if len(fields) == 0 {
 		return nil, errorf(byTok.pos, `expected a field after "by"`)
 	}
+	for _, f := range fields {
+		if strings.Contains(f, "*") {
+			return nil, errorf(byTok.pos, "by %s: wildcard field names are not supported in by; name each field", f)
+		}
+	}
 	return fields, nil
 }
 
@@ -916,6 +954,16 @@ func (p *parser) sortKeys(limit bool) ([]SortKey, error) {
 			continue
 		}
 		p.next()
+		if k, ok, err := p.sortFunc(nt); ok || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			keys = append(keys, k)
+			if p.peek().kind == tokComma {
+				p.next()
+			}
+			continue
+		}
 		k := SortKey{Field: p.fieldSuffix(nt.text)}
 		if strings.HasPrefix(nt.text, "-") || strings.HasPrefix(nt.text, "+") {
 			k.Field = nt.text[:1] + p.fieldSuffix(nt.text[1:])
@@ -939,6 +987,78 @@ func (p *parser) sortKeys(limit bool) ([]SortKey, error) {
 		}
 	}
 	return keys, nil
+}
+
+// sortFunc reads a sort key written in a function, such as -num(count),
+// whose name nt has just been read. ok is false when nt is no such name.
+func (p *parser) sortFunc(nt token) (SortKey, bool, error) {
+	name := nt.text
+	k := SortKey{}
+	if strings.HasPrefix(name, "-") || strings.HasPrefix(name, "+") {
+		k.Desc, name = name[0] == '-', name[1:]
+	}
+	fn := strings.ToLower(name)
+	if p.peek().kind != tokLParen || !slices.Contains(SortFuncs, fn) {
+		return k, false, nil
+	}
+	if p.peekAt(1).kind != tokWord || p.peekAt(2).kind != tokRParen {
+		return k, false, errorf(nt.pos, "%s() takes one field name, for example: sort -%s(count)", fn, fn)
+	}
+	p.next()
+	k.Field = p.next().text
+	p.next()
+	if fn != "auto" {
+		k.As = fn
+	}
+	return k, true, nil
+}
+
+// timechartOptions reads timechart's span=, limit=, useother= and
+// usenull= options.
+func (p *parser) timechartOptions(tc *Timechart) error {
+	for p.peek().kind == tokWord && p.peekAt(1).kind == tokOp && p.peekAt(1).text == "=" {
+		key := p.peek()
+		switch strings.ToLower(key.text) {
+		case "span":
+			p.next()
+			p.next()
+			v, err := p.value()
+			if err != nil {
+				return err
+			}
+			tc.Span = v
+		case "limit":
+			p.next()
+			p.next()
+			at := p.peek().pos
+			n, err := p.int()
+			if err != nil {
+				return err
+			}
+			if n < 0 {
+				return errorf(at, "timechart limit is 0 (no limit) or more")
+			}
+			tc.Limit = n
+			if n == 0 {
+				tc.Limit = NoTimechartLimit
+			}
+		case "useother", "usenull":
+			p.next()
+			p.next()
+			b, err := parseBool(p.next())
+			if err != nil {
+				return err
+			}
+			if strings.EqualFold(key.text, "useother") {
+				tc.NoOther = !b
+			} else {
+				tc.NoNull = !b
+			}
+		default:
+			return nil // an aggregation such as count(eval(...)) or a stray option, reported later
+		}
+	}
+	return nil
 }
 
 // fieldList reads "a, b c" style field lists, stopping at "by", pipes and EOF.

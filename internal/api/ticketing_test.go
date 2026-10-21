@@ -171,8 +171,12 @@ func TestTicketingAPI(t *testing.T) {
 func TestTicketingAudit(t *testing.T) {
 	sn, _ := fakeServiceNow(t)
 	var logs syncBuffer
-	ts, _, _ := newTicketingServer(t, func(s *Server) { s.Log = slog.New(slog.NewTextHandler(&logs, nil)) })
+	ts, srv, _ := newTicketingServer(t, func(s *Server) { s.Log = slog.New(slog.NewTextHandler(&logs, nil)) })
 	host := strings.TrimPrefix(sn.URL, "http://")
+	now := time.Now().UTC()
+	if err := srv.Cases.Create(context.Background(), &cases.Case{ID: "case-1", Title: "Malware", Severity: "high", Status: "new", Created: now, Updated: now}); err != nil {
+		t.Fatal(err)
+	}
 	save := `{"connections":[{"id":"desk","name":"Desk","type":"servicenow","url":"` + sn.URL + `","auth":"basic",
 		"username":"svc","password":"sn-password-123","allow_loopback":true}]}`
 	if code, body := doAs(t, ts, "admin", "s3cret-pass", "PUT", "/api/ticketing", save); code != 200 {
@@ -198,6 +202,20 @@ func TestTicketingAudit(t *testing.T) {
 	for _, want := range []string{"audit=true", "by=admin", "client=", "host=" + host, "secret_replaced=false"} {
 		if !strings.Contains(tested, want) {
 			t.Errorf("test log lacks %s: %s", want, tested)
+		}
+	}
+	if code, body := doAs(t, ts, "admin", "s3cret-pass", "POST", "/api/cases/case-1/tickets", `{"connection":"desk"}`); code != 201 {
+		t.Fatalf("open: %d %v", code, body)
+	}
+	opened := ""
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, `msg="case.ticket_open:`) {
+			opened = line
+		}
+	}
+	for _, want := range []string{"audit=true", "by=admin", "target=case-1", "connection=Desk", "ticket=INC0010001", "queued=false"} {
+		if !strings.Contains(opened, want) {
+			t.Errorf("ticket log lacks %s: %s", want, opened)
 		}
 	}
 	if strings.Contains(logs.String(), "sn-password-123") {

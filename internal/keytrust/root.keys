@@ -1,0 +1,6 @@
+# Signalith's offline root keys, one base64 Ed25519 public key per line;
+# # starts a comment. A root key's private half is kept offline by the
+# maintainer, never in a workflow. It is trusted to sign agent manifests
+# and content bundles as well as the online keys are, and it alone may
+# sign a revocation list (docs/key-management.md). No revocation list can
+# revoke a root key: replacing one needs a new release.

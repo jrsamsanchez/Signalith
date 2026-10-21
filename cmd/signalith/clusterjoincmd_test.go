@@ -150,7 +150,9 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	pending("n_b", "siem-b", nk.PublicText(), nk.Fingerprint())
 	other0, _ := shared.NewNodeKey()
 	out, err = run("", "approve")
-	if err != nil || !strings.Contains(out, "siem-b") || !strings.Contains(out, nk.Fingerprint()) {
+	// Only the first group: the admin types the whole one from the new
+	// server.
+	if err != nil || !strings.Contains(out, "siem-b") || !strings.Contains(out, fingerprintStart(nk.Fingerprint())) || strings.Contains(out, nk.Fingerprint()) {
 		t.Errorf("approve lists: %v\n%s", err, out)
 	}
 	if _, err := run("", "approve", "siem-x"); err == nil || !strings.Contains(err.Error(), "no server waits") {
@@ -203,7 +205,7 @@ func TestClusterTokenAndApprove(t *testing.T) {
 	// is approved again.
 	fake.Delete("cj_runtime", shared.ApprovalID("n_b"))
 	pending("n_b", "siem-b", nk.PublicText(), nk.Fingerprint())
-	if out, _ = run("", "approve"); !strings.Contains(out, nk.Fingerprint()) {
+	if out, _ = run("", "approve"); !strings.Contains(out, "siem-b") || !strings.Contains(out, fingerprintStart(nk.Fingerprint())) || strings.Contains(out, nk.Fingerprint()) {
 		t.Errorf("a server whose approval is lost does not show:\n%s", out)
 	}
 	if out, err = run("", "approve", "-fingerprint", nk.Fingerprint(), "n_b"); err != nil || fake.Source("cj_runtime", shared.ApprovalID("n_b")) == nil {

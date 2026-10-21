@@ -36,18 +36,18 @@ var modelPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
 // searchSpan returns the times a search's events fall between, from its
 // earliest= and latest=, or ok false when it has no start or a time that
 // is not understood here.
-func searchSpan(earliest, latest string, now time.Time) (from, to time.Time, ok bool) {
+func searchSpan(earliest, latest string, now time.Time, loc *time.Location) (from, to time.Time, ok bool) {
 	if earliest == "" || strings.TrimSpace(earliest) == "0" {
 		return time.Time{}, time.Time{}, false
 	}
-	from, ok = resolveTime(earliest, now)
+	from, ok = resolveTimeIn(earliest, now, loc)
 	if !ok || from.IsZero() {
 		return time.Time{}, time.Time{}, false
 	}
 	if strings.TrimSpace(latest) == "" {
 		// No upper bound: events up to the newest ingest stores.
 		to = now.Add(maxEventAhead)
-	} else if to, ok = resolveTime(latest, now); !ok {
+	} else if to, ok = resolveTimeIn(latest, now, loc); !ok {
 		return time.Time{}, time.Time{}, false
 	}
 	return from.UTC(), to.UTC(), true
