@@ -117,6 +117,15 @@
     return part('Maintenance', ...kids);
   });
 
+  // caAdvice says how to replace the cluster's certificate authority
+  // from where its rotation stands, as the card on this page last saw it.
+  function caAdvice() {
+    const r = window.caRotation ? window.caRotation() : null;
+    if (r && r.state === 'prepared') return 'A replacement is in progress, and the removed server may hold its new key too. If you don’t trust it any more, abort the replacement on the certificate authority card on this page, then start it again.';
+    if (r && r.state === 'switched') return 'A replacement was switched but not retired. If you don’t trust it any more, retire the old one on the certificate authority card on this page, then replace it again.';
+    return 'If you don’t trust it any more, replace the certificate authority afterwards on its card on this page.';
+  }
+
   // askRemove confirms a removal, with the key rotation on by default.
   function askRemove(s) {
     const d = modalDialog('sv-life-remove');
@@ -139,7 +148,8 @@
       'It leaves the list of servers and the keyring. To bring it back, give it the cluster key again.', close),
     el('div', { class: 'modal__body' },
       el('div', { class: 'field' }, el('label', { class: 'check' }, rotate, 'Rotate the cluster key (recommended)'),
-        el('p', { class: 'hint' }, why))),
+        el('p', { class: 'hint' }, why)),
+      el('p', { class: 'hint' }, `${s.name} may still hold the cluster’s HTTPS certificate authority key, which a key rotation doesn’t change. ${caAdvice()}`)),
     el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), ok));
     d.showModal();
     ok.focus();

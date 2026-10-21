@@ -359,10 +359,10 @@ func checkCAScope(f *Facts) *Check {
 }
 
 // clusterCAFix is the fix of a problem with the certificate authority all
-// the cluster's servers share, which cannot be changed yet: then, if
-// given, what to do meanwhile.
+// the cluster's servers share, which is replaced for all of them at once:
+// then, if given, what to do meanwhile.
 func clusterCAFix(then string, docs DocLink) *Fix {
-	steps := []string{"This server uses the certificate authority all the cluster's servers share. It can't be changed yet; that comes in a later version."}
+	steps := []string{"This server uses the certificate authority all the cluster's servers share. It isn't changed here: replace it for every server at once on the Servers page, or with signalith cluster tls rotate-ca. The new one has the same name limits."}
 	if then != "" {
 		steps = append(steps, then)
 	}
@@ -387,7 +387,7 @@ func scopeTip(f *Facts, inUse string) *Fix {
 			"Standard" + mark(tlsauto.ScopeStandard) + ". It can also vouch for private network names and addresses, such as intranet.corp or 192.168.1.5. " +
 				"If someone stole its key, they could pose as other private sites to computers that trust it. In a cluster the key is kept sealed with the cluster key, not on a server's disk.",
 			"Strict" + mark(tlsauto.ScopeStrict) + ". It can vouch only for the names it was made with.",
-			"All the cluster's servers share this certificate authority. Changing it comes in a later version.",
+			"All the cluster's servers share this certificate authority. Replacing it on the Servers page keeps its name limits.",
 		}, Docs: doc(docHTTPSReach)}
 	}
 	return &Fix{Label: "Standard or strict?", Steps: []string{
