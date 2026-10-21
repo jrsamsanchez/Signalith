@@ -501,8 +501,10 @@ func TestAgentRecomputesRevision(t *testing.T) {
 	ctx := context.Background()
 
 	// A newer server: a field this agent doesn't know, summed over what
-	// it sends.
-	newer := []byte(`{"revision":"","poll_seconds":300,"future":{"x":[1,2]},"fluentbit":{"config":"a & <b>"}}` + "\n")
+	// it sends. The Fluent Bit configuration is one the agent takes
+	// (checkFluentBit), with & and < in it as the server sends them.
+	fb := strings.NewReplacer(`\u0026`, "&", `\u003c`, "<", `\u003e`, ">").Replace(testFluentBitJSON("a & <b>"))
+	newer := []byte(`{"revision":"","poll_seconds":300,"future":{"x":[1,2]},"fluentbit":{"config":` + fb + `}}` + "\n")
 	rev, ok := agentproto.RawRevision(newer)
 	if !ok {
 		t.Fatal("no revision in the newer configuration")
@@ -528,7 +530,7 @@ func TestAgentRecomputesRevision(t *testing.T) {
 
 	// An older server summed json.Marshal, which escapes & while what it
 	// sent doesn't.
-	cfg := agentproto.Config{PollSeconds: 120, FluentBit: &agentproto.FluentBit{Config: "x & y"}}
+	cfg := agentproto.Config{PollSeconds: 120, FluentBit: &agentproto.FluentBit{Config: testFluentBit("x & y")}}
 	legacy := agentproto.LegacyRevisionOf(cfg)
 	cfg.Revision = legacy
 	serve(agentproto.Encode(cfg), legacy)

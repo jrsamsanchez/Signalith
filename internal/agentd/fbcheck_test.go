@@ -234,12 +234,22 @@ func TestAgentRefusesFluentBitConfig(t *testing.T) {
 	defer srv.Close()
 	a := syncAgent(t, srv.URL)
 	ctx := context.Background()
-	body = `{"revision":"r1","fluentbit":{"config":` + testFluentBitJSON("r1") + `}}`
+	// stamped is body with its revision set to the sum of its bytes, the
+	// one the agent keeps (TestAgentRecomputesRevision).
+	stamped := func(body string) (string, string) {
+		rev, ok := agentproto.RawRevision([]byte(body))
+		if !ok {
+			t.Fatalf("no revision in %s", body)
+		}
+		return strings.Replace(body, `"revision":""`, `"revision":"`+rev+`"`, 1), rev
+	}
+	body, _ = stamped(`{"revision":"","fluentbit":{"config":` + testFluentBitJSON("r1") + `}}`)
 	if err := a.sync(ctx); err != nil {
 		t.Fatal(err)
 	}
 	bad, _ := json.Marshal(strings.Replace(testFluentBit("r2"), testTail, "Name exec\n    Command id", 1))
-	body = `{"revision":"r2","poll_seconds":60,"fluentbit":{"config":` + string(bad) + `}}`
+	var r2 string
+	body, r2 = stamped(`{"revision":"","poll_seconds":60,"fluentbit":{"config":` + string(bad) + `}}`)
 	if err := a.sync(ctx); err != nil {
 		t.Fatalf("sync = %v", err)
 	}
@@ -247,7 +257,7 @@ func TestAgentRefusesFluentBitConfig(t *testing.T) {
 		t.Errorf("fluent-bit.conf = %q", b)
 	}
 	st := a.Status()
-	if st.Revision != "r2" || !strings.Contains(st.ConfigError, "refused the Fluent Bit configuration") || !strings.Contains(st.ConfigError, `"exec"`) {
+	if st.Revision != r2 || !strings.Contains(st.ConfigError, "refused the Fluent Bit configuration") || !strings.Contains(st.ConfigError, `"exec"`) {
 		t.Errorf("status = %q, %q", st.Revision, st.ConfigError)
 	}
 	a.mu.Lock()
@@ -261,11 +271,12 @@ func TestAgentRefusesFluentBitConfig(t *testing.T) {
 	if cfg, err := a.loadConfig(); err != nil || cfg.FluentBit == nil || cfg.FluentBit.Config != testFluentBit("r1") || cfg.Revision != "" {
 		t.Errorf("config.json = %+v, %v", cfg, err)
 	}
-	body = `{"revision":"r3","fluentbit":{"config":` + testFluentBitJSON("r3") + `}}`
+	var r3 string
+	body, r3 = stamped(`{"revision":"","fluentbit":{"config":` + testFluentBitJSON("r3") + `}}`)
 	if err := a.sync(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st := a.Status(); st.ConfigError != "" || st.Revision != "r3" {
+	if st := a.Status(); st.ConfigError != "" || st.Revision != r3 {
 		t.Errorf("after a good one: %q, %q", st.Revision, st.ConfigError)
 	}
 	if b, _ := os.ReadFile(a.Paths.fluentBitConf()); string(b) != testFluentBit("r3") {
