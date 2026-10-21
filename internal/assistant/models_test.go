@@ -101,9 +101,20 @@ func TestUnknownModel(t *testing.T) {
 		_, err := New(Anthropic, srv.URL, "x", "k").Chat(context.Background(), "s", []Message{{Role: "user", Content: "q"}}, 10)
 		srv.Close()
 		var ae *APIError
-		if !errors.As(err, &ae) || !ae.UnknownModel() {
+		if !errors.As(err, &ae) || !ae.UnknownModel() || !ae.Parsed {
 			t.Errorf("%s: err = %v, want an unknown model", body, err)
 		}
+	}
+	// A page instead of a JSON error is kept, but not marked parsed.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("bad gateway from proxy.internal"))
+	}))
+	defer srv.Close()
+	_, err := New(Anthropic, srv.URL, "x", "k").Chat(context.Background(), "s", []Message{{Role: "user", Content: "q"}}, 10)
+	var ae *APIError
+	if !errors.As(err, &ae) || ae.Parsed || ae.Message != "bad gateway from proxy.internal" {
+		t.Errorf("a page: %v %+v", err, ae)
 	}
 }
 

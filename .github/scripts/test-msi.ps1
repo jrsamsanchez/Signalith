@@ -34,11 +34,21 @@ function Wait-Up {
   Get-Content "$env:ProgramData\Signalith\signalith.log" -Tail 50 -ErrorAction SilentlyContinue
   throw "Signalith does not answer on https://localhost:9000 (or 8080)"
 }
-# The previous release named the built-in admin admin, which the upgrade
-# keeps.
+# The built-in admin: signalithadmin from 0.3.1, admin before, which an
+# upgrade keeps. The first sign-in finds which the previous release made.
+$script:admin = ""
 function Test-SignIn([string]$Password) {
-  $body = @{ username = "admin"; password = $Password } | ConvertTo-Json
-  Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+  $names = if ($script:admin) { @($script:admin) } else { @("signalithadmin", "admin") }
+  foreach ($name in $names) {
+    $body = @{ username = $name; password = $Password } | ConvertTo-Json
+    try {
+      Invoke-RestMethod "https://localhost:$($script:port)/api/login" -Method Post -ContentType "application/json" -Body $body -SkipCertificateCheck | Out-Null
+      $script:admin = $name
+      return
+    } catch {
+      if ($name -eq $names[-1]) { throw }
+    }
+  }
 }
 
 Write-Host "== Install $Previous"
@@ -95,6 +105,18 @@ if (($published -split "\s+")[0].ToLower() -ne $pin) { throw "the pinned SHA-512
 $os = Get-CimInstance Win32_Service -Filter "Name='SignalithOpenSearch'"
 if (-not $os -or $os.State -ne "Running") { throw "the SignalithOpenSearch service is not running" }
 if ($os.StartName -ne "NT SERVICE\SignalithOpenSearch") { throw "OpenSearch runs as $($os.StartName)" }
+# Signalith's own account may not use OpenSearch's folder, which holds the
+# CA key and the admin certificate; OpenSearch's account only its own
+# folders, never the CA.
+$osSid = (New-Object Security.Principal.NTAccount "NT SERVICE\SignalithOpenSearch").Translate([Security.Principal.SecurityIdentifier]).Value
+foreach ($dir in @("$env:ProgramData\SignalithOpenSearch", "$env:ProgramData\SignalithOpenSearch\ca")) {
+  $allowed = @("S-1-5-18", "S-1-5-32-544")
+  if ($dir -notlike "*\ca") { $allowed += $osSid }
+  $sids = (Get-Acl $dir).Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } | Sort-Object -Unique
+  foreach ($sid in $sids) {
+    if ($sid -notin $allowed) { throw "$sid may use $dir" }
+  }
+}
 $osPort = (Get-Content -Raw "$env:ProgramData\SignalithOpenSearch\installed.json" | ConvertFrom-Json).port
 $listen = @(Get-NetTCPConnection -State Listen -LocalPort $osPort | ForEach-Object { $_.LocalAddress } | Sort-Object -Unique)
 if (($listen -join ",") -ne "127.0.0.1") { throw "OpenSearch listens on $($listen -join ', '), want 127.0.0.1 only" }

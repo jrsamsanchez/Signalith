@@ -117,12 +117,12 @@ func full() *Snapshot {
 		SchedulerOn: true,
 		Hosts:       2,
 		Vulns:       &Vulns{Networks: 1, LastScan: now.Add(-3 * 24 * time.Hour)},
-		Findings:    &Findings{Open: 4, New: 1},
+		Findings:    &Findings{Open: 4, New: 1, Total: 10, Reviewed: 9},
 		Cases:       &Cases{Total: 2, Open: 1},
 		Notify:      &Notify{Channels: 1, Rules: 1},
 		Response:    &Response{Actions: 2},
 		Intel:       &Intel{Feeds: 2, Fresh: 2},
-		Retention:   &Retention{KeepDays: 400, Guard: true},
+		Retention:   &Retention{KeepDays: 400, Guard: true, Oldest: now.Add(-401 * 24 * time.Hour), OldestRead: true},
 		Users:       &Users{Named: 3},
 		Assets:      10,
 		HTTPS:       true,
@@ -134,16 +134,54 @@ func full() *Snapshot {
 	return s
 }
 
+// With everything in place, every control is met, except those that ask
+// for more than Signalith can see, which stay partial.
 func TestEverythingInPlaceMeetsEveryControl(t *testing.T) {
 	rep := Evaluate(full(), nil)
 	for _, f := range rep.Frameworks {
+		capped := 0
 		for _, c := range f.Controls {
-			if c.Status != Met {
-				t.Errorf("%s %s = %s: %+v", f.ID, c.ID, c.Status, c.Evidence)
+			want := Met
+			if c.Also != "" {
+				want = Partial
+				capped++
+			}
+			if c.Status != want {
+				t.Errorf("%s %s = %s, want %s: %+v", f.ID, c.ID, c.Status, want, c.Evidence)
 			}
 		}
-		if f.Score != 100 {
-			t.Errorf("%s score %d", f.ID, f.Score)
+		if want := int((float64(len(f.Controls))-float64(capped)/2)/float64(len(f.Controls))*100 + 0.5); f.Score != want {
+			t.Errorf("%s score %d, want %d", f.ID, f.Score, want)
+		}
+	}
+}
+
+// freshInstall is a new server: features on, nothing received or done.
+func freshInstall() *Snapshot {
+	return &Snapshot{
+		Now: now, Data: map[string]DataSeen{}, Assets: 0,
+		Detections:  []Detection{{ID: "brute", Name: "Brute force", Enabled: true, Models: []string{"Authentication"}}},
+		SchedulerOn: true, Checks: []CheckStat{},
+		Vulns: &Vulns{}, Findings: &Findings{}, Cases: &Cases{}, Notify: &Notify{}, Response: &Response{}, Intel: &Intel{},
+		Retention: &Retention{KeepDays: 90, Guard: true, OldestRead: true},
+		Users:     &Users{}, HTTPS: true, MFA: "off",
+	}
+}
+
+// A server that has received nothing and done nothing shows evidence for
+// no control: built-in features, empty queues and switched-on features
+// are not evidence on their own.
+func TestNoEvidenceWithoutData(t *testing.T) {
+	// The one exception: a deletion policy is in force from the start.
+	policy := map[string]bool{"gdpr 5(1)(e)": true}
+	for name, s := range map[string]*Snapshot{"empty": empty(), "fresh install": freshInstall()} {
+		rep := Evaluate(s, nil)
+		for _, f := range rep.Frameworks {
+			for _, c := range f.Controls {
+				if c.Status == Met && !policy[f.ID+" "+c.ID] {
+					t.Errorf("%s: %s %s is met: %+v", name, f.ID, c.ID, c.Evidence)
+				}
+			}
 		}
 	}
 }
@@ -162,10 +200,9 @@ func TestNothingInPlace(t *testing.T) {
 			}
 		}
 	}
-	// AU-8 is built in, so it is met even here.
 	f, _ := rep.Find("nist-800-53")
 	for _, c := range f.Controls {
-		if c.ID == "AU-8" && c.Status != Met {
+		if c.ID == "AU-8" && c.Status != Missing {
 			t.Errorf("AU-8 = %s", c.Status)
 		}
 		if c.ID == "RA-5" && c.Status != Missing {
@@ -236,9 +273,10 @@ func TestPartialStates(t *testing.T) {
 	if cis := control(t, rep, "cis-v8", "8.10"); cis.Status != Met {
 		t.Errorf("CIS 8.10 = %s", cis.Status)
 	}
-	// Archiving makes a year met.
+	// Archiving counts toward a year, but only partly: Signalith cannot
+	// see whether the archive files are kept.
 	s.Retention.Archive = true
-	if pci := control(t, Evaluate(s, nil), "pci-dss", "10.5.1"); pci.Status != Met {
+	if pci := control(t, Evaluate(s, nil), "pci-dss", "10.5.1"); pci.Status != Partial || !strings.Contains(pci.Evidence[1].Detail, "cannot see whether the archive files") {
 		t.Errorf("PCI 10.5.1 with archive = %s", pci.Status)
 	}
 }
@@ -272,7 +310,7 @@ func TestTaggedDetections(t *testing.T) {
 	// A control without detection capabilities gets its own line.
 	s.Detections[0].Tags = []string{"pci-dss:10.6.1"}
 	c = control(t, Evaluate(s, nil), "pci-dss", "10.6.1")
-	if len(c.Evidence) != 2 || c.Evidence[1].Capability != "tagged" || c.Evidence[1].Status != Met {
+	if last := c.Evidence[len(c.Evidence)-1]; last.Capability != "tagged" || last.Status != Met {
 		t.Errorf("tagged line = %+v", c.Evidence)
 	}
 }
@@ -306,8 +344,12 @@ func TestNotes(t *testing.T) {
 		t.Errorf("counts = %+v", f.Counts)
 	}
 	c := control(t, rep, "pci-dss", "10.6.1")
-	if c.Status != External || c.Computed != Met || c.Attestation == nil || c.Attestation.By != "ann" {
+	if c.Status != External || c.Computed != Missing || c.Attestation == nil || c.Attestation.By != "ann" {
 		t.Errorf("10.6.1 = %+v", c)
+	}
+	// A note never raises the score: it is Signalith's own evidence.
+	if plain, _ := Evaluate(empty(), nil).Find("pci-dss"); plain.Score != f.Score {
+		t.Errorf("score with a note %d, without %d", f.Score, plain.Score)
 	}
 	if _, err := n.Set(context.Background(), "pci-dss", "11.3.1", "", "", "ann", now); err != nil {
 		t.Fatal(err)
@@ -321,8 +363,19 @@ func TestScore(t *testing.T) {
 	s := full()
 	rep := Evaluate(s, map[string]Attestation{Key("hipaa", "164.312(b)"): {Status: NotApplicable, Note: "x"}})
 	f, _ := rep.Find("hipaa")
-	if f.Score != 100 || f.Counts[NotApplicable] != 1 {
-		t.Errorf("score %d counts %+v", f.Score, f.Counts)
+	var applicable, points float64
+	for _, c := range f.Controls {
+		switch c.Status {
+		case Met:
+			points++
+			applicable++
+		case Partial:
+			points += 0.5
+			applicable++
+		}
+	}
+	if want := int(points/applicable*100 + 0.5); f.Score != want || f.Counts[NotApplicable] != 1 || applicable != float64(len(f.Controls)-1) {
+		t.Errorf("score %d, want %d; counts %+v", f.Score, want, f.Counts)
 	}
 	rep = Evaluate(empty(), nil)
 	f, _ = rep.Find("hipaa")
@@ -365,10 +418,7 @@ func TestExports(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := b.String()
-	for _, want := range []string{"PCI DSS v4.0", "10.5.1", "Handled outside Signalith", "Save as PDF", "siem-1", "&lt;", "</html>"} {
-		if want == "&lt;" {
-			continue
-		}
+	for _, want := range []string{"PCI DSS v4.0.1", "10.5.1", "Handled outside Signalith", "Signalith found: Evidence", "Outside what Signalith sees:", "not a compliance assessment", "Save as PDF", "siem-1", "</html>"} {
 		if !strings.Contains(h, want) {
 			t.Errorf("HTML report lacks %q", want)
 		}
@@ -377,14 +427,29 @@ func TestExports(t *testing.T) {
 		t.Error("the report must not carry scripts")
 	}
 
-	// The hosts a check fails on are named in both exports.
+	// Text from notes and host names is escaped in the report.
+	for i := range s.Checks {
+		if len(s.Checks[i].Failing) > 0 {
+			s.Checks[i].Failing[0].Hostname = "<img src=x onerror=alert(1)>"
+		}
+	}
+	rep = Evaluate(s, map[string]Attestation{Key("nist-800-53", "RA-5"): {Status: NotApplicable, Note: `<script>alert("x")</script>`, By: "ann", At: now}})
 	nist, _ := rep.Find("nist-800-53")
 	b.Reset()
-	if err := WriteCSV(&b, rep, nist, "siem-1"); err != nil || !strings.Contains(b.String(), "1 host: db-07") {
+	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil {
+		t.Fatal(err)
+	}
+	if h := b.String(); strings.Contains(h, "<script") || strings.Contains(h, "<img") || !strings.Contains(h, "&lt;script&gt;") || !strings.Contains(h, "&lt;img src=x") {
+		t.Errorf("the report does not escape notes and host names")
+	}
+
+	// The hosts a check fails on are named in both exports.
+	b.Reset()
+	if err := WriteCSV(&b, rep, nist, "siem-1"); err != nil || !strings.Contains(b.String(), "1 host: <img") {
 		t.Errorf("CSV does not name the failing host: %v", err)
 	}
 	b.Reset()
-	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil || !strings.Contains(b.String(), "1 host: db-07") {
+	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil || !strings.Contains(b.String(), "1 host: &lt;img") {
 		t.Errorf("report does not name the failing host: %v", err)
 	}
 }

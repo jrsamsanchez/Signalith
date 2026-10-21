@@ -130,6 +130,9 @@ func (p *parser) parseChartAggs(cmdPos int) ([]Agg, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := noWildcardAggs("chart", cmdPos, aggs); err != nil {
+		return nil, err
+	}
 	p.evals = append(p.evals, head.evals...)
 	// What parseAggs left (by and its fields) is read by the caller.
 	p.i += head.i

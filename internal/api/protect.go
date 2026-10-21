@@ -50,7 +50,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 				h.Set("Clear-Site-Data", `"cache"`)
 			}
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(s.withErrorLog(w, r), r)
 	})
 }
 

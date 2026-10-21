@@ -451,3 +451,48 @@ func TestReachCheck(t *testing.T) {
 		t.Errorf("routed = %+v", ck)
 	}
 }
+
+// TestNVDKeyStaysOnItsServer: a redirect to another server does not take
+// the API key along (Go drops only Authorization and cookies); one on the
+// same server does.
+func TestNVDKeyStaysOnItsServer(t *testing.T) {
+	var mu sync.Mutex
+	got := map[string]string{}
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got["other"] = r.Header.Get("apiKey")
+		mu.Unlock()
+		io.WriteString(w, `{"totalResults":0,"vulnerabilities":[]}`)
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got[r.URL.Path] = r.Header.Get("apiKey")
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/away":
+			http.Redirect(w, r, other.URL+"/cves", http.StatusFound)
+		case "/here":
+			http.Redirect(w, r, "/cves", http.StatusFound)
+		default:
+			io.WriteString(w, `{"totalResults":0,"vulnerabilities":[]}`)
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	n := NewNVD(srv.URL+"/here", "secret-key")
+	n.Gap = time.Millisecond
+	if err := n.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got["/cves"] != "secret-key" {
+		t.Errorf("same-server redirect lost the key: %v", got)
+	}
+	n.Set(srv.URL+"/away", "secret-key")
+	if err := n.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got["/away"] != "secret-key" || got["other"] != "" {
+		t.Errorf("keys seen = %v; the other server must get none", got)
+	}
+}

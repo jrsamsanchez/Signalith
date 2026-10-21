@@ -16,10 +16,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 const packsDir = "../detect/packs"
@@ -239,5 +241,123 @@ func TestLoadPacksSkipsRulesItCannotRead(t *testing.T) {
 	_, ds, skipped, err := detect.LoadPacks(b.FS)
 	if err != nil || len(ds) != 1 || len(skipped) != 1 || !strings.Contains(skipped[0].Error(), "bad.yml") {
 		t.Fatalf("LoadPacks = %d, %v, %v", len(ds), skipped, err)
+	}
+}
+
+// A signing key revoked by a list signed with a root key is refused: the
+// update it signed is removed when the list arrives, and not taken again.
+func TestRevokedKeyIsRefused(t *testing.T) {
+	t.Cleanup(func() { detect.UsePacks(nil, nil, "") })
+	rootPub, rootPriv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRoots := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = oldRoots })
+
+	priv, keys := testKey(t)
+	data, sig := bundle(t, priv, time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC))
+	list, err := json.Marshal(keytrust.List{Format: keytrust.Format, Issued: time.Now(),
+		Revoked: []keytrust.RevokedKey{{ID: KeyID(keys[0]), Note: "leaked"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	publish := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.URL.Path == "/c.tar.gz":
+			w.Write(data)
+		case r.URL.Path == "/c.tar.gz.sig":
+			w.Write(sig)
+		case publish && r.URL.Path == "/"+keytrust.ListFile:
+			w.Write(list)
+		case publish && r.URL.Path == "/"+keytrust.SignatureFile:
+			w.Write(keytrust.Sign(rootPriv, list))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	lib, _, err := detect.NewLibrary("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "content")
+	store := &keytrust.Store{Dir: filepath.Join(t.TempDir(), "keytrust")}
+	u := &Updater{Dir: dir, Keys: keys, Library: lib, Revocations: store}
+	u.Start()
+	if st, err := u.Check(t.Context(), srv.URL+"/c.tar.gz"); err != nil || !st.Updated {
+		t.Fatalf("before the revocation: %+v %v", st, err)
+	}
+
+	mu.Lock()
+	publish = true
+	mu.Unlock()
+	st, _ := u.Check(t.Context(), srv.URL+"/c.tar.gz")
+	if st.Updated || !strings.Contains(st.LastError, "revoked") {
+		t.Fatalf("after the revocation: %+v", st)
+	}
+	if _, updated := detect.ContentVersion(); updated {
+		t.Fatal("the update signed with the revoked key is still in use")
+	}
+	if _, err := os.Stat(filepath.Join(dir, bundleFile)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("bundle still there: %v", err)
+	}
+	if _, err := u.Install(data, sig); err == nil {
+		t.Fatal("an update signed with the revoked key was installed")
+	}
+	// After a restart, with the list kept, it stays refused.
+	u2 := &Updater{Dir: dir, Keys: keys, Revocations: &keytrust.Store{Dir: store.Dir}}
+	u2.Start()
+	if _, err := u2.Install(data, sig); err == nil {
+		t.Fatal("installed after a restart")
+	}
+}
+
+// A kept revocation list that cannot be read refuses every update, rather
+// than forget the keys it revokes.
+func TestUnreadableRevocationListRefusesUpdates(t *testing.T) {
+	t.Cleanup(func() { detect.UsePacks(nil, nil, "") })
+	rootPub, rootPriv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRoots := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = oldRoots })
+
+	priv, keys := testKey(t)
+	data, sig := bundle(t, priv, time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC))
+	list, err := json.Marshal(keytrust.List{Format: keytrust.Format, Issued: time.Now(),
+		Revoked: []keytrust.RevokedKey{{ID: KeyID(keys[0]), Note: "leaked"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	trust := filepath.Join(t.TempDir(), "keytrust")
+	if kept, err := (&keytrust.Store{Dir: trust}).Offer(list, keytrust.Sign(rootPriv, list)); !kept || err != nil {
+		t.Fatalf("offer: %v %v", kept, err)
+	}
+	entries, err := os.ReadDir(trust)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("kept files: %v %v", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(trust, entries[0].Name()), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u := &Updater{Dir: filepath.Join(t.TempDir(), "content"), Keys: keys, Revocations: &keytrust.Store{Dir: trust}}
+	u.Start()
+	if _, err := u.Install(data, sig); err == nil || !strings.Contains(err.Error(), "revocation list") {
+		t.Fatalf("install = %v, want refused for the unreadable list", err)
+	}
+	if st := u.Status(); st.Ready || !strings.Contains(st.LastError, "revocation list") {
+		t.Fatalf("status = %+v", st)
+	}
+	if _, updated := detect.ContentVersion(); updated {
+		t.Fatal("an update is in use")
 	}
 }

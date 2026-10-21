@@ -280,10 +280,10 @@ func (e *Engine) addInfo(ctx context.Context, res *Result, q *query.Query) error
 		earliest = e.opts().DefaultEarliest
 	}
 	minT, maxT := 0.0, epochSeconds(now)
-	if t, ok := searchTime(earliest, now); ok {
+	if t, ok := searchTime(earliest, now, ev.loc); ok {
 		minT = epochSeconds(t)
 	}
-	if t, ok := searchTime(q.Latest, now); ok {
+	if t, ok := searchTime(q.Latest, now, ev.loc); ok {
 		maxT = epochSeconds(t)
 	}
 	info := []struct {
@@ -312,9 +312,9 @@ func (e *Engine) addInfo(ctx context.Context, res *Result, q *query.Query) error
 }
 
 // searchTime resolves a search's earliest or latest as the query engine
-// reads it: a relative time such as -24h@h, now, an ISO 8601 time, or
-// milliseconds since 1970. "" and "0" are no bound.
-func searchTime(v string, now time.Time) (time.Time, bool) {
+// reads it (see query.ResolveTime), in the time zone loc; now-1d is -1d.
+// "" and "0" are no bound.
+func searchTime(v string, now time.Time, loc *time.Location) (time.Time, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" || v == "0" {
 		return time.Time{}, false
@@ -322,18 +322,7 @@ func searchTime(v string, now time.Time) (time.Time, bool) {
 	if strings.HasPrefix(strings.ToLower(v), "now") && len(v) > 3 {
 		v = v[3:]
 	}
-	if t, ok := relativeTime(now, v); ok {
-		return t, true
-	}
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02"} {
-		if t, err := time.Parse(layout, v); err == nil {
-			return t.UTC(), true
-		}
-	}
-	if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
-		return time.UnixMilli(ms).UTC(), true
-	}
-	return time.Time{}, false
+	return query.ResolveTimeIn(v, now, loc)
 }
 
 func epochSeconds(t time.Time) float64 {

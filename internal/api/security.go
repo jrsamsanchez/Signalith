@@ -557,7 +557,7 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		s.Log.Error("could not change the certificate authority", "action", req.Action, "err", err)
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("%s didn't work: %w", caDoing[req.Action], err))
+		writeError(w, http.StatusInternalServerError, errHidden(caDoing[req.Action]+" didn't work", err))
 		return
 	}
 	s.audit(r, msg, args...)
