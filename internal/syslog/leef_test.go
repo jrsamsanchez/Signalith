@@ -108,7 +108,8 @@ func TestLEEFEvent(t *testing.T) {
 	})
 	// devTime as text.
 	d = doc("<134>Oct 12 13:59:00 qradar LEEF:1.0|V|P|1|E|devTime=Oct 12 2026 13:58:30\tdevTimeFormat=MMM dd yyyy HH:mm:ss\tsrc=192.0.2.1")
-	check(t, "devTime text", d, map[string]any{"@timestamp": "2026-10-12T13:58:30Z", "_model": "Other", "leef_devtimeformat": nil})
+	// No zone: the receive time, with devTime kept as the device's clock.
+	check(t, "devTime text", d, map[string]any{"@timestamp": "2026-10-12T14:00:00Z", "device_clock": "2026-10-12T13:58:30", "_model": "Other", "leef_devtimeformat": nil})
 	// No syslog header at all.
 	d = doc("LEEF:1.0|V|P|1|E|src=192.0.2.1\tdst=192.0.2.2")
 	check(t, "bare", d, map[string]any{"_model": "Network_Traffic", "sourcetype": "leef", "host": "192.0.2.50"})
