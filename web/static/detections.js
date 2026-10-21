@@ -1720,10 +1720,14 @@ async function uploadContent(pick, btn) {
 // it is more than a handful.
 async function bulkEnable(ds, on, btn) {
   if (!ds.length) return;
+  // Rules turned on watch new events only, so they miss sample data
+  // already loaded; say so, and how to run them over it (LP-03).
+  const sampleNote = on && (await fetchSample()) && sampleInfo.loaded
+    ? ' The sample data is loaded, and they only watch events that arrive from now on. To run them over the sample week too, remove the sample data on the Add data page and load it again.' : '';
   if (on && ds.length > 20) {
     const ok = await dxConfirm({
       title: `Turn on ${dxPlural(ds.length, 'rule')}?`,
-      text: `They start running on their schedules and raise findings for what they match. You can turn any of them off again here.`,
+      text: `They start running on their schedules and raise findings for what they match. You can turn any of them off again here.${sampleNote}`,
       confirm: 'Turn on',
     });
     if (!ok) return;
@@ -1733,7 +1737,7 @@ async function bulkEnable(ds, on, btn) {
   try {
     await api('api/detections/enable', { ids, enabled: on });
     await loadDetections();
-    dxNotify(`${dxPlural(ids.length, 'rule')} turned ${on ? 'on' : 'off'}.`, {
+    dxNotify(`${dxPlural(ids.length, 'rule')} turned ${on ? 'on' : 'off'}.${ids.length > 20 ? '' : sampleNote}`, {
       label: 'Undo',
       run: async () => {
         try { await api('api/detections/enable', { ids, enabled: !on }); await loadDetections(); dxNotify('Change undone.'); }
