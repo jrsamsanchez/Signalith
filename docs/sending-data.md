@@ -78,7 +78,7 @@ To move over:
 1. Allow port 7779 through the firewall, and through any load balancer.
 2. Set up each agent again from **Add data**; the new configuration sends to port 7779.
 3. Set `server.agent_listen`, such as `0.0.0.0:7779`, so the web port stops taking
-   agents. The next release stops taking agents on the web port anyway.
+   agents. A later release will stop taking agents on the web port.
 
 The Docker quick start is different: its updated files publish 9000 and 7779 and set
 `server.agent_listen`, so after the update open `https://localhost:9000` and set up each

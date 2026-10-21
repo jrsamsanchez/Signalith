@@ -213,7 +213,7 @@ var Sections = []Section{
 	{ID: "opensearch", Title: "OpenSearch", Help: "Where events, findings and investigations are stored."},
 	{ID: "search", Title: "Search", Help: "What a new search starts with, and when a quiet data source is flagged."},
 	{ID: "syslog", Title: "Syslog", Help: "Receive syslog from firewalls, switches and servers that cannot run an agent. A new install takes it over TLS only; plain syslog over UDP and TCP is unencrypted and can be forged, so it is off until an address is set."},
-	{ID: "detections", Title: "Detections", Help: "Whether detections run by themselves, and how many findings one run can raise."},
+	{ID: "detections", Title: "Detections", Help: "Whether detections run by themselves, how many findings one run can raise, and how soon findings of each urgency should be picked up and resolved."},
 	{ID: "assistant", Title: "AI assistant", Help: "An optional AI model. Ask sends it only the question and field names, never events. Investigate with AI sends a finding's events, and is off until you turn it on below."},
 	{ID: "intel", Title: "Threat intel", Help: "Where threat intel feeds may be downloaded from."},
 	{ID: "sso", Title: "Single sign-on", Tab: "sso", Help: "Sign in with an identity provider, over OpenID Connect (Microsoft Entra ID, Okta, Google, Keycloak) or SAML 2.0 (AD FS, Okta, Entra ID), alongside local users and directory sign-in."},
@@ -460,6 +460,26 @@ var Registry = []Setting{
 	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",
 		Placeholder: DefaultContentURL, EmptyMeans: "the Signalith project's GitHub releases"},
+
+	{Key: "detections.require_disposition", Scope: ScopeCluster, Section: "detections", Label: "Ask for a disposition to resolve", Type: TypeBool,
+		Help: "Resolving or closing a finding from the Findings page asks what it turned out to be: true positive, benign, false positive or undetermined. " +
+			"That record is what shows which detections are noisy. On by default."},
+	{Key: "detections.sla.critical_respond", Scope: ScopeCluster, Section: "detections", Label: "Critical: pick up within", Type: TypeDuration,
+		Help: slaRespondHelp("critical"), Placeholder: "15m", EmptyMeans: "15m"},
+	{Key: "detections.sla.critical_resolve", Scope: ScopeCluster, Section: "detections", Label: "Critical: resolve within", Type: TypeDuration,
+		Help: slaResolveHelp("critical"), Placeholder: "4h", EmptyMeans: "4h"},
+	{Key: "detections.sla.high_respond", Scope: ScopeCluster, Section: "detections", Label: "High: pick up within", Type: TypeDuration,
+		Help: slaRespondHelp("high"), Placeholder: "1h", EmptyMeans: "1h"},
+	{Key: "detections.sla.high_resolve", Scope: ScopeCluster, Section: "detections", Label: "High: resolve within", Type: TypeDuration,
+		Help: slaResolveHelp("high"), Placeholder: "24h", EmptyMeans: "24h"},
+	{Key: "detections.sla.medium_respond", Scope: ScopeCluster, Section: "detections", Label: "Medium: pick up within", Type: TypeDuration,
+		Help: slaRespondHelp("medium"), Placeholder: "4h", EmptyMeans: "4h"},
+	{Key: "detections.sla.medium_resolve", Scope: ScopeCluster, Section: "detections", Label: "Medium: resolve within", Type: TypeDuration,
+		Help: slaResolveHelp("medium"), Placeholder: "3d", EmptyMeans: "3d"},
+	{Key: "detections.sla.low_respond", Scope: ScopeCluster, Section: "detections", Label: "Low: pick up within", Type: TypeDuration,
+		Help: slaRespondHelp("low"), Placeholder: "24h", EmptyMeans: "24h"},
+	{Key: "detections.sla.low_resolve", Scope: ScopeCluster, Section: "detections", Label: "Low: resolve within", Type: TypeDuration,
+		Help: slaResolveHelp("low"), Placeholder: "7d", EmptyMeans: "7d"},
 
 	{Key: "assistant.provider", Scope: ScopeCluster, Section: "assistant", Label: "Provider", Type: TypeChoice,
 		Help: "Who runs the model. For a model on your own hardware (Ollama, LM Studio, vLLM) or OpenAI itself, pick Local model or OpenAI-compatible.",
@@ -1510,4 +1530,14 @@ func PlainProblem(key, problem string) string {
 func upperFirst(s string) string {
 	r, n := utf8.DecodeRuneInString(s)
 	return string(unicode.ToUpper(r)) + s[n:]
+}
+
+// slaRespondHelp and slaResolveHelp explain a finding due time.
+func slaRespondHelp(urgency string) string {
+	return "How soon someone should pick up a new " + urgency + " finding: change its status or owner. " +
+		"The Findings page shows when each one is due and which are late. Changes playbooks make do not count. 0 means no target."
+}
+
+func slaResolveHelp(urgency string) string {
+	return "How soon a " + urgency + " finding should be resolved or closed, timed from when it was raised. 0 means no target."
 }

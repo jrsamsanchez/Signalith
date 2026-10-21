@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -45,13 +46,14 @@ func properties() map[string]any {
 	return map[string]any{
 		"id": kw, "detection_id": kw, "severity": kw, "urgency": kw, "status": kw, "owner": kw,
 		"disposition": kw, "mitre": kw, "group_key": kw, "entity_values": kw, "case_id": kw, "sample": kw,
-		"title":       map[string]any{"type": "text", "fields": map[string]any{"raw": kw}},
-		"description": map[string]any{"type": "text"},
-		"created":     map[string]any{"type": "date"},
-		"updated":     map[string]any{"type": "date"},
-		"slot":        map[string]any{"type": "date"},
-		"raised_at":   map[string]any{"type": "date"},
-		"result":      notIndexed, "entities": notIndexed, "comments": notIndexed, "history": notIndexed,
+		"title":        map[string]any{"type": "text", "fields": map[string]any{"raw": kw}},
+		"description":  map[string]any{"type": "text"},
+		"created":      map[string]any{"type": "date"},
+		"updated":      map[string]any{"type": "date"},
+		"slot":         map[string]any{"type": "date"},
+		"raised_at":    map[string]any{"type": "date"},
+		"responded_at": map[string]any{"type": "date"},
+		"result":       notIndexed, "entities": notIndexed, "comments": notIndexed, "history": notIndexed,
 		"context": notIndexed,
 		"query":   map[string]any{"type": "keyword", "index": false},
 	}
@@ -88,10 +90,58 @@ func (s *OpenSearch) Upgrade(ctx context.Context) error {
 	if err := s.Client.Do(ctx, http.MethodPut, idx+"/_mapping", map[string]any{"properties": properties()}, nil); err != nil {
 		return err
 	}
-	return s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
+	if err := s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
 		"query":  map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "urgency"}}}}},
 		"script": map[string]any{"lang": "painless", "source": "ctx._source.urgency = ctx._source.severity"},
+	}, nil); err != nil {
+		return err
+	}
+	// Findings picked up before the first response was recorded count as
+	// picked up at their last change, so they are not shown as owing one.
+	return s.Client.Do(ctx, http.MethodPost, idx+"/_update_by_query?conflicts=proceed&refresh=true", map[string]any{
+		"query": map[string]any{"bool": map[string]any{
+			"must_not": []any{map[string]any{"exists": map[string]any{"field": "responded_at"}}},
+			"should": []any{
+				map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"term": map[string]any{"status": StatusNew}}}}},
+				map[string]any{"exists": map[string]any{"field": "owner"}},
+			},
+			"minimum_should_match": 1,
+		}},
+		"script": map[string]any{"lang": "painless", "source": "ctx._source.responded_at = ctx._source.updated"},
 	}, nil)
+}
+
+// dueQuery keeps open findings with a due time they have not met by
+// d.Now plus d.Within, one clause per urgency with a target.
+func dueQuery(d DueWithin) map[string]any {
+	at := d.Now.Add(d.Within)
+	var should []any
+	for _, u := range Severities {
+		var by []any
+		if rt := d.SLA.Respond[u]; rt > 0 {
+			by = append(by, map[string]any{"bool": map[string]any{
+				"must_not": []any{map[string]any{"exists": map[string]any{"field": "responded_at"}}},
+				"filter":   []any{map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-rt).UTC().Format(time.RFC3339Nano)}}}},
+			}})
+		}
+		if st := d.SLA.Resolve[u]; st > 0 {
+			by = append(by, map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-st).UTC().Format(time.RFC3339Nano)}}})
+		}
+		if len(by) == 0 {
+			continue
+		}
+		should = append(should, map[string]any{"bool": map[string]any{
+			"filter": []any{map[string]any{"term": map[string]any{"urgency": u}}},
+			"should": by, "minimum_should_match": 1,
+		}})
+	}
+	if len(should) == 0 {
+		return map[string]any{"match_none": map[string]any{}}
+	}
+	return map[string]any{"bool": map[string]any{
+		"filter": []any{map[string]any{"terms": map[string]any{"status": []string{StatusNew, StatusInProgress, StatusPending}}}},
+		"should": should, "minimum_should_match": 1,
+	}}
 }
 
 // EnsureSampleField maps the sample-data marker (the "sample" field) on an
@@ -112,8 +162,10 @@ type doc struct {
 
 func entityValues(f *Finding) []string {
 	var out []string
-	for _, v := range f.Entities {
-		if s := fmt.Sprint(v); s != "" {
+	for k, v := range f.Entities {
+		// risk_object_type says what kind the risk object is (user,
+		// system); it names no entity.
+		if s := fmt.Sprint(v); s != "" && k != "risk_object_type" && !slices.Contains(out, s) {
 			out = append(out, s)
 		}
 	}
@@ -259,6 +311,15 @@ func filterQuery(flt Filter) map[string]any {
 	if flt.Owner != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"owner": flt.Owner}})
 	}
+	if flt.Due != nil {
+		fs = append(fs, dueQuery(*flt.Due))
+	}
+	if flt.Unowned {
+		fs = append(fs, map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
+			map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "owner"}}}}},
+			map[string]any{"term": map[string]any{"owner": ""}},
+		}}})
+	}
 	if flt.DetectionID != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"detection_id": flt.DetectionID}})
 	}
@@ -312,11 +373,15 @@ func (s *OpenSearch) Search(ctx context.Context, flt Filter) ([]*Finding, int, e
 	}
 	// OpenSearch returns at most 10000 hits per request by default.
 	limit = min(limit, 10000)
+	sortBy, after := osSort(flt.Order, flt.After)
 	body := map[string]any{
 		"query":            filterQuery(flt),
 		"size":             limit,
-		"sort":             []any{map[string]any{"created": "desc"}},
+		"sort":             sortBy,
 		"track_total_hits": true,
+	}
+	if after != nil {
+		body["search_after"] = after
 	}
 	var out searchResp
 	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
@@ -399,4 +464,84 @@ func (s *OpenSearch) Summary(ctx context.Context) (*Summary, error) {
 		sm.ByUrgency[b.Key] = b.Count
 	}
 	return sm, nil
+}
+
+func (s *OpenSearch) UrgencyCounts(ctx context.Context, flt Filter) (map[string]int, error) {
+	body := map[string]any{
+		"size":  0,
+		"query": filterQuery(flt),
+		"aggs":  map[string]any{"urgency": map[string]any{"terms": map[string]any{"field": "urgency", "size": 20}}},
+	}
+	var out struct {
+		Aggregations struct {
+			Urgency struct {
+				Buckets []struct {
+					Key   string `json:"key"`
+					Count int    `json:"doc_count"`
+				} `json:"buckets"`
+			} `json:"urgency"`
+		} `json:"aggregations"`
+	}
+	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
+		return nil, err
+	}
+	res := map[string]int{}
+	for _, b := range out.Aggregations.Urgency.Buckets {
+		res[b.Key] = b.Count
+	}
+	return res, nil
+}
+
+func (s *OpenSearch) Groups(ctx context.Context, flt Filter, by string) ([]Group, error) {
+	field := "detection_id"
+	if by == GroupEntity {
+		field = "entity_values"
+	}
+	body := map[string]any{
+		"size":  0,
+		"query": filterQuery(flt),
+		"aggs": map[string]any{"g": map[string]any{
+			"terms": groupTerms(field),
+			"aggs":  map[string]any{"u": map[string]any{"terms": map[string]any{"field": "urgency", "size": 10}}},
+		}},
+	}
+	type bucket struct {
+		Key   string `json:"key"`
+		Count int    `json:"doc_count"`
+	}
+	var out struct {
+		Aggregations struct {
+			G struct {
+				Buckets []struct {
+					bucket
+					U struct {
+						Buckets []bucket `json:"buckets"`
+					} `json:"u"`
+				} `json:"buckets"`
+			} `json:"g"`
+		} `json:"aggregations"`
+	}
+	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", body, &out); err != nil {
+		return nil, err
+	}
+	gs := make([]Group, 0, len(out.Aggregations.G.Buckets))
+	for _, b := range out.Aggregations.G.Buckets {
+		var us []string
+		for _, u := range b.U.Buckets {
+			us = append(us, u.Key)
+		}
+		gs = append(gs, Group{Key: b.Key, Count: b.Count, Urgency: topUrgency(us)})
+	}
+	return sortGroups(gs), nil
+}
+
+// groupTerms is the terms aggregation of a grouping. Findings stored
+// before entity values left out risk_object_type hold "user", "system"
+// or "other" as a value; a grouping by entity leaves those out.
+func groupTerms(field string) map[string]any {
+	t := map[string]any{"field": field, "size": MaxGroups}
+	if field == "entity_values" {
+		t["exclude"] = []string{"user", "system", "other"}
+	}
+	return t
 }

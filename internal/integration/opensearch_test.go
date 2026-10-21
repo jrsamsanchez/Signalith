@@ -534,6 +534,84 @@ tags: [attack.t1059.001]
 	if err != nil || len(list) != 1 || list[0].ID != "legacy" {
 		t.Errorf("legacy urgency = %v %v", list, err)
 	}
+
+	// Each order pages through every finding once, and by urgency the
+	// most urgent come first (the legacy one by its severity).
+	for _, o := range findings.Orders {
+		all, total, err := fs.Search(ctx, findings.Filter{Order: o})
+		if err != nil || total != len(all) || total < 3 {
+			t.Fatalf("%s: %d of %d, %v", o, len(all), total, err)
+		}
+		var after *findings.Cursor
+		for i := range all {
+			page, _, err := fs.Search(ctx, findings.Filter{Order: o, Limit: 1, After: after})
+			if err != nil || len(page) != 1 || page[0].ID != all[i].ID {
+				t.Fatalf("%s: page %d = %v %v, want %s", o, i, page, err, all[i].ID)
+			}
+			c := findings.CursorOf(page[0])
+			after = &c
+		}
+		if o == findings.OrderUrgency {
+			for i := 1; i < len(all); i++ {
+				if findings.UrgencyRank(all[i].EffectiveUrgency()) > findings.UrgencyRank(all[i-1].EffectiveUrgency()) {
+					t.Errorf("by urgency: %s before %s", all[i-1].EffectiveUrgency(), all[i].EffectiveUrgency())
+				}
+			}
+		}
+	}
+	// Due times: a critical finding nobody picked up is late after 15
+	// minutes; one picked up is due only to be resolved.
+	now := time.Now().UTC()
+	picked := now.Add(-10 * time.Minute)
+	for _, f := range []*findings.Finding{
+		{ID: "due-late", DetectionID: "x", Title: "late", Severity: "critical", Urgency: "critical", Status: findings.StatusNew, Created: now.Add(-20 * time.Minute), Updated: now},
+		{ID: "due-soon", DetectionID: "x", Title: "soon", Severity: "critical", Urgency: "critical", Status: findings.StatusNew, Created: now.Add(-10 * time.Minute), Updated: now},
+		{ID: "due-picked", DetectionID: "x", Title: "picked", Severity: "critical", Urgency: "critical", Status: findings.StatusInProgress, Created: now.Add(-20 * time.Minute), Updated: now, RespondedAt: &picked},
+	} {
+		if err := fs.Create(ctx, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for within, want := range map[time.Duration]string{0: "[due-late]", 10 * time.Minute: "[due-late due-soon]"} {
+		l, _, err := fs.Search(ctx, findings.Filter{Due: &findings.DueWithin{SLA: findings.DefaultSLA(), Within: within, Now: now}, Order: findings.OrderOldest})
+		var got []string
+		for _, f := range l {
+			got = append(got, f.ID)
+		}
+		if err != nil || fmt.Sprint(got) != want {
+			t.Errorf("due within %v: %v %v, want %s", within, got, err, want)
+		}
+	}
+	every, total, _ := fs.Search(ctx, findings.Filter{})
+	if gs, err := fs.Groups(ctx, findings.Filter{}, findings.GroupDetection); err != nil || len(gs) == 0 {
+		t.Errorf("groups by detection: %v %v", gs, err)
+	} else {
+		sum := 0
+		for _, g := range gs {
+			sum += g.Count
+		}
+		if sum != total || gs[0].Urgency == "" {
+			t.Errorf("groups by detection %+v add up to %d of %d", gs, sum, total)
+		}
+	}
+	if counts, err := fs.UrgencyCounts(ctx, findings.Filter{}); err != nil || counts["low"] < 1 {
+		t.Errorf("urgency counts %v %v", counts, err)
+	}
+	owned := 0
+	for _, f := range every {
+		if f.Owner != "" {
+			owned++
+		}
+	}
+	if list, n, err := fs.Search(ctx, findings.Filter{Unowned: true}); err != nil || n != total-owned || owned == 0 {
+		t.Errorf("unowned: %d of %d (%d owned) %v", n, total, owned, err)
+	} else {
+		for _, f := range list {
+			if f.Owner != "" {
+				t.Errorf("unowned search found %s owned by %s", f.ID, f.Owner)
+			}
+		}
+	}
 }
 
 func mustGet(t *testing.T, lib *detect.Library, id, lookback string) *detect.Detection {

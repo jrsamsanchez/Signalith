@@ -490,7 +490,18 @@
   <section id="page-findings" class="page">
     <div class="split split--solo" id="f-split">
       <section class="queue" aria-label="Findings queue">
-        <div class="pills" id="f-summary" role="group" aria-label="Filter by urgency"></div>
+        <div class="fnd-top">
+          <div class="pills" id="f-summary" role="group" aria-label="Filter by urgency"></div>
+          <div class="fnd-opts">
+            <select class="select select--sm" id="f-due" aria-label="Due"></select>
+            <select class="select select--sm" id="f-group" aria-label="Group by">
+              <option value="" selected>No grouping</option>
+              <option value="detection">Group by detection</option>
+              <option value="entity">Group by entity</option>
+            </select>
+            <span id="f-views"></span>
+          </div>
+        </div>
         <div class="toolbar" id="f-toolbar" role="search">
           <div class="input-wrap"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input class="input" id="f-text" type="search" placeholder="Search title, host, user, IP" aria-label="Search findings" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></div>
           <select class="select" id="f-status" aria-label="Status">
@@ -513,6 +524,7 @@
             <button type="button" data-since="" aria-pressed="false" title="All time">All</button>
           </div>
           <span class="fnd-filter hidden" id="f-detection"></span>
+          <span class="fnd-filter hidden" id="f-entity"></span>
           <span class="spacer hide-sm"></span>
           <button class="btn btn--ghost btn--icon hide-sm hidden" type="button" id="f-clear" aria-label="Clear filters" title="Clear filters"><svg class="icon" aria-hidden="true"><use href="#i-filter-x"/></svg></button>
           <button class="btn btn--ghost btn--icon hide-sm" type="button" id="f-export" aria-label="Export these findings as CSV" title="Export as CSV"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></button>
@@ -1512,7 +1524,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <div class="page-head">
       <div>
         <h2 class="page-head__title">Approvals</h2>
-        <p class="page-head__desc">Playbook steps that wait for an analyst before they run. Nothing happens until someone approves, and a step nobody approves within a day expires.</p>
+        <p class="page-head__desc">Playbook steps that wait for an analyst before they run, and exceptions analysts propose for an admin to approve. Nothing happens until someone approves.</p>
       </div>
     </div>
     <div id="ap-page" class="ap-page" aria-busy="true"></div>
