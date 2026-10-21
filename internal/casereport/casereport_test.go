@@ -28,7 +28,7 @@ func sampleReport(t *testing.T) *Report {
 	if _, err := c.AddEntry(cases.Entry{Kind: cases.KindEvent, Event: map[string]any{"host": "web-01", "bytes": int64(9007199254740993), "at": now}}, "ana", now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.AddEntry(cases.Entry{Kind: cases.KindNote, Text: `Called the user </pre> <pre id="report-data">{} back`}, "ana", now); err != nil {
+	if _, err := c.AddEntry(cases.Entry{Kind: cases.KindNote, Text: "Called the user </pre> <pre id=\"report-data\">{} back\r\nfrom Windows"}, "ana", now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.AddTasks([]string{"Reset the password"}, "ana", now); err != nil {

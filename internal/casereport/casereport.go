@@ -389,12 +389,17 @@ func Verify(data []byte, keys Keys, requireSigned bool) (*Result, error) {
 		if err != nil {
 			return res, err
 		}
-		if !bytes.Equal(again, f.page) {
+		// Carriage returns are left out of the comparison: a browser shows
+		// none, a note pasted from Windows holds them, and a Windows tool
+		// may add them to every line end when it saves the page.
+		if !bytes.Equal(noCR(again), noCR(f.page)) {
 			return res, changed("its page was edited: it differs from the page its data makes")
 		}
 	}
 	return res, nil
 }
+
+func noCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r"), nil) }
 
 //go:embed report.html
 var page string
@@ -423,7 +428,7 @@ var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 		}
 		return strings.ToUpper(s[:1]) + strings.ReplaceAll(s[1:], "_", " ")
 	},
-}).Parse(page))
+}).Parse(strings.ReplaceAll(page, "\r\n", "\n"))) // the same page from a Windows checkout
 
 // HTML renders the report as a page that stands alone: no scripts, no
 // requests, everything escaped, with the exact bytes signed and the
