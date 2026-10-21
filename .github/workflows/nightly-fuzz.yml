@@ -1,6 +1,8 @@
 name: Nightly fuzz
 # Every fuzz target for five minutes each: longer than the short run on
-# pull requests, to find the rarer inputs that crash or hang a parser.
+# pull requests, to find the rarer inputs that crash or hang a parser. The
+# targets are shared out over four jobs (FUZZ_SHARD), so the whole run
+# fits well inside each job's time limit.
 # Nightly only, never on pull requests, so it does not hold up the runners
 # they share. A failure uploads the inputs that failed; commit each one
 # under the package's testdata/fuzz/ with its fix.
@@ -14,8 +16,12 @@ permissions:
 
 jobs:
   fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -24,8 +30,9 @@ jobs:
       - run: .github/scripts/fuzz.sh
         env:
           FUZZTIME: 5m
+          FUZZ_SHARD: ${{ matrix.shard }}/4
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: fuzz-failures
+          name: fuzz-failures-${{ matrix.shard }}
           path: '**/testdata/fuzz/'

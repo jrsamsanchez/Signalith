@@ -8,12 +8,12 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the runs of its older pushes, and a new
-# push to main cancels the run of the one before it, which the newer commit
-# contains, so busy merge days don't queue pull requests behind stale runs.
+# A new push to a pull request cancels the runs of its older pushes. Every
+# push to main runs to the end, one after another, so each commit on main
+# has a full result and a failure points at the commit that caused it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Which of the slower jobs that aren't required checks a pull request
@@ -264,9 +264,11 @@ jobs:
           echo "Signalith stopped in ${took}s"
           if [ "$took" -gt 30 ]; then $COMPOSE logs --no-color --tail 50 signalith; exit 1; fi
           go test -tags integration -count=1 -v -timeout 20m -skip '^TestCluster' ./internal/integration/
+      # Only each container's last lines, so the test output above is not
+      # buried under them.
       - name: Container logs
         if: failure()
-        run: $COMPOSE logs --no-color
+        run: $COMPOSE logs --no-color --tail 300
 
   cluster:
     runs-on: ubuntu-latest
@@ -307,9 +309,11 @@ jobs:
           SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/signalith-secrets/opensearch-client.pem
           SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/signalith-secrets/opensearch-client-key.pem
         run: go test -tags integration -count=1 -v -run '^TestCluster' -timeout 20m ./internal/integration/
+      # Only each container's last lines, so the test output above is not
+      # buried under them.
       - name: Container logs
         if: failure()
-        run: $COMPOSE logs --no-color
+        run: $COMPOSE logs --no-color --tail 300
 
   # Every fuzz target for a short while, so a change that makes a parser
   # crash or hang on odd input is caught before it merges. The nightly
@@ -352,7 +356,7 @@ jobs:
           name: signalith-binaries
           path: dist/
 
-  # Fails when a Go file isn't formatted with gofmt. Not a required check.
+  # Fails when a Go file isn't formatted with gofmt.
   gofmt:
     runs-on: ubuntu-latest
     steps:
@@ -368,7 +372,7 @@ jobs:
           fi
 
   # Measures statement coverage of the unit tests, writes the total to the
-  # job summary and fails below 80%. Not a required check.
+  # job summary and fails below 80%.
   coverage:
     runs-on: ubuntu-latest
     steps:

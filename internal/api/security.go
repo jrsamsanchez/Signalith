@@ -68,8 +68,10 @@ type SecurityChecker struct {
 	logged []string
 	// plain are the computers that signed in, and plainAgents the agents
 	// that sent events, over plain HTTP, not through a trusted reverse
-	// proxy.
-	plain, plainAgents addrSeen
+	// proxy. proxiedPlain and proxiedPlainAgents are those a trusted
+	// reverse proxy said it took over plain HTTP.
+	plain, plainAgents               addrSeen
+	proxiedPlain, proxiedPlainAgents addrSeen
 }
 
 // NewSecurityChecker returns a checker that logs to log.
@@ -77,7 +79,8 @@ func NewSecurityChecker(log *slog.Logger) *SecurityChecker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &SecurityChecker{log: log, Started: time.Now(), plain: addrSeen{max: maxPlainSignIns}, plainAgents: addrSeen{max: maxPlainSignIns}}
+	return &SecurityChecker{log: log, Started: time.Now(), plain: addrSeen{max: maxPlainSignIns}, plainAgents: addrSeen{max: maxPlainSignIns},
+		proxiedPlain: addrSeen{max: maxPlainSignIns}, proxiedPlainAgents: addrSeen{max: maxPlainSignIns}}
 }
 
 // Report is the last report, or nil before the first run ends.
@@ -328,6 +331,8 @@ func (s *Server) runtimeFacts(now time.Time, inContainer bool) *security.Runtime
 	rt := &security.RuntimeFacts{SyslogSenders: map[string]int{}}
 	rt.DirectPlain = s.security().plain.since(since)
 	rt.DirectPlainAgents = s.security().plainAgents.since(since)
+	rt.ProxiedPlain = s.security().proxiedPlain.since(since)
+	rt.ProxiedPlainAgents = s.security().proxiedPlainAgents.since(since)
 	for _, x := range s.Pipeline.PlaintextSenders(since) {
 		// Agents on this computer: their events don't cross the network.
 		if a, err := netip.ParseAddr(x.Address); err == nil && a.Unmap().IsLoopback() {
@@ -694,9 +699,15 @@ func (s *Server) saveSettingShared(r *http.Request, key string, value any) (int,
 }
 
 // notePlainSignIn records a sign-in over plain HTTP from another
-// computer, not through a trusted reverse proxy, for the Security page.
+// computer, not through a trusted reverse proxy, for the Security page;
+// and one a trusted reverse proxy says it took over plain HTTP, wherever
+// the proxy runs.
 func (s *Server) notePlainSignIn(r *http.Request) {
 	if r.TLS != nil || s.viaTrustedProxy(r) {
+		return
+	}
+	if a, ok := s.proxiedPlain(r); ok {
+		s.security().proxiedPlain.note(a)
 		return
 	}
 	from := clientaddr.Parse(r.RemoteAddr)
@@ -722,6 +733,10 @@ func (s *Server) noteName(r *http.Request) {
 // are noted by the pipeline instead (see PlainHandler).
 func (s *Server) notePlainAgent(r *http.Request) {
 	if r.TLS != nil || plaintextIngest(r) || s.viaTrustedProxy(r) {
+		return
+	}
+	if a, ok := s.proxiedPlain(r); ok {
+		s.security().proxiedPlainAgents.note(a)
 		return
 	}
 	from := clientaddr.Parse(r.RemoteAddr)

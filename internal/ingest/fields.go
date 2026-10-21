@@ -66,6 +66,8 @@ var knownFields = func() map[string]string {
 		"datamodel":      kw,
 		"device_time":    kw,
 		"dropped_fields": long,
+		// The time a syslog line without a zone states (DeviceClockField).
+		DeviceClockField: kw,
 
 		// The marker on every event and risk event the "Load sample data"
 		// feature writes (datamodel.SampleField). It is mapped up front so it

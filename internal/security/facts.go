@@ -30,8 +30,9 @@ type Facts struct {
 	// that variable.
 	SettingEnv map[string]string
 	// InContainer is true when Signalith runs in a container, and Docker
-	// when that container is the Docker quick start's.
-	InContainer, Docker bool
+	// when that container is the Docker quick start's. Kubernetes is true
+	// when the container is a Kubernetes pod's.
+	InContainer, Docker, Kubernetes bool
 	// PublicTokenAccepted is true when the server accepts the old example
 	// ingest token over plain HTTP: a Docker quick start upgraded from a
 	// version whose agents send it, with HTTPS on and agents on plain HTTP
@@ -228,6 +229,11 @@ type RuntimeFacts struct {
 	// straight to Signalith over plain HTTP while HTTPS is off, not from
 	// this computer or through a trusted proxy, in the last day.
 	DirectPlainAgents []string
+	// ProxiedPlain and ProxiedPlainAgents are the addresses that signed in
+	// or sent events through a trusted reverse proxy that said the request
+	// came over plain HTTP (X-Forwarded-Proto: http), in the last day: the
+	// client's address when the proxy named it, else the proxy's.
+	ProxiedPlain, ProxiedPlainAgents []string
 	// Syslog senders in the last day, by protocol, and whether every
 	// plain one came from the container's default gateway.
 	SyslogSenders map[string]int

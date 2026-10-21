@@ -108,6 +108,11 @@ spec:
               [ -f "$SIGNALITH_ADMIN_PASSWORD_FILE" ] || unset SIGNALITH_ADMIN_PASSWORD_FILE
               exec signalith serve -c /etc/signalith/signalith.yaml
           env:
+            # Kubernetes' container runtimes leave none of the files Docker
+            # and Podman do, so Signalith is told it runs in a container
+            # (the Security page then checks the pod, not a systemd unit).
+            - name: SIGNALITH_CONTAINER
+              value: "1"
             - name: POD_NAME
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
             # This server's name on the Servers page, and the address the
