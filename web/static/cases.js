@@ -1443,19 +1443,23 @@ async function openReportCheck() {
   const check = el('button', { type: 'submit', class: 'btn btn--primary', disabled: '' }, icon('shield-check'), 'Check');
   file.addEventListener('change', () => { check.disabled = !file.files.length; fill(result); });
   const keys = el('div', { class: 'crk-keys' });
-  const admin = can('admin');
+  // Revoking a key is the provider's: every tenant shares it.
+  const admin = can('admin') && !inTenant();
 
   const showResult = (r) => {
     const ok = r.verified;
     const lines = [];
     if (r.case) lines.push(el('p', {}, el('b', {}, r.title || r.case), ` · ${r.case}`));
     if (r.generated) lines.push(el('p', { class: 'hint' }, `Made ${fullTime(r.generated)} by ${r.generated_by}`));
-    if (r.signed) lines.push(el('p', { class: 'hint' }, `Signed with report key ${r.key_id}` + (r.key_status ? ` (${(KEY_STATUS[r.key_status] || [r.key_status])[0].toLowerCase()})` : '')));
-    if (r.warning) lines.push(el('p', { class: 'crk-warn' }, icon('triangle-alert'), r.warning));
+    // Only a verified report is "signed with" its key; otherwise the key
+    // is only what the file claims.
+    if (ok && r.key_id) lines.push(el('p', { class: 'hint' }, `Signed with report key ${r.key_id}` + (r.key_status ? ` (${(KEY_STATUS[r.key_status] || [r.key_status])[0].toLowerCase()})` : '')));
+    else if (r.key_id) lines.push(el('p', { class: 'hint' }, `Claims report key ${r.key_id}`));
     if (!ok && r.error) lines.push(el('p', {}, sentence(String(r.error).replace(/^the report did not verify: /, ''))));
-    fill(result, el('div', { class: 'alert', 'data-tone': ok ? (r.warning ? 'warning' : 'success') : 'danger', role: 'status' },
-      icon(ok ? 'shield-check' : 'shield-x'),
-      el('div', {}, el('b', {}, !ok ? 'This report did not verify.' : r.warning ? 'Signed with a key that may have leaked.' : 'Verified: this server signed it, and nothing changed since.'), ...lines)));
+    const head = ok ? 'Verified: this server signed it, and nothing changed since.'
+      : r.status === 'revoked' ? 'Signed with a revoked key: this report cannot be trusted.' : 'This report did not verify.';
+    fill(result, el('div', { class: 'alert', 'data-tone': ok ? 'success' : 'danger', role: 'status' },
+      icon(ok ? 'shield-check' : 'shield-x'), el('div', {}, el('b', {}, head), ...lines)));
   };
 
   const drawKeys = (ks) => {
@@ -1485,10 +1489,10 @@ async function openReportCheck() {
       try {
         drawKeys((await api(`api/cases/reports/keys/${encodeURIComponent(k.id)}/revoke`, { reason: reason.value }, 'POST')).keys || []);
         d.close();
-        toast('Key revoked. Reports it signed now say it may have leaked.');
+        toast('Key revoked. Reports it signed no longer verify.');
       } catch (e) { done(); toastError('Couldn’t revoke the key', e); }
     };
-    fill(d, modalHead('crk-revoke', `Revoke report key ${k.id}?`, 'Do this when the cluster key or master key it comes from may have leaked: someone with it could sign a report. Reports it signed still check, with a warning. Rotate that key too, so new reports get a new one.', () => d.close()),
+    fill(d, modalHead('crk-revoke', `Revoke report key ${k.id}?`, 'Do this when the cluster key or master key it comes from may have leaked: someone with it could sign a report. Reports it signed no longer verify, and it signs no more; reports are exported unsigned until you change that key, so new reports get a new one.', () => d.close()),
       el('div', { class: 'modal__body' }, reason),
       el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
     d.showModal();

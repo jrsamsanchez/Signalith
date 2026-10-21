@@ -161,7 +161,8 @@ func RevokeIn(ks []Key, id, by, reason string, now time.Time) ([]Key, error) {
 
 // File keeps the list of a server on its own in a file of its state
 // folder. It reads the file each time, so a key revoked with the command
-// line counts at once.
+// line counts at once, and each change holds a lock on the file's .lock
+// file, so the server and the command line never lose each other's.
 type File struct {
 	Path string
 
@@ -198,9 +199,23 @@ func write(path string, ks []Key) error {
 
 func (f *File) List(context.Context) ([]Key, error) { return Read(f.Path) }
 
-func (f *File) Use(_ context.Context, pub ed25519.PublicKey, source string, now time.Time) error {
+// lock holds the file for a change, in this process and against others.
+func (f *File) lock() (func(), error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	unlock, err := lockFile(f.Path + ".lock")
+	if err != nil {
+		f.mu.Unlock()
+		return nil, err
+	}
+	return func() { unlock(); f.mu.Unlock() }, nil
+}
+
+func (f *File) Use(_ context.Context, pub ed25519.PublicKey, source string, now time.Time) error {
+	unlock, err := f.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ks, err := Read(f.Path)
 	if err != nil {
 		return err
@@ -213,8 +228,11 @@ func (f *File) Use(_ context.Context, pub ed25519.PublicKey, source string, now 
 }
 
 func (f *File) Revoke(_ context.Context, id, by, reason string, now time.Time) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	unlock, err := f.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ks, err := Read(f.Path)
 	if err != nil {
 		return err

@@ -111,8 +111,8 @@ type Manager struct {
 	// stops before it changes anything.
 	Claim func(ctx context.Context, index, step string) error
 	// PruneCaseFiles, when set, deletes the files attached to cases that
-	// no longer exist (package casefiles), after resolved and closed
-	// cases were deleted, and returns how many.
+	// no case names any more (package casefiles) and returns how many.
+	// Every run calls it, after deleting resolved and closed cases.
 	PruneCaseFiles func(ctx context.Context) (int64, error)
 	// CanArchive, when set, says whether this server can write archives
 	// now, and why not: runs hold back the steps that archive until it
@@ -674,6 +674,7 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 		}
 		if pass == 0 && !hold {
 			m.deleteRecords(ctx, run, plan.Records)
+			m.pruneCaseFiles(ctx, run)
 		}
 		if !guardFailed || ctx.Err() != nil {
 			break
@@ -732,14 +733,33 @@ func (m *Manager) deleteRecords(ctx context.Context, run *Run, recs []RecordStep
 		}
 		run.DeletedRecords += n
 		m.record(run, act)
-		if r.Category == Cases && err == nil && m.PruneCaseFiles != nil {
-			if nf, err := m.PruneCaseFiles(ctx); err != nil {
-				run.Errors = append(run.Errors, Cases+" files: "+err.Error())
-			} else if nf > 0 && m.Log != nil {
-				m.Log.Info("deleted the files of deleted cases", "files", nf)
-			}
-		}
 	}
+}
+
+// pruneCaseFiles deletes, on every run, the files attached to cases that
+// no case names any more (PruneCaseFiles), and records it in the run.
+func (m *Manager) pruneCaseFiles(ctx context.Context, run *Run) {
+	if m.PruneCaseFiles == nil || ctx.Err() != nil {
+		return
+	}
+	if err := m.step(ctx, RecordIndex(m.Prefix, Cases), ActionDeleteRecords); err != nil {
+		run.Errors = append(run.Errors, Cases+" files: "+err.Error())
+		return
+	}
+	n, err := m.PruneCaseFiles(ctx)
+	if err != nil {
+		run.Errors = append(run.Errors, Cases+" files: "+err.Error())
+	}
+	if n == 0 && err == nil {
+		return
+	}
+	act := Action{Time: m.now(), Action: ActionDeleteRecords, Category: Cases, Docs: n, Rule: RuleRecords,
+		Reason: "files attached to cases that no case names any more"}
+	if err != nil {
+		act.Error = err.Error()
+	}
+	run.DeletedRecords += n
+	m.record(run, act)
 }
 
 // stillWanted re-reads the settings before each step of a run, so a

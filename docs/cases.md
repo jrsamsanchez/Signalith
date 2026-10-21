@@ -55,8 +55,16 @@ timeline; the case's [report](#exporting-a-report) lists each file's name and SH
 - Every upload and download is in the [audit log](audit.md), with the file's SHA-256.
 - Like notes and pinned events, analysts remove only the files they attached; admins
   can remove any. Removing a file from the timeline deletes it.
-- Files are kept in OpenSearch in the `<prefix>_case_files` index, and are deleted
-  with their case by [Data retention](retention.md).
+- A few files at a time are sent or received: a download or upload past that is
+  refused for a moment (`429`) and can be tried again.
+- Files are kept in OpenSearch in the `<prefix>_case_files` index. Every
+  [Data retention](retention.md) run deletes the files no case names any more: those of
+  deleted cases, and any whose timeline entry is gone. A report lists whether each
+  file is still stored as it was attached; a download checks its bytes, and says so in
+  an `X-Signalith-Evidence: changed` header if they changed.
+- OpenSearch must accept requests of about 14 MiB to store a 10 MiB file
+  (`http.max_content_length`, 100 MB by default; some hosted services allow only
+  10 MiB on their smallest instances).
 
 The APIs are `POST /api/cases/{id}/files` (a `multipart/form-data` form with the file
 in `file` and an optional note in `text`) and `GET /api/cases/{id}/files/{file}`.
@@ -114,25 +122,39 @@ report page or data file and says whether it verifies:
 - **Verified**: the signature matches one of this server's report keys, and the
   report, its evidence and the page are as exported. It also names the key and its
   status.
-- **Signed with a key that may have leaked**: the signature matches, but an admin
-  revoked that key (below). Someone who had the key could have made or backdated the
-  report, so confirm it another way, such as the export in the [audit log](audit.md).
-- **Changed**: the signature does not match, the key is not one this server used, or
-  the report, a piece of evidence or the page was edited.
+- **Signed with a revoked key**: the signature matches, but that key was revoked
+  because it may have leaked (below). The report does not verify: someone who had the
+  key could have made or backdated it, so confirm it another way, such as the export
+  in the [audit log](audit.md).
+- **Did not verify**: the report is not signed, the signature does not match, the key
+  is not one this server used, the report is another tenant's, or the report, a piece
+  of evidence or the page was edited.
 
 On any computer with Signalith installed (no server needed), download the key list
-with **Download keys** in the same window, then:
+with **Download** next to **Report keys** in the same window, then:
 
 ```
 signalith report verify -keys signalith-report-keys.json signalith-case-20261020-3fa9c1d27b40e865.html
 ```
 
-On the server itself, `signalith report verify <file>` uses the server's own keys.
-It prints `Verified` and exits 0, or says what changed and exits 2. Without a key
-list it checks only that the report is intact (`Intact`), which does not prove who
-made it, since anyone who edits a report can work its hashes out again. A report from
-a server whose signing was not set up says **Not signed**, and is only ever called
-intact. Every export and every check is in the [audit log](audit.md), with the
+On a server on its own, `signalith report verify <file>` uses the server's own keys;
+on a server of a cluster, pass `-keys`, since the cluster's list is in its shared
+settings. `-tenant <prefix>` also requires the report to be that tenant's; the
+command prints the tenant either way. It exits:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | `Verified`: signed with one of the keys, and nothing changed |
+| 2 | `CHANGED`: edited, not signed, or signed with a key not in the list |
+| 3 | `REVOKED`: signed with a revoked key |
+| 4 | Intact, but its signature was not checked (no key list) or it is not signed |
+| 1 | The file cannot be read |
+
+Without a key list it can only check that the report is intact, which does not prove
+who made it, since anyone who edits a report can work its hashes out again; it then
+says the report "carries a signature claiming" a key, and exits 4 (0 with
+`-allow-unsigned`). A server exports reports unsigned when it has no report key, or
+its key was revoked; they are only ever called intact. Every export and every check is in the [audit log](audit.md), with the
 report's SHA-256 and the key, so you can match a report to the export that made it.
 
 ## Report keys
@@ -145,7 +167,9 @@ whether it was retired or revoked, so older reports still verify:
 - **Current** signs new reports.
 - **Retired**: a newer key took over, after the master key or cluster key was
   changed. Its reports still verify.
-- **Revoked**: it may have leaked. Its reports still check, with a warning.
+- **Revoked**: it may have leaked. Its reports no longer verify, and it signs no
+  more: the server exports reports unsigned until the master key or cluster key is
+  changed.
 
 A server on its own keeps the list in `report-keys.json` in its state folder, which
 [backups](backup.md) include; a cluster keeps it in its shared settings. When a
@@ -154,8 +178,9 @@ server joins a cluster, its own keys are added to the cluster's list as retired.
 When a master key or cluster key may have leaked, change it (`signalith secrets
 rotate-master`, or `signalith cluster rotate-key`) and then revoke the report key it
 made, since changing a key does not revoke anything by itself. An admin does that on
-the **Investigations** page (**Check a report**, then **Revoke…** on the key), or on
-a server on its own with:
+the **Investigations** page (**Check a report**, then **Revoke…** on the key; on a
+cluster with tenants, only the provider's admins, since every tenant shares the key),
+or on a server on its own with:
 
 ```
 signalith report keys
@@ -163,8 +188,9 @@ signalith report revoke-key -reason "the master key was in a leaked backup" 3fa9
 ```
 
 The APIs are `POST /api/cases/reports/verify` (the file as the request body),
-`GET /api/cases/reports/keys`, and `POST /api/cases/reports/keys/{id}/revoke`
-(admins, with `{"reason": "..."}`).
+`GET /api/cases/reports/keys` (a tenant's users see the keys, not who revoked one or
+why), and `POST /api/cases/reports/keys/{id}/revoke` (admins, with
+`{"reason": "..."}`).
 
 ## Where cases are kept
 

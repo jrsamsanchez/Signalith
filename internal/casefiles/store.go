@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -23,6 +24,8 @@ type Store interface {
 	Put(ctx context.Context, f *File, data []byte) error
 	// Get returns a file of a case and its bytes.
 	Get(ctx context.Context, caseID, id string) (*File, []byte, error)
+	// Stat returns a file of a case without its bytes.
+	Stat(ctx context.Context, caseID, id string) (*File, error)
 	// Delete removes a file of a case; one already gone is not an error.
 	Delete(ctx context.Context, caseID, id string) error
 }
@@ -40,9 +43,6 @@ type OpenSearch struct {
 	Index  string
 	// Replicas are the index's replicas settings; nil is auto.
 	Replicas map[string]any
-
-	mu    sync.Mutex
-	ready bool
 }
 
 // NewOpenSearch returns a store using index "<prefix>_case_files".
@@ -60,14 +60,11 @@ func notFound(err error) bool {
 	return errors.As(err, &oe) && oe.Status == 404
 }
 
-// EnsureIndex creates the index if it does not exist. Put calls it the
-// first time, so the index exists only once a file was attached.
+// EnsureIndex creates the index if it does not exist. Put calls it each
+// time, so the index exists once a file was attached, and a file is
+// never written to an index OpenSearch made by itself (with every field
+// searchable) after the index was deleted.
 func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.ready {
-		return nil
-	}
 	kw := map[string]any{"type": "keyword"}
 	body := map[string]any{
 		"settings": store.SmallIndexSettings(s.Replicas),
@@ -82,7 +79,6 @@ func (s *OpenSearch) EnsureIndex(ctx context.Context) error {
 	err := s.Client.Do(ctx, http.MethodPut, "/"+url.PathEscape(s.Index), body, nil)
 	var oe *store.Error
 	if err == nil || errors.As(err, &oe) && oe.Status == 400 && strings.Contains(oe.Body, "resource_already_exists_exception") {
-		s.ready = true
 		return nil
 	}
 	return err
@@ -122,6 +118,24 @@ func (s *OpenSearch) Get(ctx context.Context, caseID, id string) (*File, []byte,
 	return &f, data, nil
 }
 
+func (s *OpenSearch) Stat(ctx context.Context, caseID, id string) (*File, error) {
+	if !ValidID(id) {
+		return nil, ErrNotFound
+	}
+	var out struct {
+		Found  bool `json:"found"`
+		Source File `json:"_source"`
+	}
+	err := s.Client.Do(ctx, http.MethodGet, "/"+url.PathEscape(s.Index)+"/_doc/"+url.PathEscape(id)+"?_source_excludes=data", nil, &out)
+	if notFound(err) || err == nil && (!out.Found || out.Source.CaseID != caseID) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out.Source, nil
+}
+
 func (s *OpenSearch) Delete(ctx context.Context, caseID, id string) error {
 	if !ValidID(id) {
 		return nil
@@ -137,49 +151,82 @@ func (s *OpenSearch) Delete(ctx context.Context, caseID, id string) error {
 	return err
 }
 
-// Prune deletes the files of cases that no longer exist, after retention
-// deleted resolved and closed cases. caseIndex is the cases index. It
-// returns how many files it deleted.
-func (s *OpenSearch) Prune(ctx context.Context, caseIndex string) (int64, error) {
-	var agg struct {
-		Aggregations struct {
-			Cases struct {
-				Buckets []struct {
-					Key string `json:"key"`
-				} `json:"buckets"`
-			} `json:"cases"`
-		} `json:"aggregations"`
+// PruneGrace is how old a file must be before Prune deletes it for not
+// being on its case's timeline: an upload stores the file a moment before
+// it names it there.
+const PruneGrace = time.Hour
+
+// maxPrune caps the files one Prune looks at; the next run sees the rest.
+const maxPrune = 10000
+
+// Prune deletes the files no case names any more: those of cases that
+// were deleted (by retention or with sample data), and those whose
+// timeline entry is gone (removed while OpenSearch could not delete the
+// file, or never added because the server stopped between storing the
+// file and naming it), once they are PruneGrace old. caseIndex is the
+// cases index. It returns how many files it deleted.
+func (s *OpenSearch) Prune(ctx context.Context, caseIndex string, now time.Time) (int64, error) {
+	var page struct {
+		Hits struct {
+			Hits []struct {
+				Source File `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
 	}
-	err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search",
-		map[string]any{"size": 0, "aggs": map[string]any{"cases": map[string]any{"terms": map[string]any{"field": "case_id", "size": 10000}}}}, &agg)
+	err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", map[string]any{
+		"size": maxPrune, "_source": []string{"id", "case_id"},
+		"query": map[string]any{"range": map[string]any{"added": map[string]any{"lt": now.Add(-PruneGrace).UTC().Format(time.RFC3339Nano)}}},
+		"sort":  []any{map[string]any{"added": "asc"}},
+	}, &page)
 	if notFound(err) {
 		return 0, nil
 	}
 	if err != nil {
 		return 0, err
 	}
-	var ids []string
-	for _, b := range agg.Aggregations.Cases.Buckets {
-		ids = append(ids, b.Key)
+	byCase := map[string][]string{}
+	for _, h := range page.Hits.Hits {
+		byCase[h.Source.CaseID] = append(byCase[h.Source.CaseID], h.Source.ID)
 	}
-	if len(ids) == 0 {
+	if len(byCase) == 0 {
 		return 0, nil
+	}
+	ids := make([]string, 0, len(byCase))
+	for id := range byCase {
+		ids = append(ids, id)
 	}
 	var mget struct {
 		Docs []struct {
-			ID    string `json:"_id"`
-			Found bool   `json:"found"`
-			Error any    `json:"error"`
+			ID     string `json:"_id"`
+			Found  bool   `json:"found"`
+			Error  any    `json:"error"`
+			Source struct {
+				Entries []struct {
+					FileID string `json:"file_id"`
+				} `json:"entries"`
+			} `json:"_source"`
 		} `json:"docs"`
 	}
-	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(caseIndex)+"/_mget?_source=false", map[string]any{"ids": ids}, &mget); err != nil {
+	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(caseIndex)+"/_mget?_source_includes=entries.file_id", map[string]any{"ids": ids}, &mget); err != nil {
 		return 0, err
 	}
 	var gone []string
 	for _, d := range mget.Docs {
-		// Only a case OpenSearch says is not there; an error keeps its files.
-		if !d.Found && d.Error == nil && slices.Contains(ids, d.ID) {
-			gone = append(gone, d.ID)
+		files, ok := byCase[d.ID]
+		// Only what OpenSearch answered for: an error keeps the files.
+		if !ok || d.Error != nil {
+			continue
+		}
+		named := map[string]bool{}
+		if d.Found {
+			for _, e := range d.Source.Entries {
+				named[e.FileID] = true
+			}
+		}
+		for _, f := range files {
+			if !named[f] {
+				gone = append(gone, f)
+			}
 		}
 	}
 	if len(gone) == 0 {
@@ -189,7 +236,7 @@ func (s *OpenSearch) Prune(ctx context.Context, caseIndex string) (int64, error)
 		Deleted int64 `json:"deleted"`
 	}
 	err = s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_delete_by_query?refresh=true&conflicts=proceed",
-		map[string]any{"query": map[string]any{"terms": map[string]any{"case_id": gone}}}, &out)
+		map[string]any{"query": map[string]any{"terms": map[string]any{"id": gone}}}, &out)
 	return out.Deleted, err
 }
 
@@ -223,6 +270,17 @@ func (m *Memory) Get(_ context.Context, caseID, id string) (*File, []byte, error
 	}
 	c := *f
 	return &c, slices.Clone(m.data[id]), nil
+}
+
+func (m *Memory) Stat(_ context.Context, caseID, id string) (*File, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, ok := m.files[id]
+	if !ok || f.CaseID != caseID {
+		return nil, ErrNotFound
+	}
+	c := *f
+	return &c, nil
 }
 
 func (m *Memory) Delete(_ context.Context, caseID, id string) error {

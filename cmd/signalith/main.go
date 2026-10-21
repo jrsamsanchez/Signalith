@@ -220,7 +220,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
 		os.Exit(2)
 	}
-	if errors.Is(err, errTampered) || errors.Is(err, errReportChanged) {
+	if code := reportExitCode(err); code != 0 {
+		os.Exit(code)
+	}
+	if errors.Is(err, errTampered) {
 		os.Exit(2)
 	}
 	if err != nil {
@@ -2479,7 +2482,7 @@ func newRetention(c *config.Config, cl *store.Client, log *slog.Logger) *retenti
 	files := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	caseIndex := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix).Index
 	return &retention.Manager{
-		PruneCaseFiles: func(ctx context.Context) (int64, error) { return files.Prune(ctx, caseIndex) },
+		PruneCaseFiles: func(ctx context.Context) (int64, error) { return files.Prune(ctx, caseIndex, time.Now()) },
 		Cluster:        retention.NewOpenSearch(cl),
 		Prefix:         c.OpenSearch.IndexPrefix,
 		Config:         c.RetentionPolicies(),

@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -84,12 +85,14 @@ func TestCaseFiles(t *testing.T) {
 		t.Fatalf("report: %+v %v", res, err)
 	}
 	files.Tamper(fid, []byte("changed"))
-	_, rep = get(t, ts, "/api/cases/"+id+"/report?format=json")
-	if res, err := casereport.Verify([]byte(rep), nil, false); err != nil || res.Report.Evidence[0].Intact {
-		t.Errorf("tampered file in report: %+v %v", res, err)
-	}
 	if resp, _ := get(t, ts, "/api/cases/"+id+"/files/"+fid); resp.Header.Get("X-Signalith-Evidence") != "changed" {
 		t.Error("a changed file is not flagged on download")
+	}
+	// HEAD would read the file and count as a download.
+	req, _ := http.NewRequest("HEAD", ts.URL+"/api/cases/"+id+"/files/"+fid, nil)
+	req.SetBasicAuth("admin", "s3cret-pass")
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("HEAD: %v %v", resp, err)
 	}
 
 	// Bad uploads.
@@ -112,6 +115,18 @@ func TestCaseFiles(t *testing.T) {
 	}
 	if code, out := upload(t, ts, id, "one-too-many.txt", []byte("x"), ""); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "at most") {
 		t.Errorf("over the count: %d %v", code, out)
+	}
+
+	// A file gone from the store shows as changed in the report.
+	if code, out := upload(t, ts, oid, "gone.txt", []byte("gone"), ""); code == http.StatusCreated {
+		gid := out["entry"].(map[string]any)["file_id"].(string)
+		files.Delete(t.Context(), oid, gid)
+		_, rep := get(t, ts, "/api/cases/"+oid+"/report?format=json")
+		if res, err := casereport.Verify([]byte(rep), nil, false); err != nil || res.Report.Evidence[0].Intact {
+			t.Errorf("missing file in report: %+v %v", res, err)
+		}
+	} else {
+		t.Fatalf("upload: %d", code)
 	}
 
 	// Removing the entry deletes the file.
@@ -137,11 +152,44 @@ func TestCaseFilesOff(t *testing.T) {
 
 func TestAttachmentHeader(t *testing.T) {
 	for name, want := range map[string]string{
-		"report.pdf":  `attachment; filename="report.pdf"`,
+		"report.pdf":  `attachment; filename=report.pdf`,
+		"a;b c.txt":   `attachment; filename="a;b c.txt"`,
 		"naïve;x.txt": `attachment; filename*=utf-8''na%C3%AFve%3Bx.txt; filename="na_ve_x.txt"`,
 	} {
 		if got := attachment(name); got != want {
 			t.Errorf("attachment(%q) = %s, want %s", name, got, want)
 		}
+	}
+}
+
+func TestFileTransferLimit(t *testing.T) {
+	var held []func()
+	for i := 0; i < maxUserTransfers; i++ {
+		release, ok := fileTransfers.take("ana")
+		if !ok {
+			t.Fatalf("transfer %d refused", i)
+		}
+		held = append(held, release)
+	}
+	if _, ok := fileTransfers.take("ana"); ok {
+		t.Error("one user ran more than the cap")
+	}
+	for i := maxUserTransfers; i < maxTransfers; i++ {
+		release, ok := fileTransfers.take(fmt.Sprintf("user%d", i))
+		if !ok {
+			t.Fatalf("transfer %d refused", i)
+		}
+		held = append(held, release)
+	}
+	if _, ok := fileTransfers.take("bob"); ok {
+		t.Error("the server ran more than the cap")
+	}
+	for _, release := range held {
+		release()
+	}
+	if release, ok := fileTransfers.take("ana"); !ok {
+		t.Error("released transfers were not freed")
+	} else {
+		release()
 	}
 }

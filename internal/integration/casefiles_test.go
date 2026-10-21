@@ -26,7 +26,7 @@ func TestCaseFilesInOpenSearch(t *testing.T) {
 	}
 	fs := casefiles.NewOpenSearch(cl, prefix)
 	// Before any file: nothing to prune, no index needed.
-	if n, err := fs.Prune(ctx, cs.Index); err != nil || n != 0 {
+	if n, err := fs.Prune(ctx, cs.Index, time.Now().Add(2*casefiles.PruneGrace)); err != nil || n != 0 {
 		t.Fatalf("prune with no index: %d %v", n, err)
 	}
 	now := time.Now()
@@ -56,17 +56,40 @@ func TestCaseFilesInOpenSearch(t *testing.T) {
 	if _, _, err := fs.Get(ctx, gone.ID, kf.ID); err != casefiles.ErrNotFound {
 		t.Errorf("a file through another case: %v", err)
 	}
+	// The kept case names its file; the deleted case's goes.
+	if _, err := cs.Modify(ctx, keep.ID, func(c *cases.Case) (bool, error) {
+		_, err := c.AddEntry(cases.Entry{Kind: cases.KindFile, FileID: kf.ID, FileName: kf.Name, FileSize: kf.Size, FileSHA256: kf.SHA256}, "ana", now)
+		return true, err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := cs.Delete(ctx, gone.ID); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := fs.Prune(ctx, cs.Index); err != nil || n != 1 {
+	// Within the grace an upload needs, nothing goes.
+	if n, err := fs.Prune(ctx, cs.Index, now); err != nil || n != 0 {
+		t.Fatalf("prune within the grace: %d %v", n, err)
+	}
+	if n, err := fs.Prune(ctx, cs.Index, time.Now().Add(2*casefiles.PruneGrace)); err != nil || n != 1 {
 		t.Fatalf("prune: %d %v", n, err)
 	}
 	if _, _, err := fs.Get(ctx, gone.ID, gf.ID); err != casefiles.ErrNotFound {
 		t.Errorf("file of a deleted case: %v", err)
 	}
-	if _, _, err := fs.Get(ctx, keep.ID, kf.ID); err != nil {
-		t.Errorf("file of a kept case: %v", err)
+	if f, err := fs.Stat(ctx, keep.ID, kf.ID); err != nil || f.SHA256 != kf.SHA256 {
+		t.Errorf("file of a kept case: %+v %v", f, err)
+	}
+	// A file its case does not name (an entry removed while OpenSearch
+	// could not delete the file) goes too.
+	orphan := casefiles.New(keep.ID, "orphan.txt", []byte("x"), "ana", now)
+	if err := fs.Put(ctx, orphan, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := fs.Prune(ctx, cs.Index, time.Now().Add(2*casefiles.PruneGrace)); err != nil || n != 1 {
+		t.Fatalf("prune of an unnamed file: %d %v", n, err)
+	}
+	if _, err := fs.Stat(ctx, keep.ID, orphan.ID); err != casefiles.ErrNotFound {
+		t.Errorf("unnamed file: %v", err)
 	}
 	if err := fs.Delete(ctx, keep.ID, kf.ID); err != nil {
 		t.Fatal(err)

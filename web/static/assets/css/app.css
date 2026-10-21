@@ -2412,7 +2412,6 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #case-reports .crk-pick__row { display: flex; gap: 8px; align-items: center; }
 #case-reports .crk-pick__row .input { flex: 1; min-width: 0; }
 #case-reports .crk-result .alert p { margin: 4px 0 0; }
-#case-reports .crk-warn { display: flex; gap: 6px; align-items: flex-start; color: var(--warning); }
 #case-reports .crk-keys-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
 #case-reports .crk-keys-head .label { margin: 0; }
 #case-reports .crk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

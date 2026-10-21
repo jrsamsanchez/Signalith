@@ -49,13 +49,15 @@ var (
 	// requests to addresses a user gives (feeds, webhooks, mail servers,
 	// scripts, Jira and ServiceNow): a tenant's own users could reach the
 	// provider's network with them, so only the provider's users may
-	// change them.
+	// change them. So is revoking a case report key, which every tenant
+	// shares.
 	providerManaged = []string{
 		"POST /api/intel/feeds", "PUT /api/intel/feeds/{name}", "DELETE /api/intel/feeds/{name}",
 		"POST /api/intel/feeds/test", "POST /api/intel/feeds/{name}/refresh", "POST /api/intel/catalog",
 		"POST /api/intel/taxii/collections", "PUT /api/notify", "POST /api/notify/test",
 		"PUT /api/respond/config", "POST /api/respond/test",
 		"PUT /api/ticketing", "POST /api/ticketing/test",
+		"POST /api/cases/reports/keys/{id}/revoke",
 	}
 	// tenantVisible are routes about the server every user may use, the
 	// same for every tenant: the web UI asks every user which cluster

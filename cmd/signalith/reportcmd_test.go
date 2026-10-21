@@ -33,8 +33,15 @@ func TestReportVerifyCommand(t *testing.T) {
 	bad := filepath.Join(dir, "bad.html")
 	os.WriteFile(good, page, 0o600)
 	os.WriteFile(bad, []byte(strings.Replace(string(page), "<dd>Low</dd>", "<dd>High</dd>", 1)), 0o600)
-	if err := cmdReport([]string{"verify", good}); err != nil {
+	// Unsigned and intact: exit 4, or 0 when that is allowed.
+	if err := cmdReport([]string{"verify", good}); !errors.Is(err, errReportUnchecked) || reportExitCode(err) != 4 {
 		t.Errorf("good: %v", err)
+	}
+	if err := cmdReport([]string{"verify", "-allow-unsigned", good}); err != nil {
+		t.Errorf("good, unsigned allowed: %v", err)
+	}
+	if err := cmdReport([]string{"verify", "-allow-unsigned", "-tenant", "other", good}); !errors.Is(err, errReportChanged) {
+		t.Errorf("another tenant: %v", err)
 	}
 	if err := cmdReport([]string{"verify", bad}); !errors.Is(err, errReportChanged) {
 		t.Errorf("bad: %v", err)
@@ -64,9 +71,31 @@ func TestReportVerifyChecksSignatures(t *testing.T) {
 	if err := reportVerify([]string{"-c", cfg, "-keys", keysFile, report}, &out); err != nil || !strings.Contains(out.String(), "Verified") {
 		t.Errorf("with keys: %v %s", err, out.String())
 	}
+	if !strings.Contains(out.String(), "tenant signalith") {
+		t.Errorf("the tenant is not shown: %s", out.String())
+	}
 	out.Reset()
-	if err := reportVerify([]string{"-c", cfg, report}, &out); err != nil || !strings.Contains(out.String(), "not checked") {
+	if err := reportVerify([]string{"-c", cfg, report}, &out); !errors.Is(err, errReportUnchecked) || !strings.Contains(out.String(), "claiming report key") || strings.Contains(out.String(), "Verified") {
 		t.Errorf("without keys: %v %s", err, out.String())
+	}
+	// With a key list, a report without its signature does not verify.
+	out.Reset()
+	if err := reportVerify([]string{"-c", cfg, "-keys", keysFile, filepath.Join(dir, "unsigned.json")}, &out); err == nil {
+		t.Error("a missing file verified")
+	}
+	unsigned, _ := r.Sign(nil)
+	uj, _ := unsigned.JSON()
+	os.WriteFile(filepath.Join(dir, "unsigned.json"), uj, 0o600)
+	if err := reportVerify([]string{"-c", cfg, "-keys", keysFile, filepath.Join(dir, "unsigned.json")}, &out); !errors.Is(err, errReportChanged) {
+		t.Errorf("unsigned with a key list: %v", err)
+	}
+	// A revoked key: exit 3.
+	rk, _ := reportkeys.RevokeIn(ks, ks[0].ID, "admin", "leaked", now)
+	b, _ = json.Marshal(map[string]any{"keys": rk})
+	os.WriteFile(keysFile, b, 0o600)
+	out.Reset()
+	if err := reportVerify([]string{"-c", cfg, "-keys", keysFile, report}, &out); !errors.Is(err, errReportRevoked) || reportExitCode(err) != 3 || !strings.Contains(out.String(), "REVOKED") {
+		t.Errorf("revoked: %v %s", err, out.String())
 	}
 	// Another key's list refuses it.
 	other, _, _ := ed25519.GenerateKey(nil)

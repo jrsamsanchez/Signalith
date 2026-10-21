@@ -50,6 +50,19 @@ func (s *Server) reportKey(r *http.Request) (ed25519.PrivateKey, string) {
 	if err == nil {
 		err = s.ReportKeys.Use(r.Context(), key.Public().(ed25519.PublicKey), source, time.Now())
 	}
+	if err == nil {
+		// A key revoked as leaked never signs again, even before the key
+		// it comes from was changed.
+		var ks []reportkeys.Key
+		if ks, err = s.ReportKeys.List(r.Context()); err == nil {
+			id := reportkeys.KeyID(key.Public().(ed25519.PublicKey))
+			if k, ok := reportkeys.Lookup(ks)(id); !ok {
+				err = errors.New("the report key is not in the list of keys")
+			} else if k.Status() == reportkeys.Revoked {
+				err = fmt.Errorf("report key %s was revoked; change the cluster key or master key it comes from so reports get a new one", id)
+			}
+		}
+	}
 	if err != nil {
 		s.Log.Warn("a case report is exported unsigned", "err", err)
 		return nil, err.Error()
@@ -128,53 +141,65 @@ func (s *Server) handleCaseReport(w http.ResponseWriter, r *http.Request) {
 
 // handleVerifyCaseReport checks a report file someone was sent against
 // this server's report keys: the signature over its exact bytes first,
-// then its hashes and page, and that it is this tenant's. Each check is
-// audited, so a forged report someone tried shows in the log.
+// then its hashes and page, and that it is this tenant's. A report signed
+// with a revoked key does not verify. Each check, and each one refused
+// before it starts, is audited, so a forged report someone tried shows in
+// the log.
 func (s *Server) handleVerifyCaseReport(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, casereport.MaxSize+1))
 	if err != nil || len(data) > casereport.MaxSize {
+		s.audit(r, "case report verify failed", "err", "too large")
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("a case report is at most %d MiB", casereport.MaxSize>>20))
 		return
 	}
 	if s.ReportKeys == nil {
+		s.audit(r, "case report verify failed", "err", "no report keys")
 		writeError(w, http.StatusServiceUnavailable, errors.New("this server keeps no report keys"))
 		return
 	}
 	ks, err := s.ReportKeys.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.audit(r, "case report verify failed", "err", "the report keys could not be read: "+err.Error())
+		s.Log.Warn("the report keys could not be read", "err", err)
+		writeError(w, http.StatusBadGateway, errors.New("the report keys could not be read; try again"))
 		return
 	}
 	res, err := casereport.Verify(data, reportkeys.Lookup(ks), true)
 	if err == nil && res.Report.Tenant != s.conf().OpenSearch.IndexPrefix {
 		err = fmt.Errorf("%w: it was made for another tenant (%s)", casereport.ErrChanged, res.Report.Tenant)
 	}
-	out := map[string]any{"verified": err == nil}
+	if err == nil && res.KeyStatus == reportkeys.Revoked {
+		err = fmt.Errorf("%w: it is signed with report key %s, which was revoked because it may have leaked: someone who had that key could have made or backdated it", casereport.ErrChanged, res.KeyID)
+	}
+	status := "verified"
+	switch {
+	case err != nil && res != nil && res.KeyStatus == reportkeys.Revoked:
+		status = reportkeys.Revoked
+	case err != nil:
+		status = "failed"
+	}
+	out := map[string]any{"verified": err == nil, "status": status}
+	keyID := ""
 	if res != nil {
+		keyID = res.KeyID
 		out["signed"], out["key_id"], out["key_status"] = res.Signed, res.KeyID, res.KeyStatus
 		if rep := res.Report; rep != nil {
 			out["case"], out["title"], out["generated"], out["generated_by"], out["sha256"] = rep.Case.ID, rep.Case.Title, rep.Generated, rep.GeneratedBy, rep.SHA256
 		}
 	}
-	keyID := ""
-	if res != nil {
-		keyID = res.KeyID
-	}
 	if err != nil {
 		out["error"] = err.Error()
-		s.audit(r, "case report verify failed", "key", keyID, "err", err.Error())
+		s.audit(r, "case report verify failed", "key", keyID, "status", status, "err", err.Error())
 		writeJSON(w, http.StatusOK, out)
 		return
-	}
-	if res.KeyStatus == reportkeys.Revoked {
-		out["warning"] = "It was signed with a key that was replaced because it may have leaked: someone who had that key could have made or backdated this report."
 	}
 	s.audit(r, "case report verified", "case", res.Report.Case.ID, "sha256", res.Report.SHA256, "key", keyID, "key_status", res.KeyStatus)
 	writeJSON(w, http.StatusOK, out)
 }
 
 // handleCaseReportKeys lists the public keys that signed case reports,
-// to hand to whoever checks them.
+// to hand to whoever checks them. A tenant's users share the cluster's
+// keys but not who revoked one or why: that is the provider's record.
 func (s *Server) handleCaseReportKeys(w http.ResponseWriter, r *http.Request) {
 	if s.ReportKeys == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"keys": []reportkeys.Key{}})
@@ -182,11 +207,17 @@ func (s *Server) handleCaseReportKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	ks, err := s.ReportKeys.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.Log.Warn("the report keys could not be read", "err", err)
+		writeError(w, http.StatusBadGateway, errors.New("the report keys could not be read; try again"))
 		return
 	}
 	if ks == nil {
 		ks = []reportkeys.Key{}
+	}
+	if tenantUser(r) {
+		for i := range ks {
+			ks[i].RevokedBy, ks[i].Reason = "", ""
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"keys": ks})
 }

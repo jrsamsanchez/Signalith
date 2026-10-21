@@ -65,12 +65,15 @@ func TestCaseReport(t *testing.T) {
 	if out := verify(strings.Replace(page, "<dd>Medium</dd>", "<dd>Low</dd>", 1)); out["verified"] != false || !strings.Contains(out["error"].(string), "page") {
 		t.Errorf("verify edited page: %v", out)
 	}
-	// Revoked by an admin: still verifies, with a warning.
+	// Revoked by an admin: no longer verifies, and signs no more.
 	if code, _ := do(t, ts, "POST", "/api/cases/reports/keys/"+ks[0].ID+"/revoke", `{"reason":"master key in a leaked backup"}`, true); code != http.StatusOK {
 		t.Fatalf("revoke: %d", code)
 	}
-	if out := verify(js); out["verified"] != true || out["key_status"] != reportkeys.Revoked || out["warning"] == nil {
+	if out := verify(js); out["verified"] != false || out["status"] != reportkeys.Revoked || out["key_status"] != reportkeys.Revoked {
 		t.Errorf("verify after revoke: %v", out)
+	}
+	if _, after := get(t, ts, "/api/cases/"+id+"/report?format=json"); strings.Contains(after, casereport.PayloadType) {
+		t.Error("a revoked key signed a report")
 	}
 	if code, _ := do(t, ts, "POST", "/api/cases/reports/keys/abcdefabcdef/revoke", `{}`, true); code != http.StatusNotFound {
 		t.Errorf("revoke unknown: %d", code)

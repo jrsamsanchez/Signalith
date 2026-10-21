@@ -21,30 +21,55 @@ import (
 )
 
 const reportUsage = `Usage:
-  signalith report verify [-c file] [-keys keys.json] file
+  signalith report verify [-c file] [-keys keys.json] [-tenant prefix] [-allow-unsigned] file
   signalith report keys [-c file] [-json]
   signalith report revoke-key [-c file] [-reason text] <key ID>
 
 verify checks a case report exported from a case's page, the .html or the
-.json file. A signed report's signature is checked first, against the
-report keys of this server (on a server on its own) or of keys.json (the
-list the Investigations page's Report keys downloads, for checking on any
-computer); then the hashes of the report and of each piece of evidence,
-and, for the page, that nothing on it was edited. Without a key list it
-checks only that the report is intact, which does not prove who made it.
+.json file. Its signature is checked first, against the report keys of
+this server (on a server on its own) or of keys.json (the list the
+Investigations page's Check a report downloads, for checking on any
+computer, or on a server of a cluster, whose own list may be out of date);
+then the hashes of the report and of each piece of evidence, and, for the
+page, that nothing on it was edited. -tenant also requires the report to
+be for that tenant (its index prefix). Without a key list, or for a report
+that is not signed, it can only check that the report is intact, which
+does not prove who made it.
 
 keys lists the report keys of a server on its own; a cluster's are on the
-Investigations page (Report keys).
+Investigations page (Check a report).
 
 revoke-key marks a report key of a server on its own as possibly leaked,
-after its master key leaked: reports it signed then say so. On a cluster,
-an admin revokes a key on the Investigations page (Report keys).
+after its master key leaked: reports it signed then no longer verify, and
+it never signs again. On a cluster, an admin of the provider revokes a key
+on the Investigations page.
 
-verify exits 0 when the report verifies, 2 when it was changed or its
-signature is not accepted, and 1 when the file cannot be read.`
+verify exits 0 when the report verifies; 2 when it was changed, or its
+signature is missing, wrong or not one of the keys; 3 when it is signed
+with a revoked key; 4 when it is intact but its signature was not checked
+(no key list) or it is not signed, unless -allow-unsigned is given; and 1
+when the file cannot be read.`
 
-// errReportChanged is verify refusing a report; main exits 2.
-var errReportChanged = errors.New("the report did not verify")
+// verify's refusals; main exits with each one's code.
+var (
+	errReportChanged   = errors.New("the report did not verify")
+	errReportRevoked   = errors.New("the report is signed with a revoked key")
+	errReportUnchecked = errors.New("the report's signature was not checked")
+)
+
+// reportExitCode is the exit code of a verify refusal, or 0 for another
+// error.
+func reportExitCode(err error) int {
+	switch {
+	case errors.Is(err, errReportRevoked):
+		return 3
+	case errors.Is(err, errReportUnchecked):
+		return 4
+	case errors.Is(err, errReportChanged):
+		return 2
+	}
+	return 0
+}
 
 func cmdReport(args []string) error {
 	if len(args) == 0 {
@@ -78,20 +103,23 @@ func reportVerify(args []string, out io.Writer) error {
 	fs.Usage = func() { fmt.Fprintln(os.Stderr, reportUsage) }
 	path := configFlag(fs)
 	keysFile := fs.String("keys", "", "check signatures against this list of report keys (from the Investigations page)")
+	tenant := fs.String("tenant", "", "require the report to be for this tenant (its index prefix)")
+	allowUnsigned := fs.Bool("allow-unsigned", false, "exit 0 for an intact report whose signature was not checked")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		return errors.New(reportUsage)
 	}
-	info, err := os.Stat(fs.Arg(0))
+	fh, err := os.Open(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	if info.Size() > casereport.MaxSize {
+	data, err := io.ReadAll(io.LimitReader(fh, casereport.MaxSize+1))
+	fh.Close()
+	if err != nil {
+		return err
+	}
+	if len(data) > casereport.MaxSize {
 		return fmt.Errorf("the file is larger than %d MiB, more than any case report", casereport.MaxSize>>20)
-	}
-	data, err := os.ReadFile(fs.Arg(0))
-	if err != nil {
-		return err
 	}
 	var ks []reportkeys.Key
 	from := ""
@@ -114,7 +142,11 @@ func reportVerify(args []string, out io.Writer) error {
 	if from != "" {
 		keys = reportkeys.Lookup(ks)
 	}
-	res, err := casereport.Verify(data, keys, false)
+	// With a key list, only a signed report with one of its keys verifies.
+	res, err := casereport.Verify(data, keys, keys != nil)
+	if err == nil && *tenant != "" && res.Report.Tenant != *tenant {
+		err = fmt.Errorf("%w: it was made for tenant %q, not %q", casereport.ErrChanged, res.Report.Tenant, *tenant)
+	}
 	if errors.Is(err, casereport.ErrChanged) {
 		fmt.Fprintln(out, "CHANGED:", err)
 		return errReportChanged
@@ -123,18 +155,22 @@ func reportVerify(args []string, out io.Writer) error {
 		return err
 	}
 	r := res.Report
+	made := fmt.Sprintf("case %s for tenant %s, made %s by %s", r.Case.ID, r.Tenant, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy)
 	switch {
-	case res.Signed && keys != nil:
-		fmt.Fprintf(out, "Verified: case %s, made %s by %s, signed with report key %s (%s).\n", r.Case.ID, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy, res.KeyID, res.KeyStatus)
-		if res.KeyStatus == reportkeys.Revoked {
-			fmt.Fprintln(out, "WARNING: that key was replaced because it may have leaked: someone who had it could have made or backdated this report.")
-		}
+	case keys != nil && res.KeyStatus == reportkeys.Revoked:
+		fmt.Fprintf(out, "REVOKED: %s, signed with report key %s, which was revoked because it may have leaked: someone who had that key could have made or backdated this report.\n", made, res.KeyID)
+		return errReportRevoked
+	case keys != nil:
+		fmt.Fprintf(out, "Verified: %s, signed with report key %s (%s, from %s).\n", made, res.KeyID, res.KeyStatus, from)
 	case res.Signed:
-		fmt.Fprintf(out, "Intact: case %s, made %s by %s. It is signed with report key %s, but the signature was not checked: pass -keys with the list of report keys from the Investigations page.\n", r.Case.ID, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy, res.KeyID)
+		fmt.Fprintf(out, "Intact, signature not checked: %s. It carries a signature claiming report key %s (not checked): pass -keys with the list of report keys from the Investigations page.\n", made, res.KeyID)
 	default:
-		fmt.Fprintf(out, "Intact: case %s, made %s by %s. It is not signed: this checks the report is intact; it does not prove who made it.\n", r.Case.ID, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy)
+		fmt.Fprintf(out, "Intact, not signed: %s. This checks the report is intact; it does not prove who made it.\n", made)
 	}
 	fmt.Fprintf(out, "SHA-256 %s\n", r.SHA256)
+	if keys == nil && !*allowUnsigned {
+		return errReportUnchecked
+	}
 	return nil
 }
 
@@ -188,6 +224,6 @@ func reportRevoke(args []string, out io.Writer) error {
 	if err := f.Revoke(context.Background(), fs.Arg(0), cliUser(), *reason, time.Now()); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Report key %s is revoked: reports it signed now say it may have leaked. Rotate the master key too (signalith secrets rotate-master), so new reports get a new key.\n", fs.Arg(0))
+	fmt.Fprintf(out, "Report key %s is revoked: reports it signed no longer verify, and it signs no more. Rotate the master key too (signalith secrets rotate-master), so new reports get a new key.\n", fs.Arg(0))
 	return nil
 }

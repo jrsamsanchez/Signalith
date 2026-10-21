@@ -168,6 +168,19 @@ func TestSignedReportCatchesChanges(t *testing.T) {
 	if _, err := Verify(bytes.Repeat([]byte(" "), MaxSize+1), keys, true); err == nil {
 		t.Error("an oversized file was read")
 	}
+	// A key ID that could not be one, or a signature too long to be one,
+	// is refused before it is shown anywhere.
+	var env2 envelope
+	json.Unmarshal(js, &env2)
+	for _, bad := range []envelope{
+		{PayloadType: PayloadType, Payload: env2.Payload, KeyID: "<script>", Sig: env2.Sig},
+		{PayloadType: PayloadType, Payload: env2.Payload, KeyID: env2.KeyID, Sig: strings.Repeat("A", 4096)},
+	} {
+		b, _ := json.Marshal(bad)
+		if res, err := Verify(b, keys, true); !errors.Is(err, ErrChanged) || res != nil {
+			t.Errorf("bad signature %.20s: %+v %v", bad.KeyID, res, err)
+		}
+	}
 	if _, err := Verify([]byte(`{"format":"other"}`), nil, false); err == nil {
 		t.Error("another format verified")
 	}

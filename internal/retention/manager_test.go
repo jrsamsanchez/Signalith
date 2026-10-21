@@ -309,8 +309,6 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if len(f.mem.Records("signalith_cases")) != 3 {
 		t.Error("cases were deleted without a policy")
 	}
-	pruned := 0
-	f.m.PruneCaseFiles = func(context.Context) (int64, error) { pruned++; return 3, nil }
 	if err := f.m.SetPolicy(Cases, &Policy{KeepDays: 180}); err != nil {
 		t.Fatal(err)
 	}
@@ -318,11 +316,6 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if n := len(f.mem.Records("signalith_cases")); n != 2 {
 		t.Errorf("cases left = %d", n)
 	}
-	// The files of the deleted cases go with them.
-	if pruned != 1 {
-		t.Errorf("case files pruned %d times", pruned)
-	}
-	f.m.PruneCaseFiles = nil
 	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Action != ActionDeleteRecords || acts[0].Category != Cases || acts[0].Docs != 1 {
 		t.Errorf("actions = %+v", acts)
@@ -731,4 +724,27 @@ func TestOverviewCountsDayPartsOnce(t *testing.T) {
 		return
 	}
 	t.Fatal("no endpoint category")
+}
+
+// Files attached to cases that no case names are pruned on every run,
+// with or without a policy for cases, and the run records it.
+func TestCaseFilesPrunedEveryRun(t *testing.T) {
+	f := newFixture(t, Config{})
+	pruned := 0
+	f.m.PruneCaseFiles = func(context.Context) (int64, error) { pruned++; return 3, nil }
+	run, err := f.m.Run(context.Background(), TriggerSchedule, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 1 || run.DeletedRecords != 3 {
+		t.Errorf("pruned %d times, run %+v", pruned, run)
+	}
+	_, acts, _ := f.m.hist.Recent(context.Background())
+	if len(acts) == 0 || acts[0].Category != Cases || acts[0].Docs != 3 || !strings.Contains(acts[0].Reason, "files") {
+		t.Errorf("actions = %+v", acts)
+	}
+	f.m.PruneCaseFiles = func(context.Context) (int64, error) { return 0, errors.New("boom") }
+	if run, _ := f.m.Run(context.Background(), TriggerSchedule, ""); len(run.Errors) == 0 {
+		t.Error("a failed prune is not in the run's errors")
+	}
 }

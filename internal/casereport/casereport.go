@@ -272,7 +272,7 @@ func parse(data []byte) (*file, error) {
 			}
 			f.keyID, f.sig = id, sig
 		}
-		return f, nil
+		return checkSig(f)
 	}
 	var env envelope
 	if json.Unmarshal(data, &env) == nil && env.PayloadType != "" {
@@ -283,9 +283,25 @@ func parse(data []byte) (*file, error) {
 		if err != nil {
 			return nil, errors.New("the report's payload is not base64")
 		}
-		return &file{payload: payload, keyID: env.KeyID, sig: env.Sig}, nil
+		return checkSig(&file{payload: payload, keyID: env.KeyID, sig: env.Sig})
 	}
 	return &file{payload: data}, nil
+}
+
+// maxSig caps a signature as read: an Ed25519 signature is 88 characters
+// of base64.
+const maxSig = 128
+
+// checkSig refuses a signature whose key ID could not be one, or that is
+// too long to be one, before either is shown or logged anywhere.
+func checkSig(f *file) (*file, error) {
+	if f.keyID == "" && f.sig == "" {
+		return f, nil
+	}
+	if !reportkeys.ValidID(f.keyID) || len(f.sig) > maxSig {
+		return nil, changed("its signature is not one Signalith makes")
+	}
+	return f, nil
 }
 
 // Keys finds a signing key by its ID; ok is false for a key it does not

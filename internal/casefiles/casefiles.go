@@ -85,15 +85,16 @@ func ValidID(id string) bool {
 }
 
 // CleanName keeps the last part of a file name a browser sent, without
-// folders, control characters or invisible formatting (such as a
-// right-to-left mark that makes "exe.pdf" read as "fdp.exe"), and at most
+// folders, control characters, line and paragraph separators, or
+// invisible formatting (such as a right-to-left mark that makes "exe.pdf"
+// read as "fdp.exe"), and at most
 // MaxNameLen characters. An empty name becomes "file".
 func CleanName(name string) string {
 	name = strings.ReplaceAll(name, `\`, "/")
 	name = path.Base(name)
 	var b strings.Builder
 	for _, r := range name {
-		if r == utf8.RuneError || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '"' {
+		if r == utf8.RuneError || unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) || r == '"' {
 			continue
 		}
 		b.WriteRune(r)

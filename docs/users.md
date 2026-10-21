@@ -1214,7 +1214,9 @@ tenant's own settings: `POST /api/intel/feeds`, `PUT /api/intel/feeds/{name}`,
 `POST /api/intel/feeds/{name}/refresh`, `POST /api/intel/catalog`,
 `POST /api/intel/taxii/collections`, `PUT /api/notify`, `POST /api/notify/test`,
 `PUT /api/respond/config`, `POST /api/respond/test`, `PUT /api/ticketing` and
-`POST /api/ticketing/test`. Every other route works on the tenant the request is in.
+`POST /api/ticketing/test`; and `POST /api/cases/reports/keys/{id}/revoke`, since every
+tenant's case reports are signed with the cluster's one report key. Every other route
+works on the tenant the request is in.
 
 A route added without a role is admin-only, and a test fails until it gets one. That
 includes routes registered outside the role table, straight on the server's outer

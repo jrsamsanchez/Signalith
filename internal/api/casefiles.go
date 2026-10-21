@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/casefiles"
@@ -30,6 +31,58 @@ func (s *Server) routeCaseFiles(api *router) {
 // errNoFiles is a server that keeps no files.
 var errNoFiles = errors.New("this server cannot keep files")
 
+// A file in transfer is held in memory whole, a few times over (the
+// bytes, their base64 and OpenSearch's answer), so few run at once: at
+// most maxTransfers on the server and maxUserTransfers for one user.
+// Another is refused with 429 rather than queued.
+const (
+	maxTransfers     = 6
+	maxUserTransfers = 2
+)
+
+type transferLimit struct {
+	mu     sync.Mutex
+	all    int
+	byUser map[string]int
+}
+
+var fileTransfers = &transferLimit{byUser: map[string]int{}}
+
+// take reserves a transfer for user; release frees it. ok is false when
+// the server or the user has too many running.
+func (t *transferLimit) take(user string) (release func(), ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.all >= maxTransfers || t.byUser[user] >= maxUserTransfers {
+		return nil, false
+	}
+	t.all++
+	t.byUser[user]++
+	return func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.all--
+		if t.byUser[user]--; t.byUser[user] <= 0 {
+			delete(t.byUser, user)
+		}
+	}, true
+}
+
+// fileSlot takes a transfer for the request's user, or answers 429.
+func fileSlot(w http.ResponseWriter, r *http.Request) (func(), bool) {
+	release, ok := fileTransfers.take(userOf(r))
+	if !ok {
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusTooManyRequests, errors.New("too many files are being sent or received right now; try again in a moment"))
+		return nil, false
+	}
+	return release, true
+}
+
+// errFileStore hides OpenSearch's own error text from the answer; the
+// log has it.
+var errFileStore = errors.New("the file could not be stored or read; try again")
+
 // handleAttachCaseFile adds a file to a case: a multipart form with the
 // file in "file" and an optional note in "text". The file is stored with
 // the SHA-256 of its bytes, then named on the timeline; when the case
@@ -42,6 +95,11 @@ func (s *Server) handleAttachCaseFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, errNoFiles)
 		return
 	}
+	release, ok := fileSlot(w, r)
+	if !ok {
+		return
+	}
+	defer release()
 	name, text, data, err := readCaseFile(w, r)
 	if err != nil {
 		var tooBig *http.MaxBytesError
@@ -66,7 +124,8 @@ func (s *Server) handleAttachCaseFile(w http.ResponseWriter, r *http.Request) {
 	}
 	f := casefiles.New(c.ID, name, data, user, time.Now())
 	if err := s.CaseFiles.Put(r.Context(), f, data); err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.Log.Warn("a case file could not be stored", "case", caseID, "err", err)
+		writeError(w, http.StatusBadGateway, errFileStore)
 		return
 	}
 	var added *cases.Entry
@@ -108,6 +167,7 @@ func fileRoom(c *cases.Case, size int64) error {
 // readCaseFile reads the upload form without temporary files: the file
 // part into memory, up to the size cap, and the note.
 func readCaseFile(w http.ResponseWriter, r *http.Request) (name, text string, data []byte, err error) {
+	allowSlowUpload(w)
 	r.Body = http.MaxBytesReader(w, r.Body, casefiles.MaxFileBytes+64<<10)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -163,6 +223,13 @@ func readCaseFile(w http.ResponseWriter, r *http.Request) (name, text string, da
 // no longer match their SHA-256 are still sent, so they can be examined,
 // with a header saying so.
 func (s *Server) handleCaseFile(w http.ResponseWriter, r *http.Request) {
+	// GET routes answer HEAD too; a HEAD would read the whole file and
+	// count as a download.
+	if r.Method == http.MethodHead {
+		w.Header().Set("Allow", http.MethodGet)
+		writeError(w, http.StatusMethodNotAllowed, errors.New("download the file with GET"))
+		return
+	}
 	if !s.casesReady(w) {
 		return
 	}
@@ -183,13 +250,19 @@ func (s *Server) handleCaseFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e := c.Entries[i]
+	release, ok := fileSlot(w, r)
+	if !ok {
+		return
+	}
+	defer release()
 	f, data, err := s.CaseFiles.Get(r.Context(), c.ID, id)
 	if errors.Is(err, casefiles.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.Log.Warn("a case file could not be read", "case", c.ID, "file", id, "err", err)
+		writeError(w, http.StatusBadGateway, errFileStore)
 		return
 	}
 	intact := f.Matches(data) && f.SHA256 == e.FileSHA256 && cases.EvidenceIntact(e)
@@ -212,26 +285,37 @@ func (s *Server) handleCaseFile(w http.ResponseWriter, r *http.Request) {
 // attachment is a Content-Disposition naming a download: the name in
 // UTF-8, with a plain ASCII fallback for older clients.
 func attachment(name string) string {
+	plain := !strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r > 0x7e })
+	if cd := mime.FormatMediaType("attachment", map[string]string{"filename": name}); plain && cd != "" {
+		// FormatMediaType quotes and escapes a plain name as needed.
+		return cd
+	}
 	ascii := strings.Map(func(r rune) rune {
 		if r < 0x20 || r > 0x7e || r == '"' || r == '\\' || r == ';' {
 			return '_'
 		}
 		return r
 	}, name)
-	if ascii == name {
-		return `attachment; filename="` + name + `"`
+	fallback := `attachment; filename="` + ascii + `"`
+	if cd := mime.FormatMediaType("attachment", map[string]string{"filename": name}); cd != "" {
+		// filename* in UTF-8 (RFC 5987), then the fallback for older
+		// clients.
+		return cd + `; filename="` + ascii + `"`
 	}
-	return mime.FormatMediaType("attachment", map[string]string{"filename": name}) + `; filename="` + ascii + `"`
+	return fallback
 }
 
-// caseFileIntact checks an attached file's bytes for a report.
+// caseFileIntact checks an attached file for a report: that it is still
+// stored, with the size and SHA-256 its entry names.
 func (s *Server) caseFileIntact(ctx context.Context, caseID string) func(cases.Entry) bool {
 	return func(e cases.Entry) bool {
 		if s.CaseFiles == nil {
 			return false
 		}
-		f, data, err := s.CaseFiles.Get(ctx, caseID, e.FileID)
-		return err == nil && f.Matches(data) && f.SHA256 == e.FileSHA256
+		// The stored record, not the bytes: reading every file for each
+		// report would hold up to 250 MiB. Downloads check the bytes.
+		f, err := s.CaseFiles.Stat(ctx, caseID, e.FileID)
+		return err == nil && f.SHA256 == e.FileSHA256 && f.Size == e.FileSize
 	}
 }
 
@@ -242,7 +326,8 @@ func (s *Server) removeCaseFile(r *http.Request, caseID string, e cases.Entry) {
 		return
 	}
 	if err := s.CaseFiles.Delete(context.WithoutCancel(r.Context()), caseID, e.FileID); err != nil {
-		s.Log.Warn("a file removed from a case was not deleted; retention removes it with the case", "case", caseID, "file", e.FileID, "err", err)
+		s.Log.Warn("a file removed from a case was not deleted; retention deletes it later", "case", caseID, "file", e.FileID, "err", err)
+		s.audit(r, "case file removed", "case", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256, "deleted", false)
 		return
 	}
 	s.audit(r, "case file removed", "case", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256)
