@@ -91,12 +91,14 @@ func TestVolumeRiskScaledAndRefused(t *testing.T) {
 	r2.run()
 	r2.e.Risk = &failRisk{}
 	r2.now = at.Add(time.Hour + settle)
-	if _, err := r2.e.Round(context.Background()); err == nil || !strings.Contains(err.Error(), DataVolume) {
-		t.Errorf("refused risk = %v", err)
+	// The other checks learned the hour; this one waits for it.
+	if _, err := r2.e.Round(context.Background()); err != nil {
+		t.Errorf("round = %v", err)
 	}
 	st, _, _, err := r2.store.State(context.Background())
-	if err != nil || !strings.Contains(st.LastError, "read-only") {
-		t.Errorf("state = %+v %v", st.LastError, err)
+	cs := st.Checks[DataVolume]
+	if err != nil || !strings.Contains(st.LastError, "read-only") || !strings.Contains(cs.Error, DataVolume) || !cs.Behind.Equal(at) {
+		t.Errorf("state = %q %+v %v", st.LastError, cs, err)
 	}
 }
 

@@ -31,6 +31,11 @@ type Query struct {
 	// is UTC. Set by callers, such as the Search page from the browser's
 	// zone, not parsed.
 	TimeZone string
+	// MaxRows, when over the engine's own limit, is how many stats rows
+	// the search may read: background jobs that group a whole estate in
+	// one search need more than an analyst's search. Set by callers,
+	// not parsed.
+	MaxRows int
 }
 
 // Expr is a boolean filter expression.

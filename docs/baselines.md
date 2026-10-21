@@ -3,8 +3,13 @@
 Behavior baselines learn what each user and host usually does, and add risk when
 one of them does something new or rare. They find what no single rule can: a
 sign-in from a country the user never signed in from, a program almost no host
-has run, an hour of uploads far above a host's normal. This is often called user
-and entity behavior analytics (UEBA).
+has run, an hour of uploads far above a host's normal.
+
+What they are not: six fixed checks of first-seen and rare activity, each against
+the user's or host's own history (and, for programs, how many hosts ran it). There
+are no peer groups, no machine-learning models and no anomaly scores. That is a
+small part of what products sold as user and entity behavior analytics (UEBA) do,
+and it is meant as a source of risk next to the detections, not instead of one.
 
 The baselines don't raise findings of their own. Each one adds **risk events** to
 the user or host, in the Risk data model, with the detections' risk. Risk-based
@@ -25,7 +30,7 @@ Open them at **Settings > Behavior baselines** (admins). They are on by default.
 | Sign-in at an unusual hour | user | Authentication | it comes at an hour of the day (UTC) with under 2% of the user's activity, once they have been seen in at least 40 different hours | 10 |
 | Rare process on a host | host | Endpoint | a host runs a program it never ran before, which at most 3 hosts ever ran | 20 |
 | New kind of change by a user | user | Change | a user makes a kind of change they never made before, such as a cloud API call (`CreateAccessKey`) or deleting a group | 15 |
-| Unusual data volume from a host | host | Network_Traffic | a host on your network sends at least 100 MB in an hour, five times its usual hour and four standard deviations above it | 30 |
+| Unusual data volume from a host | host | Network_Traffic | a host on your network sends at least 100 MB in an hour, five times its usual hour and four standard deviations above it, and the same for that hour of the day (and the hours either side) on its other days | 30 |
 
 Each risk event has `detection_id` `baseline-<check>` (for example
 `baseline-new-country`), the field `baseline` (the check), `baseline_value` (the
@@ -67,6 +72,16 @@ What the checks leave out:
   learned from, so a new employee's first week adds no risk.
 - **Catching up.** If the baselines fall more than 7 days behind (OpenSearch was
   down for a week), they skip to 7 days ago rather than replay every hour.
+- **One check at a time.** When one check's search fails (a field mapped two
+  different ways, a search that times out), that check waits and the others go on.
+  The page shows the error on the check, and the check catches up on its own once
+  its search works, again for at most 7 days back.
+- **Data volume by hour of the day.** Besides its usual hour, each host has a usual
+  amount for each hour of the day, from one sample a day, and an hour must be
+  unusual for both. A backup that sends a gigabyte every night at 02:00, or a sync
+  every Friday afternoon, is normal for that hour. An hour of the day needs 7 days
+  of history before it can be unusual. A job that runs only once a month still
+  stands out each time; add an exception for that host.
 - **Each hour adds risk once.** A risk event's ID comes from the check, the user or
   host, the value and the hour, so an hour read twice (after a server takeover)
   writes nothing twice.
@@ -75,8 +90,16 @@ What the checks leave out:
 
 On the **Checks** card, each check has its own risk score (1 to 1000) and switch.
 Its menu opens its risk in Search, or **forgets what it learned**: the check
-deletes its profiles at its next round, then learns again from that hour, so it
-adds no risk for the learning period. Risk it already added stays.
+deletes its profiles at its next round, then learns the stored history again (up to
+30 days, or the learning period if longer) without adding risk, as the first run
+does, so users and hosts with a history are judged at once. Risk it already added
+stays. A check you turn on later learns the history the same way. **New country**
+and **New network** learn from the same searches, so forgetting one also holds
+back the other's risk until the replay is done.
+
+First-seen checks only know what happened within the history they read and what
+they still remember (**Forget after**). Something done less often, such as a
+quarterly task, is new to a check the first time after it starts or is reset.
 
 On the **Learning** card:
 
@@ -143,15 +166,18 @@ finding on its own.
 
 To keep memory and storage bounded:
 
-- Each check keeps at most 200 values per user or host (countries, networks,
-  programs, changes). When it is full, the value seen longest ago is dropped.
+- Each check keeps a bounded number of values per user or host: 2,000 programs or
+  kinds of change, 500 networks and every country. When it is full, the value seen
+  longest ago is dropped, and is new again the next time it is seen.
 - Each check learns at most 100,000 users or hosts. Past that, new ones are learned
   once old ones are forgotten, and the page says so.
 - Each check adds risk to at most 50 users or hosts per hour of data, so a change
   seen everywhere at once (new software rolled out, a VPN moved) can't flood the
-  risk index. The page shows how many were held back.
-- One hour's search returns at most 50,000 combinations. The page says when an hour
-  had more.
+  risk index. Which ones add risk is not decided by name: the order changes every
+  hour. The page shows how many were held back.
+- One hour's search reads at most 250,000 combinations (of user or host and value).
+  The rows come in name order, so when an hour has more, the page names the last
+  user or host that was read: those after it were not learned that hour.
 - The learned profiles are kept in the `signalith_baselines` index (one shard, one
   replica when there are two OpenSearch nodes), apart from your events, so data
   retention doesn't delete them. A profile is forgotten after the **Forget after**

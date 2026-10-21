@@ -10,10 +10,10 @@ It covers eight frameworks:
 | --- | --- | --- |
 | NIST SP 800-53 | Rev. 5 | 30 |
 | CIS Controls | v8 | 20 |
-| PCI DSS | v4.0.1 | 27 |
+| PCI DSS | v4.0.1 | 26 |
 | ISO/IEC 27001 | 2022 (Annex A) | 13 |
-| HIPAA Security Rule | 45 CFR 164 Subpart C | 8 |
-| SOC 2 | Trust Services Criteria 2017 (revised 2022) | 6 |
+| HIPAA Security Rule | 45 CFR 164 Subpart C | 7 |
+| SOC 2 | Trust Services Criteria 2017 (revised 2022) | 5 |
 | NIS2 Directive | (EU) 2022/2555 | 14 |
 | GDPR | (EU) 2016/679 | 11 |
 
@@ -68,8 +68,8 @@ A control shows:
   control asks for more than Signalith can see,
 - **Gap** when none are.
 
-Some controls ask for things no SIEM can show: a written incident response plan, a
-lockout setting on every system, a report you send to an authority. Those say so under
+Some controls ask for things no SIEM can show: a written incident response plan or
+policy, a lockout setting on every system, a report you send to an authority. Those say so under
 **Outside what Signalith sees**, and are at most partial however much evidence Signalith
 has, so the page never reads as if Signalith covered them.
 
@@ -215,6 +215,13 @@ it lines up with.
 - The configuration checks follow the [SCAP Security Guide](https://github.com/ComplianceAsCode/content)
   (BSD-3-Clause) and carry the NIST SP 800-53 references of the rules they are based
   on. No CIS Benchmark text is used.
+
+Every control was read again against its standard. Controls a SIEM cannot give
+evidence for are left out rather than shown as covered: account lockout (PCI DSS
+8.3.4, which is shown under 10.2.1.4 as failed attempts being logged), a risk
+analysis (HIPAA 164.308(a)(1)(ii)(A)) and the evaluation of every control (SOC 2
+CC4.1). The mapping has not yet been reviewed by a practising assessor of each
+framework; reviews are welcome as issues or pull requests.
 
 The mapping shows where Signalith gives evidence. It does not by itself make a system
 compliant, and your assessor decides what evidence is enough.
