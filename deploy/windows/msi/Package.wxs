@@ -2,9 +2,10 @@
 <!--
   Signalith's Windows installer (.msi), built with the WiX Toolset v5
   (https://wixtoolset.org, MS-RL licence) by build.ps1:
-    .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Out dist
+    .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Agents dist\agents -Out dist
 
-  It puts signalith.exe and install.ps1 in C:\Program Files\Signalith and
+  It puts signalith.exe, install.ps1 and the Signalith Agent's programs
+  (agents\) in C:\Program Files\Signalith and
   runs install.ps1, which on a new install installs OpenSearch on this
   computer (downloaded, and checked against the SHA-512 Signalith pins),
   writes the config in C:\ProgramData\Signalith, protects that folder,
@@ -47,7 +48,11 @@
     <Property Id="OPENSEARCHPROXY" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Signalith" />
+      <Directory Id="INSTALLFOLDER" Name="Signalith">
+        <!-- The Signalith Agent's programs, which the server hands to the
+             computers it is installed on (docs/signalith-agent.md). -->
+        <Directory Id="AGENTSFOLDER" Name="agents" />
+      </Directory>
     </StandardDirectory>
 
     <ComponentGroup Id="Program" Directory="INSTALLFOLDER">
@@ -76,6 +81,10 @@
       </Component>
     </ComponentGroup>
 
+    <ComponentGroup Id="AgentPrograms" Directory="AGENTSFOLDER">
+      <Files Include="$(var.Agents)\*" />
+    </ComponentGroup>
+
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenu" Guid="7C1D9E52-3F4B-4E8A-B1C6-0A9F2D7E5B13">
         <util:InternetShortcut Id="OpenSignalith" Name="Signalith" Target="https://localhost:9000/" Type="url" />
@@ -85,6 +94,7 @@
 
     <Feature Id="Main" Title="Signalith" Level="1">
       <ComponentGroupRef Id="Program" />
+      <ComponentGroupRef Id="AgentPrograms" />
       <ComponentRef Id="StartMenu" />
     </Feature>
 

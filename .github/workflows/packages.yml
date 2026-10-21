@@ -82,12 +82,34 @@ jobs:
           name: previous-binaries
           path: previous/
 
-  linux:
-    needs: [versions, binaries]
+  # The Signalith Agent's programs, which every package carries for the
+  # server to hand out.
+  agents:
+    needs: versions
     runs-on: ubuntu-latest
     # The agent release key is a secret of the release environment, which
     # GitHub hands only to runs of a v* tag (docs/releasing.md); CI and dry
     # runs build unsigned agent programs.
+    environment: ${{ inputs.sign && 'release' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build the agent programs
+        env:
+          VERSION: ${{ needs.versions.outputs.version }}
+          SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
+        run: deploy/packages/build-agents.sh "$VERSION" agents
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-programs
+          path: agents/
+
+  linux:
+    needs: [versions, binaries, agents]
+    runs-on: ubuntu-latest
+    # The package signing key is a secret of the release environment too.
     environment: ${{ inputs.sign && 'release' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,12 +121,16 @@ jobs:
         with:
           name: binaries
           path: bin
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-programs
+          path: agents
       - name: Build the .deb and .rpm packages
         env:
           VERSION: ${{ needs.versions.outputs.version }}
           GPG_KEY: ${{ secrets.SIGNALITH_GPG_PRIVATE_KEY }}
           NFPM_PASSPHRASE: ${{ secrets.SIGNALITH_GPG_PASSPHRASE }}
-          SIGNALITH_AGENT_KEY: ${{ secrets.SIGNALITH_AGENT_KEY }}
+          SIGNALITH_AGENTS_DIR: agents
         run: |
           if [ -n "$GPG_KEY" ]; then
             export SIGNALITH_GPG_KEY_FILE="$RUNNER_TEMP/signing-key.asc"
@@ -151,7 +177,7 @@ jobs:
           .github/scripts/test-repos.sh packages "$VERSION"
 
   windows:
-    needs: [versions, binaries]
+    needs: [versions, binaries, agents]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -159,9 +185,13 @@ jobs:
         with:
           name: binaries
           path: bin
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-programs
+          path: agents
       - name: Build the .msi
         shell: pwsh
-        run: .\deploy\windows\msi\build.ps1 -Version "${{ needs.versions.outputs.version }}" -Exe bin\signalith-windows-amd64.exe -Out packages
+        run: .\deploy\windows\msi\build.ps1 -Version "${{ needs.versions.outputs.version }}" -Exe bin\signalith-windows-amd64.exe -Agents agents -Out packages
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-packages
@@ -181,7 +211,7 @@ jobs:
           if ($env:PREVIOUS_RELEASE) {
             gh release download $env:PREVIOUS_RELEASE --repo $env:GITHUB_REPOSITORY --dir previous --pattern '*.msi'
           } else {
-            .\deploy\windows\msi\build.ps1 -Version $env:PREVIOUS -Exe previous-bin\signalith-windows-amd64.exe -Out previous
+            .\deploy\windows\msi\build.ps1 -Version $env:PREVIOUS -Exe previous-bin\signalith-windows-amd64.exe -Agents agents -Out previous
           }
       - name: Install, upgrade and uninstall the .msi
         shell: pwsh

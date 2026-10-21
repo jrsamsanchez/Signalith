@@ -36,7 +36,7 @@ func TestLines(t *testing.T) {
 		t.Errorf("linux note %q", c.LinuxNote)
 	}
 	// A Linux server cannot hand out the Windows program.
-	for _, want := range []string{"/api/cluster/join/install.ps1", strings.ToUpper(sha.PS1), "-SkipCertificateCheck", "ServerCertificateValidationCallback=$null",
+	for _, want := range []string{"/api/cluster/join/install.ps1", strings.ToUpper(sha.PS1), "-SkipCertificateCheck", "[SignalithGet]::Save(",
 		"-From $u -Version 1.5.0 -Join '" + token + "'"} {
 		if !strings.Contains(c.Windows, want) {
 			t.Errorf("windows line has no %q:\n%s", want, c.Windows)
@@ -172,5 +172,34 @@ func TestGate(t *testing.T) {
 		t.Error("refused an hour later")
 	} else {
 		d()
+	}
+}
+
+// TestWindowsPowerShell51Download keeps SignalithGet the same in the
+// pasted lines, the server's install.ps1 and the .msi test, which runs it
+// in Windows PowerShell 5.1, and fit for a single-quoted PowerShell
+// string.
+func TestWindowsPowerShell51Download(t *testing.T) {
+	if strings.Contains(signalithGetCS, "'") {
+		t.Fatal("signalithGetCS has a ' and would end its PowerShell string")
+	}
+	for _, f := range []string{"../../deploy/windows/install.ps1", "../../.github/scripts/test-msi.ps1"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), "Add-Type -TypeDefinition '"+signalithGetCS+"'") {
+			t.Errorf("%s does not define SignalithGet as the pasted lines do", f)
+		}
+	}
+	c, err := Lines(Line{URL: "https://siem-a:8443", Token: token, Version: "1.5.0", GOOS: "windows", GOARCH: "amd64", BinarySHA256: bin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, _ := agentWindowsLine(AgentLine{Version: "1.5.0"}, "https://siem-a:7779")
+	for _, line := range []string{c.Windows, agent} {
+		if strings.Contains(line, "[Net.ServicePointManager]::ServerCertificateValidationCallback") || !strings.Contains(line, ps51Get) {
+			t.Errorf("the Windows line does not download with SignalithGet: %s", line)
+		}
 	}
 }
