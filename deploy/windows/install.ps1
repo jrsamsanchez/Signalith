@@ -180,9 +180,12 @@ if ($Join) {
       if ($PSVersionTable.PSEdition -eq "Core") {
         Invoke-WebRequest $uri -OutFile $download -SkipCertificateCheck -MaximumRedirection 0
       } else {
-        [Net.ServicePointManager]::SecurityProtocol = "Tls12"
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        try { Invoke-WebRequest $uri -OutFile $download -UseBasicParsing -MaximumRedirection 0 } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback = $null }
+        # A script block as the certificate check fails here ("There is
+        # no Runspace available"): Windows PowerShell 5.1 checks it on
+        # another thread. SignalithGet is the same C# as the pasted line's.
+        if (-not ('SignalithGet' -as [type])) { Add-Type -TypeDefinition 'public static class SignalithGet { static bool Any(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain h, System.Net.Security.SslPolicyErrors e) { return true; } public static void Save(string url, string file) { var r = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url); r.AllowAutoRedirect = false; r.ServerCertificateValidationCallback = Any; using (var p = (System.Net.HttpWebResponse)r.GetResponse()) { if ((int)p.StatusCode != 200) { throw new System.Net.WebException("the server answered " + (int)p.StatusCode); } using (var s = p.GetResponseStream()) using (var o = System.IO.File.Create(file)) { s.CopyTo(o); } } } }' }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        [SignalithGet]::Save($uri, $download)
       }
     } catch {
       $code = 0

@@ -106,9 +106,17 @@ Write-Host "== Windows PowerShell 5.1 downloads the agent install script as the 
 $want = Join-Path $env:RUNNER_TEMP "agent-install-7.ps1"
 $got51 = Join-Path $env:RUNNER_TEMP "agent-install-51.ps1"
 Invoke-WebRequest "https://127.0.0.1:7779/api/agent/install.ps1" -OutFile $want -SkipCertificateCheck -MaximumRedirection 0
-& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command ("`$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol='Tls12'; " +
-  "[Net.ServicePointManager]::ServerCertificateValidationCallback={`$true}; " +
-  "Invoke-WebRequest 'https://127.0.0.1:7779/api/agent/install.ps1' -OutFile '$got51' -UseBasicParsing -MaximumRedirection 0")
+# The same download as the pasted line's Windows PowerShell 5.1 part (a
+# Go test keeps this C# the same as the line's).
+$get51 = Join-Path $env:RUNNER_TEMP "get51.ps1"
+Set-Content -LiteralPath $get51 -Value @'
+param([string]$Url, [string]$Out)
+$ErrorActionPreference = "Stop"
+if (-not ('SignalithGet' -as [type])) { Add-Type -TypeDefinition 'public static class SignalithGet { static bool Any(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain h, System.Net.Security.SslPolicyErrors e) { return true; } public static void Save(string url, string file) { var r = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url); r.AllowAutoRedirect = false; r.ServerCertificateValidationCallback = Any; using (var p = (System.Net.HttpWebResponse)r.GetResponse()) { if ((int)p.StatusCode != 200) { throw new System.Net.WebException("the server answered " + (int)p.StatusCode); } using (var s = p.GetResponseStream()) using (var o = System.IO.File.Create(file)) { s.CopyTo(o); } } } }' }
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+[SignalithGet]::Save($Url, $Out)
+'@
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $get51 -Url "https://127.0.0.1:7779/api/agent/install.ps1" -Out $got51
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $got51)) { throw "Windows PowerShell 5.1 could not download the agent install script" }
 if ((Get-FileHash $got51).Hash -ne (Get-FileHash $want).Hash) { throw "Windows PowerShell 5.1 got another agent install script" }
 
@@ -118,6 +126,7 @@ if (Get-Service Signalith -ErrorAction SilentlyContinue) { throw "the service is
 if (Test-Path $exe) { throw "$exe is still there" }
 if (-not (Test-Path $config)) { throw "the config was not kept" }
 if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are still there" }
+if (Test-Path "$env:ProgramFiles\Signalith\agents") { throw "the agent programs are still there" }
 
 Write-Host "== A failed install over the kept config is undone like a new one, not like an upgrade"
 $good = Get-Content -Raw -LiteralPath $config
