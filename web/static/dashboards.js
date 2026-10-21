@@ -870,7 +870,8 @@
       el('div', { class: 'db-hstats' },
         stat(String(h.enabled), ` of ${h.total}`, 'detections on', null, h.not_run ? `${h.not_run} enabled detections have not run on schedule yet` : ''),
         stat(String(erroring.length), '', 'erroring', erroring.length ? 'danger' : null),
-        stat(String(silent.length), '', `no match in ${h.silent_window}`, null, 'Enabled detections with no findings and no risk events. They may need tuning, or the data they need may be missing.'),
+        stat(String(silent.length), '', `no match in ${h.silent_window}`, null, 'Enabled detections with no findings and no risk events. They may need tuning, or the data they need may be missing.'
+          + (h.too_new ? ` ${h.too_new} more first ran less than ${h.silent_window} ago and are not counted yet.` : '')),
         stat(String(stale.length), ` of ${h.sources}`, 'sources stopped', stale.length ? 'warning' : null, `Hosts and source types seen in the last ${h.source_lookback} with nothing in the last ${h.stale_after}`)),
       err ? cardAlert('danger', err) : null,
       note,

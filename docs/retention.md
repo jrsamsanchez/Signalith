@@ -122,7 +122,10 @@ OpenSearch protects itself when a data disk fills up. At 85% (the low watermark)
 stops placing new replica shards on the node. At 90% (the high watermark) it moves
 shards away from the node. At 95% (the flood stage) it makes every index with a
 shard on that node read-only, and ingest stops until space is freed. The page counts
-the indices OpenSearch has blocked this way.
+the indices OpenSearch has blocked this way. When every data disk is past the high
+watermark, OpenSearch also refuses to create indices (`cluster.blocks.create_index`),
+so a new day's events, cases and detection runs fail although the cluster stays green.
+The Health page and the Health card show either block as **OpenSearch refuses writes**.
 
 The disk guard acts first. When the fullest OpenSearch data disk is above
 **Max disk use** (default 85%), it deletes the oldest event days, in any category,

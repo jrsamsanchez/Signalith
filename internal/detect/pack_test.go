@@ -259,3 +259,59 @@ func TestSplunkPackSeverities(t *testing.T) {
 		}
 	}
 }
+
+// The starter set is 100 to 150 high and critical pack rules that read
+// only what hosts send as installed (BUY-03).
+func TestStarterSet(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]*Detection{}
+	tagged := 0
+	for _, d := range ds {
+		byID[d.ID] = d
+		if slices.Contains(d.Tags, StarterTag) {
+			tagged++
+		}
+	}
+	if n := len(starterIDs); n < 100 || n > 150 || tagged != n {
+		t.Errorf("starter set: %d listed, %d tagged", n, tagged)
+	}
+	for id := range starterIDs {
+		d := byID[id]
+		if d == nil {
+			t.Errorf("%s: no such pack rule", id)
+			continue
+		}
+		if d.Severity != "high" && d.Severity != "critical" {
+			t.Errorf("%s: %s", id, d.Severity)
+		}
+		for _, tag := range d.Tags {
+			if strings.HasPrefix(tag, "needs-") {
+				t.Errorf("%s: %s", id, tag)
+			}
+		}
+	}
+}
+
+// TestMitigationsRulesReadBothLogs checks that the exploit protection
+// rules read the user mode log as well as the kernel mode one (BUY-05).
+func TestMitigationsRulesReadBothLogs(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, d := range ds {
+		if strings.HasPrefix(d.ID, "sigma-win-security-mitigations-") {
+			found++
+			if !strings.Contains(d.Query, "sourcetype=WinEventLog:Microsoft-Windows-Security-Mitigations/* ") {
+				t.Errorf("%s reads one log only: %s", d.ID, d.Query)
+			}
+		}
+	}
+	if found == 0 {
+		t.Error("no exploit protection rules in the Sigma pack")
+	}
+}

@@ -65,6 +65,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
@@ -76,6 +77,12 @@ import (
 type Backend interface {
 	Health(ctx context.Context) (string, error)
 	Mapping(ctx context.Context, pattern string) (map[string]string, error)
+}
+
+// writeBlocker is a Backend that can say what keeps OpenSearch from
+// writing (store.Client.WriteBlocks).
+type writeBlocker interface {
+	WriteBlocks(ctx context.Context) ([]string, error)
 }
 
 // Server wires the API together.
@@ -1328,6 +1335,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	var problem, advice string
 	if err != nil {
 		status, problem, advice = osTrouble(err)
+	} else if b, ok := s.Backend.(writeBlocker); ok {
+		// A full disk leaves the cluster green but stops writes (LP-11).
+		if says, berr := b.WriteBlocks(ctx); berr == nil && len(says) > 0 {
+			status, problem = "refused", string(store.RefusedBlocked)
+			advice = strings.Join(says, " ") + " " + store.DiskBlockedFix
+		}
 	}
 	// No server running detections, a full disk: everyone sees those, on
 	// every page.
