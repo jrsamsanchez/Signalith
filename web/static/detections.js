@@ -1397,7 +1397,7 @@ const isStarter = (d) => (d.tags || []).includes('starter');
 const NEEDS = {
   'needs-sysmon': ['Needs Sysmon', 'Reads Sysmon events: tick Sysmon on the Windows install line, or install Sysmon yourself.'],
   'needs-process-auditing': ['Needs process auditing', 'Reads program starts: Sysmon, or the Security log’s 4688 events with the command line (Audit Process Creation and Include command line in process creation events).'],
-  'needs-powershell-logging': ['Needs PowerShell logging', 'Reads PowerShell’s script block or module logging: tick PowerShell on the Windows install line, and turn the logging on by group policy.'],
+  'needs-powershell-logging': ['Needs PowerShell logging', 'Reads PowerShell’s script block or module logging: tick Also turn on logs that are off by default on the Windows install line, or turn the logging on by group policy.'],
   'needs-auditd': ['Needs the audit log', 'Reads the Linux audit log: install auditd and have it record the programs that run.'],
 };
 const ruleNeeds = (d) => (d.tags || []).find((t) => NEEDS[t]);

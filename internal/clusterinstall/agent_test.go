@@ -43,7 +43,7 @@ func TestAgentLines(t *testing.T) {
 		t.Errorf("Windows script SHA-256 %s", c.WindowsSHA256)
 	}
 	for _, want := range []string{"$u='https://siem:7779'", "Invoke-WebRequest 'https://siem:7779/api/agent/install.ps1' -OutFile $f -SkipCertificateCheck",
-		"ServerCertificateValidationCallback=$null", "-ne '" + strings.ToUpper(c.WindowsSHA256) + "'",
+		"[SignalithGet]::Save(", "-ne '" + strings.ToUpper(c.WindowsSHA256) + "'",
 		"'" + agents.TokenPlaceholder + "' | & $f -From $u -CaSha256 " + caSum + " -Version 0.4.0 -Token -"} {
 		if !strings.Contains(c.Windows, want) {
 			t.Errorf("Windows line has no %q:\n%s", want, c.Windows)

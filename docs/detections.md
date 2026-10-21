@@ -1424,6 +1424,10 @@ its name in snake case (`ApplicationPath` is `firewall_application_path`,
 | DNS Server (`DNS Server`) | `dnsserver_` | On DNS servers |
 | IIS configuration (`Microsoft-IIS-Configuration/Operational`) | `iisconfig_` | On web servers, after `wevtutil sl Microsoft-IIS-Configuration/Operational /e:true` |
 
+The Signalith Agent's install line turns on the DNS client, Task Scheduler, CryptoAPI and
+device driver logs with `-EnableLogs` (**Also turn on logs that are off by default** on
+**Add data**); see [Logs that are off by default](signalith-agent.md#logs-that-are-off-by-default-on-windows).
+
 Fluent Bit skips the logs a computer doesn't have. The OpenTelemetry Collector stops on a log
 it can't open, so its configuration leaves out the OpenSSH, DNS Server and IIS logs; add a
 `windowseventlog` receiver for each one a server has.
