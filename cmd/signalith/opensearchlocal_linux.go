@@ -70,6 +70,14 @@ func (linuxOpenSearch) prepare(l oslocal.Layout, home string) error {
 	if err := rootFolder(l.Home, 0o755); err != nil {
 		return err
 	}
+	// Signalith's certificate goes in a folder only root may change.
+	if parent := filepath.Dir(l.Client); parent != "" {
+		if _, err := os.Stat(parent); err == nil {
+			if err := onlyRootChanges(parent); err != nil {
+				return err
+			}
+		}
+	}
 	if home == "" {
 		return nil
 	}
@@ -301,7 +309,71 @@ func openSearchAccount(l oslocal.Layout) (uid, gid int, err error) {
 	if err1 != nil || err2 != nil || uid == 0 {
 		return 0, 0, fmt.Errorf("the %s account is %s:%s, which OpenSearch does not run as", openSearchUser, u.Uid, u.Gid)
 	}
+	if err := checkAccount(uid, gid); err != nil {
+		return 0, 0, err
+	}
 	return uid, gid, nil
+}
+
+// Where accounts are listed; the tests change them.
+var (
+	passwdFile = "/etc/passwd"
+	groupFile  = "/etc/group"
+)
+
+// checkAccount checks the account OpenSearch runs as, uid:gid, is one
+// made for it: a system account that cannot sign in, alone in a group of
+// its own name, which may read its certificates and keystore.
+func checkAccount(uid, gid int) error {
+	bad := func(why string) error {
+		return fmt.Errorf("the %s account is not one made for OpenSearch alone (%s), so OpenSearch is not set up to run as it; "+
+			"remove it (sudo userdel %s) and run the install again", openSearchUser, why, openSearchUser)
+	}
+	if uid >= 1000 || gid >= 1000 {
+		return bad(fmt.Sprintf("%d:%d is not a system account's", uid, gid))
+	}
+	passwd, err := os.ReadFile(passwdFile)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, line := range strings.Split(string(passwd), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 7 {
+			continue
+		}
+		if f[0] == openSearchUser {
+			found = true
+			if shell := filepath.Base(f[6]); shell != "nologin" && shell != "false" {
+				return bad("it may sign in, with " + f[6])
+			}
+		} else if f[3] == strconv.Itoa(gid) {
+			return bad(f[0] + " is in its group too")
+		}
+	}
+	if !found {
+		return bad("it is not in " + passwdFile)
+	}
+	group, err := os.ReadFile(groupFile)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(string(group), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 4 || f[2] != strconv.Itoa(gid) {
+			continue
+		}
+		if f[0] != openSearchUser {
+			return bad("its group is " + f[0])
+		}
+		for _, m := range strings.Split(f[3], ",") {
+			if m != "" && m != openSearchUser {
+				return bad(m + " is in its group too")
+			}
+		}
+		return nil
+	}
+	return bad(fmt.Sprintf("its group %d is not in %s", gid, groupFile))
 }
 
 // giveClientFiles lets Signalith's account read its certificate for

@@ -66,9 +66,25 @@ status=$(sudo signalith opensearch status); echo "$status"
 rel=$(echo "$status" | sed -n 's/^Release installed: \([^,]*\), SHA-512 .*/\1/p')
 pin=$(echo "$status" | sed -n 's/^Release installed: .*, SHA-512 \([0-9a-f]*\)$/\1/p')
 published=$(curl -fsSL "$rel.sha512" | awk '{print $1}')
+# The arm64 release's pin too, which no runner here installs: read from
+# the source this package was built from.
+arm=${rel%-linux-x64.tar.gz}-linux-arm64.tar.gz
+armpin=$(python3 - "$(dirname "$0")/../../internal/oslocal/oslocal.go" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+m = re.search(r'"linux/arm64":\s*\{.*?SHA512:\s*((?:"[0-9a-f]*"\s*\+?\s*)+)', src, re.S)
+print("".join(re.findall(r'"([0-9a-f]*)"', m.group(1))) if m else "")
+PY
+)
+armpublished=$(curl -fsSL "$arm.sha512" | awk '{print $1}')
+bad=no
 if [ -z "$rel" ] || [ "$published" != "$pin" ]; then
-  echo "::error::The pinned SHA-512 for $rel is '$pin'; OpenSearch publishes $published"; exit 1
+  echo "::error::The pinned SHA-512 for $rel is '$pin'; OpenSearch publishes $published"; bad=yes
 fi
+if [ "$armpublished" != "$armpin" ]; then
+  echo "::error::The pinned SHA-512 for $arm is '$armpin'; OpenSearch publishes $armpublished"; bad=yes
+fi
+[ "$bad" = no ] || exit 1
 sudo signalith opensearch install
 systemctl is-active --quiet signalith-opensearch
 pid=$(systemctl show -p MainPID --value signalith-opensearch)

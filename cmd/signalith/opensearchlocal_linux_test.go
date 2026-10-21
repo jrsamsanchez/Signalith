@@ -142,6 +142,37 @@ func TestShareConfig(t *testing.T) {
 	}
 }
 
+func TestCheckAccount(t *testing.T) {
+	dir := t.TempDir()
+	pw, gr := passwdFile, groupFile
+	t.Cleanup(func() { passwdFile, groupFile = pw, gr })
+	passwdFile, groupFile = filepath.Join(dir, "passwd"), filepath.Join(dir, "group")
+	set := func(passwd, group string) {
+		os.WriteFile(passwdFile, []byte(passwd), 0o600)
+		os.WriteFile(groupFile, []byte(group), 0o600)
+	}
+	const own = "root:x:0:0:root:/root:/bin/bash\nsignalith-opensearch:x:990:990::/var/lib/signalith-opensearch:/usr/sbin/nologin\n"
+	set(own, "root:x:0:\nsignalith-opensearch:x:990:\n")
+	if err := checkAccount(990, 990); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		uid, gid      int
+		passwd, group string
+	}{
+		"not a system account": {1001, 1001, own, "signalith-opensearch:x:1001:\n"},
+		"may sign in":          {990, 990, "signalith-opensearch:x:990:990::/:/bin/bash\n", "signalith-opensearch:x:990:\n"},
+		"a shared group":       {990, 100, "signalith-opensearch:x:990:100::/:/usr/sbin/nologin\n", "users:x:100:\n"},
+		"a member":             {990, 990, own, "signalith-opensearch:x:990:sam\n"},
+		"another's group too":  {990, 990, own + "sam:x:1000:990::/home/sam:/bin/bash\n", "signalith-opensearch:x:990:\n"},
+	} {
+		set(c.passwd, c.group)
+		if err := checkAccount(c.uid, c.gid); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
 func TestToolEnv(t *testing.T) {
 	t.Setenv("JAVA_OPTS", "-javaagent:/tmp/x.jar")
 	l := oslocal.DefaultLayout()

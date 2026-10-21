@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -67,8 +68,9 @@ var Releases = map[string]Release{
 			"f8c1753a92bf35bfd82713a609b55682de2e450633ca964d2bc0631c3a64b01e",
 	},
 	"linux/amd64": {
-		File:   "opensearch-" + Version + "-linux-x64.tar.gz",
-		SHA512: "",
+		File: "opensearch-" + Version + "-linux-x64.tar.gz",
+		SHA512: "a1b761ed245445cc8f15ec0cba7340243aa76caf914092e22b16a04e5754967e" +
+			"9d62a728b20fa941735cb8b28db671293c7f9b3ea9283706e368a1a05bfdc672",
 	},
 	"linux/arm64": {
 		File:   "opensearch-" + Version + "-linux-arm64.tar.gz",
@@ -374,6 +376,9 @@ func Extract(file, dest string) error {
 	} else {
 		err = u.zip()
 	}
+	if err == nil {
+		err = u.finish()
+	}
 	if cerr := root.Close(); err == nil {
 		err = cerr
 	}
@@ -493,6 +498,23 @@ func (u *unpacker) tarGz(f io.Reader) error {
 	}
 }
 
+// finish checks every link ends up inside the release, now all of them
+// are made (a link may lead through another), and gives every folder
+// mode 0755 whatever the umask, so the service may read the program.
+func (u *unpacker) finish() error {
+	for _, l := range u.links {
+		if _, err := u.root.Stat(l[0]); err != nil {
+			return fmt.Errorf("%s has a link that leads outside its folder, or nowhere: %q to %q", u.file, l[0], l[1])
+		}
+	}
+	return fs.WalkDir(u.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return err
+		}
+		return u.root.Chmod(p, 0o755)
+	})
+}
+
 // write writes a file, executable if it was in the release.
 func (u *unpacker) write(name string, r io.Reader, mode os.FileMode) error {
 	if err := u.root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
@@ -503,6 +525,11 @@ func (u *unpacker) write(name string, r io.Reader, mode os.FileMode) error {
 		return err
 	}
 	if _, err := io.Copy(w, r); err != nil {
+		w.Close()
+		return err
+	}
+	// Whatever the umask: readable by all, as in the release.
+	if err := w.Chmod(0o644 | mode.Perm()&0o111); err != nil {
 		w.Close()
 		return err
 	}
@@ -724,8 +751,13 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 	put := func(name string, b []byte) error {
 		return putIn(root, l.Config(), name, b)
 	}
-	src := filepath.Join(home, "config")
-	log4j, err := os.ReadFile(filepath.Join(src, "log4j2.properties"))
+	// The release's files are read inside it, never through a link out.
+	rel, err := os.OpenRoot(filepath.Join(home, "config"))
+	if err != nil {
+		return fmt.Errorf("the release's config folder (log4j2.properties, jvm.options, opensearch-security) is missing: %w", err)
+	}
+	defer rel.Close()
+	log4j, err := rel.ReadFile("log4j2.properties")
 	if err != nil {
 		return err
 	}
@@ -742,7 +774,7 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 			}
 		}
 	}
-	jvm, err := os.ReadFile(filepath.Join(src, "jvm.options"))
+	jvm, err := rel.ReadFile("jvm.options")
 	if err != nil {
 		return err
 	}
@@ -751,13 +783,13 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 	}
 	// The release's other security files (action groups, tenants, ...),
 	// then Signalith's.
-	entries, err := os.ReadDir(filepath.Join(src, "opensearch-security"))
+	entries, err := fs.ReadDir(rel.FS(), "opensearch-security")
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
 		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".yml") {
-			b, err := os.ReadFile(filepath.Join(src, "opensearch-security", e.Name()))
+			b, err := rel.ReadFile(filepath.Join("opensearch-security", e.Name()))
 			if err != nil {
 				return err
 			}
