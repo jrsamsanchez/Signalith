@@ -5,7 +5,7 @@
 // printable report for auditors; and, for admins, a note on a control that
 // is handled outside Signalith or does not apply. Evidence sources lists
 // the capabilities behind every control, the ones that would help most
-// first.
+// first. History lists the signed monthly records of the evidence.
 'use strict';
 
 (function () {
@@ -23,7 +23,13 @@
     notify: 'Notifications', respond: 'Response actions', intel: 'Threat intel', retention: 'Data retention', users: 'Users',
     security: 'Security', settings: 'Settings', assets: 'Assets & identities', health: 'Health', search: 'Search',
   };
-  const S = { data: null, fw: '', tab: 'controls', find: '', show: 'all', open: new Set(), loading: false, seq: 0 };
+  const S = { data: null, fw: '', tab: 'controls', find: '', show: 'all', open: new Set(), loading: false, seq: 0, hist: null, histErr: null };
+  const CHECK = {
+    verified: { label: 'Verified', tone: 'success', text: 'Intact and signed with one of this server’s report keys.' },
+    unsigned: { label: 'Not signed', tone: 'outline', text: 'Intact, but taken when the server had no report key.' },
+    revoked: { label: 'Revoked key', tone: 'warning', text: '' },
+    changed: { label: 'Changed', tone: 'danger', text: '' },
+  };
   try { S.fw = localStorage.getItem(FW_KEY) || ''; } catch (_) { /* storage may be blocked */ }
 
   pageHooks.push((name) => { if (name === 'compliance') load(false); });
@@ -144,7 +150,7 @@
     const notes = (S.data.notes || []).map((n) => dxAlert('warning', 'Some evidence could not be read', n));
 
     const noted = c.external + c.na;
-    const tabs = dxTabs('cp', [['controls', 'Controls', f.controls.length], ['sources', 'Evidence sources', S.data.capabilities.length]], S.tab, (t) => {
+    const tabs = dxTabs('cp', [['controls', 'Controls', f.controls.length], ['sources', 'Evidence sources', S.data.capabilities.length], ['history', 'History', S.hist ? S.hist.length : 0]], S.tab, (t) => {
       S.tab = t;
       renderBody();
       $('cp-tab-' + t).focus();
@@ -156,6 +162,7 @@
         tabs,
         dxPanel('cp', 'controls', S.tab, S.tab === 'controls' ? controlsPanel(f) : null),
         dxPanel('cp', 'sources', S.tab, S.tab === 'sources' ? sourcesPanel() : null),
+        dxPanel('cp', 'history', S.tab, S.tab === 'history' ? historyPanel(f) : null),
         el('p', { class: 'cp-notice' }, f.notice, ' The mapping shows where Signalith gives evidence; it does not by itself make a system compliant.')));
   }
 
@@ -367,5 +374,66 @@
         li.querySelector('.cp-ev__detail').before(el('p', { class: 'cp-ev__desc' }, c.description));
         return li;
       })));
+  }
+
+  // ---------- history ----------
+  async function loadHistory() {
+    try {
+      const d = await api('api/compliance/history');
+      S.hist = d.records;
+    } catch (e) {
+      S.hist = null;
+      S.histErr = e;
+    }
+    if (S.data && S.tab === 'history') renderBody();
+  }
+
+  async function takeRecord(btn) {
+    btn.disabled = true;
+    try {
+      await api('api/compliance/history', { method: 'POST' });
+      dxNotify('Recorded the evidence as it is now.');
+      await loadHistory();
+    } catch (e) {
+      toastError('Couldn’t take a record', e);
+      btn.disabled = false;
+    }
+  }
+
+  function historyPanel(f) {
+    if (!S.hist && !S.histErr) {
+      loadHistory();
+      return el('div', { 'aria-busy': 'true' }, ...Array.from({ length: 3 }, () => el('div', { class: 'cp-skel' }, dxSkel('70%'))));
+    }
+    if (!S.hist) {
+      const e = S.histErr;
+      return dxEmpty({ tone: 'danger', icon: 'circle-alert', title: 'Couldn’t load the history', text: sentence(e.message), action: dxRetry(() => { S.histErr = null; renderBody(); }) });
+    }
+    const take = can('admin') ? dxBtn('secondary', 'Take a record now', (ev) => takeRecord(ev.currentTarget), { sm: true, icon: 'archive' }) : null;
+    const intro = el('div', { class: 'cp-hist__head' },
+      el('p', { class: 'cp-intro' }, 'On the first day of each month, Signalith records every framework’s score and each control’s status, signed with the server’s report key, so you can show the evidence held all along.'),
+      take);
+    if (!S.hist.length) {
+      return el('div', {}, intro, dxEmpty({ icon: 'history', title: 'No records yet', text: 'The first one is taken within an hour of the server that runs the background jobs starting.' }));
+    }
+    return el('div', {}, intro, el('ul', { class: 'cp-hist' }, ...S.hist.map((r) => historyItem(f, r))));
+  }
+
+  function historyItem(f, r) {
+    const chk = CHECK[r.check] || CHECK.changed;
+    const mine = (r.frameworks || []).find((x) => x.id === f.id);
+    const when = new Date(r.taken);
+    const how = r.trigger === 'manual' ? `Taken by ${r.by || 'an admin'}` : 'Monthly';
+    const score = mine
+      ? el('span', { class: 'cp-hist__score' }, el('b', { class: 'num' }, mine.score + '%'), ' ',
+        el('span', { class: 'cp-hist__counts' }, `${mine.counts.met || 0} evidence · ${mine.counts.partial || 0} partial · ${mine.counts.missing || 0} ${mine.counts.missing === 1 ? 'gap' : 'gaps'}`))
+      : el('span', { class: 'cp-hist__counts' }, `${f.name} was not in this record`);
+    return el('li', { class: 'cp-hist__item' },
+      el('div', { class: 'cp-hist__when' },
+        el('time', { datetime: r.taken }, isNaN(when) ? r.id : when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })),
+        el('span', { class: 'cp-hist__how' }, how)),
+      r.check === 'changed' ? el('span', { class: 'cp-hist__counts' }, 'Nothing in this record can be trusted.') : score,
+      el('span', { class: `badge badge--${chk.tone} cp-badge`, title: r.problem || chk.text }, chk.label),
+      r.problem ? el('p', { class: 'cp-hist__problem' }, sentence(r.problem)) : null);
   }
 })();

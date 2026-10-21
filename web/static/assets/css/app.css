@@ -6044,6 +6044,19 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .cp-ev__fix .link-btn { font-size: var(--fs-sm); }
 .cp-used { font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); }
 .cp-sources { gap: 14px; }
+.cp-hist__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.cp-hist { list-style: none; margin: 0; padding: 0; display: grid; }
+.cp-hist__item { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.cp-hist__item:first-child { border-top: 0; }
+.cp-hist__when { display: grid; gap: 2px; }
+.cp-hist__when time { font-weight: 600; }
+.cp-hist__how, .cp-hist__counts { color: var(--text-2); font-size: var(--fs-sm); }
+.cp-hist__score b { font-size: var(--fs-md); }
+.cp-hist__problem { grid-column: 1 / -1; margin: 0; color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .cp-hist__item { grid-template-columns: minmax(0, 1fr) auto; }
+  .cp-hist__item > .cp-hist__score, .cp-hist__item > .cp-hist__counts { grid-column: 1 / -1; grid-row: 2; }
+}
 .cp-sources > .cp-ev { padding: 12px 14px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); }
 .cp-sub { display: grid; gap: 6px; padding-top: 12px; box-shadow: inset 0 1px 0 var(--line-subtle); }
 .cp-sub p { margin: 0; color: var(--text-2); }

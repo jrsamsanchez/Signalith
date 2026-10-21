@@ -209,6 +209,43 @@ PUT /api/compliance/notes
 
 `status` is `external`, `na`, or empty to remove the note.
 
+## Evidence history
+
+An export shows the evidence on the day it was made. To show it held all along, Signalith
+keeps a history: on the first day of each month (UTC), the server that runs the
+background jobs records every framework's score and each control's status, with any notes
+on controls and what each capability found. Admins can also take a record at any time
+with **Take a record now** on the Compliance page, up to one every 10 minutes.
+
+Each record is signed with the server's [report key](cases.md#report-keys), the same key
+that signs case reports, so nobody can change a record without it showing. The
+**History** section of the Compliance page lists the records, newest first, with each
+framework's score, and says for each one whether it checks out:
+
+| Check | Meaning |
+| --- | --- |
+| Verified | The record is as it was taken, signed with one of this server's report keys. |
+| Not signed | The record is intact, but it was taken when the server had no report key, so its signature cannot prove who made it. |
+| Revoked key | The signature matches, but the key that made it was [revoked](cases.md#report-keys) because it may have leaked. |
+| Changed | The record was changed or was not made by Signalith. Nothing in it is shown. |
+
+Records are kept in OpenSearch, in the `<prefix>_compliance_history` index, and are never
+changed or deleted by Signalith. The page and the API show the newest 200 (over 8 years of
+monthly records).
+
+Over the API (any role reads, admins take a record):
+
+```
+GET  /api/compliance/history
+GET  /api/compliance/history/2026-10
+POST /api/compliance/history
+```
+
+One record's answer has the record and, under `signed`, the stored record with its exact
+data (`payload`, base64 JSON), its SHA-256, the report key's ID and the signature. The
+signature is Ed25519 over the text `signalith-compliance-history-v1`, a line break, then
+the decoded data. Check it with the public keys from `GET /api/cases/reports/keys`.
+
 ## Where the mapping comes from
 
 The mapping is Signalith's own work, under the project's Apache 2.0 licence, in
