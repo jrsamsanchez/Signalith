@@ -374,6 +374,12 @@ func (r *Receiver) Start(ctx context.Context) error {
 		}
 		r.tlsConf = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
 	}
+	if r.tlsConf != nil {
+		// No session tickets: syslog senders do not resume sessions, and
+		// a TLS 1.3 sender that never reads them resets the connection
+		// when it closes, losing lines it had not yet sent.
+		r.tlsConf.SessionTicketsDisabled = true
+	}
 	var lc net.ListenConfig
 	if r.cfg.UDP != "" {
 		pc, err := lc.ListenPacket(ctx, "udp", r.cfg.UDP)

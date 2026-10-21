@@ -4614,6 +4614,8 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
 #page-baselines .bl-check[data-on="false"] .st-field__label, #page-baselines .bl-check[data-on="false"] .st-field__help { color: var(--text-3); }
 #page-baselines .bl-check__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-top: 4px; font-size: var(--fs-sm); color: var(--text-2); }
 #page-baselines .bl-check .st-warn { margin-top: 4px; }
+#page-baselines .bl-check .st-warn.is-info { color: var(--text-2); }
+#page-baselines .bl-check .alert { margin-top: 8px; }
 #page-baselines .bl-check__control { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; align-content: start; justify-content: flex-start; }
 @container st-card (min-width: 620px) {
   #page-baselines .bl-check { grid-template-columns: minmax(0, 1fr) auto; }
@@ -5762,7 +5764,6 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 .sj-pending__text { display: grid; gap: 2px; min-width: 0; }
 .sj-pending__name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .sj-fp { font-size: var(--fs-xs); color: var(--text-2); }
-.sj-fp-big { padding: 12px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); font-size: var(--fs-md); letter-spacing: .04em; text-align: center; overflow-wrap: anywhere; }
 
 dialog.modal.sj-dialog { width: min(760px, calc(100vw - 32px)); }
 dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }

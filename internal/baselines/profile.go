@@ -19,8 +19,9 @@ import (
 
 // Bounds of a profile.
 const (
-	// MaxValues is the most values one profile keeps. When a new one
-	// would go over, the one seen longest ago is forgotten.
+	// MaxValues is the most values one profile keeps, unless its check
+	// keeps more (valueLimits). When a new one would go over, the one
+	// seen longest ago is forgotten, and is new again when it comes back.
 	MaxValues = 200
 	// maxValueLen is the longest value kept; longer ones are cut.
 	maxValueLen = 256
@@ -31,6 +32,25 @@ const (
 	// matters.
 	prevalenceCap = 16
 )
+
+// valueLimits are the checks whose users or hosts often have more
+// values than MaxValues: a busy admin makes hundreds of kinds of change,
+// and a developer's computer runs hundreds of programs. Forgetting one
+// of those would make it "new" the next time. About 120 bytes a value.
+var valueLimits = map[string]int{
+	NewChange:   2000,
+	RareProcess: 2000,
+	NewNetwork:  500,
+	NewCountry:  250, // every country
+}
+
+// ValueLimit is the most values a profile of a check keeps.
+func ValueLimit(check string) int {
+	if n, ok := valueLimits[check]; ok {
+		return n
+	}
+	return MaxValues
+}
 
 // Value is one value a profile has seen.
 type Value struct {
@@ -65,6 +85,13 @@ type Profile struct {
 	Mean float64 `json:"mean,omitempty"`
 	Var  float64 `json:"var,omitempty"`
 	Span int64   `json:"span,omitempty"`
+	// HourMean and HourVar are the same for each hour of the day (UTC),
+	// with one sample a day, and HourN counts the samples: a host that
+	// sends a backup every night is judged against its other nights,
+	// not against its quiet afternoons.
+	HourMean []float64 `json:"hour_mean,omitempty"`
+	HourVar  []float64 `json:"hour_var,omitempty"`
+	HourN    []int64   `json:"hour_n,omitempty"`
 	// Many marks a fleet profile with more hosts than it names.
 	Many bool `json:"many,omitempty"`
 }
@@ -133,7 +160,7 @@ func (p *Profile) see(v string, h time.Time) bool {
 		p.Values[i].N++
 		return false
 	}
-	if len(p.Values) >= MaxValues {
+	if len(p.Values) >= ValueLimit(p.Check) {
 		oldest := 0
 		for i, x := range p.Values {
 			if x.Last.Before(p.Values[oldest].Last) {
@@ -184,8 +211,13 @@ func (p *Profile) countHour(h int) {
 }
 
 // volumeAlpha is the weight of each new hour in the data volume mean:
-// an hour counts half as much a week later.
-var volumeAlpha = 1 - math.Pow(0.5, 1.0/(7*24))
+// an hour counts half as much a week later. hourAlpha is the weight of
+// each new day in the mean of one hour of the day: a day counts half as
+// much two weeks later.
+var (
+	volumeAlpha = 1 - math.Pow(0.5, 1.0/(7*24))
+	hourAlpha   = 1 - math.Pow(0.5, 1.0/14)
+)
 
 // maxGapHours is the most empty hours applied to a volume profile at
 // once: after a month without traffic, the mean is near zero anyway.
@@ -196,17 +228,28 @@ const maxGapHours = 30 * 24
 func (p *Profile) addVolume(bytes float64, h time.Time) {
 	if p.Span == 0 {
 		p.Mean, p.Var, p.Span = bytes, 0, 1
+		p.hourSample(h.Hour(), bytes)
 		return
 	}
-	if !p.Through.IsZero() {
-		gap := int64(h.Sub(p.Through) / time.Hour)
-		for range min(max(gap, 0), maxGapHours) {
-			p.ewma(0)
-		}
-		p.Span += max(gap, 0)
-	}
+	p.Span += p.fillGap(h)
 	p.ewma(bytes)
+	p.hourSample(h.Hour(), bytes)
 	p.Span++
+}
+
+// fillGap applies the empty hours since the last one applied, up to
+// maxGapHours of them, and returns how many hours had passed.
+func (p *Profile) fillGap(h time.Time) int64 {
+	if p.Through.IsZero() {
+		return 0
+	}
+	gap := max(int64(h.Sub(p.Through)/time.Hour), 0)
+	from := h.Add(-time.Duration(min(gap, maxGapHours)) * time.Hour)
+	for t := from; t.Before(h); t = t.Add(time.Hour) {
+		p.ewma(0)
+		p.hourSample(t.Hour(), 0)
+	}
+	return gap
 }
 
 func (p *Profile) ewma(x float64) {
@@ -215,15 +258,54 @@ func (p *Profile) ewma(x float64) {
 	p.Var = (1 - volumeAlpha) * (p.Var + volumeAlpha*d*d)
 }
 
-// usual returns the mean and standard deviation the profile would have
-// at the hour starting at h, counting the empty hours since the last.
-func (p *Profile) usual(h time.Time) (mean, sd float64) {
-	q := *p
-	if !q.Through.IsZero() {
-		gap := int64(h.Sub(q.Through) / time.Hour)
-		for range min(max(gap, 0), maxGapHours) {
-			q.ewma(0)
-		}
+// hourSample adds one day's bytes for hour k of the day. The first
+// sample is the mean, so a host is not judged against zero.
+func (p *Profile) hourSample(k int, x float64) {
+	if len(p.HourMean) != 24 || len(p.HourVar) != 24 || len(p.HourN) != 24 {
+		p.HourMean, p.HourVar, p.HourN = make([]float64, 24), make([]float64, 24), make([]int64, 24)
 	}
-	return q.Mean, math.Sqrt(q.Var)
+	if p.HourN[k] == 0 {
+		p.HourMean[k], p.HourVar[k], p.HourN[k] = x, 0, 1
+		return
+	}
+	d := x - p.HourMean[k]
+	p.HourMean[k] += hourAlpha * d
+	p.HourVar[k] = (1 - hourAlpha) * (p.HourVar[k] + hourAlpha*d*d)
+	p.HourN[k]++
+}
+
+// usualVolume is what the profile would expect of the hour starting at
+// h, counting the empty hours since the last.
+type usualVolume struct {
+	// Mean and SD are of every hour.
+	Mean, SD float64
+	// HourMean is the mean of this hour of the day, and HourN the days
+	// it has seen. HourLimit is the least that is unusual for this hour
+	// of the day and the hours either side, so a nightly job that runs
+	// a little early or late, or a change of daylight saving time, does
+	// not count.
+	HourMean  float64
+	HourN     int64
+	HourLimit float64
+}
+
+func (p *Profile) usual(h time.Time) usualVolume {
+	q := *p
+	q.HourMean, q.HourVar, q.HourN = slices.Clone(p.HourMean), slices.Clone(p.HourVar), slices.Clone(p.HourN)
+	q.fillGap(h)
+	u := usualVolume{Mean: q.Mean, SD: math.Sqrt(q.Var)}
+	if len(q.HourN) != 24 {
+		return u
+	}
+	k := h.Hour()
+	u.HourMean, u.HourN = q.HourMean[k], q.HourN[k]
+	for d := -1; d <= 1; d++ {
+		j := (k + d + 24) % 24
+		if q.HourN[j] == 0 {
+			continue
+		}
+		m, sd := q.HourMean[j], math.Sqrt(q.HourVar[j])
+		u.HourLimit = max(u.HourLimit, volumeFactor*m, m+volumeSigmas*sd)
+	}
+	return u
 }

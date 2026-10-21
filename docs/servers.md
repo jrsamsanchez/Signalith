@@ -82,7 +82,7 @@ it from the Signalith folder with
 With one OpenSearch node, losing it stops every server. Run three nodes, give each
 server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
 keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
-that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks, the shards in use against the limit,
 indices without a copy on another node, and which of this server's addresses are being
 skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
 per-node certificates and snapshots.
@@ -161,6 +161,8 @@ for being older than the catch-up limit (`detections.catch_up`), and how many ru
 server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
 rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
 look at the slowest rules on the Detections page, or spread detections over more servers.
+A late run counts for the server that ran it, not for one the rule moved to since, and
+slots missed before a server took a rule (a restart, a handover) are not late runs.
 
 When a group moves, its new server takes over from where the last run of each rule
 ended, so no time is skipped or searched twice. A server that is still running hands
@@ -817,6 +819,21 @@ are an **inbox**:
   **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
   have a file removed from its folders remove that detection or dashboard from every
   server.
+- **Mirror guards against emptying the library by accident.** A folder that is missing is
+  not taken for an empty one. And when one look at the folders would remove many shared
+  files of one kind at once (detections, their `state` files or dashboards: all of
+  them, once there are 3 or more, or more than 20 that are over half of them), or of all
+  kinds together, as an empty volume or an `rsync --delete` from an empty folder would,
+  the server removes nothing of that kind, writes the files back, and says so in its log
+  (an audit record) and on the Servers page for a day. Removing a few files at a time
+  works as usual, so this catches accidents, not someone who removes the files over
+  several smaller steps. To remove many on purpose, put an empty file named
+  `allow-mass-delete` in the server's detections folder (it covers its `state` folder
+  too) or dashboards folder, and remove the files within the hour. The next look removes
+  them from every server and deletes `allow-mass-delete`, so it allows one removal, of
+  that folder only. While it waits, the Servers page says "Mass delete allowed". An
+  `allow-mass-delete` older than an hour, or that is a link, is ignored without a
+  warning: delete it.
 
 Each server records what it last saw of its files in `library-seen.json` in its state
 folder. Content pack updates stay per server (`detections.content_updates`), so give

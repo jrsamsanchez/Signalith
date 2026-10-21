@@ -11,6 +11,12 @@
 # setting on every system, a report you send) says so in `also`, and is
 # then at most partly supported, however much evidence Signalith has.
 #
+# Every change here shows in testdata/catalog.golden, which the tests
+# compare against: run go test ./internal/compliance -run TestCatalogGolden
+# -update after a change, and review its diff. The mapping has not yet been
+# reviewed by a practising assessor of each framework; when one is, name
+# them and the date here.
+#
 # Licences: NIST SP 800-53 and the HIPAA Security Rule are works of the US
 # government and are used with their official titles. For the other
 # frameworks only the control and requirement numbers are used; every title
@@ -31,7 +37,7 @@ frameworks:
     controls:
       - {id: AC-2, group: Access Control, title: Account Management, caps: [data-change, detect-change], nist: [AC-2]}
       - {id: AC-6(9), group: Access Control, title: Least Privilege | Log Use of Privileged Functions, caps: [data-auth, data-process, detect-privilege], nist: [AC-6(9)]}
-      - {id: AC-7, group: Access Control, title: Unsuccessful Logon Attempts, caps: [data-auth, detect-auth], nist: [AC-7]}
+      - {id: AC-7, group: Access Control, title: Unsuccessful Logon Attempts, also: "The limit and the lockout are set on each system. Signalith shows the failed sign-ins and detects attacks on accounts.", caps: [data-auth, detect-auth], nist: [AC-7]}
       - {id: AU-2, group: Audit and Accountability, title: Event Logging, caps: [data-auth, data-process, data-change], nist: [AU-2]}
       - {id: AU-3, group: Audit and Accountability, title: Content of Audit Records, caps: [record-content], nist: [AU-3]}
       - {id: AU-4, group: Audit and Accountability, title: Audit Log Storage Capacity, caps: [storage-guard], nist: [AU-4]}
@@ -49,7 +55,7 @@ frameworks:
       - {id: IA-5, group: Identification and Authentication, title: Authenticator Management, caps: [config-checks], nist: [IA-5]}
       - {id: IR-4, group: Incident Response, title: Incident Handling, caps: [cases, response, detect-any], nist: [IR-4]}
       - {id: IR-5, group: Incident Response, title: Incident Monitoring, caps: [cases, triage], nist: [IR-5]}
-      - {id: IR-6, group: Incident Response, title: Incident Reporting, caps: [notify], nist: [IR-6]}
+      - {id: IR-6, group: Incident Response, title: Incident Reporting, also: "Reporting an incident to the people and authorities who must know is yours to do; Signalith sends the alerts that start it.", caps: [notify], nist: [IR-6]}
       - {id: PM-16, group: Program Management, title: Threat Awareness Program, caps: [intel], nist: [PM-16]}
       - {id: RA-5, group: Risk Assessment, title: Vulnerability Monitoring and Scanning, caps: [vuln-scan], nist: [RA-5]}
       - {id: SC-8, group: System and Communications Protection, title: Transmission Confidentiality and Integrity, caps: [config-checks], nist: [SC-8]}
@@ -69,8 +75,8 @@ frameworks:
     controls:
       - {id: "1.1", group: Inventory of Enterprise Assets, title: Keep a detailed inventory of enterprise assets, caps: [assets, data-inventory], nist: [CM-8]}
       - {id: "2.1", group: Inventory of Software Assets, title: Keep an inventory of installed software, caps: [data-inventory], nist: [CM-8]}
-      - {id: "4.1", group: Secure Configuration, title: Keep a secure configuration process, caps: [config-checks], nist: [CM-6, CM-7]}
-      - {id: "7.1", group: Continuous Vulnerability Management, title: Run a vulnerability management process, caps: [vuln-scan], nist: [RA-5]}
+      - {id: "4.1", group: Secure Configuration, title: Keep a secure configuration process, also: "The safeguard asks for a documented configuration process; Signalith's checks show how hosts are configured.", caps: [config-checks], nist: [CM-6, CM-7]}
+      - {id: "7.1", group: Continuous Vulnerability Management, title: Run a vulnerability management process, also: "The safeguard asks for a documented vulnerability management process; Signalith's scans are part of it.", caps: [vuln-scan], nist: [RA-5]}
       - {id: "7.5", group: Continuous Vulnerability Management, title: Scan internal assets for vulnerabilities automatically, caps: [vuln-scan], nist: [RA-5]}
       - {id: "8.2", group: Audit Log Management, title: Collect audit logs, caps: [data-auth, data-process, data-change], nist: [AU-2, AU-12]}
       - {id: "8.3", group: Audit Log Management, title: Keep enough storage for audit logs, caps: [storage-guard], nist: [AU-4]}
@@ -101,7 +107,6 @@ frameworks:
       - {id: "5.3.4", group: "5: Malware protection", title: Anti-malware logs are kept, caps: [data-malware, retention-1y], nist: []}
       - {id: "6.3.1", group: "6: Secure systems and software", title: Security vulnerabilities are found and ranked, caps: [vuln-scan], nist: [RA-5]}
       - {id: "6.3.3", group: "6: Secure systems and software", title: Security patches are installed, caps: [vuln-scan, config-checks], nist: [SI-2]}
-      - {id: "8.3.4", group: "8: Identification and authentication", title: Repeated failed sign-ins lock the account, also: "The lockout itself is set on each system. Signalith shows the failed sign-ins and detects attacks on accounts.", caps: [data-auth, detect-auth], nist: [AC-7]}
       - {id: "10.2.1", group: "10: Logging and monitoring", title: Audit logs are on for all system components, also: "Every in-scope system must log. Signalith counts events by kind, not by host, so check each system sends.", caps: [data-any, data-auth, data-process], nist: [AU-2, AU-12]}
       - {id: "10.2.1.2", group: "10: Logging and monitoring", title: Actions by administrators are logged, caps: [data-auth, data-process, detect-privilege], nist: [AC-6(9)]}
       - {id: "10.2.1.4", group: "10: Logging and monitoring", title: Failed access attempts are logged, caps: [data-auth, detect-auth], nist: []}
@@ -121,7 +126,7 @@ frameworks:
       - {id: "11.5.2", group: "11: Testing security", title: Changes to critical files are detected, caps: [data-files], nist: [SI-7]}
       - {id: "12.5.1", group: "12: Policies and programs", title: An inventory of in-scope system components is kept, caps: [assets, data-inventory], nist: [CM-8]}
       - {id: "12.10.1", group: "12: Policies and programs", title: An incident response plan is ready to use, also: "The written plan, roles and tests are yours; Signalith records the investigations and responses that follow it.", caps: [cases, response], nist: [IR-4]}
-      - {id: "12.10.5", group: "12: Policies and programs", title: The response plan covers alerts from security monitoring, caps: [notify, triage, data-files], nist: [IR-6]}
+      - {id: "12.10.5", group: "12: Policies and programs", title: The response plan covers alerts from security monitoring, also: "The response plan itself is a document you keep; Signalith provides the alerts it covers.", caps: [notify, triage, data-files], nist: [IR-6]}
 
   - id: iso-27001
     name: ISO/IEC 27001
@@ -151,7 +156,6 @@ frameworks:
     url: https://www.hhs.gov/hipaa/for-professionals/security/index.html
     notice: The HIPAA Security Rule is US federal regulation and is not subject to copyright.
     controls:
-      - {id: 164.308(a)(1)(ii)(A), group: Administrative safeguards, title: Risk analysis, also: "A risk analysis is an assessment you write; vulnerability scans and configuration checks are inputs to it.", caps: [vuln-scan, config-checks], nist: [RA-5, CM-6]}
       - {id: 164.308(a)(1)(ii)(D), group: Administrative safeguards, title: Information system activity review, caps: [detect-any, triage], nist: [AU-6]}
       - {id: 164.308(a)(5)(ii)(B), group: Administrative safeguards, title: Protection from malicious software, caps: [data-malware, detect-malware], nist: [SI-3]}
       - {id: 164.308(a)(5)(ii)(C), group: Administrative safeguards, title: Log-in monitoring, caps: [data-auth, detect-auth], nist: [AC-7]}
@@ -167,7 +171,6 @@ frameworks:
     url: https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services
     notice: Criteria numbers refer to the AICPA Trust Services Criteria. Titles here are Signalith's own summaries; read the criteria for their text. SOC 2 is a trademark of the AICPA.
     controls:
-      - {id: CC4.1, group: Monitoring activities, title: Controls are evaluated on an ongoing basis, also: "The evaluations a SOC 2 auditor looks for cover all controls, not only technical checks.", caps: [config-checks, vuln-scan], nist: [CA-7, CM-6]}
       - {id: CC6.8, group: Logical and physical access, title: Unauthorized or malicious software is prevented or detected, caps: [data-malware, detect-malware], nist: [SI-3]}
       - {id: CC7.1, group: System operations, title: Configuration changes and vulnerabilities are detected, caps: [config-checks, vuln-scan, data-files], nist: [CM-6]}
       - {id: CC7.2, group: System operations, title: System components are monitored for anomalies, caps: [data-any, detect-any, notify], nist: [SI-4]}
@@ -185,12 +188,12 @@ frameworks:
       - {id: 21(2)(a), group: "Art. 21: Risk-management measures", title: Risk analysis and information system security, also: "The policies are yours; Signalith supplies scan and configuration results for them.", caps: [vuln-scan, config-checks], nist: [RA-5, CM-6]}
       - {id: 21(2)(b), group: "Art. 21: Risk-management measures", title: Incident handling, caps: [detect-any, triage, cases, response], nist: [IR-4, IR-5]}
       - {id: 21(2)(e), group: "Art. 21: Risk-management measures", title: Vulnerability handling in maintaining systems, caps: [vuln-scan, config-checks], nist: [RA-5, SI-2]}
-      - {id: 21(2)(f), group: "Art. 21: Risk-management measures", title: Assess whether the security measures work, caps: [config-checks, vuln-scan, detect-any], nist: [CA-7, CM-6]}
-      - {id: 21(2)(g), group: "Art. 21: Risk-management measures", title: Basic cyber hygiene, caps: [config-checks, data-malware, detect-malware], nist: [CM-6, SI-3]}
-      - {id: 21(2)(h), group: "Art. 21: Risk-management measures", title: Cryptography and encryption, caps: [config-checks, siem-tls], nist: [SC-8, SC-28]}
-      - {id: 21(2)(i), group: "Art. 21: Risk-management measures", title: Access control and asset management, caps: [assets, data-inventory, data-change, detect-change], nist: [AC-2, CM-8]}
+      - {id: 21(2)(f), group: "Art. 21: Risk-management measures", title: Assess whether the security measures work, also: "NIS2 asks for policies and procedures to assess the measures; Signalith's checks and scans are evidence for them.", caps: [config-checks, vuln-scan, detect-any], nist: [CA-7, CM-6]}
+      - {id: 21(2)(g), group: "Art. 21: Risk-management measures", title: Basic cyber hygiene, also: "Basic cyber hygiene includes training, which Signalith cannot show.", caps: [config-checks, data-malware, detect-malware], nist: [CM-6, SI-3]}
+      - {id: 21(2)(h), group: "Art. 21: Risk-management measures", title: Cryptography and encryption, also: "NIS2 asks for policies on the use of cryptography; Signalith checks encryption settings on hosts and its own connections.", caps: [config-checks, siem-tls], nist: [SC-8, SC-28]}
+      - {id: 21(2)(i), group: "Art. 21: Risk-management measures", title: Access control and asset management, also: "This also covers human resources security and access control policies, which Signalith cannot show.", caps: [assets, data-inventory, data-change, detect-change], nist: [AC-2, CM-8]}
       - {id: 21(2)(j), group: "Art. 21: Risk-management measures", title: Multi-factor authentication, also: "NIS2 asks for multi-factor authentication across your systems, not only for Signalith; Signalith shows its own setting and watches sign-ins.", caps: [siem-mfa, data-auth, detect-auth], nist: [IA-2]}
-      - {id: 23(1), group: "Art. 23: Reporting obligations", title: Significant incidents are found and reported without undue delay, caps: [detect-any, notify, triage], nist: [IR-6, SI-4]}
+      - {id: 23(1), group: "Art. 23: Reporting obligations", title: Significant incidents are found and reported without undue delay, also: "Notifying the CSIRT or competent authority is yours to do; Signalith helps you find the incident in time.", caps: [detect-any, notify, triage], nist: [IR-6, SI-4]}
       - {id: 23(4)(a), group: "Art. 23: Reporting obligations", title: Early warning within 24 hours, also: "Sending the early warning to your CSIRT or authority is yours; Signalith helps you notice in time and keeps the record.", caps: [notify, triage, cases], nist: [IR-6]}
       - {id: 23(4)(b), group: "Art. 23: Reporting obligations", title: "Incident notification within 72 hours, with severity, impact and indicators", also: "Writing and sending the notification is yours; the investigation holds what goes into it.", caps: [cases, record-content, intel], nist: [IR-6]}
       - {id: 23(4)(d), group: "Art. 23: Reporting obligations", title: "Final report within one month, with root cause and measures taken", also: "Writing and sending the final report is yours; the investigation holds what goes into it.", caps: [cases, search, retention-90], nist: [IR-4]}
@@ -211,7 +214,7 @@ frameworks:
       - {id: "25", group: Personal data in your logs, title: Data protection by default in the SIEM, caps: [siem-access, siem-mfa, retention-limit], nist: []}
       - {id: 32(1)(a), group: "Art. 32: Security of processing", title: Encryption of personal data, caps: [config-checks, siem-tls], nist: [SC-8, SC-28]}
       - {id: 32(1)(b), group: "Art. 32: Security of processing", title: "Ongoing confidentiality, integrity and availability", caps: [data-auth, detect-any, source-health, storage-guard], nist: [SI-4, AU-5]}
-      - {id: 32(1)(d), group: "Art. 32: Security of processing", title: Security measures are tested and assessed regularly, caps: [config-checks, vuln-scan], nist: [CA-7, CM-6, RA-5]}
+      - {id: 32(1)(d), group: "Art. 32: Security of processing", title: Security measures are tested and assessed regularly, also: "Article 32 asks for a process covering organisational measures too; Signalith shows the technical checks.", caps: [config-checks, vuln-scan], nist: [CA-7, CM-6, RA-5]}
       - {id: 33(1), group: "Art. 33-34: Personal data breaches", title: Breaches are noticed in time to notify within 72 hours, also: "Deciding whether a breach must be notified, and notifying the supervisory authority, are yours.", caps: [detect-any, detect-network, notify, triage], nist: [IR-6, SI-4]}
       - {id: 33(3), group: "Art. 33-34: Personal data breaches", title: The notification can describe the breach and its likely consequences, also: "Writing the notification is yours; the investigation and searches hold what goes into it.", caps: [cases, search, record-content], nist: [IR-4]}
       - {id: 33(5), group: "Art. 33-34: Personal data breaches", title: "Every breach is documented, with its facts, effects and remedial action", caps: [cases, retention-1y], nist: [IR-5]}

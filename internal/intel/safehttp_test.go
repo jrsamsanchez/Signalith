@@ -237,6 +237,14 @@ func TestSafeDialerProxy(t *testing.T) {
 	if n != 1 {
 		t.Errorf("the proxy got %d requests: %v", n, asked)
 	}
+	// A plain request through the client, as the CVE and KEV downloads
+	// make, may use the local proxy too.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://feeds.example/list.txt", nil)
+	if resp, err := newFeedClientWith(false, nil, proxy).Do(req); err != nil {
+		t.Errorf("plain request through the local proxy: %v", err)
+	} else {
+		resp.Body.Close()
+	}
 	// Without a recorded proxy, every dial is checked.
 	d := newSafeDialer(false, nil)
 	if c, err := d.DialContext(ctx, "tcp", "localhost:"+port); err == nil {

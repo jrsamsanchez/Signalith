@@ -253,6 +253,9 @@ async function api(path, body, method, extraHeaders) {
     else if (typeof toast === 'function') toast(data.error, null, { tone: 'danger', title: 'Your role can’t do that' });
   }
   if ((resp.status === 409 || resp.status === 503) && data.code === 'tenant_unavailable') tenantUnavailable(resp.status, data.error);
+  // The server could not check the session just now (it restarted while
+  // OpenSearch was slow): the session still stands, so the page stays.
+  if (resp.status === 503 && data.code === 'session_unchecked') sessionUnchecked(data.error);
   if (!resp.ok) {
     const err = new Error(data.error || resp.statusText);
     err.status = resp.status;
@@ -265,6 +268,16 @@ async function api(path, body, method, extraHeaders) {
     throw err;
   }
   return data;
+}
+
+// sessionUnchecked says, at most once in 30 seconds, that the
+// server could not check the session; the request can be tried again.
+let sessionNoted = false;
+function sessionUnchecked(text) {
+  if (sessionNoted) return;
+  sessionNoted = true;
+  setTimeout(() => { sessionNoted = false; }, 30000);
+  if (typeof toast === 'function') toast(sentence(text || 'Signalith can’t check your sign-in right now.'), null, { tone: 'danger', title: 'Try again in a few seconds' });
 }
 
 // tenantUnavailable tells that the tenant the session works in can't be
@@ -362,7 +375,18 @@ function setScope(m) {
   }
 }
 // meReady resolves once api/me has answered (to null if it failed).
-const meReady = api('api/me').then((m) => {
+// A server that could not check the session yet is asked again a few
+// times before the page gives up.
+async function fetchMe(tries) {
+  try {
+    return await api('api/me');
+  } catch (err) {
+    if (err.status !== 503 || err.code !== 'session_unchecked' || tries <= 1) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    return fetchMe(tries - 1);
+  }
+}
+const meReady = fetchMe(5).then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
   if (m.must_setup_mfa) { toSignIn(false, true); return m; }
   me = m;
