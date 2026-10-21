@@ -359,6 +359,10 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 				// query with it could not be written back.
 				return nil, errorf(t.pos, "%s is a keyword, not a field name", t.text)
 			}
+			if strings.HasPrefix(t.text, "[") {
+				// Written back, it would open a subsearch.
+				return nil, errorf(t.pos, "a field name cannot start with [")
+			}
 		}
 		if nt.kind == tokOp {
 			p.next()
@@ -1038,9 +1042,13 @@ func (p *parser) timechartOptions(tc *Timechart) error {
 			if n < 0 {
 				return errorf(at, "timechart limit is 0 (no limit) or more")
 			}
-			tc.Limit = n
-			if n == 0 {
+			switch n {
+			case 0:
 				tc.Limit = NoTimechartLimit
+			case 10:
+				tc.Limit = 0 // the default, as the command writes it back
+			default:
+				tc.Limit = n
 			}
 		case "useother", "usenull":
 			p.next()
