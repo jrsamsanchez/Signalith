@@ -1,12 +1,15 @@
 # Copyright 2026 The Signalith authors
 # SPDX-License-Identifier: Apache-2.0
 # Builds Signalith's Windows installer with the WiX Toolset v5:
-#   .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Out dist
+#   .\deploy\windows\msi\build.ps1 -Version 0.1.0 -Exe dist\signalith-windows-amd64.exe -Agents dist\agents -Out dist
+# Agents is the folder of the Signalith Agent's programs that
+# deploy/packages/build-agents.sh makes, which the server hands out.
 # Needs the .NET SDK (dotnet). WiX v5 is used rather than later versions,
 # whose binaries come with a maintenance-fee agreement; v5 is MS-RL only.
 param(
   [Parameter(Mandatory)][string]$Version,
   [Parameter(Mandatory)][string]$Exe,
+  [Parameter(Mandatory)][string]$Agents,
   [Parameter(Mandatory)][string]$Out
 )
 $ErrorActionPreference = "Stop"
@@ -36,12 +39,15 @@ $rtf = Join-Path $work "License.rtf"
 Set-Content -Path $rtf -Encoding ASCII -Value ("{\rtf1\ansi\deff0{\fonttbl{\f0 Consolas;}}\fs16 " + $text + "}")
 
 $exePath = (Resolve-Path $Exe).Path
+$agentsPath = (Resolve-Path $Agents).Path
+# Without the Windows one the server cannot set up a Windows computer.
+if (-not (Test-Path (Join-Path $agentsPath "signalith-agent-windows-amd64.exe"))) { throw "$Agents has no signalith-agent-windows-amd64.exe" }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $msi = Join-Path (Resolve-Path $Out).Path "signalith-$Version-x64.msi"
 Push-Location $here
 try {
   wix build Package.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext `
-    -d "Version=$msiVersion" -d "Exe=$exePath" -d "LicenseRtf=$rtf" `
+    -d "Version=$msiVersion" -d "Exe=$exePath" -d "Agents=$agentsPath" -d "LicenseRtf=$rtf" `
     -o $msi
   if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
   # The debug symbols WiX writes next to the .msi are not shipped.

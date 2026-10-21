@@ -217,6 +217,13 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Fatalf("-Sysmon: %v\n%s", err, out)
 	}
 
+	// -EnableLogs turns on script block logging and the logs that are off
+	// by default (BUY-04), and -Uninstall turns them off again.
+	out, err = w.run(t, "", append(again, "-EnableLogs")...)
+	if err != nil || !strings.Contains(out, "EnableScriptBlockLogging 1") || !strings.Contains(out, `wevtutil sl "Microsoft-Windows-DNS-Client/Operational" /e:true`) {
+		t.Fatalf("-EnableLogs: %v\n%s", err, out)
+	}
+
 	// -Osquery too; a run again after it keeps osquery.
 	out, err = w.run(t, "", append(again, "-Osquery")...)
 	if err != nil || !strings.Contains(out, "would download https://pkg.osquery.io/windows/osquery-") {
@@ -228,7 +235,8 @@ func TestAgentPS1DryRun(t *testing.T) {
 	}
 
 	out, err = w.run(t, "", "-Uninstall", "-DryRun", root)
-	if err != nil || !strings.Contains(out, "sc.exe delete SignalithAgent") || !strings.Contains(out, "Sysmon64.exe -u force") {
+	if err != nil || !strings.Contains(out, "sc.exe delete SignalithAgent") || !strings.Contains(out, "Sysmon64.exe -u force") ||
+		!strings.Contains(out, "Remove-ItemProperty") || !strings.Contains(out, `wevtutil sl "Microsoft-Windows-CAPI2/Operational" /e:false`) {
 		t.Fatalf("uninstall: %v\n%s", err, out)
 	}
 	for _, p := range []string{conf, prog} {

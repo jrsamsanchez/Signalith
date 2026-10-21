@@ -35,6 +35,10 @@
 #   5. Turns on process creation auditing with the command line (Security
 #      event 4688), which CIS recommends and most Windows detections read,
 #      unless -NoProcessAuditing. Removing the agent leaves it on.
+#      With -EnableLogs: turns on PowerShell script block logging and the
+#      Windows logs that are off by default (DNS client, Task Scheduler,
+#      CryptoAPI, device driver), which detections read. Removing the agent
+#      turns off what this turned on.
 #   6. With -Osquery: when osquery is not installed yet, downloads its MSI
 #      from its publisher (the version pinned below), checks its signature
 #      (or -OsquerySha256), and installs it. osquery's own service is
@@ -70,6 +74,9 @@ param(
   [switch]$Sysmon,
   # Leave Windows' process creation auditing as it is.
   [switch]$NoProcessAuditing,
+  # Also turn on PowerShell script block logging and the Windows logs
+  # that are off by default.
+  [switch]$EnableLogs,
   # A Fluent Bit for Windows zip (fluent-bit-<version>-win64.zip) already
   # on this computer, used instead of downloading one.
   [string]$FluentBitZip = "",
@@ -814,6 +821,62 @@ function Process-Auditing {
   Ok "Windows logs each program start with its command line (Security 4688)"
 }
 
+# --- Logs that are off by default --------------------------------------------
+
+$ScriptBlockKey = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging"
+# The Windows logs detections read that Windows keeps turned off.
+$OffByDefaultLogs = @("Microsoft-Windows-DNS-Client/Operational", "Microsoft-Windows-TaskScheduler/Operational",
+  "Microsoft-Windows-CAPI2/Operational", "Microsoft-Windows-DriverFrameworks-UserMode/Operational")
+
+# Enable-Logs turns on, with -EnableLogs, PowerShell script block logging
+# (event 4104) and the logs above, and records what it turned on for
+# -Uninstall. A failure only warns.
+function Enable-Logs {
+  if (-not $EnableLogs) { return }
+  if ($DryRun) {
+    if (-not (Manifest-Has "scriptblocklogging")) {
+      Would "Set-ItemProperty $ScriptBlockKey EnableScriptBlockLogging 1"
+      Manifest-Add "scriptblocklogging"
+      foreach ($log in $OffByDefaultLogs) {
+        Would "wevtutil sl `"$log`" /e:true"
+        Manifest-Add "eventlog $log"
+      }
+      $script:changed = $true
+    }
+    return
+  }
+  try {
+    $cur = (Get-ItemProperty -LiteralPath $ScriptBlockKey -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue).EnableScriptBlockLogging
+    if ($cur -ne 1) {
+      if (-not (Test-Path -LiteralPath $ScriptBlockKey)) { New-Item -Path $ScriptBlockKey -Force | Out-Null }
+      Set-ItemProperty -LiteralPath $ScriptBlockKey -Name EnableScriptBlockLogging -Value 1 -Type DWord
+      Manifest-Add "scriptblocklogging"
+      $script:changed = $true
+    }
+    Ok "PowerShell logs the scripts it runs (event 4104)"
+  } catch {
+    Warn "Could not turn on PowerShell script block logging ($($_.Exception.Message))." "Group Policy: Administrative Templates > Windows Components > Windows PowerShell > Turn on PowerShell Script Block Logging."
+  }
+  foreach ($log in $OffByDefaultLogs) {
+    $ErrorActionPreference = "Continue"
+    $info = & wevtutil.exe gl $log 2>&1
+    $ErrorActionPreference = "Stop"
+    # A computer without the log has nothing to turn on.
+    if ($LASTEXITCODE -ne 0) { continue }
+    if ($info | Select-String -Pattern '^enabled:\s*true' -Quiet) { continue }
+    $ErrorActionPreference = "Continue"
+    & wevtutil.exe sl $log /e:true 2>&1 | Out-Null
+    $ErrorActionPreference = "Stop"
+    if ($LASTEXITCODE -eq 0) {
+      Manifest-Add "eventlog $log"
+      $script:changed = $true
+      Ok "turned on the $log log"
+    } else {
+      Warn "Could not turn on the $log log (wevtutil exit code $LASTEXITCODE)." "wevtutil sl `"$log`" /e:true"
+    }
+  }
+}
+
 # --- osquery -----------------------------------------------------------------
 
 # Osquery-Wanted says whether the agent runs osquery here: asked for now,
@@ -1150,6 +1213,29 @@ function Remove-Agent {
       }
     }
   }
+  if ($lines -contains "scriptblocklogging") {
+    if ($DryRun) {
+      Would "Remove-ItemProperty $ScriptBlockKey EnableScriptBlockLogging"
+    } else {
+      try {
+        Remove-ItemProperty -LiteralPath $ScriptBlockKey -Name EnableScriptBlockLogging -ErrorAction SilentlyContinue
+        Ok "turned PowerShell script block logging back off"
+      } catch { Warn "Could not turn PowerShell script block logging back off: $($_.Exception.Message)" }
+    }
+  }
+  foreach ($line in $lines) {
+    if ($line -match '^eventlog (.+)$') {
+      $log = $Matches[1]
+      if ($DryRun) {
+        Would "wevtutil sl `"$log`" /e:false"
+      } else {
+        $ErrorActionPreference = "Continue"
+        & wevtutil.exe sl $log /e:false 2>&1 | Out-Null
+        $ErrorActionPreference = "Stop"
+        if ($LASTEXITCODE -eq 0) { Ok "turned the $log log back off" } else { Warn "Could not turn the $log log back off." "wevtutil sl `"$log`" /e:false" }
+      }
+    }
+  }
   foreach ($line in $lines) {
     if ($line -match '^service-start (fluent-bit|osqueryd) (\w+)$') {
       $name, $mode = $Matches[1], $Matches[2]
@@ -1200,6 +1286,7 @@ try {
     FluentBit-Install
     Sysmon-Install
     Process-Auditing
+    Enable-Logs
     Osquery-Install
     Agent-Program
     Agent-Files
