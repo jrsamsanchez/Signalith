@@ -1142,9 +1142,15 @@ func (s *Scheduler) run(ctx context.Context, d *Detection, spec runSpec) (*RunRe
 }
 
 // throttleWindow is how long a finding or risk event of d holds its
-// group back; zero means no throttle.
+// group back; zero means no throttle. A rule without a window whose
+// lookback is longer than its schedule is held for its lookback, so a
+// row that overlapping runs both see is one finding.
 func throttleWindow(d *Detection) time.Duration {
 	if d.Throttle.Window == "" {
+		lb, _ := ParseDuration(d.Lookback)
+		if sched, _ := ParseDuration(d.Schedule); lb > sched {
+			return lb
+		}
 		return 0
 	}
 	w, _ := ParseDuration(d.Throttle.Window)

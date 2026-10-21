@@ -104,7 +104,8 @@ func TestCasesErrors(t *testing.T) {
 		{"PATCH", "/api/cases/" + id, `{`, ""},
 		{"PATCH", "/api/cases/" + id, `{"severity":"apocalyptic"}`, ""},
 		{"PATCH", "/api/cases/" + id, `{"status":"resolved","disposition":"maybe"}`, ""},
-		{"PATCH", "/api/cases/" + id, `{"close_findings":true}`, "set the case to resolved or closed"},
+		{"PATCH", "/api/cases/" + id, `{"close_findings":true,"disposition":"benign_true_positive"}`, "set the case to resolved or closed"},
+		{"PATCH", "/api/cases/" + id, `{"status":"resolved","close_findings":true}`, "pick a disposition"}, // AW4-04
 		{"POST", "/api/cases/" + id + "/findings", `{`, ""},
 		{"POST", "/api/cases/" + id + "/findings", `{"ids":[]}`, "ids must list 1-500 findings"},
 		{"POST", "/api/cases/" + id + "/entries", `{`, ""},

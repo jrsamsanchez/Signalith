@@ -28,7 +28,7 @@ func (s *Server) routeEndpoints(api *router) {
 	api.admin("DELETE /api/endpoints/{id}", s.handleRemoveEndpoint)
 	api.admin("GET /api/endpoints/blocked", s.handleBlockedEndpoints)
 	api.admin("DELETE /api/endpoints/blocked/{host}", s.handleUnblockEndpoint)
-	api.admin("POST /api/endpoints/queries", s.handleNewLiveQuery)
+	api.sensitive("POST /api/endpoints/queries", s.handleNewLiveQuery)
 	api.admin("GET /api/endpoints/queries/{id}", s.handleLiveQuery)
 }
 
