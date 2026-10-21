@@ -152,7 +152,7 @@ func (s *Scheduler) Backtest(ctx context.Context, d *Detection, window time.Dura
 		b := Bucket{Start: from, End: to, Results: len(res.Rows)}
 		bt.Results += len(res.Rows)
 		bt.Matched += res.Matched
-		if res.Truncated || (res.Kind == "events" && res.Matched > int64(len(res.Rows))) {
+		if res.Truncated || res.Sampled > 0 || (res.Kind == "events" && res.Matched > int64(len(res.Rows))) {
 			bt.Capped = true
 		}
 		// Rows come newest first; throttling goes oldest first.
