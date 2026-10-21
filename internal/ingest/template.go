@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -192,10 +193,24 @@ const MaxAutoShards = 8
 // new indices, which stops ingestion at the start of a day.
 const autoShardRoom = 0.5
 
+// ShardRoomWarn is the share of the cluster's shard limit in use, or
+// projected from the data models written each day and how long they are
+// kept, at which Signalith warns: in the server log when the template is
+// checked, and on the Servers page.
+const ShardRoomWarn = 0.8
+
 // roomLogged is set once this process has warned that automatic shards
 // fell back to one, so the template checks every few minutes do not
 // repeat it.
 var roomLogged atomic.Bool
+
+// fullLogged is when this process last warned that the cluster is near
+// its shard limit (Unix seconds), so the template checks every few
+// minutes repeat it only every few hours.
+var fullLogged atomic.Int64
+
+// fullLogEvery is how often the near-the-limit warning is repeated.
+const fullLogEvery = 6 * time.Hour
 
 // fitShards sets number_of_shards for the data nodes OpenSearch has.
 //
@@ -212,12 +227,16 @@ var roomLogged atomic.Bool
 // on one node, and stop ingestion at the start of a day. With at most one
 // shard per node, each node holds no more per day than a single node
 // holds with one.
+//
+// Whatever the number of nodes, it warns in the log when the cluster
+// holds ShardRoomWarn of the shards it allows.
 func fitShards(ctx context.Context, cl *store.Client, prefix string, settings map[string]any, log *slog.Logger) (map[string]any, error) {
 	auto := fmt.Sprint(settings["number_of_shards"]) == store.AutoShards
 	var want int
 	if !auto {
 		fmt.Sscan(fmt.Sprint(settings["number_of_shards"]), &want)
 		if want <= 1 {
+			shardRoomCheck(ctx, cl, prefix, log)
 			return settings, nil
 		}
 	}
@@ -227,6 +246,7 @@ func fitShards(ctx context.Context, cl *store.Client, prefix string, settings ma
 	}
 	nodes = max(nodes, 1)
 	out := maps.Clone(settings)
+	checked := false
 	if auto {
 		want = min(nodes, MaxAutoShards)
 		if want > 1 {
@@ -234,6 +254,8 @@ func fitShards(ctx context.Context, cl *store.Client, prefix string, settings ma
 			if err != nil {
 				return nil, fmt.Errorf("could not read OpenSearch's shard limit for automatic opensearch.shards: %w", err)
 			}
+			warnShardRoom(prefix, used, limit, log)
+			checked = true
 			if float64(used) > autoShardRoom*float64(limit) {
 				if log != nil && !roomLogged.Swap(true) {
 					log.Warn("OpenSearch holds more than half the shards it allows, so each new day's events get one shard per data model instead of one per data node; "+
@@ -250,12 +272,49 @@ func fitShards(ctx context.Context, cl *store.Client, prefix string, settings ma
 		}
 		want = nodes
 	}
+	if !checked {
+		shardRoomCheck(ctx, cl, prefix, log)
+	}
 	if want <= 1 {
 		delete(out, "number_of_shards")
 	} else {
 		out["number_of_shards"] = want
 	}
 	return out, nil
+}
+
+// shardRoomCheck warns when the cluster is near its shard limit. It is
+// best effort: a user without the right to read the cluster settings
+// still gets its template.
+func shardRoomCheck(ctx context.Context, cl *store.Client, prefix string, log *slog.Logger) {
+	if log == nil {
+		return
+	}
+	if used, limit, err := cl.ShardRoom(ctx); err == nil {
+		warnShardRoom(prefix, used, limit, log)
+	}
+}
+
+// warnShardRoom logs, every few hours at most, that the cluster holds
+// ShardRoomWarn or more of the shards it allows.
+func warnShardRoom(prefix string, used, limit int, log *slog.Logger) {
+	if log == nil || !NearShardLimit(used, limit) {
+		return
+	}
+	now := time.Now().Unix()
+	last := fullLogged.Load()
+	if last != 0 && now-last < int64(fullLogEvery/time.Second) || !fullLogged.CompareAndSwap(last, now) {
+		return
+	}
+	log.Warn("OpenSearch is near its shard limit; once it is reached, OpenSearch refuses each new day's indices and events stop being stored. "+
+		"Keep fewer days, send fewer data models, add a data node, or raise cluster.max_shards_per_node (a soft limit)",
+		"template", prefix, "shards_in_use", used, "shard_limit", limit)
+}
+
+// NearShardLimit reports whether used shards are ShardRoomWarn or more of
+// limit.
+func NearShardLimit(used, limit int) bool {
+	return limit > 0 && float64(used) >= ShardRoomWarn*float64(limit)
 }
 
 // getTemplate reads the index template called name, as OpenSearch keeps

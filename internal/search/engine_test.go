@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -107,16 +109,30 @@ func TestToDateMath(t *testing.T) {
 	cases := map[string]string{
 		"-24h":                 "now-24h",
 		"-7d@d":                "now-7d/d",
-		"@w":                   "now/w",
 		"now":                  "now",
 		"-1mon":                "now-1M",
 		"-15minutes":           "now-15m",
 		"2026-10-01T00:00:00Z": "2026-10-01T00:00:00Z",
 		"1700000000000":        "1700000000000",
+		"1700000000":           "1700000000000", // epoch seconds (SL-06)
+		"10/01/2026:08:00:00":  "1790841600000",
 	}
 	for in, want := range cases {
 		if got := toDateMath(in); got != want {
 			t.Errorf("toDateMath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// OpenSearch's weeks start on Monday, so Signalith works out @w
+	// (Sunday, SL-05), and chained modifiers and quarters, itself.
+	for _, in := range []string{"@w", "-1w@w1", "@d-1h", "-1d@d+8h", "-1q@q"} {
+		got := toDateMath(in)
+		ms, err := strconv.ParseInt(got, 10, 64)
+		if err != nil {
+			t.Errorf("toDateMath(%q) = %q, want epoch milliseconds", in, got)
+			continue
+		}
+		if in == "@w" && time.UnixMilli(ms).UTC().Weekday() != time.Sunday {
+			t.Errorf("@w = %v, want a Sunday", time.UnixMilli(ms).UTC())
 		}
 	}
 }
@@ -154,6 +170,47 @@ func TestStatsByRunsCompositeAndPages(t *testing.T) {
 	}
 	if res.Matched != 40 {
 		t.Errorf("matched = %d", res.Matched)
+	}
+}
+
+// A caller may read more stats rows than an analyst's search, up to
+// MaxRowsLimit.
+func TestStatsMaxRows(t *testing.T) {
+	pages := func() *fakeStore {
+		return &fakeStore{responses: []string{
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"after_key":{"k0":"b"},"buckets":[
+				{"key":{"k0":"a"},"doc_count":1},{"key":{"k0":"b"},"doc_count":1}]}}}`,
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"after_key":{"k0":"c"},"buckets":[
+				{"key":{"k0":"c"},"doc_count":1}]}}}`,
+			`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[]}}}`,
+		}}
+	}
+	run := func(maxRows int) *Result {
+		t.Helper()
+		e := &Engine{Store: pages(), Opt: Options{MaxBuckets: 2}}
+		q, err := query.Parse(`datamodel=Authentication | stats count by src`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q.MaxRows = maxRows
+		res, err := e.Execute(context.Background(), q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	// A truncated stats search is re-ranked by a further search, so only
+	// the truncation is checked here.
+	if res := run(0); len(res.Rows) > 2 || !res.Truncated {
+		t.Errorf("default: %d rows, truncated %v", len(res.Rows), res.Truncated)
+	}
+	if res := run(10); len(res.Rows) != 3 || res.Truncated {
+		t.Errorf("MaxRows 10: %d rows, truncated %v", len(res.Rows), res.Truncated)
+	}
+	q, _ := query.Parse(`datamodel=Authentication | stats count by src`)
+	q.MaxRows = 10 * MaxRowsLimit
+	if p, err := (&Engine{Store: pages()}).Compile(q); err != nil || p.maxRows != MaxRowsLimit {
+		t.Errorf("over the limit: %v %v", p, err)
 	}
 }
 
@@ -204,23 +261,47 @@ func TestEventColumnsOrder(t *testing.T) {
 }
 
 func TestTimechartByPivotsColumns(t *testing.T) {
-	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":9}},"aggregations":{"time":{"buckets":[
-		{"key_as_string":"2026-10-11T00:00:00.000Z","doc_count":4,"by":{"buckets":[{"key":"failure","doc_count":3},{"key":"success","doc_count":1}]}},
-		{"key_as_string":"2026-10-11T01:00:00.000Z","doc_count":5,"by":{"buckets":[{"key":"success","doc_count":5}]}}]}}}`}}
+	// First the series over the whole range, then each hour's count of
+	// each series, the other values and events without the field
+	// (SL-04).
+	fs := &fakeStore{responses: []string{
+		`{"hits":{"total":{"value":12}},"aggregations":{"series":{"sum_other_doc_count":2,"buckets":[{"key":"success","doc_count":6},{"key":"failure","doc_count":3}]}}}`,
+		`{"aggregations":{"time":{"buckets":[
+		{"key_as_string":"2026-10-11T00:00:00.000Z","doc_count":5,"by":{"buckets":{"s0":{"doc_count":1},"s1":{"doc_count":3},"OTHER":{"doc_count":1},"NULL":{"doc_count":0}}}},
+		{"key_as_string":"2026-10-11T01:00:00.000Z","doc_count":7,"by":{"buckets":{"s0":{"doc_count":5},"s1":{"doc_count":0},"OTHER":{"doc_count":1},"NULL":{"doc_count":1}}}}]}}}`,
+	}}
 	e := &Engine{Store: fs}
 	res, err := e.Run(context.Background(), `* earliest=-24h | timechart span=1h count by action`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hist := fs.bodies[0]["aggs"].(map[string]any)["time"].(map[string]any)["date_histogram"].(map[string]any)
-	if hist["fixed_interval"] != "1h" {
-		t.Errorf("interval = %v", hist)
+	series := fs.bodies[0]["aggs"].(map[string]any)["series"].(map[string]any)["terms"].(map[string]any)
+	if series["field"] != "action" || series["size"] != 10 {
+		t.Errorf("series = %v", series)
 	}
-	if !reflect.DeepEqual(res.Columns, []string{"_time", "success", "failure"}) {
+	split, _ := json.Marshal(fs.bodies[1])
+	for _, want := range []string{`"fixed_interval":"1h"`, `"s0":{"term":{"action":"success"}}`, `"OTHER":{"bool":{"filter":[{"exists":{"field":"action"}}],"must_not":[{"terms":{"action":["success","failure"]}}]}}`, `"NULL":{"bool":{"must_not":[{"exists":{"field":"action"}}]}}`} {
+		if !strings.Contains(string(split), want) {
+			t.Errorf("split request lacks %s: %s", want, split)
+		}
+	}
+	if !reflect.DeepEqual(res.Columns, []string{"_time", "success", "failure", "OTHER", "NULL"}) {
 		t.Errorf("columns = %v", res.Columns)
 	}
-	if res.Rows[1]["failure"] != int64(0) {
-		t.Errorf("missing value should be 0, got %v", res.Rows[1]["failure"])
+	if res.Rows[1]["failure"] != int64(0) || res.Rows[0]["NULL"] != int64(0) || res.Rows[1]["OTHER"] != int64(1) {
+		t.Errorf("rows = %v", res.Rows)
+	}
+
+	// useother=f usenull=f ask for neither.
+	fs = &fakeStore{responses: []string{
+		`{"aggregations":{"series":{"sum_other_doc_count":2,"buckets":[{"key":"success","doc_count":6}]}}}`,
+		`{"aggregations":{"time":{"buckets":[]}}}`,
+	}}
+	if _, err := (&Engine{Store: fs}).Run(context.Background(), `* | timechart count by action useother=f usenull=f`); err != nil {
+		t.Fatal(err)
+	}
+	if split, _ := json.Marshal(fs.bodies[1]); strings.Contains(string(split), "OTHER") || strings.Contains(string(split), "NULL") {
+		t.Errorf("split request = %s", split)
 	}
 }
 

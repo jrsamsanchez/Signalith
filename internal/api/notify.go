@@ -391,7 +391,7 @@ func (s *Server) handleNotifyDeliveries(w http.ResponseWriter, r *http.Request) 
 		defer cancel()
 		got, err := s.Notify.Deliveries.Recent(ctx, limit)
 		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Errorf("recent deliveries could not be read: %w", err))
+			writeError(w, http.StatusBadGateway, errHidden("recent deliveries could not be read", err))
 			return
 		}
 		for _, d := range got {

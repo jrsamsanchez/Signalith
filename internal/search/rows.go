@@ -4,9 +4,11 @@
 package search
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
+	"net/netip"
 	"slices"
 	"sort"
 	"strconv"
@@ -48,6 +50,9 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		res.Rows = out
 	case *query.Sort:
 		sortRows(res.Rows, c.Keys)
+		if c.Limit > 0 && len(res.Rows) > c.Limit {
+			res.Rows = res.Rows[:c.Limit]
+		}
 	case *query.Head:
 		if len(res.Rows) > c.N {
 			res.Rows = res.Rows[:c.N]
@@ -88,34 +93,49 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 			}
 		}
 	case *query.Stats:
-		rows, cols, err := goStats(ctx, res.Rows, c)
+		var clipped bool
+		rows, cols, err := goStatsBy(ctx, res.Rows, c, true, &clipped)
 		if err != nil {
 			return err
 		}
+		res.Truncated = res.Truncated || clipped
 		res.Rows, res.Columns = rows, cols
 		res.Kind = "table"
 	case *query.Top:
 		var counted []Row
 		groups := map[string]Row{}
 		keys := append(append([]string{}, c.By...), c.Fields...)
-		for i, r := range res.Rows {
-			if i%checkEvery == 0 && ctx.Err() != nil {
-				return ctx.Err()
+		ev := evaluatorFor(ctx)
+		n := 0
+		for _, r := range res.Rows {
+			ks, vals, ok, err := groupCombos(r, keys)
+			if err != nil {
+				return err
 			}
-			k, ok := groupKey(r, keys)
 			if !ok {
 				continue
 			}
-			g, exists := groups[k]
-			if !exists {
-				g = Row{topCount: int64(0)}
-				for _, f := range keys {
-					g[f] = r[f]
+			for gi, k := range ks {
+				if n++; n%checkEvery == 0 && ctx.Err() != nil {
+					return ctx.Err()
 				}
-				groups[k] = g
-				counted = append(counted, g)
+				g, exists := groups[k]
+				if !exists {
+					if len(groups) >= maxMemGroups {
+						return tooManyGroups()
+					}
+					if !chargeGroup(ev, k, len(keys)+1, 0) {
+						return ev.err
+					}
+					g = Row{topCount: int64(0)}
+					for _, f := range keys {
+						g[f] = vals[gi][f]
+					}
+					groups[k] = g
+					counted = append(counted, g)
+				}
+				g[topCount] = g[topCount].(int64) + 1
 			}
-			g[topCount] = g[topCount].(int64) + 1
 		}
 		res.Rows, res.Columns = topRows(counted, c)
 		res.Kind = "table"
@@ -249,6 +269,15 @@ const topCount = "\x00count"
 // topRows turns per-value counts into a top table with percentages,
 // limited per by-group, with an other row for the rest when asked.
 func topRows(rows []Row, top *query.Top) ([]Row, []string) {
+	return topRowsBeyond(rows, top, 0)
+}
+
+// topRowsBeyond is topRows when, with no by fields, beyond the rows
+// there are more events in values not among them.
+func topRowsBeyond(rows []Row, top *query.Top, beyond int64) ([]Row, []string) {
+	if len(top.By) > 0 {
+		beyond = 0
+	}
 	groupTotals := map[string]int64{}
 	byGroup := map[string][]Row{}
 	var order []string
@@ -260,6 +289,9 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 		byGroup[k] = append(byGroup[k], r)
 		groupTotals[k] += topN(r)
 	}
+	for k := range groupTotals {
+		groupTotals[k] += beyond // one group, with no by fields
+	}
 	countCol, percentCol := top.CountColumn(), top.PercentColumn()
 	var out []Row
 	for _, k := range order {
@@ -270,7 +302,7 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 			}
 			return topN(g[i]) > topN(g[j])
 		})
-		var rest int64
+		rest := beyond
 		if top.Limit > 0 && len(g) > top.Limit {
 			for _, r := range g[top.Limit:] {
 				rest += topN(r)
@@ -294,7 +326,7 @@ func topRows(rows []Row, top *query.Top) ([]Row, []string) {
 				r[countCol] = n
 			}
 			if t := groupTotals[k]; t > 0 && !top.NoPercent {
-				r[percentCol] = math.Round(float64(n)*10000/float64(t)) / 100
+				r[percentCol] = math.Round(float64(n)*1e8/float64(t)) / 1e6 // six places, as Splunk gives
 			}
 			out = append(out, r)
 		}
@@ -333,45 +365,143 @@ func groupKey(r Row, fields []string) (string, bool) {
 	return b.String(), true
 }
 
+// maxGroupCombos bounds the groups one row counts in when it has several
+// values in its by fields.
+const maxGroupCombos = 10000
+
+// maxMemGroups bounds the groups stats and top make in memory, whatever
+// the rows' multivalue by fields multiply them to.
+var maxMemGroups = maxEventsLimit // a variable so tests can lower it
+
+func tooManyGroups() error {
+	return &QueryError{Msg: fmt.Sprintf("the search makes more than %d groups; narrow it or use fewer by fields", maxMemGroups)}
+}
+
+// groupOverhead is what the budget counts for a group besides its key,
+// by values and states: its map entry, struct, row map and place in the
+// output order (measured at about 500 bytes).
+const groupOverhead = 512
+
+// chargeGroup charges the budget for a new group with key k, its by
+// values and its aggregation states.
+func chargeGroup(ev *evaluator, k string, by, states int) bool {
+	return ev.charge(groupOverhead + 2*len(k) + by*fieldOverhead + states*aggStateSize)
+}
+
+// groupCombos returns the groups row r counts in for fields, as keys (see
+// groupKey) and their values: a row with several values in a by field
+// counts once for each, and with several such fields once for each
+// combination, as in Splunk. ok is false when a field has no value.
+func groupCombos(r Row, fields []string) (keys []string, vals []Row, ok bool, err error) {
+	if !slices.ContainsFunc(fields, func(f string) bool { _, multi := r[f].([]any); return multi }) {
+		k, ok := groupKey(r, fields)
+		return []string{k}, []Row{r}, ok, nil
+	}
+	keys, vals = []string{""}, []Row{{}}
+	for _, f := range fields {
+		v, has := r[f]
+		if !has || v == nil {
+			return nil, nil, false, nil
+		}
+		list := valueList(v)
+		if len(list) == 0 {
+			return nil, nil, false, nil
+		}
+		if len(keys)*len(list) > maxGroupCombos {
+			return nil, nil, false, &QueryError{Msg: fmt.Sprintf("a row's multivalue by fields make more than %d groups; use mvexpand or fewer by fields", maxGroupCombos)}
+		}
+		var nk []string
+		var nv []Row
+		for i, k := range keys {
+			for _, x := range list {
+				row := Row{f: x}
+				for kf, kv := range vals[i] {
+					row[kf] = kv
+				}
+				nk = append(nk, k+fmt.Sprint(x)+"\x00")
+				nv = append(nv, row)
+			}
+		}
+		keys, vals = nk, nv
+	}
+	return keys, vals, true, nil
+}
+
 // goStats aggregates rows in memory, for stats after another transform.
+// A row with several values in a by field counts in the group of each.
 func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string, error) {
+	return goStatsBy(ctx, rows, st, true, nil)
+}
+
+// goStatsBy is goStats; with expand false a multivalue by field groups by
+// its whole list, as eventstats looks its groups up. clipped, when not
+// nil, is set when values() or list() left values out.
+func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, clipped *bool) ([]Row, []string, error) {
+	if hasWildcardAgg(st.Aggs) {
+		st = &query.Stats{Aggs: expandWildcardAggs(st.Aggs, st.By, rows, clipped), By: st.By}
+	}
 	type group struct {
 		keys   Row
 		states []*aggState
 	}
 	groups := map[string]*group{}
 	var order []string
-	for i, r := range rows {
-		if i%checkEvery == 0 && ctx.Err() != nil {
-			return nil, nil, ctx.Err()
-		}
-		k, ok := groupKey(r, st.By)
-		if !ok {
-			continue
-		}
-		g, exists := groups[k]
-		if !exists {
-			g = &group{keys: Row{}}
-			for _, f := range st.By {
-				g.keys[f] = r[f]
-			}
-			for range st.Aggs {
-				g.states = append(g.states, newAggState())
-			}
-			groups[k] = g
-			order = append(order, k)
-		}
-		for i, a := range st.Aggs {
-			s := g.states[i]
-			if a.Field == "" {
-				s.count++
+	ev := evaluatorFor(ctx)
+	n := 0
+	for _, r := range rows {
+		var keys []string
+		var vals []Row
+		if expand {
+			var ok bool
+			var err error
+			if keys, vals, ok, err = groupCombos(r, st.By); err != nil {
+				return nil, nil, err
+			} else if !ok {
 				continue
 			}
-			v, ok := r[a.Field]
-			if !ok || v == nil {
+		} else {
+			k, ok := groupKey(r, st.By)
+			if !ok {
 				continue
 			}
-			s.add(a, v, r)
+			keys, vals = []string{k}, []Row{r}
+		}
+		for gi, k := range keys {
+			if n++; n%checkEvery == 0 && ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			g, exists := groups[k]
+			if !exists {
+				if len(groups) >= maxMemGroups {
+					return nil, nil, tooManyGroups()
+				}
+				if !chargeGroup(ev, k, len(st.By), len(st.Aggs)) {
+					return nil, nil, ev.err
+				}
+				g = &group{keys: Row{}}
+				for _, f := range st.By {
+					g.keys[f] = vals[gi][f]
+				}
+				for range st.Aggs {
+					g.states = append(g.states, newAggState())
+				}
+				groups[k] = g
+				order = append(order, k)
+			}
+			for i, a := range st.Aggs {
+				s := g.states[i]
+				if a.Field == "" {
+					s.count++
+					continue
+				}
+				v, ok := r[a.Field]
+				if !ok || v == nil {
+					continue
+				}
+				if !ev.charge(s.add(a, v, r)) {
+					return nil, nil, ev.err
+				}
+			}
 		}
 	}
 	sort.Strings(order)
@@ -384,6 +514,9 @@ func goStats(ctx context.Context, rows []Row, st *query.Stats) ([]Row, []string,
 		}
 		for i, a := range st.Aggs {
 			row[a.Column()] = g.states[i].result(a)
+			if clipped != nil && g.states[i].clipped {
+				*clipped = true
+			}
 		}
 		out = append(out, row)
 	}
@@ -440,6 +573,54 @@ func compareValues(a, b any) int {
 		return 0
 	}
 	return strings.Compare(strings.ToLower(fmt.Sprint(a)), strings.ToLower(fmt.Sprint(b)))
+}
+
+// compareAs orders a and b as a sort key's function says: "num" puts
+// numbers first, in order, then the rest as text; "str" orders them as
+// text; "ip" orders addresses by their value, before anything else;
+// otherwise numbers before text, both in order. Missing values go last.
+func compareAs(as string, a, b any) int {
+	if a == nil || b == nil {
+		return compareValues(a, b)
+	}
+	switch as {
+	case "":
+		// As Splunk's sort does: numbers in order before text, and text
+		// in byte order, so upper case comes before lower case (SL-16).
+		fa, oka := asFloat(a)
+		fb, okb := asFloat(b)
+		switch {
+		case oka && okb:
+			return cmp.Compare(fa, fb)
+		case oka:
+			return -1
+		case okb:
+			return 1
+		}
+	case "num":
+		fa, oka := asFloat(a)
+		fb, okb := asFloat(b)
+		switch {
+		case oka && okb:
+			return cmp.Compare(fa, fb)
+		case oka:
+			return -1
+		case okb:
+			return 1
+		}
+	case "ip":
+		ia, erra := netip.ParseAddr(strings.TrimSpace(fmt.Sprint(a)))
+		ib, errb := netip.ParseAddr(strings.TrimSpace(fmt.Sprint(b)))
+		switch {
+		case erra == nil && errb == nil:
+			return ia.Unmap().Compare(ib.Unmap())
+		case erra == nil:
+			return -1
+		case errb == nil:
+			return 1
+		}
+	}
+	return strings.Compare(fmt.Sprint(a), fmt.Sprint(b))
 }
 
 // regex reports whether a where clause's regular expression is found in
@@ -507,9 +688,11 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		}
 		return ok
 	case *query.In:
-		for _, v := range e.Values {
-			if m.equals(r[e.Field], v) {
-				return true
+		for _, x := range valueList(r[e.Field]) {
+			for _, v := range e.Values {
+				if m.equals(x, v) {
+					return true
+				}
 			}
 		}
 		return false
@@ -518,25 +701,18 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		if !ok || v == nil {
 			return false
 		}
-		if e.Ref {
-			if w, ok := r[e.Value]; ok && w != nil {
-				return compareOp(e.Op, compareValues(v, w))
+		if list, multi := v.([]any); multi {
+			// A multivalue field matches when one of its values does,
+			// and != when none equals the value, as search reads them
+			// (SL-07).
+			if e.Op == "!=" {
+				eq := *e
+				eq.Op = "="
+				return !slices.ContainsFunc(list, func(x any) bool { return m.compare(&eq, x, r) })
 			}
+			return slices.ContainsFunc(list, func(x any) bool { return m.compare(e, x, r) })
 		}
-		switch e.Op {
-		case "=":
-			return m.equals(v, e.Value)
-		case "!=":
-			return !m.equals(v, e.Value)
-		case "=~":
-			return m.regex(e.Value, fmt.Sprint(v))
-		}
-		if e.Field == "_time" {
-			if _, isNum := asFloat(e.Value); isNum {
-				v = timeNumber(v)
-			}
-		}
-		return compareOp(e.Op, compareValues(v, e.Value))
+		return m.compare(e, v, r)
 	case *query.Text:
 		want := m.lowered(e.Value)
 		for _, v := range r {
@@ -546,6 +722,32 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		}
 	}
 	return false
+}
+
+// compare evaluates a comparison for v, one value of row r's field.
+func (m *matcher) compare(e *query.Compare, v any, r Row) bool {
+	if v == nil {
+		return false
+	}
+	if e.Ref {
+		if w, ok := r[e.Value]; ok && w != nil {
+			return compareOp(e.Op, compareValues(v, w))
+		}
+	}
+	switch e.Op {
+	case "=":
+		return m.equals(v, e.Value)
+	case "!=":
+		return !m.equals(v, e.Value)
+	case "=~":
+		return m.regex(e.Value, fmt.Sprint(v))
+	}
+	if e.Field == "_time" {
+		if _, isNum := asFloat(e.Value); isNum {
+			v = timeNumber(v)
+		}
+	}
+	return compareOp(e.Op, compareValues(v, e.Value))
 }
 
 // compareOp reports whether cmp, as compareValues returns it, satisfies op.
@@ -565,6 +767,14 @@ func compareOp(op string, cmp int) bool {
 		return cmp >= 0
 	}
 	return false
+}
+
+// valueList is v's values: each of a multivalue field's, or v itself.
+func valueList(v any) []any {
+	if list, ok := v.([]any); ok {
+		return list
+	}
+	return []any{v}
 }
 
 func (m *matcher) lowered(s string) string {
@@ -847,7 +1057,7 @@ func sortRows(rows []Row, keys []query.SortKey) {
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		for _, k := range keys {
-			cmp := compareValues(rows[i][k.Field], rows[j][k.Field])
+			cmp := compareAs(k.As, rows[i][k.Field], rows[j][k.Field])
 			if cmp == 0 {
 				continue
 			}

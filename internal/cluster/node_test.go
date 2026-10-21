@@ -1486,3 +1486,33 @@ func TestNoHandOverWhileFrozen(t *testing.T) {
 	fos.Block(false)
 	until(t, 15*time.Second, "the jobs to move once OpenSearch takes writes", b.RunsJobs)
 }
+
+// The problems Settings.Problems gives go into the heartbeat, for the
+// other servers' Servers page, and into this server's warnings.
+func TestSettingsProblems(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	l, err := OpenLocal(t.TempDir(), testOptions("siem-p"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(Options{Local: l, Version: "1.0.0", Timing: fast})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		n.Close()
+	})
+	n.Start(ctx)
+	const text = "Refused to remove 6 of the 6 shared detection and dashboard files at once. Nothing was removed."
+	n.Use(c, "s", Settings{Eligible: true, Problems: func() []string { return []string{text} }})
+	until(t, 5*time.Second, "the problem in the heartbeat", func() bool {
+		return slices.Contains(heartbeatOf(t, fos, n.ID()).Problems, text)
+	})
+	found := false
+	for _, w := range n.Status().Warnings {
+		found = found || w.Level == "amber" && w.Text == text
+	}
+	if !found {
+		t.Errorf("warnings %+v", n.Status().Warnings)
+	}
+}

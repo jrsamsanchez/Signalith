@@ -4,11 +4,12 @@
 // Package baselines learns how each user and host usually behaves, and
 // adds risk to them when they do something new or rare: a sign-in from a
 // new country or network, or at an unusual hour; a rare program on a host;
-// a new kind of change by a user; an unusual amount of data sent. This is
-// user and entity behavior analytics (UEBA). The risk goes to the Risk
-// data model like a detection's, so it adds up with the detections' own
-// risk and raises a finding through the risk incident detections rather
-// than a stream of alerts of its own.
+// a new kind of change by a user; an unusual amount of data sent. These
+// are first-seen and rare checks against each one's own history, a small
+// part of what UEBA products do, with no peer groups or models. The risk
+// goes to the Risk data model like a detection's, so it adds up with the
+// detections' own risk and raises a finding through the risk incident
+// detections rather than a stream of alerts of its own.
 //
 // The server that runs the background jobs learns one clock hour of
 // events at a time, a few minutes after it ends, with a search per check
@@ -65,8 +66,15 @@ const (
 	// are made up; older ones are skipped.
 	backfill   = 30 * 24 * time.Hour
 	maxCatchUp = 7 * 24 * time.Hour
-	// searchTimeout bounds one search.
+	// searchTimeout bounds one search, and searchRows the rows it reads:
+	// five times an analyst's search, as one hour of a large estate has
+	// more than 50,000 hosts and programs.
 	searchTimeout = 2 * time.Minute
+	searchRows    = 250_000
+	// searchSlots is how many baselines searches run at once across every
+	// tenant's engine: each can hold searchRows rows in memory, and every
+	// engine learns the same hour minutes after it ends.
+	searchSlots = 2
 	// ipdbFresh is how often the IP database is downloaded again, and
 	// ipdbRetry how soon after a failed download it is tried again.
 	ipdbFresh = 7 * 24 * time.Hour
@@ -83,10 +91,14 @@ const (
 	rareHourShare  = 0.02
 	// Data volume: an unusual hour sends at least volumeFactor times the
 	// usual hour, and volumeSigmas standard deviations over it, after at
-	// least minVolumeHours hours of history.
+	// least minVolumeHours hours of history; and the same for the same
+	// hour of the day.
 	volumeFactor   = 5
 	volumeSigmas   = 4
 	minVolumeHours = 72
+	// minHourDays is how many days an hour of the day needs before it
+	// can be unusual for a host.
+	minHourDays = 7
 )
 
 // Engine learns the baselines and raises their risk.
@@ -209,11 +221,7 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 		return false, err
 	}
 	if !found {
-		back := max(set.Learning(), backfill)
-		if e.history > 0 {
-			back = e.history
-		}
-		st = State{Through: now.Add(-back).Truncate(time.Hour), LiveFrom: now}
+		st = State{Through: now.Add(-e.back(set)).Truncate(time.Hour), LiveFrom: now}
 		e.log().Info("behavior baselines start learning", "from", st.Through, "learning_days", int(set.Learning().Hours()/24))
 	}
 	dirty := !found
@@ -228,6 +236,11 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 		}
 		if cs.Started.IsZero() && set.On(c.ID) {
 			cs.Started, dirty = now, true
+			if found {
+				// Turned on since the first run: it learns the history
+				// first, as the first run did.
+				e.replay(set, &st, cs, now)
+			}
 		}
 	}
 	reset, err := e.resets(ctx, set, &st)
@@ -251,6 +264,65 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 	}
 	st.Epoch, st.Node = e.epoch(), e.NodeID
 	done := 0
+	save := func() error {
+		if !e.allowed() {
+			return ErrStale
+		}
+		nv, err := e.Store.SaveState(ctx, st, ver)
+		if err == nil {
+			ver = nv
+		}
+		return err
+	}
+	// Checks that fell behind the others, after a failed search or a
+	// reset, catch up first, each on its own.
+	for _, u := range units {
+		if !u.on(set) {
+			dirty = u.clear(&st) || dirty
+			continue
+		}
+		from := u.behind(&st)
+		if from.IsZero() {
+			continue
+		}
+		live := u.liveFrom(&st)
+		if oldest := now.Add(-maxCatchUp).Truncate(time.Hour); from.Before(oldest) && !from.Before(live.Truncate(time.Hour)) {
+			e.log().Warn("behavior baselines skip hours a check could not learn from", "check", u.id, "from", from, "to", oldest)
+			u.skip(&st, oldest)
+			from, dirty = oldest, true
+		}
+		if !from.Before(st.Through) {
+			dirty = u.clear(&st) || dirty
+			continue
+		}
+		for h := from; h.Before(st.Through); h = h.Add(time.Hour) {
+			if done == maxHoursPerRound {
+				more = true
+				break
+			}
+			if ctx.Err() != nil || !e.allowed() {
+				return false, ctx.Err()
+			}
+			errs, err := e.learnHour(ctx, set, &st, h, []unit{u}, live)
+			if err != nil {
+				return false, ignoreStale(err)
+			}
+			done++
+			if uerr := errs[u.id]; uerr != nil {
+				e.failed(&st, u, h, uerr, now)
+				st.LastError = checkErrors(&st)
+				if err := save(); err != nil {
+					return false, ignoreStale(err)
+				}
+				break
+			}
+			u.advance(&st, h, now)
+			st.LastError = checkErrors(&st)
+			if err := save(); err != nil {
+				return false, ignoreStale(err)
+			}
+		}
+	}
 	for h := st.Through; !h.Add(time.Hour + settle).After(now); h = h.Add(time.Hour) {
 		if done == maxHoursPerRound {
 			more = true
@@ -259,22 +331,38 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 		if ctx.Err() != nil || !e.allowed() {
 			return false, ctx.Err()
 		}
-		if err := e.hour(ctx, set, &st, h); err != nil {
-			st.LastError = err.Error()
+		var us []unit
+		for _, u := range units {
+			if u.on(set) && u.behind(&st).IsZero() {
+				us = append(us, u)
+			}
+		}
+		errs, err := e.learnHour(ctx, set, &st, h, us, st.LiveFrom)
+		if err != nil {
+			return false, ignoreStale(err)
+		}
+		if len(us) > 0 && len(errs) == len(us) {
+			// Nothing could learn from the hour, as when OpenSearch
+			// cannot be reached: the round stops and tries it again.
+			st.LastError = errs[us[0].id].Error()
 			if _, serr := e.Store.SaveState(ctx, st, ver); serr != nil && !errors.Is(serr, ErrStale) {
 				e.log().Debug("behavior baselines: could not save the state", "err", serr)
 			}
-			return false, err
+			return false, errs[us[0].id]
 		}
-		st.Through, st.LastRun, st.LastError = h.Add(time.Hour), now, ""
-		if !e.allowed() {
-			return false, nil
+		// A check whose search failed falls behind and catches up on
+		// its own; the others go on.
+		for _, u := range us {
+			if uerr := errs[u.id]; uerr != nil {
+				e.failed(&st, u, h, uerr, now)
+			} else {
+				u.ok(&st)
+			}
 		}
-		nv, err := e.Store.SaveState(ctx, st, ver)
-		if err != nil {
-			return false, err
+		st.Through, st.LastRun, st.LastError = h.Add(time.Hour), now, checkErrors(&st)
+		if err := save(); err != nil {
+			return false, ignoreStale(err)
 		}
-		ver = nv
 		done++
 	}
 	if dirty && done == 0 {
@@ -306,6 +394,7 @@ func (e *Engine) resets(ctx context.Context, set Settings, st *State) (bool, err
 		any = true
 		e.log().Info("behavior baselines: a check was reset and learns again", "check", id)
 		*state = CheckState{Started: at}
+		e.replay(set, st, state, at)
 		e.mu.Lock()
 		delete(e.counts, id)
 		if id == RareProcess {
@@ -382,36 +471,195 @@ type hourRun struct {
 	countryNew map[string]bool
 }
 
-func (e *Engine) hour(ctx context.Context, set Settings, st *State, h time.Time) error {
-	r := &hourRun{e: e, set: set, st: st, start: h, live: h.Add(time.Hour).After(st.LiveFrom),
+// A unit is the checks that learn from the same searches. A unit learns
+// each hour on its own: when one of its searches fails, it falls behind
+// and catches up later, and the others go on.
+type unit struct {
+	id     string
+	checks []string
+	learn  func(r *hourRun, ctx context.Context) error
+}
+
+var units = []unit{
+	{id: "sign-in-networks", checks: []string{NewCountry, NewNetwork}, learn: (*hourRun).signinNetworks},
+	{id: UnusualHour, checks: []string{UnusualHour}, learn: (*hourRun).signinHours},
+	{id: RareProcess, checks: []string{RareProcess}, learn: (*hourRun).processes},
+	{id: NewChange, checks: []string{NewChange}, learn: (*hourRun).changes},
+	{id: DataVolume, checks: []string{DataVolume}, learn: (*hourRun).volume},
+}
+
+func (u unit) on(set Settings) bool {
+	return slices.ContainsFunc(u.checks, set.On)
+}
+
+func (u unit) states(st *State) []*CheckState {
+	out := make([]*CheckState, 0, len(u.checks))
+	for _, c := range u.checks {
+		cs := st.Checks[c]
+		if cs == nil {
+			cs = &CheckState{}
+			st.Checks[c] = cs
+		}
+		out = append(out, cs)
+	}
+	return out
+}
+
+// behind is the first hour the unit has still to learn, when it is
+// behind the others; zero when it is not.
+func (u unit) behind(st *State) time.Time {
+	var at time.Time
+	for _, cs := range u.states(st) {
+		if !cs.Behind.IsZero() && (at.IsZero() || cs.Behind.Before(at)) {
+			at = cs.Behind
+		}
+	}
+	return at
+}
+
+// liveFrom is when the hours the unit catches up on start to add risk:
+// after a reset, the hours before it are only learned from.
+func (u unit) liveFrom(st *State) time.Time {
+	at := st.LiveFrom
+	for _, cs := range u.states(st) {
+		if !cs.Behind.IsZero() && cs.LiveFrom.After(at) {
+			at = cs.LiveFrom
+		}
+	}
+	return at
+}
+
+// advance marks the hour starting at h learned by the checks catching
+// up on it, and clears their error.
+func (u unit) advance(st *State, h, now time.Time) {
+	next := h.Add(time.Hour)
+	for _, cs := range u.states(st) {
+		if cs.Behind.IsZero() || cs.Behind.After(h) {
+			continue
+		}
+		cs.Behind, cs.Error = next, ""
+		if !next.Before(st.Through) {
+			cs.Behind = time.Time{} // LiveFrom stays: the page shows it replayed
+		}
+	}
+	st.LastRun = now
+}
+
+// skip moves the checks catching up to the hour starting at to.
+func (u unit) skip(st *State, to time.Time) {
+	for _, cs := range u.states(st) {
+		if !cs.Behind.IsZero() && cs.Behind.Before(to) {
+			cs.Behind, cs.Skipped = to, to
+		}
+	}
+}
+
+// clear stops the unit catching up: it is off, or caught up.
+func (u unit) clear(st *State) bool {
+	changed := false
+	for _, cs := range u.states(st) {
+		if !cs.Behind.IsZero() || cs.Error != "" {
+			cs.Behind, cs.Error, changed = time.Time{}, "", true
+		}
+	}
+	return changed
+}
+
+// ok clears the error of a unit that learned an hour with the others.
+func (u unit) ok(st *State) {
+	for _, cs := range u.states(st) {
+		cs.Error = ""
+	}
+}
+
+// failed records that the unit could not learn the hour starting at h:
+// it learns again from there.
+func (e *Engine) failed(st *State, u unit, h time.Time, err error, now time.Time) {
+	for _, cs := range u.states(st) {
+		if cs.Error != err.Error() {
+			e.log().Warn("behavior baselines: a check could not learn from an hour; it catches up on its own, and the others go on",
+				"check", u.id, "hour", h, "err", err)
+		}
+		if cs.Behind.IsZero() || h.Before(cs.Behind) {
+			cs.Behind = h
+		}
+		cs.Error, cs.ErrorAt = err.Error(), now
+	}
+}
+
+// replay makes a check that starts learning after the first run learn
+// the history first, as the first run did, so a reset does not make
+// every user and host new again: hours before at only teach it.
+func (e *Engine) replay(set Settings, st *State, cs *CheckState, at time.Time) {
+	from := at.Add(-e.back(set)).Truncate(time.Hour)
+	if st.Through.IsZero() || !from.Before(st.Through) {
+		return
+	}
+	cs.Behind, cs.LiveFrom = from, at
+}
+
+// back is how much history a check learns from when it starts.
+func (e *Engine) back(set Settings) time.Duration {
+	if e.history > 0 {
+		return e.history
+	}
+	return Replay(set)
+}
+
+// Replay is how much stored history a check learns from when the
+// baselines first run, or it is turned on or reset.
+func Replay(set Settings) time.Duration {
+	return max(set.Learning(), backfill)
+}
+
+// checkErrors joins the errors of the checks that are behind.
+func checkErrors(st *State) string {
+	var out []string
+	for _, c := range Checks {
+		if cs := st.Checks[c.ID]; cs != nil && cs.Error != "" && !slices.Contains(out, cs.Error) {
+			out = append(out, cs.Error)
+		}
+	}
+	return strings.Join(out, "; ")
+}
+
+func ignoreStale(err error) error {
+	if errors.Is(err, ErrStale) {
+		return nil
+	}
+	return err
+}
+
+// learnHour learns the hour starting at h for each unit given, on its
+// own, and returns the error of each that failed. Its own error stops
+// the round: the context ended, or this server no longer runs the jobs.
+func (e *Engine) learnHour(ctx context.Context, set Settings, st *State, h time.Time, us []unit, liveFrom time.Time) (map[string]error, error) {
+	r := &hourRun{e: e, set: set, st: st, start: h, live: h.Add(time.Hour).After(liveFrom),
 		raised: map[string]int{}, countryNew: map[string]bool{}}
 	if e.Assets != nil {
 		r.lists = e.Assets.Own()
 	}
-	if set.On(NewCountry) || set.On(NewNetwork) || set.On(UnusualHour) {
-		if err := r.signins(ctx); err != nil {
-			return err
+	errs := map[string]error{}
+	for _, u := range us {
+		err := u.learn(r, ctx)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if errors.Is(err, ErrStale) || !e.allowed() {
+			return nil, ErrStale
+		}
+		if err != nil {
+			errs[u.id] = err
 		}
 	}
-	if set.On(RareProcess) {
-		if err := r.processes(ctx); err != nil {
-			return err
-		}
-	}
-	if set.On(NewChange) {
-		if err := r.changes(ctx); err != nil {
-			return err
-		}
-	}
-	if set.On(DataVolume) {
-		if err := r.volume(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
+	return errs, nil
 }
 
 // search runs one search over the hour, with sample data left out.
+// searching holds a slot for each baselines search running, in every
+// engine of the process.
+var searching = make(chan struct{}, searchSlots)
+
 func (r *hourRun) search(ctx context.Context, check, src string) ([]search.Row, error) {
 	q, err := query.Parse(src)
 	if err != nil {
@@ -421,14 +669,29 @@ func (r *hourRun) search(ctx context.Context, check, src string) ([]search.Row, 
 	q.Latest = r.start.Add(time.Hour).Format(time.RFC3339)
 	detect.ScopeSample(q, "")
 	q.EventsOnly = true // it raises risk, as detections do
+	q.MaxRows = searchRows
+	select {
+	case searching <- struct{}{}:
+		defer func() { <-searching }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("%s: %w", check, ctx.Err())
+	}
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 	res, err := r.e.Search.Execute(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", check, err)
 	}
-	if res.Truncated {
-		r.state(check).Truncated = r.start
+	if res.Truncated && len(res.Rows) > 0 {
+		// Rows come in name order, so the users or hosts after the last
+		// one read were not learned.
+		cs := r.state(check)
+		cs.Truncated, cs.TruncatedAfter = r.start, ""
+		for _, c := range q.Commands {
+			if st, ok := c.(*query.Stats); ok && len(st.By) > 0 {
+				cs.TruncatedAfter = cut(str(res.Rows[len(res.Rows)-1][st.By[0]]), maxValueLen)
+			}
+		}
 	}
 	return res.Rows, nil
 }
@@ -566,7 +829,14 @@ func (r *hourRun) learn(ctx context.Context, check string, all map[string]*seen,
 	for k := range all {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	// In an order that changes every hour, so when more than
+	// MaxRaisedPerHour are unusual at once, which ones add risk does not
+	// depend on their names.
+	order := make(map[string]string, len(keys))
+	for _, k := range keys {
+		order[k] = eventID(check, k, r.start)
+	}
+	sort.Slice(keys, func(i, j int) bool { return order[keys[i]] < order[keys[j]] })
 	for len(keys) > 0 {
 		part := keys[:min(chunk, len(keys))]
 		keys = keys[len(part):]
@@ -725,36 +995,37 @@ func publicSource(rows []search.Row) bool {
 	return false
 }
 
-func (r *hourRun) signins(ctx context.Context) error {
-	if (r.set.On(NewCountry) || r.set.On(NewNetwork)) && r.set.IPSource() != "" {
-		rows, err := r.search(ctx, NewCountry, signinSearch)
-		if err != nil {
-			return err
-		}
-		db := r.e.currentIPDB()
-		if db == nil && publicSource(rows) {
-			// The first sign-in from the internet: only now is the IP
-			// database downloaded, so a server whose users sign in only
-			// from inside never fetches it.
-			r.e.maintainIPDB(ctx, r.set, r.e.now(), true)
-			db = r.e.currentIPDB()
-		}
-		if db != nil {
-			if err := r.networks(ctx, db, rows); err != nil {
-				return err
-			}
-		}
+func (r *hourRun) signinNetworks(ctx context.Context) error {
+	if !r.set.On(NewCountry) && !r.set.On(NewNetwork) || r.set.IPSource() == "" {
+		return nil
 	}
-	if r.set.On(UnusualHour) {
-		rows, err := r.search(ctx, UnusualHour, activeSearch)
-		if err != nil {
-			return err
-		}
-		if err := r.hours(ctx, rows); err != nil {
-			return err
-		}
+	rows, err := r.search(ctx, NewCountry, signinSearch)
+	if err != nil {
+		return err
 	}
-	return nil
+	db := r.e.currentIPDB()
+	if db == nil && publicSource(rows) {
+		// The first sign-in from the internet: only now is the IP
+		// database downloaded, so a server whose users sign in only
+		// from inside never fetches it.
+		r.e.maintainIPDB(ctx, r.set, r.e.now(), true)
+		db = r.e.currentIPDB()
+	}
+	if db == nil {
+		return nil
+	}
+	return r.networks(ctx, db, rows)
+}
+
+func (r *hourRun) signinHours(ctx context.Context) error {
+	if !r.set.On(UnusualHour) {
+		return nil
+	}
+	rows, err := r.search(ctx, UnusualHour, activeSearch)
+	if err != nil {
+		return err
+	}
+	return r.hours(ctx, rows)
 }
 
 func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) error {
@@ -988,20 +1259,23 @@ func (r *hourRun) volume(ctx context.Context) error {
 	}
 	minBytes := r.set.minBytes()
 	return r.learn(ctx, DataVolume, srcs, func(p *Profile, key string, s *seen) []detect.RiskEvent {
-		mean, sd := p.usual(r.start)
-		spike := r.canRaise(p) && p.Span >= minVolumeHours && s.bytes >= minBytes &&
-			s.bytes >= volumeFactor*mean && s.bytes >= mean+volumeSigmas*sd
+		u := p.usual(r.start)
+		// Unusual for the host, and for this hour of the day: a backup
+		// that runs every night is not.
+		spike := r.canRaise(p) && p.Span >= minVolumeHours && u.HourN >= minHourDays && s.bytes >= minBytes &&
+			s.bytes >= volumeFactor*u.Mean && s.bytes >= u.Mean+volumeSigmas*u.SD && s.bytes >= u.HourLimit
 		p.addVolume(s.bytes, r.start)
 		if !spike {
 			return nil
 		}
 		times := "far more than"
-		if mean > 0 {
-			times = fmt.Sprintf("about %s times", strconv.FormatFloat(math.Round(s.bytes/mean), 'f', -1, 64))
+		if u.HourMean > 0 {
+			times = fmt.Sprintf("about %s times", strconv.FormatFloat(math.Round(s.bytes/u.HourMean), 'f', -1, 64))
 		}
-		msg := fmt.Sprintf("%s sent %s in an hour, %s its usual %s", s.name, size(s.bytes), times, size(mean))
+		hr := r.start.Hour()
+		msg := fmt.Sprintf("%s sent %s between %02d:00 and %02d:00 UTC, %s its usual %s for that hour", s.name, size(s.bytes), hr, (hr+1)%24, times, size(u.HourMean))
 		return []detect.RiskEvent{r.event(DataVolume, "system", s.name, size(s.bytes), msg, s.first,
-			map[string]any{"src": s.name, "bytes_out": int64(s.bytes), "baseline_usual_bytes": int64(mean)})}
+			map[string]any{"src": s.name, "bytes_out": int64(s.bytes), "baseline_usual_bytes": int64(u.HourMean)})}
 	})
 }
 

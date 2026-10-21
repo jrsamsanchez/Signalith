@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/nlq"
 )
 
 func TestAskWithoutAI(t *testing.T) {
@@ -29,6 +30,13 @@ func TestAskWithoutAI(t *testing.T) {
 	}
 	if len(out["steps"].([]any)) != 4 || len(out["explanation"].([]any)) == 0 {
 		t.Errorf("steps %v explanation %v", out["steps"], out["explanation"])
+	}
+	if out["run"] != true {
+		t.Errorf("a fully understood question is not run: %v", out)
+	}
+	// Half understood, with no AI model: shown, not run.
+	if code, out := do(t, ts, "POST", "/api/ask", `{"question":"service account logins from workstations"}`, true); code != 200 || out["run"] != false {
+		t.Errorf("half understood %d %v", code, out)
 	}
 	if code, out := do(t, ts, "POST", "/api/ask", `{"question":"x","mode":"ai"}`, true); code != 400 || !strings.Contains(out["error"].(string), "Settings page") {
 		t.Errorf("ai without model %d %v", code, out)
@@ -53,7 +61,7 @@ func TestAskFallsBackToAI(t *testing.T) {
 	}
 	// It does not understand this one, so auto mode asks the model.
 	code, out = do(t, ts, "POST", "/api/ask", `{"question":"lateral movement via wmi remote process creation"}`, true)
-	if code != 200 || out["source"] != "ai" || !strings.Contains(out["query"].(string), "wmic.exe") || out["ai_model"] != "claude-sonnet-5-5" {
+	if code != 200 || out["source"] != "ai" || !strings.Contains(out["query"].(string), "wmic.exe") || out["ai_model"] != "claude-sonnet-5-5" || out["run"] != true {
 		t.Fatalf("ai %d %v", code, out)
 	}
 	// Rules only, when asked.
@@ -72,5 +80,15 @@ func TestAskReportsAIErrors(t *testing.T) {
 	code, out := do(t, ts, "POST", "/api/ask", `{"question":"something odd from 10.0.0.1","mode":"ai"}`, true)
 	if code != 200 || out["source"] != "rules" || !strings.Contains(out["ai_error"].(string), "overloaded") || out["query"] != "src=10.0.0.1" {
 		t.Fatalf("%d %v", code, out)
+	}
+}
+
+// Every example under the Ask box is understood well enough to run.
+func TestAskExamplesAreUnderstood(t *testing.T) {
+	for _, q := range askExamples {
+		r, err := nlq.Translate(q, nil)
+		if err != nil || r.Confidence < aiThreshold {
+			t.Errorf("%q: %v, confidence %.2f, unknown %v", q, err, r.Confidence, r.Unknown)
+		}
 	}
 }

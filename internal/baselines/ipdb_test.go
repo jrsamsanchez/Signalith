@@ -120,12 +120,12 @@ func TestPublic(t *testing.T) {
 }
 
 func TestProfileBounds(t *testing.T) {
-	p := newProfile(NewChange, "u", time.Unix(0, 0).UTC())
+	p := newProfile(UnusualHour, "u", time.Unix(0, 0).UTC())
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range MaxValues + 20 {
 		p.see(strings.Repeat("x", i%3)+string(rune('a'+i%26))+time.Duration(i).String(), at.Add(time.Duration(i)*time.Hour))
 	}
-	if len(p.Values) != MaxValues {
+	if len(p.Values) != MaxValues || ValueLimit(UnusualHour) != MaxValues || ValueLimit(NewChange) <= MaxValues {
 		t.Fatalf("%d values", len(p.Values))
 	}
 	// The ones seen longest ago went.

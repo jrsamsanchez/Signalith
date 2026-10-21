@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
@@ -149,7 +152,7 @@ func (s *Server) handleIntelRefresh(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "status": st})
 	default:
-		s.Log.Info("threat intel feed refreshed by hand", "feed", name, "by", userOf(r))
+		s.audit(r, "intel.feed_refresh: threat intel feed refreshed by hand", "feed", name, "indicators", st.Count)
 		writeJSON(w, http.StatusOK, map[string]any{"status": st})
 	}
 }
@@ -191,7 +194,7 @@ func (s *Server) handleIntelAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	s.Log.Info("threat intel indicator added", "type", ind.Type, "value", ind.Value, "by", userOf(r))
+	s.audit(r, "intel.indicator_add: threat intel indicator added", indicatorAudit(ind)...)
 	got, _ := s.Intel.Get(inds[0].ID)
 	writeJSON(w, http.StatusOK, got)
 }
@@ -220,7 +223,7 @@ func (s *Server) handleIntelDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	s.Log.Info("threat intel indicator deleted", "type", ind.Type, "value", ind.Value, "by", userOf(r))
+	s.audit(r, "intel.indicator_delete: threat intel indicator deleted", indicatorAudit(ind)...)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 
@@ -250,7 +253,7 @@ func (s *Server) handleIntelUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	s.Log.Info("threat intel indicators uploaded", "indicators", len(inds), "by", userOf(r))
+	s.audit(r, "intel.indicator_upload: threat intel indicators uploaded", uploadAudit(inds)...)
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(inds)})
 }
 
@@ -340,7 +343,7 @@ func writeFeedError(w http.ResponseWriter, err error) {
 	case errors.Is(err, intel.ErrReadOnly):
 		writeError(w, http.StatusConflict, err)
 	case errors.As(err, &fe):
-		writeError(w, http.StatusServiceUnavailable, err)
+		writeError(w, http.StatusServiceUnavailable, errHidden("The feeds file could not be read. Fix or delete it, then reload this page", err))
 	case errors.Is(err, intel.ErrBusy):
 		writeError(w, http.StatusTooManyRequests, err)
 	default:
@@ -403,7 +406,9 @@ func (s *Server) handleIntelFeedAdd(w http.ResponseWriter, r *http.Request) {
 		writeFeedError(w, err)
 		return
 	}
-	s.Log.Info("threat intel feed added", "feed", v.Name, "url", intel.RedactURL(v.URL), "by", userOf(r))
+	if fd, ok := s.Feeds.Get(v.Name); ok {
+		s.audit(r, "intel.feed_add: threat intel feed added", feedAudit(fd)...)
+	}
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -423,6 +428,7 @@ func (s *Server) handleIntelFeedUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	before, _ := s.Feeds.Get(name)
 	v, err := s.Feeds.UpdateFeedIf(r.Context(), userOf(r), name, r.Header.Get("If-Match"), in)
 	if err != nil {
 		writeFeedError(w, err)
@@ -431,7 +437,8 @@ func (s *Server) handleIntelFeedUpdate(w http.ResponseWriter, r *http.Request) {
 	if tag, ok := s.Feeds.ETag(name); ok {
 		w.Header().Set("ETag", tag)
 	}
-	s.Log.Info("threat intel feed changed", "feed", name, "url", intel.RedactURL(v.URL), "enabled", v.Enabled, "by", userOf(r))
+	after, _ := s.Feeds.Get(name)
+	s.audit(r, "intel.feed_change: threat intel feed changed", append(feedAudit(after), "changes", feedChanges(before, after))...)
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -449,12 +456,13 @@ func (s *Server) handleIntelFeedDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
+	before, _ := s.Feeds.Get(name)
 	n, err := s.Feeds.RemoveFeedIf(ctx, userOf(r), name, r.Header.Get("If-Match"), mode != "keep")
 	if err != nil {
 		writeFeedError(w, err)
 		return
 	}
-	s.Log.Info("threat intel feed deleted", "feed", name, "indicators_removed", n, "by", userOf(r))
+	s.audit(r, "intel.feed_delete: threat intel feed deleted", append(feedAudit(before), "indicators_removed", n)...)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "indicators_removed": n, "indicators_kept": mode == "keep"})
 }
 
@@ -512,7 +520,7 @@ func (s *Server) handleIntelFeedTest(w http.ResponseWriter, r *http.Request) {
 		writeFeedError(w, err)
 		return
 	}
-	s.Log.Info("threat intel feed tested", "url", intel.RedactURL(req.URL), "ok", res.OK, "indicators", res.Total, "by", userOf(r))
+	s.audit(r, "intel.feed_test: threat intel feed tested", "feed", req.Feed, "url", intel.RedactURL(req.URL), "ok", res.OK, "indicators", res.Total)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -570,7 +578,75 @@ func (s *Server) handleIntelCatalogAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, v := range added {
-		s.Log.Info("threat intel feed added from the catalog", "feed", v.Name, "by", userOf(r))
+		if fd, ok := s.Feeds.Get(v.Name); ok {
+			s.audit(r, "intel.feed_add: threat intel feed added from the catalog", feedAudit(fd)...)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"added": added, "skipped": skipped})
+}
+
+// indicatorAudit describes an indicator for an audit line.
+func indicatorAudit(ind intel.Indicator) []any {
+	exp := ""
+	if !ind.Expires.IsZero() {
+		exp = ind.Expires.UTC().Format(time.RFC3339)
+	}
+	return []any{"target", ind.Value, "type", ind.Type, "source", ind.Source, "weight", ind.Weight, "expires", exp,
+		"tags", strings.Join(ind.Tags, ","), "indicator", ind.ID}
+}
+
+// uploadAudit describes an upload for an audit line: how many indicators
+// of each type, and the first values.
+func uploadAudit(inds []intel.Indicator) []any {
+	types := map[string]int{}
+	var first []string
+	for _, ind := range inds {
+		types[ind.Type]++
+		if len(first) < 20 {
+			first = append(first, ind.Value)
+		}
+	}
+	var byType []string
+	for _, t := range slices.Sorted(maps.Keys(types)) {
+		byType = append(byType, fmt.Sprintf("%s=%d", t, types[t]))
+	}
+	return []any{"indicators", len(inds), "types", strings.Join(byType, ","), "values", strings.Join(first, ",")}
+}
+
+// feedAudit describes a feed for an audit line. The address loses any
+// credentials it holds; headers and the password are never named.
+func feedAudit(fd intel.Feed) []any {
+	return []any{"feed", fd.Name, "kind", fd.Kind, "url", intel.RedactURL(fd.URL), "collection", fd.Collection,
+		"format", fd.Format, "type", fd.Type, "interval", fd.Interval.String(), "max_age", fd.MaxAge.String(),
+		"weight", fd.Weight, "enabled", fd.Enabled}
+}
+
+// feedChanges names what a change to a feed changed, with the old and
+// new values of its settings; secrets are only said to have changed.
+func feedChanges(a, b intel.Feed) string {
+	var out []string
+	add := func(name, from, to string) {
+		if from != to {
+			out = append(out, name+": "+from+" -> "+to)
+		}
+	}
+	add("url", intel.RedactURL(a.URL), intel.RedactURL(b.URL))
+	add("kind", a.Kind, b.Kind)
+	add("collection", a.Collection, b.Collection)
+	add("format", a.Format, b.Format)
+	add("type", a.Type, b.Type)
+	add("column", a.Column, b.Column)
+	add("interval", a.Interval.String(), b.Interval.String())
+	add("max_age", a.MaxAge.String(), b.MaxAge.String())
+	add("weight", strconv.FormatFloat(a.Weight, 'g', -1, 64), strconv.FormatFloat(b.Weight, 'g', -1, 64))
+	add("enabled", strconv.FormatBool(a.Enabled), strconv.FormatBool(b.Enabled))
+	add("tags", strings.Join(a.Tags, ","), strings.Join(b.Tags, ","))
+	add("username", a.Username, b.Username)
+	if a.Password != b.Password {
+		out = append(out, "password changed")
+	}
+	if !maps.Equal(a.Headers, b.Headers) {
+		out = append(out, "headers changed")
+	}
+	return strings.Join(out, ", ")
 }

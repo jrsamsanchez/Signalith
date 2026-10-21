@@ -347,7 +347,7 @@
       <article class="card" data-clip="compliance">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
         <h3>Compliance and evidence</h3>
-        <p>See how your detections and data cover NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, and hand an auditor an evidence report.</p>
+        <p>See how your detections and data cover NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1, ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, and hand an auditor an evidence report.</p>
       </article>
       <article class="card" data-clip="signin">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
@@ -481,7 +481,7 @@
           <li><p>Install <a href="https://www.docker.com/products/docker-desktop/">Docker Desktop</a> (Windows or Mac) or Docker Engine (Linux), then get the code:</p>
 <div class="code"><pre><code>git clone https://github.com/jrsamsanchez/signalith
 cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Start OpenSearch and Signalith. The first start makes the passwords and certificates, so it takes a minute or two.</p>
+          <li><p>Start OpenSearch and the newest release of Signalith. The first start makes the passwords and certificates, so it takes a minute or two.</p>
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml up -d</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
           <li><p>Show the admin password:</p>
 <div class="code"><pre><code>docker compose -f deploy/docker/docker-compose.yml exec signalith signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
@@ -506,8 +506,8 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 
       <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
         <ol class="steps">
-          <li><p>Download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith-0.3.1-x64.msi">signalith-0.3.1-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>).</p></li>
-          <li><p>Double-click it and follow the steps. It downloads and sets up OpenSearch on this computer, then installs and starts the <b>Signalith</b> service under its own account. The first install takes a few minutes.</p></li>
+          <li><p>Download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith-0.3.1-x64.msi">signalith-0.3.1-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>). There is nothing to install first.</p></li>
+          <li><p>Double-click it and follow the steps. It downloads and sets up OpenSearch 3.9 on this computer, then installs and starts the <b>Signalith</b> and <b>SignalithOpenSearch</b> services, each under its own account. The first install downloads about 1 GB.</p></li>
           <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/intel"
 )
 
 // CPE is a product name in the Common Platform Enumeration, the names
@@ -200,7 +202,11 @@ const NVDHost = "services.nvd.nist.gov"
 type NVD struct {
 	URL    string
 	APIKey string
-	HTTP   *http.Client
+	// HTTP makes the requests; the server gives it the client of feed
+	// downloads, which never reaches this machine, its OpenSearch or a
+	// cloud metadata service. Either way the API key never follows a
+	// redirect to another server.
+	HTTP *http.Client
 	// Gap overrides the wait between requests (tests).
 	Gap time.Duration
 
@@ -211,9 +217,25 @@ type NVD struct {
 // NewNVD returns a client for the CVE API at url (DefaultNVDURL when
 // empty), sending key when one is set.
 func NewNVD(url, key string) *NVD {
-	n := &NVD{HTTP: &http.Client{Timeout: 2 * time.Minute}}
+	n := &NVD{HTTP: &http.Client{Timeout: 2 * time.Minute, CheckRedirect: dropKeyOffOrigin}}
 	n.Set(url, key)
 	return n
+}
+
+// nvdKeyHeader is the header the API key goes in.
+const nvdKeyHeader = "apiKey"
+
+// dropKeyOffOrigin follows up to 10 redirects, as Go does, but drops the
+// API key from one to another server: Go drops only Authorization and
+// cookies, never a header of the API's own.
+func dropKeyOffOrigin(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if !intel.SameOrigin(via[0].URL, req.URL) {
+		req.Header.Del(nvdKeyHeader)
+	}
+	return nil
 }
 
 // Set changes where lookups go and the API key, as the Settings page
@@ -359,6 +381,7 @@ func (n *NVD) page(ctx context.Context, query, vendor, product string) ([]CVE, i
 		return nil, 0, err
 	}
 	base, key := n.endpoint()
+	ctx = intel.WithSecretHeaders(ctx, nvdKeyHeader)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+query, nil)
 	if err != nil {
 		return nil, 0, err
@@ -366,7 +389,7 @@ func (n *NVD) page(ctx context.Context, query, vendor, product string) ([]CVE, i
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Signalith vulnerability scanner")
 	if key != "" {
-		req.Header.Set("apiKey", key)
+		req.Header.Set(nvdKeyHeader, key)
 	}
 	hc := n.HTTP
 	if hc == nil {

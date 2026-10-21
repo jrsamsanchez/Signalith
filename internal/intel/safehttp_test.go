@@ -237,6 +237,14 @@ func TestSafeDialerProxy(t *testing.T) {
 	if n != 1 {
 		t.Errorf("the proxy got %d requests: %v", n, asked)
 	}
+	// A plain request through the client, as the CVE and KEV downloads
+	// make, may use the local proxy too.
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://feeds.example/list.txt", nil)
+	if resp, err := newFeedClientWith(false, nil, proxy).Do(req); err != nil {
+		t.Errorf("plain request through the local proxy: %v", err)
+	} else {
+		resp.Body.Close()
+	}
 	// Without a recorded proxy, every dial is checked.
 	d := newSafeDialer(false, nil)
 	if c, err := d.DialContext(ctx, "tcp", "localhost:"+port); err == nil {
@@ -327,6 +335,10 @@ func TestDescribeErrors(t *testing.T) {
 		"https://u:p@x.example/a/b?key=abc#f": "https://x.example/a/b?…",
 		"https://x.example/feed.txt":          "https://x.example/feed.txt",
 		"http://x.example/?token=1":           "http://x.example/?…",
+		"https://u:p@h.example/x#tok=SECRET":  "https://h.example/x#…",
+		"https://h.example/x#":                "https://h.example/x#…",
+		// A key in the path cannot be told from the path, and stays.
+		"https://h.example/k3y/feed.txt": "https://h.example/k3y/feed.txt",
 		// Does not parse (a space in the password): still no password.
 		"https://u:pa ss@x.example/a?key=1": "https://***@x.example?…",
 	} {

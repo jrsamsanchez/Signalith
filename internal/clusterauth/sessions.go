@@ -478,12 +478,37 @@ func (s *Sessions) forget(id string) {
 	s.Cache.neg[id] = s.now().Add(CacheFor)
 }
 
+// ErrSessionUnchecked is a session this server cannot check now: it has
+// no copy of it that it may use, and it cannot read OpenSearch (it cannot
+// use OpenSearch now, or the read failed). The cookie is not refused for
+// that: the request may be sent again in a moment.
+var ErrSessionUnchecked = errors.New("this server cannot check the sign-in session right now; try again in a moment")
+
+// errNoSession is a cookie with no session that may be used: never made,
+// signed out, ended, or refused.
+var errNoSession = errors.New("no sign-in session")
+
+// Session read retries: when OpenSearch does not answer a session's read
+// and there is no copy that may be used instead, it is read again after
+// readRetry, then after twice that.
+const readTries = 3
+
+var readRetry = 250 * time.Millisecond
+
 // Lookup returns the session of a cookie, checked against its user as
 // they are now. used marks it used, so it does not end for being idle; a
 // request a page makes on its own passes false.
 func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.Session, bool) {
+	ss, err := s.Check(ctx, cookie, used)
+	return ss, err == nil
+}
+
+// Check is Lookup, but says why there is no session: ErrSessionUnchecked
+// when this server cannot tell now, any other error when the cookie is
+// refused.
+func (s *Sessions) Check(ctx context.Context, cookie string, used bool) (auth.Session, error) {
 	if !s.known(cookie) {
-		return auth.Session{}, false
+		return auth.Session{}, errNoSession
 	}
 	id := SessionID(cookie)
 	now := s.now()
@@ -492,7 +517,7 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 	if until, ok := c.neg[id]; ok {
 		if now.Before(until) {
 			c.mu.Unlock()
-			return auth.Session{}, false
+			return auth.Session{}, errNoSession
 		}
 		delete(c.neg, id)
 	}
@@ -505,7 +530,10 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 		}
 		out := e.session()
 		c.mu.Unlock()
-		return out, ok
+		if !ok {
+			return auth.Session{}, errNoSession
+		}
+		return out, nil
 	}
 	e := c.pos[id]
 	var cur entry
@@ -514,14 +542,14 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 	}
 	c.mu.Unlock()
 	if e == nil || now.Sub(cur.confirmed) >= CacheFor {
-		read, ok := s.read(ctx, id, e, now)
-		if !ok {
-			return auth.Session{}, false
+		read, err := s.read(ctx, id, e, now)
+		if err != nil {
+			return auth.Session{}, err
 		}
 		cur = read
 	}
 	if !s.allows(&cur, now, false) {
-		return auth.Session{}, false
+		return auth.Session{}, errNoSession
 	}
 	if used {
 		cur.local = now
@@ -531,7 +559,7 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 			switch {
 			case errors.Is(err, store.ErrNotFound):
 				s.forget(id)
-				return auth.Session{}, false
+				return auth.Session{}, errNoSession
 			case err == nil:
 				cur.stored = now
 			}
@@ -546,7 +574,7 @@ func (s *Sessions) Lookup(ctx context.Context, cookie string, used bool) (auth.S
 		*e = cur
 	}
 	c.mu.Unlock()
-	return cur.session(), true
+	return cur.session(), nil
 }
 
 // known reports whether a cookie may have a session, without reading
@@ -623,49 +651,56 @@ func (s *Sessions) Carry(ctx context.Context, list []Carried) (carried, dropped 
 
 // read reads the session id from OpenSearch and caches it. When
 // OpenSearch cannot be read, or this server cannot use it now, a copy
-// confirmed less than StaleFor ago (old) is used instead.
-func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Time) (entry, bool) {
+// confirmed less than StaleFor ago (old) is used instead; without one, it
+// returns ErrSessionUnchecked, not a refusal: a server that just started
+// has no copies, and a moment when OpenSearch does not answer must not
+// sign everyone out. Only what OpenSearch says (no document, a MAC that
+// does not verify) refuses the session here.
+func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Time) (entry, error) {
 	var oldCopy entry
 	if old != nil {
 		s.Cache.mu.Lock()
 		oldCopy = *old
 		s.Cache.mu.Unlock()
 	}
-	stale := func() (entry, bool) {
-		if old != nil && now.Sub(oldCopy.confirmed) < StaleFor {
-			return oldCopy, true
+	usable := old != nil && now.Sub(oldCopy.confirmed) < StaleFor
+	stale := func() (entry, error) {
+		if usable {
+			return oldCopy, nil
 		}
-		return entry{}, false
+		return entry{}, ErrSessionUnchecked
 	}
 	if s.degradedNow() {
 		return stale()
 	}
-	cl, index := s.index()
-	src, _, found, err := cl.Get(ctx, index, id)
+	src, found, err := s.get(ctx, id, !usable)
 	if err != nil {
+		if !usable {
+			s.log().Warn("could not read a sign-in session; the request is answered 503, not signed out", "session", id, "err", err)
+		}
 		return stale()
 	}
 	if !found {
 		s.forget(id)
-		return entry{}, false
+		return entry{}, errNoSession
 	}
 	var d sessionDoc
 	if err := json.Unmarshal(src, &d); err != nil || !d.verify(s.Docs.keys(), id) {
 		s.forget(id)
 		s.log().Error("session.tamper: a sign-in session in OpenSearch was changed or made outside Signalith; it is refused",
 			"audit", true, "session", id, "user", d.User, "node", d.Node)
-		return entry{}, false
+		return entry{}, errNoSession
 	}
 	created, err := time.Parse(time.RFC3339Nano, d.Created)
 	if err != nil {
 		s.forget(id)
-		return entry{}, false
+		return entry{}, errNoSession
 	}
 	if d.Tenant != "" && !s.Docs.TenantsOn() {
 		// Written at a level this cluster is not at: never read as a
 		// session of the default tenant.
 		s.forget(id)
-		return entry{}, false
+		return entry{}, errNoSession
 	}
 	stored, _ := time.Parse(time.RFC3339Nano, d.LastSeen)
 	e := entry{user: d.User, epoch: d.Epoch, created: created, remember: d.Remember, method: d.Method, degraded: d.Degraded, born: d.Born,
@@ -677,7 +712,39 @@ func (s *Sessions) read(ctx context.Context, id string, old *entry, now time.Tim
 	s.Cache.pos[id] = &e
 	cp := e
 	s.Cache.mu.Unlock()
-	return cp, true
+	return cp, nil
+}
+
+// get reads the session document id. retry reads it again, briefly,
+// when OpenSearch does not answer: for a session with no copy that may be
+// used instead.
+func (s *Sessions) get(ctx context.Context, id string, retry bool) (json.RawMessage, bool, error) {
+	cl, index := s.index()
+	tries := 1
+	if retry {
+		tries = readTries
+	}
+	var err error
+	for i := range tries {
+		if i > 0 {
+			t := time.NewTimer(readRetry << (i - 1))
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return nil, false, err
+			case <-t.C:
+			}
+			if s.degradedNow() {
+				return nil, false, err
+			}
+		}
+		var src json.RawMessage
+		var found bool
+		if src, _, found, err = cl.Get(ctx, index, id); err == nil {
+			return src, found, nil
+		}
+	}
+	return nil, false, err
 }
 
 // allows checks a session against its user as they are now: there, not

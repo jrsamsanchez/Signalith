@@ -85,7 +85,7 @@ func TestBin(t *testing.T) {
 	for src, want := range map[string][]string{
 		`* | bin span=1h _time | table _time`:         {"2026-10-15T11:00:00Z", "2026-10-15T11:00:00Z", "2026-10-14T23:00:00Z"},
 		`* | bucket _time span=1d | table _time`:      {"2026-10-15T00:00:00Z", "2026-10-15T00:00:00Z", "2026-10-14T00:00:00Z"},
-		`* | bin span=1w _time | table _time`:         {"2026-10-12T00:00:00Z", "2026-10-12T00:00:00Z", "2026-10-12T00:00:00Z"},
+		`* | bin span=1w _time | table _time`:         {"2026-10-11T00:00:00Z", "2026-10-11T00:00:00Z", "2026-10-11T00:00:00Z"},
 		`* | bin span=15m _time AS slot | table slot`: {"2026-10-15T11:45:00Z", "2026-10-15T11:00:00Z", "2026-10-14T23:30:00Z"},
 		`* | bin span=100 bytes | table bytes`:        {"200-300", "0-100", "-100-0"},
 		`* | bin span=0.5 bytes AS b | table b`:       {"250-250.5", "99.5-100", "-1--0.5"},
