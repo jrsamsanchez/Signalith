@@ -96,6 +96,12 @@ func setup(t *testing.T) (*store.Client, *search.Engine, string) {
 
 func syslogTime(t time.Time) string { return t.Local().Format("Jan _2 15:04:05") }
 
+// fluentBitLine is a line read by Fluent Bit, with the "date" it sends:
+// the line's own RFC 3164 time has no zone, so the event takes this one.
+func fluentBitLine(at time.Time, rest string) map[string]any {
+	return map[string]any{"log": syslogTime(at) + " " + rest, "date": float64(at.UnixNano()) / 1e9}
+}
+
 func load(t *testing.T, cl *store.Client, prefix string) {
 	t.Helper()
 	ctx := context.Background()
@@ -104,7 +110,7 @@ func load(t *testing.T, cl *store.Client, prefix string) {
 
 	var linux []map[string]any
 	add := func(ago time.Duration, rest string) {
-		linux = append(linux, map[string]any{"log": syslogTime(now.Add(-ago)) + " web1 " + rest})
+		linux = append(linux, fluentBitLine(now.Add(-ago), "web1 "+rest))
 	}
 	for i := 0; i < 12; i++ {
 		add(time.Duration(i)*time.Minute+5*time.Minute, fmt.Sprintf("sshd[%d]: Failed password for invalid user oracle from 203.0.113.9 port %d ssh2", 100+i, 40100+i))
