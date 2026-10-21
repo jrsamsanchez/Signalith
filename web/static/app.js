@@ -4717,6 +4717,7 @@ function healthPageRender(h) {
   if (noAnswer) alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it answers again.'));
   else if (status === 'unreachable') alerts.push(healthPageAlert('danger', 'circle-alert', 'Signalith can’t reach OpenSearch.', 'Searches and new events fail until it is back.'));
   else if (status === 'refused' && os.problem === 'busy') alerts.push(healthPageAlert('warning', 'triangle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it catches up.'));
+  else if (status === 'refused' && os.problem === 'blocked') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'New events, findings and detection runs fail until this is fixed; searches still work.'));
   else if (status === 'refused') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events fail until this is fixed.'));
   else if (status === 'red') alerts.push(healthPageAlert('danger', 'circle-alert', 'OpenSearch is red.', 'Some data cannot be searched or stored until it recovers.'));
   if (failed) alerts.push(healthPageAlert('warning', 'triangle-alert', `${healthPageNum(failed)} ${failed === 1 ? 'event' : 'events'} could not be stored.`, 'Counted since the server started. OpenSearch rejected them or did not answer.'));
