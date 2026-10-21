@@ -14,6 +14,8 @@
     msiexec /i signalith-0.1.0-x64.msi /qn
   without internet access, with the OpenSearch release's .zip copied here:
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHZIP=C:\path\opensearch-3.9.0-windows-x64.zip
+  behind a proxy the computer's WinHTTP setting does not name:
+    msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHPROXY=proxy.example.com:3128
   or with an OpenSearch of your own instead:
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 -->
@@ -36,9 +38,11 @@
          OPENSEARCHURL=...) instead of the one Signalith installs; an
          existing config is always kept, and the address can be changed on
          the Settings page. OPENSEARCHZIP is the OpenSearch release's .zip
-         to install instead of downloading it. -->
+         to install instead of downloading it, and OPENSEARCHPROXY the
+         proxy to download it through (host:port, no password). -->
     <Property Id="OPENSEARCHURL" Secure="yes" />
     <Property Id="OPENSEARCHZIP" Secure="yes" />
+    <Property Id="OPENSEARCHPROXY" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Signalith" />
@@ -83,7 +87,7 @@
     <!-- install.ps1 runs as SYSTEM after the files are in place, on install,
          upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
     <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot; -OpenSearchProxy &quot;proxy:[OPENSEARCHPROXY]&quot;" />
     <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
     <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith agents','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />

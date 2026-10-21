@@ -84,7 +84,7 @@ func goodFacts(t *testing.T, extra string) *Facts {
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
 		Now:    now,
-		Server: ServerInfo{Name: "siem-1", Version: "v0.9.0", Go: "go1.26.9", OS: "linux", Deployment: DeployLinuxSystemd, DeploymentLabel: "Linux, systemd service"},
+		Server: ServerInfo{Name: "siem-1", Version: "v0.9.0", Go: "go1.26.10", OS: "linux", Deployment: DeployLinuxSystemd, DeploymentLabel: "Linux, systemd service"},
 		Config: c, Uptime: 48 * time.Hour,
 		TLS: &TLSFacts{Mode: "auto", Leaf: &LeafFacts{NotAfter: now.AddDate(0, 0, 300)}, CA: ca, ScopeSetup: "standard",
 			WouldCover: map[string][]string{"standard": {"siem-1", "10.0.0.12"}, "strict": {"siem-1", "siem-1.corp.local", "10.0.0.12", "localhost", "127.0.0.1", "::1"}}},
@@ -193,8 +193,77 @@ func TestHTTPS(t *testing.T) {
 		{name: "auto", state: Good, line: "The web page, the API and agents use HTTPS, with Signalith's own certificate."},
 		{name: "files", set: func(f *Facts) { f.Config.Server.TLS.Mode = "files" }, state: Good,
 			line: "The web page, the API and agents use HTTPS, with your own certificate."},
-		{name: "off on loopback", set: func(f *Facts) { f.Config.Server.TLS.Mode = "off"; f.Config.Server.Listen = "127.0.0.1:8080" }, state: Good,
+		{name: "off on loopback", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "127.0.0.1:7779"
+		}, state: Good,
 			line: "HTTPS is off, but Signalith only answers on this computer (127.0.0.1:8080), so nothing it sends crosses the network."},
+		{name: "off on loopback, agents on the web port", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "off"
+		}, state: Good,
+			line: "HTTPS is off, but Signalith only answers on this computer (127.0.0.1:8080), so nothing it sends crosses the network."},
+		// The web port answers only this computer, but the agent port
+		// answers the network over plain HTTP.
+		{name: "off on loopback, agent port open", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen = "127.0.0.1:8080"
+		}, state: Attention,
+			line: "HTTPS is off, and agents send to 0.0.0.0:7779, which other computers can reach, so agent tokens and events cross the network unencrypted.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Setting != "server.agent_listen" || len(c.Fix.Steps) != 2 || !strings.Contains(c.Fix.Steps[1], "127.0.0.1:7779") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "off on loopback, agents on the open agent port", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", ":7779"
+			f.Runtime.DirectPlainAgents = []string{"web-1 (10.0.0.4)"}
+		}, state: Risk,
+			line: "HTTPS is off, and agents send to :7779, which other computers can reach, so agent tokens and events cross the network unencrypted.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "web-1 (10.0.0.4)") {
+					t.Errorf("%q", c.Details)
+				}
+			}},
+		// A reverse proxy on this computer that takes sign-ins over plain
+		// HTTP and says so.
+		{name: "off on loopback, proxy takes plain HTTP", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.Listen, f.Config.Server.AgentListen = "127.0.0.1:8080", "127.0.0.1:7779"
+			f.Config.Server.TrustedProxies = []string{"127.0.0.1"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+		}, state: Attention,
+			line: "Signalith only answers on this computer, but 1 computer signed in through the reverse proxy over plain HTTP in the last day: 10.0.0.77.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Fix.Steps) != 1 || !strings.Contains(c.Fix.Steps[0], "redirect http:// to https://") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "proxy takes plain HTTP", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.TrustedProxies = []string{"127.0.0.1"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+			f.Runtime.ProxiedPlainAgents = []string{"10.0.0.80"}
+		}, state: Attention,
+			line: "A reverse proxy at 127.0.0.1 serves Signalith, but 1 computer signed in through the reverse proxy over plain HTTP in the last day: 10.0.0.77.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "1 agent sent events through the reverse proxy") || len(c.Fix.Steps) != 2 {
+					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
+		{name: "proxy, direct and proxied sign-ins", set: func(f *Facts) {
+			f.Config.Server.TLS.Mode = "off"
+			f.Config.Server.TrustedProxies = []string{"10.0.0.5"}
+			f.Runtime.DirectPlain = []string{"10.0.0.7"}
+			f.Runtime.ProxiedPlain = []string{"10.0.0.77"}
+		}, state: Attention,
+			line: "A reverse proxy serves HTTPS, but 1 computer signed in to Signalith directly over plain HTTP in the last day: 10.0.0.7.",
+			fix: func(t *testing.T, c *Check) {
+				if len(c.Details) != 1 || !strings.Contains(c.Details[0], "through the reverse proxy") || len(c.Fix.Steps) != 3 {
+					t.Errorf("%q %+v", c.Details, c.Fix)
+				}
+			}},
 		{name: "proxy, direct sign-ins", set: func(f *Facts) {
 			f.Config.Server.TLS.Mode = "off"
 			f.Config.Server.TrustedProxies = []string{"10.0.0.5"}
@@ -585,6 +654,10 @@ func TestOpenSearchTransit(t *testing.T) {
 			f.Config.OpenSearch.URL = "http://opensearch:9200"
 			f.InContainer, f.OpenSearch.SameNetwork = true, true
 		}, state: Attention, line: "Events cross to OpenSearch at opensearch unencrypted. It's on the same Docker network, so they likely stay on this computer."},
+		{name: "same network in Kubernetes", set: func(f *Facts) {
+			f.Config.OpenSearch.URL = "http://opensearch:9200"
+			f.InContainer, f.Kubernetes, f.OpenSearch.SameNetwork = true, true, true
+		}, state: Risk, line: "Events and the OpenSearch password cross the network to opensearch unencrypted."},
 		{name: "http remote", set: func(f *Facts) { f.Config.OpenSearch.URL = "http://10.0.0.20:9200" }, state: Risk,
 			line: "Events and the OpenSearch password cross the network to 10.0.0.20 unencrypted."},
 		{name: "http remote, no password", set: func(f *Facts) {
@@ -1499,6 +1572,23 @@ func TestService(t *testing.T) {
 			line: "Signalith's container runs read-only, without extra privileges or capabilities."},
 		{name: "container missing", set: func(f *Facts) { f.InContainer = true; f.Process.ReadOnlyRoot = false }, state: Attention,
 			line: "Signalith's container is missing protections from the quick start: no capabilities and a read-only system."},
+		// A pod: not told to install a systemd unit, nor to turn off crash
+		// dumps, which its spec can't.
+		{name: "kubernetes", set: func(f *Facts) {
+			f.InContainer, f.Kubernetes = true, true
+			f.Process.Systemd, f.Process.NoCapsAtAll = false, true
+			f.Memory.Known, f.Memory.CoreOff = true, false
+		}, state: Good, line: "Signalith's pod runs read-only, without extra privileges or capabilities."},
+		{name: "kubernetes missing", set: func(f *Facts) {
+			f.InContainer, f.Kubernetes = true, true
+			f.Process.Systemd, f.Process.NoCapsAtAll = false, true
+			f.Process.ReadOnlyRoot = false
+		}, state: Attention, line: "Signalith's pod is missing protections the Helm chart sets up: a read-only system.",
+			fix: func(t *testing.T, c *Check) {
+				if c.Fix.Docs == nil || c.Fix.Docs.File != "kubernetes.md" || len(c.Fix.Commands) != 0 {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
 	})
 }
 

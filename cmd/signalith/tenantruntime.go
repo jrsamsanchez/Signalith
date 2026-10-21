@@ -26,7 +26,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
+	"github.com/jrsamsanchez/signalith/internal/exceptionreqs"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
@@ -489,34 +491,36 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ti.jobs.Go(func() { agentsInv.Run(ctx) })
 
 	srv := &api.Server{
-		Config:     c,
-		Tokens:     tokens,
-		Agents:     agentsInv,
-		Engine:     eng,
-		Pipeline:   pipeline,
-		EventAge:   live,
-		Backend:    cl,
-		Detections: lib,
-		Scheduler:  sched,
-		Findings:   fstore,
-		Assets:     lists,
-		Intel:      indicators,
-		Feeds:      feeds,
-		Notify:     &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
-		Dashboards: boards,
-		Cases:      cstore,
-		Notebooks:  nstore,
-		Respond:    responder,
-		Playbooks:  &api.Playbooks{Manager: pbooks, Runs: pruns},
-		Baselines:  blStore,
-		Ticketing:  &api.Ticketing{Service: tsync},
-		Retention:  ret,
-		Sample:     sampleLoader,
-		SetupGuide: &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
-		Content:    updater,
-		Endpoints:  estore,
-		Background: front.Background,
-		Assistant:  newAssistant(c),
+		Config:            c,
+		Tokens:            tokens,
+		Agents:            agentsInv,
+		Engine:            eng,
+		Pipeline:          pipeline,
+		EventAge:          live,
+		Backend:           cl,
+		Detections:        lib,
+		Scheduler:         sched,
+		Findings:          fstore,
+		Assets:            lists,
+		Intel:             indicators,
+		Feeds:             feeds,
+		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
+		Dashboards:        boards,
+		Cases:             cstore,
+		Notebooks:         nstore,
+		Respond:           responder,
+		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Baselines:         blStore,
+		Ticketing:         &api.Ticketing{Service: tsync},
+		Retention:         ret,
+		Sample:            sampleLoader,
+		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
+		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: prefix},
+		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: prefix},
+		Content:           updater,
+		Endpoints:         estore,
+		Background:        front.Background,
+		Assistant:         newAssistant(c),
 		// The provider's users and sessions: everyone signs in on the
 		// default tenant's server, which hands a tenant's requests on.
 		Users:         front.Users,
@@ -533,6 +537,9 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Version:       front.Version,
 	}
 	srv.Handler()
+	// Rules that escalate late findings follow the due times set on the
+	// Settings page.
+	dispatcher.SLA = func() findings.SLA { return srv.Running().FindingSLA() }
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
 		Notify: notes, Sender: senders, Deliveries: deliveries, Server: server, Log: log,
