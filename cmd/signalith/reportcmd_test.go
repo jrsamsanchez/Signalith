@@ -106,3 +106,10 @@ func TestReportVerifyChecksSignatures(t *testing.T) {
 		t.Errorf("unknown key: %v", err)
 	}
 }
+
+// Text from a report cannot drive the terminal or turn itself around.
+func TestReportTextHidesControls(t *testing.T) {
+	if got := reportText("CASE-1\x1b[2K\rVerified‮"); got != "CASE-1?[2K?Verified?" {
+		t.Errorf("got %q", got)
+	}
+}

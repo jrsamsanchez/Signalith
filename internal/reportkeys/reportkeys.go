@@ -199,6 +199,14 @@ func write(path string, ks []Key) error {
 
 func (f *File) List(context.Context) ([]Key, error) { return Read(f.Path) }
 
+// lockWait is how long a change waits for another one to finish, so a
+// command stopped while it holds the lock does not stop every export.
+var lockWait = 10 * time.Second
+
+const lockPoll = 50 * time.Millisecond
+
+var errBusy = errors.New("another Signalith command is changing the report keys; try again")
+
 // lock holds the file for a change, in this process and against others.
 func (f *File) lock() (func(), error) {
 	f.mu.Lock()

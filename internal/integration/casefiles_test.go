@@ -91,6 +91,17 @@ func TestCaseFilesInOpenSearch(t *testing.T) {
 	if _, err := fs.Stat(ctx, keep.ID, orphan.ID); err != casefiles.ErrNotFound {
 		t.Errorf("unnamed file: %v", err)
 	}
+	// With the cases index emptied, as one deleted and made again would
+	// be, the files stay rather than all going.
+	if err := cs.Delete(ctx, keep.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Do(ctx, "POST", "/"+cs.Index+"/_refresh", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := fs.Prune(ctx, cs.Index, time.Now().Add(2*casefiles.PruneGrace)); err != nil || n != 0 {
+		t.Fatalf("prune with no cases: %d %v", n, err)
+	}
 	if err := fs.Delete(ctx, keep.ID, kf.ID); err != nil {
 		t.Fatal(err)
 	}

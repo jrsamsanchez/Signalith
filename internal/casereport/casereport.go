@@ -389,17 +389,21 @@ func Verify(data []byte, keys Keys, requireSigned bool) (*Result, error) {
 		if err != nil {
 			return res, err
 		}
-		// Carriage returns are left out of the comparison: a browser shows
-		// none, a note pasted from Windows holds them, and a Windows tool
-		// may add them to every line end when it saves the page.
-		if !bytes.Equal(noCR(again), noCR(f.page)) {
+		// Line ends are compared the way a browser reads them, CR LF and
+		// a lone CR each as LF: a note pasted from Windows holds them, and
+		// a Windows tool may add them to every line end when it saves the
+		// page. A CR put anywhere else is an edit, as a browser sees one.
+		if !bytes.Equal(htmlLines(again), htmlLines(f.page)) {
 			return res, changed("its page was edited: it differs from the page its data makes")
 		}
 	}
 	return res, nil
 }
 
-func noCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r"), nil) }
+// htmlLines makes line ends LF, as HTML parsing does.
+func htmlLines(b []byte) []byte {
+	return bytes.ReplaceAll(bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
+}
 
 //go:embed report.html
 var page string

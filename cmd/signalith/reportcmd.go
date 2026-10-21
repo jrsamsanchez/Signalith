@@ -12,8 +12,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
 
 	"github.com/jrsamsanchez/signalith/internal/casereport"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -148,14 +150,14 @@ func reportVerify(args []string, out io.Writer) error {
 		err = fmt.Errorf("%w: it was made for tenant %q, not %q", casereport.ErrChanged, res.Report.Tenant, *tenant)
 	}
 	if errors.Is(err, casereport.ErrChanged) {
-		fmt.Fprintln(out, "CHANGED:", err)
+		fmt.Fprintln(out, "CHANGED:", reportText(err.Error()))
 		return errReportChanged
 	}
 	if err != nil {
 		return err
 	}
 	r := res.Report
-	made := fmt.Sprintf("case %s for tenant %s, made %s by %s", r.Case.ID, r.Tenant, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy)
+	made := reportText(fmt.Sprintf("case %s for tenant %s, made %s by %s", r.Case.ID, r.Tenant, r.Generated.Format("2006-01-02 15:04 UTC"), r.GeneratedBy))
 	switch {
 	case keys != nil && res.KeyStatus == reportkeys.Revoked:
 		fmt.Fprintf(out, "REVOKED: %s, signed with report key %s, which was revoked because it may have leaked: someone who had that key could have made or backdated this report.\n", made, res.KeyID)
@@ -226,4 +228,16 @@ func reportRevoke(args []string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "Report key %s is revoked: reports it signed no longer verify, and it signs no more. Rotate the master key too (signalith secrets rotate-master), so new reports get a new key.\n", fs.Arg(0))
 	return nil
+}
+
+// reportText shows text from a report someone was sent with its control
+// and invisible formatting characters as "?": a terminal escape in a case
+// ID could otherwise redraw the line to say the report verified.
+func reportText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
+			return '?'
+		}
+		return r
+	}, s)
 }

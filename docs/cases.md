@@ -59,7 +59,7 @@ timeline; the case's [report](#exporting-a-report) lists each file's name and SH
   refused for a moment (`429`) and can be tried again.
 - Files are kept in OpenSearch in the `<prefix>_case_files` index. Every
   [Data retention](retention.md) run deletes the files no case names any more: those of
-  deleted cases, and any whose timeline entry is gone. A report lists whether each
+  deleted cases, and any whose timeline entry is gone, once they are a day old. A report lists whether each
   file is still stored as it was attached; a download checks its bytes, and says so in
   an `X-Signalith-Evidence: changed` header if they changed.
 - OpenSearch must accept requests of about 14 MiB to store a 10 MiB file

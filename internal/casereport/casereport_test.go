@@ -80,7 +80,8 @@ func TestUnsignedReportIsIntact(t *testing.T) {
 	}
 	s, _ := r.Sign(nil)
 	js, page := files(t, s)
-	crlf := bytes.ReplaceAll(page, []byte("\n"), []byte("\r\n"))
+	// As a Windows editor saves it: every line end CR LF.
+	crlf := bytes.ReplaceAll(bytes.ReplaceAll(page, []byte("\r\n"), []byte("\n")), []byte("\n"), []byte("\r\n"))
 	for name, b := range map[string][]byte{"json": js, "page": page, "crlf page": crlf} {
 		res, err := Verify(b, nil, false)
 		if err != nil || res.Signed {
@@ -114,6 +115,23 @@ func TestSignedReportVerifies(t *testing.T) {
 	m.Revoke(context.Background(), s.KeyID, "admin", "leaked", time.Now())
 	if res, err := Verify(js, keys, true); err != nil || res.KeyStatus != reportkeys.Revoked {
 		t.Errorf("revoked: %+v %v", res, err)
+	}
+}
+
+// A CR put inside the page's markup changes how a browser reads it, so
+// the page no longer verifies.
+func TestPageCatchesCarriageReturns(t *testing.T) {
+	priv, _, keys := keyring(t)
+	s, _ := sampleReport(t).Sign(priv)
+	_, page := files(t, s)
+	for _, edit := range [][2]string{{"<style>", "<s\rtyle>"}, {`<span class="hash">`, "<s\rpan class=\"hash\">"}, {"color:", "co\rlor:"}} {
+		if !bytes.Contains(page, []byte(edit[0])) {
+			t.Fatalf("the page has no %q", edit[0])
+		}
+		b := bytes.Replace(page, []byte(edit[0]), []byte(edit[1]), 1)
+		if _, err := Verify(b, keys, true); !errors.Is(err, ErrChanged) {
+			t.Errorf("%q: %v", edit[1], err)
+		}
 	}
 }
 

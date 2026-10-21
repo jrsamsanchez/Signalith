@@ -8,23 +8,34 @@ package reportkeys
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-// lockFile waits for an exclusive lock on path, creating it if needed,
-// and returns what releases it. A filesystem without locks gets none:
-// the in-process mutex still holds.
+// lockFile takes an exclusive lock for path, waiting at most lockWait,
+// and returns what releases it. It locks the folder path is in rather
+// than a file of its own: nothing is created, so a command run as root
+// leaves no file the service cannot open, and there is no file a link
+// could be put in place of. A filesystem without locks gets none: the
+// in-process mutex still holds.
 func lockFile(path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(filepath.Dir(path), os.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
+	deadline := time.Now().Add(lockWait)
 	for {
-		err = unix.Flock(int(f.Fd()), unix.LOCK_EX)
-		if !errors.Is(err, unix.EINTR) {
-			break
+		err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
+			if time.Now().Before(deadline) {
+				time.Sleep(lockPoll)
+				continue
+			}
+			err = errBusy
 		}
+		break
 	}
 	if err != nil {
 		f.Close()

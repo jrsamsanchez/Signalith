@@ -153,11 +153,12 @@ func (s *OpenSearch) Delete(ctx context.Context, caseID, id string) error {
 
 // PruneGrace is how old a file must be before Prune deletes it for not
 // being on its case's timeline: an upload stores the file a moment before
-// it names it there.
-const PruneGrace = time.Hour
+// it names it there. It is a day, not minutes, as the file's time is the
+// clock of the server that stored it, and Prune runs on another one.
+const PruneGrace = 24 * time.Hour
 
-// maxPrune caps the files one Prune looks at; the next run sees the rest.
-const maxPrune = 10000
+// prunePage is how many files Prune looks at a time.
+const prunePage = 1000
 
 // Prune deletes the files no case names any more: those of cases that
 // were deleted (by retention or with sample data), and those whose
@@ -166,31 +167,52 @@ const maxPrune = 10000
 // file and naming it), once they are PruneGrace old. caseIndex is the
 // cases index. It returns how many files it deleted.
 func (s *OpenSearch) Prune(ctx context.Context, caseIndex string, now time.Time) (int64, error) {
-	var page struct {
-		Hits struct {
-			Hits []struct {
-				Source File `json:"_source"`
+	var deleted int64
+	var after []any
+	for {
+		var page struct {
+			Hits struct {
+				Hits []struct {
+					Source File  `json:"_source"`
+					Sort   []any `json:"sort"`
+				} `json:"hits"`
 			} `json:"hits"`
-		} `json:"hits"`
+		}
+		q := map[string]any{
+			"size": prunePage, "_source": []string{"id", "case_id"},
+			"query": map[string]any{"range": map[string]any{"added": map[string]any{"lt": now.Add(-PruneGrace).UTC().Format(time.RFC3339Nano)}}},
+			"sort":  []any{map[string]any{"added": "asc"}, map[string]any{"id": "asc"}},
+		}
+		if after != nil {
+			q["search_after"] = after
+		}
+		err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", q, &page)
+		if notFound(err) {
+			return deleted, nil
+		}
+		if err != nil {
+			return deleted, err
+		}
+		hits := page.Hits.Hits
+		if len(hits) == 0 {
+			return deleted, nil
+		}
+		byCase := map[string][]string{}
+		for _, h := range hits {
+			byCase[h.Source.CaseID] = append(byCase[h.Source.CaseID], h.Source.ID)
+		}
+		n, err := s.pruneCases(ctx, caseIndex, byCase)
+		deleted += n
+		if err != nil || len(hits) < prunePage {
+			return deleted, err
+		}
+		after = hits[len(hits)-1].Sort
 	}
-	err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", map[string]any{
-		"size": maxPrune, "_source": []string{"id", "case_id"},
-		"query": map[string]any{"range": map[string]any{"added": map[string]any{"lt": now.Add(-PruneGrace).UTC().Format(time.RFC3339Nano)}}},
-		"sort":  []any{map[string]any{"added": "asc"}},
-	}, &page)
-	if notFound(err) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	byCase := map[string][]string{}
-	for _, h := range page.Hits.Hits {
-		byCase[h.Source.CaseID] = append(byCase[h.Source.CaseID], h.Source.ID)
-	}
-	if len(byCase) == 0 {
-		return 0, nil
-	}
+}
+
+// pruneCases deletes the files of byCase (case ID to file IDs) that their
+// case does not name.
+func (s *OpenSearch) pruneCases(ctx context.Context, caseIndex string, byCase map[string][]string) (int64, error) {
 	ids := make([]string, 0, len(byCase))
 	for id := range byCase {
 		ids = append(ids, id)
@@ -209,6 +231,24 @@ func (s *OpenSearch) Prune(ctx context.Context, caseIndex string, now time.Time)
 	}
 	if err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(caseIndex)+"/_mget?_source_includes=entries.file_id", map[string]any{"ids": ids}, &mget); err != nil {
 		return 0, err
+	}
+	found := false
+	for _, d := range mget.Docs {
+		found = found || d.Found
+	}
+	if !found {
+		// None of the cases is there: keep the files if the cases index
+		// is empty, as one deleted and made again would be, rather than
+		// delete every file. Files of cases all gone wait for a new case.
+		var count struct {
+			Count int64 `json:"count"`
+		}
+		if err := s.Client.Do(ctx, http.MethodGet, "/"+url.PathEscape(caseIndex)+"/_count", nil, &count); err != nil {
+			return 0, err
+		}
+		if count.Count == 0 {
+			return 0, nil
+		}
 	}
 	var gone []string
 	for _, d := range mget.Docs {
@@ -235,7 +275,7 @@ func (s *OpenSearch) Prune(ctx context.Context, caseIndex string, now time.Time)
 	var out struct {
 		Deleted int64 `json:"deleted"`
 	}
-	err = s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_delete_by_query?refresh=true&conflicts=proceed",
+	err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_delete_by_query?refresh=true&conflicts=proceed",
 		map[string]any{"query": map[string]any{"terms": map[string]any{"id": gone}}}, &out)
 	return out.Deleted, err
 }
