@@ -65,6 +65,10 @@ type seqRange struct{ First, Last int64 }
 type agentBatch struct {
 	body        []byte
 	first, last int64
+	// tag is the Fluent Bit tag the batch is sent with; empty sends none.
+	tag string
+	// attacks are the replayed events in it sent as recorded.
+	attacks int64
 }
 
 func (b *agentBatch) events() int64 { return b.last - b.first + 1 }
@@ -128,6 +132,11 @@ type Fleet struct {
 	buffered    atomic.Int64 // bytes of batches queued or being sent
 
 	switchOnError atomic.Bool
+	// corpus is the recorded events a replay sends.
+	corpus *replayCorpus
+	// replayed is whether any phase replayed recorded events, which carry
+	// no sequence numbers to verify.
+	replayed atomic.Bool
 }
 
 func newFleet(run, token string, targets []string, client *http.Client, m *Metrics) *Fleet {
@@ -171,6 +180,18 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 		bufferMB = defaultBufferMB
 	}
 	limit := int64(bufferMB) << 20
+	var share float64
+	if load.Replay != nil {
+		c, err := loadReplayCorpus()
+		if err != nil {
+			// The scenario check loads the corpus first, so this is a
+			// broken build.
+			f.m.Add("agent_replay_errors", 1)
+			return
+		}
+		f.corpus, share = c, load.Replay.share()
+		f.replayed.Store(true)
+	}
 	for i := range load.N {
 		f.agent(i)
 	}
@@ -183,7 +204,14 @@ func (f *Fleet) Run(ctx context.Context, load AgentLoad) {
 			f.m.Add("agent_events_dropped", int64(batch))
 			return
 		}
-		b := f.build(a, batch, load.EventBytes)
+		var b *agentBatch
+		if load.Replay != nil {
+			b = f.buildReplay(a, batch, share)
+			f.m.Add("agent_attack_events_sent", b.attacks)
+		} else {
+			b = f.build(a, batch, load.EventBytes)
+		}
+		f.m.Add("agent_bytes_sent", int64(len(b.body)))
 		f.sent.Add(b.events())
 		f.pending.Add(b.events())
 		f.buffered.Add(int64(len(b.body)))
@@ -269,7 +297,9 @@ func (f *Fleet) deliver(a *simAgent, b *agentBatch) {
 			if ans.Rejected > 0 {
 				f.rejected.Add(int64(ans.Rejected))
 				f.m.Add("agent_events_rejected", int64(ans.Rejected))
-			} else {
+			} else if b.tag == "" {
+				// Replayed events carry no sequence numbers to verify, and
+				// a week of their ranges would fill the generator's memory.
 				a.mu.Lock()
 				a.acked = append(a.acked, seqRange{b.first, b.last})
 				a.mu.Unlock()
@@ -314,6 +344,9 @@ func (f *Fleet) send(a *simAgent, b *agentBatch) (int, ingestAnswer, error) {
 	req.Header.Set("Authorization", "Bearer "+f.token)
 	req.Header.Set("User-Agent", "Fluent-Bit")
 	req.Header.Set("X-Signalith-Agent", a.host)
+	if b.tag != "" {
+		req.Header.Set("X-Signalith-Tag", b.tag)
+	}
 	start := time.Now()
 	resp, err := f.client.Do(req)
 	f.m.Add("ingest_requests", 1)

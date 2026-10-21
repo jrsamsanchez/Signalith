@@ -166,6 +166,30 @@ type AgentLoad struct {
 	// past it new batches are dropped and counted, as Fluent Bit's
 	// Mem_Buf_Limit does. Default 512.
 	BufferMB int `yaml:"buffer_mb"`
+	// Replay sends real recorded Windows and Sysmon events instead of
+	// made-up lines (event_bytes is then ignored); see replay.go.
+	Replay *ReplayLoad `yaml:"replay"`
+}
+
+// ReplayLoad is agents sending the recorded Windows and Sysmon events
+// the detection packs carry as tests (SigmaHQ's regression data and
+// Splunk's attack recordings), each with the agent's name and the time
+// now, tagged as the agent's Windows event log input tags them.
+type ReplayLoad struct {
+	// AttackShare is the share of events sent as recorded, which the
+	// detections match. The rest are the same events with the letters of
+	// their values rotated (ROT13): the same fields, sizes and parsing,
+	// which the detections leave alone, as most of a real fleet's events
+	// are. Default 0.001; 0 sends none as recorded.
+	AttackShare *float64 `yaml:"attack_share"`
+}
+
+// share is the attack share, with its default.
+func (r *ReplayLoad) share() float64 {
+	if r.AttackShare == nil {
+		return defaultAttackShare
+	}
+	return *r.AttackShare
 }
 
 // SyslogLoad is simulated syslog devices.
@@ -368,6 +392,14 @@ func (s *Scenario) validate() error {
 			}
 			if a.N > 0 && a.Rate <= 0 {
 				bad("%s: agents: rate is required", where)
+			}
+			if r := a.Replay; r != nil {
+				if sh := r.share(); sh < 0 || sh > 1 {
+					bad("%s: agents: replay: attack_share must be from 0 to 1", where)
+				}
+				if _, err := loadReplayCorpus(); err != nil {
+					bad("%s: agents: replay: %v", where, err)
+				}
 			}
 		}
 		if sl := p.Syslog; sl != nil {

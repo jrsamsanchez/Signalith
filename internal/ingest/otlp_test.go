@@ -666,3 +666,43 @@ func TestOTLPBatchesSplitMessages(t *testing.T) {
 		t.Errorf("bulk calls = %v", b.calls)
 	}
 }
+
+// The Collector sends a request again after a 503 or an answer it never
+// got: nothing is stored twice, the records of an Event Hub message
+// included, and identical records in one request are each stored.
+func TestOTLPResendIsDuplicate(t *testing.T) {
+	msg := `{"records": [{"time":"2026-10-11T11:58:01Z","category":"Administrative","operationName":"a","tenantId":"t"},{"time":"2026-10-11T11:58:02Z","category":"Administrative","operationName":"b","tenantId":"t"}]}`
+	req := tRes{recs: []tRec{{body: "same line"}, {body: "same line"}, {body: msg}}}
+	for _, isJSON := range []bool{false, true} {
+		body := encodeProto(req)
+		if isJSON {
+			body = encodeJSON(req)
+		}
+		b := &idBulk{}
+		p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+		res, err := p.IngestOTLP(context.Background(), body, isJSON)
+		if err != nil || res.Indexed != 4 || res.Duplicates != 0 {
+			t.Fatalf("json=%v: %+v %v", isJSON, res, err)
+		}
+		seen := map[string]bool{}
+		for _, id := range b.ids {
+			if id == "" || seen[id] {
+				t.Fatalf("json=%v: ids = %q", isJSON, b.ids)
+			}
+			seen[id] = true
+		}
+		res, err = p.IngestOTLP(context.Background(), body, isJSON)
+		if err != nil || res.Duplicates != 4 || res.Rejected != 0 {
+			t.Fatalf("json=%v: resend: %+v %v", isJSON, res, err)
+		}
+		// The same bytes from another agent token are its own records.
+		other := WithOrigin(context.Background(), Origin{Intake: IntakeOTLP, TokenID: "tok-b"})
+		res, err = p.IngestOTLP(other, body, isJSON)
+		if err != nil || res.Duplicates != 0 || res.Indexed != 4 {
+			t.Fatalf("json=%v: other sender: %+v %v", isJSON, res, err)
+		}
+		if res, err = p.IngestOTLP(other, body, isJSON); err != nil || res.Duplicates != 4 {
+			t.Fatalf("json=%v: other sender's resend: %+v %v", isJSON, res, err)
+		}
+	}
+}

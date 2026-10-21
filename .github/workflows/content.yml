@@ -27,6 +27,9 @@ concurrency:
 jobs:
   content:
     runs-on: ubuntu-latest
+    # The content key is a secret of the signing environment, which only
+    # main can use (docs/releasing.md).
+    environment: signing
     permissions:
       contents: write # the content release
     services:

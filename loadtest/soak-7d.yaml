@@ -1,0 +1,34 @@
+# The 7-day soak: real recorded Windows and Sysmon events (the detection
+# packs' recordings, see replay in cmd/signalith-loadgen/replay.go) at
+# about a terabyte a day, for seven days, with 5 analysts searching. The
+# recorded events average about 1.6 KB, so 7,200 a second is about
+# 1 TB of events a day. One event in a thousand is sent as recorded, so
+# the detections that match it fire; the rest are the same events with
+# their text rotated, which they leave alone. For the cloud lab (sudo
+# lab-loadtest soak on signalith-1; see docs/cloud-lab.md), which sends
+# the agents to every server's agent port (it rewrites agent_targets and
+# ca_file in a copy of this file). Its numbers are recorded rather than
+# judged, except events the agents drop.
+name: soak-7d
+description: Real recorded Windows events at about 1 TB a day for 7 days, with 5 analysts searching.
+targets: [https://signalith-1.lab.internal:9000]
+agent_targets: [https://signalith-1.lab.internal:7779]
+ca_file: /root/loadtest/ca.pem
+credentials:
+  admin_file: /root/loadtest/admin.txt
+  token_file: /root/loadtest/token.txt
+drain: 10m
+phases:
+  - {name: warm, for: 10m, agents: {n: 200, rate: 2000, switch_on_error: true, replay: {}}, users: {n: 5, think: 30s, create: true}}
+  - {name: soak, for: 168h, agents: {n: 200, rate: 7200, switch_on_error: true, replay: {}}, users: {n: 5, think: 30s, create: true}}
+criteria:
+  - {name: ingest_events_per_second, phase: warm}
+  - {name: ingest_events_per_second, phase: soak}
+  - {name: ingest_p99_ms, phase: soak}
+  - {name: ingest_error_rate, phase: soak}
+  - {name: search_p95_ms, phase: soak}
+  - {name: page_p95_ms, phase: soak}
+  - {name: events_undelivered}
+  # Agents that drop events mean the servers did not keep up.
+  - {name: events_dropped, max: 0}
+  - {name: generator_lag_ms}

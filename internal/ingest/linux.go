@@ -24,21 +24,40 @@ func parseSyslogLine(line, sourcetype string, now time.Time) Event {
 	if m == nil {
 		return Event{Model: "Other", Fields: map[string]any{"sourcetype": sourcetype, "message": line}}
 	}
-	var ts time.Time
+	var ts, clock time.Time
 	if m[1] != "" {
-		if t, err := time.ParseInLocation("Jan _2 15:04:05", strings.Join(strings.Fields(m[1]), " "), time.Local); err == nil {
-			ts = GuessYear(t, now)
+		// An RFC 3164 time has no zone: the host's clock could be in any
+		// zone, and reading it as this server's would file the event
+		// hours off. The event takes the collector's time instead (Fluent
+		// Bit's date, the Collector's or HEC's time, else when it
+		// arrived), and the time as the host wrote it is kept.
+		if t, err := time.ParseInLocation("Jan _2 15:04:05", strings.Join(strings.Fields(m[1]), " "), time.UTC); err == nil {
+			clock = GuessYear(t, now)
 		}
 	} else if t, ok := parseTime(m[2]); ok {
 		ts = t
 	}
 	ev := ParseProgram(m[3], m[4], m[5], m[6], sourcetype)
 	ev.Fields["message"] = line
+	if !clock.IsZero() {
+		ev.Fields[DeviceClockField] = FormatDeviceClock(clock)
+	}
 	// An audit record has its own, more precise time.
 	if ev.Time.IsZero() {
 		ev.Time = ts
 	}
 	return ev
+}
+
+// DeviceClockField holds the time a line without a zone states, as the
+// sender wrote it (see FormatDeviceClock), when the event takes another
+// time because that one could be in any zone.
+const DeviceClockField = "device_clock"
+
+// FormatDeviceClock writes the wall-clock time of t, which has no zone,
+// as "2006-01-02T15:04:05".
+func FormatDeviceClock(t time.Time) string {
+	return t.Format("2006-01-02T15:04:05")
 }
 
 // GuessYear gives a timestamp that has no year, as in RFC 3164 syslog
