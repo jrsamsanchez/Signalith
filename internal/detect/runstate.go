@@ -518,6 +518,7 @@ func runStateOf(st DetState) RunState {
 		LastThrottled: st.LastThrottled, LastDuplicates: st.LastDuplicates, LastSuppressed: st.LastSuppressed,
 		LastError: st.LastError, ErrorKind: st.ErrorKind, TimedOut: st.TimedOut, Capped: st.Capped,
 		Lag: st.LagMS, LateRuns: st.LateRuns, LastLate: st.LastLate, LateNode: st.LateNode, Node: st.Node,
+		Since: st.Created,
 	}
 	if st.Skipped.Count > 0 {
 		sk := st.Skipped

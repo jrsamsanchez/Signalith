@@ -21,6 +21,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -185,9 +186,20 @@ type Snapshot struct {
 	Detections  []Detection
 	SchedulerOn bool
 	// Checks is nil when endpoints are off; Hosts is how many hosts run
-	// osquery.
-	Checks []CheckStat
-	Hosts  int
+	// osquery, Platforms how many of them run each platform, and
+	// HostsSeen the oldest and newest time one of them last reported.
+	Checks    []CheckStat
+	Hosts     int
+	Platforms map[string]int
+	HostsSeen [2]time.Time
+	// Computers are the computers that should send events: those whose
+	// agent sent in the DataWindow and those that run osquery, by
+	// ShortHost name. DataHosts are, for each data model of HostModels,
+	// the hosts (by ShortHost name) that sent its events in the
+	// DataWindow; HostsErr says why they are unknown.
+	Computers []string
+	DataHosts map[string]map[string]bool
+	HostsErr  string
 
 	Vulns     *Vulns
 	Findings  *Findings
@@ -211,6 +223,24 @@ type Snapshot struct {
 
 // DataWindow is how far back event data counts as arriving.
 const DataWindow = 7 * 24 * time.Hour
+
+// HostModels are the data models every computer that sends events
+// should send: an auditor asks whether all of them do, not whether one
+// does.
+var HostModels = []string{"Authentication", "Endpoint", "Script"}
+
+// ShortHost is how a computer's name is compared across sources: lower
+// case, without its domain. An IP address stays whole.
+func ShortHost(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if _, err := netip.ParseAddr(s); err == nil {
+		return s
+	}
+	if i := strings.IndexByte(s, '.'); i > 0 {
+		s = s[:i]
+	}
+	return s
+}
 
 // DataSeen is the events of one data model.
 type DataSeen struct {

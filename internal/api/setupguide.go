@@ -35,6 +35,8 @@ type setupStep struct {
 	Unknown bool `json:"unknown,omitempty"`
 	// Count is a number the step shows: the security checks at risk.
 	Count int `json:"count,omitempty"`
+	// Attention is the security checks that need attention.
+	Attention int `json:"attention,omitempty"`
 }
 
 type setupGuideView struct {
@@ -135,7 +137,8 @@ func (s *Server) setupSteps(ctx context.Context, p *principal, c setupguide.Choi
 		if p.runsServer() {
 			sec := setupStep{ID: "security", Unknown: true}
 			if rep := s.security().Report(); rep != nil {
-				sec.Done, sec.Unknown, sec.Count = rep.Summary.Risk == 0, false, rep.Summary.Risk
+				sum := rep.Summary
+				sec.Done, sec.Unknown, sec.Count, sec.Attention = sum.Risk == 0 && sum.Attention == 0, false, sum.Risk, sum.Attention
 			}
 			out = append(out, sec)
 			out = append(out, setupStep{ID: "ai", Optional: true, Done: s.conf().Assistant.Provider != "" || opened("ai")})

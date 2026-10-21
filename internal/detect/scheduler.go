@@ -304,6 +304,9 @@ type RunState struct {
 	Manual *ManualRun `json:"manual,omitempty"`
 	// StatusError says the run state could not be read just now.
 	StatusError string `json:"status_error,omitempty"`
+	// Since is when the rule was first scheduled: turned on, for a rule
+	// that came off.
+	Since time.Time `json:"since,omitzero"`
 
 	queued bool // waiting for a worker
 }

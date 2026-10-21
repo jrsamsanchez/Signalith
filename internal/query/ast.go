@@ -88,6 +88,11 @@ func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")"
 func (e *Not) String() string { return "NOT " + e.Child.String() }
 func (e *Compare) String() string {
 	v := FormatValue(e.Value)
+	if e.Ref {
+		// It parsed as a bare name, so it reads back as one even when
+		// FormatValue would quote it, as a field named by is.
+		v = e.Value
+	}
 	if e.lit && !e.Ref && v == e.Value && isEvalIdent(v) && e.Op != "=~" {
 		v = quote(v) // bare, it would name a field
 	}

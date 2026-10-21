@@ -15,9 +15,11 @@
 package agentproto
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"regexp"
 	"strings"
 )
@@ -156,7 +158,16 @@ type Status struct {
 	ConfigError string `json:"config_error,omitempty"`
 	// Components are the collectors it runs.
 	Components []Component `json:"components"`
+	// CAs are the SHA-256 fingerprints (lowercase hex) of the
+	// certificate authorities in its ca.pem, at most MaxCAs; none from
+	// agents before they reported them.
+	CAs []string `json:"ca_sha256,omitempty"`
 }
+
+// TooManyCAs stands, last in Status.CAs, for the certificate
+// authorities past MaxCAs in an agent's ca.pem: no certificate has this
+// fingerprint, so the server never knows it.
+var TooManyCAs = strings.Repeat("0", 64)
 
 // Component states.
 const (
@@ -189,6 +200,7 @@ type Component struct {
 const (
 	MaxStatusBytes  = 64 << 10
 	MaxComponents   = 8
+	MaxCAs          = 8
 	MaxTextLen      = 2000
 	maxShortTextLen = 128
 )
@@ -216,6 +228,14 @@ func (s Status) Clean() Status {
 	}
 	if revisionHex.MatchString(s.Revision) {
 		out.Revision = s.Revision
+	}
+	for _, fp := range s.CAs {
+		if len(out.CAs) == MaxCAs {
+			break
+		}
+		if fp = strings.ToLower(fp); sha256Hex.MatchString(fp) {
+			out.CAs = append(out.CAs, fp)
+		}
 	}
 	for _, c := range s.Components {
 		if len(out.Components) == MaxComponents {
@@ -262,11 +282,87 @@ func cut(v string) string {
 	return ""
 }
 
-// RevisionOf names a configuration by what it holds: the first 32 hex
-// digits of the SHA-256 of its JSON with an empty Revision.
+// RevisionOf names a configuration by what it holds: revisionSum of the
+// JSON the server sends (Encode) with an empty Revision. An agent checks
+// it over the bytes it got (RawRevision), so fields it doesn't know yet
+// count too.
 func RevisionOf(c Config) string {
 	c.Revision = ""
+	return revisionSum(Encode(c))
+}
+
+// Encode is c as the server sends it (its writeJSON, without the final
+// new line): compact JSON, with <, > and & as they are.
+func Encode(c Config) []byte {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(c)
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+}
+
+// LegacyRevisionOf is how servers before RawRevision named a
+// configuration: the sum of json.Marshal with an empty Revision, which
+// escapes <, > and & unlike the JSON they sent. An agent accepts it from
+// such a server. It matches only while every Config field the server
+// doesn't know is empty and omitempty.
+func LegacyRevisionOf(c Config) string {
+	c.Revision = ""
 	b, _ := json.Marshal(c)
+	return revisionSum(b)
+}
+
+// RawRevision is the revision of b, a configuration's JSON as received:
+// revisionSum of b with what follows its top-level "revision" key (the
+// colon, any white space and the string) made `:""`, and the white space
+// around b trimmed. It is RevisionOf of what the
+// server encoded, whatever fields the agent knows. ok is false when b is
+// not one JSON object with exactly one top-level "revision" string.
+func RawRevision(b []byte) (rev string, ok bool) {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return "", false
+	}
+	start, end := int64(-1), int64(-1)
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return "", false
+		}
+		if t == "revision" {
+			if start >= 0 {
+				return "", false
+			}
+			// From the end of the key to the end of its value: the
+			// colon, any white space and the string.
+			start = dec.InputOffset()
+			v, err := dec.Token()
+			if _, isString := v.(string); err != nil || !isString {
+				return "", false
+			}
+			end = dec.InputOffset()
+			continue
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return "", false
+		}
+	}
+	if t, err := dec.Token(); err != nil || t != json.Delim('}') || start < 0 {
+		return "", false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return "", false
+	}
+	blank := make([]byte, 0, len(b))
+	blank = append(blank, b[:start]...)
+	blank = append(blank, `:""`...)
+	blank = append(blank, b[end:]...)
+	return revisionSum(bytes.TrimSpace(blank)), true
+}
+
+// revisionSum is the first 32 hex digits of the SHA-256 of b.
+func revisionSum(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:16])
 }

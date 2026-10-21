@@ -188,7 +188,7 @@ var capabilities = []Capability{
 	// Checking hosts.
 	{ID: "config-checks", Name: "Configuration checks", Page: "endpoints",
 		Description: "osquery checks each host's settings against hardening rules based on the SCAP Security Guide.",
-		Fix:         "Enroll hosts with osquery (Add data > osquery) and fix the failing checks on the Endpoints page.",
+		Fix:         "Enroll hosts with osquery (Add data > osquery) and fix the failing checks on the Endpoints page. Where no built-in check covers your hosts' platform, show the setting another way.",
 		eval:        evalChecks},
 	{ID: "vuln-scan", Name: "Vulnerability scanning", Page: "vulns",
 		Description: "Scheduled Nmap scans find hosts, open ports and known vulnerabilities (CVEs).",
@@ -375,8 +375,39 @@ func dataCap(id, name, desc, fix string, models ...string) Capability {
 			if !last.IsZero() {
 				d += fmt.Sprintf(", the latest %s", ago(s.Now.Sub(last)))
 			}
+			if slices.ContainsFunc(models, func(m string) bool { return slices.Contains(HostModels, m) }) {
+				return hostCoverage(s, models, d)
+			}
 			return Met, d + "."
 		}}
+}
+
+// hostCoverage rates data every computer should send by how many of the
+// computers Signalith knows sent it: one host sending is not all of them.
+func hostCoverage(s *Snapshot, models []string, d string) (Status, string) {
+	if s.HostsErr != "" {
+		return Partial, d + ". Which computers sent them could not be read: " + s.HostsErr + "."
+	}
+	if len(s.Computers) == 0 {
+		return Met, d + ". No computer runs the agent or osquery, so Signalith cannot tell whether every computer sends them."
+	}
+	var missing []string
+	for _, c := range s.Computers {
+		if !slices.ContainsFunc(models, func(m string) bool { return s.DataHosts[m][c] }) {
+			missing = append(missing, c)
+		}
+	}
+	n := len(s.Computers)
+	if len(missing) == 0 {
+		return Met, fmt.Sprintf("%s, from all %s %s that %s the agent or osquery.", d, count(int64(n)), plural(n, "computer", "computers"), plural(n, "runs", "run"))
+	}
+	sort.Strings(missing)
+	names := strings.Join(missing[:min(len(missing), MaxHosts)], ", ")
+	if more := len(missing) - MaxHosts; more > 0 {
+		names += fmt.Sprintf(" and %s more", count(int64(more)))
+	}
+	return Partial, fmt.Sprintf("%s, from %s of the %s %s that %s the agent or osquery; none from %s.", d,
+		count(int64(n-len(missing))), count(int64(n)), plural(n, "computer", "computers"), plural(n, "runs", "run"), names)
 }
 
 func detectCap(id, name, desc string, match func(Detection) bool) Capability {
@@ -456,10 +487,17 @@ func evalChecks(s *Snapshot, c *controlCtx) (Status, string) {
 		return Missing, "Endpoints are off, so no configuration checks run."
 	}
 	ev := &CheckEvidence{Failing: []CheckRef{}}
+	// covers are the platforms the matching checks are for; only those
+	// with a host that runs them count.
+	covers := map[string]bool{}
 	for _, ch := range s.Checks {
 		if c != nil && !slices.ContainsFunc(c.control.NIST, func(n string) bool {
 			return slices.ContainsFunc(ch.Refs, func(r string) bool { return refMatches(n, r) })
 		}) {
+			continue
+		}
+		covers[ch.Platform] = true
+		if s.Platforms != nil && s.Platforms[ch.Platform] == 0 {
 			continue
 		}
 		ev.Checks++
@@ -484,19 +522,71 @@ func evalChecks(s *Snapshot, c *controlCtx) (Status, string) {
 	if c != nil {
 		c.checks = ev
 	}
+	// The hosts no matching check is for are not checked at all.
+	var uncovered []string
+	for _, p := range sortedKeys(s.Platforms) {
+		if !covers[p] && s.Platforms[p] > 0 {
+			uncovered = append(uncovered, fmt.Sprintf("%d %s %s", s.Platforms[p], PlatformName(p), plural(s.Platforms[p], "host", "hosts")))
+		}
+	}
+	more := ""
+	if ev.Error > 0 {
+		more += fmt.Sprintf(" %s %s could not be read on the host.", count(int64(ev.Error)), plural(ev.Error, "result", "results"))
+	}
+	if !s.HostsSeen[0].IsZero() {
+		more += fmt.Sprintf(" Hosts last reported between %s and %s.", ago(s.Now.Sub(s.HostsSeen[0])), ago(s.Now.Sub(s.HostsSeen[1])))
+	}
+	seen := more
+	if len(uncovered) > 0 {
+		more = " No check covers your " + strings.Join(uncovered, " or ") + "." + more
+	}
 	switch {
 	case s.Hosts == 0:
 		return Missing, "No host runs osquery yet, so no configuration checks run."
-	case ev.Checks == 0:
+	case len(covers) == 0:
 		return Missing, "No configuration check covers this yet."
+	case ev.Checks == 0:
+		var on []string
+		for _, p := range sortedKeys(covers) {
+			on = append(on, PlatformName(p))
+		}
+		return Missing, fmt.Sprintf("The checks for this run only on %s, and none of your hosts does.%s", strings.Join(on, " and "), seen)
+	case ev.Pass+ev.Fail == 0 && ev.Error > 0 && ev.Pending == 0:
+		return Missing, fmt.Sprintf("%d %s apply, but no host could run %s.%s", ev.Checks, plural(ev.Checks, "check", "checks"), plural(ev.Checks, "it", "them"), more)
 	case ev.Pass+ev.Fail == 0:
-		return Missing, fmt.Sprintf("%d %s apply, but no host has reported results yet.", ev.Checks, plural(ev.Checks, "check", "checks"))
+		return Missing, fmt.Sprintf("%d %s apply, but no host has reported results yet.%s", ev.Checks, plural(ev.Checks, "check", "checks"), more)
 	case ev.Fail > 0:
-		return Partial, fmt.Sprintf("%d %s: %s %s and %s %s across %d %s.", ev.Checks, plural(ev.Checks, "check", "checks"),
-			count(int64(ev.Pass)), plural(ev.Pass, "pass", "passes"), count(int64(ev.Fail)), plural(ev.Fail, "failure", "failures"), s.Hosts, plural(s.Hosts, "host", "hosts"))
+		return Partial, fmt.Sprintf("%d %s: %s %s and %s %s across %d %s.%s", ev.Checks, plural(ev.Checks, "check", "checks"),
+			count(int64(ev.Pass)), plural(ev.Pass, "pass", "passes"), count(int64(ev.Fail)), plural(ev.Fail, "failure", "failures"), s.Hosts, plural(s.Hosts, "host", "hosts"), more)
 	}
-	return Met, fmt.Sprintf("%d %s pass on every host that reported (%s %s across %d %s).", ev.Checks, plural(ev.Checks, "check", "checks"),
-		count(int64(ev.Pass)), plural(ev.Pass, "result", "results"), s.Hosts, plural(s.Hosts, "host", "hosts"))
+	st := Met
+	if len(uncovered) > 0 {
+		st = Partial
+	}
+	return st, fmt.Sprintf("%d %s pass on every host that reported (%s %s across %d %s).%s", ev.Checks, plural(ev.Checks, "check", "checks"),
+		count(int64(ev.Pass)), plural(ev.Pass, "result", "results"), s.Hosts, plural(s.Hosts, "host", "hosts"), more)
+}
+
+// PlatformName is how the report names an osquery platform.
+func PlatformName(p string) string {
+	switch p {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	}
+	return p
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func evalRetention(s *Snapshot, days int, archiveCounts bool) (Status, string) {

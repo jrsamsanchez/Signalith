@@ -26,7 +26,9 @@
            UpgradeCode="6B2F3C1E-8E0A-4C7B-9A57-3D2E5B1F0C42" Scope="perMachine"
            InstallerVersion="500" Compressed="yes">
     <SummaryInformation Description="Signalith $(var.Version), an open-source SIEM" />
-    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Signalith is already installed. To go back to an older one, uninstall this one first; your configuration and data in C:\ProgramData\Signalith are kept." />
+    <!-- afterInstallInitialize: the previous version is removed inside the
+         same transaction, so a failed upgrade puts it back. -->
+    <MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of Signalith is already installed. To go back to an older one, uninstall this one first; your configuration and data in C:\ProgramData\Signalith are kept." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="signalith.ico" SourceFile="signalith.ico" />
@@ -63,6 +65,8 @@
       </Component>
       <Component Bitness="always64">
         <File Id="msi_setup.ps1" Source="msi-setup.ps1" KeyPath="yes" />
+        <!-- What msi-setup.ps1 notes for a rollback. -->
+        <RemoveFile Id="SetupBefore" Name="setup-before.json" On="uninstall" />
       </Component>
       <Component Bitness="always64">
         <File Id="LICENSE.txt" Source="..\..\..\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
@@ -88,6 +92,12 @@
          upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
     <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot; -OpenSearchProxy &quot;proxy:[OPENSEARCHPROXY]&quot;" />
+    <!-- When the install fails: undoes what SetUpSignalith set up that was
+         not there before, or, on an upgrade (WIX_UPGRADE_DETECTED), sets up
+         the previous version's service again
+         (C:\Windows\Temp\signalith-rollback.log). -->
+    <CustomAction Id="RollBackSetUp" Directory="INSTALLFOLDER" Execute="rollback" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -Rollback -Upgrade &quot;up:[WIX_UPGRADE_DETECTED]&quot;" />
     <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
     <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith agents','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
@@ -96,8 +106,9 @@
          C:\ProgramData\SignalithOpenSearch. Output in
          C:\Windows\Temp\signalith-uninstall.log. -->
     <CustomAction Id="RemoveOpenSearch" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;&amp; '[INSTALLFOLDER]signalith.exe' opensearch remove *&gt; (Join-Path $env:windir 'Temp\signalith-uninstall.log')&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;&amp; '[INSTALLFOLDER]signalith.exe' opensearch remove -home '[INSTALLFOLDER]OpenSearch' *&gt; (Join-Path $env:windir 'Temp\signalith-uninstall.log')&quot;" />
     <InstallExecuteSequence>
+      <Custom Action="RollBackSetUp" Before="SetUpSignalith" Condition="NOT REMOVE" />
       <Custom Action="SetUpSignalith" Before="InstallFinalize" Condition="NOT REMOVE" />
       <Custom Action="RemoveFirewallRules" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RemoveOpenSearch" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />

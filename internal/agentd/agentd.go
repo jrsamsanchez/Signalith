@@ -15,8 +15,10 @@ package agentd
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -30,6 +32,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -397,7 +400,31 @@ func (a *Agent) sync(ctx context.Context) error {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return fmt.Errorf("the configuration is not valid JSON: %w", err)
 	}
+	cfg.Revision = a.revisionOf(b, &cfg)
 	return a.apply(&cfg, resp.TLS)
+}
+
+// revisionOf is the revision the agent keeps for cfg, read from b: the
+// server's claim only when it holds, never taken on its word, since a
+// stale or forged one could make the agent skip a configuration or
+// report one it doesn't run. The claim holds when it is the sum of the
+// bytes received (RawRevision), which counts fields this agent doesn't
+// know yet, or how an older server summed it (LegacyRevisionOf). Either
+// way the agent sends back what the server's ETag holds, so it doesn't
+// fetch the whole configuration again on every poll. Otherwise the
+// agent keeps its own sum of the bytes.
+func (a *Agent) revisionOf(b []byte, cfg *agentproto.Config) string {
+	raw, ok := agentproto.RawRevision(b)
+	if cfg.Revision != "" && (ok && raw == cfg.Revision || agentproto.LegacyRevisionOf(*cfg) == cfg.Revision) {
+		return cfg.Revision
+	}
+	if !ok {
+		raw = agentproto.RevisionOf(*cfg)
+	}
+	if cfg.Revision != "" {
+		a.Log.Warn("the configuration's revision doesn't match what it holds; the agent's own is kept", "claimed", cfg.Revision, "revision", raw)
+	}
+	return raw
 }
 
 // apply puts a new configuration in place: the certificate authority, then
@@ -475,6 +502,7 @@ func (a *Agent) writeCA(ca string, conn *tls.ConnectionState) error {
 	pool := x509.NewCertPool()
 	rest := []byte(ca)
 	n := 0
+	distinct := map[[sha256.Size]byte]bool{}
 	for {
 		var blk *pem.Block
 		blk, rest = pem.Decode(rest)
@@ -489,10 +517,17 @@ func (a *Agent) writeCA(ca string, conn *tls.ConnectionState) error {
 			return fmt.Errorf("the certificate authority the server handed out is not valid: %w", err)
 		}
 		pool.AddCert(c)
+		distinct[sha256.Sum256(blk.Bytes)] = true
 		n++
 	}
 	if n == 0 {
 		return errors.New("the certificate authority the server handed out holds no certificate")
+	}
+	// The agent reports at most MaxCAs of them (caFingerprints): one more
+	// could hide behind the others.
+	if len(distinct) > agentproto.MaxCAs {
+		a.Log.Warn("the server handed out more certificate authorities than an agent keeps; ca.pem is kept as it was", "count", len(distinct), "max", agentproto.MaxCAs)
+		return fmt.Errorf("the server handed out %d certificate authorities, more than the %d an agent keeps, so ca.pem was kept as it was", len(distinct), agentproto.MaxCAs)
 	}
 	if conn != nil && len(conn.PeerCertificates) > 0 {
 		inter := x509.NewCertPool()
@@ -620,8 +655,43 @@ func (a *Agent) Status() agentproto.Status {
 	return agentproto.Status{
 		Version: a.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, System: systemName(),
 		Revision: rev, Started: a.started.UTC().Format(time.RFC3339), ConfigError: cerr,
-		Components: comps,
+		Components: comps, CAs: a.caFingerprints(),
 	}
+}
+
+// caFingerprints are the SHA-256 fingerprints (lowercase hex) of the
+// certificate authorities the agent trusts now (its ca.pem), for the
+// server to tell whether it took a new one; nil when it has none.
+func (a *Agent) caFingerprints() []string {
+	b, err := os.ReadFile(a.Paths.caFile())
+	if err != nil {
+		return nil
+	}
+	// Each once, before the cap, so copies of one can't push another out
+	// of the report.
+	var out []string
+	for {
+		var blk *pem.Block
+		blk, b = pem.Decode(b)
+		if blk == nil {
+			break
+		}
+		if blk.Type != "CERTIFICATE" {
+			continue
+		}
+		sum := sha256.Sum256(blk.Bytes)
+		if fp := hex.EncodeToString(sum[:]); !slices.Contains(out, fp) {
+			out = append(out, fp)
+		}
+	}
+	if len(out) > agentproto.MaxCAs {
+		// writeCA never keeps that many: someone else wrote this file.
+		// The last slot says so with a fingerprint no certificate has,
+		// which the server never knows, so the agent is flagged.
+		a.Log.Warn("ca.pem holds more certificate authorities than the agent reports", "count", len(out), "max", agentproto.MaxCAs)
+		out = append(out[:agentproto.MaxCAs-1], agentproto.TooManyCAs)
+	}
+	return out
 }
 
 // osqueryComponent is osquery as the agent reports it, nil when the

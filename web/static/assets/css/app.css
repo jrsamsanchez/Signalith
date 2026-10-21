@@ -4976,6 +4976,7 @@ body:has(:is(#page-settings, #page-sso, #page-baselines).active .st-savebar:not(
 #page-detections .dx-pack__head .dx-meta { display: inline; margin: 0; }
 #page-detections .dx-pack__desc { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
 #page-detections .dx-pack__credit { color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
+#page-detections .dx-pack__note { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.45; }
 #page-detections .dx-pack__credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 #page-detections .dx-pack__actions { flex: 0 1 auto; margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 #page-detections .dx-more { display: flex; justify-content: center; padding: 10px; box-shadow: inset 0 1px 0 var(--line-subtle); }

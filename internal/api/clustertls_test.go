@@ -12,12 +12,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -61,6 +63,12 @@ func (f *fakeClusterTLS) Publish(_ context.Context, node, fp, _ string) (*shared
 	defer f.mu.Unlock()
 	f.asked = append(f.asked, node, fp)
 	return &shared.Request{ID: "rq_1"}, nil
+}
+func (f *fakeClusterTLS) RotateCA(_ context.Context, step, fp, _ string) (*shared.Request, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.asked = append(f.asked, step, fp)
+	return &shared.Request{ID: "rq_2"}, nil
 }
 
 // tlsCluster is two servers with their certificates' heartbeats.
@@ -120,6 +128,9 @@ func TestClusterTLSIsForAdmins(t *testing.T) {
 		}
 		if code, _ := doAs(t, ts, user, "role-password", "POST", "/api/cluster/tls/choose", `{"ca_sha256":"`+a.Fingerprint()+`"}`); code != http.StatusForbidden {
 			t.Errorf("%s POST: %d", user, code)
+		}
+		if code, _ := doAs(t, ts, user, "role-password", "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`); code != http.StatusForbidden {
+			t.Errorf("%s rotate-ca: %d", user, code)
 		}
 	}
 }
@@ -225,6 +236,56 @@ func TestClusterTLSChoose(t *testing.T) {
 	}
 }
 
+// Replacing the cluster's certificate authority: each step asks the
+// server that runs the jobs, and switch and retire wait for every server.
+func TestClusterTLSRotate(t *testing.T) {
+	a, b := newCertManager(t), newCertManager(t)
+	ct := &fakeClusterTLS{}
+	ts, cl := newClusterTLSServer(t, ct, a, b)
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`, true); code != http.StatusConflict {
+		t.Errorf("nothing published: %d %v", code, out)
+	}
+	ct.body = &clustertls.Body{CACertPEM: caPEM(b), CASHA256: b.Fingerprint(), PublishedBy: "siem-b", PublishedAt: time.Now()}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"bogus"}`, true); code != http.StatusBadRequest {
+		t.Errorf("bogus: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict {
+		t.Errorf("switch with nothing prepared: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"abort"}`, true); code != http.StatusConflict {
+		t.Errorf("abort with nothing prepared: %d %v", code, out)
+	}
+	code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"prepare"}`, true)
+	if code != http.StatusAccepted || out["request_id"] != "rq_2" || len(ct.asked) != 2 || ct.asked[0] != "prepare" || ct.asked[1] != b.Fingerprint() {
+		t.Fatalf("prepare %d %v %v", code, out, ct.asked)
+	}
+	// Prepared: siem-b uses the cluster's but doesn't hand out the next.
+	ct.mu.Lock()
+	ct.body.Next = &clustertls.OtherCA{CACertPEM: caPEM(a), CASHA256: a.Fingerprint(), By: "admin", At: time.Now()}
+	ct.mu.Unlock()
+	cl.b.Cluster = true
+	_, out = do(t, ts, "GET", "/api/cluster/tls", "", true)
+	rot, _ := out["rotation"].(map[string]any)
+	if rot == nil || rot["state"] != "prepared" || len(rot["blockers"].([]any)) != 1 {
+		t.Fatalf("rotation %v", out["rotation"])
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusConflict ||
+		!strings.Contains(out["error"].(string), "siem-b doesn't hand out") {
+		t.Errorf("switch before siem-b is ready: %d %v", code, out)
+	}
+	// Abort is never held back by the servers.
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"abort"}`, true); code != http.StatusAccepted || out["ca_sha256"] != a.Fingerprint() {
+		t.Errorf("abort: %d %v", code, out)
+	}
+	cl.b.NextCASHA256 = a.Fingerprint()
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"switch"}`, true); code != http.StatusAccepted || out["ca_sha256"] != a.Fingerprint() {
+		t.Errorf("switch: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/cluster/tls/rotate-ca", `{"step":"retire"}`, true); code != http.StatusConflict {
+		t.Errorf("retire with nothing switched: %d %v", code, out)
+	}
+}
+
 // A server using the cluster's certificate authority serves it to agents
 // and browsers, says so, and refuses a change of its own.
 func TestClusterCAOnSecurityPage(t *testing.T) {
@@ -287,11 +348,78 @@ func TestSecurityWithoutClusterCA(t *testing.T) {
 func TestAgentOfRetiredCA(t *testing.T) {
 	s := &Server{}
 	a := agentinv.Agent{Key: "k", CA: []string{"aaaa"}, LastSeen: time.Now(), NeedsConfig: true, Reason: agentinv.ReasonRetiredCA}
-	if v := s.agentFlags(a, "bbbb", "", time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "retired_ca" {
+	if v := s.agentFlags(a, "bbbb", "", nil, time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "retired_ca" {
 		t.Errorf("retired: %v", v.NeedsConfig)
 	}
 	a.NeedsConfig, a.Reason = false, ""
-	if v := s.agentFlags(a, "bbbb", "", time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "ca" {
+	if v := s.agentFlags(a, "bbbb", "", nil, time.Now()); len(v.NeedsConfig) != 1 || v.NeedsConfig[0] != "ca" {
 		t.Errorf("other CA: %v", v.NeedsConfig)
+	}
+}
+
+// A Signalith Agent whose ca.pem holds a certificate authority the
+// servers never handed out is flagged; the one in use and the next are
+// fine, however the fingerprint is written.
+func TestAgentOfUnknownCA(t *testing.T) {
+	m, other := newCertManager(t), newCertManager(t)
+	s := &Server{TLS: m}
+	cur := strings.ToLower(strings.ReplaceAll(m.Fingerprint(), ":", ""))
+	a := agentinv.Agent{Key: "k", LastSeen: time.Now(), Managed: &agentinv.ManagedStatus{Status: agentproto.Status{CAs: []string{cur}}}}
+	flags := func() []string { return s.agentFlags(a, "", "", s.knownCAs(), time.Now()).NeedsConfig }
+	if got := flags(); len(got) != 0 {
+		t.Errorf("the CA in use: %v", got)
+	}
+	if err := m.Prepare("standard"); err != nil {
+		t.Fatal(err)
+	}
+	a.Managed.CAs = []string{cur, strings.ToLower(strings.ReplaceAll(m.Next().Fingerprint, ":", ""))}
+	if got := flags(); len(got) != 0 {
+		t.Errorf("the CA in use and the next: %v", got)
+	}
+	a.Managed.CAs = append(a.Managed.CAs, strings.ToLower(strings.ReplaceAll(other.Fingerprint(), ":", "")))
+	if got := flags(); !slices.Equal(got, []string{"unknown_ca"}) {
+		t.Errorf("an unknown CA: %v", got)
+	}
+	// An agent that doesn't report its CAs, and a server with none.
+	a.Managed.CAs = nil
+	if got := flags(); len(got) != 0 {
+		t.Errorf("no CAs reported: %v", got)
+	}
+	a.Managed.CAs = []string{"00"}
+	if got := (&Server{}).agentFlags(a, "", "", (&Server{}).knownCAs(), time.Now()).NeedsConfig; len(got) != 0 {
+		t.Errorf("no TLS: %v", got)
+	}
+}
+
+// The certificate authorities agents may trust are the whole cluster's,
+// not only the viewing server's: another server's own, the cluster's
+// next and previous, and the ones retired are not unknown.
+func TestKnownCAsAcrossTheCluster(t *testing.T) {
+	a, b, retired, stranger := newCertManager(t), newCertManager(t), newCertManager(t), newCertManager(t)
+	cur, next := strings.Repeat("A1", 32), strings.Repeat("B2", 32)
+	ct := &fakeClusterTLS{body: &clustertls.Body{CASHA256: cur, Next: &clustertls.OtherCA{CASHA256: next},
+		Retired: []clustertls.RetiredCA{{CACertPEM: caPEM(retired), RetiredAt: time.Now()}}}}
+	// siem-b (this server) keeps a CA of its own; siem-a's certificate
+	// comes from its own too, which only its heartbeat says.
+	cl := &tlsCluster{a: clustertls.StatusOf(a, "", ""), b: clustertls.StatusOf(b, "", "")}
+	s := &Server{TLS: b, Cluster: cl, ClusterTLS: ct}
+	hexOf := func(fp string) string { return strings.ToLower(strings.ReplaceAll(fp, ":", "")) }
+	agent := agentinv.Agent{Key: "k", LastSeen: time.Now(), Managed: &agentinv.ManagedStatus{Status: agentproto.Status{
+		CAs: []string{hexOf(a.Fingerprint()), hexOf(b.Fingerprint()), hexOf(cur), hexOf(next), hexOf(retired.Fingerprint())}}}}
+	flags := func() []string { return s.agentFlags(agent, "", "", s.knownCAs(), time.Now()).NeedsConfig }
+	if got := flags(); len(got) != 0 {
+		t.Errorf("known CAs flagged: %v", got)
+	}
+	// After a switch the previous one is still known.
+	ct.mu.Lock()
+	ct.body = &clustertls.Body{CASHA256: next, Previous: &clustertls.OtherCA{CASHA256: cur}}
+	ct.mu.Unlock()
+	agent.Managed.CAs = []string{hexOf(cur), hexOf(next)}
+	if got := flags(); len(got) != 0 {
+		t.Errorf("previous CA flagged: %v", got)
+	}
+	agent.Managed.CAs = append(agent.Managed.CAs, hexOf(stranger.Fingerprint()))
+	if got := flags(); !slices.Equal(got, []string{"unknown_ca"}) {
+		t.Errorf("a stranger: %v", got)
 	}
 }

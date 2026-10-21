@@ -208,7 +208,7 @@ func TestSyncFailures(t *testing.T) {
 	}
 	// The same revision again is not applied again.
 	os.Remove(a.Paths.configFile())
-	if err := a.apply(&agentproto.Config{Revision: "r1"}, nil); err != nil {
+	if err := a.apply(&agentproto.Config{Revision: a.Status().Revision}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.Paths.configFile()); err == nil {

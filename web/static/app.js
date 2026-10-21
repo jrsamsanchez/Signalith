@@ -1414,6 +1414,8 @@ async function toggleField(f) {
 // ---------- autocomplete ----------
 let suggestions = [];
 let suggestIndex = 0;
+// suggestPicked is set once the arrow keys move through the suggestions.
+let suggestPicked = false;
 
 function currentWord() {
   const ta = queryBox;
@@ -1441,6 +1443,7 @@ function updateSuggestions() {
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
   suggestIndex = 0;
+  suggestPicked = false;
   renderSuggestions();
 }
 function renderSuggestions() {
@@ -1490,13 +1493,22 @@ function acceptSuggestion(i) {
   ta.focus();
   onQueryInput();
 }
+// Enter runs the search, as in other search tools; Shift+Enter starts a
+// new line. With suggestions open, Tab takes the highlighted one, and so
+// does Enter once the arrow keys picked one.
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
+  const enter = ev.key === 'Enter' && !ev.isComposing && !ev.altKey;
+  if (enter && !ev.shiftKey && (ev.ctrlKey || ev.metaKey || !(suggestions.length && suggestPicked))) {
+    ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return;
+  }
   if (!suggestions.length) return;
-  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'Tab' || ev.key === 'Enter') { ev.preventDefault(); acceptSuggestion(suggestIndex); }
-  else if (ev.key === 'Escape') { ev.preventDefault(); suggestions = []; renderSuggestions(); }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'Tab' || (enter && !ev.shiftKey)) { ev.preventDefault(); acceptSuggestion(suggestIndex); }
+  else if (enter || ev.key === 'Escape') {
+    if (ev.key === 'Escape') ev.preventDefault();
+    suggestions = []; renderSuggestions();
+  }
 });
 queryBox.addEventListener('blur', () => setTimeout(() => { suggestions = []; renderSuggestions(); }, 100));
 
@@ -1711,7 +1723,7 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// runSearch runs the query box's search. Only Run and Enter pass
 // writeLookups, so an outputlookup in the query writes its table when the
 // user runs it, not again when a time change, sort, filter or drilldown
 // re-runs it, nor when the Ask box runs a query it wrote.
@@ -4705,6 +4717,7 @@ function healthPageRender(h) {
   if (noAnswer) alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it answers again.'));
   else if (status === 'unreachable') alerts.push(healthPageAlert('danger', 'circle-alert', 'Signalith can’t reach OpenSearch.', 'Searches and new events fail until it is back.'));
   else if (status === 'refused' && os.problem === 'busy') alerts.push(healthPageAlert('warning', 'triangle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it catches up.'));
+  else if (status === 'refused' && os.problem === 'blocked') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'New events, findings and detection runs fail until this is fixed; searches still work.'));
   else if (status === 'refused') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events fail until this is fixed.'));
   else if (status === 'red') alerts.push(healthPageAlert('danger', 'circle-alert', 'OpenSearch is red.', 'Some data cannot be searched or stored until it recovers.'));
   if (failed) alerts.push(healthPageAlert('warning', 'triangle-alert', `${healthPageNum(failed)} ${failed === 1 ? 'event' : 'events'} could not be stored.`, 'Counted since the server started. OpenSearch rejected them or did not answer.'));
@@ -4859,7 +4872,7 @@ function healthSyslogCard(sl) {
     stat('Received', sl.received),
     stat('Dropped', sl.dropped, 'warning', 'Lost because OpenSearch could not keep up, or while stopping'),
     stat('Rejected', sl.rejected, 'warning', 'Turned away: senders outside syslog.allow, messages too large, or too many connections'),
-    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch did not store them'));
+    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch refused them for good, or it was down and they could not be spooled'));
 
   let body;
   const rejected = healthSyslogRejected(sl);
@@ -4897,7 +4910,7 @@ function healthSyslogCard(sl) {
   return el('div', { class: 'card hp-syslog' },
     el('div', { class: 'card__head' }, el('div', {}, title, el('p', { class: 'card__sub' }, last ? 'Last message ' + ago(last) : `Nothing ${sl.rejected ? 'accepted' : 'received'} since the server started`)),
       el('span', { class: 'hp-state' }, pulse, state[1])),
-    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected),
+    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected, healthSyslogSpool(sl)),
     body);
 }
 
@@ -4924,6 +4937,34 @@ function healthSyslogRejected(sl) {
     el('b', {}, `${healthPageNum(sl.rejected)} ${sl.rejected === 1 ? 'message was' : 'messages were'} turned away since the server started.`),
     one ? el('p', {}, ...line(why[0])) : el('ul', { role: 'list' }, ...why.map((w) => el('li', {}, ...line(w))))));
 }
+// healthSyslogSpool says what the spool on disk did while OpenSearch
+// refused syslog events for now: a warning when it dropped events because
+// it was full or is more than half full, a note while it holds events,
+// and null otherwise.
+function healthSyslogSpool(sl) {
+  const max = sl.spool_max_bytes || 0;
+  if (!max || !(sl.spooled || sl.spool_events || sl.spool_dropped)) return null;
+  const size = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.max(b ? 1 : 0, Math.round(b / 1048576)).toLocaleString() + ' MB');
+  const events = (n) => `${healthPageNum(n)} ${n === 1 ? 'event' : 'events'}`;
+  const pct = Math.round((100 * (sl.spool_bytes || 0)) / max);
+  const holds = `The spool holds ${events(sl.spool_events || 0)} (${size(sl.spool_bytes || 0)} of ${size(max)}, ${pct}%).`;
+  const counts = `Since the server started, ${events(sl.spooled || 0)} went to the spool and ${events(sl.replayed || 0)} were written from it.`;
+  const where = can('admin') ? ['Its size is ', el('button', { type: 'button', class: 'link-btn', onclick: () => openSetting('syslog.spool_mb') }, 'Spool size (MB)'), ' on the Settings page, under Syslog.']
+    : ['Its size is Spool size (MB) on the Settings page, under Syslog.'];
+  if (sl.spool_dropped || pct > 50) {
+    const head = sl.spool_dropped
+      ? `${events(sl.spool_dropped)} ${sl.spool_dropped === 1 ? 'was' : 'were'} dropped because the syslog spool was full.`
+      : `The syslog spool is ${pct}% full.`;
+    return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, head),
+      el('p', {}, 'OpenSearch refused syslog events for now, so they wait on this server’s disk until it takes them again; when the spool is full, the oldest are dropped. ', holds, ' ', counts, ' ', ...where)));
+  }
+  if (!sl.spool_events) return null;
+  return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'info' }, icon('info'), el('div', {},
+    el('b', {}, `${events(sl.spool_events)} ${sl.spool_events === 1 ? 'waits' : 'wait'} in the syslog spool.`),
+    el('p', {}, 'OpenSearch refused them for now; they are written once it takes them again. ', holds, ' ', counts)));
+}
+
 // syslogAllowWhere says where a sender is added to the allowed ones: a
 // link to the Settings page for admins, who can open it.
 function syslogAllowWhere() {
@@ -4970,7 +5011,7 @@ function healthPageError(e) {
 // ---------- startup ----------
 (async function init() {
   document.querySelectorAll('.mod-key').forEach((k) => { k.textContent = isMac ? '⌘' : 'Ctrl'; });
-  $('run').title = `Search (${isMac ? '⌘' : 'Ctrl'}+Enter)`;
+  $('run').title = 'Search (Enter; Shift+Enter starts a new line)';
   renderGuide();
   renderEditor();
   try { if (localStorage.getItem('signalith.builder') === 'open') $('builder').open = true; } catch (_) { /* ignore */ }

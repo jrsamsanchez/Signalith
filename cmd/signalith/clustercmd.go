@@ -50,6 +50,8 @@ const clusterUsage = `usage:
   signalith cluster accept-restore [-c file] [-yes]           accept the shared settings after an OpenSearch snapshot was restored
   signalith cluster tls            [-c file] [-json]          the cluster's certificate authority and each server's
   signalith cluster tls choose     [-c file] [-yes] <server|fingerprint>   keep that certificate authority for the whole cluster
+  signalith cluster tls import     [-c file] [-cert ca.pem] [-yes] <ca.key>   give the cluster its certificate authority's key again, from an export
+  signalith cluster tls rotate-ca  [-c file] [-yes] prepare|switch|retire|abort   replace the cluster's certificate authority, one step at a time
   signalith cluster upgrade-check  [-c file] [-json]          whether it is safe to upgrade the next server
   signalith cluster token          [-c file] [-platform linux|windows|docker] [-role scanner] [-ttl 60m] [-note text] [-node-url url] [-url url] [-json]
                                    a join token, which adds a server with signalith join
@@ -133,7 +135,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	flags.StringVar(&tok.revoke, "revoke", "", "token: cancel the join token with this id")
 	fingerprint := flags.String("fingerprint", "", "approve: the fingerprint the waiting server shows, which must match")
 	noRotate := flags.Bool("no-rotate", false, "with remove or leave, do not rotate the cluster key")
-	caCert := flags.String("cert", "", "with opensearch-ca import, the certificate authority's certificate (default root-ca.pem next to the key)")
+	caCert := flags.String("cert", "", "with opensearch-ca import or tls import, the certificate authority's certificate (default root-ca.pem or ca.pem next to the key)")
 	pos := parseInterleaved(flags, args)
 	switch sub {
 	case "status", "found", "export", "import", "export-key", "import-key", "reset-key", "accept-restore", "apply", "tls", "upgrade-check", "opensearch-ca",
@@ -198,7 +200,7 @@ func runCluster(args []string, in *os.File, out, errOut io.Writer) error {
 	case "accept-restore":
 		return x.acceptRestore(ctx, *yes)
 	case "tls":
-		return x.tlsCommand(ctx, pos, *asJSON, *yes)
+		return x.tlsCommand(ctx, pos, *caCert, *asJSON, *yes)
 	case "upgrade-check":
 		return upgradeExit(x.upgradeCheck(ctx, *asJSON))
 	case "token":
