@@ -212,7 +212,18 @@ func (d *Doc[T]) apply(doc store.Doc, uuid string, gen uint64) bool {
 		return false
 	}
 	if d.cur != nil && doc.Found && d.cur.same(uuid, doc.Version) {
+		// The copy in use is the one stored. A read in between that
+		// found the document gone or unusable, as while OpenSearch had
+		// just started, was wrong about it: it is forgotten.
+		var changed func()
+		if d.missing || d.h.problemOf(d.id) != nil {
+			d.missing = false
+			changed = d.h.fine(d.id, d.cur.env.Rev)
+		}
 		d.mu.Unlock()
+		if changed != nil {
+			changed()
+		}
 		return true
 	}
 	d.missing = !doc.Found
