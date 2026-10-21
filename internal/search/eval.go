@@ -8,9 +8,11 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"net/netip"
 	"net/url"
 	"regexp"
@@ -46,6 +48,7 @@ const maxCachedRegexes = 256
 type evaluator struct {
 	ctx      context.Context
 	now      time.Time
+	loc      *time.Location // the search's time zone, for strftime and the like
 	regexes  map[string]*regexp.Regexp
 	produced int
 	steps    int
@@ -59,7 +62,7 @@ type evaluator struct {
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
-	return &evaluator{ctx: ctx, now: time.Now()}
+	return &evaluator{ctx: ctx, now: time.Now(), loc: zoneFrom(ctx)}
 }
 
 type evaluatorKey struct{}
@@ -646,6 +649,48 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		return math1(math.Sqrt)
 	case "exp":
 		return math1(math.Exp)
+	case "exact":
+		// Numbers keep full precision already.
+		return arg(0)
+	case "pi":
+		return math.Pi
+	case "random":
+		// Splunk's random() is a whole number from 0 to 2^31-1.
+		return rand.Int64N(1 << 31)
+	case "sin":
+		return math1(math.Sin)
+	case "cos":
+		return math1(math.Cos)
+	case "tan":
+		return math1(math.Tan)
+	case "asin":
+		return math1(math.Asin)
+	case "acos":
+		return math1(math.Acos)
+	case "atan":
+		return math1(math.Atan)
+	case "sinh":
+		return math1(math.Sinh)
+	case "cosh":
+		return math1(math.Cosh)
+	case "tanh":
+		return math1(math.Tanh)
+	case "asinh":
+		return math1(math.Asinh)
+	case "acosh":
+		return math1(math.Acosh)
+	case "atanh":
+		return math1(math.Atanh)
+	case "atan2", "hypot":
+		y, ok1 := num(0)
+		x, ok2 := num(1)
+		if !ok1 || !ok2 {
+			return nil
+		}
+		if c.Func == "hypot" {
+			return numOut(math.Hypot(y, x))
+		}
+		return numOut(math.Atan2(y, x))
 	case "ln":
 		return math1(math.Log)
 	case "log":
@@ -984,6 +1029,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return true
 		}
 		return false
+	case "isbool":
+		_, ok := args[0].(bool)
+		return ok
 	case "isstr":
 		_, ok := args[0].(string)
 		return ok
@@ -1070,7 +1118,24 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return d
 		}
 		return s
-	case "md5", "sha1", "sha256":
+	case "ipmask":
+		// ipmask("255.255.255.0", ip) keeps the address's masked part.
+		mask, ok1 := text(0)
+		ip, ok2 := text(1)
+		if !ok1 || !ok2 {
+			return nil
+		}
+		m, err1 := netip.ParseAddr(strings.TrimSpace(mask))
+		a, err2 := netip.ParseAddr(strings.TrimSpace(ip))
+		if err1 != nil || err2 != nil || !m.Is4() || !a.Unmap().Is4() {
+			return nil
+		}
+		mb, ab := m.As4(), a.Unmap().As4()
+		for i := range ab {
+			ab[i] &= mb[i]
+		}
+		return netip.AddrFrom4(ab).String()
+	case "md5", "sha1", "sha256", "sha512":
 		s, ok := text(0)
 		if !ok {
 			return nil
@@ -1081,6 +1146,9 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			return hex.EncodeToString(h[:])
 		case "sha1":
 			h := sha1.Sum([]byte(s))
+			return hex.EncodeToString(h[:])
+		case "sha512":
+			h := sha512.Sum512([]byte(s))
 			return hex.EncodeToString(h[:])
 		}
 		h := sha256.Sum256([]byte(s))
@@ -1095,14 +1163,14 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 		if !ok || !ok2 {
 			return nil
 		}
-		return ev.str(strftime(t, format))
+		return ev.str(strftime(t.In(ev.loc), format))
 	case "strptime":
 		s, ok := text(0)
 		format, ok2 := text(1)
 		if !ok || !ok2 {
 			return nil
 		}
-		t, ok := strptime(s, format)
+		t, ok := strptimeIn(s, format, ev.loc)
 		if !ok {
 			return nil
 		}
@@ -1248,7 +1316,7 @@ func timeNumber(v any) any {
 	return numOut(float64(t.Unix()) + float64(t.Nanosecond())/1e9)
 }
 
-// strftime formats t (in UTC) with the usual % conversions.
+// strftime formats t, in its time zone, with the usual % conversions.
 func strftime(t time.Time, format string) string {
 	var b strings.Builder
 	for i := 0; i < len(format); i++ {
@@ -1302,9 +1370,9 @@ func strftime(t time.Time, format string) string {
 		case 'j':
 			b.WriteString(fmt.Sprintf("%03d", t.YearDay()))
 		case 'Z':
-			b.WriteString("UTC")
+			b.WriteString(t.Format("MST"))
 		case 'z':
-			b.WriteString("+0000")
+			b.WriteString(t.Format("-0700"))
 		case 's':
 			b.WriteString(strconv.FormatInt(t.Unix(), 10))
 		case 'T':
@@ -1332,7 +1400,10 @@ func strftime(t time.Time, format string) string {
 }
 
 // strptime parses s with a % format, in UTC unless the format reads a zone.
-func strptime(s, format string) (time.Time, bool) {
+func strptime(s, format string) (time.Time, bool) { return strptimeIn(s, format, time.UTC) }
+
+// strptimeIn is strptime in the time zone loc unless the format reads one.
+func strptimeIn(s, format string, loc *time.Location) (time.Time, bool) {
 	if strings.TrimSpace(format) == "%s" {
 		f, ok := asFloat(s)
 		if !ok {
@@ -1365,7 +1436,7 @@ func strptime(s, format string) (time.Time, bool) {
 		}
 		layout.WriteString(p)
 	}
-	t, err := time.Parse(layout.String(), strings.TrimSpace(s))
+	t, err := time.ParseInLocation(layout.String(), strings.TrimSpace(s), loc)
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -1535,7 +1606,9 @@ func applyFillnull(res *Result, c *query.Fillnull) {
 }
 
 func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) error {
-	groups, cols, err := goStats(ctx, res.Rows, &query.Stats{Aggs: c.Aggs, By: c.By})
+	var clipped bool
+	groups, cols, err := goStatsBy(ctx, res.Rows, &query.Stats{Aggs: c.Aggs, By: c.By}, false, &clipped)
+	res.Truncated = res.Truncated || clipped
 	if err != nil {
 		return err
 	}

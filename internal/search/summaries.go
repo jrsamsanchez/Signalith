@@ -76,11 +76,11 @@ func (e *Engine) summaryPlan(q *query.Query, filters []query.Expr, cmd query.Com
 		fields = append(fields, fs...)
 	}
 	fields = append(fields, by...)
-	from, ok := resolveTime(earliest, now)
+	from, ok := resolveTimeIn(earliest, now, zoneOf(q.TimeZone))
 	if !ok {
 		return nil
 	}
-	to, ok := resolveTime(q.Latest, now)
+	to, ok := resolveTimeIn(q.Latest, now, zoneOf(q.TimeZone))
 	if !ok || to.IsZero() {
 		return nil
 	}
@@ -245,76 +245,15 @@ func wholeSlots(span string) bool {
 // all time (zero), -24h and -7d@d are relative, and ISO 8601 or epoch
 // milliseconds are absolute. ok is false for anything else.
 func resolveTime(v string, now time.Time) (time.Time, bool) {
-	v = strings.TrimSpace(v)
-	switch {
-	case v == "" || strings.EqualFold(v, "now"):
-		return now, true
-	case v == "0":
+	return resolveTimeIn(v, now, time.UTC)
+}
+
+// resolveTimeIn is resolveTime in the time zone loc.
+func resolveTimeIn(v string, now time.Time, loc *time.Location) (time.Time, bool) {
+	if strings.TrimSpace(v) == "0" {
 		return time.Time{}, true
 	}
-	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
-		return t.UTC(), true
-	}
-	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-		// As OpenSearch reads the number toDateMath passes on.
-		return time.UnixMilli(n).UTC(), true
-	}
-	m := relTime.FindStringSubmatch(v)
-	if m == nil || (m[1] == "" && m[4] == "") {
-		return time.Time{}, false
-	}
-	t := now.UTC()
-	if m[3] != "" || m[2] != "" {
-		n := 1
-		if m[2] != "" {
-			var err error
-			if n, err = strconv.Atoi(m[2]); err != nil {
-				return time.Time{}, false
-			}
-		}
-		if m[1] == "-" {
-			n = -n
-		}
-		switch unitMap[strings.ToLower(m[3])] {
-		case "s":
-			t = t.Add(time.Duration(n) * time.Second)
-		case "m":
-			t = t.Add(time.Duration(n) * time.Minute)
-		case "h":
-			t = t.Add(time.Duration(n) * time.Hour)
-		case "d":
-			t = t.AddDate(0, 0, n)
-		case "w":
-			t = t.AddDate(0, 0, 7*n)
-		case "M":
-			t = t.AddDate(0, n, 0)
-		case "y":
-			t = t.AddDate(n, 0, 0)
-		default:
-			return time.Time{}, false
-		}
-	}
-	if m[4] != "" {
-		switch unitMap[strings.ToLower(m[4])] {
-		case "s":
-			t = t.Truncate(time.Second)
-		case "m":
-			t = t.Truncate(time.Minute)
-		case "h":
-			t = t.Truncate(time.Hour)
-		case "d":
-			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
-		case "M":
-			t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
-		case "y":
-			t = time.Date(t.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
-		default:
-			// OpenSearch rounds a week to its Monday; not worth
-			// copying for a snap nobody uses.
-			return time.Time{}, false
-		}
-	}
-	return t, true
+	return query.ResolveTimeIn(v, now, loc)
 }
 
 // clause is the filter that reads, for each model, summary rows of its

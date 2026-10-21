@@ -326,6 +326,13 @@ func TestGuardQuery(t *testing.T) {
 		`* | stats count by user | search user=masked-user-1`:                       true,
 		`* | enrich user`:                                                           false,
 		`* | intel src`:                                                             false,
+		// A wildcard aggregation expands to columns like values(user),
+		// which masking does not go by (SL483-01).
+		`* | stats values(*) by src`:      false,
+		`* | stats values(us*) by src`:    false,
+		`* | stats latest(*) by src`:      false,
+		`* | stats list(*) as x_* by src`: false,
+		`* | stats dc(*) by src`:          true,
 	} {
 		q, err := query.Parse(src)
 		if err != nil {

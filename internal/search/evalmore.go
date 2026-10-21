@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -140,7 +139,7 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		if !ok || !ok2 {
 			return nil, true
 		}
-		rt, ok := relativeTime(t, spec)
+		rt, ok := query.RelativeTimeIn(t, spec, ev.loc)
 		if !ok || rt.Year() < 1 || rt.Year() > 9999 {
 			return nil, true
 		}
@@ -255,74 +254,10 @@ func writeJSONValue(b *strings.Builder, v any) {
 	}
 }
 
-// relTimeRe is relative_time's modifier: an offset like -1d, then an
-// optional snap like @d.
-var relTimeRe = regexp.MustCompile(`^(?:([+-])(\d*)([a-zA-Z]+))?(?:@([a-zA-Z]+))?$`)
-
 // relativeTime applies an SPL time modifier (-1d@d, +2h, @w, now) to t,
 // in UTC. @w snaps to Sunday, as in Splunk.
 func relativeTime(t time.Time, spec string) (time.Time, bool) {
-	spec = strings.TrimSpace(spec)
-	if strings.EqualFold(spec, "now") || spec == "" {
-		return t, spec != ""
-	}
-	m := relTimeRe.FindStringSubmatch(spec)
-	if m == nil || m[1] == "" && m[4] == "" {
-		return time.Time{}, false
-	}
-	t = t.UTC()
-	if m[1] != "" {
-		n := 1
-		if m[2] != "" {
-			var err error
-			if n, err = strconv.Atoi(m[2]); err != nil || n > 100000 {
-				return time.Time{}, false
-			}
-		}
-		if m[1] == "-" {
-			n = -n
-		}
-		switch unitMap[strings.ToLower(m[3])] {
-		case "s":
-			t = t.Add(time.Duration(n) * time.Second)
-		case "m":
-			t = t.Add(time.Duration(n) * time.Minute)
-		case "h":
-			t = t.Add(time.Duration(n) * time.Hour)
-		case "d":
-			t = t.AddDate(0, 0, n)
-		case "w":
-			t = t.AddDate(0, 0, 7*n)
-		case "M":
-			t = t.AddDate(0, n, 0)
-		case "y":
-			t = t.AddDate(n, 0, 0)
-		default:
-			return time.Time{}, false
-		}
-	}
-	if m[4] != "" {
-		y, mo, d := t.Date()
-		switch unitMap[strings.ToLower(m[4])] {
-		case "s":
-			t = t.Truncate(time.Second)
-		case "m":
-			t = t.Truncate(time.Minute)
-		case "h":
-			t = t.Truncate(time.Hour)
-		case "d":
-			t = time.Date(y, mo, d, 0, 0, 0, 0, time.UTC)
-		case "w":
-			t = time.Date(y, mo, d-int(t.Weekday()), 0, 0, 0, 0, time.UTC)
-		case "M":
-			t = time.Date(y, mo, 1, 0, 0, 0, 0, time.UTC)
-		case "y":
-			t = time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)
-		default:
-			return time.Time{}, false
-		}
-	}
-	return t, true
+	return query.RelativeTime(t, spec)
 }
 
 // maxPrintfWidth caps a printf width or precision, so a short format
