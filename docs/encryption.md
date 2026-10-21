@@ -113,7 +113,11 @@ of backups that many people can read, as you keep the master key:
   state folder, next to `keys` (`/var/lib/signalith/tls`,
   `C:\ProgramData\Signalith\tls`, and in Docker the `signalith-data` volume). Whoever
   has `ca.key` can make certificates that browsers and agents trusting Signalith's CA
-  accept; see [docs/https.md](https.md).
+  accept; see [docs/https.md](https.md). On the servers of a cluster there is no
+  `tls/ca.key`: the cluster's CA key is sealed with the cluster key in the `tls`
+  document of the shared settings and in each server's `cluster/cache.enc` (see
+  [On the servers of a cluster](https.md#on-the-servers-of-a-cluster)). Whoever has
+  the cluster key and either copy can open it.
 - **The sign-in key**, `signin.key` in the state folder. It signs the cookie that lets
   a browser that signed in to an account before keep signing in while someone else is
   guessing that account's password (see [failed sign-in limits](users.md#signing-in)).
@@ -265,8 +269,9 @@ so a new admin password goes where the service uses it.
 In the Docker quick start the key is `/var/lib/signalith/keys/master.key` in the
 `signalith-data` volume, together with `directory.json`, `intel_feeds.yaml` and
 `settings.yaml`. A backup of the volume therefore holds both the key and the values it
-decrypts. The same volume holds Signalith's HTTPS keys (`tls/ca.key` and
-`tls/server.key`), and the `signalith-secrets` volume the first admin password, the
+decrypts. The same volume holds Signalith's HTTPS keys (`tls/server.key`, and
+`tls/ca.key` on a server of its own, or the cluster key and `cluster/cache.enc`, which
+open the cluster's CA key, on a server of a cluster), and the `signalith-secrets` volume the first admin password, the
 shared agent token and Signalith's OpenSearch client key, none of them encrypted (see
 [above](#not-encrypted-by-the-master-key)): keep backups of both volumes as private as
 the key. Copy the key out and keep it apart (in a password manager or a vault). From the
@@ -339,8 +344,17 @@ move (above).
 A backup of the state folder (or of the Docker volumes) also holds the files the
 master key does not encrypt, such as Signalith's HTTPS CA key (`tls/ca.key`; see
 [Not encrypted by the master key](#not-encrypted-by-the-master-key)). Give such a
-backup the same care as the key, or leave the `tls` folder out: a server restored
-without it makes a new CA, which browsers and agents then have to trust again.
+backup the same care as the key, or leave the `tls` folder out: a server of its own
+restored without it makes a new CA, which browsers and agents then have to trust
+again.
+
+On the servers of a cluster, the backup holds the cluster key and `cluster/cache.enc`
+instead, which together open the cluster's CA key. A server restored with
+`tls/cluster-ca.txt` never makes a new CA. To survive the loss of every copy of the
+cluster key, also keep an offline copy of the cluster's CA: run
+`signalith cluster export --to-files` on one server and keep its `tls` folder in a
+vault (see [Backing up the cluster's CA](servers.md#backing-up-the-clusters-ca)).
+`signalith cluster tls import` gives the key back after `reset-key`.
 
 ### Losing the key
 

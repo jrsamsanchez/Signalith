@@ -5,6 +5,7 @@ package syslog
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -126,6 +127,15 @@ type Config struct {
 	FlushInterval           time.Duration
 	QueueSize               int
 	QueueBytes              int64
+
+	// SpoolDir, when set, is a private folder where batches OpenSearch
+	// refuses for now (it is down, too busy, or blocks writes) are kept
+	// and written from later, oldest first, also after a restart; empty
+	// keeps no spool, and such batches are lost. SpoolMaxBytes bounds it
+	// (zero: DefaultSpoolBytes): when full, the oldest batches are
+	// dropped.
+	SpoolDir      string
+	SpoolMaxBytes int64
 }
 
 // Sink receives batches of events; ingest.Pipeline is one.
@@ -150,6 +160,13 @@ type Receiver struct {
 
 	queue       chan queued
 	queuedBytes atomic.Int64
+	// spool keeps batches OpenSearch refused for now (nil: none), and
+	// blocked is set while it refuses them, so new batches go to the
+	// spool without waiting for it; the replay clears it once a batch
+	// is written. replaying is the replay's goroutine.
+	spool     *spool
+	blocked   atomic.Bool
+	replaying sync.WaitGroup
 	// maxAge is cfg.MaxAge, which SetMaxAge changes while it runs.
 	maxAge atomic.Int64
 
@@ -174,6 +191,9 @@ type Receiver struct {
 	closing    bool
 	evictAfter time.Duration
 	finalFlush time.Duration
+	// replayMin and replayMax bound the wait between tries of the spool
+	// (replayMinWait and replayMaxWait; tests shorten them).
+	replayMin, replayMax time.Duration
 
 	received, dropped, writeFailed            atomic.Int64
 	notAllowed, tooLarge, badFraming, tooMany atomic.Int64
@@ -238,12 +258,27 @@ type Stats struct {
 	// Dropped counts received messages lost because the queue was full
 	// (OpenSearch slower than the senders) or the server was stopping.
 	Dropped int64 `json:"dropped"`
-	// WriteFailed counts messages OpenSearch did not store: it was down,
-	// timed out, or rejected them.
-	WriteFailed int64      `json:"write_failed"`
-	Rejected    int64      `json:"rejected"`
-	RejectedBy  Rejections `json:"rejected_by"`
-	Queued      int        `json:"queued"`
+	// WriteFailed counts messages OpenSearch did not store and the spool
+	// did not keep: it refused them for good (such as a field it cannot
+	// map), or it was down and there is no spool.
+	WriteFailed int64 `json:"write_failed"`
+	// Spooled counts messages kept in the spool on disk because
+	// OpenSearch refused them for now, Replayed those written from it
+	// since, and SpoolDropped those the spool dropped because it was
+	// full. SpoolEvents and SpoolBytes are what it holds now, and
+	// SpoolMaxBytes its cap; zero when there is no spool.
+	Spooled       int64 `json:"spooled"`
+	Replayed      int64 `json:"replayed"`
+	SpoolDropped  int64 `json:"spool_dropped"`
+	SpoolEvents   int64 `json:"spool_events"`
+	SpoolBytes    int64 `json:"spool_bytes"`
+	SpoolMaxBytes int64 `json:"spool_max_bytes"`
+	// SpoolSkipped counts the files in the spool's folder at start that
+	// were not batches it could read, and were left alone.
+	SpoolSkipped int64      `json:"spool_skipped,omitempty"`
+	Rejected     int64      `json:"rejected"`
+	RejectedBy   Rejections `json:"rejected_by"`
+	Queued       int        `json:"queued"`
 	// Connections is the number of open TCP and TLS connections.
 	Connections int       `json:"connections"`
 	LastMessage time.Time `json:"last_message,omitzero"`
@@ -303,12 +338,25 @@ func New(cfg Config, sink Sink, log *slog.Logger) *Receiver {
 		perSender:   map[netip.Addr]int{},
 		evictAfter:  evictAfter,
 		finalFlush:  finalFlushTimeout,
+		replayMin:   replayMinWait,
+		replayMax:   replayMaxWait,
 		senders:     senderTable{max: maxSenders, m: map[netip.Addr]*Sender{}},
 		names:       newNameBudget(maxExtraNamesPerIndex, maxExtraNamesPerSender),
 		warned:      map[string]time.Time{},
 	}
 	r.names.servers = cfg.Servers
 	r.maxAge.Store(int64(cfg.MaxAge))
+	if cfg.SpoolDir != "" {
+		sp, err := openSpool(cfg.SpoolDir, cfg.SpoolMaxBytes)
+		if err != nil {
+			log.Error("syslog spool: cannot open its folder, so syslog events OpenSearch refuses for now are lost", "dir", cfg.SpoolDir, "err", err)
+		} else {
+			r.spool = sp
+			if sp.skipped > 0 {
+				log.Warn("syslog spool: left alone files in its folder that are not batches it can read (links, pipes, folders, other names, or too large)", "dir", cfg.SpoolDir, "files", sp.skipped)
+			}
+		}
+	}
 	return r
 }
 
@@ -325,6 +373,12 @@ func (r *Receiver) Start(ctx context.Context) error {
 			return fmt.Errorf("syslog.tls: cannot load the certificate in server.tls_cert and server.tls_key: %w", err)
 		}
 		r.tlsConf = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	}
+	if r.tlsConf != nil {
+		// No session tickets: syslog senders do not resume sessions, and
+		// a TLS 1.3 sender that never reads them resets the connection
+		// when it closes, losing lines it had not yet sent.
+		r.tlsConf.SessionTicketsDisabled = true
 	}
 	var lc net.ListenConfig
 	if r.cfg.UDP != "" {
@@ -368,6 +422,10 @@ func (r *Receiver) Start(ctx context.Context) error {
 	}
 	r.started = true
 	go r.write(ctx)
+	if r.spool != nil {
+		r.replaying.Add(1)
+		go r.replay(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		r.stop()
@@ -382,6 +440,7 @@ func (r *Receiver) Wait() {
 		return
 	}
 	<-r.done
+	r.replaying.Wait()
 }
 
 // stop closes the listeners and connections, waits for the readers, and
@@ -863,8 +922,9 @@ func (r *Receiver) write(ctx context.Context) {
 				return
 			}
 			r.queuedBytes.Add(-q.size)
-			if r.drain.Err() != nil {
+			if r.drain.Err() != nil && r.spool == nil {
 				// Stopping, and out of time to write: what is left is lost.
+				// With a spool, it is kept there (see send).
 				r.dropped.Add(1)
 				continue
 			}
@@ -890,28 +950,210 @@ func (r *Receiver) ready() bool {
 	}
 }
 
-// send writes one batch. Failures are counted (write_failed here, and
-// "failed" in the ingest stats) and logged at most once a minute; the batch
-// is not retried, so a slow or down OpenSearch cannot back up the receiver.
+// send writes one batch. Events OpenSearch refuses for now (it is down,
+// too busy, or blocks writes; see ingest.TemporaryError) go to the spool,
+// to be written later by replay; while it refuses them, later batches go
+// straight there, so a down OpenSearch cannot back up the receiver.
+// Events it refuses for good, and all of them when there is no spool, are
+// counted (write_failed here, and "failed" in the ingest stats) and
+// logged at most once a minute.
 func (r *Receiver) send(batch []ingest.Event) {
 	if !r.ready() || r.drain.Err() != nil {
 		// Stopping before OpenSearch was ever ready, or out of time.
-		r.dropped.Add(int64(len(batch)))
+		if !r.keep(batch) {
+			r.dropped.Add(int64(len(batch)))
+		}
 		return
+	}
+	if r.spool != nil {
+		// Each event has its document ID from the first write on, the
+		// same when it is spooled and written again, so a write that
+		// OpenSearch stored but answered with an error (a timeout, a
+		// reset connection) is not stored twice: the second write is
+		// refused as a conflict and counted as a duplicate.
+		for i := range batch {
+			if batch[i].ID == "" {
+				batch[i].ID = rand.Text()
+			}
+		}
+		if r.blocked.Load() && r.keep(batch) {
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(r.drain, writeTimeout)
 	defer cancel()
 	res, err := r.sink.IngestEvents(ctx, batch)
 	if err != nil {
+		if ingest.TemporaryError(err) && r.keep(batch) {
+			r.blocked.Store(true)
+			r.warn("spool", "OpenSearch is not taking syslog events for now; keeping them in the spool on disk to write later", "events", len(batch), "err", err)
+			return
+		}
 		r.writeFailed.Add(int64(len(batch)))
 		r.warn("write", "could not write syslog events to OpenSearch; they were dropped", "events", len(batch), "err", err)
 		return
 	}
-	// Errors lists only the first few; Rejected counts them all.
-	if res.Rejected > 0 && len(res.Errors) > 0 {
-		r.writeFailed.Add(int64(res.Rejected))
-		r.warn("rejected", "OpenSearch rejected some syslog events", "rejected", res.Rejected, "first", res.Errors[0].Reason)
+	failed := res.Rejected
+	if len(res.TemporaryAt) > 0 && r.keep(pick(batch, res.TemporaryAt)) {
+		failed -= len(res.TemporaryAt)
+		r.blocked.Store(true)
+		r.warn("spool", "OpenSearch refused some syslog events for now; keeping them in the spool on disk to write later", "events", len(res.TemporaryAt), "first", firstReason(res, true))
 	}
+	// Errors lists only the first few; Rejected counts them all.
+	if failed > 0 {
+		r.writeFailed.Add(int64(failed))
+		r.warn("rejected", "OpenSearch rejected some syslog events", "rejected", failed, "first", firstReason(res, false))
+	}
+}
+
+// keep puts events in the spool, and reports whether it took them (or
+// dropped them because it is full, which it counts). Without a spool, or
+// when it cannot be written, it takes none.
+func (r *Receiver) keep(events []ingest.Event) bool {
+	if r.spool == nil || len(events) == 0 {
+		return false
+	}
+	dropped, err := r.spool.add(events)
+	if dropped > 0 {
+		r.warn("spool-full", "the syslog spool is full; dropped the oldest batches in it to make room (see syslog.spool_mb)", "events", dropped, "max_bytes", r.spool.max)
+	}
+	if err != nil {
+		r.warn("spool-write", "could not write syslog events to the spool on disk", "events", len(events), "err", err)
+		return false
+	}
+	return true
+}
+
+// pick returns the events at the positions given.
+func pick(events []ingest.Event, at []int) []ingest.Event {
+	out := make([]ingest.Event, 0, len(at))
+	for _, i := range at {
+		if i >= 0 && i < len(events) {
+			out = append(out, events[i])
+		}
+	}
+	return out
+}
+
+// firstReason returns the reason of the first event OpenSearch refused
+// for now (temporary) or for good, as far as res lists them.
+func firstReason(res *ingest.Result, temporary bool) string {
+	for _, e := range res.Errors {
+		if ingest.Temporary(e) == temporary {
+			return e.Reason
+		}
+	}
+	if len(res.Errors) > 0 {
+		return res.Errors[0].Reason
+	}
+	return ""
+}
+
+// replay writes the spooled batches, oldest first: those an earlier run
+// left as soon as OpenSearch is ready, and the others once a batch went
+// to the spool. While OpenSearch refuses them it waits between tries,
+// from replayMinWait up to replayMaxWait. It stops when ctx ends.
+func (r *Receiver) replay(ctx context.Context) {
+	defer r.replaying.Done()
+	if r.cfg.Ready != nil {
+		select {
+		case <-r.cfg.Ready:
+		case <-ctx.Done():
+			return
+		}
+	}
+	var wait time.Duration
+	for {
+		if wait > 0 {
+			t := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+			}
+		}
+		if r.replayAll(ctx) {
+			r.blocked.Store(false)
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.spool.kick:
+			}
+			// A batch went to the spool because OpenSearch refused it
+			// just now: give it a moment.
+			wait = r.replayMin
+			continue
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		wait = min(max(2*wait, r.replayMin), r.replayMax)
+	}
+}
+
+// replayAll writes spooled batches until none is left, and reports
+// whether that happened; false when OpenSearch refused one for now.
+func (r *Receiver) replayAll(ctx context.Context) bool {
+	for {
+		f, ok := r.spool.next()
+		if !ok {
+			return true
+		}
+		if !r.replayOne(ctx, f) {
+			return false
+		}
+		// OpenSearch takes writes again: new batches go to it.
+		r.blocked.Store(false)
+	}
+}
+
+// replayOne writes one spooled batch, and reports whether it left the
+// spool: written, or refused for good. It stays when OpenSearch refused
+// it, or some of its events, for now.
+func (r *Receiver) replayOne(ctx context.Context, f spoolFile) bool {
+	events, bad, err := r.spool.read(f)
+	if err != nil {
+		r.writeFailed.Add(int64(f.events))
+		r.warn("spool-read", "could not read a batch of syslog events from the spool; it was dropped", "events", f.events, "err", err)
+		r.spool.done(f, 0, nil)
+		return true
+	}
+	r.writeFailed.Add(int64(bad))
+	if len(events) == 0 {
+		r.spool.done(f, 0, nil)
+		return true
+	}
+	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	res, err := r.sink.IngestEvents(wctx, events)
+	if err != nil {
+		if ingest.TemporaryError(err) {
+			r.spool.release()
+			r.warn("replay", "OpenSearch is still not taking syslog events; the spool will try again", "err", err)
+			return false
+		}
+		r.writeFailed.Add(int64(len(events)))
+		r.warn("write", "could not write syslog events from the spool to OpenSearch; they were dropped", "events", len(events), "err", err)
+		r.spool.done(f, 0, nil)
+		return true
+	}
+	rest := pick(events, res.TemporaryAt)
+	failed := res.Rejected - len(rest)
+	if failed > 0 {
+		r.writeFailed.Add(int64(failed))
+		r.warn("rejected", "OpenSearch rejected some syslog events", "rejected", failed, "first", firstReason(res, false))
+	}
+	if err := r.spool.done(f, len(events)-len(rest)-failed, rest); err != nil {
+		r.writeFailed.Add(int64(len(rest)))
+		r.warn("spool-write", "could not write syslog events to the spool on disk", "events", len(rest), "err", err)
+		return true
+	}
+	if len(rest) > 0 {
+		r.warn("replay", "OpenSearch refused some syslog events from the spool for now; the spool will try again", "events", len(rest), "first", firstReason(res, true))
+		return false
+	}
+	return true
 }
 
 // warn logs a problem at most once a minute per kind.
@@ -953,6 +1195,9 @@ func (r *Receiver) Stats() Stats {
 		Queued:  len(r.queue),
 		Senders: r.senders.list(),
 	}
+	sp := r.spool.stats()
+	s.Spooled, s.Replayed, s.SpoolDropped = sp.spooled, sp.replayed, sp.dropped
+	s.SpoolEvents, s.SpoolBytes, s.SpoolMaxBytes, s.SpoolSkipped = sp.events, sp.bytes, sp.max, sp.skipped
 	for _, p := range r.cfg.Allow {
 		if p.IsSingleIP() {
 			s.Allow = append(s.Allow, p.Addr().String())

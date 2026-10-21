@@ -1,0 +1,4 @@
+{"rule": "fa0c05b6-8ad3-468d-8231-c1cbccb64fba", "cases": [
+  {"expect":true,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{"Signature":"PshlSpy"}},
+  {"expect":false,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{}}
+]}

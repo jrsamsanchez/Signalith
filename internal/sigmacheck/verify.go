@@ -65,6 +65,11 @@ const (
 	// GitHubChannel is GitHub audit log events, whose data are the
 	// fields of the Sigma rule (action).
 	GitHubChannel = ingest.GitHubChannel
+	// AntivirusChannel is antivirus alerts (category: antivirus), whose
+	// data are Sigma's antivirus fields (Signature, Filename). They are
+	// recorded as Microsoft Defender Antivirus's threat detected event
+	// (1116), which the parser puts in the Malware data model.
+	AntivirusChannel = "antivirus"
 )
 
 // TestFile holds a shipped rule's test events.
@@ -176,6 +181,9 @@ func (c Case) SigmaView() (map[string]string, bool) {
 		// Sigma's CloudTrail rules name the record's own fields, and its
 		// Azure rules the fields the record is built from.
 		return maps.Clone(c.Data), true
+	case c.Channel == AntivirusChannel:
+		// An antivirus alert's fields by Sigma's names.
+		return maps.Clone(c.Data), true
 	case c.Channel == MacOSChannel:
 		// An osquery program start's columns.
 		return macOSView(c.Data), true
@@ -274,6 +282,9 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 		_ = json.Unmarshal(OsqueryLine(host, t, c.Data), &rec)
 		return OsqueryTag, rec
 	}
+	if c.Channel == AntivirusChannel {
+		return "win.events", ingest.WinEventRecord(DefenderChannel, c.EventID, host, t, antivirusData(c.Data))
+	}
 	if c.Channel == AuditdChannel {
 		return "linux.audit", ingest.AuditdRecordFor(ingest.AuditdLine(c.EventID, t, c.Data), host)
 	}
@@ -317,6 +328,20 @@ func (c Case) Record(host string, t time.Time) (string, map[string]any) {
 		return ingest.WebTag, ingest.WebRecord(ingest.AccessLine(t, c.Data), "/var/log/nginx/access.log", host, t)
 	}
 	return "win.events", ingest.WinEventRecord(c.Channel, c.EventID, host, t, c.Data)
+}
+
+// antivirusData is an antivirus alert's fields (Signature, Filename) as
+// the event data of Defender's threat detected event: the threat's name,
+// and the file it was found in as Defender writes a resource (file:_).
+func antivirusData(d map[string]string) map[string]string {
+	out := map[string]string{"SeverityName": "Severe", "SourceName": "Real-Time Protection"}
+	if v, ok := d["Signature"]; ok {
+		out["ThreatName"] = v
+	}
+	if v, ok := d["Filename"]; ok {
+		out["Path"] = "file:_" + v
+	}
+	return out
 }
 
 // Stored is a case's event after the real parser.
@@ -399,6 +424,9 @@ var sysmonEvents = map[string]string{
 	// Defender log rules (service: windefend) name their events; a
 	// threat detected is the first.
 	"windefend": "1116",
+	// Antivirus alerts (category: antivirus) are recorded as Defender's
+	// threat detected event.
+	"antivirus": "1116",
 }
 
 // SecurityEvents are the Security log events Security log rules
@@ -513,6 +541,8 @@ func Channel(category string) string {
 		return CodeIntegrityChannel
 	case "windefend":
 		return DefenderChannel
+	case "antivirus":
+		return AntivirusChannel
 	case "webserver":
 		return WebChannel
 	case "cloudtrail":
@@ -819,6 +849,11 @@ var Bases = map[string]map[string]string{
 		"SourceName":    "Real-Time Protection",
 		"ProcessName":   `C:\Windows\explorer.exe`,
 		"DetectionUser": `CORP\tester`,
+	},
+	// An antivirus alert: a threat's name and the file it was found in.
+	"antivirus": {
+		"Signature": "Example.Generic.Detection",
+		"Filename":  `D:\apps\work\download.bin`,
 	},
 	"raw_access_thread": {
 		"Image":     `D:\apps\backup\backup.exe`,

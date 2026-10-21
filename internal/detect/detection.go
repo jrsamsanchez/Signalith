@@ -57,6 +57,10 @@ type Detection struct {
 
 	// Source is "builtin", "pack", "custom" or "override"; set when loaded.
 	Source string `yaml:"-" json:"source"`
+	// Scoped are the exceptions for many detections that cover this one
+	// (see ScopedExceptions), set when loaded; Suppressing checks them
+	// before Exceptions.
+	Scoped []Exception `yaml:"-" json:"-"`
 }
 
 // Throttle suppresses repeat findings. Two results with the same values
@@ -116,6 +120,11 @@ func (d *Detection) Validate() error {
 	var p []string
 	if !idPattern.MatchString(d.ID) {
 		p = append(p, "id must be 3-64 lowercase letters, digits, - or _")
+	} else if d.ID == ScopedID || d.ID == "exceptions" {
+		// exceptions is also the page of exceptions for many detections
+		// (/api/detections/exceptions), which a detection of that id
+		// could not be read past.
+		p = append(p, "the id "+d.ID+" is reserved")
 	}
 	if strings.TrimSpace(d.Title) == "" {
 		p = append(p, "title is required")
@@ -160,6 +169,7 @@ func (d *Detection) Validate() error {
 		}
 	}
 	p = append(p, exceptionProblems(d.Exceptions)...)
+	p = append(p, ownProblems(d.Exceptions)...)
 	if len(p) > 0 {
 		return &ValidationError{ID: d.ID, Problems: p}
 	}

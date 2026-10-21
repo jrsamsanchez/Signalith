@@ -1,0 +1,4 @@
+{"rule": "fdf135a2-9241-4f96-a114-bb404948f736", "cases": [
+  {"expect":true,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{"Signature":"Perl."}},
+  {"expect":false,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{}}
+]}

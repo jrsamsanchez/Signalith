@@ -1194,7 +1194,8 @@ func (in *instance) stop() {
 		// Stop receiving and write out what is queued.
 		in.receiver.Wait()
 		s := in.receiver.Stats()
-		in.log.Info("syslog receiver stopped", "received", s.Received, "dropped", s.Dropped, "write_failed", s.WriteFailed, "rejected", s.Rejected)
+		in.log.Info("syslog receiver stopped", "received", s.Received, "dropped", s.Dropped, "write_failed", s.WriteFailed, "rejected", s.Rejected,
+			"spooled", s.Spooled, "replayed", s.Replayed, "left_in_spool", s.SpoolEvents, "spool_dropped", s.SpoolDropped)
 	}
 	if in.store != nil {
 		in.store.CloseIdleConnections()
@@ -1203,6 +1204,9 @@ func (in *instance) stop() {
 		c.CloseIdleConnections()
 	}
 }
+
+// syslogSpoolDir is the syslog spool's folder in the state folder.
+const syslogSpoolDir = "syslog-spool"
 
 // start builds every component from c and starts the background jobs.
 // On an error, what had started is stopped again.
@@ -1314,6 +1318,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
 			Servers: indexingServers,
 			Proxy:   proxyFor(c, c.Syslog.ProxyProtocol, log),
+			// Batches OpenSearch refuses for now wait here, on this
+			// server's own disk, until it takes them.
+			SpoolDir:      filepath.Join(c.StateDir(), syslogSpoolDir),
+			SpoolMaxBytes: c.Syslog.SpoolBytes(),
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -2175,6 +2183,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
+			settings.Problems = r.sharedContent.library.problems
 			settings.Restart = r.restartStatus
 			settings.Pending = func() (restart, refused []string) {
 				restart, refused, _ = r.sharedContent.settingsStatus()

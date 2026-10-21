@@ -157,6 +157,10 @@ func TestManagedAgentConfig(t *testing.T) {
 	if code != 200 || h.Get("Cache-Control") != "no-store" || h.Get("ETag") == "" {
 		t.Fatalf("config: %d %v %s", code, h, body)
 	}
+	// The revision holds over the bytes sent, as the agent checks it.
+	if rev, ok := agentproto.RawRevision([]byte(body)); !ok || `"`+rev+`"` != h.Get("ETag") {
+		t.Errorf("revision over the bytes sent %q %v, ETag %s", rev, ok, h.Get("ETag"))
+	}
 	var cfg agentproto.Config
 	if err := json.Unmarshal([]byte(body), &cfg); err != nil {
 		t.Fatal(err)

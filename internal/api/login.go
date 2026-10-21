@@ -328,14 +328,17 @@ func (s *Server) handleCAPEM(w http.ResponseWriter, r *http.Request) {
 	switch which := r.URL.Query().Get("which"); which {
 	case "", "current":
 	case "next", "both":
-		if s.TLS.Next() == nil {
+		// After a switch of the cluster's certificate authority, both is
+		// the new one and the one it replaced, until that is retired.
+		both := s.TLS.AgentCAPEM()
+		if s.TLS.Next() == nil && (which == "next" || bytes.Equal(both, s.TLS.CAPEM())) {
 			writeError(w, http.StatusNotFound, errors.New("Signalith isn't switching certificate authority, so there is no new one to download."))
 			return
 		}
 		if which == "next" {
 			ca, file = s.TLS.NextPEM(), "signalith-ca-new.crt"
 		} else {
-			ca, file = s.TLS.AgentCAPEM(), "signalith-ca.pem"
+			ca, file = both, "signalith-ca.pem"
 		}
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("which must be next or both"))

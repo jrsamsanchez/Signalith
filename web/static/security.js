@@ -416,9 +416,13 @@
         ? el('span', { class: 'sc-locked' }, icon('lock', 'icon--xs'), el('span', {}, 'Set by ', el('code', {}, fix.locked_by), ' where Signalith is started'))
         : btn('secondary', 'Open setting', () => openSetting(fix.setting), { 'data-focus': 'set:' + kind + ':' + c.id }));
     }
-    if (fix.page) {
+    // Change password opens the account menu's dialog, which changes the
+    // signed-in user's own password: offered only to the built-in admin.
+    const own = fix.page && fix.page.id === 'change-password';
+    if (fix.page && (!own || (me && me.source === 'builtin' && me.can_change_password))) {
       const p = fix.page;
       acts.push(btn('secondary', p.label, () => {
+        if (own) { $('change-password').click(); return; }
         if (p.id === 'users' && p.tab && window.showUsersTab) window.showUsersTab(p.tab);
         else showPage(p.id);
       }, { 'data-focus': 'page:' + kind + ':' + c.id }));
@@ -490,7 +494,7 @@
         el('span', { class: 'sc-group__icon' }, icon('shield-check')),
         el('div', { class: 'sc-group__heading' },
           el('h2', { class: 'sc-group__title', id: 'sc-cluster-ca-title' }, 'Cluster certificate authority'),
-          el('p', { class: 'sc-group__desc' }, 'This server’s HTTPS certificate comes from the certificate authority every server of the cluster shares, so agents and browsers trust one file for all of them. It isn’t changed here: changing it comes in a later version.'))),
+          el('p', { class: 'sc-group__desc' }, 'This server’s HTTPS certificate comes from the certificate authority every server of the cluster shares, so agents and browsers trust one file for all of them. It isn’t changed here: replace it for every server at once on the Servers page.'))),
       el('div', { class: 'sc-cluster-ca__body' },
         cur ? el('p', { class: 'sc-cluster-ca__fp' }, el('span', { class: 'sc-others__label' }, 'Fingerprint'), el('span', { class: 'mono' }, cur.fingerprint)) : null,
         el('div', { class: 'sc-actions' },

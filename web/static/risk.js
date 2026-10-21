@@ -402,7 +402,10 @@ function riskEventItem(e, links) {
       searchLink(),
       // A behavior baseline's event: admins can mark it as normal.
       /^baseline-/.test(id) && can('admin') && window.blMarkNormal
-        ? el('button', { type: 'button', class: 'link-btn r-ev__link r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null);
+        ? el('button', { type: 'button', class: 'link-btn r-ev__link r-ev__normal', onclick: () => window.blMarkNormal(e) }, 'Mark as normal') : null,
+      // Or forget what it learned, when the value came from misuse.
+      /^baseline-/.test(id) && !e.baseline_reason && can('admin') && window.blUnlearn
+        ? el('button', { type: 'button', class: 'link-btn r-ev__link r-ev__unlearn', onclick: () => window.blUnlearn(e) }, 'Forget it') : null);
   };
   draw({ detections: new Set(), findings: new Map() });
   links.then((l) => { if (l) draw(l); });

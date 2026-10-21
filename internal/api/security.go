@@ -238,6 +238,15 @@ func (s *Server) gatherSecurity(ctx context.Context) *security.Report {
 	c := s.conf()
 	now := time.Now()
 	h := security.ServerHost(c, s.inContainer())
+	if s.SharedUsers != nil {
+		h.Builtin = func() (string, time.Time, bool) {
+			v, _, ok := s.SharedUsers.Docs.BuiltinUser()
+			if !ok {
+				return "", time.Time{}, false
+			}
+			return v.PasswordHash, v.Updated, true
+		}
+	}
 	f := security.NewFacts(h, now, security.ServerInfoFor(h, s.serverName(), s.Version))
 	if !s.Started.IsZero() {
 		f.Uptime = now.Sub(s.Started)

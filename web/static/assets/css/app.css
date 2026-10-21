@@ -4664,6 +4664,8 @@ dialog.pb-dialog[open] { display: flex; flex-direction: column; }
 #page-baselines .bl-check[data-on="false"] .st-field__label, #page-baselines .bl-check[data-on="false"] .st-field__help { color: var(--text-3); }
 #page-baselines .bl-check__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-top: 4px; font-size: var(--fs-sm); color: var(--text-2); }
 #page-baselines .bl-check .st-warn { margin-top: 4px; }
+#page-baselines .bl-check .st-warn.is-info { color: var(--text-2); }
+#page-baselines .bl-check .alert { margin-top: 8px; }
 #page-baselines .bl-check__control { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; align-content: start; justify-content: flex-start; }
 @container st-card (min-width: 620px) {
   #page-baselines .bl-check { grid-template-columns: minmax(0, 1fr) auto; }

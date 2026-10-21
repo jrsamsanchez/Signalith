@@ -82,7 +82,7 @@ it from the Signalith folder with
 With one OpenSearch node, losing it stops every server. Run three nodes, give each
 server their addresses (**More addresses** on the Settings page, `opensearch.urls`), and
 keep Replicas at `auto`: Signalith then spreads its requests over the nodes and skips one
-that is down. The Servers page has an OpenSearch card that shows the nodes, their disks,
+that is down. The Servers page has an OpenSearch card that shows the nodes, their disks, the shards in use against the limit,
 indices without a copy on another node, and which of this server's addresses are being
 skipped. [OpenSearch with several nodes](opensearch-failover.md) explains the setup,
 per-node certificates and snapshots.
@@ -161,6 +161,8 @@ for being older than the catch-up limit (`detections.catch_up`), and how many ru
 server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
 rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
 look at the slowest rules on the Detections page, or spread detections over more servers.
+A late run counts for the server that ran it, not for one the rule moved to since, and
+slots missed before a server took a rule (a restart, a handover) are not late runs.
 
 When a group moves, its new server takes over from where the last run of each rule
 ended, so no time is skipped or searched twice. A server that is still running hands
@@ -556,8 +558,8 @@ choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#t
 Only that server can, only while it runs (a CA whose servers are all offline is marked
 so, and can't be kept until one is started), and only while its CA is still the one you
 chose. The request is signed with the cluster key, so only a server of the cluster can
-ask for it. Once one is shared, choosing another is refused: changing the cluster's CA
-comes in a later version.
+ask for it. Once one is shared, choosing another is refused: replace it instead
+([Replacing the cluster's CA](#replacing-the-clusters-ca)).
 
 **Retired CAs.** A server that takes the cluster's CA keeps a copy of its old `ca.pem`
 in `tls/retired/<date>-<fingerprint>/` and deletes its old `ca.key`, so the old CA never
@@ -589,6 +591,115 @@ holding that CA to share it and answers `202` with a `request_id` that
 `GET /api/requests/{id}` follows; `409` when the cluster already shares one, `400` when
 no server seen in the last day uses that CA, `503` when the shared settings can't be
 changed now or no server holding that CA runs (each candidate's `up` says). Each choice is written to the audit log.
+
+### When a server leaves
+
+Every server of the cluster can open the CA's key: it needs it to renew its own
+certificate. A server you remove, or that leaves, may keep it:
+
+- in its memory, while it still runs;
+- in its copy of the shared settings (`cluster/cache.enc`) together with its copy of the
+  cluster key, and in any backup of its state folder.
+
+Rotating the cluster key stops an old copy of the cluster key from opening anything
+**new**, but the CA's key it could open before stays the same. HTTPS certificates have
+no revocation list, and agents trust the CA itself. So whoever holds that key can make
+certificates that agents, browsers and syslog devices trust, for any name the CA may
+vouch for, until the cluster's CA is replaced. `signalith cluster remove` and `leave`
+print this. After you remove a server you no longer trust, replace the CA
+([Replacing the cluster's CA](#replacing-the-clusters-ca)). If a replacement is
+prepared, the server may hold the new CA's key too: abort it, then prepare again. If one
+was switched but not retired, retire it, then replace the CA again.
+
+A server that leaves keeps its HTTPS certificate and can't renew it. `leave` prints
+the date it expires. To use the server on its own after that, delete its `tls` folder
+before it starts, so it makes a CA of its own, and give its agents a new configuration.
+
+### Replacing the cluster's CA
+
+Replace the cluster's CA when its key may have leaked, when a server you removed may
+still hold it, or when its 10 years are nearly up. It takes three steps, like a change
+of a server's own CA on its Security page, but for every server at once. Each step is on
+the **Certificate authority** card of the Servers page, and in
+`signalith cluster tls rotate-ca prepare|switch|retire|abort` (see
+[cluster-cli.md](cluster-cli.md#tls)). The card and `signalith cluster tls` show which
+step the cluster is at, with its date, and what each step waits for.
+
+1. **Prepare** (**Replace it**). The server that runs the background jobs makes a new CA
+   with the same limits as the one in use: the same name constraints, server
+   authentication only, 10 years. Its key is encrypted with the cluster key and bound
+   to its fingerprint, like the other's. Every server then hands out both CAs, and the
+   one in use stays: in the CA file of Add data and `GET /api/tls/ca.pem?which=both`,
+   in the install lines' pins, and in the configuration managed agents fetch. A managed
+   agent that is online takes the new file at its next configuration fetch. It keeps it
+   only when it still vouches for the server it talks to. That check doesn't tell a real
+   server from one that holds a leaked CA key: such a one could give the agent a file
+   with a CA of its own. So each managed agent reports the fingerprints in its file, and
+   the Endpoints page marks one that holds a CA no server knows: not the cluster's
+   (in use, next, previous or retired), nor one a server uses or hands out
+   (**Needs a new configuration**, for an unknown certificate authority). The card and `signalith cluster tls` count the managed agents that have
+   the new CA. Give other agents, browsers and syslog devices the file with both CAs.
+2. **Switch** (**Switch to it**). Refused until every running server hands out the new
+   CA. Then each server issues itself a certificate from the new CA within seconds. The
+   old CA is still handed out, and its key kept, so nothing that trusts either one
+   breaks. The old one is listed as retired, so agents whose configuration trusts only
+   it are marked **Needs a new configuration**.
+3. **Retire** (**Retire the old one**). Refused until every running server serves a
+   certificate from the new CA. The old CA is no longer handed out, and its key is
+   deleted from the shared settings.
+
+Before the switch, **Abort** drops the new CA and its key. Every server then hands out
+only the one in use again. Abort when the new CA's key is lost (`reset-key` empties it,
+and only an abort and a new **Prepare** fix that), or when you'd rather start again. After
+the switch there is nothing to abort: retire the old CA, then replace the new one if
+needed.
+
+A server that is stopped or offline isn't waited for: it takes the new CA when it
+starts. Servers with your own certificate files, or that don't serve HTTPS themselves,
+never use the cluster's CA. **Prepare** is refused while a running server is on a
+version that can't replace the CA, and the refusal names it: upgrade it, or stop it.
+Such a server, running the background jobs, would rotate the cluster key without
+encrypting the new CA's key again. A key rotation that can't encrypt the new or old
+CA's key again keeps it as it was, and writes that to the audit log. Each step asked again does nothing more,
+and each is written to the audit log. A key rotation encrypts the new CA's key again
+too.
+
+An agent that was offline through the whole change, and trusts only the old CA, can't
+reach the servers afterwards: give it a new configuration from Add data. Once the old
+CA is retired, a copy of its key elsewhere (a backup, a removed server) no longer makes
+certificates that agents trusting only the new CA accept. Make a new offline copy of the
+CA afterwards (below).
+
+From a script, as an admin: `POST /api/cluster/tls/rotate-ca` with
+`{"step": "prepare"}`, `"switch"`, `"retire"` or `"abort"` asks the server that runs the background
+jobs to take that step, and answers `202` with a `request_id` that
+`GET /api/requests/{id}` follows; `409` when the step doesn't fit the state, or a server
+isn't ready (the error names it); `503` when the shared settings can't be changed now.
+`GET /api/cluster/tls` has the state in `rotation`: `state` (`none`, `prepared` or
+`switched`), `next` or `previous` with its fingerprint, date and `key_lost`,
+`blockers`, and `agents` (`managed`, `reporting` and `have_new`).
+
+### Backing up the cluster's CA
+
+The CA's key lives only in the shared settings and each server's `cluster/cache.enc`,
+both sealed with the cluster key. If every copy of the cluster key is lost,
+`signalith cluster reset-key` can't open it and empties it. Servers then keep their
+certificates until they expire, and can't renew them.
+
+Keep an offline copy of the CA, as a key you keep apart from everything else:
+
+1. On one server, run `signalith cluster export --to-files <new folder>` (see
+   [export --to-files](cluster-cli.md#export-to-files)). The `tls` folder in it has
+   `ca.pem` and `ca.key`.
+2. Copy that `tls` folder somewhere offline (a vault or an encrypted drive), and delete
+   the export folder.
+
+After a `reset-key`, give the key back with
+`signalith cluster tls import <folder>/tls/ca.key` (see
+[cluster-cli.md](cluster-cli.md#tls)). Every server renews from it again within
+seconds. A founder's old `tls/ca.key`, from a backup made before the cluster kept it,
+works too. With no copy of the key at all, replace the CA instead: the steps above
+don't need the old key, and every agent then needs the new CA file.
 
 ## Each server's own OpenSearch certificate
 
@@ -817,6 +928,21 @@ are an **inbox**:
   **Detection and dashboard folders** (`detections.sync`) to **Mirror** on a server to
   have a file removed from its folders remove that detection or dashboard from every
   server.
+- **Mirror guards against emptying the library by accident.** A folder that is missing is
+  not taken for an empty one. And when one look at the folders would remove many shared
+  files of one kind at once (detections, their `state` files or dashboards: all of
+  them, once there are 3 or more, or more than 20 that are over half of them), or of all
+  kinds together, as an empty volume or an `rsync --delete` from an empty folder would,
+  the server removes nothing of that kind, writes the files back, and says so in its log
+  (an audit record) and on the Servers page for a day. Removing a few files at a time
+  works as usual, so this catches accidents, not someone who removes the files over
+  several smaller steps. To remove many on purpose, put an empty file named
+  `allow-mass-delete` in the server's detections folder (it covers its `state` folder
+  too) or dashboards folder, and remove the files within the hour. The next look removes
+  them from every server and deletes `allow-mass-delete`, so it allows one removal, of
+  that folder only. While it waits, the Servers page says "Mass delete allowed". An
+  `allow-mass-delete` older than an hour, or that is a link, is ignored without a
+  warning: delete it.
 
 Each server records what it last saw of its files in `library-seen.json` in its state
 folder. Content pack updates stay per server (`detections.content_updates`), so give
@@ -1135,3 +1261,6 @@ virtual IP (keepalived, see the sample) or straight to one server. Never send on
 device to two servers at once: each message would be stored twice. When a server
 stops, devices on TCP reconnect through the balancer to another; a few messages sent
 just before may be stored twice or lost, as with any syslog server that restarts.
+While OpenSearch is down, each server keeps the syslog it received in a spool on its
+own disk and writes it once OpenSearch is back (see
+[Agents and syslog](sending-data.md#when-opensearch-is-down)).

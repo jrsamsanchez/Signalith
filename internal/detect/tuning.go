@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Exception tunes a detection: results that match it raise no finding and
@@ -29,6 +31,9 @@ type Exception struct {
 	Added   time.Time         `yaml:"added" json:"added"`
 	// Finding is the finding the exception was made from, if any.
 	Finding string `yaml:"finding,omitempty" json:"finding,omitempty"`
+	// Scope is set only on an exception for many detections (see
+	// ScopedExceptions): "all", "pack:<name>" or "tag:<tag>".
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
 	// ProposedBy is the analyst who asked for the exception, when an admin
 	// (By) approved their request.
 	ProposedBy string `yaml:"proposed_by,omitempty" json:"proposed_by,omitempty"`
@@ -166,6 +171,11 @@ func (e *Exception) problems() []string {
 	if e.From != nil && e.Until != nil && !e.Until.After(*e.From) {
 		p = append(p, fmt.Sprintf("exception %s: until must be after from", e.ID))
 	}
+	if e.Scope != "" {
+		if err := checkScope(e.Scope); err != nil {
+			p = append(p, fmt.Sprintf("exception %s: %v", e.ID, err))
+		}
+	}
 	if len(e.Comment) > maxCommentLen {
 		p = append(p, fmt.Sprintf("exception %s: the comment is longer than %d characters", e.ID, maxCommentLen))
 	}
@@ -189,8 +199,14 @@ func exceptionProblems(es []Exception) []string {
 }
 
 // Suppressing returns the first active exception that matches a result
-// row at t, or nil.
+// row at t, or nil: the exceptions for many detections that cover d
+// first (see ScopedExceptions), then d's own.
 func (d *Detection) Suppressing(row map[string]any, t time.Time) *Exception {
+	for i := range d.Scoped {
+		if e := &d.Scoped[i]; e.Active(t) && e.Matches(row) {
+			return e
+		}
+	}
 	for i := range d.Exceptions {
 		if e := &d.Exceptions[i]; e.Active(t) && e.Matches(row) {
 			return e
@@ -214,4 +230,69 @@ func (e *Exception) Describe() string {
 		parts[i] = k + "=" + e.Match[k]
 	}
 	return strings.Join(parts, " and ")
+}
+
+// Scopes of an exception for many detections.
+const (
+	ScopeAll     = "all"
+	scopePack    = "pack:"
+	scopeTag     = "tag:"
+	maxScopeName = 128
+)
+
+// checkScope checks the scope of an exception for many detections.
+func checkScope(scope string) error {
+	if scope == ScopeAll {
+		return nil
+	}
+	for _, prefix := range []string{scopePack, scopeTag} {
+		if name, ok := strings.CutPrefix(scope, prefix); ok {
+			if name == "" || strings.TrimSpace(name) != name || len(name) > maxScopeName || strings.ContainsFunc(name, unicode.IsControl) {
+				return fmt.Errorf("%s needs a name of up to %d characters", strings.TrimSuffix(prefix, ":"), maxScopeName)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("scope %q must be all, pack:<name> or tag:<tag>", scope)
+}
+
+// InScope reports whether the exception, one for many detections, covers
+// detection d: every detection for "all", the rules of a content pack
+// for "pack:<name>", and the detections with a tag for "tag:<tag>"
+// (ignoring case). An exception without a scope covers none.
+func (e *Exception) InScope(d *Detection) bool {
+	switch {
+	case e.Scope == ScopeAll:
+		return true
+	case strings.HasPrefix(e.Scope, scopePack):
+		return d.Origin != nil && strings.EqualFold(d.Origin.Pack, e.Scope[len(scopePack):])
+	case strings.HasPrefix(e.Scope, scopeTag):
+		tag := e.Scope[len(scopeTag):]
+		return slices.ContainsFunc(d.Tags, func(t string) bool { return strings.EqualFold(t, tag) })
+	}
+	return false
+}
+
+// ScopedProblems lists what is wrong with the exceptions for many
+// detections: what exceptionProblems finds, and each needs a scope.
+func ScopedProblems(es []Exception) []string {
+	p := exceptionProblems(es)
+	for i := range es {
+		if es[i].Scope == "" {
+			p = append(p, fmt.Sprintf("exception %s: scope is required: all, pack:<name> or tag:<tag>", es[i].ID))
+		}
+	}
+	return p
+}
+
+// ownProblems lists exceptions of one detection that have a scope, which
+// only exceptions for many detections have.
+func ownProblems(es []Exception) []string {
+	var p []string
+	for i := range es {
+		if es[i].Scope != "" {
+			p = append(p, fmt.Sprintf("exception %s: a detection's own exception has no scope; add it to the exceptions for many detections instead", es[i].ID))
+		}
+	}
+	return p
 }

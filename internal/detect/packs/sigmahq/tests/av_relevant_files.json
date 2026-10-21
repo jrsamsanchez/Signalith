@@ -1,0 +1,5 @@
+{"rule": "c9a88268-0047-4824-ba6e-4d81ce0b907c", "cases": [
+  {"expect":true,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{"Filename":".vbe"}},
+  {"expect":true,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{"Filename":"apache"}},
+  {"expect":false,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{}}
+]}
