@@ -59,3 +59,74 @@ func TestWhereFieldCompareRunsOverEvents(t *testing.T) {
 		t.Errorf("text filter not sent to OpenSearch: %s", body)
 	}
 }
+
+// A multivalue field matches when one of its values does, in where and
+// search alike (SL-07).
+func TestWhereMatchesAnyValue(t *testing.T) {
+	for src, rows := range map[string]int{
+		`| makeresults | eval u=split("alice,bob", ",") | where u=alice`:           1,
+		`| makeresults | eval u=split("alice,bob", ",") | search u=alice`:          1,
+		`| makeresults | eval u=split("alice,bob", ",") | where u!=alice`:          0,
+		`| makeresults | eval u=split("alice,bob", ",") | where u!=carol`:          1,
+		`| makeresults | eval u=split("alice,bob", ",") | where u IN (carol, bob)`: 1,
+		`| makeresults | eval n=split("1,20", ",") | where n > 10`:                 1,
+		`| makeresults | eval n=split("1,2", ",") | where n > 10`:                  0,
+		`| makeresults | eval u=split("alice,bob", ",") | where u=al*`:             1,
+	} {
+		res, err := (&Engine{}).Run(context.Background(), src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if len(res.Rows) != rows {
+			t.Errorf("%s: %d rows, want %d", src, len(res.Rows), rows)
+		}
+	}
+}
+
+// stats and top by a multivalue field count each row once for each of
+// its values, as in Splunk (SL-08).
+func TestStatsByMultivalueCountsEachValue(t *testing.T) {
+	base := `| makeresults count=3 | eval mv=split("a,b", ",")`
+	for src, want := range map[string]string{
+		base + ` | stats count by mv`:                    "[map[count:3 mv:a] map[count:3 mv:b]]",
+		base + ` | eval h="x" | stats count by h, mv`:    "[map[count:3 h:x mv:a] map[count:3 h:x mv:b]]",
+		base + ` | top mv | table mv, count`:             "[map[count:3 mv:a] map[count:3 mv:b]]",
+		base + ` | eventstats count by mv | table count`: "[map[count:3] map[count:3] map[count:3]]",
+	} {
+		res, err := (&Engine{}).Run(context.Background(), src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if got := fmt.Sprint(res.Rows); got != want {
+			t.Errorf("%s = %s, want %s", src, got, want)
+		}
+	}
+}
+
+// values() keeps up to 10,000 values, each with its type, and says when
+// it left some out (SL-10).
+func TestValuesKeepsTypesAndSaysWhenClipped(t *testing.T) {
+	res, err := (&Engine{}).Run(context.Background(), `| makeresults count=150 | streamstats count as n | stats values(n) as vals, dc(n) as d`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals, _ := res.Rows[0]["vals"].([]any)
+	if len(vals) != 150 || res.Truncated {
+		t.Fatalf("%d values, truncated %v", len(vals), res.Truncated)
+	}
+	if _, isNum := vals[0].(int64); !isNum || fmt.Sprint(vals[:3]) != "[1 10 100]" {
+		t.Errorf("values = %v (%T), want numbers sorted as text", vals[:3], vals[0])
+	}
+	res, err = (&Engine{}).Run(context.Background(), `| makeresults count=10000 | eval n=mvappend(-1, -2) | streamstats count as m | eval n=mvappend(n, m) | stats values(n) as vals`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vals, _ := res.Rows[0]["vals"].([]any); len(vals) != maxValues || !res.Truncated {
+		t.Errorf("%d values, truncated %v", len(vals), res.Truncated)
+	}
+	clipped := `{"hits":{"total":{"value":500}},"aggregations":{"m0":{"sum_other_doc_count":400,"buckets":[{"key":"a","doc_count":100}]}}}`
+	fs := &fakeStore{responses: []string{clipped}}
+	if res, err := (&Engine{Store: fs}).Run(context.Background(), `* | stats values(user)`); err != nil || !res.Truncated {
+		t.Errorf("OpenSearch values() left values out: truncated %v, %v", res.Truncated, err)
+	}
+}

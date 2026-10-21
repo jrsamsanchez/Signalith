@@ -43,8 +43,41 @@ line=$(jq -r .linux install.json | sed "s|$placeholder|$token|")
 line="$line --name ci-sensor --local-rules $work/ci.rules"
 printf '%s\n' "$line" | sed "s|$token|<token>|"
 
-step "Install"
-sh -c "$line"
+# fake_fluent_bit runs a stand-in for a Fluent Bit already shipping logs
+# somewhere else, from a unit file in the folder $1.
+fake_fluent_bit() {
+  sudo mkdir -p "$1"
+  printf '[Service]\nExecStart=/bin/sleep infinity\n' | sudo tee "$1/fluent-bit.service" >/dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl start fluent-bit.service
+}
+no_fake() {
+  sudo systemctl stop fluent-bit.service || true
+  sudo rm -f "$1/fluent-bit.service"
+  sudo systemctl daemon-reload
+}
+# refused says the line ($1) stopped with $2, changing nothing.
+refused() {
+  if sh -c "$1" >vendor.out 2>&1; then cat vendor.out; echo "installed over a running fluent-bit.service"; exit 1; fi
+  grep -q "$2" vendor.out || { cat vendor.out; exit 1; }
+  if [ -e /etc/signalith-sensor ]; then echo "changed the machine before stopping"; exit 1; fi
+  systemctl is-active --quiet fluent-bit.service || { echo "stopped the running fluent-bit.service"; exit 1; }
+}
+
+step "A Fluent Bit already running here for something else: the line stops, changing nothing"
+fake_fluent_bit /run/systemd/system
+refused "$line" "fluent-bit.service already runs here"
+
+step "With --take-over, but its unit is a file of the admin's own in /etc/systemd/system: stops too"
+no_fake /run/systemd/system
+fake_fluent_bit /etc/systemd/system
+refused "$line --take-over" "cannot be masked"
+no_fake /etc/systemd/system
+
+step "Install with --take-over: the other Fluent Bit is stopped"
+fake_fluent_bit /run/systemd/system
+sh -c "$line --take-over"
+if systemctl is-active --quiet fluent-bit.service; then echo "the other fluent-bit.service still runs"; exit 1; fi
 
 step "Traffic: HTTP and DNS on lo, captured, then replayed on the capture port"
 python3 -m http.server 8099 --bind 127.0.0.1 >/dev/null 2>&1 &
@@ -103,7 +136,8 @@ for f in $(sudo find /var/lib/signalith-sensor/suricata/update/cache -name '*.ta
 done
 
 step "Uninstall, with the copy of the script the sensor keeps"
-sudo sh /usr/lib/signalith-sensor/install.sh --uninstall
+sudo sh /usr/lib/signalith-sensor/install.sh --uninstall >uninstall.txt 2>&1 || { cat uninstall.txt; exit 1; }
+cat uninstall.txt
 left=''
 # The capture port is put back as it was: not promiscuous, answering ARP.
 flags=$(cat /sys/class/net/cap0/flags)
@@ -122,6 +156,10 @@ done
 for u in suricata.service fluent-bit.service; do
   [ "$(systemctl is-enabled "$u" 2>/dev/null || true)" != masked ] || left="$left masked:$u"
 done
+# The Fluent Bit it took over is started again (removing the package may
+# stop it after that, so this checks what --uninstall said).
+! grep -q "Could not start fluent-bit.service" uninstall.txt || left="$left stopped:fluent-bit.service"
+no_fake /run/systemd/system
 if [ -n "$left" ]; then
   echo "Left after --uninstall:$left"
   exit 1
