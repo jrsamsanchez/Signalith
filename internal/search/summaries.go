@@ -191,6 +191,9 @@ func exprFields(e query.Expr) ([]string, bool) {
 	case *query.Not:
 		return exprFields(e.Child)
 	case *query.Compare:
+		if e.Ref {
+			return []string{e.Field, e.Value}, plainField(e.Field) && plainField(e.Value)
+		}
 		return []string{e.Field}, plainField(e.Field)
 	case *query.In:
 		return []string{e.Field}, plainField(e.Field)

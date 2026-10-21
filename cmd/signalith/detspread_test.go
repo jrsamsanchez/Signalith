@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 )
@@ -108,5 +109,43 @@ func TestDetViews(t *testing.T) {
 	jobs.Wait()
 	if got := v.all(context.Background()); len(got) != 0 {
 		t.Errorf("views after the tenants stopped: %+v", got)
+	}
+}
+
+// TestDetViewsAnswerFromARecentRead: GET /api/cluster every second must
+// not cost OpenSearch a read of every tenant's spread each time.
+func TestDetViewsAnswerFromARecentRead(t *testing.T) {
+	v := newDetViews()
+	clock := time.Unix(1_800_000_000, 0)
+	v.now = func() time.Time { return clock }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var jobs sync.WaitGroup
+	reads := 0
+	read := func(tenant string) func(context.Context) (detect.SpreadView, error) {
+		return func(context.Context) (detect.SpreadView, error) {
+			reads++
+			return detect.SpreadView{Tenant: tenant, Buckets: detect.Buckets, Servers: map[string]detect.SpreadCount{"a": {Run: 1}}}, nil
+		}
+	}
+	v.add(ctx, &jobs, "acme", read("acme"))
+	for range 5 {
+		if got := v.all(ctx); len(got) != 1 {
+			t.Fatalf("%+v", got)
+		}
+		clock = clock.Add(time.Second)
+	}
+	if reads != 1 {
+		t.Errorf("five asks within %s read OpenSearch %d times, not once", detViewsFresh, reads)
+	}
+	clock = clock.Add(detViewsFresh)
+	v.all(ctx)
+	if reads != 2 {
+		t.Errorf("an ask after %s was answered from the old read (%d reads)", detViewsFresh, reads)
+	}
+	// A tenant added since is read at once.
+	v.add(ctx, &jobs, "zeta", read("zeta"))
+	if got := v.all(ctx); len(got) != 2 {
+		t.Errorf("a new tenant waited for the old read to age: %+v", got)
 	}
 }

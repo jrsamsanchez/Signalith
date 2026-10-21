@@ -146,6 +146,8 @@ jobs:
     needs: packages
     if: github.event_name == 'push' && vars.SIGNPATH_ORGANIZATION_ID != ''
     runs-on: windows-latest
+    # The SignPath token is a secret of the release environment.
+    environment: release
     permissions:
       contents: read
       actions: read
@@ -199,6 +201,9 @@ jobs:
     # Also when windows-signing is skipped (no SignPath set up, or a dry run).
     if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.chart.result == 'success' && needs.windows-signing.result != 'failure' }}
     runs-on: ubuntu-latest
+    # For the GPG key, a secret of the release environment; a dry run has
+    # none, so it signs the checksums with Sigstore only.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
       contents: write
       id-token: write

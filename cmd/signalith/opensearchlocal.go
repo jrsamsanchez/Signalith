@@ -26,7 +26,8 @@ import (
 )
 
 const opensearchUsage = `usage:
-  signalith opensearch install [-zip FILE]   install or upgrade the OpenSearch Signalith runs on this computer
+  signalith opensearch install [-zip FILE] [-proxy HOST:PORT]
+                                             install or upgrade the OpenSearch Signalith runs on this computer
   signalith opensearch remove                remove it, keeping its data
   signalith opensearch status                show what is installed
   signalith opensearch adopt -c CONFIG       on an upgrade: install it when CONFIG's OpenSearch was never set up
@@ -34,7 +35,8 @@ const opensearchUsage = `usage:
 The Windows installer runs these (docs/install-packages.md). install
 downloads OpenSearch ` + oslocal.Version + ` for Windows and checks its SHA-512;
 -zip uses a copy of that file instead, for a computer without internet
-access. adopt installs it the same way, and points CONFIG at it, only when
+access; -proxy downloads through a proxy (by default the computer's own
+proxy setting is used). adopt installs it the same way, and points CONFIG at it, only when
 CONFIG still has the address older installers wrote (plain http on this
 computer, port 9200, no sign-in) and nothing answers there.
 `
@@ -68,22 +70,27 @@ func cmdOpenSearch(args []string) error {
 	fs.StringVar(&l.Data, "data", def.Data, "folder for OpenSearch's config, data and logs")
 	fs.StringVar(&l.Client, "client", def.Client, "folder for Signalith's certificate for OpenSearch")
 	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" .zip for Windows to install, instead of downloading it")
+	proxy := fs.String("proxy", "", "the proxy to download through (host:port); by default the computer's own proxy setting")
 	path := configFlag(fs)
 	fs.Parse(args)
 	sys, err := newLocalOpenSearch()
 	if err != nil {
 		return err
 	}
+	client, err := oslocal.Client(*proxy)
+	if err != nil {
+		return err
+	}
 	switch cmd {
 	case "install":
-		return installOpenSearch(context.Background(), os.Stdout, sys, l, *zip)
+		return installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client)
 	case "adopt":
 		applyServiceEnv(*path)
 		c, err := loadConfig(*path, newLogger(os.Stderr))
 		if err != nil {
 			return err
 		}
-		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, *path, c, answers)
+		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client, *path, c, answers)
 	case "remove":
 		return removeOpenSearch(os.Stdout, sys, l)
 	case "status":
@@ -106,13 +113,13 @@ func cmdOpenSearch(args []string) error {
 // installOpenSearch installs OpenSearch, or upgrades the one installed
 // before to the pinned version, and waits until it answers with its
 // security settings loaded. Its config, data and certificates are kept.
-func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string) error {
-	return installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort)
+func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client) error {
+	return installOpenSearchFrom(ctx, out, sys, l, zip, client, oslocal.FirstPort)
 }
 
 // installOpenSearchFrom is installOpenSearch with a new install taking
 // the first free port from firstPort.
-func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, firstPort int) error {
+func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, firstPort int) error {
 	st, err := oslocal.LoadState(l)
 	if err != nil {
 		return err
@@ -160,7 +167,10 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		if version != oslocal.Version {
 			return fmt.Errorf("OpenSearch %s is not in %s any more; install Signalith with OpenSearch %s or newer", version, home, version)
 		}
-		file, err := oslocal.Fetch(ctx, zip, l.Download(), out)
+		if err := oslocal.CheckRoom(l); err != nil {
+			return err
+		}
+		file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
 		if err != nil {
 			return err
 		}
@@ -223,7 +233,7 @@ const oldDefaultOpenSearch = "127.0.0.1:9200"
 // address with no sign-in and nothing answers there, Signalith has never
 // reached an OpenSearch, so this installs one as a new install does and
 // points the config file at it. Any other config is left as it is.
-func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip, path string, c *config.Config, answers func(addr string) bool) error {
+func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, path string, c *config.Config, answers func(addr string) bool) error {
 	if st, err := oslocal.LoadState(l); err != nil || st != nil {
 		return err
 	}
@@ -234,7 +244,7 @@ func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l 
 	fmt.Fprintf(out, "Nothing answers at http://%s, the OpenSearch address in %s, so Signalith installs OpenSearch on this computer.\n", oldDefaultOpenSearch, path)
 	// From the next port, so an OpenSearch of the user's that is only
 	// stopped now can still start on 9200 later.
-	if err := installOpenSearchFrom(ctx, out, sys, l, zip, oslocal.FirstPort+1); err != nil {
+	if err := installOpenSearchFrom(ctx, out, sys, l, zip, client, oslocal.FirstPort+1); err != nil {
 		return err
 	}
 	st, err := oslocal.LoadState(l)
