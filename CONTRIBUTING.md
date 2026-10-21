@@ -18,12 +18,12 @@ Everyone taking part is expected to follow the [code of conduct](CODE_OF_CONDUCT
 ## Build
 
 Signalith is one Go program with the web UI embedded (`web/static`, plain JavaScript,
-no build step). It needs the Go version in [`go.mod`](go.mod) (currently 1.26.9). With
+no build step). It needs the Go version in [`go.mod`](go.mod) (currently 1.26.10). With
 an older Go installed, the `go` command downloads the right one by itself; if your
 setup turns that off, set it for one command:
 
 ```sh
-GOTOOLCHAIN=go1.26.9 go build -o signalith ./cmd/signalith
+GOTOOLCHAIN=go1.26.10 go build -o signalith ./cmd/signalith
 ```
 
 ```sh
