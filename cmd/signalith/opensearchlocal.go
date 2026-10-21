@@ -170,6 +170,9 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		if err := oslocal.CheckRoom(l); err != nil {
 			return err
 		}
+		if w := oslocal.DiskWarning(l); w != "" {
+			fmt.Fprintln(out, "Warning: "+w)
+		}
 		file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
 		if err != nil {
 			return err
