@@ -416,9 +416,13 @@
         ? el('span', { class: 'sc-locked' }, icon('lock', 'icon--xs'), el('span', {}, 'Set by ', el('code', {}, fix.locked_by), ' where Signalith is started'))
         : btn('secondary', 'Open setting', () => openSetting(fix.setting), { 'data-focus': 'set:' + kind + ':' + c.id }));
     }
-    if (fix.page) {
+    // Change password opens the account menu's dialog, which changes the
+    // signed-in user's own password: offered only to the built-in admin.
+    const own = fix.page && fix.page.id === 'change-password';
+    if (fix.page && (!own || (me && me.source === 'builtin' && me.can_change_password))) {
       const p = fix.page;
       acts.push(btn('secondary', p.label, () => {
+        if (own) { $('change-password').click(); return; }
         if (p.id === 'users' && p.tab && window.showUsersTab) window.showUsersTab(p.tab);
         else showPage(p.id);
       }, { 'data-focus': 'page:' + kind + ':' + c.id }));

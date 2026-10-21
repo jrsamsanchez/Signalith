@@ -146,9 +146,26 @@ type CheckState struct {
 	// check already had MaxProfiles.
 	Truncated time.Time `json:"truncated,omitzero"`
 	Full      time.Time `json:"full,omitzero"`
+	// TruncatedAfter is the last user or host the truncated search read:
+	// those after it in name order were not learned that hour.
+	TruncatedAfter string `json:"truncated_after,omitempty"`
 	// Started is when the check started learning: when baselines first
 	// ran, or when it was turned on or reset since.
 	Started time.Time `json:"started,omitzero"`
+	// Behind is the next hour the check learns from when it is behind
+	// the others: after one of its searches failed, or while it learns
+	// the history after it was turned on or reset. Zero when it keeps
+	// up. LiveFrom is when it was turned on or reset: the hours before
+	// only teach it. It stays once the check caught up.
+	Behind   time.Time `json:"behind,omitzero"`
+	LiveFrom time.Time `json:"live_from,omitzero"`
+	// Error is why it last could not learn an hour, ErrorAt when; empty
+	// once it learned one again.
+	Error   string    `json:"error,omitempty"`
+	ErrorAt time.Time `json:"error_at,omitzero"`
+	// Skipped is the end of the hours it skipped because it could not
+	// learn from them for over a week.
+	Skipped time.Time `json:"skipped,omitzero"`
 }
 
 // ErrStale refuses a state write over one a newer job holder made.

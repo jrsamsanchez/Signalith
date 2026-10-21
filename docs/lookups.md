@@ -164,7 +164,7 @@ index=signalith-authentication-* earliest=-7d
 ```
 
 Only admins can use it, and it writes only when they press **Run** (or
-Ctrl+Enter) on the Search page. Changing the time range, sorting, filtering
+Enter) on the Search page. Changing the time range, sorting, filtering
 on a value, drilling down or opening the Events tab runs the search again
 without writing, and so does the Ask box. Detections cannot use it (a
 detection with it is refused when saved), nor can dashboards, the AI tools or

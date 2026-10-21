@@ -290,6 +290,8 @@ type RunState struct {
 	Lag      int64     `json:"lag_ms,omitempty"`
 	LateRuns int       `json:"late_runs,omitempty"`
 	LastLate time.Time `json:"last_late,omitzero"`
+	// LateNode is the server that ran that late run.
+	LateNode string `json:"late_node,omitempty"`
 	// Skipped is the latest stretch of missed slots older than
 	// detections.catch_up, which were not run.
 	Skipped *Skipped `json:"skipped,omitempty"`
@@ -767,7 +769,7 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 		st.LagMS = lag.Milliseconds()
 		if cstart.Sub(later(slot, s.takenAt(d.ID))) > sched {
 			st.LateRuns++
-			st.LastLate = start.UTC()
+			st.LastLate, st.LateNode = start.UTC(), s.NodeID
 			if !catchup {
 				s.log().Warn("detection ran late: every worker was busy", "detection", d.ID, "late", lag.Round(time.Second), "schedule", d.Schedule)
 			}

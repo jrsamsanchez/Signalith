@@ -224,3 +224,35 @@ func networkPackRule(d *Detection) bool {
 	}
 	return false
 }
+
+// DQ-01: the Splunk pack ranks its TTPs, so severity filters and the
+// high-and-critical button see its strongest rules. security_content gives
+// nearly every TTP the same risk score, so a change upstream that flattens
+// them again fails here.
+func TestSplunkPackSeverities(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := map[string]int{}
+	sev := map[string]string{}
+	for _, d := range ds {
+		if d.Origin != nil && d.Origin.Pack == "splunk" {
+			n[d.Severity]++
+			sev[d.ID] = d.Severity
+		}
+	}
+	t.Logf("splunk severities: %v", n)
+	if n["critical"] < 20 || n["high"] < 100 || n["medium"] < 100 || n["low"] < 100 {
+		t.Errorf("splunk severities: %v", n)
+	}
+	for id, want := range map[string]string{
+		"splunk-windows-steal-authentication-certificates-esc1-abuse": "high",
+		"splunk-dump-lsass-via-procdump":                              "high",
+		"splunk-bcdedit-failure-recovery-modification":                "critical",
+	} {
+		if sev[id] != want {
+			t.Errorf("%s: %q, want %s", id, sev[id], want)
+		}
+	}
+}

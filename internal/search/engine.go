@@ -48,6 +48,10 @@ type Options struct {
 // maxEventsLimit bounds MaxEvents however it is set.
 const maxEventsLimit = 100000
 
+// MaxRowsLimit bounds the stats rows a caller may ask for with
+// query.Query.MaxRows.
+const MaxRowsLimit = 500000
+
 // Engine runs queries.
 type Engine struct {
 	Store store.Searcher
@@ -248,6 +252,9 @@ type Plan struct {
 	// split is a timechart by a field's date histogram, run once Body
 	// has found its series.
 	split map[string]any
+	// maxRows is how many stats rows are read before the result is
+	// truncated: MaxBuckets, or more when the query asks.
+	maxRows int
 }
 
 func (e *Engine) opts() Options {
@@ -497,7 +504,10 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 	if err := checkPatterns(q); err != nil {
 		return nil, err
 	}
-	p := &Plan{Index: index, threat: threat, sum: sum}
+	p := &Plan{Index: index, threat: threat, sum: sum, maxRows: o.MaxBuckets}
+	if q.MaxRows > p.maxRows {
+		p.maxRows = min(q.MaxRows, MaxRowsLimit)
+	}
 	body := map[string]any{"query": dsl, "track_total_hits": true}
 	p.Body = body
 	summed := sum != nil
@@ -972,7 +982,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 			res.Rows = []Row{row}
 			return res, nil
 		}
-		buckets, truncated, err := e.allBuckets(ctx, p, resp, o.MaxBuckets)
+		buckets, truncated, err := e.allBuckets(ctx, p, resp, p.rowsMax(o))
 		if err != nil {
 			return nil, err
 		}
@@ -1006,7 +1016,7 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		return res, nil
 	case "top":
 		top := p.transform.(*query.Top)
-		buckets, truncated, err := e.allBuckets(ctx, p, resp, o.MaxBuckets)
+		buckets, truncated, err := e.allBuckets(ctx, p, resp, p.rowsMax(o))
 		if err != nil {
 			return nil, err
 		}
@@ -1078,6 +1088,14 @@ func (e *Engine) allBuckets(ctx context.Context, p *Plan, resp map[string]any, m
 			return nil, false, err
 		}
 	}
+}
+
+// rowsMax is how many stats rows the plan reads.
+func (p *Plan) rowsMax(o Options) int {
+	if p.maxRows > 0 {
+		return p.maxRows
+	}
+	return o.MaxBuckets
 }
 
 func cloneMap(m map[string]any) map[string]any {
