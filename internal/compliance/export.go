@@ -5,7 +5,9 @@ package compliance
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io"
@@ -39,11 +41,35 @@ func (r *Report) Find(id string) (*FrameworkReport, bool) {
 	return nil, false
 }
 
+// Export says where a report comes from: the server, the Signalith
+// version and who exported it.
+type Export struct {
+	Server, Version, By string
+}
+
+// MappingVersion identifies the mapping of controls a report used: the
+// start of the SHA-256 of frameworks.yaml.
+func MappingVersion() string {
+	sum := sha256.Sum256(frameworksYAML)
+	return hex.EncodeToString(sum[:6])
+}
+
+// Basis says how the report measured what it shows, for an auditor.
+func Basis() []string {
+	return []string{
+		fmt.Sprintf("Events count when they arrived in the last %d days, sample data left out.", int(DataWindow.Hours()/24)),
+		fmt.Sprintf("Findings count as reviewed when none waited more than %d days for triage.", int(TriageWindow.Hours()/24)),
+		"A vulnerability scan counts when it finished in the last 31 days, partly when in the last 92.",
+		"Configuration checks use each host's latest result.",
+		"Retention reads the policy and the oldest day of stored events.",
+	}
+}
+
 // WriteCSV writes one row per control and piece of evidence, for an
 // auditor's spreadsheet.
-func WriteCSV(w io.Writer, rep *Report, f *FrameworkReport, server string) error {
+func WriteCSV(w io.Writer, rep *Report, f *FrameworkReport, x Export) error {
 	cw := csv.NewWriter(w)
-	head := []string{"framework", "control", "group", "title", "status", "signalith_found", "outside_signalith", "evidence", "evidence_status", "detail", "nist_800_53", "note", "note_by", "note_at", "server", "generated"}
+	head := []string{"framework", "control", "group", "title", "status", "signalith_found", "outside_signalith", "evidence", "evidence_status", "detail", "nist_800_53", "note", "note_by", "note_at", "server", "generated", "signalith_version", "mapping", "exported_by"}
 	if err := cw.Write(head); err != nil {
 		return err
 	}
@@ -55,7 +81,7 @@ func WriteCSV(w io.Writer, rep *Report, f *FrameworkReport, server string) error
 		if a := c.Attestation; a != nil {
 			note, by, at = a.Note, a.By, a.At.UTC().Format("2006-01-02 15:04 UTC")
 		}
-		return []string{strings.Join(c.NIST, " "), note, by, at, server, rep.Generated.UTC().Format("2006-01-02 15:04 UTC")}
+		return []string{strings.Join(c.NIST, " "), note, by, at, x.Server, rep.Generated.UTC().Format("2006-01-02 15:04 UTC"), x.Version, MappingVersion(), x.By}
 	}
 	for _, c := range f.Controls {
 		rows := [][]string{}
@@ -102,7 +128,7 @@ func safeCSV(rec []string) []string {
 }
 
 // WriteHTML writes a report page to print or save as PDF.
-func WriteHTML(w io.Writer, rep *Report, f *FrameworkReport, server, version string) error {
+func WriteHTML(w io.Writer, rep *Report, f *FrameworkReport, x Export) error {
 	type group struct {
 		Name     string
 		Controls []ControlReport
@@ -116,7 +142,8 @@ func WriteHTML(w io.Writer, rep *Report, f *FrameworkReport, server, version str
 	}
 	var b bytes.Buffer
 	err := reportTemplate.Execute(&b, map[string]any{
-		"R": rep, "F": f, "Groups": groups, "Server": server, "Version": version,
+		"R": rep, "F": f, "Groups": groups, "Server": x.Server, "Version": x.Version, "By": x.By,
+		"Mapping": MappingVersion(), "Basis": Basis(),
 		"Generated": rep.Generated.UTC().Format("2 January 2006, 15:04 UTC"),
 	})
 	if err != nil {
@@ -196,7 +223,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 <header>
   <div class="brand">Signalith compliance evidence</div>
   <h1>{{.F.Name}} {{.F.Version}}</h1>
-  <p class="meta">Server {{.Server}} · Generated {{.Generated}}{{if .Version}} · Signalith {{.Version}}{{end}}</p>
+  <p class="meta">Server {{.Server}} · Generated {{.Generated}}{{if .Version}} · Signalith {{.Version}}{{end}} · Mapping {{.Mapping}}{{with .By}} · Exported by {{.}}{{end}}</p>
 </header>
 <section class="summary" aria-label="Summary">
   <div class="kpi"><b>{{.F.Score}}%</b><span>Evidence coverage of {{len .F.Controls}} mapped controls</span></div>
@@ -209,6 +236,7 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
 <p class="note"><b>This is not a compliance assessment.</b> It shows what Signalith itself observed for the {{len .F.Controls}} controls of {{.F.Name}} a SIEM can give evidence for; the rest of the framework is outside its scope, and an assessor decides what evidence is enough.</p>
 <p class="note">The score counts controls with evidence as 1 and partly supported ones as ½, out of the controls that apply. Controls noted as handled outside Signalith count for what Signalith found, not for the note.</p>
 {{range .R.Notes}}<p class="note"><b>Note:</b> {{.}}</p>{{end}}
+<p class="note"><b>How it was measured:</b> {{range $i, $b := .Basis}}{{if $i}} {{end}}{{$b}}{{end}}</p>
 {{range .Groups}}
 <h2>{{.Name}}</h2>
 <table>

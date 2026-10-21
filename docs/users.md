@@ -1177,7 +1177,7 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 (setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
-`POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`POST /api/baselines/{check}/reset`, `POST /api/baselines/{check}/unlearn` (the [behavior baselines](baselines.md) and their exceptions),
 `GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,

@@ -99,6 +99,12 @@ const (
 	// minHourDays is how many days an hour of the day needs before it
 	// can be unusual for a host.
 	minHourDays = 7
+	// dormantAfter is how long a user may go without a sign-in from the
+	// internet before the next one adds risk (arrival).
+	dormantAfter = 30 * 24 * time.Hour
+	// maxArrivals is the most arrival events one hour raises, so they
+	// never take most of MaxRaisedPerHour from new countries.
+	maxArrivals = 10
 )
 
 // Engine learns the baselines and raises their risk.
@@ -247,7 +253,11 @@ func (e *Engine) Round(ctx context.Context) (more bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	dirty = dirty || reset
+	unlearned, err := e.unlearn(ctx, set, &st)
+	if err != nil {
+		return false, err
+	}
+	dirty = dirty || reset || unlearned
 	if err := e.housekeep(ctx, set, now); err != nil {
 		e.log().Warn("behavior baselines: could not remove forgotten profiles", "err", err)
 	}
@@ -405,6 +415,61 @@ func (e *Engine) resets(ctx context.Context, set Settings, st *State) (bool, err
 	return any, nil
 }
 
+// unlearn forgets the values asked to be forgotten since the last round.
+func (e *Engine) unlearn(ctx context.Context, set Settings, st *State) (bool, error) {
+	changed := false
+	for _, id := range checkIDs() {
+		state := st.Checks[id]
+		if state == nil {
+			continue
+		}
+		var todo []ForgetValue
+		for _, f := range set.Checks[id].Unlearn {
+			// One asked before a reset went with the profiles. One waits
+			// until the hours up to when it was asked are learned, so a
+			// check catching up does not learn the value again.
+			if f.At.After(state.Unlearned) && f.At.After(state.Started) && !st.Through.Before(f.At) {
+				todo = append(todo, f)
+			}
+		}
+		if len(todo) == 0 {
+			continue
+		}
+		if !e.allowed() {
+			return changed, nil
+		}
+		var keys []string
+		for _, f := range todo {
+			if k := NormEntity(f.Entity); k != "" && !slices.Contains(keys, k) {
+				keys = append(keys, k)
+			}
+		}
+		ps, err := e.Store.Profiles(ctx, id, keys)
+		if err != nil {
+			return changed, err
+		}
+		var write []*Profile
+		for _, f := range todo {
+			if f.At.After(state.Unlearned) {
+				state.Unlearned = f.At
+			}
+			i := slices.Index(keys, NormEntity(f.Entity))
+			if i < 0 || ps[i] == nil || !ps[i].unlearn(f.Value) {
+				continue
+			}
+			if !slices.Contains(write, ps[i]) {
+				write = append(write, ps[i])
+			}
+			e.log().Info("behavior baselines: a value was forgotten", "check", id, "entity", f.Entity, "value", f.Value, "by", f.By)
+		}
+		if err := e.Store.WriteProfiles(ctx, write); err != nil {
+			return changed, err
+		}
+		changed = true
+	}
+	return changed, nil
+}
+
 func (e *Engine) housekeep(ctx context.Context, set Settings, now time.Time) error {
 	e.mu.Lock()
 	due := e.houseAt.IsZero() || now.Sub(e.houseAt) >= housekeepEvery
@@ -467,8 +532,10 @@ type hourRun struct {
 	// raised counts the risk events of each check this hour.
 	raised map[string]int
 	// countryNew holds the users with a new country this hour, whose
-	// new network is not raised again.
+	// new network is not raised again; arrivals counts the arrival
+	// events this hour.
 	countryNew map[string]bool
+	arrivals   int
 }
 
 // A unit is the checks that learn from the same searches. A unit learns
@@ -879,6 +946,55 @@ func (r *hourRun) learn(ctx context.Context, check string, all map[string]*seen,
 	return nil
 }
 
+// arrival is the risk of a user with no sign-in from the internet on
+// record, or none for dormantAfter, signing in from the internet: how a
+// new or long-unused account is taken over, which the learning period
+// would keep quiet. It adds half the check's risk, once the check itself
+// has learned sign-ins from the internet for the learning period (so
+// sign-in data that starts arriving late does not make every user new),
+// at most maxArrivals an hour, and not on top of a new country.
+func (r *hourRun) arrival(p *Profile, key string, s *seen) (detect.RiskEvent, bool) {
+	cs := r.state(NewCountry)
+	learning := r.set.Learning()
+	if !r.live || r.countryNew[key] || cs.Started.IsZero() || r.start.Before(cs.Started.Add(learning)) ||
+		cs.DataFrom.IsZero() || r.start.Before(cs.DataFrom.Add(learning)) {
+		return detect.RiskEvent{}, false
+	}
+	fresh := p.Hours == 0 && p.First.Equal(r.start)
+	idle := r.start.Sub(p.Last)
+	if !fresh && (p.Hours == 0 || idle < dormantAfter) {
+		return detect.RiskEvent{}, false
+	}
+	vs := sortedValues(s)
+	if len(vs) == 0 {
+		return detect.RiskEvent{}, false
+	}
+	sv := s.values[vs[0]]
+	f := map[string]any{"user": s.name}
+	for k, v := range sv.extra {
+		f[k] = v
+	}
+	from := fmt.Sprintf("%s (%s)", sv.extra["src"], CountryName(vs[0]))
+	value, msg := "returning", fmt.Sprintf("%s signed in from the internet after %d days without a sign-in, from %s", s.name, int(idle.Hours()/24), from)
+	if fresh {
+		// What the check remembers: since the history it first learned,
+		// up to Forget after.
+		known := min(r.set.Forget(), r.start.Sub(cs.Started.Add(-r.e.back(r.set))))
+		value, msg = "new", fmt.Sprintf("First sign-in from the internet on record for %s in the last %d days, from %s: a new or long-unused account", s.name, int(known.Hours()/24), from)
+	}
+	if r.arrivals >= maxArrivals {
+		return detect.RiskEvent{}, false
+	}
+	r.arrivals++
+	// The new network is the same news.
+	r.countryNew[key] = true
+	f["baseline_reason"] = value
+	ev := r.event(NewCountry, "user", s.name, value, msg, sv.first, f)
+	ev.BaseScore = max(ev.BaseScore/2, 1)
+	ev.Score = max(math.Round(ev.Score*5)/10, 1)
+	return ev, true
+}
+
 // canRaise reports whether a profile has learned long enough for its
 // unusual behavior in this hour to add risk.
 func (r *hourRun) canRaise(p *Profile) bool {
@@ -1046,6 +1162,9 @@ func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) err
 			}
 			return n.Country, map[string]any{"src": src, "src_country": n.Country, "src_asn": n.AS(), "src_asn_name": n.Name}
 		})
+		if cs := r.state(NewCountry); len(users) > 0 && (cs.DataFrom.IsZero() || r.start.Before(cs.DataFrom)) {
+			cs.DataFrom = r.start
+		}
 		err := r.learn(ctx, NewCountry, users, func(p *Profile, key string, s *seen) []detect.RiskEvent {
 			var out []detect.RiskEvent
 			can := r.canRaise(p)
@@ -1060,6 +1179,9 @@ func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) err
 					out = append(out, r.event(NewCountry, "user", s.name, c, msg, sv.first, f))
 					r.countryNew[key] = true
 				}
+			}
+			if ev, ok := r.arrival(p, key, s); ok {
+				out = append(out, ev)
 			}
 			return out
 		})
