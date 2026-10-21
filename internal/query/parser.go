@@ -355,11 +355,12 @@ func (p *parser) parseAtom(search bool) (Expr, error) {
 		}
 		if nt.kind == tokOp {
 			p.next()
+			bare := p.peek().kind == tokWord
 			v, err := p.value()
 			if err != nil {
 				return nil, err
 			}
-			return &Compare{Field: t.text, Op: nt.text, Value: v}, nil
+			return &Compare{Field: t.text, Op: nt.text, Value: v, Ref: !search && bare && nt.text != "=~" && isEvalIdent(v)}, nil
 		}
 		if nt.kind == tokWord && nt.text == "IN" {
 			p.next()

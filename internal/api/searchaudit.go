@@ -24,9 +24,17 @@ const maxAuditQuery = 2000
 // an audited act as changing a setting (GDPR Article 5(2), NIST SP 800-53
 // AU-2). The line is kept like every other audit line: admins only, chained
 // and signed once audit records are kept in OpenSearch.
+//
+// A public demo's visitors are anonymous and search made-up data, and
+// anyone can run as many searches as they like: their lines go only to
+// the server's log, not to the audit records, which would grow with
+// every visitor's searches.
 func (s *Server) auditSearch(r *http.Request, msg string, attrs ...any) {
 	p := principalOf(r)
 	base := []any{"audit", true, "by", userOf(r)}
+	if p != nil && p.Source == sourceDemo {
+		base[0] = "demo"
+	}
 	if p != nil {
 		if p.Active != "" {
 			base = append(base, "tenant", p.Active)

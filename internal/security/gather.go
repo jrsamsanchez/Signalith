@@ -19,6 +19,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/archivecrypt"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/incontainer"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
@@ -56,6 +57,7 @@ func (h Host) getenv(name string) string {
 // NewFacts starts the facts with what the configuration says.
 func NewFacts(h Host, now time.Time, server ServerInfo) *Facts {
 	f := &Facts{Now: now, Server: server, Config: h.Config, InContainer: h.InContainer, Docker: h.Docker, SettingEnv: map[string]string{}}
+	f.Kubernetes = h.InContainer && !h.Docker && incontainer.Kubernetes(h.getenv)
 	f.PublicTokenAccepted = h.InContainer && h.Config.OldTokenAccepted()
 	if f.Server.OS == "" {
 		f.Server.OS = h.GOOS

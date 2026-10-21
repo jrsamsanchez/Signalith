@@ -80,12 +80,18 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		return total, nil
 	}
 	batch := make([]Event, 0, min(n, batchEvents))
-	size, done := 0, 0
+	ids := make([]string, 0, cap(batch))
+	// The agent token that sent the request is part of the seed, so the
+	// same bytes from another sender can't take its records' IDs (and so
+	// be counted as duplicates of them instead of being stored). The
+	// token, not the address, since a resend may come from another one.
+	seed := bodySeed("otlp\x00"+OriginFrom(ctx).TokenID, body)
+	size, done, pos := 0, 0, 0
 	flush := func() error {
-		res, err := p.write(ctx, batch, nil)
+		res, err := p.write(ctx, batch, ids)
 		done += len(batch)
 		clear(batch)
-		batch, size = batch[:0], 0
+		batch, ids, size = batch[:0], ids[:0], 0
 		if err != nil {
 			p.stats.Failed.Add(int64(n - done))
 			return err
@@ -94,6 +100,11 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		return nil
 	}
 	err := walk(body, true, func(l *otlpLog, rawSize int, bad *BodyError) error {
+		// The record's place in the request gives its events their
+		// document IDs, so a request the Collector sends again (after a
+		// 503, or an answer it never got) is counted as duplicates instead
+		// of being stored twice.
+		pos++
 		if bad != nil {
 			done++
 			p.stats.Failed.Add(1)
@@ -111,8 +122,9 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		// is written as soon as it is full, so a message split into many
 		// records can't make an oversized bulk request.
 		share := max(rawSize/max(len(evs), 1), 1)
-		for _, ev := range evs {
+		for i, ev := range evs {
 			batch = append(batch, ev)
+			ids = append(ids, subRecordID(seed, pos-1, i))
 			total.noteHost(&batch[len(batch)-1])
 			size += share
 			if len(batch) >= batchEvents || size >= batchBytes {
@@ -438,7 +450,7 @@ func otlpSeverityName(n int64) string {
 // "data" list of one-entry maps in schema order (array, the only format
 // in older versions). The Windows parser reads Security events by
 // position, so named values are put in schema order with windowsSchema;
-// Sysmon events are read from the named values directly.
+// Sysmon and Defender events are read from the named values directly.
 func otlpWindows(b map[string]any) Event {
 	channel := str(b, "channel")
 	var eventID string
@@ -508,7 +520,7 @@ func otlpWindows(b map[string]any) Event {
 		rec["Binary"] = binary
 	}
 	var named map[string]string
-	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") {
+	if strings.EqualFold(channel, "Microsoft-Windows-Sysmon/Operational") || strings.EqualFold(channel, DefenderChannel) {
 		named = values
 	}
 	ev := parseWindowsWith(rec, named)

@@ -112,7 +112,7 @@ days of light background, about 1,000 events in all.
 
 ## A guided tour of the attacks
 
-Eleven stories are woven into the week. Six are intrusions designed so that
+Fourteen stories are woven into the week. Eight are intrusions designed so that
 every built-in detection that is on fires; the others are benign activity,
 everyday weaknesses and upkeep that trip detections you can close as benign
 or fix.
@@ -131,6 +131,8 @@ counts toward the risk findings below. The table keeps them apart.
 | **Antivirus upkeep** | Definitions updates fail twice on `web-01` (ClamAV) and on `ws-ops-02` (Defender). ClamAV’s nightly scan on `app-01` finds a web shell in an upload folder but only reports it, so the file stays. IT tests Defender on `ws-it-02` with the EICAR test file. | av-definitions-failing; malware-left-clamav and malware-detected for the web shell; malware-detected for the EICAR test, a finding to close as benign | |
 | **Nightly scan finds vulnerable servers** | Signalith's own [vulnerability scan](vulnerabilities.md) of the server network finds Apache httpd 2.4.49 on `web-01` with two vulnerabilities attackers are known to use (CVE-2021-41773 and CVE-2021-42013) and a critical one (CVE-2023-25690), a critical OpenSSH flaw on `app-01` (CVE-2023-38408) that EPSS rates likely to be exploited, and Telnet still open on the jump host `jump-01`. `web-01` is a high priority asset, so its known exploited CVEs raise a critical finding too. The results are events in Search; the **Vulnerabilities** page lists only your own scans. | vuln-known-exploited, vuln-known-exploited-priority-asset, vuln-likely-exploited, vuln-critical, vuln-cleartext-remote-login | |
 | **DNS tunnelling and an internal scan** | Malware on the engineering workstation `eng-ws-02` tries 32 generated domain names that do not exist until one resolves, then hides its traffic in DNS (TXT lookups whose names carry 48 characters of encoded data), then scans 26 internal addresses for SMB, which Zeek also reports as an address scan. Seen only by the network sensor. | network-dns-nxdomain-burst, network-dns-tunneling, network-internal-scan, network-zeek-scan-notice | |
+| **Malware reaches the plant network** | The next day the malware on `eng-ws-02` moves onto the plant network: it asks the 12 addresses of the controller range who they are over EtherNet/IP, probes `plc-01` until it refuses 30 requests (illegal data address), writes new set points to `plc-02`, downloads a program to `plc-03` over S7comm and stops it, and forces `plc-01` into Modbus listen-only mode so its HMI can no longer reach it. Seen only by the network sensor, in the [Industrial](network-sensor.md#industrial-protocols) data model. | ot-device-discovery, ot-exception-burst, ot-program-transfer, ot-controller-stop-start, ot-modbus-listen-only | |
+| **A controller answers the internet** | A port forward left `plc-02`'s Modbus port open to the internet, and `203.0.113.88` reads its coils and switches one at night. | ot-command-from-outside | |
 | **Clear-text sign-ins and a blind spot** | An admin signs in to `jump-01` over Telnet, a user opens a printer's admin page with HTTP basic authentication and `file-01` uploads a report to a partner over FTP, all sending passwords in clear text (the parser never stores them). During the nightly backup the sensor misses 7.8% of the traffic. A test service on `web-01` answers the internet on port 8443. | network-cleartext-credentials, network-sensor-packet-loss | |
 | **Network sensors need attention** | The mirror port of the network sensor `nsm-01` goes down for 25 minutes, so Zeek and Suricata see nothing; a nightly Suricata rules update fails; and the branch office's sensor `nsm-02` stops sending, which Signalith notices itself (a *Sensor silent* event). [Settings > Network sensors](network-sensor.md#settings-network-sensors) shows real sensors only, not these. | network-sensor-unhealthy, once for each problem | |
 | **Benign activity that looks malicious** | A backup job on `file-01` runs encoded PowerShell, and IT fetches a tool with `certutil`. | endpoint-encoded-powershell on `file-01`: one finding to close as benign | endpoint-lolbin-download on `ws-it-02` |
@@ -140,14 +142,14 @@ The risk that builds up then raises two more findings on its own:
 - **risk-threshold-exceeded**: a user or host passed the risk threshold;
 - **risk-multiple-tactics**: risk from several ATT&CK tactics on one entity.
 
-So 46 of the 49 built-in detections fire from the sample, all of them on.
+So 54 of the 59 built-in detections fire from the sample, all of them on.
 Each detection adds its risk once per thing it found, so the totals on the
 Risk page and the dashboards are the same every time you load.
 
 ### Detections that do not fire
 
-Three built-in detections are **off by default**, so the load does not run them.
-The sample has data for all three. To see them fire, turn them on on the
+Five built-in detections are **off by default**, so the load does not run them.
+The sample has data for all five. To see them fire, turn them on on the
 **Detections** page, then remove the sample data and load it again (the load
 runs the detections over the whole week; once it is loaded, a detection you
 turn on only looks at the last few minutes):
@@ -160,6 +162,12 @@ turn on only looks at the last few minutes):
 - **network-new-inbound-service**: the test service on `web-01` that answers
   the internet on port 8443. It is off by default because its first runs list
   every service already open to the internet.
+- **network-beaconing**: the phishing story's beacon to its command and control
+  server. It is off by default because ordinary workstations make the same
+  pattern to telemetry and update servers until you add exceptions.
+- **ot-new-command-source**: the workstation that writes to `plc-02` in the
+  plant story. It is off by default because its first runs list every host that
+  commands each controller today.
 
 ## How it stays apart from your data
 

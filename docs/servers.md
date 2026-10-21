@@ -855,7 +855,7 @@ use the shared settings, saving a note there answers `503`.
 ## Field names when several servers receive events
 
 Each day's events go to one index per data model, and Signalith lets one index hold at
-most 2,400 fields. Signalith's own fields always fit; the names senders choose (JSON
+most 2,500 fields. Signalith's own fields always fit; the names senders choose (JSON
 keys, syslog structured data, CEF extensions) share what is left (see
 [Ingest limits](sending-data.md#ingest-limits)). With several servers:
 
@@ -891,9 +891,9 @@ users stay signed in:
 2. **Drain** the server on the Servers page (see
    [Draining and removing a server](#draining-and-removing-a-server)).
 3. Install the new version on it: the new package on Linux (or by hand, as the
-   [README](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#linux) says),
+   [Getting started](getting-started.md#linux) says),
    the new MSI or `install.ps1` on
-   [Windows](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#windows)
+   [Windows](getting-started.md#windows)
    (with apt, run `sudo apt update` first). In Docker, in the Signalith folder,
    `git pull && docker compose -f deploy/docker/docker-compose.yml up -d`; for a
    server added with **Add a server**, set `SIGNALITH_VERSION` in

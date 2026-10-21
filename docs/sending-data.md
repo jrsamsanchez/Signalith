@@ -83,7 +83,7 @@ To move over:
 The Docker quick start is different: its updated files publish 9000 and 7779 and set
 `server.agent_listen`, so after the update open `https://localhost:9000` and set up each
 agent again from **Add data** (see
-[Upgrading to 0.3](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#upgrading-to-03-the-agent-port)).
+[Upgrading to 0.3](docker.md#upgrading-to-03-the-agent-port)).
 
 ## What each source becomes
 
@@ -106,8 +106,8 @@ or detection covers every source of the same kind.
 | Syslog from any device (see below), including CEF | Authentication, Change, Network_Traffic or Other |
 | OpenTelemetry Collector or SDK logs over OTLP/HTTP ([OpenTelemetry](opentelemetry.md)) | the same models for Windows, Linux and syslog records; Other for app logs |
 | Splunk HEC senders ([Splunk HEC senders](hec.md)) | by sourcetype: Authentication, Web and the cloud sources' models; Other for the rest |
-| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; other Zeek logs in Other |
-| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; other event types in Other |
+| Zeek on a network sensor: conn, dns, http, ssl and x509, files, notice ([Network sensor](network-sensor.md)) | Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers, Intrusion_Detection; Modbus, DNP3 and the ICSNPP industrial protocol logs in Industrial; other Zeek logs in Other |
+| Suricata EVE from a network sensor, or over syslog from pfSense and OPNsense: alert, flow, dns, http, tls, fileinfo ([Network sensor](network-sensor.md)) | Intrusion_Detection, Network_Traffic, Network_Resolution, Web, Certificates, File_Transfers; modbus, dnp3 and enip in Industrial; other event types in Other |
 | Status of a sensor built with the sensor install script, every 5 minutes ([Network sensor](network-sensor.md#status)) | Other, sourcetype `sensor:status` |
 | A log you saved a parser for on **Add data → Any other log** ([Any other log](custom-logs.md)) | The data model you chose, with the parser's sourcetype |
 | Anything else | Other (searchable by text and fields) |
@@ -146,12 +146,20 @@ under the time it arrived and its own time is kept in `device_time`, so a wrong 
 a forged date cannot create indices for other days. Search `device_time=*` to find these
 events.
 
+A syslog line with no time zone, such as `Oct 11 09:15:02` in an RFC 3164 auth.log, could
+be in any zone, and reading it as the server's would file the event hours off. Such an
+event takes the collector's time instead (Fluent Bit's `date`, the OpenTelemetry record's
+time, the HEC event's `time`, or when Signalith received it), and the time as the host
+wrote it is kept in `device_clock` (for example `2026-10-11T09:15:02`, with the year
+guessed). A time with a zone name other than UTC or GMT that the server's own zone doesn't
+use, such as `2026-10-11 09:15:02 XYZ`, is not trusted either: the receive time is used.
+
 Field names that senders choose (JSON keys, syslog structured data, CEF extensions) are
 limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, names of
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
 1,000 new names per daily index each time Signalith starts. With several servers, those
 1,000 are shared among the servers that stored events in the last 10 minutes (at least
-100 each), and no server adds new names to a day whose index already has 2,000 fields
+100 each), and no server adds new names to a day whose index already has 2,100 fields
 (see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
@@ -236,7 +244,14 @@ syslog (including the usual variations, such as Cisco IOS, IOS XR, NX-OS and ASA
 `dest`, `dest_port`, `user` and `action`. Forwarded sshd, sudo, su and user-management messages
 land in Authentication and Change like agent data, so the built-in detections apply.
 Events have `sourcetype=syslog` (or `cef`), `host` from the message, `dvc` set to the
-sender's address, and `facility` and `severity`. The event time is the one in the message,
+sender's address, and `facility` and `severity`. A message time without a zone (RFC 3164's
+`Oct 11 09:15:02`, or an ISO 8601 time without an offset, in the header or in a CEF `rt`,
+`end` or `start` or a LEEF `devTime`) is not used, since the device's clock may be in another
+zone than the server: the event takes the time Signalith received it, and the device's time
+is kept in `device_clock`. A CEF or LEEF time with a zone name other than UTC or GMT (`CST`
+is three different zones) is not used either. Set the device to send RFC 5424 or
+to write its timestamps in UTC with the zone shown
+to keep its own times. Otherwise the event time is the one in the message,
 unless it is older than `ingest.max_event_age` (a week by default, or the shortest time any
 event category is kept when that is shorter) or more than an hour
 ahead; then it is the time Signalith received the message, and the device's own time is

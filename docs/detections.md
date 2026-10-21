@@ -4,6 +4,30 @@ A detection is a Signalith query that runs on a schedule. Every row the query
 returns becomes a finding, unless the throttle says the same thing was already
 raised recently.
 
+Signalith ships 59 built-in detections mapped to MITRE ATT&CK: brute force, password
+spray, encoded PowerShell, Office spawning shells, shadow copy deletion, credential
+dumping, privileged group changes, malware and more, plus two risk incident rules. 54
+are on by default. With both [content packs](#content-packs) on, rules are tagged with
+181 ATT&CK techniques.
+
+## The pages
+
+- **Findings** is the triage queue. Filter by status, severity, owner or entity;
+  assign, change status and disposition, comment, and update many at once. Each
+  finding shows the result that fired, its entities, triage guidance, its full
+  history, and a **View contributing events** link that opens the exact search (see
+  [What a finding contains](#what-a-finding-contains)). Findings that belong to one
+  incident can be grouped in a [case](cases.md).
+- **Detections** lists every rule with its last run. Edit one in the form, **Test**
+  it to see which findings it would raise, or **Run now**. Editing a built-in saves
+  your version and keeps the original to revert to. Any search can become a
+  detection with **Save as detection** on the Search page.
+- **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to
+  a Signalith query and lists anything it had to approximate (see
+  [Sigma rules](#sigma-rules)).
+- **ATT&CK coverage** shows the Enterprise matrix with the techniques covered by
+  enabled detections, those covered only by disabled ones, and the gaps.
+
 ## Where detections live
 
 - **Built-in detections** ship inside the binary (`internal/detect/builtin`).
@@ -69,6 +93,9 @@ Rules of thumb:
 - Make `lookback` at least as long as `schedule`, or events between runs are missed.
   A little overlap is fine; throttling keeps overlapping runs from raising duplicates.
 - Without `throttle.fields`, the whole result row is the throttle key.
+- Without `throttle.window`, a rule whose `lookback` is longer than its `schedule`
+  holds each row back for `lookback`, so a row that overlapping runs both see raises
+  one finding.
 - Views that count a detection across many findings, such as **Top detections firing**
   on the posture dashboard, show `name`. Without one, they show `title` with each
   `$field$` and the word that leads to it left out ("Brute force against $dest$ from
@@ -96,7 +123,7 @@ Rules of thumb:
   example "Signalith was not running detections from 02:10 to 09:40; 90 runs of this
   detection were skipped." Search that time by hand if it matters. Set
   `detections.catch_up` on the Settings page, or see the
-  [configuration table](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#configuration).
+  [configuration table](configuration.md#all-settings).
 - **Failed runs.** A run that failed because OpenSearch did not answer, or was too
   busy, is tried again: the detection waits until it works. A run whose query has an
   error is not tried again; fix the query and the next run uses it. A run that times
@@ -158,6 +185,49 @@ activity, such as a sign-in from a new country.
 Write your own the same way, for example
 `datamodel=Risk risk_object_type=user | stats sum(risk_score) as risk_score by risk_object | where risk_score >= 200`.
 
+The **Risk** page lists the users and systems with the most risk. Open one to see
+what added its risk: each entry opens the detection that added it, with a link to
+the finding raised with it (or, for a risk-only detection, to the risk event in
+Search). Click an ATT&CK tactic to show only the entries for that tactic. Each user
+or system in the list has a bar for its score, the number of detections and tactics,
+and its asset or identity context.
+
+Risk events are stored under the Risk data model (`datamodel=Risk`) in
+`<prefix>-risk-YYYY.MM.DD` indices, which ordinary searches leave out.
+
+## Assets and identities
+
+The **Assets & identities** page takes two CSV files, one for assets and one for
+identities. Upload them on that page, or put them in `lookups.dir` as `assets.csv` and
+`identities.csv`; they reload within a minute. Every bad line is reported, and nothing
+is saved until the file is clean. Download the current file from the same page to
+edit it.
+
+```csv
+host,ip,cidr,owner,priority,category,bunit,location
+web1|web1.corp.local,10.0.1.10,,web team,critical,web|pci,ecommerce,dc1
+,,10.20.0.0/16,it,low,workstation,,office
+```
+
+```csv
+identity,name,email,manager,priority,category,bunit,watchlist
+alice|CORP\alice|alice@corp.local,Alice Ng,alice@corp.local,bob,high,admin,it,true
+```
+
+Use `|` between several values in one cell. Hosts match by short name or FQDN, IPs
+exactly or by the most specific CIDR, and users with or without `DOMAIN\` or
+`@domain`. Priority is `low`, `medium`, `high` or `critical`.
+
+This context changes three things:
+
+- **Risk scores** are multiplied by the object's priority: critical ×2, high ×1.5,
+  medium ×1, low ×0.5. A watchlisted user counts at least ×1.5.
+- **Urgency** on each finding starts at its severity. It goes up one level when a
+  critical asset or watchlisted user is involved, and down one level when every
+  known entity is low priority. The Findings queue shows and filters by urgency.
+- **`| enrich`** in any search adds `<field>_priority`, `_owner`, `_category` and more
+  next to each user, host and IP field (see [enrich](query-language.md#commands)).
+
 ## Exceptions
 
 An exception tunes a detection without editing its query, so that
@@ -176,6 +246,28 @@ window.
   one with its bin icon, or add one by hand with **Add**: one `field=value` per line,
   where `*` and `?` are wildcards and case is ignored. Leave the values empty, with a
   start time and how long, to silence every result for a maintenance window.
+
+### Proposing an exception
+
+Analysts know which findings are noise, but exceptions change what a detection
+raises, so an admin adds them. From a finding, an analyst chooses **More actions** (⋯)
+> **Propose an exception**, ticks the values, picks how long and says why. The
+finding can be closed in the same step. The request waits on the **Approvals** page,
+where an admin approves or declines it with an optional note; only an approval adds
+the exception, and its time starts then. The decision is noted on the finding, the
+exception records who proposed and who approved it, and the audit log records the
+proposal and the decision. A request nobody decides in 14 days expires. Up to 200
+requests can wait at once, 50 of them from one person.
+
+The values come from the finding, so the exception matches them **exactly**
+(ignoring case): a logged `*` or `adm?` is taken as those characters, never as a
+wildcard. An admin who proposes an exception cannot approve it; another admin does,
+or they add the exception on the detection directly.
+
+If saving an approved exception fails and Signalith cannot tell whether it was
+saved, the request stays approved and the audit log records **detection exception
+approval unconfirmed**. Check the detection's exceptions then, and add the exception
+by hand if it is missing: the request cannot be approved again.
 
 Each run counts the results exceptions matched; **Last run** on the Detections page
 shows them. An exception that has ended stays listed, greyed out, until it is
@@ -204,7 +296,7 @@ aggregates exist.
 
 ## Antivirus detections
 
-Eight built-in detections read the Malware data model (see
+Ten built-in detections read the Malware data model (see
 [antivirus.md](antivirus.md#detections) for what each means and what to do). All
 are on by default and raise findings:
 
@@ -313,6 +405,30 @@ a connection, which only host data (Sysmon) has, so they leave sensor data alone
 `network-sensor-shell-port` covers the sensor's side. If one IDS rule is noisy on your
 network, add an exception on its `signature_id`.
 
+## Industrial detections
+
+Industrial protocol traffic seen by a [network sensor](network-sensor.md#industrial-protocols)
+(the **Industrial** data model) lights up these built-in detections. They are mapped to
+[MITRE ATT&CK for ICS](https://attack.mitre.org/matrices/ics/), so their techniques
+(T0xxx) appear on **Detections > Coverage** under **ICS**, a second matrix shown once any
+detection uses one. They stay quiet on a network with no industrial devices.
+
+| ID | Severity | Fires when | Default |
+| --- | --- | --- | --- |
+| `ot-controller-stop-start` | high | A host told a controller to stop, start, restart, reset or stop talking (S7 PLC stop, DNP3 cold or warm restart, CIP stop or reset, BACnet device control, ...) | on |
+| `ot-program-transfer` | medium | A program or logic was downloaded to, or uploaded from, a controller | on |
+| `ot-command-from-outside` | high | An address outside your network sent a write, control or program command to an industrial device | on |
+| `ot-modbus-listen-only` | high | A Modbus device was forced into listen-only mode (needs CISA's ICSNPP Modbus analyzer) | on |
+| `ot-device-discovery` | medium | One host sent identification or discovery requests to 10 or more industrial devices in 15 minutes | on |
+| `ot-exception-burst` | low | Industrial devices answered 25 or more requests from one host with an error in 15 minutes | on |
+| `ot-new-command-source` | medium | A host sent write, control or program commands to a device it had not commanded in 30 days | off |
+
+Engineering workstations stop controllers and transfer programs during maintenance, and
+asset inventory tools ask devices who they are: add an exception on `src` for the hosts
+that do this routinely. Like `network-new-inbound-service`, `ot-new-command-source` uses
+its 30-day throttle as its memory, so its first runs list every host that commands each
+device today; turn it on when you want that inventory.
+
 ## What a finding contains
 
 The result row, the entities found in it (`user`, `src_user`, `src`, `src_host`,
@@ -326,6 +442,53 @@ Findings move through `new`, `in_progress`, `pending`, `resolved` and `closed`, 
 an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positive`,
 `undetermined`), comments, and a history of every change. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
+
+Resolving or closing a finding asks for a disposition, so the false positive rate
+of each detection stays honest. **Resolve** on selected findings opens the edit
+dialog with the status set; pick the disposition there. Closing a case with its
+findings asks for one disposition for them all. Playbooks set their own. To turn the check off, set `detections.require_disposition: false`
+(Settings > Detections).
+
+### The findings queue
+
+The **Findings** page lists findings most urgent first. Click **Urgency** or **Age** to
+sort the other way or by time; the server sorts, so the order covers every finding that
+matches, not only those on screen. The queue loads 200 at a time; **Load more** at the
+bottom adds the next 200. The urgency pills count every finding the other filters let
+through. **Unassigned** shows findings nobody owns.
+
+The filters are kept in the address, such as `#findings?owner=__none&urgency=critical`
+for unassigned critical findings, so a bookmark or a link to a colleague opens the same
+queue.
+
+**Views** next to the pills switches between saved filters. Common queues, such as
+**Assigned to me** and **Unassigned critical and high**, are there for everyone. **Save these filters as a view** keeps the filters on screen under a name of
+your own (up to 30). Your views are yours alone and follow you from browser to browser;
+they keep filters only, never findings.
+
+**Group by detection** or **Group by entity** shows, instead of findings, the detections
+or the hosts, users and addresses the matching findings share, largest first, each with
+its highest urgency. Pick one to see its findings.
+
+Keys: **J** and **K** move through the list, **X** selects the open finding, **A**
+assigns it to you (and moves a new one to In progress), **R** picks Resolved in its form
+and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search box.
+
+### Due times
+
+Each urgency has two targets: how soon someone should pick a finding up (change its
+status or owner) and how soon it should be resolved, both timed from when it was raised.
+They start at 15 minutes and 4 hours for critical, 1 hour and 24 hours for high, 4 hours
+and 3 days for medium, and 24 hours and 7 days for low; informational findings have none.
+Change them under **Settings > Detections** (`detections.sla.critical_respond`,
+`detections.sla.critical_resolve` and so on; `0` means no target).
+
+The queue shows when each open finding is next due (**Due 12m**, amber within the hour)
+or how late it is (**Late 2h**, red), and the finding shows both times. **Due** filters to
+findings late now or due within 1, 4 or 24 hours. With **Unassigned** and **Critical** it
+shows unowned critical findings about to breach; **Views** has **Unassigned, due within the
+hour** and **Late now** built in. Changes a playbook makes do not count as picking a finding
+up, so a playbook that assigns findings does not stop the clock.
 
 ## Content packs
 
@@ -1552,10 +1715,14 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `DELETE /api/detections/content` | Remove the update and use the rules built into Signalith (admin) |
 | `POST /api/detections/{id}/exceptions` | Add an exception: `{"match": {"host": "web*"}, "for": "7d", "from", "until", "comment"}` (admin) |
 | `DELETE /api/detections/{id}/exceptions/{exception}` | Remove an exception (admin) |
+| `POST /api/findings/{id}/propose-exception` | Propose an exception for an admin to approve: the same body as suppress, with a `comment` saying why (analyst) |
+| `GET /api/exception-requests` | Proposed exceptions, newest first, with `pending` (analyst) |
+| `POST /api/exception-requests/{id}/approve`, `/decline` | Decide a proposal, with an optional `{"note"}`; approving adds the exception (admin) |
 | `POST /api/findings/{id}/suppress` | Don't alert on this again: `{"fields": ["host", "user"], "for": "30d", "comment", "update": {"status": "closed", "disposition": "false_positive"}}` adds an exception for the finding's values of those fields and can update the finding (admin) |
 | `POST /api/detections/enable` | `{"ids": [...], "enabled": true}`: turn up to 5,000 detections on or off at once (404 and no change if any ID is unknown) |
-| `GET /api/coverage` | ATT&CK matrix with coverage |
-| `GET /api/findings?status=&severity=&urgency=&owner=&detection=&q=&since=7d&limit=` | Queue |
+| `GET /api/coverage` | ATT&CK matrix with coverage; `ics` holds the ATT&CK for ICS matrix when a detection uses an ICS technique |
+| `GET /api/findings?status=&severity=&urgency=&owner=&unowned=true&detection=&entity=&q=&since=7d&limit=&sort=&after=&counts=urgency&group=` | Queue. `sort` is `urgency` (most urgent first), `urgency_asc`, `newest` (the default) or `oldest`. When a page is full the answer has `next`; pass it as `after` for the next page. `counts=urgency` adds `by_urgency`, the count of each urgency without the `urgency` filter. `group=detection` or `group=entity` adds `groups`: up to 100 of `{key, count, urgency}`, largest first. `due=overdue` or `due=1h` keeps open findings late now or due within that time; the answer's `due` gives each finding's `respond_by`, `resolve_by`, `respond_late` and `resolve_late` |
+| `GET`, `PUT /api/me/finding-views` | Your saved views: `{"views": [{"id", "name", "query"}]}`; a PUT replaces the list |
 | `GET`, `PATCH /api/findings/{id}` | Read; update status, owner, severity, disposition, comment |
 | `POST /api/findings/bulk` | `{"ids": [...], "update": {...}}` |
 | `POST /api/findings` | Raise a finding by hand |

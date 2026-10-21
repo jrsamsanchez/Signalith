@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -108,6 +109,9 @@ func TestFailedWriteIsRetried(t *testing.T) {
 	if ErrorKind(&store.Error{Status: http.StatusBadRequest}) != ErrorTransient ||
 		ErrorKind(&searchError{Err: &store.Error{Status: http.StatusBadRequest}}) != ErrorQuery {
 		t.Error("a 400 outside the search is taken for a broken rule, or one of the search is not")
+	}
+	if ErrorKind(&search.QueryError{Msg: "no database", Err: geoip.ErrNoDatabase}) != ErrorSetup {
+		t.Error("an iplocation with no GeoIP database is taken for a broken rule")
 	}
 }
 

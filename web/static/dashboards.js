@@ -688,8 +688,9 @@
       rep.findings_truncated ? el('div', { class: 'alert', 'data-tone': 'info' }, icon('info'), el('p', {}, 'Finding counts are approximate: there are more findings in this period than one request returns.')) : null,
       kpiRow(rep),
       findingsCard(rep),
-      el('div', { class: 'grid-2' }, detectionsCard(rep), riskCard(rep)),
-      el('div', { class: 'grid-2' }, tacticsCard(rep), healthCard(rep)),
+      el('div', { class: 'grid-2' }, detectionsCard(rep), noisyCard(rep)),
+      el('div', { class: 'grid-2' }, riskCard(rep), tacticsCard(rep)),
+      healthCard(rep),
       el('div', { class: 'grid-2' }, datamodelCard(rep), sourcetypeCard(rep)));
   }
 
@@ -783,6 +784,23 @@
     else content = emptyState('crosshair', 'No detection fired', `Detections that raise findings or risk in the ${lastRange(rep.range)} show here.`);
     return card({ title: 'Top detections firing', sub: 'Findings and risk events', actions: [pageLink('All detections', 'detections')] },
       items.length && err ? cardAlert('danger', err) : null, content);
+  }
+
+  // noisyCard ranks detections by findings closed as false positive, from
+  // the dispositions analysts pick when they resolve.
+  function noisyCard(rep) {
+    const err = sectionError(rep, 'findings');
+    const since = ['24h', '7d', '30d'].includes(rep.range) ? rep.range : 'all';
+    const items = (rep.noisy_detections || []).map((d) => ({
+      label: d.title, value: d.false_positive, type: `${Math.round(d.rate * 100)}%`,
+      title: `${d.false_positive} of ${plural(d.judged, 'closed finding', 'closed findings')} judged false positive. Click to see its findings.`,
+      href: '#findings', onclick: () => { location.hash = 'findings?' + new URLSearchParams({ status: 'any', since, detection: d.id }); },
+    }));
+    let content;
+    if (err) content = errorState('Couldn’t count false positives', err, retry());
+    else if (!items.length) content = emptyState('shield-check', 'No false positives', `No finding closed in the ${lastRange(rep.range)} was judged a false positive.`);
+    else content = rankList(items.slice(0, TOP));
+    return card({ title: 'Noisiest detections', sub: 'False positives · % of closed', actions: [pageLink('Open queue', 'findings')] }, content);
   }
 
   // riskBand comes from risk.js, so a score has the same colour here and on the Risk page.
@@ -1022,8 +1040,15 @@
   // none of them found anything: what data it needs and where to set it up.
   function renderNoData(slot, d, results) {
     const none = results.length && results.every((pr, i) => d.panels[i] && panelEmpty(d.panels[i], pr));
-    if (!none || (d.id !== 'malware' && d.id !== 'network' && d.id !== 'vulnerabilities')) { put(slot); return; }
+    if (!none || !['malware', 'network', 'ot-network', 'vulnerabilities'].includes(d.id)) { put(slot); return; }
     const admin = typeof can === 'function' && can('admin');
+    if (d.id === 'ot-network') {
+      put(slot, el('div', { class: 'card db-nodata' }, emptyState('gauge', 'No industrial protocol traffic yet',
+        'A network sensor on an industrial network fills this dashboard: Modbus, DNP3, S7comm, EtherNet/IP, BACnet and more. Zeek logs Modbus and DNP3 on its own; the guide shows how to add the others.',
+        el('a', { class: 'btn btn--sm', href: 'https://signalith.io/docs/network-sensor/#industrial-protocols', target: '_blank', rel: 'noopener' }, icon('book-open'), 'Industrial protocols guide'),
+        null, null)));
+      return;
+    }
     if (d.id === 'network') {
       put(slot, el('div', { class: 'card db-nodata' }, emptyState('activity', 'No network sensor events yet',
         'A network sensor running Zeek or Suricata fills this dashboard: IDS alerts, connections, DNS lookups, web requests, files and certificates seen on your network.',

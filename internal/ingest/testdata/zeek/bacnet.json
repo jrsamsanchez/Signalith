@@ -1,0 +1,2 @@
+{"ts":1791720700.1,"uid":"Cbac1aBcDeFgHiJk","id.orig_h":"192.168.90.3","id.orig_p":47808,"id.resp_h":"192.168.90.255","id.resp_p":47808,"is_orig":true,"bvlc_function":"Original_Broadcast_NPDU","pdu_type":"UnConfirmed_REQUEST","pdu_service":"who-is","invoke_id":0,"result_code":"-"}
+{"ts":1791720701.1,"uid":"Cbac2bCdEfGhIjKl","id.orig_h":"192.168.90.3","id.orig_p":47808,"id.resp_h":"192.168.90.21","id.resp_p":47808,"is_orig":true,"bvlc_function":"Original_Unicast_NPDU","pdu_type":"Confirmed_REQUEST","pdu_service":"reinitialize-device","invoke_id":5,"result_code":"-"}

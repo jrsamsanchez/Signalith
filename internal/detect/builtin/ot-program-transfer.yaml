@@ -1,0 +1,26 @@
+id: ot-program-transfer
+title: Controller program transferred between $src$ and $dest$ ($app$)
+name: Controller program upload or download
+description: A host downloaded a program or logic to an industrial controller, or uploaded the controller's program, over an industrial protocol. Engineers do this during maintenance; an attacker does it to change what the process does or to steal its logic.
+query: |
+  datamodel=Industrial category=program NOT type=response
+  | stats count, min(_time) as first_seen, values(ot_function) as functions by src, dest, app
+schedule: 10m
+lookback: 15m
+severity: medium
+mitre: [T0843, T0845, T0889]
+throttle:
+  fields: [src, dest]
+  window: 4h
+risk:
+  score: 40
+  objects:
+    - {field: dest, type: system}
+    - {field: src, type: system}
+enabled: true
+tags: [network, ot, execution, nist-800-53:CM-3, nist-800-53:SI-4, cis-v8:13.3]
+guidance: >-
+  Confirm the change with the site's engineers and their change record. Program transfers
+  from anything but the known engineering workstations are suspect; add an exception on
+  src for those workstations if transfers from them are routine. Functions starting with
+  UPLOAD read the program out (theft of logic), DOWNLOAD writes it in.

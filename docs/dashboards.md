@@ -1,7 +1,7 @@
 # Dashboards
 
-The **Dashboards** tab has four built-in dashboards, **Security posture**,
-**Malware**, **Network** and **Vulnerabilities**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
+The **Dashboards** tab has five built-in dashboards, **Security posture**,
+**Malware**, **Network**, **Industrial network** and **Vulnerabilities**, and any custom dashboards you build. Pick one from the list at the top left, choose a time
 range, and optionally turn on auto-refresh (every minute, 5 or 15 minutes; it pauses
 while the browser tab is hidden).
 
@@ -39,6 +39,7 @@ length, so "Last 24 hours" compares today with the 24 hours before.
 | Events ingested | Events stored in the period, all data models except Risk |
 | Findings over time by urgency | New findings per hour (or per 15 minutes, 6 hours or day, depending on the range) |
 | Top detections firing | Findings plus risk events per detection; click one to open it |
+| Noisiest detections | Detections whose findings closed in the period were judged false positive, with the share of closed findings; click one to see its findings |
 | Top risk objects | Users and systems with the most risk; click one to open it on the Risk page |
 | ATT&CK tactics seen | Findings and risk events per ATT&CK tactic, in matrix order |
 | Detection health | Enabled detections, detections whose last run failed, detections behind schedule, enabled detections with no findings and no risk events in 30 days, and data sources that stopped sending. When missed runs were skipped (older than `detections.catch_up`) in the period or the last day, a line says when, for example "Signalith was not running detections from 02:10 to 09:40; 90 runs of 'Brute force' were skipped". Every server shows the same health |
@@ -91,6 +92,17 @@ files by type, self-signed certificates, the commonest and rarest TLS client fin
 changed on shares, and the sensor's packet loss. It opens on the last 24 hours. Until sensor events arrive it shows a **Set up a network sensor** button
 (for admins) that opens Add data.
 
+## Industrial network
+
+A built-in panel dashboard for the industrial protocols a [network sensor](network-sensor.md#industrial-protocols)
+sees (Modbus, DNP3, S7comm, EtherNet/IP and CIP, BACnet and others): messages by protocol,
+write, control and program commands over time, which hosts command which devices,
+controller stops, starts and program changes, the commonest functions, the busiest
+devices, errors devices sent back, industrial traffic from outside your network, and the
+devices that named their product. It opens on the last 24 hours. Until industrial
+events arrive it shows a link to the Industrial protocols guide; on a network with no
+industrial devices it simply stays empty.
+
 ## Vulnerabilities
 
 A built-in panel dashboard for the scans on the [Vulnerabilities page](vulnerabilities.md):
@@ -111,7 +123,7 @@ are on). It saves *Malware (copy)* as a custom dashboard with the same panels an
 opens it, ready to edit. **Add to dashboard** on the Search page lists custom
 dashboards only.
 
-The ids `posture`, `malware`, `network` and `vulnerabilities` belong to the built-in dashboards. A file
+The ids `posture`, `malware`, `network`, `ot-network` and `vulnerabilities` belong to the built-in dashboards. A file
 `malware.yaml` in `dashboards.dir` is ignored and listed as a problem: rename the
 file and change its `id` to keep it.
 
@@ -204,7 +216,7 @@ panels:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `id` | from the title | File name without `.yaml`. `posture`, `malware`, `network` and `vulnerabilities` are reserved for the built-in dashboards |
+| `id` | from the title | File name without `.yaml`. `posture`, `malware`, `network`, `ot-network` and `vulnerabilities` are reserved for the built-in dashboards |
 | `title` | required | Shown in the dashboard list |
 | `description` | none | Shown under the title |
 | `time_range` | `24h` | Default time range for panels |
@@ -227,7 +239,7 @@ Every endpoint needs the admin sign-in, like the rest of the API.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/posture?range=24h` | The security posture report (range 1m to 90d) |
-| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, network and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
+| `GET /api/dashboards` | List: the built-in dashboards (posture, then malware, network, ot-network and vulnerabilities, each with `"builtin": true`, even when custom dashboards are off), every custom one, and files with problems |
 | `POST /api/dashboards` | Create; without `id`, one is made from the title. 409 if the id exists or belongs to a built-in dashboard |
 | `GET /api/dashboards/{id}` | One dashboard as JSON |
 | `GET /api/dashboards/{id}/yaml` | Download its YAML file |

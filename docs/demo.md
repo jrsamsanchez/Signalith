@@ -29,6 +29,9 @@ and run searches, dashboards and notebooks. The visitor cannot change anything:
 - the visitor has no password to change, cannot set up two-step sign-in or
   passkeys, and cannot make API tokens.
 
+A visitor's searches are written to the server's log, but not kept as audit
+records, so the Audit page and its indices don't grow with every visitor.
+
 Visitors' sessions are kept in the server's memory only, apart from the users'
 sessions. One ends after 30 minutes without use and 2 hours after it started,
 and when the browser closes. A visitor's address can start 10 sessions a minute,
@@ -140,9 +143,9 @@ You need Docker Compose 2.24.4 or newer, a DNS name for the computer and port
 On a new Ubuntu 24.04 cloud server, `deploy/demo/cloud-init.yaml` does all of
 this for you: change `demo.example.com` in it to the demo's name and paste it
 into the provider's "Cloud config" or "user data" box when creating the
-server. It installs Docker, starts the demo and updates it every Sunday. Give
-the server an SSH key, and open port 443 to everyone and port 22 only to your
-own address.
+server. It installs Docker, starts the demo and updates it to the newest build
+of `main` every day at 08:00 UTC. Give the server an SSH key, and open port 443
+to everyone and port 22 only to your own address.
 
 To sign in as the admin from your own address, set
 `SIGNALITH_DEMO_ADMIN_NETWORKS` in `deploy/demo/docker-compose.demo.yml` and

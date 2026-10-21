@@ -197,6 +197,13 @@ func (b *builder) zeek(log string, t time.Time, rec map[string]any) {
 	if src, _ := ev.Fields["src"].(string); log == "notice" && ev.Fields["local_host"] == nil && Internal(src) {
 		ev.Fields["local_host"] = src
 	}
+	// Industrial logs carry no local_orig either: take the sample's
+	// company range as the plant's own.
+	if src, _ := ev.Fields["src"].(string); ev.Model == ingest.IndustrialModel && ev.Fields["direction"] == "external" {
+		if dest, _ := ev.Fields["dest"].(string); Internal(dest) && !Internal(src) {
+			ev.Fields["direction"] = "inbound"
+		}
+	}
 	b.emit(ev)
 }
 

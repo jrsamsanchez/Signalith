@@ -77,7 +77,7 @@ func zeekLogType(tag string, r map[string]any) string {
 			t = t[i+1:]
 		}
 		fromTag = cleanLogType(t)
-		if zeekMapped[fromTag] || zeekAlsoGeneric[fromTag] || strings.HasSuffix(tag, ".log") {
+		if zeekMapped[fromTag] || zeekAlsoGeneric[fromTag] || isZeekOT(fromTag) || strings.HasSuffix(tag, ".log") {
 			return fromTag
 		}
 	}
@@ -250,6 +250,11 @@ func ParseZeek(lt string, r map[string]any, raw string) Event {
 			zeekSMBMapping(r, f)
 		case "known_hosts", "known_services", "software", "dhcp":
 			zeekInventory(lt, r, f)
+		default:
+			if isZeekOT(lt) {
+				model = IndustrialModel
+				zeekIndustrial(lt, r, f)
+			}
 		}
 	}
 	if model == "Intrusion_Detection" {
@@ -605,7 +610,7 @@ func zeekGeneric(lt string, r, f map[string]any) {
 				f[name] = x
 			}
 		case string:
-			if zeekAlsoGeneric[lt] {
+			if zeekAlsoGeneric[lt] || isZeekOT(lt) {
 				// A copy of a mapped log's value, capped as the mapped
 				// fields are, so it is searchable too.
 				v = CapValue(v)

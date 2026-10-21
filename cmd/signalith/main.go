@@ -46,7 +46,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
+	"github.com/jrsamsanchez/signalith/internal/exceptionreqs"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
@@ -98,6 +100,8 @@ Usage:
   signalith ask       [-c file] [-ai] "<question>"     turn a question into a query
   signalith mcp       [-url URL] [-user name] [-check]  read-only MCP server for AI tools such as Claude Desktop
   signalith archive   list|verify|restore [-c file] ...  list, check or restore archived days
+  signalith backup    [-c file] [-o file.zip] [-archive] [-no-master-key]  copy this server's files into one zip
+  signalith restore   [-c file] [-yes] file.zip   put a backup's files back (with the server stopped)
   signalith sample-data load|remove|status [-c file] [-size ...]  load or remove a week of sample data to try
   signalith tokens    list|create|rename|revoke|legacy [-c file] ...  the tokens agents send with
   signalith secrets   status|encrypt|set|rotate-master [-c file] ...  the master key and stored passwords
@@ -177,6 +181,10 @@ func main() {
 		err = cmdService(args)
 	case "archive":
 		err = cmdArchive(args)
+	case "backup":
+		err = cmdBackup(args)
+	case "restore":
+		err = cmdRestore(args)
 	case "sample-data":
 		err = cmdSampleData(args)
 	case "tokens":
@@ -1676,50 +1684,52 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	in.jobs.Go(func() { sensorWatch.Run(ctx) })
 	srv := &api.Server{
-		Config:       c,
-		Tokens:       tokens,
-		Agents:       agentsInv,
-		Engine:       eng,
-		Pipeline:     pipeline,
-		Parsers:      parsers,
-		EventAge:     live,
-		Syslog:       receiver,
-		Backend:      cl,
-		Detections:   lib,
-		Scheduler:    sched,
-		Findings:     fstore,
-		Assets:       lists,
-		Intel:        indicators,
-		Feeds:        feeds,
-		Notify:       &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
-		Dashboards:   boards,
-		Cases:        cstore,
-		Notebooks:    nstore,
-		Respond:      responder,
-		Playbooks:    &api.Playbooks{Manager: pbooks, Runs: pruns},
-		Chat:         &api.Chat{Store: chats},
-		Ticketing:    &api.Ticketing{Service: tsync},
-		Retention:    ret,
-		Sample:       sampleLoader,
-		SetupGuide:   &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
-		Content:      updater,
-		Endpoints:    estore,
-		SensorTuning: tuning,
-		Vulns:        &api.Vulns{Store: vstore, Scanner: scanner},
-		Baselines:    blStore,
-		Background:   r.backgroundContext(parent),
-		Assistant:    newAssistant(c),
-		Users:        people,
-		Directory:    dir,
-		TLS:          certs,
-		Sessions:     r.sessions,
-		Limiter:      r.limiter,
-		Restarter:    r,
-		Security:     r.security,
-		Started:      r.started,
-		UI:           web.FS(),
-		Log:          log,
-		Version:      version,
+		Config:            c,
+		Tokens:            tokens,
+		Agents:            agentsInv,
+		Engine:            eng,
+		Pipeline:          pipeline,
+		Parsers:           parsers,
+		EventAge:          live,
+		Syslog:            receiver,
+		Backend:           cl,
+		Detections:        lib,
+		Scheduler:         sched,
+		Findings:          fstore,
+		Assets:            lists,
+		Intel:             indicators,
+		Feeds:             feeds,
+		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
+		Dashboards:        boards,
+		Cases:             cstore,
+		Notebooks:         nstore,
+		Respond:           responder,
+		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
+		Chat:              &api.Chat{Store: chats},
+		Ticketing:         &api.Ticketing{Service: tsync},
+		Retention:         ret,
+		Sample:            sampleLoader,
+		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		Content:           updater,
+		Endpoints:         estore,
+		SensorTuning:      tuning,
+		Vulns:             &api.Vulns{Store: vstore, Scanner: scanner},
+		Baselines:         blStore,
+		Background:        r.backgroundContext(parent),
+		Assistant:         newAssistant(c),
+		Users:             people,
+		Directory:         dir,
+		TLS:               certs,
+		Sessions:          r.sessions,
+		Limiter:           r.limiter,
+		Restarter:         r,
+		Security:          r.security,
+		Started:           r.started,
+		UI:                web.FS(),
+		Log:               log,
+		Version:           version,
 	}
 	followProxyTrust(srv)
 	// Likewise a host that stopped sending: the server that runs the
@@ -1752,6 +1762,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
+	// Rules that escalate late findings follow the due times set on the
+	// Settings page.
+	dispatcher.SLA = func() findings.SLA { return srv.Running().FindingSLA() }
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
 		Notify: notes, Sender: senders, Deliveries: deliveries, Server: sampleServer, Log: log,

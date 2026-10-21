@@ -129,7 +129,7 @@ func TestFetchLocal(t *testing.T) {
 	sum := sha512.Sum512(b)
 	setPin(t, hex.EncodeToString(sum[:]))
 	dir := filepath.Join(t.TempDir(), "download")
-	got, err := Fetch(context.Background(), z, dir, io.Discard)
+	got, err := Fetch(context.Background(), z, dir, http.DefaultClient, io.Discard)
 	if err != nil || filepath.Dir(got) != dir {
 		t.Fatalf("Fetch = %q, %v: want a copy in %s", got, err, dir)
 	}
@@ -138,7 +138,7 @@ func TestFetchLocal(t *testing.T) {
 	}
 	os.Remove(got)
 	setPin(t, strings.Repeat("0", 128))
-	if _, err := Fetch(context.Background(), z, dir, io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
+	if _, err := Fetch(context.Background(), z, dir, http.DefaultClient, io.Discard); err == nil || !strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
 		t.Fatalf("a file with another SHA-512 was taken, or the error does not name its SHA-512: %v", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
@@ -192,7 +192,7 @@ func TestHeapMB(t *testing.T) {
 }
 
 func TestFreePort(t *testing.T) {
-	p, err := FreePort()
+	p, err := FreePort(FirstPort)
 	if err != nil {
 		t.Skip(err)
 	}
@@ -311,5 +311,45 @@ func TestStateAndConfig(t *testing.T) {
 	heap, _ := os.ReadFile(filepath.Join(l.Config(), "jvm.options.d", "heap.options"))
 	if !strings.Contains(string(heap), "-Xmx2048m") {
 		t.Errorf("heap.options: %s", heap)
+	}
+}
+
+// Signalith's config folder deleted before installing again: its client
+// certificate is made again from the kept CA, and OpenSearch's stay.
+func TestMakeCertsRemakesClient(t *testing.T) {
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := Layout{Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
+	if err := MakeCerts(l, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	node, _ := os.ReadFile(filepath.Join(l.Certs(), ospki.NodeCertFile))
+	os.RemoveAll(filepath.Dir(l.Client))
+	if err := MakeCerts(l, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.ReadFile(filepath.Join(l.Certs(), ospki.NodeCertFile)); !bytes.Equal(again, node) {
+		t.Fatal("OpenSearch's certificate changed")
+	}
+	ca, err := ospki.LoadCA(l.CA())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, certFile, keyFile := l.ClientFiles()
+	client, err := ospki.ReadPair(l.Client, filepath.Base(certFile), filepath.Base(keyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.Cert.CheckSignatureFrom(ca.Cert) != nil || client.Cert.Subject.CommonName != ospki.ClientName {
+		t.Fatalf("client certificate %v is not Signalith's from the kept CA", client.Cert.Subject)
+	}
+
+	// Without the CA's key, it says what is missing.
+	os.Remove(filepath.Join(l.CA(), ospki.RootCAKeyFile))
+	os.RemoveAll(l.Client)
+	if err := MakeCerts(l, time.Now()); err == nil || !strings.Contains(err.Error(), "cannot be made") {
+		t.Fatalf("got %v", err)
 	}
 }

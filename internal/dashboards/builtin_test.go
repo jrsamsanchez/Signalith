@@ -18,7 +18,7 @@ import (
 
 func TestBuiltinMalware(t *testing.T) {
 	bs := Builtin()
-	if len(bs) != 3 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != NetworkID || bs[2].ID != VulnerabilitiesID {
+	if len(bs) != 4 || bs[0].ID != MalwareID || bs[0].Title != "Malware" || bs[1].ID != NetworkID || bs[2].ID != IndustrialID || bs[3].ID != VulnerabilitiesID {
 		t.Fatalf("built-ins = %+v", bs)
 	}
 	d, ok := GetBuiltin(MalwareID)
@@ -49,6 +49,17 @@ func TestBuiltinVulnerabilities(t *testing.T) {
 		t.Errorf("check: %v", err)
 	}
 	checkPanels(t, d, "Vulnerabilities")
+}
+
+func TestBuiltinIndustrial(t *testing.T) {
+	d, ok := GetBuiltin(IndustrialID)
+	if !ok || d.Title != "Industrial network" || d.TimeRange != "24h" || len(d.Panels) != 14 {
+		t.Fatalf("industrial = %+v", d)
+	}
+	if err := d.check(); err != nil {
+		t.Errorf("check: %v", err)
+	}
+	checkPanels(t, d, "Industrial")
 }
 
 func TestBuiltinNetwork(t *testing.T) {

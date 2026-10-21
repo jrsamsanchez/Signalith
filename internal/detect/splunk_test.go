@@ -269,7 +269,7 @@ func TestSplunkGeoIPRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		eng := &search.Engine{Store: emptySearcher{}, GeoIP: geoip.Open(t.TempDir())}
-		if _, err := eng.Execute(context.Background(), q); err == nil || !strings.Contains(err.Error(), "iplocation needs a GeoIP database") || ErrorKind(err) != ErrorQuery {
+		if _, err := eng.Execute(context.Background(), q); err == nil || !strings.Contains(err.Error(), "iplocation needs a GeoIP database") || ErrorKind(err) != ErrorSetup {
 			t.Errorf("with no database: %v", err)
 		}
 	}

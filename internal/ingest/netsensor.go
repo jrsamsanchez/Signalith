@@ -159,6 +159,14 @@ var neverStored = map[string]bool{
 	"http_request_body_printable": true, "http_response_body_printable": true,
 }
 
+// credentialKey reports whether a key's name says it holds a password or
+// secret (an OPC UA identity token's user_password, a key or secret some
+// ICSNPP analyzers log), which is never stored either.
+func credentialKey(k string) bool {
+	k = strings.ToLower(k)
+	return strings.Contains(k, "password") || strings.Contains(k, "passwd") || strings.Contains(k, "secret")
+}
+
 // scrubSensitive deletes the neverStored keys from r and every object in
 // it, cuts payload_printable to maxPayloadPrintable bytes, and reports
 // whether it changed anything (the raw line is then encoded again).
@@ -172,7 +180,7 @@ func scrubSensitive(r map[string]any) bool {
 		switch x := v.(type) {
 		case map[string]any:
 			for k, e := range x {
-				if neverStored[k] {
+				if neverStored[k] || credentialKey(k) {
 					delete(x, k)
 					changed = true
 					continue

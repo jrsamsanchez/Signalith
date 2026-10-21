@@ -205,7 +205,7 @@ func (n *Notebook) Validate() error {
 	for _, t := range n.Techniques {
 		if !techPattern.MatchString(t) {
 			p = append(p, fmt.Sprintf("%q is not an ATT&CK technique ID such as T1059 or T1059.001", t))
-		} else if _, ok := detect.ATTACK().Technique(t); !ok {
+		} else if _, ok := detect.AnyTechnique(t); !ok {
 			p = append(p, fmt.Sprintf("%s is not in the ATT&CK matrix", t))
 		}
 	}

@@ -56,6 +56,7 @@ var modelDims = map[string][]string{
 	"Web":                 {"http_method", "status", "url_domain", "src", "dest", "dest_port", "user", "app", "direction"},
 	"Certificates":        {"ssl_version", "ssl_server_name", "ssl_issuer_common_name", "ssl_validation_status", "ssl_self_signed", "ja3", "ja4", "src", "dest", "dest_port"},
 	"File_Transfers":      {"app", "mime_type", "src", "dest", "direction", "file_name"},
+	"Industrial":          {"app", "ot_function", "category", "type", "src", "dest", "dest_port", "direction"},
 	"Image_Load":          {"loaded_file_name", "signed", "signature_status", "process_name", "user", "dest"},
 	"Script":              {"user", "dest"},
 	"Inventory":           {"inventory_type", "action", "dest", "os", "name", "vendor", "status"},

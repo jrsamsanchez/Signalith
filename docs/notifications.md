@@ -249,6 +249,7 @@ Choose **Add rule**. A rule has:
 | **How urgent** | The least urgency to send: Critical, High (the default), Medium, Low, or Any. Urgency is the finding's own (its severity, or the urgency set on it). |
 | **From** | **Any detection**, or **Only some**: pick detections from the list |
 | **Least risk score** (More options) | Only applies to findings that carry a risk score: the risk incident detections put one in `result.risk_score`. Other findings are sent whatever this says. Empty or 0 means any score. |
+| **Send again if nobody picks it up in time** | On for new rules. A finding still open and unassigned past its [due time](detections.md#due-times) is sent once more, its title starting "Unassigned and late:". Signalith checks every minute. |
 | **Include sample data** (More options) | Findings from the one-click sample data are skipped unless this is on. Turn it on to try a channel with sample data. |
 | **On** | A rule that is off sends nothing |
 
@@ -256,7 +257,8 @@ The dialog shows a plain-English summary of the rule as you change it.
 
 What gets sent:
 
-- Only **new** findings are sent. A rule sends findings raised after it was added or last
+- Only **new** findings are sent, plus, for rules that ask, a finding nobody picked up
+  by its due time, once. A rule sends findings raised after it was added or last
   turned on, so a new rule does not send old findings. If no server ran the job for a while
   (a restart, or the background jobs moving to another server), the findings raised
   meanwhile are still sent, up to 24 hours back.
@@ -360,7 +362,8 @@ A finding:
     "risk_score": null,
     "created": "2026-10-13T09:14:51Z",
     "link": "https://siem.example.com/#findings",
-    "sample": false
+    "sample": false,
+    "credit": ""
   }
 }
 ```
@@ -378,6 +381,8 @@ A finding:
 | `finding.risk_score` | A number for findings of risk detections, else `null` |
 | `finding.link` | `server.public_url` + `/#findings`, or empty when that is not set |
 | `finding.sample` | `true` for a finding from sample data |
+| `finding.credit` | For a rule from a content pack, its author and licence, as in `Rule by Florian Roth, from SigmaHQ community rules (DRL-1.1, ...)`; empty for built-in rules. Email, Slack and Teams messages show it as a line of their own. |
+| `finding.late` | `true` when the finding is sent again because nobody picked it up by its due time; left out otherwise |
 
 A flood guard summary:
 

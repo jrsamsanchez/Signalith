@@ -12,8 +12,9 @@ import (
 // below; the Windows agent collects it. The rendered Message reads as
 // "Label: value" lines, which name the threat, file, user and so on in
 // every Windows version (older ones say "Signature" where newer ones say
-// "Security intelligence"). The event data inserts are used only when
-// there is no message to read.
+// "Security intelligence"). The OpenTelemetry Collector sends the event
+// data values by name, which read the same way. The event data inserts
+// are used only when there is neither.
 
 // DefenderChannel is the Windows event log channel Defender writes to.
 const DefenderChannel = "Microsoft-Windows-Windows Defender/Operational"
@@ -148,12 +149,50 @@ func versionPart(v, prefix string) string {
 	return strings.TrimSpace(v)
 }
 
-// parseDefender maps a Defender event onto the Malware data model.
-func parseDefender(eventID, msg string, in []string, ev *Event) {
+// defenderDataNames maps the names of Defender's event data values, in
+// lower case with "signature" spelled "security intelligence", onto the
+// message labels they match where the two differ.
+var defenderDataNames = map[string]string{
+	"threat name":    "name",
+	"threat id":      "id",
+	"severity name":  "severity",
+	"category name":  "category",
+	"source name":    "detection source",
+	"detection user": "user",
+}
+
+// defenderNamed reads the named event data values (the OpenTelemetry
+// Collector sends them, and often no rendered message) as message labels.
+func defenderNamed(named map[string]string) map[string]string {
+	out := map[string]string{}
+	for name, v := range named {
+		if len(name) > defenderMaxLabel || v == "" {
+			continue
+		}
+		label := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(name)), "signature", "security intelligence")
+		if l, ok := defenderDataNames[label]; ok {
+			label = l
+		}
+		if defenderLabels[label] {
+			out[label] = strings.TrimSpace(v)
+		}
+	}
+	return out
+}
+
+// parseDefender maps a Defender event onto the Malware data model. The
+// rendered message is read first; named event data values fill what it
+// leaves out.
+func parseDefender(eventID, msg string, in []string, named map[string]string, ev *Event) {
 	f := ev.Fields
 	f["sourcetype"] = "WinEventLog:" + DefenderChannel
 	f["vendor_product"] = DefenderProduct
 	kv := defenderMessage(msg)
+	for k, v := range defenderNamed(named) {
+		if kv[k] == "" {
+			kv[k] = v
+		}
+	}
 
 	typ, action, sig := "", "", ""
 	switch eventID {

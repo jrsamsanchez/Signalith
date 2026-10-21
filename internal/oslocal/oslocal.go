@@ -193,8 +193,9 @@ func Newer(a, b string) bool {
 // a computer without internet access), else downloaded from URL. The file
 // is checked as it is written to dir, which only administrators may
 // change, so the file a caller unpacks is the one checked, not one someone
-// changed after. The caller deletes it when done.
-func Fetch(ctx context.Context, local, dir string, out io.Writer) (string, error) {
+// changed after. The caller deletes it when done. client is what it is
+// downloaded with (see Client).
+func Fetch(ctx context.Context, local, dir string, client *http.Client, out io.Writer) (string, error) {
 	if local != "" {
 		f, err := os.Open(local)
 		if err != nil {
@@ -203,7 +204,7 @@ func Fetch(ctx context.Context, local, dir string, out io.Writer) (string, error
 		defer f.Close()
 		return save(f, dir, local)
 	}
-	return download(ctx, URL(), dir, out, http.DefaultClient)
+	return download(ctx, URL(), dir, out, client)
 }
 
 // save writes r to a new file in dir, removing it unless its SHA-512 is
@@ -240,8 +241,9 @@ func download(ctx context.Context, url, dir string, out io.Writer, client *http.
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s, "+
-			"or download that file on another computer and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url)
+		return "", fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s; "+
+			"behind a proxy, install with OPENSEARCHPROXY=<host:port>; or download that file on another computer "+
+			"and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -348,17 +350,17 @@ func extractFile(f *zip.File, target string) error {
 	return w.Close()
 }
 
-// FreePort returns the first port from FirstPort that nothing listens on
-// at 127.0.0.1.
-func FreePort() (int, error) {
-	for p := FirstPort; p < FirstPort+10; p++ {
+// FreePort returns the first port from first that nothing listens on at
+// 127.0.0.1.
+func FreePort(first int) (int, error) {
+	for p := first; p < first+10; p++ {
 		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
 		if err == nil {
 			l.Close()
 			return p, nil
 		}
 	}
-	return 0, fmt.Errorf("ports %d to %d are all in use on this computer, so OpenSearch has none to listen on", FirstPort, FirstPort+9)
+	return 0, fmt.Errorf("ports %d to %d are all in use on this computer, so OpenSearch has none to listen on", first, first+9)
 }
 
 // HeapMB is OpenSearch's Java heap for a computer with total MB of memory:
@@ -372,10 +374,16 @@ func HeapMB(total uint64) int {
 
 // MakeCerts makes the CA, OpenSearch's node and admin certificates and
 // Signalith's client certificate, when there are none yet: on the first
-// install. They are kept on upgrades.
+// install. They are kept on upgrades. When only Signalith's are missing,
+// because its config folder was deleted before installing again, it gets
+// a new client certificate from the kept CA.
 func MakeCerts(l Layout, now time.Time) error {
 	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.NodeCertFile)); err == nil {
-		return nil
+		ca, cert, key := l.ClientFiles()
+		if haveAll(ca, cert, key) {
+			return nil
+		}
+		return remakeClient(l, now)
 	}
 	set, err := ospki.New(ospki.Options{Now: now})
 	if err != nil {
@@ -403,6 +411,38 @@ func MakeCerts(l Layout, now time.Time) error {
 			if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func haveAll(paths ...string) bool {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// remakeClient issues Signalith a new client certificate from the CA
+// kept in l.CA().
+func remakeClient(l Layout, now time.Time) error {
+	ca, err := ospki.LoadCA(l.CA())
+	if err != nil {
+		return fmt.Errorf("Signalith's certificate for OpenSearch is missing from %s, and a new one cannot be made: %w", l.Client, err)
+	}
+	client, err := ospki.IssueClient(ca, ospki.ClientName, now, ospki.Validity)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(l.Client, 0o700); err != nil {
+		return err
+	}
+	set := ospki.Set{CA: ca, Client: client}
+	for name, b := range set.SignalithFiles() {
+		if err := os.WriteFile(filepath.Join(l.Client, name), b, 0o600); err != nil {
+			return err
 		}
 	}
 	return nil

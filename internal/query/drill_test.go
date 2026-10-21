@@ -75,9 +75,9 @@ func TestDrilldown(t *testing.T) {
 		},
 		{
 			src:    `sourcetype=syslog earliest=-7d latest=-1d | where host!="a" | stats count by host`,
-			want:   Drill{Search: `sourcetype=syslog`, Pipe: "\n| where host!=a", Earliest: "-7d", Latest: "-1d", Fields: map[string]string{"host": "host"}},
+			want:   Drill{Search: `sourcetype=syslog`, Pipe: "\n| where host!=\"a\"", Earliest: "-7d", Latest: "-1d", Fields: map[string]string{"host": "host"}},
 			terms:  []string{`host=b`},
-			events: "sourcetype=syslog host=b\n| where host!=a",
+			events: "sourcetype=syslog host=b\n| where host!=\"a\"",
 		},
 		{
 			// Columns eval or a second stats replace no longer drill.

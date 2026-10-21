@@ -12,11 +12,34 @@ datamodel=Authentication action=failure earliest=-24h
 | head 10
 ```
 
+## Building a query in the UI
+
+You do not need to memorize the syntax:
+
+- **Ask in plain English.** Type a question above the query box, such as
+  *top 10 users with failed logins today*. Signalith writes the query, runs it, and
+  lists how it read each phrase (see [Asking in plain English](#asking-in-plain-english)).
+- **Query builder.** Pick the data, add conditions, and choose events, a table or a
+  chart. The query text is written as you click, and typing in the text updates the
+  builder when it can represent the query.
+- **Fields sidebar.** Click a field for its top values; click a value to filter on it.
+- **Click any result cell** to filter to it, exclude it, count by that field, or chart
+  it over time.
+- **Autocomplete** for fields, commands and functions as you type.
+- **Explain** turns any query into plain-English steps and shows the OpenSearch request
+  it runs (see [How queries run](#how-queries-run)).
+- **Starter hunts** on the empty search page cover brute force, new accounts, encoded
+  PowerShell and more.
+
+From the shell, `signalith query "datamodel=Authentication | top user"` runs a query;
+add `-explain` to see the compiled request. `signalith ask "failed logins from
+203.0.113.9 today"` prints the query for a question.
+
 ## Search
 
 | Syntax | Meaning |
 | --- | --- |
-| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware (antivirus; see [antivirus.md](antivirus.md)), Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers (the last four from a [network sensor](network-sensor.md)), Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
+| `datamodel=Authentication` | Events of one data model: Authentication, Endpoint, Network_Traffic, Change, Malware (antivirus; see [antivirus.md](antivirus.md)), Filesystem, Registry, Network_Resolution, Intrusion_Detection, Web, Certificates, File_Transfers (the last four from a [network sensor](network-sensor.md)), Industrial (industrial protocols, also from a network sensor), Image_Load, Script, Inventory, Configuration_Check, Alerts, Other. `datamodel=Risk` searches risk events, which are left out otherwise |
 | `index=signalith-authentication-2026.10.*` | One pattern of Signalith's daily indices, `<prefix>-<datamodel>-YYYY.MM.DD`. It must start with the configured `opensearch.index_prefix` and `-`; `index=*` means all events, as when `index=` is left out. Lists (`a,b`), exclusions (`-x`), other indices and system indices, other clusters (`remote:x`) and date math are refused |
 | `sourcetype`, `source` | Every event has its format as `sourcetype` (`WinEventLog:Security`, `linux:auth`, `aws:cloudtrail`) and where it was read from as `source`, as in Splunk: the log file (`/var/log/auth.log`), the Windows event log (`WinEventLog:Security`), `journald`, or how it arrived (`syslog`, `otlp`, `osquery`, `agent`). A sender's own `source` is kept. `stats count by sourcetype, source` shows what is coming in. Events stored before Signalith 0.3.0 have no `source`, and Linux agents installed before it give auth and audit lines the source `agent` until they are installed again from **Add data** |
 | `index` as a field | Every event has the daily index it is stored in as the field `index`, as in Splunk: `stats count by index`, `table _time index host`, `where index="signalith-web-2026.10.15"`, `(index=signalith-web-* OR index=signalith-authentication-*)`. It takes `=` and `!=` with `*` wildcards (not `=~` or `<`), and in `stats` it works with `count`, `dc`, `values` and `mode` and as a `by` field |
@@ -196,9 +219,11 @@ A comparison with a missing field is null, which `where` treats as false. Use `i
 
 `where` keeps its plain filter reading for conditions such as `count > 20`,
 `user=adm*` or `src IN (a, b)`: there the right side is a value, matching ignores case and
-`*` is a wildcard. As soon as the condition uses a function, arithmetic or a quoted field
-name it is read as an expression, so `where bytes_out > bytes_in` compares the text
-`bytes_in`, while `where bytes_out > bytes_in * 1` compares the two fields.
+`*` is a wildcard. A bare name on the right names a field, as in Splunk:
+`where bytes_out > bytes_in` compares the two fields on every row that has `bytes_in`, and
+compares with the text `bytes_in` only on rows without it. Right after the search, where OpenSearch runs the `where`, only a field a data model names is read as a field there; any other bare name is compared as text, so write `where bytes_out > 'my_field'` or move the `where` after a command such as `eval` when comparing with a field of your own. Put a value in double quotes
+(`where user="admin"`) to always compare with the text. As soon as the condition uses a
+function, arithmetic or a single-quoted field name it is read as an expression.
 
 | Functions | |
 | --- | --- |
@@ -222,7 +247,11 @@ with room to spare).
 ## Asking in plain English
 
 The box above the query editor (and `signalith ask "..."`) turns a question into a
-query. It understands:
+query, such as *top 10 users with failed logins today*, *users who logged in to more
+than 3 hosts* or *powershell spawned by winword on dc01*. It lists how it read each
+phrase, so you can see why the query looks the way it does and edit it. The built-in
+translator works offline. Words it does not understand are listed rather than guessed
+at. It understands:
 
 | You write | It adds |
 | --- | --- |
@@ -241,9 +270,26 @@ query. It understands:
 | per hour, over time, daily | `timechart` |
 | show user, src and dest | `table _time, user, src, dest` |
 
-Names from the asset and identity lists are recognized as users or hosts. When an AI
-model is configured, questions with unknown words go to it; see
-[Writing queries](https://github.com/jrsamsanchez/Signalith/blob/main/README.md#writing-queries) in the README.
+Names from the asset and identity lists are recognized as users or hosts.
+
+### Using an AI model
+
+An AI model is optional. When `assistant.provider` is set, questions the translator
+only partly understands go to the model instead, and every question does when you
+tick **Use AI**. Only the question and the field list are sent, never your events. The
+parser checks the model's query before you see it. Point `assistant.url` at a local
+Ollama or LM Studio server to keep everything on site:
+
+```yaml
+assistant:
+  provider: openai
+  url: http://localhost:11434/v1
+  model: llama3.1
+```
+
+The AI assistant can also be set on the **Settings** page (see
+[Server settings](settings.md)), and its settings are in the
+[configuration table](configuration.md#all-settings).
 
 ## How queries run
 
