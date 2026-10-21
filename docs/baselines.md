@@ -25,7 +25,7 @@ Open them at **Settings > Behavior baselines** (admins). They are on by default.
 
 | Check | Learns per | From | Adds risk when | Risk |
 | --- | --- | --- | --- | --- |
-| Sign-in from a new country | user | Authentication | a successful sign-in comes from a country none of the user's sign-ins came from before | 40 |
+| Sign-in from a new country | user | Authentication | a successful sign-in comes from a country none of the user's sign-ins came from before; or, at half the risk, from a user with no sign-in from the internet on record (a new or long-unused account) or none for 30 days | 40 |
 | Sign-in from a new network | user | Authentication | it comes from an AS (internet provider or cloud network) the user never signed in from, in a country they did sign in from | 15 |
 | Sign-in at an unusual hour | user | Authentication | it comes at an hour of the day (UTC) with under 2% of the user's activity, once they have been seen in at least 40 different hours | 10 |
 | Rare process on a host | host | Endpoint | a host runs a program it never ran before, which at most 3 hosts ever ran | 20 |
@@ -69,7 +69,12 @@ What the checks leave out:
   already have (or the learning period, if longer), oldest first, a day of data per
   round. Users and hosts with a history are judged from the start.
 - **The learning period.** A user or host first seen less than 14 days ago is only
-  learned from, so a new employee's first week adds no risk.
+  learned from, so a new employee's first week adds no risk. One thing is not held
+  back: once the check itself has learned for the learning period, the first sign-in
+  from the internet by a user it has none on record for (a new account, or one unused
+  for longer than **Forget after**), or by a user with none for 30 days, adds half the
+  check's risk, with `baseline_value` `new` or `returning`. That is how new and unused
+  accounts are taken over.
 - **Catching up.** If the baselines fall more than 7 days behind (OpenSearch was
   down for a week), they skip to 7 days ago rather than replay every hour.
 - **One check at a time.** When one check's search fails (a field mapped two
@@ -96,6 +101,15 @@ does, so users and hosts with a history are judged at once. Risk it already adde
 stays. A check you turn on later learns the history the same way. **New country**
 and **New network** learn from the same searches, so forgetting one also holds
 back the other's risk until the replay is done.
+
+To forget **one value** for one user or host, say a country learned while an account
+was misused, click **Forget it** on the baseline risk event on the Risk page, or choose
+**Forget one value…** in the check's menu and name the user or host and the value
+(as `baseline_value` has it, such as `BR` or `03:00 UTC`). At its next round the check
+forgets that value for that user or host only, so the next time it is seen it adds
+risk as new; everything else the check learned stays. For **Unusual data volume** it
+forgets how much the host usually sends, and learns it again over the next 3 days.
+Each request is audited, and the check shows how many wait.
 
 First-seen checks only know what happened within the history they read and what
 they still remember (**Forget after**). Something done less often, such as a
@@ -202,3 +216,6 @@ Admins only:
   settings and exceptions. The version is the one read; another admin's newer save
   is refused with 409.
 - `POST /api/baselines/{check}/reset`: forgets what a check learned.
+- `POST /api/baselines/{check}/unlearn` with `{"entity": "alice", "value": "BR"}`:
+  forgets one value for one user or host at the next round (the value is empty for
+  data volume). At most 100 may wait per check.

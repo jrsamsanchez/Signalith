@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,6 +128,54 @@ type CheckSettings struct {
 	// ResetAt asks for the check's profiles to be forgotten, so it learns
 	// again from then on.
 	ResetAt time.Time `json:"reset_at,omitzero"`
+	// Unlearn asks for values single users or hosts learned to be
+	// forgotten; the server that runs the jobs applies them at its next
+	// round.
+	Unlearn []ForgetValue `json:"unlearn,omitempty"`
+}
+
+// ForgetValue asks for one value a user's or host's profile learned to be
+// forgotten, so the check treats it as new again: say a country learned
+// while the account was misused. For data volume the value is empty, and
+// the host's usual amounts are learned again.
+type ForgetValue struct {
+	Entity string    `json:"entity"`
+	Value  string    `json:"value,omitempty"`
+	At     time.Time `json:"at"`
+	By     string    `json:"by,omitempty"`
+}
+
+// MaxUnlearn is how many values may wait to be forgotten for one check.
+const MaxUnlearn = 100
+
+// ForgetProblem checks a value to forget for a check.
+func ForgetProblem(check, entity, value string) error {
+	switch {
+	case NormEntity(entity) == "":
+		return errors.New("Name the user or host.")
+	case len(entity) > maxEntityLen || len(value) > maxValueLen:
+		return errors.New("The user or host, or the value, is too long.")
+	case check == DataVolume:
+		if value != "" {
+			return errors.New("Data volume learns amounts, not values: leave the value empty.")
+		}
+	case strings.TrimSpace(value) == "":
+		return errors.New("Say which value to forget.")
+	case check == UnusualHour:
+		if _, ok := hourOf(value); !ok {
+			return errors.New("Give the hour as on the risk event, such as 03:00 UTC.")
+		}
+	}
+	return nil
+}
+
+// hourOf reads an hour of the day as the sign-in hour check names it:
+// "03:00 UTC", "03:00" or "3".
+func hourOf(v string) (int, bool) {
+	v = strings.TrimSpace(v)
+	v, _, _ = strings.Cut(v, ":")
+	h, err := strconv.Atoi(strings.TrimSpace(v))
+	return h, err == nil && h >= 0 && h < 24
 }
 
 // Learning returns the learning period.

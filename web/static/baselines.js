@@ -177,6 +177,7 @@
     const notes = [];
     if (c.waiting) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, c.waiting)));
     if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only ${B.view.defaults.max_raised_per_hour} of them added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
+    if (c.unlearning) notes.push(el('p', { class: 'st-warn is-info' }, icon('info'), el('span', {}, `${riNumText(c.unlearning)} ${c.unlearning === 1 ? 'value is' : 'values are'} forgotten at the next round, within the hour.`)));
     if (c.full) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `It has learned the most ${many} it keeps (${riNumText(B.view.defaults.max_profiles)}); new ones are learned once old ones are forgotten.`)));
     if (c.truncated) {
       const after = c.truncated_after ? ` Those after ${c.truncated_after} in name order were not learned that hour.` : ' Some of it was not learned.';
@@ -205,6 +206,7 @@
     });
     const menu = dxMenu('More for ' + c.title, [
       { icon: 'search', label: 'Show its risk in Search', run: () => openSearch('datamodel=Risk detection_id=baseline-' + c.id, '-7d') },
+      { icon: 'circle-x', label: c.id === 'data-volume' ? 'Forget one host’s usual volume…' : 'Forget one value…', run: () => unlearnDialog(c.id, '', '') },
       'sep',
       { icon: 'rotate-ccw', label: 'Forget what it learned…', danger: true, run: () => reset(c) },
     ]);
@@ -360,6 +362,56 @@
     if (ev.baseline_value != null && ev.baseline_value !== '') match.baseline_value = String(ev.baseline_value);
     exceptionDialog({ match });
   };
+
+  // blUnlearn forgets the value one baseline risk event was about, for
+  // that user or host only, from the Risk page.
+  window.blUnlearn = async function (ev) {
+    try {
+      if (!B.view) B.view = await api('api/baselines');
+    } catch (e) { toastError('Couldn’t load the behavior baselines', e); return; }
+    const check = String(ev.baseline || ev.detection_id || '').replace(/^baseline-/, '');
+    unlearnDialog(check, ev.risk_object || '', check === 'data-volume' || ev.baseline_value == null ? '' : String(ev.baseline_value));
+  };
+
+  // unlearnDialog asks for one value a user or host learned to be
+  // forgotten, so the check treats it as new again; the rest of the check
+  // keeps what it learned.
+  function unlearnDialog(check, who, value) {
+    const c = B.view.checks.find((x) => x.id === check);
+    if (!c) return;
+    const volume = check === 'data-volume';
+    const [one] = ENTITY[c.entity] || ['user or host'];
+    const d = modalDialog('bl-un-dialog');
+    const whoIn = el('input', { id: 'bl-un-who', class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', value: who });
+    const whatIn = volume ? null : el('input', { id: 'bl-un-what', class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', placeholder: VALUE_HINT[check] || '', value });
+    const alert = formAlert();
+    const save = el('button', { type: 'button', class: 'btn btn--danger' }, 'Forget it');
+    const form = el('form', { class: 'modal__body bl-ex-form', novalidate: '' },
+      alert,
+      el('p', {}, volume
+        ? `It forgets how much this ${one} usually sends and learns it again, so its volume adds no risk for the next 3 days.`
+        : `It forgets this value for this ${one} only, so the next time it is seen it adds risk as new. Use it for something learned while an account or host was misused. Other ${(ENTITY[c.entity] || ['', 'users and hosts'])[1]} keep what they learned.`),
+      dxField(one[0].toUpperCase() + one.slice(1), whoIn, 'As the risk event names it.'),
+      volume ? null : dxField('Value', whatIn, 'As the risk event’s value has it, such as ' + ((VALUE_HINT[check] || '').replace(/^.*such as /, '') || 'BR') + '.'));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const restore = busy(save, 'Saving…');
+      try {
+        B.view = await api('api/baselines/' + encodeURIComponent(check) + '/unlearn', { entity: whoIn.value.trim(), value: whatIn ? whatIn.value.trim() : '' });
+        render();
+        d.close();
+        toast('It is forgotten at the next round, within the hour.');
+      } catch (err) {
+        restore();
+        showAlert(alert, 'Nothing was forgotten', sentence(err.message));
+      }
+    });
+    fill(d, modalHead('bl-un-dialog', volume ? 'Forget a host’s usual volume' : 'Forget one value', c.title, () => d.close()),
+      form, el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), save));
+    save.addEventListener('click', () => form.requestSubmit());
+    d.showModal();
+    (who ? (whatIn && !value ? whatIn : save) : whoIn).focus();
+  }
 
   // ---------- learning settings ----------
   function settingsCard() {
