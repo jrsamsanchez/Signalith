@@ -32,13 +32,20 @@ on its own, right now. For example:
 
 - **Data arriving**: authentication, process, network, DNS, account change, antivirus,
   file integrity and inventory events in the last 7 days. Sample data never counts.
+  Sign-in and process events count for every computer: when computers run the agent or
+  osquery, each of them must have sent some in the last 7 days, and the evidence names
+  those that did not (partial). Without agents or osquery Signalith cannot tell which
+  computers should send them, and says so.
 - **Detections**: enabled detections that match the control (sign-in attacks, privilege
   misuse, malware, network intrusions, persistence), with the data they read arriving
   and scheduled detections turned on.
 - **Configuration checks**: the [osquery checks](endpoints.md) whose NIST SP 800-53
   references match the control, and how many pass and fail across your hosts. Each
   failing check names the hosts it fails on (up to 25, then a count); analysts and
-  admins can click a host to open it as on the Endpoints page.
+  admins can click a host to open it as on the Endpoints page. Each check runs on one
+  platform (Windows, Linux or macOS): hosts on a platform no matching check covers make
+  the evidence partial, and when none of your hosts runs the checks' platform there is
+  no evidence. The evidence says when hosts last reported.
 - **Vulnerability scanning**: a [scan](vulnerabilities.md) finished in the last month
   (in the last three months counts as partial).
 - **Findings reviewed**: findings have been raised and looked at, and no new finding has
@@ -174,13 +181,16 @@ in the shared settings instead, so every server shows the same notes.
 Each framework has two exports:
 
 - **CSV**: one row per control and piece of evidence, with the status, the details, the
-  NIST SP 800-53 controls it lines up with, any note, the server and the time. Cells
+  NIST SP 800-53 controls it lines up with, any note, the server, the time, the
+  Signalith version, the mapping version and who exported it. Cells
   that start with `=`, `+`, `-` or `@` are prefixed with `'` so spreadsheet programs do
   not run them as formulas.
 - **Report (PDF)**: a report page that opens in a new tab. Use your browser's
   **Print** command and choose **Save as PDF**. It has the score, a summary and every
   control grouped as in the framework, with the evidence, failing checks and their hosts, detections and
-  notes.
+  notes. Its header names the server, the Signalith version, the mapping version (the
+  start of the SHA-256 of the control mapping, which changes whenever a control does)
+  and who exported it, and it says how each kind of evidence was measured.
 
 Over the API (any role):
 

@@ -121,19 +121,23 @@ func (s *Server) handleComplianceExport(w http.ResponseWriter, r *http.Request) 
 	}
 	rep := s.complianceReport(r)
 	f, _ := rep.Find(fw)
-	server := s.serverName()
+	x := compliance.Export{Server: s.serverName(), Version: s.Version, By: userOf(r)}
 	name := "signalith-" + fw + "-evidence-" + rep.Generated.UTC().Format("2006-01-02")
 	if format == "csv" {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
-		_ = compliance.WriteCSV(w, rep, f, server)
+		if err := compliance.WriteCSV(w, rep, f, x); err != nil {
+			s.Log.Warn("compliance: the CSV export was cut short", "framework", fw, "err", err)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if q.Get("download") == "1" {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.html"`)
 	}
-	_ = compliance.WriteHTML(w, rep, f, server, s.Version)
+	if err := compliance.WriteHTML(w, rep, f, x); err != nil {
+		s.Log.Warn("compliance: the report export failed", "framework", fw, "err", err)
+	}
 }
 
 func frameworkIDs() []string {
@@ -221,6 +225,11 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	if s.Endpoints != nil {
 		s.complianceChecks(ctx, snap)
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.complianceComputers(ctx, snap)
+	}()
 	if s.Vulns != nil && s.Vulns.Store != nil {
 		v := &compliance.Vulns{}
 		if set, err := s.Vulns.Store.CachedSettings(ctx); err == nil {
@@ -382,6 +391,61 @@ func (s *Server) complianceData(ctx context.Context, snap *compliance.Snapshot) 
 	}
 }
 
+// complianceComputers adds the computers whose agent sent in the data
+// window to those that run osquery, and reads which hosts sent each data
+// model every computer should send.
+func (s *Server) complianceComputers(ctx context.Context, snap *compliance.Snapshot) {
+	if s.Agents != nil {
+		agents, _, err := s.Agents.List(ctx)
+		if err != nil {
+			snap.HostsErr = "the agents could not be read: " + err.Error()
+		}
+		for _, a := range agents {
+			if a.Name != "" && snap.Now.Sub(a.LastSeen) <= compliance.DataWindow {
+				snap.Computers = append(snap.Computers, compliance.ShortHost(a.Name))
+			}
+		}
+	}
+	slices.Sort(snap.Computers)
+	snap.Computers = slices.Compact(slices.DeleteFunc(snap.Computers, func(c string) bool { return c == "" }))
+	if len(snap.Computers) == 0 || snap.HostsErr != "" {
+		return
+	}
+	if s.Engine == nil {
+		snap.HostsErr = "search is not available"
+		return
+	}
+	snap.DataHosts = map[string]map[string]bool{}
+	for _, m := range compliance.HostModels {
+		q, err := query.Parse("datamodel=" + m + " NOT " + datamodel.SampleField + "=* | stats count by host")
+		if err != nil {
+			snap.HostsErr = err.Error()
+			return
+		}
+		q.Earliest = "-7d"
+		q.MaxRows = complianceHostRows
+		res, err := s.Engine.Execute(ctx, q)
+		if err != nil {
+			snap.HostsErr = err.Error()
+			return
+		}
+		if res.Truncated {
+			snap.HostsErr = "more than " + strconv.Itoa(complianceHostRows) + " hosts sent " + m + " events"
+			return
+		}
+		seen := map[string]bool{}
+		for _, row := range res.Rows {
+			if h, _ := row["host"].(string); h != "" {
+				seen[compliance.ShortHost(h)] = true
+			}
+		}
+		snap.DataHosts[m] = seen
+	}
+}
+
+// complianceHostRows is the most hosts read for each data model.
+const complianceHostRows = 100_000
+
 // cellNumber reads a numeric search result cell; anything else is 0.
 func cellNumber(v any) float64 {
 	if f, ok := toFloat(v); ok {
@@ -442,8 +506,20 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 	byPlatform := map[string]int{}
 	for _, n := range nodes {
 		byPlatform[n.Platform]++
+		if n.LastSeen.IsZero() {
+			continue
+		}
+		if snap.HostsSeen[0].IsZero() || n.LastSeen.Before(snap.HostsSeen[0]) {
+			snap.HostsSeen[0] = n.LastSeen
+		}
+		if n.LastSeen.After(snap.HostsSeen[1]) {
+			snap.HostsSeen[1] = n.LastSeen
+		}
 	}
-	snap.Hosts = len(nodes)
+	snap.Hosts, snap.Platforms = len(nodes), byPlatform
+	for _, n := range nodes {
+		snap.Computers = append(snap.Computers, compliance.ShortHost(cmp.Or(n.Hostname, n.HostIdentifier)))
+	}
 	snap.Checks = []compliance.CheckStat{}
 	for _, c := range checks.All() {
 		st := compliance.CheckStat{ID: c.ID, Title: c.Title, Platform: c.Platform, Refs: c.References}
