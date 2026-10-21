@@ -1812,13 +1812,17 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/findings` | Raise a finding by hand |
 | `GET /api/findings/summary` | Open counts by status, severity and urgency |
 | `GET /api/cases?status=&owner=&q=&finding=&limit=` | Cases, most recently updated first, without timelines |
-| `POST /api/cases` | `{"title", "description", "severity", "owner", "findings": [...]}`; the title defaults to the first finding's |
+| `POST /api/cases` | `{"title", "description", "severity", "owner", "findings": [...], "template"}`; the title defaults to the first finding's, and a template fills the severity, description and tasks |
 | `GET`, `PATCH /api/cases/{id}` | Read with linked findings; update title, description, status, severity, owner, resolution, `comment`, and `close_findings` with `disposition` |
 | `POST /api/cases/{id}/findings` | `{"ids": [...]}`: add findings, moving them from another case |
 | `DELETE /api/cases/{id}/findings/{finding}` | Remove a finding |
 | `POST /api/cases/{id}/entries` | Add `{"kind": "note", "text"}`, `{"kind": "search", "query", "earliest", "latest"}` (runs it and keeps 50 rows) or `{"kind": "event", "event": {...}}` |
 | `DELETE /api/cases/{id}/entries/{entry}` | Remove a timeline entry |
 | `POST /api/cases/{id}/entities` | `{"field", "value"}` |
+| `POST /api/cases/{id}/tasks` | Add tasks: `{"titles": ["…"]}` or `{"template": "phishing"}` |
+| `PATCH`, `DELETE /api/cases/{id}/tasks/{task}` | Tick off, rename or assign a task (`{"done", "title", "owner"}`), or remove it |
+| `GET /api/cases/{id}/report` | Export the case's [report](cases.md#exporting-a-report): `?format=html` (default) or `json` |
+| `GET`, `PUT /api/case-templates` | The case templates: built-in ones and the admins' own (`PUT` replaces the admins', admin) |
 | `GET /api/cases/summary` | Open cases, and open cases you own |
 | `GET /api/risk?since=24h&type=` | Risk objects by total score, with context |
 | `GET /api/risk/object?object=&type=&since=7d` | Risk events for one object |

@@ -34,6 +34,7 @@ package secrets
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
@@ -56,6 +57,12 @@ const (
 	// derived from one master key.
 	infoKey = "signalith secrets v1"
 	infoID  = "signalith key id v1"
+	// infoReport makes the case report signing key of a server on its
+	// own; the cluster key makes a cluster's with another info, so the
+	// two never coincide.
+	infoReport = "signalith case-report v1 master"
+	// ReportSalt is the HKDF salt of both report signing keys.
+	ReportSalt = "signalith"
 )
 
 // sealedForm matches the start of an encrypted value of any version:
@@ -81,6 +88,9 @@ func KeyID(stored string) string {
 type masterKey struct {
 	id   string
 	aead cipher.AEAD
+	// report signs the case reports of a server that is not in a cluster
+	// (ReportKey); it is made from the key with its own HKDF info.
+	report ed25519.PrivateKey
 }
 
 // newMasterKey derives the encryption key and the key id from raw. The
@@ -106,7 +116,12 @@ func newMasterKey(raw []byte) (*masterKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &masterKey{id: hex.EncodeToString(idb), aead: aead}, nil
+	seed, err := hkdf.Key(sha256.New, raw, []byte(ReportSalt), infoReport, ed25519.SeedSize)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(seed)
+	return &masterKey{id: hex.EncodeToString(idb), aead: aead, report: ed25519.NewKeyFromSeed(seed)}, nil
 }
 
 // aad binds a value to its key and its setting.
