@@ -90,7 +90,7 @@ func TestTextAllGood(t *testing.T) {
 	checkText(t, text)
 	for _, want := range []string{
 		"Signalith security report for siem-1\n",
-		"Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.9). Linux, systemd\nservice.\n",
+		"Checked 2026-10-13 14:02 UTC. Signalith v0.9.0 (go1.26.10). Linux, systemd\nservice.\n",
 		"Summary: nothing needs attention, 20 good.\n",
 		"In transit\n  [good]        Connection to OpenSearch\n",
 		"  [good]        HTTPS\n                The web page, the API and agents use HTTPS, with Signalith's\n                own certificate.\n",
