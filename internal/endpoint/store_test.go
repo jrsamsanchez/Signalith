@@ -244,3 +244,33 @@ func TestCapRows(t *testing.T) {
 		t.Fatal("small result marked cut")
 	}
 }
+
+// A live query may not read the tables osquery runs with off (ASI-12),
+// but may name them in a single-quoted string; in double quotes SQLite
+// reads a name.
+func TestLiveQueryRefusesDisabledTables(t *testing.T) {
+	for sql, refused := range map[string]bool{
+		"SELECT result FROM curl WHERE url = 'http://169.254.169.254/'":   true,
+		"select * from Curl_Certificate where hostname='example.com:443'": true,
+		"select p.name from processes p join `curl` c":                    true,
+		"select * from processes where name = 'curl'":                     false,
+		`select * from "curl" where url='http://169.254.169.254/'`:        true,
+		`select * from "Curl_certificate"`:                                true,
+		"select * from [curl]":                                            true,
+		`select * from processes where cmdline like "%curl_certificate%"`: true,
+		"select * from processes where cmdline like '%curl_certificate%'": false,
+		"select * from curling_scores":                                    false,
+		"select * from processes":                                         false,
+	} {
+		if got := readsDisabledTable(sql); got != refused {
+			t.Errorf("%q: refused = %v, want %v", sql, got, refused)
+		}
+	}
+	ctx := context.Background()
+	s, _, _ := faultStore()
+	n, _ := enroll(t, s, "uuid-1", "web1")
+	var ie *InputError
+	if _, err := s.NewLiveQuery(ctx, "select * from curl where url='http://x/'", []string{n.ID}, "sam"); !errors.As(err, &ie) {
+		t.Errorf("curl query: %v", err)
+	}
+}
