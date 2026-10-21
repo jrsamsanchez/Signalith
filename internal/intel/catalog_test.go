@@ -244,6 +244,21 @@ func TestReservedNetworks(t *testing.T) {
 	if ind, err := (Input{Value: "10.1.2.3"}).Build(time.Now()); err != nil || ind.Value != "10.1.2.3" {
 		t.Errorf("manual private address = %+v %v", ind, err)
 	}
+	// But a network so broad it would match most of the internet is
+	// refused, by hand and in an upload, as feeds skip it.
+	for _, v := range []string{"0.0.0.0/0", "::/0", "128.0.0.0/1", "0.0.0.0/7", "2000::/3", "::ffff:0.0.0.0/96"} {
+		if ind, err := (Input{Value: v}).Build(time.Now()); err == nil || !strings.Contains(err.Error(), "too broad") {
+			t.Errorf("manual %s = %+v %v, want refused as too broad", v, ind, err)
+		}
+	}
+	for _, v := range []string{"10.0.0.0/8", "8.0.0.0/8", "2a00::/16", "fd12::/16"} {
+		if _, err := (Input{Value: v, Type: TypeCIDR}).Build(time.Now()); err != nil {
+			t.Errorf("manual %s refused: %v", v, err)
+		}
+	}
+	if _, err := ParseUpload(strings.NewReader("203.0.113.9\n0.0.0.0/0\n"), time.Now()); err == nil || !strings.Contains(err.Error(), "line 2: network 0.0.0.0/0 is too broad") {
+		t.Errorf("upload with 0.0.0.0/0 = %v, want refused", err)
+	}
 	if !slices.Contains(FeedTypes, TypeCIDR) {
 		t.Error("cidr must be a feed type")
 	}

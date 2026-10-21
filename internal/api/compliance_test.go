@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +21,9 @@ import (
 func TestComplianceReport(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("SIGNALITH_STATE_DIR", state)
-	ts, _ := newRoleServer(t)
+	ts, srv := newRoleServer(t)
+	var logs logBuffer
+	srv.Log = slog.New(slog.NewTextHandler(&logs, nil))
 
 	// Every signed-in user can read it, so an auditor can be a Viewer.
 	code, out := doAs(t, ts, "vera", "role-password", "GET", "/api/compliance", "")
@@ -59,6 +62,16 @@ func TestComplianceReport(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(state, compliance.NotesFile)); err != nil {
 		t.Errorf("notes file: %v", err)
+	}
+	// Changing a note is audited, with what it replaced.
+	if code, out := do(t, ts, "PUT", "/api/compliance/notes", `{"framework":"pci-dss","control":"10.6.1","status":"external","note":"Chrony, checked weekly."}`, true); code != 200 {
+		t.Fatalf("second PUT = %d %v", code, out)
+	}
+	line := auditLine(t, logs.String(), `note="Chrony, checked weekly."`)
+	for _, want := range []string{`msg="compliance.note: compliance note changed"`, "audit=true", "by=admin", "control=10.6.1", `previous_note="Chrony on every host."`, "previous_status=external"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("note audit line lacks %s: %s", want, line)
+		}
 	}
 	_, out = do(t, ts, "GET", "/api/compliance", "", true)
 	found := false

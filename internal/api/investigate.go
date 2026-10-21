@@ -182,6 +182,19 @@ func (s *Server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		sentTo = config.Origin(c.URL)
 	}
 	res, err := inv.Run(ctx, f, send)
+	var stopped *investigate.StoppedError
+	if errors.As(err, &stopped) {
+		for _, st := range stopped.Steps {
+			if st.By == "ai" && strings.HasPrefix(st.Error, investigate.RefusedPrefix) {
+				s.Log.Warn("AI investigation search refused", "audit", true, "by", userOf(r), "finding", f.ID, "model", inv.Model.Name(),
+					"query", st.Query, "reason", strings.TrimPrefix(st.Error, investigate.RefusedPrefix))
+			}
+		}
+		s.Log.Warn("Investigate with AI stopped: the model searched for a masked value", "audit", true, "by", userOf(r), "finding", f.ID,
+			"model", inv.Model.Name(), "sent_to", sentTo)
+		send(investigate.Event{Type: "error", Text: err.Error()})
+		return
+	}
 	if err != nil {
 		if strings.Contains(err.Error(), "Client.Timeout exceeded") {
 			err = fmt.Errorf("the AI model did not answer within its answer time limit (%s); an admin can raise Answer time limit in Settings, under AI assistant, or use a faster model", shortDuration(s.conf().AssistantRequestTimeout()))

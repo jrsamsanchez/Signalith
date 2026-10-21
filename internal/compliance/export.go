@@ -43,12 +43,12 @@ func (r *Report) Find(id string) (*FrameworkReport, bool) {
 // auditor's spreadsheet.
 func WriteCSV(w io.Writer, rep *Report, f *FrameworkReport, server string) error {
 	cw := csv.NewWriter(w)
-	head := []string{"framework", "control", "group", "title", "status", "evidence", "evidence_status", "detail", "nist_800_53", "note", "note_by", "note_at", "server", "generated"}
+	head := []string{"framework", "control", "group", "title", "status", "signalith_found", "outside_signalith", "evidence", "evidence_status", "detail", "nist_800_53", "note", "note_by", "note_at", "server", "generated"}
 	if err := cw.Write(head); err != nil {
 		return err
 	}
 	base := func(c ControlReport) []string {
-		return []string{f.Name + " " + f.Version, c.ID, c.Group, c.Title, StatusLabel(c.Status)}
+		return []string{f.Name + " " + f.Version, c.ID, c.Group, c.Title, StatusLabel(c.Status), StatusLabel(c.Computed), c.Also}
 	}
 	tail := func(c ControlReport) []string {
 		note, by, at := "", "", ""
@@ -199,14 +199,15 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
   <p class="meta">Server {{.Server}} · Generated {{.Generated}}{{if .Version}} · Signalith {{.Version}}{{end}}</p>
 </header>
 <section class="summary" aria-label="Summary">
-  <div class="kpi"><b>{{.F.Score}}%</b><span>Coverage score</span></div>
+  <div class="kpi"><b>{{.F.Score}}%</b><span>Evidence coverage of {{len .F.Controls}} mapped controls</span></div>
   <div class="kpi"><b>{{n .F.Counts "met"}}</b><span>With evidence</span></div>
   <div class="kpi"><b>{{n .F.Counts "partial"}}</b><span>Partial</span></div>
   <div class="kpi"><b>{{n .F.Counts "missing"}}</b><span>Gaps</span></div>
   <div class="kpi"><b>{{n .F.Counts "external"}}</b><span>Handled outside</span></div>
   <div class="kpi"><b>{{n .F.Counts "na"}}</b><span>Not applicable</span></div>
 </section>
-<p class="note">The score counts controls with evidence as 1 and partly supported ones as ½, out of the controls that apply. This report lists only the {{len .F.Controls}} controls a SIEM can give evidence for; the rest of {{.F.Name}} is outside its scope.</p>
+<p class="note"><b>This is not a compliance assessment.</b> It shows what Signalith itself observed for the {{len .F.Controls}} controls of {{.F.Name}} a SIEM can give evidence for; the rest of the framework is outside its scope, and an assessor decides what evidence is enough.</p>
+<p class="note">The score counts controls with evidence as 1 and partly supported ones as ½, out of the controls that apply. Controls noted as handled outside Signalith count for what Signalith found, not for the note.</p>
 {{range .R.Notes}}<p class="note"><b>Note:</b> {{.}}</p>{{end}}
 {{range .Groups}}
 <h2>{{.Name}}</h2>
@@ -223,7 +224,9 @@ var reportTemplate = template.Must(template.New("report").Funcs(template.FuncMap
         {{with .Checks}}{{if gt .Checks 0}}{{if .Failing}}<li><span class="ev-st partial">Failing checks:</span> {{range $i, $c := .Failing}}{{if $i}}; {{end}}{{$c.Title}} ({{$c.Platform}}, {{$c.Hosts}} {{plural $c.Hosts "host" "hosts"}}: {{hosts $c}}){{end}}</li>{{end}}{{end}}{{end}}
         {{if .Detections}}<li class="small">Detections on: {{range $i, $d := more .Detections 12}}{{if $i}}; {{end}}{{$d.Name}}{{end}}{{if gt (len .Detections) 12}}; and {{sub (len .Detections) 12}} more{{end}}</li>{{end}}
       </ul>
+      {{with .Also}}<div class="small"><b>Outside what Signalith sees:</b> {{.}}</div>{{end}}
       {{with .Attestation}}<div class="attest"><b>{{label .Status}}</b> ({{.By}}, {{stamp .}}): {{.Note}}</div>{{end}}
+      {{if .Attestation}}<div class="small">Signalith found: {{label .Computed}}</div>{{end}}
       {{if .NIST}}<div class="small">NIST SP 800-53: {{join .NIST ", "}}</div>{{end}}
     </td>
     <td class="st"><span class="pill {{.Status}}">{{label .Status}}</span></td>
