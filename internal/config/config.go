@@ -1044,6 +1044,26 @@ type Syslog struct {
 	// front still lets Signalith see each device's address.
 	// SIGNALITH_SYSLOG_PROXY_PROTOCOL overrides it.
 	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// SpoolMB bounds, in megabytes, the spool on disk (in the state
+	// folder) that keeps syslog events while OpenSearch refuses them for
+	// now; when it is full, the oldest are dropped. Zero means
+	// DefaultSyslogSpoolMB.
+	SpoolMB int `yaml:"spool_mb,omitempty"`
+}
+
+// DefaultSyslogSpoolMB is syslog.spool_mb when it is not set (1 GB), and
+// MaxSyslogSpoolMB the most it may be (1 TB).
+const (
+	DefaultSyslogSpoolMB = 1024
+	MaxSyslogSpoolMB     = 1 << 20
+)
+
+// SpoolBytes returns syslog.spool_mb in bytes, the default when unset.
+func (s Syslog) SpoolBytes() int64 {
+	if s.SpoolMB <= 0 {
+		return DefaultSyslogSpoolMB << 20
+	}
+	return int64(s.SpoolMB) << 20
 }
 
 // Enabled reports whether any syslog listener is set.
@@ -1115,6 +1135,9 @@ func (s *Syslog) problems(server Server) []string {
 		if _, err := parseAllow(a); err != nil {
 			p = append(p, fmt.Sprintf("syslog.allow[%d] %q must be an IP address or a CIDR such as 10.0.0.0/8", i, a))
 		}
+	}
+	if s.SpoolMB < 0 || s.SpoolMB > MaxSyslogSpoolMB {
+		p = append(p, fmt.Sprintf("syslog.spool_mb %d must be 1-%d (or 0 for the default, %d)", s.SpoolMB, MaxSyslogSpoolMB, DefaultSyslogSpoolMB))
 	}
 	return p
 }
@@ -3230,6 +3253,8 @@ const header = `# Signalith configuration.
 #                    SIGNALITH_SYSLOG_UDP / _TCP override, "off" turns off)
 # syslog.allow       sender IPs or CIDRs allowed to send syslog (empty = any sender)
 # syslog.public_port port devices send to, if forwarded to another (Docker: 514 -> 5514)
+# syslog.spool_mb    most disk space, in MB, for syslog events kept while OpenSearch
+#                    refuses them for now (default 1024); when full, the oldest are dropped
 # detections.dir     folder for custom detections (relative to this file)
 # cluster.leader_eligible  lets this server run detections, threat intel downloads,
 #                    notifications and retention (default true; SIGNALITH_LEADER_ELIGIBLE);

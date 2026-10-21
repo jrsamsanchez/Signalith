@@ -241,6 +241,10 @@ type Result struct {
 	// later, such as while its disk is full or it is too busy.
 	Temporary int                   `json:"temporary,omitempty"`
 	Errors    []store.BulkItemError `json:"errors,omitempty"`
+	// TemporaryAt are the positions, in the events given, of those
+	// rejected for now (all of them, unlike Errors), so a sender that
+	// keeps events, such as syslog's spool, can send just those again.
+	TemporaryAt []int `json:"-"`
 	// Retimed and FieldsDropped are as in Stats, for this call.
 	Retimed       int `json:"retimed,omitempty"`
 	FieldsDropped int `json:"fields_dropped,omitempty"`
@@ -441,8 +445,11 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	res.Sensor = storedSensor(events, errs, recv)
 	limited := 0
 	for _, e := range errs {
-		if temporary(e) {
+		if Temporary(e) {
 			res.Temporary++
+			if e.Pos >= 0 && e.Pos < res.Received && !slices.Contains(res.TemporaryAt, e.Pos) {
+				res.TemporaryAt = append(res.TemporaryAt, e.Pos)
+			}
 		}
 		if shardLimit(e) {
 			limited++
@@ -557,12 +564,12 @@ func retryable(errs []store.BulkItemError, events []Event, docs []store.IndexedD
 	return retry, pos, removed
 }
 
-// temporary reports whether OpenSearch turned an event away for a reason
+// Temporary reports whether OpenSearch turned an event away for a reason
 // that may pass, so the sender should send it again later: too busy
 // (429, es_rejected_execution_exception), a write block such as a full
 // disk (cluster_block_exception), no room for the day's new index under
 // the shard limit (see shardLimit), or a failure on its side (5xx).
-func temporary(e store.BulkItemError) bool {
+func Temporary(e store.BulkItemError) bool {
 	if shardLimit(e) {
 		return true
 	}
@@ -572,6 +579,23 @@ func temporary(e store.BulkItemError) bool {
 		return true
 	}
 	return e.Status == http.StatusTooManyRequests || e.Status >= 500
+}
+
+// TemporaryError reports whether a whole write failed for a reason that
+// may pass, as Temporary does for one event: OpenSearch could not be
+// reached or did not answer in time, or it answered 429, a 5xx or a
+// cluster block. A request it refused for good (another 4xx, such as a
+// wrong password) is not.
+func TemporaryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *store.Error
+	if errors.As(err, &se) {
+		return se.Status == http.StatusTooManyRequests || se.Status >= 500 ||
+			strings.Contains(se.Body, "cluster_block_exception") || strings.Contains(se.Body, "es_rejected_execution_exception")
+	}
+	return true
 }
 
 // shardLimit reports whether OpenSearch refused to create the event's
