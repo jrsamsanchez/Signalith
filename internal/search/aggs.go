@@ -236,7 +236,13 @@ func newAggState() *aggState {
 	return &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]any{}}
 }
 
-func (s *aggState) add(a query.Agg, v any, r Row) {
+// aggStateSize is what the budget counts for one aggState, its distinct
+// map included.
+const aggStateSize = 384
+
+// add counts v in s and returns the bytes s now keeps for it, which the
+// caller charges to the search's budget.
+func (s *aggState) add(a query.Agg, v any, r Row) (kept int) {
 	s.count++
 	if a.Func == "dc" || a.Func == "values" {
 		for _, x := range asList(v) {
@@ -249,6 +255,7 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 				break
 			}
 			s.distinct[k] = x
+			kept += len(k) + valueSize(x) + fieldOverhead
 		}
 	}
 	f, ok := asFloat(v)
@@ -267,20 +274,25 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 		switch a.Func {
 		case "median", "stdev", "var", "stdevp", "varp":
 			s.nums = append(s.nums, f)
+			kept += 8
 		default:
 			if query.Percentile(a.Func) > 0 {
 				s.nums = append(s.nums, f)
+				kept += 8
 			}
 		}
 	}
 	switch a.Func {
 	case "list", "first", "last", "mode", "earliest", "latest":
 		s.vals = append(s.vals, v)
+		kept += valueSize(v) + 16
 		if a.Func == "earliest" || a.Func == "latest" {
 			t, _ := toTime(r["_time"])
 			s.times = append(s.times, t)
+			kept += 24
 		}
 	}
+	return kept
 }
 
 func (s *aggState) result(a query.Agg) any {

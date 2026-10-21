@@ -71,7 +71,13 @@ var countOnly = []string{"count", "dc", "distinct_count"}
 
 func guardAggs(aggs []query.Agg, m *Masker) error {
 	for _, a := range aggs {
-		if a.Field != "" && guarded(a.Field, m) && !slices.Contains(countOnly, strings.ToLower(a.Func)) {
+		counts := slices.Contains(countOnly, strings.ToLower(a.Func))
+		if strings.Contains(a.Field, "*") && !counts {
+			// values(*) or values(us*) expands to columns such as
+			// values(user), which masking does not go by.
+			return fmt.Errorf("%s(%s): name each field; only count and dc take a wildcard in an AI investigation's searches", a.Func, a.Field)
+		}
+		if a.Field != "" && guarded(a.Field, m) && !counts {
 			return fmt.Errorf("%s(%s) would show values of a masked field; only count and dc work on it", a.Func, a.Field)
 		}
 	}

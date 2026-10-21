@@ -73,7 +73,12 @@ func TestSearchInATimeZone(t *testing.T) {
 	if res.TimeZone != "America/New_York" {
 		t.Errorf("time zone = %q", res.TimeZone)
 	}
-	if ValidTimeZone("Mars/Olympus") == nil || ValidTimeZone("Europe/Berlin") != nil || ValidTimeZone("") != nil {
-		t.Error("ValidTimeZone")
+	for name, ok := range map[string]bool{
+		"": true, "Europe/Berlin": true, "UTC": true, "GMT": true, "Etc/GMT+5": true,
+		"Mars/Olympus": false, "Local": false, "posixrules": false, "Factory": false, "../etc/passwd": false,
+	} {
+		if (ValidTimeZone(name) == nil) != ok {
+			t.Errorf("ValidTimeZone(%q) ok = %v, want %v", name, !ok, ok)
+		}
 	}
 }

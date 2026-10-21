@@ -105,10 +105,9 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		var counted []Row
 		groups := map[string]Row{}
 		keys := append(append([]string{}, c.By...), c.Fields...)
-		for i, r := range res.Rows {
-			if i%checkEvery == 0 && ctx.Err() != nil {
-				return ctx.Err()
-			}
+		ev := evaluatorFor(ctx)
+		n := 0
+		for _, r := range res.Rows {
 			ks, vals, ok, err := groupCombos(r, keys)
 			if err != nil {
 				return err
@@ -117,8 +116,17 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 				continue
 			}
 			for gi, k := range ks {
+				if n++; n%checkEvery == 0 && ctx.Err() != nil {
+					return ctx.Err()
+				}
 				g, exists := groups[k]
 				if !exists {
+					if len(groups) >= maxMemGroups {
+						return tooManyGroups()
+					}
+					if !chargeGroup(ev, k, len(keys)+1, 0) {
+						return ev.err
+					}
 					g = Row{topCount: int64(0)}
 					for _, f := range keys {
 						g[f] = vals[gi][f]
@@ -361,6 +369,25 @@ func groupKey(r Row, fields []string) (string, bool) {
 // values in its by fields.
 const maxGroupCombos = 10000
 
+// maxMemGroups bounds the groups stats and top make in memory, whatever
+// the rows' multivalue by fields multiply them to.
+var maxMemGroups = maxEventsLimit // a variable so tests can lower it
+
+func tooManyGroups() error {
+	return &QueryError{Msg: fmt.Sprintf("the search makes more than %d groups; narrow it or use fewer by fields", maxMemGroups)}
+}
+
+// groupOverhead is what the budget counts for a group besides its key,
+// by values and states: its map entry, struct, row map and place in the
+// output order (measured at about 500 bytes).
+const groupOverhead = 512
+
+// chargeGroup charges the budget for a new group with key k, its by
+// values and its aggregation states.
+func chargeGroup(ev *evaluator, k string, by, states int) bool {
+	return ev.charge(groupOverhead + 2*len(k) + by*fieldOverhead + states*aggStateSize)
+}
+
 // groupCombos returns the groups row r counts in for fields, as keys (see
 // groupKey) and their values: a row with several values in a by field
 // counts once for each, and with several such fields once for each
@@ -419,10 +446,9 @@ func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, cl
 	}
 	groups := map[string]*group{}
 	var order []string
-	for i, r := range rows {
-		if i%checkEvery == 0 && ctx.Err() != nil {
-			return nil, nil, ctx.Err()
-		}
+	ev := evaluatorFor(ctx)
+	n := 0
+	for _, r := range rows {
 		var keys []string
 		var vals []Row
 		if expand {
@@ -441,8 +467,17 @@ func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, cl
 			keys, vals = []string{k}, []Row{r}
 		}
 		for gi, k := range keys {
+			if n++; n%checkEvery == 0 && ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
 			g, exists := groups[k]
 			if !exists {
+				if len(groups) >= maxMemGroups {
+					return nil, nil, tooManyGroups()
+				}
+				if !chargeGroup(ev, k, len(st.By), len(st.Aggs)) {
+					return nil, nil, ev.err
+				}
 				g = &group{keys: Row{}}
 				for _, f := range st.By {
 					g.keys[f] = vals[gi][f]
@@ -463,7 +498,9 @@ func goStatsBy(ctx context.Context, rows []Row, st *query.Stats, expand bool, cl
 				if !ok || v == nil {
 					continue
 				}
-				s.add(a, v, r)
+				if !ev.charge(s.add(a, v, r)) {
+					return nil, nil, ev.err
+				}
 			}
 		}
 	}

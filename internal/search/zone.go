@@ -6,6 +6,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	_ "time/tzdata" // the zone names, on servers without a zone database
@@ -40,7 +41,10 @@ func ValidTimeZone(name string) error {
 	if len(name) > 64 {
 		return fmt.Errorf("time zone %.64q... is too long", name)
 	}
-	if _, err := time.LoadLocation(name); err != nil {
+	// Local, posixrules and Factory load too, but mean the server's own
+	// zone or nothing; OpenSearch would read them differently.
+	_, err := time.LoadLocation(name)
+	if err != nil || (!strings.Contains(name, "/") && name != "UTC" && name != "GMT") {
 		return fmt.Errorf("unknown time zone %q; use an IANA name such as America/New_York", name)
 	}
 	return nil
