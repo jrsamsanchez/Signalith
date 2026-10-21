@@ -76,10 +76,18 @@ type Evidence struct {
 	AddedBy string    `json:"added_by"`
 	SHA256  string    `json:"sha256"`
 	Intact  bool      `json:"intact"`
+	// FileName and FileSHA256 name an attached file and the SHA-256 of
+	// its bytes, so whoever has the file can check it.
+	FileName   string `json:"file_name,omitempty"`
+	FileSHA256 string `json:"file_sha256,omitempty"`
 }
 
 // New builds a case's report.
-func New(c *cases.Case, linked []*findings.Finding, missing []string, by, server, tenant string, now time.Time) (*Report, error) {
+//
+// fileIntact, when given, says whether an attached file's bytes still
+// match the SHA-256 taken when it was added; the report holds the file's
+// name and hashes, not its bytes.
+func New(c *cases.Case, linked []*findings.Finding, missing []string, by, server, tenant string, now time.Time, fileIntact ...func(cases.Entry) bool) (*Report, error) {
 	r := &Report{
 		Format: Format, Version: Version, Generated: now.UTC(), GeneratedBy: by, Server: server, Tenant: tenant,
 		Case: *c, Findings: []Finding{}, Missing: missing, Evidence: []Evidence{},
@@ -92,7 +100,14 @@ func New(c *cases.Case, linked []*findings.Finding, missing []string, by, server
 		if e.SHA256 == "" {
 			continue
 		}
-		r.Evidence = append(r.Evidence, Evidence{EntryID: e.ID, Kind: e.Kind, Added: e.Time, AddedBy: e.Author, SHA256: e.SHA256, Intact: cases.EvidenceIntact(e)})
+		ev := Evidence{EntryID: e.ID, Kind: e.Kind, Added: e.Time, AddedBy: e.Author, SHA256: e.SHA256, Intact: cases.EvidenceIntact(e)}
+		if e.Kind == cases.KindFile {
+			ev.FileName, ev.FileSHA256 = e.FileName, e.FileSHA256
+			for _, ok := range fileIntact {
+				ev.Intact = ev.Intact && ok(e)
+			}
+		}
+		r.Evidence = append(r.Evidence, ev)
 	}
 	// Read the report back from its own JSON, so it holds what a file of
 	// it holds (numbers as float64, times as text in events) and its page

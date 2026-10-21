@@ -1095,7 +1095,7 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
 `GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
-`GET /api/cases/{id}`, `GET /api/case-templates` ([case templates](cases.md#templates-and-tasks)), `GET /api/cases/reports/keys` (the [report keys](cases.md#report-keys)), `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
+`GET /api/cases/{id}`, `GET /api/case-templates` ([case templates](cases.md#templates-and-tasks)), `GET /api/cases/reports/keys` (the [report keys](cases.md#report-keys)), `GET /api/cases/{id}/files/{file}` (downloading a case's [attached file](cases.md#attaching-files)), `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/storyline` (the [attack storyline](storyline.md)), `GET /api/intel`, `GET /api/intel/feeds`,
 `GET /api/intel/catalog`, `GET /api/intel/indicators`, `GET /api/intel/lookup`, `GET /api/posture`,
 `GET /api/dashboards`, `GET /api/dashboards/{id}`, `GET /api/dashboards/{id}/yaml`,
@@ -1116,7 +1116,7 @@ clicks still need the Analyst role), and the web UI.
 `PATCH /api/findings/{id}`, `POST /api/cases`, `PATCH /api/cases/{id}`,
 `POST /api/cases/{id}/findings`, `DELETE /api/cases/{id}/findings/{fid}`,
 `POST /api/cases/{id}/entries`, `DELETE /api/cases/{id}/entries/{entry}`,
-`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `GET /api/cases/{id}/report` (exporting a case's [report](cases.md#exporting-a-report)), `POST /api/cases/reports/verify` ([checking a report](cases.md#checking-a-report)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
+`POST /api/cases/{id}/entities`, `POST /api/cases/{id}/tasks`, `PATCH /api/cases/{id}/tasks/{task}`, `DELETE /api/cases/{id}/tasks/{task}` (a case's [tasks](cases.md#templates-and-tasks)), `GET /api/cases/{id}/report` (exporting a case's [report](cases.md#exporting-a-report)), `POST /api/cases/reports/verify` ([checking a report](cases.md#checking-a-report)), `POST /api/cases/{id}/files` ([attaching a file](cases.md#attaching-files)), `POST /api/cases/{id}/tickets` (opening a [ticket](ticketing.md) for a case), `POST /api/dashboards`, `PUT /api/dashboards/{id}`,
 `DELETE /api/dashboards/{id}`, `POST /api/dashboards/{id}/panels`, `POST /api/notebooks`,
 `PUT /api/notebooks/{id}`, `DELETE /api/notebooks/{id}`, `POST /api/notebooks/{id}/cells`,
 `POST /api/notebooks/{id}/cases`, `DELETE /api/notebooks/{id}/cases/{case}` (an analyst changes

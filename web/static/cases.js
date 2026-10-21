@@ -27,6 +27,7 @@ refreshCaseCount();
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
 const fullTime = (t) => new Date(t).toLocaleString();
 const shortDate = (t) => new Date(t).toLocaleDateString();
+const sizeText = (n) => (n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : plural(n, 'byte'));
 // shortAgo drops the "ago" for table cells: 48m, 3h, 2d.
 const shortAgo = (t) => { const a = ago(t); return a === 'just now' ? 'now' : a.replace(/ ago$/, ''); };
 // when gives a timeline time: relative for a week, then the date.
@@ -799,18 +800,58 @@ function timelineCard(c, linked) {
     if (caseState.open === c.id) showCase(c.id);
   });
 
-  // Note or Search
+  // File composer: one file at a time, with an optional note.
+  const MAX_FILE = 10 * 1024 * 1024;
+  const fileIn = el('input', { id: 'cf-file', class: 'input', type: 'file', 'aria-label': 'File' });
+  const fileNote = el('input', { id: 'cf-text', class: 'input', type: 'text', maxlength: '2000', placeholder: 'What it is (optional)', 'aria-label': 'What the file is' });
+  const fileBtn = el('button', { type: 'submit', class: 'btn btn--primary', disabled: '' }, icon('paperclip'), 'Attach');
+  const fileErr = el('div', { class: 'field-error hidden', role: 'alert' });
+  const showFileErr = (m) => { fill(fileErr, icon('circle-alert'), sentence(m)); fileErr.classList.remove('hidden'); };
+  fileIn.addEventListener('change', () => {
+    fileErr.classList.add('hidden');
+    const f = fileIn.files[0];
+    fileBtn.disabled = !f;
+    if (f && f.size > MAX_FILE) { fileBtn.disabled = true; showFileErr(`${f.name} is ${sizeText(f.size)}; a file is at most 10 MB`); }
+  });
+  const fileForm = el('form', { class: 'c-compose__form' }, fileIn, fileErr,
+    el('div', { class: 'c-compose__bar' }, fileNote, el('span', { class: 'hint hide-sm' }, 'Up to 10 MB. Its SHA-256 is kept with it.'), el('span', { class: 'spacer' }), fileBtn));
+  fileForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = fileIn.files[0];
+    if (!f) return;
+    fileErr.classList.add('hidden');
+    const fd = new FormData();
+    fd.append('text', fileNote.value);
+    fd.append('file', f, f.name);
+    const done = busy(fileBtn, 'Attaching…');
+    try {
+      const resp = await apiRaw('api/cases/' + encodeURIComponent(c.id) + '/files', { method: 'POST', body: fd });
+      const r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+    } catch (e) {
+      done();
+      showFileErr(e.message);
+      return;
+    }
+    draft.mode = 'note';
+    refreshCaseCount();
+    if (caseState.open === c.id) showCase(c.id);
+  });
+
+  // Note, Search or File
   const seg = el('div', { class: 'seg seg--sm', role: 'group', 'aria-label': 'Add to the timeline' });
   const setMode = (m, focus) => {
     draft.mode = m;
     seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
     noteForm.classList.toggle('hidden', m !== 'note');
     searchForm.classList.toggle('hidden', m !== 'search');
-    if (focus) (m === 'note' ? note : sq).focus();
+    fileForm.classList.toggle('hidden', m !== 'file');
+    if (focus) (m === 'note' ? note : m === 'search' ? sq : fileIn).focus();
   };
   seg.append(
     el('button', { type: 'button', 'data-mode': 'note', onclick: () => setMode('note', true) }, icon('message-square-text'), 'Note'),
-    el('button', { type: 'button', 'data-mode': 'search', onclick: () => setMode('search', true) }, icon('search'), 'Search'));
+    el('button', { type: 'button', 'data-mode': 'search', onclick: () => setMode('search', true) }, icon('search'), 'Search'),
+    el('button', { type: 'button', 'data-mode': 'file', onclick: () => setMode('file', true) }, icon('paperclip'), 'File'));
   setMode(draft.mode);
 
   const entries = c.entries || [];
@@ -833,7 +874,7 @@ function timelineCard(c, linked) {
     el('div', { class: 'card__head' },
       el('div', {}, el('h3', { class: 'card__title', id: 'ct-head' }, 'Timeline ', el('span', { class: 'count' }, String(entries.length)))),
       can('analyst') ? el('div', { class: 'card__actions' }, seg) : null),
-    can('analyst') ? el('div', { class: 'c-compose' }, noteForm, searchForm) : null,
+    can('analyst') ? el('div', { class: 'c-compose' }, noteForm, searchForm, fileForm) : null,
     el('ol', { class: 'timeline c-entries' }, ...items));
 }
 
@@ -895,6 +936,24 @@ function entryNode(c, e, linked) {
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
           snapshotTable(e), evidenceLine(e)],
         remove: removeEntryButton(c, e, 'search') });
+    case 'file': {
+      // Always a download: the server never shows a file in the browser.
+      const href = 'api/cases/' + encodeURIComponent(c.id) + '/files/' + encodeURIComponent(e.file_id);
+      return tlItem({ kind: 'file', icon: 'paperclip', time: e.time, text: [who, ' attached a file'],
+        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null,
+          el('div', { class: 'c-file' },
+            el('span', { class: 'c-file__icon' }, icon('file-text')),
+            el('div', { class: 'c-file__main' },
+              el('a', { class: 'c-file__name', href, download: e.file_name, rel: 'noopener' }, e.file_name),
+              el('span', { class: 'hint' }, `${sizeText(e.file_size || 0)} · ${(e.file_type || '').split(';')[0]}`)),
+            el('a', { class: 'btn btn--ghost btn--sm', href, download: e.file_name, 'aria-label': 'Download ' + e.file_name }, icon('download'), el('span', { class: 'hide-sm' }, 'Download'))),
+          // The file's own SHA-256, which whoever has a copy can check;
+          // the warning when the entry was changed outside Signalith.
+          ((caseState.data && caseState.data.evidence_changed) || []).includes(e.id) ? evidenceLine(e)
+            : e.file_sha256 ? el('p', { class: 'c-evidence', title: 'SHA-256 of the file when attached: ' + e.file_sha256 }, icon('fingerprint', 'icon--xs'),
+              'SHA-256 ', el('span', { class: 'mono' }, e.file_sha256.slice(0, 16) + '…')) : null].filter(Boolean),
+        remove: removeEntryButton(c, e, 'file') });
+    }
     case 'notebook':
       // A hunting notebook linked to this case; unlinking happens from the
       // notebook, so the entry has no remove button here.

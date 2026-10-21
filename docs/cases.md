@@ -20,7 +20,7 @@ Open the **Investigations** tab to see open cases.
 
 ## The timeline
 
-The **timeline** holds notes, searches and events.
+The **timeline** holds notes, searches, events and [files](#attaching-files).
 
 - **Add a search** on the case (or **Add to case** on the Search page) runs the query
   and keeps a snapshot of its first 50 rows. The case still shows what you saw after
@@ -34,11 +34,32 @@ The **timeline** holds notes, searches and events.
 - [Response actions](response-actions.md) run from the case with **Respond** are
   noted on its timeline.
 
-Each pinned event and search snapshot records a **SHA-256** of its content when it is
+Each pinned event, search snapshot and attached file records a **SHA-256** of its content when it is
 added, shown under it. If the stored copy is ever changed outside Signalith, the case
 says so in red, so the evidence can be trusted in a report.
 
 A case holds at most 1,000 timeline entries and 500 findings.
+
+## Attaching files
+
+**File** on the timeline (analysts and admins) attaches a file to the case, such as a
+screenshot, a suspicious email with its headers or a tool's output, with an optional
+note. Signalith records the file's **SHA-256** when it is added and shows it on the
+timeline; the case's [report](#exporting-a-report) lists each file's name and SHA-256
+(not the file itself), so whoever has a copy of the file can check it is the same one.
+
+- A file is at most 10 MiB, and a case holds at most 25 files and 100 MiB of them.
+- Files are only ever downloaded, never opened in the browser by Signalith, whatever
+  they hold. Treat a file someone attached as you would an email attachment: it may be
+  the malware you are investigating.
+- Every upload and download is in the [audit log](audit.md), with the file's SHA-256.
+- Like notes and pinned events, analysts remove only the files they attached; admins
+  can remove any. Removing a file from the timeline deletes it.
+- Files are kept in OpenSearch in the `<prefix>_case_files` index, and are deleted
+  with their case by [Data retention](retention.md).
+
+The APIs are `POST /api/cases/{id}/files` (a `multipart/form-data` form with the file
+in `file` and an optional note in `text`) and `GET /api/cases/{id}/files/{file}`.
 
 ## Templates and tasks
 

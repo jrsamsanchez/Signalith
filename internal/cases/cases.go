@@ -43,6 +43,9 @@ const (
 	// KindNotebook is a hunting notebook linked to the case: Text is its
 	// title when it was linked, NotebookID names it.
 	KindNotebook = "notebook"
+	// KindFile is a file attached to the case (package casefiles): the
+	// entry names it, and FileSHA256 is the SHA-256 of its bytes.
+	KindFile = "file"
 )
 
 // Limits keep one case document a reasonable size.
@@ -143,13 +146,20 @@ type Entry struct {
 	RunID  string `json:"run_id,omitempty"`
 	Status string `json:"status,omitempty"` // of the run: succeeded or failed
 
+	FileID     string `json:"file_id,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+	FileSize   int64  `json:"file_size,omitempty"`
+	FileType   string `json:"file_type,omitempty"`
+	FileSHA256 string `json:"file_sha256,omitempty"`
+
 	// SHA256 fingerprints a pinned event or a search snapshot when it is
 	// added (EvidenceHash), so a report can show it is unchanged since.
 	SHA256 string `json:"sha256,omitempty"`
 }
 
 // EvidenceHash is the SHA-256, in hex, of what an evidence entry holds:
-// the pinned event, or the search with its snapshot. It is taken over
+// the pinned event, the search with its snapshot, or the attached file's
+// name, size and SHA-256 (the bytes are checked against FileSHA256). It is taken over
 // JSON with sorted keys, so it is the same wherever it is computed. Other
 // kinds of entry have none.
 func EvidenceHash(e Entry) string {
@@ -160,6 +170,9 @@ func EvidenceHash(e Entry) string {
 	case KindSearch:
 		v = map[string]any{"kind": e.Kind, "query": e.Query, "earliest": e.Earliest, "latest": e.Latest,
 			"result_kind": e.Result, "columns": e.Columns, "rows": e.Rows, "matched": e.Matched, "truncated": e.Truncated}
+	case KindFile:
+		v = map[string]any{"kind": e.Kind, "file_id": e.FileID, "file_name": e.FileName, "file_size": e.FileSize,
+			"file_type": e.FileType, "file_sha256": e.FileSHA256}
 	default:
 		return ""
 	}
@@ -479,3 +492,14 @@ func modifyResult(err error) error {
 
 // OpenStatuses are the statuses that still need work.
 var OpenStatuses = []string{findings.StatusNew, findings.StatusInProgress, findings.StatusPending}
+
+// FileUsage counts the files attached to the case and their bytes.
+func (c *Case) FileUsage() (n int, bytes int64) {
+	for _, e := range c.Entries {
+		if e.Kind == KindFile {
+			n++
+			bytes += e.FileSize
+		}
+	}
+	return n, bytes
+}

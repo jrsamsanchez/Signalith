@@ -110,6 +110,10 @@ type Manager struct {
 	// index, so a server that lost the background jobs without knowing
 	// stops before it changes anything.
 	Claim func(ctx context.Context, index, step string) error
+	// PruneCaseFiles, when set, deletes the files attached to cases that
+	// no longer exist (package casefiles), after resolved and closed
+	// cases were deleted, and returns how many.
+	PruneCaseFiles func(ctx context.Context) (int64, error)
 	// CanArchive, when set, says whether this server can write archives
 	// now, and why not: runs hold back the steps that archive until it
 	// can, rather than delete days unarchived.
@@ -728,6 +732,13 @@ func (m *Manager) deleteRecords(ctx context.Context, run *Run, recs []RecordStep
 		}
 		run.DeletedRecords += n
 		m.record(run, act)
+		if r.Category == Cases && err == nil && m.PruneCaseFiles != nil {
+			if nf, err := m.PruneCaseFiles(ctx); err != nil {
+				run.Errors = append(run.Errors, Cases+" files: "+err.Error())
+			} else if nf > 0 && m.Log != nil {
+				m.Log.Info("deleted the files of deleted cases", "files", nf)
+			}
+		}
 	}
 }
 

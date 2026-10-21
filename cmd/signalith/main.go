@@ -38,6 +38,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
+	"github.com/jrsamsanchez/signalith/internal/casefiles"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
@@ -1467,6 +1468,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	cfiles := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	cfiles.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
@@ -1706,6 +1709,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards:        boards,
 		Cases:             cstore,
+		CaseFiles:         cfiles,
 		Notebooks:         nstore,
 		Respond:           responder,
 		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
@@ -2472,15 +2476,18 @@ func newCertificates(c *config.Config, log *slog.Logger) (*tlsauto.Manager, erro
 // retention page and the run history live next to the asset and identity
 // lists, which every install can write.
 func newRetention(c *config.Config, cl *store.Client, log *slog.Logger) *retention.Manager {
+	files := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	caseIndex := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix).Index
 	return &retention.Manager{
-		Cluster:     retention.NewOpenSearch(cl),
-		Prefix:      c.OpenSearch.IndexPrefix,
-		Config:      c.RetentionPolicies(),
-		Store:       retention.NewStore(filepath.Join(c.LookupsDir(), "retention.yaml")),
-		Archive:     &retention.Archive{Dir: c.ArchiveDir()},
-		HistoryFile: filepath.Join(c.LookupsDir(), "retention_history.json"),
-		Interval:    c.RetentionInterval(),
-		Log:         log,
+		PruneCaseFiles: func(ctx context.Context) (int64, error) { return files.Prune(ctx, caseIndex) },
+		Cluster:        retention.NewOpenSearch(cl),
+		Prefix:         c.OpenSearch.IndexPrefix,
+		Config:         c.RetentionPolicies(),
+		Store:          retention.NewStore(filepath.Join(c.LookupsDir(), "retention.yaml")),
+		Archive:        &retention.Archive{Dir: c.ArchiveDir()},
+		HistoryFile:    filepath.Join(c.LookupsDir(), "retention_history.json"),
+		Interval:       c.RetentionInterval(),
+		Log:            log,
 		// Retention runs on one of the servers that share an OpenSearch,
 		// never on one with detections.scheduler off.
 		ReadOnly: !c.Detections.Scheduler,

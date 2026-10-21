@@ -309,6 +309,8 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if len(f.mem.Records("signalith_cases")) != 3 {
 		t.Error("cases were deleted without a policy")
 	}
+	pruned := 0
+	f.m.PruneCaseFiles = func(context.Context) (int64, error) { pruned++; return 3, nil }
 	if err := f.m.SetPolicy(Cases, &Policy{KeepDays: 180}); err != nil {
 		t.Fatal(err)
 	}
@@ -316,6 +318,11 @@ func TestFindingsAndCasesRetention(t *testing.T) {
 	if n := len(f.mem.Records("signalith_cases")); n != 2 {
 		t.Errorf("cases left = %d", n)
 	}
+	// The files of the deleted cases go with them.
+	if pruned != 1 {
+		t.Errorf("case files pruned %d times", pruned)
+	}
+	f.m.PruneCaseFiles = nil
 	_, acts, _ := f.m.hist.Recent(context.Background())
 	if acts[0].Action != ActionDeleteRecords || acts[0].Category != Cases || acts[0].Docs != 1 {
 		t.Errorf("actions = %+v", acts)

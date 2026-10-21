@@ -79,13 +79,14 @@ footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
 {{if .Event}}<pre>{{json .Event}}</pre>{{end}}
 {{if .Rows}}<pre>{{json .Rows}}</pre>{{end}}
 {{if .FindingID}}<div class="meta">Finding {{.FindingID}}</div>{{end}}
+{{if .FileID}}<div>Attached file: {{.FileName}} <span class="meta">({{.FileSize}} bytes, {{.FileType}})</span></div>{{end}}
 {{if .RunID}}<div class="meta">Playbook run {{.RunID}}{{if .Status}} ({{.Status}}){{end}}</div>{{end}}
 </div>{{else}}<p class="meta">The timeline is empty.</p>{{end}}
 
 <h2>Evidence</h2>
 {{if .Evidence}}{{range .Evidence}}<div class="entry">
 <div class="meta">{{title .Kind}} {{.EntryID}} · added {{when .Added}} by {{.AddedBy}}</div>
-<div class="hash">{{.SHA256}}</div>
+{{if .FileName}}<div>{{.FileName}}</div><div class="meta">SHA-256 of the file</div><div class="hash">{{.FileSHA256}}</div><div class="meta">SHA-256 of the entry</div>{{end}}<div class="hash">{{.SHA256}}</div>
 <div>{{if .Intact}}<span class="ok">Matches the evidence</span>{{else}}<span class="bad">The evidence was changed after it was added</span>{{end}}</div>
 </div>{{end}}{{else}}<p class="meta">No pinned events or search snapshots.</p>{{end}}
 

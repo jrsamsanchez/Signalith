@@ -86,7 +86,7 @@ func (s *Server) handleCaseReport(w http.ResponseWriter, r *http.Request) {
 			linked = append(linked, f)
 		}
 	}
-	rep, err := casereport.New(c, linked, missing, userOf(r), s.conf().Server.PublicURL, s.conf().OpenSearch.IndexPrefix, time.Now())
+	rep, err := casereport.New(c, linked, missing, userOf(r), s.conf().Server.PublicURL, s.conf().OpenSearch.IndexPrefix, time.Now(), s.caseFileIntact(r.Context(), c.ID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

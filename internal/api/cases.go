@@ -642,8 +642,12 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	id, user := r.PathValue("entry"), userOf(r)
 	p := principalOf(r)
+	var removed cases.Entry
 	c, err := s.modifyCase(r.Context(), r.PathValue("id"), func(c *cases.Case) (bool, error) {
 		i := slices.IndexFunc(c.Entries, func(e cases.Entry) bool { return e.ID == id })
+		if i >= 0 {
+			removed = c.Entries[i]
+		}
 		if i >= 0 && c.Entries[i].Kind == cases.KindFinding {
 			return false, badRequest{errors.New("remove the finding from the case instead")}
 		}
@@ -653,7 +657,7 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		if i >= 0 && c.Entries[i].Kind == cases.KindAction {
 			return false, badRequest{errors.New("a response action stays on the timeline: it is the record of what was done")}
 		}
-		// Notes, pinned events and searches are evidence: analysts remove
+		// Notes, pinned events, searches and files are evidence: analysts remove
 		// only their own, admins anyone's.
 		if i >= 0 && !p.Role.AtLeast(users.Admin) && !strings.EqualFold(c.Entries[i].Author, p.Username) {
 			return false, notYours{fmt.Errorf("only %s or an admin can remove this; you can remove what you added yourself", c.Entries[i].Author)}
@@ -664,6 +668,7 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		s.writeModifyError(w, err)
 		return
 	}
+	s.removeCaseFile(r, c.ID, removed)
 	writeJSON(w, http.StatusOK, c)
 }
 

@@ -30,6 +30,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
+	"github.com/jrsamsanchez/signalith/internal/casefiles"
 	"github.com/jrsamsanchez/signalith/internal/cases"
 	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
@@ -160,6 +161,8 @@ type Server struct {
 	// that ever signed one, so a report verifies after its key changed.
 	ReportSigner func() (ed25519.PrivateKey, string, error)
 	ReportKeys   reportkeys.Registry
+	// CaseFiles keeps the files attached to cases; nil refuses files.
+	CaseFiles casefiles.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -482,6 +485,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeExceptionRequests(api)
 	s.routeCaseTasks(api)
 	s.routeCaseReport(api)
+	s.routeCaseFiles(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)
