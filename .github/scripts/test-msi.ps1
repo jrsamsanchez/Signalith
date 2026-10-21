@@ -97,6 +97,16 @@ if (Test-Path $exe) { throw "$exe is still there" }
 if (-not (Test-Path $config)) { throw "the config was not kept" }
 if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are still there" }
 
+Write-Host "== A failed install over the kept config is undone like a new one, not like an upgrade"
+$good = Get-Content -Raw -LiteralPath $config
+Add-Content -LiteralPath $config "`n:: not a setting ::"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall-fail.log" -Fails
+Set-Content -LiteralPath $config $good -NoNewline
+if (Get-Service Signalith -ErrorAction SilentlyContinue) { throw "the service is left after the failed install" }
+if (Test-Path $exe) { throw "$exe is left after the failed install" }
+if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are left after the failed install" }
+if (-not (Test-Path $config)) { throw "the config was not kept" }
+
 Write-Host "== Install again: the kept config and password are used"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall.log"
 Wait-Up

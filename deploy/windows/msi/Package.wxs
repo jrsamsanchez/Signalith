@@ -92,12 +92,12 @@
          upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
     <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot; -OpenSearchProxy &quot;proxy:[OPENSEARCHPROXY]&quot;" />
-    <!-- When the install fails after SetUpSignalith ran: undoes what it set
-         up on a computer that had no Signalith before, or sets up the
-         previous version's service again on an upgrade
+    <!-- When the install fails: undoes what SetUpSignalith set up that was
+         not there before, or, on an upgrade (WIX_UPGRADE_DETECTED), sets up
+         the previous version's service again
          (C:\Windows\Temp\signalith-rollback.log). -->
     <CustomAction Id="RollBackSetUp" Directory="INSTALLFOLDER" Execute="rollback" Impersonate="no" Return="ignore"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -Rollback" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -Rollback -Upgrade &quot;up:[WIX_UPGRADE_DETECTED]&quot;" />
     <!-- On uninstall (not an upgrade), the firewall rules install.ps1 made. -->
     <CustomAction Id="RemoveFirewallRules" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-NetFirewallRule -DisplayName 'Signalith','Signalith agents','Signalith syslog *' -ErrorAction SilentlyContinue&quot;" />
@@ -106,7 +106,7 @@
          C:\ProgramData\SignalithOpenSearch. Output in
          C:\Windows\Temp\signalith-uninstall.log. -->
     <CustomAction Id="RemoveOpenSearch" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="ignore"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;&amp; '[INSTALLFOLDER]signalith.exe' opensearch remove *&gt; (Join-Path $env:windir 'Temp\signalith-uninstall.log')&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;&amp; '[INSTALLFOLDER]signalith.exe' opensearch remove -home '[INSTALLFOLDER]OpenSearch' *&gt; (Join-Path $env:windir 'Temp\signalith-uninstall.log')&quot;" />
     <InstallExecuteSequence>
       <Custom Action="RollBackSetUp" Before="SetUpSignalith" Condition="NOT REMOVE" />
       <Custom Action="SetUpSignalith" Before="InstallFinalize" Condition="NOT REMOVE" />

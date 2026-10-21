@@ -168,7 +168,8 @@ those folders by hand to remove everything.
 If an install or upgrade fails, the installer undoes it: a failed upgrade puts the
 previous version back and starts it again a minute later, and a failed first install
 removes the services and firewall rules it set up. If a new OpenSearch's service does not
-start, the previous OpenSearch runs again. What went wrong is in
+start, the previous OpenSearch runs again (one that starts but never answers is not
+undone, since it may have changed its data already: run the `.msi` again). What went wrong is in
 `C:\Windows\Temp\signalith-install.log`, and what was undone in
 `C:\Windows\Temp\signalith-rollback.log`. Fix the cause and run the `.msi` again.
 
