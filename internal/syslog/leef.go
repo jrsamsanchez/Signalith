@@ -177,8 +177,9 @@ var leefFields = map[string]cefField{
 }
 
 // leefFieldsFor maps a LEEF record onto CIM fields, as cefFieldsFor does
-// for CEF, and returns the event time from devTime when one parses.
-func leefFieldsFor(l *LEEF, f map[string]any, extra *int, now time.Time) time.Time {
+// for CEF, and returns the event time from devTime when one parses with a
+// zone, or else, as clock, devTime without a zone.
+func leefFieldsFor(l *LEEF, f map[string]any, extra *int, now time.Time) (t, clock time.Time) {
 	f["sourcetype"] = "leef"
 	f["vendor_product"] = vendorProduct(l.Vendor, l.Product)
 	f["signature"] = l.EventID
@@ -187,7 +188,6 @@ func leefFieldsFor(l *LEEF, f map[string]any, extra *int, now time.Time) time.Ti
 	f["leef_vendor"] = l.Vendor
 	f["leef_product"] = l.Product
 	f["leef_device_version"] = l.DeviceVersion
-	var t time.Time
 	for _, p := range l.Attributes {
 		v := p.Value
 		if v == "" {
@@ -203,8 +203,12 @@ func leefFieldsFor(l *LEEF, f map[string]any, extra *int, now time.Time) time.Ti
 			}
 			continue
 		case "devTime":
-			if t.IsZero() {
-				t, _ = cefTime(v, now)
+			if t.IsZero() && clock.IsZero() {
+				if t2, zoneless, ok := cefTime(v, now); ok && zoneless {
+					clock = t2
+				} else if ok {
+					t = t2
+				}
 			}
 			continue
 		case "devTimeFormat":
@@ -238,5 +242,5 @@ func leefFieldsFor(l *LEEF, f map[string]any, extra *int, now time.Time) time.Ti
 	if hasIn || hasOut {
 		f["bytes"] = in + out
 	}
-	return t
+	return t, clock
 }

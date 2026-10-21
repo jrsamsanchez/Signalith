@@ -134,7 +134,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	var out strings.Builder
 	// OpenSearch does not load its security settings by itself: they are
 	// loaded with its tool.
-	if err := installOpenSearch(context.Background(), &out, sys, l, ""); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if sys.adminRuns != 1 || sys.installed != l.VersionHome(oslocal.Version) {
@@ -153,7 +153,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	// Run again (a repair or an upgrade of Signalith alone): kept as it is.
 	sys.stop()
 	out.Reset()
-	if err := installOpenSearch(context.Background(), &out, sys, l, ""); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "is installed; checking it runs") {
@@ -172,7 +172,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	fakeRelease(t, l, oslocal.Version)
 	sys.stop()
 	out.Reset()
-	if err := installOpenSearch(context.Background(), &out, sys, l, ""); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if sys.installed != l.VersionHome(oslocal.Version) {
@@ -205,7 +205,7 @@ func TestInstallOpenSearchRefusesFolderNotItsOwn(t *testing.T) {
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "client")}
 	os.MkdirAll(l.Data, 0o700)
 	os.WriteFile(filepath.Join(l.Data, "planted.yml"), []byte("x"), 0o600)
-	err := installOpenSearch(context.Background(), io.Discard, &fakeOpenSearch{t: t, l: l}, l, "")
+	err := installOpenSearch(context.Background(), io.Discard, &fakeOpenSearch{t: t, l: l}, l, "", nil)
 	if err == nil || !strings.Contains(err.Error(), "already has files") {
 		t.Fatalf("got %v", err)
 	}
@@ -252,7 +252,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 		cfg := load()
 		cfg.OpenSearch.URL = c.url
 		var out strings.Builder
-		if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, cfg, func(string) bool { return c.answers }); err != nil {
+		if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, cfg, func(string) bool { return c.answers }); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if !strings.Contains(out.String(), "Keeping the OpenSearch") || sys.installed != "" {
@@ -267,7 +267,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 
 	// Set up: the old default, with nothing there.
 	var out strings.Builder
-	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, load(), nothing); err != nil {
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, load(), nothing); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	st, err := oslocal.LoadState(l)
@@ -293,7 +293,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 
 	// Again (a repair): nothing more to do.
 	out.Reset()
-	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", path, load(), nothing); err != nil || out.Len() != 0 {
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, load(), nothing); err != nil || out.Len() != 0 {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 }

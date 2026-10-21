@@ -39,11 +39,33 @@ It runs on Linux and Windows. Faults that stop processes (`kill9`, `stop`) need 
 | `sizing-small.yaml` | Agents from 1k to 32k events/s; rate stored, answer times, CPU, memory | CI, laptop |
 | `tb-day.yaml` | 25k events/s (about 1 TB a day) for 4 hours with analysts searching | Cloud lab's load test ([docs/cloud-lab.md](../docs/cloud-lab.md#load-test)) |
 | `spread-10k.yaml` | 10k events/s for 4 hours with analysts searching, while detections are spread over the servers | Cloud lab's spread test ([docs/cloud-lab.md](../docs/cloud-lab.md#detection-spread)) |
+| `soak-7d.yaml` | Real recorded Windows events at about 1 TB a day for 7 days with analysts searching | Cloud lab's soak ([docs/cloud-lab.md](../docs/cloud-lab.md#seven-day-soak)) |
 
 A scenario file names the targets (and `agent_targets`, the servers' agent port, when
 they take agents on a port of their own), the files with secrets, the phases of load, the
 faults and the pass criteria. `${NAME}` in it is replaced by that environment variable.
 `signalith-loadgen check loadtest/*.yaml` checks the files without running anything.
+
+### Real events (replay)
+
+By default the agents send made-up lines padded to `event_bytes`. With `replay: {}` under
+`agents`, they send real recorded Windows and Sysmon events instead: the 1,677 recordings
+the detection packs carry as tests (SigmaHQ's regression data and Splunk's attack
+recordings, about 1.6 KB each on average), each with the agent's name and the time now,
+tagged `win.events` as the agent's Windows event log input tags them. So the servers parse,
+map and store events of real size and shape, and the detections search them.
+
+`attack_share` (default 0.001) is the share sent as recorded, which the detections match.
+The rest are the same events with the letters of their values rotated (ROT13): the same
+fields, sizes and parsing, but no program, path or command line a detection looks for, as
+most of a real fleet's events are. A few rules that look only at an event ID or a number
+still match them. Replayed events carry no sequence numbers, so a replay run does not
+verify stored events one by one; the counters `agent_bytes_sent` and
+`agent_attack_events_sent` give the bytes and the attacks sent.
+
+```yaml
+agents: {n: 200, rate: 7200, replay: {attack_share: 0.001}}
+```
 
 ## Running a scenario
 
