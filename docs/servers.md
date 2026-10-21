@@ -161,6 +161,8 @@ for being older than the catch-up limit (`detections.catch_up`), and how many ru
 server is **falling behind** when slots were skipped in the last hour, or when at least 3 of its
 rules, and at least 5% of them, started late in the last hour. The page then shows a warning:
 look at the slowest rules on the Detections page, or spread detections over more servers.
+A late run counts for the server that ran it, not for one the rule moved to since, and
+slots missed before a server took a rule (a restart, a handover) are not late runs.
 
 When a group moves, its new server takes over from where the last run of each rule
 ended, so no time is skipped or searched twice. A server that is still running hands
