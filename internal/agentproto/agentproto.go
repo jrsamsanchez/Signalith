@@ -97,6 +97,13 @@ type Osquery struct {
 	Error string `json:"error,omitempty"`
 }
 
+// OsqueryDisabledTables are the osquery tables no query may read
+// (ASI-12): curl and curl_certificate make the computer fetch any
+// address, so a live query to every host could reach anything they can.
+// osquery's file carving, the other way to take files off a host, stays
+// off as osquery leaves it (--disable_carver).
+const OsqueryDisabledTables = "curl,curl_certificate"
+
 // osqueryFlagNames are the flags a server may give osquery. Flags that
 // load code (extensions) or name files are not among them: the agent
 // names its own files.
@@ -109,12 +116,15 @@ var osqueryFlagNames = map[string]bool{
 	"disable_events": true, "enable_file_events": true, "enable_ntfs_event_publisher": true, "utc": true,
 	// macOS: program starts from EndpointSecurity.
 	"disable_endpointsecurity": true,
+	// Tables a live query may not read; the agent adds its own list
+	// after the server's, and osquery keeps the last.
+	"disable_tables": true,
 }
 
 // osqueryFlagValue is what a value of those flags may hold: a host and
-// port, a route, a number or true; no spaces, which could start another
-// flag.
-var osqueryFlagValue = regexp.MustCompile(`^[A-Za-z0-9._:/\[\]-]*$`)
+// port, a route, a number, true or a list of names; no spaces, which
+// could start another flag.
+var osqueryFlagValue = regexp.MustCompile(`^[A-Za-z0-9._:/\[\],-]*$`)
 
 // OsqueryFlagAllowed says whether a server may give osquery the flag
 // line (--name or --name=value).

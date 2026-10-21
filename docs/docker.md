@@ -234,7 +234,7 @@ agents on the web port, with a warning in the log for each one, so nothing stops
    servers.
 2. Set up each agent again from **Add data**: its new configuration sends to port 7779.
 3. Set `server.agent_listen` (for example `0.0.0.0:7779`) so the web port stops taking
-   agents. The next release stops taking agents on the web port anyway.
+   agents. A later release will stop taking agents on the web port.
 
 See [The agent port](sending-data.md#the-agent-port).
 
