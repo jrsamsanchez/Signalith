@@ -12,8 +12,14 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
-// maxAggValues caps the values values() and list() return per group.
+// maxAggValues caps the values list() returns per group, and values()
+// when stats runs in OpenSearch; a result that reaches the cap is marked
+// truncated.
 const maxAggValues = 100
+
+// maxValues caps the values values() returns per group when stats runs in
+// Signalith, as Splunk's default limit does.
+const maxValues = 10000
 
 // metricAgg returns the OpenSearch aggregation for one stats function, or
 // nil when the bucket's doc_count already answers it (a bare count).
@@ -56,7 +62,7 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 		return map[string]any{a.Func: map[string]any{"field": field}}, nil
 	case "median":
 		return map[string]any{"percentiles": map[string]any{"field": field, "percents": []any{50}, "keyed": false}}, nil
-	case "stdev", "var":
+	case "stdev", "var", "stdevp", "varp", "sumsq":
 		return map[string]any{"extended_stats": map[string]any{"field": field}}, nil
 	case "range":
 		return map[string]any{"stats": map[string]any{"field": field}}, nil
@@ -72,6 +78,21 @@ func metricAgg(a query.Agg) (map[string]any, error) {
 		return byTime("asc", 1), nil
 	}
 	return nil, fmt.Errorf("unsupported function %q", a.Func)
+}
+
+// aggClipped reports whether values() or list(), run in OpenSearch, left
+// values out of the aggregation named name inside container.
+func aggClipped(a query.Agg, container map[string]any, name string) bool {
+	m, _ := container[name].(map[string]any)
+	switch a.Func {
+	case "values":
+		n, _ := asFloat(toNumber(m["sum_other_doc_count"]))
+		return n > 0
+	case "list":
+		n, _ := asFloat(toNumber(m["doc_count"]))
+		return n > maxAggValues
+	}
+	return false
 }
 
 // aggValue reads one stats function's result from the aggregation named
@@ -94,10 +115,10 @@ func timeSeconds(a query.Agg, v any) any {
 		return v
 	}
 	switch {
-	case a.Func == "var":
+	case a.Func == "var", a.Func == "varp", a.Func == "sumsq":
 		return numOut(f / 1e6)
 	case a.Func == "min", a.Func == "max", a.Func == "avg", a.Func == "sum", a.Func == "range",
-		a.Func == "median", a.Func == "stdev", query.Percentile(a.Func) > 0:
+		a.Func == "median", a.Func == "stdev", a.Func == "stdevp", query.Percentile(a.Func) > 0:
 		return numOut(f / 1e3)
 	}
 	return v
@@ -141,6 +162,23 @@ func rawAggValue(a query.Agg, container map[string]any, name string) any {
 			return numOut(math.Sqrt(sample))
 		}
 		return numOut(sample)
+	case "stdevp", "varp":
+		n, ok1 := num(m["count"])
+		v, ok2 := num(m["variance"])
+		if !ok1 || !ok2 || n < 1 {
+			return nil
+		}
+		if a.Func == "stdevp" {
+			return numOut(math.Sqrt(math.Max(v, 0)))
+		}
+		return numOut(math.Max(v, 0))
+	case "sumsq":
+		n, ok1 := num(m["count"])
+		v, ok2 := num(m["sum_of_squares"])
+		if !ok1 || !ok2 || n < 1 {
+			return nil
+		}
+		return numOut(v)
 	case "range":
 		lo, ok1 := num(m["min"])
 		hi, ok2 := num(m["max"])
@@ -186,24 +224,38 @@ type aggState struct {
 	sum      float64
 	numeric  int64
 	min, max float64
-	distinct map[string]bool
+	distinct map[string]any // each value's text, and the first value with it
+	clipped  bool           // values() or list() left values out
+	sumsq    float64
 	nums     []float64 // for median, percentiles, stdev and var
 	vals     []any     // values in row order, for list, first, last and mode
 	times    []time.Time
 }
 
 func newAggState() *aggState {
-	return &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]bool{}}
+	return &aggState{min: math.Inf(1), max: math.Inf(-1), distinct: map[string]any{}}
 }
 
-func (s *aggState) add(a query.Agg, v any, r Row) {
+// aggStateSize is what the budget counts for one aggState, its distinct
+// map included.
+const aggStateSize = 384
+
+// add counts v in s and returns the bytes s now keeps for it, which the
+// caller charges to the search's budget.
+func (s *aggState) add(a query.Agg, v any, r Row) (kept int) {
 	s.count++
 	if a.Func == "dc" || a.Func == "values" {
-		if a.Func == "dc" || len(s.distinct) < maxMultiValues {
-			for _, x := range asList(v) {
-				k, _ := evStr(x)
-				s.distinct[k] = true
+		for _, x := range asList(v) {
+			k, _ := evStr(x)
+			if _, seen := s.distinct[k]; seen {
+				continue
 			}
+			if a.Func == "values" && len(s.distinct) >= maxValues {
+				s.clipped = true
+				break
+			}
+			s.distinct[k] = x
+			kept += len(k) + valueSize(x) + fieldOverhead
 		}
 	}
 	f, ok := asFloat(v)
@@ -216,25 +268,31 @@ func (s *aggState) add(a query.Agg, v any, r Row) {
 	if ok {
 		s.numeric++
 		s.sum += f
+		s.sumsq += f * f
 		s.min = math.Min(s.min, f)
 		s.max = math.Max(s.max, f)
 		switch a.Func {
-		case "median", "stdev", "var":
+		case "median", "stdev", "var", "stdevp", "varp":
 			s.nums = append(s.nums, f)
+			kept += 8
 		default:
 			if query.Percentile(a.Func) > 0 {
 				s.nums = append(s.nums, f)
+				kept += 8
 			}
 		}
 	}
 	switch a.Func {
 	case "list", "first", "last", "mode", "earliest", "latest":
 		s.vals = append(s.vals, v)
+		kept += valueSize(v) + 16
 		if a.Func == "earliest" || a.Func == "latest" {
 			t, _ := toTime(r["_time"])
 			s.times = append(s.times, t)
+			kept += 24
 		}
 	}
+	return kept
 }
 
 func (s *aggState) result(a query.Agg) any {
@@ -247,7 +305,10 @@ func (s *aggState) result(a query.Agg) any {
 	case "dc":
 		return int64(len(s.distinct))
 	case "sum":
-		return toNumber(s.sum)
+		// No numbers to add up gives nothing, as in Splunk, not 0.
+		if s.numeric > 0 {
+			return toNumber(s.sum)
+		}
 	case "avg":
 		if s.numeric > 0 {
 			return s.sum / float64(s.numeric)
@@ -266,12 +327,17 @@ func (s *aggState) result(a query.Agg) any {
 		}
 	case "median":
 		return percentile(s.nums, 50)
-	case "stdev", "var":
+	case "sumsq":
+		if s.numeric > 0 {
+			return toNumber(s.sumsq)
+		}
+	case "stdev", "var", "stdevp", "varp":
 		n := float64(len(s.nums))
 		if n < 1 {
 			return nil
 		}
-		if n == 1 {
+		population := a.Func == "stdevp" || a.Func == "varp"
+		if n == 1 && !population {
 			// One value varies by nothing; Splunk gives 0.
 			return int64(0)
 		}
@@ -285,22 +351,23 @@ func (s *aggState) result(a query.Agg) any {
 			ss += (f - mean) * (f - mean)
 		}
 		v := ss / (n - 1)
-		if a.Func == "stdev" {
+		if population {
+			v = ss / n
+		}
+		if a.Func == "stdev" || a.Func == "stdevp" {
 			return numOut(math.Sqrt(v))
 		}
 		return numOut(v)
 	case "values":
-		keys := make([]string, 0, len(s.distinct))
+		// Sorted as text, as Splunk does, each keeping its type.
+		var keys []string
 		for k := range s.distinct {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		if len(keys) > maxAggValues {
-			keys = keys[:maxAggValues]
-		}
-		out := make([]any, len(keys))
-		for i, k := range keys {
-			out[i] = k
+		var out []any
+		for _, k := range keys {
+			out = append(out, s.distinct[k])
 		}
 		return mvOut(out)
 	case "list":
@@ -308,6 +375,7 @@ func (s *aggState) result(a query.Agg) any {
 		for _, v := range s.vals {
 			out = append(out, asList(v)...)
 			if len(out) >= maxAggValues {
+				s.clipped = s.clipped || len(out) > maxAggValues
 				out = out[:maxAggValues]
 				break
 			}

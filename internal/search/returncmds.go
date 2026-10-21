@@ -108,7 +108,7 @@ func applyMakeContinuous(ctx context.Context, res *Result, c *query.MakeContinuo
 			if !ok {
 				return 0, false
 			}
-			u := t.Unix() - offset
+			u := wallSeconds(t, secs, ev.loc) - offset
 			return (u - ((u%secs)+secs)%secs) / secs, true
 		}
 		f, ok := evNum(v)
@@ -160,9 +160,9 @@ func applyMakeContinuous(ctx context.Context, res *Result, c *query.MakeContinuo
 		var v any
 		switch {
 		case secs > 0 && numeric:
-			v = b*secs + offset
+			v = fromWallSeconds(b*secs+offset, secs, ev.loc).Unix()
 		case secs > 0:
-			v = time.Unix(b*secs+offset, 0).UTC().Format(time.RFC3339)
+			v = fromWallSeconds(b*secs+offset, secs, ev.loc).Format(time.RFC3339)
 		default:
 			v = numOut(float64(b) * size)
 		}
