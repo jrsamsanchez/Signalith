@@ -188,12 +188,16 @@ if ($Join) {
         [SignalithGet]::Save($uri, $download)
       }
     } catch {
+      Remove-Item -LiteralPath $download -ErrorAction SilentlyContinue
+      # [SignalithGet]::Save's error comes wrapped in PowerShell's own.
+      $e = $_.Exception
+      while ($e -and -not $e.Response -and $e.InnerException) { $e = $e.InnerException }
       $code = 0
-      if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+      if ($e.Response) { $code = [int]$e.Response.StatusCode }
       if ($code -eq 404) {
         throw "$From cannot hand out the program for Windows $arch (it runs on another kind of computer). Install the Signalith $Version .msi first (https://signalith.io/docs/install-packages/), then run the same line again."
       }
-      throw "Could not download the program from $From ($($_.Exception.Message)). Check that this computer can reach it (the web port), then run the same line again."
+      throw "Could not download the program from $From ($($e.Message)). Check that this computer can reach it (the web port), then run the same line again."
     }
     Test-Sha256 $download "The program downloaded from $From"
     $source = $download
