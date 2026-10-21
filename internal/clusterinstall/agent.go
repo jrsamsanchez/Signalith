@@ -145,18 +145,16 @@ func agentMacLine(l AgentLine, base string) (string, string) {
 }
 
 // agentWindowsLine is the Windows line: as for the server's own join
-// line, Windows PowerShell 5.1 needs the certificate check turned off for
-// the one download (and back on after it), PowerShell 7 has
-// -SkipCertificateCheck. The token goes to the script through the
-// pipeline, in the same PowerShell, so it is on no program's command
-// line.
+// line, Windows PowerShell 5.1 downloads with SignalithGet (see
+// signalithGetCS) and PowerShell 7 has -SkipCertificateCheck. The token
+// goes to the script through the pipeline, in the same PowerShell, so it
+// is on no program's command line.
 func agentWindowsLine(l AgentLine, base string) (string, string) {
 	sha := scriptSHA.AgentPS1
 	u := base + agentproto.RouteInstallPS1
 	line := fmt.Sprintf("$u='%s'; $f=Join-Path $env:TEMP 'signalith-agent-install.ps1'; $ProgressPreference='SilentlyContinue'; "+
 		"if ($PSVersionTable.PSVersion.Major -ge 6) { Invoke-WebRequest '%s' -OutFile $f -SkipCertificateCheck -MaximumRedirection 0 } "+
-		"else { [Net.ServicePointManager]::SecurityProtocol='Tls12'; [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; "+
-		"try { Invoke-WebRequest '%s' -OutFile $f -UseBasicParsing -MaximumRedirection 0 } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; "+
+		"else { "+ps51Get+"[SignalithGet]::Save('%s', $f) }; "+
 		"if ((Get-FileHash $f -Algorithm SHA256).Hash -ne '%s') { throw 'The downloaded script is not the one this line names, so it was not run.' }; "+
 		"Set-ExecutionPolicy -Scope Process Bypass -Force; '%s' | & $f -From $u",
 		base, u, u, strings.ToUpper(sha), agents.TokenPlaceholder)
