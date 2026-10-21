@@ -246,6 +246,17 @@ func TestTriageAndResolveTimes(t *testing.T) {
 	if at, ok := TriagedAt(f); !ok || !at.Equal(c.Add(10*time.Minute)) {
 		t.Errorf("triaged %v %v", at, ok)
 	}
+	// A playbook assigning it is not triage; a recorded first response is.
+	auto := mkFinding("y", "d", "low", "in_progress", c, nil, change("owner", "", "bob", c.Add(time.Second)), change("status", "new", "in_progress", c.Add(5*time.Minute)))
+	auto.History[0].Author = "playbook Assign"
+	if at, ok := TriagedAt(auto); !ok || !at.Equal(c.Add(5*time.Minute)) {
+		t.Errorf("triaged after a playbook %v %v", at, ok)
+	}
+	resp := c.Add(3 * time.Minute)
+	auto.RespondedAt = &resp
+	if at, ok := TriagedAt(auto); !ok || !at.Equal(resp) {
+		t.Errorf("triaged with a first response %v %v", at, ok)
+	}
 	if at, ok := ResolvedAt(f); !ok || !at.Equal(c.Add(30*time.Minute)) {
 		t.Errorf("resolved %v %v", at, ok)
 	}
@@ -332,5 +343,33 @@ func TestPostureHealthOnAnotherServer(t *testing.T) {
 	g = p.Report(context.Background(), 24*time.Hour, "24h").Health.Skipped
 	if g == nil || g.Runs != 48 || g.Detections != 1 || g.Title == "" {
 		t.Errorf("one skipped = %+v", g)
+	}
+}
+
+// The noisiest detections are those whose findings closed in the period
+// were most often false positives (AW-4).
+func TestNoisiestDetections(t *testing.T) {
+	c := now.Add(-2 * time.Hour)
+	closed := func(id, det, disp string) *findings.Finding {
+		f := mkFinding(id, det, "low", "closed", c, nil, change("status", "new", "closed", c.Add(time.Hour)))
+		f.Disposition = disp
+		return f
+	}
+	list := []*findings.Finding{
+		closed("1", "noisy", "false_positive"), closed("2", "noisy", "false_positive"), closed("3", "noisy", "true_positive"),
+		closed("4", "rare", "false_positive"),
+		closed("5", "good", "true_positive"), closed("6", "good", ""),
+		mkFinding("7", "open", "low", "new", c, nil),
+	}
+	fs := computeFindingStats(list, now.Add(-24*time.Hour), now, now.Add(-48*time.Hour), 24*time.Hour)
+	got := noisiest(fs, func(id string) string { return "T " + id })
+	if len(got) != 2 {
+		t.Fatalf("noisiest = %+v", got)
+	}
+	if n := got[0]; n.ID != "noisy" || n.Title != "T noisy" || n.Judged != 3 || n.FalsePositive != 2 || n.Rate < 0.66 || n.Rate > 0.67 {
+		t.Errorf("first = %+v", n)
+	}
+	if n := got[1]; n.ID != "rare" || n.Judged != 1 || n.Rate != 1 {
+		t.Errorf("second = %+v", n)
 	}
 }

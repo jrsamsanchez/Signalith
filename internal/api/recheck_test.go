@@ -74,6 +74,7 @@ func TestRecheckBeforeSensitiveChanges(t *testing.T) {
 		{"PUT", "/api/retention/guard", `{}`},
 		{"POST", "/api/cluster/rotate-key", `{}`},
 		{"PUT", "/api/notify", `{}`},
+		{"POST", "/api/endpoints/queries", `{"sql":"select 1","all":true}`},
 	} {
 		if code, out, _ := callWith(t, ts.URL, c.method, c.path, c.body, old); code != 403 || out["code"] != "recheck_required" || out["with"] != "password" {
 			t.Errorf("%s %s = %d %v", c.method, c.path, code, out)

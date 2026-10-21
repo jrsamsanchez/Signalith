@@ -13,7 +13,7 @@
 
 (function () {
   const PB = { data: null, runs: null, runsErr: '', seq: 0, detections: null, deferred: false };
-  const AP = { waiting: null, recent: null, err: '', seq: 0, notes: new Map(), busy: new Set() };
+  const AP = { waiting: null, recent: null, err: '', seq: 0, notes: new Map(), busy: new Set(), exr: [] };
 
   const STEP = {
     notify: { icon: 'bell', label: 'Notify a channel', short: 'Notify' },
@@ -44,7 +44,8 @@
     const s = (new Date(t).getTime() - Date.now()) / 1000;
     if (!isFinite(s) || s <= 0) return 'expired';
     if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m left`;
-    return `${Math.round(s / 3600)}h left`;
+    if (s < 2 * 86400) return `${Math.round(s / 3600)}h left`;
+    return `${Math.round(s / 86400)}d left`;
   };
   const openFinding = (id) => {
     showPage('findings');
@@ -627,17 +628,19 @@
       fill(abox(), el('div', { class: 'card pb-skel' }, dxSkel('50%'), dxSkel('80%'), dxSkel('30%')));
     }
     try {
-      const [w, r] = await Promise.all([
+      const [w, r, x] = await Promise.all([
         api('api/playbooks/runs?status=waiting_approval&limit=100'),
         api('api/playbooks/runs?status=approved,queued,running,succeeded,failed,rejected,expired,interrupted&limit=100').catch(() => ({ runs: [] })),
+        api('api/exception-requests').catch(() => ({ requests: [] })),
       ]);
       if (seq !== AP.seq) return;
+      AP.exr = x.requests || [];
       // Oldest first: the one that expires soonest is on top.
       AP.waiting = (w.runs || []).slice().reverse();
       // Runs whose approval step was decided or expired, whatever came after.
       AP.recent = (r.runs || []).filter((x) => x.approval && (x.approval.decided_by || x.status === 'expired')).slice(0, 20);
       AP.err = '';
-      setCount(w.waiting);
+      setCount(w.waiting + (can('admin') ? x.pending || 0 : 0));
     } catch (e) {
       if (seq !== AP.seq) return;
       AP.err = e.status === 503 ? 'Playbooks are not available on this server.' : e.message;
@@ -652,15 +655,18 @@
       return;
     }
     const live = AP.waiting.filter((r) => new Date(r.approval.expires).getTime() > Date.now());
+    const exr = AP.exr.filter((x) => x.status === 'pending');
     const a = document.activeElement;
     const key = a && abox().contains(a) && a.dataset ? a.dataset.key : '';
     fill(abox(),
-      live.length ? el('ul', { class: 'ap-list', 'aria-label': 'Waiting for approval' }, ...live.map(approvalCard))
+      exr.length ? el('ul', { class: 'ap-list', 'aria-label': 'Proposed exceptions' }, ...exr.map(exceptionCard)) : null,
+      live.length || exr.length ? (live.length ? el('ul', { class: 'ap-list', 'aria-label': 'Waiting for approval' }, ...live.map(approvalCard)) : null)
         : el('div', { class: 'card' }, el('div', { class: 'empty ap-empty' },
           el('span', { class: 'empty__icon ap-empty__icon' }, icon('circle-check')),
           el('div', { class: 'empty__title' }, 'Nothing waits for approval'),
           el('p', { class: 'empty__text' }, 'When a playbook reaches a step that needs a person’s say, it waits here. Nothing runs until someone approves it.'))),
-      AP.recent && AP.recent.length ? recentCard() : null);
+      AP.recent && AP.recent.length ? recentCard() : null,
+      AP.exr.some((x) => x.status !== 'pending') ? exceptionsDecidedCard() : null);
     if (key) { const again = abox().querySelector(`[data-key="${CSS.escape(key)}"]`); if (again) again.focus({ preventScroll: true }); }
   }
 
@@ -691,6 +697,76 @@
             `asked ${ago(a.requested)}`, steps.length > a.step + 1 ? el('span', { class: 'dotsep', 'aria-hidden': 'true' }) : null,
             steps.length > a.step + 1 ? `then ${steps.slice(a.step + 1).map(phrase).join(', then ')}` : null))),
       el('div', { class: 'ap-card__foot' }, note, el('div', { class: 'ap-card__btns' }, reject, approve)));
+  }
+
+  // ---- proposed exceptions ----
+  // An analyst asked for an exception from a finding; an admin approves
+  // (which adds it to the detection) or declines it here.
+  const matchText = (m) => Object.entries(m || {}).map(([k, v]) => `${k} is ${v}`).join(' and ');
+  // matchNodes shows each field and value in code type, joined in words.
+  const matchNodes = (m) => Object.entries(m || {}).flatMap(([k, v], i) => [i ? ' and ' : '', el('code', {}, k), ' is ', el('b', { class: 'rp-target' }, v)]);
+  const FOR_WORDS = { '24h': 'for 24 hours', '7d': 'for 7 days', '30d': 'for 30 days', '90d': 'for 90 days' };
+  const forText = (f) => (f ? FOR_WORDS[f] || `for ${f}` : 'until removed');
+
+  function exceptionCard(x) {
+    const k = 'x:' + x.id;
+    const busy = AP.busy.has(k);
+    const admin = can('admin');
+    const note = admin ? el('textarea', { class: 'textarea ap-note', rows: '2', maxlength: '1000', placeholder: 'Add a note (optional): why, a ticket number', 'aria-label': 'Note', 'data-key': 'n:' + k }) : null;
+    if (note) { note.value = AP.notes.get(k) || ''; note.addEventListener('input', () => AP.notes.set(k, note.value)); }
+    // Another admin approves an admin's own request; they can still withdraw it.
+    const own = x.by === currentUser;
+    const approve = admin && !own ? el('button', { class: 'btn btn--primary', type: 'button', 'data-key': 'a:' + k, onclick: () => decideException(x, true) }, icon('check'), busy ? 'Working…' : 'Approve') : null;
+    const decline = admin ? el('button', { class: 'btn btn--secondary', type: 'button', 'data-key': 'r:' + k, onclick: () => decideException(x, false) }, 'Decline') : null;
+    if (approve) approve.disabled = busy;
+    if (decline) decline.disabled = busy;
+    const expires = new Date(new Date(x.created).getTime() + 14 * 86400000).toISOString();
+    return el('li', { class: 'card ap-card' },
+      el('div', { class: 'ap-card__top' },
+        x.finding_id ? el('button', { type: 'button', class: 'ap-card__finding', title: 'Open the finding', onclick: () => openFinding(x.finding_id) }, x.finding_title || x.finding_id) : el('span', {}, x.detection_title),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'ap-card__left', title: 'Expires ' + fmtTime(expires) }, icon('clock'), until(expires))),
+      el('div', { class: 'ap-card__ask' },
+        el('span', { class: 'ap-card__icon' }, icon('bell-off')),
+        el('div', { class: 'ap-card__what' },
+          el('p', { class: 'ap-card__label' }, `${x.by} proposes an exception to ${x.detection_title || x.detection_id}`),
+          el('p', { class: 'ap-card__sentence' }, 'Stop alerting where ', ...matchNodes(x.match), ' exactly, ' + forText(x.for) + '.'),
+          el('p', { class: 'ap-card__meta' }, `“${x.comment}”`, el('span', { class: 'dotsep', 'aria-hidden': 'true' }), `asked ${ago(x.created)}`))),
+      admin ? el('div', { class: 'ap-card__foot' }, note, own ? el('p', { class: 'ap-card__meta' }, 'You proposed this, so another admin approves it.') : null, el('div', { class: 'ap-card__btns' }, decline, approve))
+        : el('p', { class: 'ap-card__meta ap-card__wait' }, 'Waiting for an admin to approve or decline.'));
+  }
+
+  async function decideException(x, approve) {
+    const k = 'x:' + x.id;
+    if (AP.busy.has(k)) return;
+    AP.busy.add(k);
+    renderApprovals();
+    try {
+      await api(`api/exception-requests/${encodeURIComponent(x.id)}/${approve ? 'approve' : 'decline'}`, { note: AP.notes.get(k) || '' }, 'POST');
+      AP.notes.delete(k);
+      toast(approve ? `The detection no longer alerts where ${matchText(x.match)}.` : `${x.by} sees your answer on the finding.`, null,
+        { title: approve ? 'Exception added' : 'Declined' });
+    } catch (e) {
+      toastError(e.status === 409 ? 'Already decided' : approve ? 'Couldn’t approve' : 'Couldn’t decline', e);
+    }
+    AP.busy.delete(k);
+    await loadApprovals(true);
+  }
+
+  function exceptionsDecidedCard() {
+    const list = AP.exr.filter((x) => x.status !== 'pending').slice(0, 20);
+    return el('section', { class: 'card', 'aria-labelledby': 'ap-exr-title' },
+      el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title', id: 'ap-exr-title' }, 'Proposed exceptions decided'),
+        el('p', { class: 'card__sub' }, 'Approved, declined and expired'))),
+      el('ul', { class: 'pb-runs' }, ...list.map((x) => {
+        const who = x.status === 'expired' ? 'Nobody decided it in 14 days' : `${x.status === 'approved' ? 'Approved' : 'Declined'} by ${x.decided_by}` + (x.note ? `: ${x.note}` : '');
+        return el('li', { class: 'pb-run' },
+          el('div', { class: 'pb-run__main' },
+            el('div', { class: 'pb-run__title' }, el('span', { class: 'pb-run__what' }, `${x.detection_title || x.detection_id}: ${matchText(x.match)}`)),
+            el('div', { class: 'pb-run__sub' }, `Proposed by ${x.by}`, el('span', { class: 'dotsep', 'aria-hidden': 'true' }),
+              el('span', { title: fmtTime(x.decided || x.created) }, ago(x.decided || x.created)))),
+          el('div', { class: 'pb-run__state' }, (x.status === 'declined' ? el('span', { class: 'badge' }, 'Declined') : statusBadge(x.status)), el('p', { class: 'pb-run__detail', title: who }, who)));
+      })));
   }
 
   // whatWithTarget shows the sentence with its target in bold.
@@ -744,8 +820,11 @@
   async function refreshApprovalCount() {
     if (!can('analyst') || document.hidden) return;
     try {
-      const r = await api('api/playbooks/runs?status=waiting_approval&limit=1');
-      setCount(r.waiting);
+      const [r, x] = await Promise.all([
+        api('api/playbooks/runs?status=waiting_approval&limit=1'),
+        can('admin') ? api('api/exception-requests').catch(() => ({ pending: 0 })) : { pending: 0 },
+      ]);
+      setCount(r.waiting + (x.pending || 0));
     } catch (_) { setCount(0); }
   }
   meReady.then(() => { refreshApprovalCount(); setInterval(refreshApprovalCount, 60000); });

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -648,6 +649,36 @@ func TestScheduledThrottles(t *testing.T) {
 	list, _, _ := s.Findings.Search(context.Background(), findings.Filter{})
 	if len(list) != 2 || list[0].Slot == nil || list[0].RaisedAt.IsZero() || !list[0].Created.Equal(*list[0].Slot) {
 		t.Errorf("findings %+v", list)
+	}
+}
+
+// TestOverlappingRunsWithoutAThrottleRaiseOnce: a rule whose lookback
+// is longer than its schedule and that sets no throttle raises one
+// finding for a row that overlapping runs both see, and a rule whose
+// lookback equals its schedule raises on every run as before.
+func TestOverlappingRunsWithoutAThrottleRaiseOnce(t *testing.T) {
+	for _, tc := range []struct {
+		lookback string
+		want     []int
+	}{
+		{"15m", []int{1, 0, 0, 1}},
+		{"5m", []int{1, 1, 1, 1}},
+	} {
+		d := &Detection{ID: "rule-r", Title: "R", Query: "user=r", Enabled: true, Schedule: "5m", Lookback: tc.lookback}
+		lib := OnlyRules(t, d)
+		run := &recRunner{rows: map[string][]search.Row{"user=r": {{"user": "bob", "action": "login"}}}}
+		clock := &fakeClock{t: t0}
+		s := newTestScheduler(lib, run, clock)
+		s.RunDue(context.Background())
+		var got []int
+		for range tc.want {
+			clock.Add(5 * time.Minute)
+			s.RunDue(context.Background())
+			got = append(got, mustState(t, s, "rule-r").LastFindings)
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("lookback %s: findings per run %v, want %v", tc.lookback, got, tc.want)
+		}
 	}
 }
 
