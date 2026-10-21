@@ -321,6 +321,12 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Closing a case's findings with it says what they were, like closing
+	// them from the queue (AW4-04).
+	if req.CloseFindings && req.Disposition == "" && s.conf() != nil && s.conf().Detections.RequireDispositionOn() {
+		writeError(w, http.StatusBadRequest, errors.New("pick a disposition for the findings this closes (true positive, benign, false positive or undetermined)"))
+		return
+	}
 	user := userOf(r)
 	var changes []findings.Change
 	c, err := s.modifyCase(r.Context(), r.PathValue("id"), func(c *cases.Case) (bool, error) {
