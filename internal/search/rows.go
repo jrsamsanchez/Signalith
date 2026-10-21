@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
+	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
@@ -515,6 +518,11 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		if !ok || v == nil {
 			return false
 		}
+		if e.Ref {
+			if w, ok := r[e.Value]; ok && w != nil {
+				return compareOp(e.Op, compareValues(v, w))
+			}
+		}
 		switch e.Op {
 		case "=":
 			return m.equals(v, e.Value)
@@ -528,17 +536,7 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 				v = timeNumber(v)
 			}
 		}
-		cmp := compareValues(v, e.Value)
-		switch e.Op {
-		case "<":
-			return cmp < 0
-		case "<=":
-			return cmp <= 0
-		case ">":
-			return cmp > 0
-		case ">=":
-			return cmp >= 0
-		}
+		return compareOp(e.Op, compareValues(v, e.Value))
 	case *query.Text:
 		want := m.lowered(e.Value)
 		for _, v := range r {
@@ -546,6 +544,25 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// compareOp reports whether cmp, as compareValues returns it, satisfies op.
+func compareOp(op string, cmp int) bool {
+	switch op {
+	case "=":
+		return cmp == 0
+	case "!=":
+		return cmp != 0
+	case "<":
+		return cmp < 0
+	case "<=":
+		return cmp <= 0
+	case ">":
+		return cmp > 0
+	case ">=":
+		return cmp >= 0
 	}
 	return false
 }
@@ -841,4 +858,32 @@ func sortRows(rows []Row, keys []query.SortKey) {
 		}
 		return false
 	})
+}
+
+// catalogFields holds every field the data models name.
+var catalogFields = sync.OnceValue(func() map[string]bool {
+	out := map[string]bool{"_time": true}
+	for _, f := range datamodel.FieldsFor("") {
+		out[f.Name] = true
+	}
+	return out
+})
+
+// comparesCatalogFields reports whether e compares a field with a bare
+// name that the data models know as a field (where bytes_out > bytes_in).
+// OpenSearch cannot compare two fields of an event, so such a filter runs
+// over the events it returns; a bare name no model knows (where
+// action=blocked) is text, and is searched for there.
+func comparesCatalogFields(e query.Expr) bool {
+	switch e := e.(type) {
+	case *query.And:
+		return slices.ContainsFunc(e.Children, comparesCatalogFields)
+	case *query.Or:
+		return slices.ContainsFunc(e.Children, comparesCatalogFields)
+	case *query.Not:
+		return comparesCatalogFields(e.Child)
+	case *query.Compare:
+		return e.Ref && catalogFields()[e.Value]
+	}
+	return false
 }

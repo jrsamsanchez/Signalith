@@ -125,7 +125,15 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 	msg := ""
 	if len(res.Errors) > 0 {
 		msg = res.Errors[0].Reason
-		s.Log.Warn("some events were rejected", "rejected", res.Rejected, "first", msg)
+		s.Log.Warn("some events were rejected", "rejected", res.Rejected, "temporary", res.Temporary, "first", msg)
+	}
+	if res.Temporary > 0 {
+		// OpenSearch may take these later (its disk is full, or it is too
+		// busy). A partial success would make the Collector drop them;
+		// 503 makes it send the batch again, and the records already
+		// stored count as duplicates then.
+		fail(http.StatusServiceUnavailable, "30", errors.New("some events could not be stored right now; send them again later"))
+		return
 	}
 	writeOTLPSuccess(w, isJSON, int64(res.Rejected), msg)
 }

@@ -193,8 +193,9 @@ func Newer(a, b string) bool {
 // a computer without internet access), else downloaded from URL. The file
 // is checked as it is written to dir, which only administrators may
 // change, so the file a caller unpacks is the one checked, not one someone
-// changed after. The caller deletes it when done.
-func Fetch(ctx context.Context, local, dir string, out io.Writer) (string, error) {
+// changed after. The caller deletes it when done. client is what it is
+// downloaded with (see Client).
+func Fetch(ctx context.Context, local, dir string, client *http.Client, out io.Writer) (string, error) {
 	if local != "" {
 		f, err := os.Open(local)
 		if err != nil {
@@ -203,7 +204,7 @@ func Fetch(ctx context.Context, local, dir string, out io.Writer) (string, error
 		defer f.Close()
 		return save(f, dir, local)
 	}
-	return download(ctx, URL(), dir, out, http.DefaultClient)
+	return download(ctx, URL(), dir, out, client)
 }
 
 // save writes r to a new file in dir, removing it unless its SHA-512 is
@@ -240,8 +241,9 @@ func download(ctx context.Context, url, dir string, out io.Writer, client *http.
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s, "+
-			"or download that file on another computer and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url)
+		return "", fmt.Errorf("could not download OpenSearch (%w). Check that this computer can reach %s; "+
+			"behind a proxy, install with OPENSEARCHPROXY=<host:port>; or download that file on another computer "+
+			"and install with OPENSEARCHZIP=<the file> (docs/install-packages.md)", err, url)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

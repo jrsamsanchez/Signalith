@@ -388,7 +388,9 @@ func (r *runner) phases(ctx context.Context) {
 	r.report.Faults = faults
 	r.endState(ctx)
 	r.runChecks(ctx)
-	if r.fleet != nil && r.os != nil && r.fleet.sent.Load() > 0 {
+	if r.fleet != nil && r.os != nil && r.fleet.replayed.Load() {
+		r.report.Notes = append(r.report.Notes, "verify: skipped, since replayed events carry no sequence numbers to count them by")
+	} else if r.fleet != nil && r.os != nil && r.fleet.sent.Load() > 0 {
 		settle := r.s.Settle.D()
 		if settle <= 0 {
 			settle = time.Minute
