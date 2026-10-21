@@ -75,12 +75,16 @@ type Dispatcher struct {
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
 	Log *slog.Logger
+	// SLA returns the due-time targets for rules that escalate late
+	// findings; nil escalates none.
+	SLA func() findings.SLA
 
 	reader    Reader
 	mu        sync.Mutex
 	inFlight  map[string]bool // deliveries this server is sending
 	warned    bool            // a pass read the most findings it may; logged once
 	lastPurge time.Time
+	lastLate  time.Time
 	lastErr   string // the last pass's problem, logged once
 }
 
@@ -128,6 +132,7 @@ type item struct {
 	rule    Rule
 	stored  *Stored // set for a retry
 	urgency int
+	late    bool // an escalation of a finding still unassigned
 }
 
 // Pass sends what is due once.
@@ -166,6 +171,8 @@ func (d *Dispatcher) Pass(ctx context.Context) {
 	}
 	if err := d.collect(ctx, s, now, perChannel); err != nil {
 		d.problem("could not read new findings to send", err)
+	} else if err := d.collectLate(ctx, s, now, perChannel); err != nil {
+		d.problem("could not read late findings to send", err)
 	} else {
 		d.problem("", nil)
 	}
@@ -244,6 +251,87 @@ func (d *Dispatcher) collect(ctx context.Context, s Settings, now time.Time, per
 		perChannel[w.channel] = append(perChannel[w.channel], item{msg: m, rule: w.rule, urgency: urgencyRank(m.Urgency)})
 	}
 	d.reader.Done(now)
+	return nil
+}
+
+// LateEvery is how often the dispatcher looks for findings still
+// unassigned past their due time, and MaxLate the most it reads at once.
+const (
+	LateEvery = time.Minute
+	MaxLate   = 200
+)
+
+// LateDeliveryID is the delivery of a finding's escalation to a channel:
+// apart from the first message, so each goes out once.
+func LateDeliveryID(findingID, channelID string) string {
+	return DeliveryID(findingID+"~late", channelID)
+}
+
+// collectLate adds, for rules that escalate, the open findings nobody
+// owns that are past their due time, each once per channel.
+func (d *Dispatcher) collectLate(ctx context.Context, s Settings, now time.Time, perChannel map[string][]item) error {
+	if d.SLA == nil || now.Sub(d.lastLate) < LateEvery {
+		return nil
+	}
+	var rules []Rule
+	for _, r := range s.Rules {
+		if r.Enabled && r.Late && len(r.Channels) > 0 {
+			rules = append(rules, r)
+		}
+	}
+	sla := d.SLA()
+	if len(rules) == 0 || sla.Off() {
+		d.lastLate = now
+		return nil
+	}
+	list, _, err := d.Findings.Search(ctx, findings.Filter{
+		Status: []string{findings.StatusNew, findings.StatusInProgress, findings.StatusPending}, Unowned: true, Due: &findings.DueWithin{SLA: sla, Now: now},
+		Limit: MaxLate, Order: findings.OrderUrgency,
+	})
+	if err != nil {
+		return err
+	}
+	link := d.link()
+	seen := map[string]bool{}
+	type want struct {
+		f       *findings.Finding
+		channel string
+		rule    Rule
+	}
+	var wants []want
+	var ids []string
+	for _, f := range list {
+		for _, r := range rules {
+			if !r.Matches(f) {
+				continue
+			}
+			for _, cid := range r.Channels {
+				id := LateDeliveryID(f.ID, cid)
+				if _, ok := s.Channel(cid); !ok || seen[id] {
+					continue
+				}
+				seen[id] = true
+				wants = append(wants, want{f, cid, r})
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(wants) > 0 {
+		have, err := d.Deliveries.Existing(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for i, w := range wants {
+			if have[ids[i]] {
+				continue
+			}
+			m := NewMessage(w.f, link)
+			m.Late = true
+			m.Title = clean("Unassigned and late: "+m.Title, maxTitle)
+			perChannel[w.channel] = append(perChannel[w.channel], item{msg: m, rule: w.rule, urgency: urgencyRank(m.Urgency), late: true})
+		}
+	}
+	d.lastLate = now
 	return nil
 }
 
@@ -337,8 +425,12 @@ func (d *Dispatcher) claim(ctx context.Context, c Channel, it item, summary int)
 		}
 		return claimed{&del, v}, true
 	}
+	id := DeliveryID(it.msg.FindingID, c.ID)
+	if it.late {
+		id = LateDeliveryID(it.msg.FindingID, c.ID)
+	}
 	del := &Delivery{
-		ID: DeliveryID(it.msg.FindingID, c.ID), Kind: KindFinding, FindingID: it.msg.FindingID,
+		ID: id, Kind: KindFinding, FindingID: it.msg.FindingID,
 		Channel: c.ID, ChannelName: c.Name, ChannelType: c.Type, Rule: it.rule.ID, RuleName: it.rule.Name,
 		Status: StatusSending, Attempts: 1, Summary: summary, Message: it.msg, Server: d.Server,
 		Created: now, Updated: now, Claimed: now,

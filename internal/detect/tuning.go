@@ -6,6 +6,7 @@ package detect
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -28,6 +29,13 @@ type Exception struct {
 	Added   time.Time         `yaml:"added" json:"added"`
 	// Finding is the finding the exception was made from, if any.
 	Finding string `yaml:"finding,omitempty" json:"finding,omitempty"`
+	// ProposedBy is the analyst who asked for the exception, when an admin
+	// (By) approved their request.
+	ProposedBy string `yaml:"proposed_by,omitempty" json:"proposed_by,omitempty"`
+	// Exact makes Match compare values whole (ignoring case), with * and ?
+	// as plain characters. An exception made from a finding is exact: its
+	// values come from the logs, so a logged "*" must not match everything.
+	Exact bool `yaml:"exact,omitempty" json:"exact,omitempty"`
 }
 
 // Limits on a detection's exceptions.
@@ -66,31 +74,34 @@ func (e *Exception) Expired(t time.Time) bool { return e.Until != nil && !t.Befo
 // exception. A multi-valued field matches when any of its values does.
 func (e *Exception) Matches(row map[string]any) bool {
 	for field, want := range e.Match {
-		if !valueMatches(row[field], want) {
+		if !valueMatches(row[field], want, e.Exact) {
 			return false
 		}
 	}
 	return true
 }
 
-func valueMatches(v any, pattern string) bool {
+func valueMatches(v any, pattern string, exact bool) bool {
 	switch x := v.(type) {
 	case nil:
 		return false
 	case []any:
 		for _, item := range x {
-			if valueMatches(item, pattern) {
+			if valueMatches(item, pattern, exact) {
 				return true
 			}
 		}
 		return false
 	case []string:
 		for _, item := range x {
-			if wildcard(pattern, item) {
+			if valueMatches(item, pattern, exact) {
 				return true
 			}
 		}
 		return false
+	}
+	if exact {
+		return strings.EqualFold(pattern, fmt.Sprint(v))
 	}
 	return wildcard(pattern, fmt.Sprint(v))
 }
@@ -120,6 +131,15 @@ func wildcard(pattern, s string) bool {
 		pi++
 	}
 	return pi == len(p)
+}
+
+// Validate checks one exception on its own, as a detection's checks
+// would.
+func (e *Exception) Validate() error {
+	if p := e.problems(); len(p) > 0 {
+		return errors.New(strings.Join(p, "; "))
+	}
+	return nil
 }
 
 func (e *Exception) problems() []string {

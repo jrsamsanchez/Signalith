@@ -447,6 +447,43 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 		Owner:       v.Get("owner"),
 		DetectionID: v.Get("detection"),
 		Text:        v.Get("q"),
+		Unowned:     v.Get("unowned") == "true",
+		Order:       v.Get("sort"),
+	}
+	if e := v.Get("entity"); e != "" {
+		flt.EntityValues = []string{e}
+	}
+	sla := s.findingSLA()
+	if due := v.Get("due"); due != "" {
+		// due=overdue keeps findings late now; due=1h also those due
+		// within the hour.
+		var within time.Duration
+		if due != "overdue" {
+			d, err := detect.ParseDuration(due)
+			if err != nil || d < 0 || d > 7*24*time.Hour {
+				writeError(w, http.StatusBadRequest, errors.New("due must be overdue or a time up to 7d, such as 1h"))
+				return
+			}
+			within = d
+		}
+		flt.Due = &findings.DueWithin{SLA: sla, Within: within, Now: time.Now()}
+	}
+	group := v.Get("group")
+	if group != "" && group != findings.GroupDetection && group != findings.GroupEntity {
+		writeError(w, http.StatusBadRequest, errors.New("group must be detection or entity"))
+		return
+	}
+	if !findings.ValidOrder(flt.Order) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("sort must be one of %s", strings.Join(findings.Orders, ", ")))
+		return
+	}
+	if a := v.Get("after"); a != "" {
+		c, err := findings.DecodeCursor(a)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		flt.After = c
 	}
 	if since := v.Get("since"); since != "" {
 		dur, err := detect.ParseDuration(strings.TrimPrefix(since, "-"))
@@ -476,7 +513,47 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	for _, f := range list {
 		f.History = nil
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"findings": list, "total": total})
+	resp := map[string]any{"findings": list, "total": total}
+	if !sla.Off() {
+		now := time.Now()
+		due := map[string]*findings.Due{}
+		for _, f := range list {
+			if d := sla.DueOf(f, now); d != nil {
+				due[f.ID] = d
+			}
+		}
+		resp["due"] = due
+	}
+	if uc, ok := s.Findings.(findings.UrgencyCounter); ok && v.Get("counts") == "urgency" {
+		// The pills count every urgency the other filters let through.
+		cf := flt
+		cf.Urgency, cf.After = nil, nil
+		counts, err := uc.UrgencyCounts(r.Context(), cf)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["by_urgency"] = counts
+	}
+	if g, ok := s.Findings.(findings.Grouper); ok && group != "" {
+		cf := flt
+		cf.After = nil
+		groups, err := g.Groups(r.Context(), cf, group)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["groups"] = groups
+	}
+	limit := flt.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if len(list) == limit {
+		// There may be more: next continues after the last one.
+		resp["next"] = findings.CursorOf(list[len(list)-1]).Encode()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
@@ -493,6 +570,9 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{"finding": f}
+	if d := s.findingSLA().DueOf(f, time.Now()); d != nil {
+		resp["due"] = d
+	}
 	if d, err := s.Detections.Get(f.DetectionID); err == nil {
 		resp["detection"] = d
 	}
@@ -505,6 +585,23 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 // change made at the same moment is lost.
 func (s *Server) updateFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
 	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		return f.Apply(u, author, time.Now().UTC()), nil
+	})
+}
+
+// errNeedsDisposition is the answer to resolving a finding from the queue
+// without saying what it turned out to be, while that is required.
+var errNeedsDisposition = errors.New("pick a disposition (true positive, benign, false positive or undetermined) to resolve or close a finding")
+
+// triageFinding is an analyst's change from the queue: updateFinding, but
+// resolving or closing an open finding needs a disposition when
+// detections.require_disposition is on.
+func (s *Server) triageFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
+	need := u.Status != nil && !findings.IsOpen(*u.Status) && s.conf() != nil && s.conf().Detections.RequireDispositionOn()
+	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		if need && findings.IsOpen(f.Status) && (u.Disposition == nil || *u.Disposition == "") && f.Disposition == "" {
+			return false, errNeedsDisposition
+		}
 		return f.Apply(u, author, time.Now().UTC()), nil
 	})
 }
@@ -526,7 +623,11 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	f, err := s.updateFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	f, err := s.triageFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	if errors.Is(err, errNeedsDisposition) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if errors.Is(err, findings.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -565,7 +666,7 @@ func (s *Server) handleBulkFindings(w http.ResponseWriter, r *http.Request) {
 	failed := map[string]string{}
 	updated := 0
 	for _, id := range req.IDs {
-		if _, err := s.updateFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
+		if _, err := s.triageFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
 			failed[id] = err.Error()
 			continue
 		}
@@ -644,4 +745,12 @@ func (s *Server) handleFindingsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
+}
+
+// findingSLA is the due times of findings in use.
+func (s *Server) findingSLA() findings.SLA {
+	if c := s.conf(); c != nil {
+		return c.FindingSLA()
+	}
+	return findings.DefaultSLA()
 }
