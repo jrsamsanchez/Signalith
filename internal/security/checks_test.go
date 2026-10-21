@@ -84,7 +84,7 @@ func goodFacts(t *testing.T, extra string) *Facts {
 		NotBefore: now.AddDate(-1, 0, 0), NotAfter: now.AddDate(9, 0, 0), Names: []string{"siem-1", "10.0.0.12"}}
 	f := &Facts{
 		Now:    now,
-		Server: ServerInfo{Name: "siem-1", Version: "v0.9.0", Go: "go1.26.9", OS: "linux", Deployment: DeployLinuxSystemd, DeploymentLabel: "Linux, systemd service"},
+		Server: ServerInfo{Name: "siem-1", Version: "v0.9.0", Go: "go1.26.10", OS: "linux", Deployment: DeployLinuxSystemd, DeploymentLabel: "Linux, systemd service"},
 		Config: c, Uptime: 48 * time.Hour,
 		TLS: &TLSFacts{Mode: "auto", Leaf: &LeafFacts{NotAfter: now.AddDate(0, 0, 300)}, CA: ca, ScopeSetup: "standard",
 			WouldCover: map[string][]string{"standard": {"siem-1", "10.0.0.12"}, "strict": {"siem-1", "siem-1.corp.local", "10.0.0.12", "localhost", "127.0.0.1", "::1"}}},

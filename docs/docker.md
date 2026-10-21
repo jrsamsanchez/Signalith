@@ -117,12 +117,12 @@ gives you. To run a release instead, check out its tag and set `SIGNALITH_VERSIO
 same version before the first command, for example in PowerShell:
 
 ```powershell
-git checkout v0.3.0
-$env:SIGNALITH_VERSION = "0.3.0"
+git checkout v0.3.1
+$env:SIGNALITH_VERSION = "0.3.1"
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
-(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.3.0`). To build the image
+(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.3.1`). To build the image
 from the code you checked out, for example to try a change of your own, add
 `-f deploy/docker/docker-compose.build.yml` after the first `-f` in every command:
 
@@ -222,7 +222,7 @@ agents on the web port, with a warning in the log for each one, so nothing stops
    servers.
 2. Set up each agent again from **Add data**: its new configuration sends to port 7779.
 3. Set `server.agent_listen` (for example `0.0.0.0:7779`) so the web port stops taking
-   agents. The next release stops taking agents on the web port anyway.
+   agents. A later release will stop taking agents on the web port.
 
 See [The agent port](sending-data.md#the-agent-port).
 

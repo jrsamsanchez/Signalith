@@ -56,6 +56,9 @@ type Message struct {
 	// known.
 	Link   string `json:"link,omitempty"`
 	Sample bool   `json:"sample,omitempty"`
+	// Late is set on a finding sent again because it is still unassigned
+	// past its due time.
+	Late bool `json:"late,omitempty"`
 	// Count is how many findings a summary stands for.
 	Count int `json:"count,omitempty"`
 	// Ask says what waits for approval, in a KindApproval message, as in
@@ -330,6 +333,9 @@ type WebhookFinding struct {
 	Sample    bool              `json:"sample"`
 	// Credit names the rule's author and licence; "" for built-in rules.
 	Credit string `json:"credit"`
+	// Late is true when the finding is sent again because nobody picked
+	// it up by its due time.
+	Late bool `json:"late,omitempty"`
 }
 
 // WebhookSummary stands for several new findings at once.
@@ -356,7 +362,7 @@ func (m Message) webhookBody(sent time.Time) WebhookBody {
 	}
 	b.Finding = &WebhookFinding{ID: m.FindingID, Title: m.Title, Urgency: m.Urgency, Severity: m.Severity, Detection: m.DetectionID,
 		MITRE: mitre, Entities: ent, RiskScore: m.RiskScore, Created: m.Created, Link: m.Link, Sample: m.Sample,
-		Credit: m.Credit}
+		Credit: m.Credit, Late: m.Late}
 	if m.Kind == KindApproval {
 		b.Approval = &WebhookApproval{Text: m.Ask, Link: m.Link}
 	}
