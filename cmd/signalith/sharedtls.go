@@ -71,6 +71,9 @@ type sharedTLS struct {
 	keyDone *tlsauto.Manager
 	retired *x509.Certificate
 	logged  string
+	// lost is whether the cluster's certificate authority key was found
+	// lost, logged once each time it becomes so.
+	lost bool
 }
 
 func newSharedTLS() *sharedTLS {
@@ -191,7 +194,13 @@ func (r *runner) sharedTLS(ctx context.Context, in *instance, c *config.Config, 
 	rt := r.shared
 	s.sync(ctx, rt, certs, r.node.Name(), r.log)
 	in.jobs.Go(func() { s.run(ctx, rt, certs, r.node.Name(), r.log) })
-	return func() *cluster.TLSStatus { return clustertls.StatusOf(certs, host, s.adoptError()) }
+	return func() *cluster.TLSStatus {
+		st := clustertls.StatusOf(certs, host, s.adoptError())
+		if b, ok := s.tls.Get(); st != nil && ok {
+			st.CAKeyLost = clustertls.KeyLost(certs, b)
+		}
+		return st
+	}
 }
 
 // hostOf is the host of the URL u, "" for none.
@@ -243,6 +252,20 @@ func (s *sharedTLS) sync(ctx context.Context, rt *shared.Runtime, m *tlsauto.Man
 	if s.certs.Load() != m {
 		// A later start's Manager took over.
 		return
+	}
+	var cur *clustertls.Body
+	if b, ok := s.tls.Get(); ok {
+		cur = b
+	}
+	if lost := clustertls.KeyLost(m, cur); lost != s.lost {
+		s.lost = lost
+		if lost {
+			var exp time.Time
+			if leaf := m.Leaf(); leaf != nil {
+				exp = leaf.NotAfter
+			}
+			log.Warn(clustertls.KeyLostText(exp))
+		}
 	}
 	b, ok := s.tls.Get()
 	if rt == nil || !ok || b.CASHA256 == "" || !rt.SharedTLS() {
