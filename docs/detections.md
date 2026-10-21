@@ -1400,7 +1400,7 @@ BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
 (`Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`), shell
 (`Microsoft-Windows-Shell-Core/Operational`), SMB client security
 (`Microsoft-Windows-SmbClient/Security`) and exploit protection
-(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules, and the rules for the logs in the
+(`Microsoft-Windows-Security-Mitigations/KernelMode` and `/UserMode`) rules, and the rules for the logs in the
 table below, find their events in Other by
 event ID, and name their data the way Windows does: each value is the log's prefix
 (`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`, or the one

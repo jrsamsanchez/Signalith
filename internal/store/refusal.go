@@ -172,6 +172,10 @@ const BusyFix = "If this lasts more than a few minutes, check that OpenSearch's 
 const BlockedFix = "OpenSearch does this when its disk is full, or when someone set a block such as cluster.blocks.read_only: " +
 	"give OpenSearch more disk, or remove the block."
 
+// DiskBlockedFix says what to do about the blocks WriteBlocks finds.
+const DiskBlockedFix = "Give OpenSearch more disk, or keep fewer days on the Data retention page: OpenSearch lifts a block it set " +
+	"once its disks are below the watermark again. A block someone set stays until they remove it."
+
 // Unusable says why OpenSearch could not be used, for the command line:
 // that it could not be reached, or what its answer means, and, where the
 // fix is not in Signalith's own settings, what to do.

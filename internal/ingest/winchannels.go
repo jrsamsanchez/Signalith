@@ -40,6 +40,11 @@ const SmbClientSecurityChannel = "Microsoft-Windows-SmbClient/Security"
 // kernel mode, such as an unsigned image a protected process refused.
 const MitigationsChannel = "Microsoft-Windows-Security-Mitigations/KernelMode"
 
+// MitigationsUserChannel is where Windows logs the same blocks in user
+// mode. Its events are read as MitigationsChannel's, and the Sigma rules
+// for exploit protection read both logs.
+const MitigationsUserChannel = "Microsoft-Windows-Security-Mitigations/UserMode"
+
 // BitsChannel is where the Background Intelligent Transfer Service logs
 // its download and upload jobs.
 const BitsChannel = "Microsoft-Windows-Bits-Client/Operational"
@@ -332,6 +337,9 @@ func NamedChannelCategory(service string) string {
 // namedChannelFor is the log of a channel whose events the parser reads
 // by name.
 func namedChannelFor(channel string) (namedChannel, bool) {
+	if strings.EqualFold(channel, MitigationsUserChannel) {
+		channel = MitigationsChannel
+	}
 	c, ok := namedChannels[strings.ToLower(channel)]
 	return c, ok
 }
