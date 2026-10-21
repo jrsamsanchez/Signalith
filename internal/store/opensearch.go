@@ -14,12 +14,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -563,6 +565,61 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	}
 	err := c.Do(ctx, http.MethodGet, "/_cluster/health", nil, &out)
 	return out.Status, err
+}
+
+// WriteBlocks says, in sentences, what OpenSearch's blocks keep it from
+// writing: a cluster-wide block (one an admin set, or cluster.blocks.
+// create_index, which OpenSearch sets itself when every data disk passes
+// its high watermark), and indices made read-only, as at the flood-stage
+// watermark. It returns nothing when writes are not blocked. Cluster
+// health stays green through all of these.
+func (c *Client) WriteBlocks(ctx context.Context) ([]string, error) {
+	type block struct {
+		Description string   `json:"description"`
+		Levels      []string `json:"levels"`
+	}
+	var out struct {
+		Blocks struct {
+			Global  map[string]block            `json:"global"`
+			Indices map[string]map[string]block `json:"indices"`
+		} `json:"blocks"`
+	}
+	if err := c.Do(ctx, http.MethodGet, "/_cluster/state/blocks", nil, &out); err != nil {
+		return nil, err
+	}
+	writes := func(b block) bool {
+		return slices.ContainsFunc(b.Levels, func(l string) bool { return l == "write" || l == "metadata_write" || l == "create_index" })
+	}
+	var says []string
+	ids := slices.Sorted(maps.Keys(out.Blocks.Global))
+	for _, id := range ids {
+		b := out.Blocks.Global[id]
+		switch {
+		case !writes(b):
+		case strings.Contains(b.Description, "create-index"):
+			says = append(says, "OpenSearch refuses to create indices (cluster.blocks.create_index), as it does by itself when every data disk passes its high watermark (90% full by default), so new days' events, cases and detection state can't be stored.")
+		default:
+			says = append(says, "OpenSearch blocks writes to the whole cluster ("+b.Description+").")
+		}
+	}
+	var readOnly []string
+	for index, bs := range out.Blocks.Indices {
+		for _, b := range bs {
+			if writes(b) {
+				readOnly = append(readOnly, index)
+				break
+			}
+		}
+	}
+	if n := len(readOnly); n > 0 {
+		slices.Sort(readOnly)
+		what := readOnly[0]
+		if n > 1 {
+			what = fmt.Sprintf("%d indices, %s among them,", n, readOnly[0])
+		}
+		says = append(says, "OpenSearch made "+what+" read-only, as it does when a disk passes its flood-stage watermark (95% full by default).")
+	}
+	return says, nil
 }
 
 // AutoShards is number_of_shards in the event index settings when

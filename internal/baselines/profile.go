@@ -173,6 +173,31 @@ func (p *Profile) see(v string, h time.Time) bool {
 	return true
 }
 
+// unlearn forgets what the profile learned of a value, so the check
+// treats it as new again, and reports whether it had learned it. For data
+// volume it forgets the usual amounts, learned again from then on; for
+// the sign-in hour, the hour of the day.
+func (p *Profile) unlearn(value string) bool {
+	switch p.Check {
+	case DataVolume:
+		had := p.Span > 0 || len(p.HourN) > 0
+		p.Mean, p.Var, p.Span, p.HourMean, p.HourVar, p.HourN = 0, 0, 0, nil, nil, nil
+		return had
+	case UnusualHour:
+		h, ok := hourOf(value)
+		if !ok || len(p.ByHour) != 24 || p.ByHour[h] == 0 {
+			return false
+		}
+		p.Hours = max(p.Hours-p.ByHour[h], 0)
+		p.ByHour[h] = 0
+		return true
+	}
+	value = cut(strings.TrimSpace(value), maxValueLen)
+	n := len(p.Values)
+	p.Values = slices.DeleteFunc(p.Values, func(x Value) bool { return strings.EqualFold(x.V, value) })
+	return len(p.Values) < n
+}
+
 // forget drops the values not seen since before.
 func (p *Profile) forget(before time.Time) {
 	p.Values = slices.DeleteFunc(p.Values, func(x Value) bool { return x.Last.Before(before) })

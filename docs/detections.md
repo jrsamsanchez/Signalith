@@ -534,7 +534,7 @@ Content packs are rule sets from other open source projects, shipped unchanged
 inside Signalith and converted when it starts. Every pack detection is **off** until
 an admin turns it on.
 
-**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,638 rules from
+**SigmaHQ community rules** (`internal/detect/packs/sigmahq`) holds 2,644 rules from
 [SigmaHQ](https://github.com/SigmaHQ/sigma), pinned to one commit: 2,138 Windows rules
 for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Windows Firewall, BITS, AppX deployment, WMI activity, Remote Desktop session, shell, SMB client, exploit protection, DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device driver, packaged app, certificate, OpenSSH, DNS Server, IIS configuration and Defender log sources, 154 Linux rules (see
 [Linux endpoints](#linux-endpoints-sysmon-for-linux) and
@@ -546,7 +546,9 @@ for these Sysmon, Security, PowerShell, System, Application, Code Integrity, Win
 [Entra ID and Azure](#entra-id-and-azure)), 17 Microsoft 365 rules (see
 [Microsoft 365](#microsoft-365)), 16 Google Cloud rules and 7 Google Workspace rules (see
 [Google Cloud](#google-cloud)), 19 Okta rules (see [Okta](#okta)), 15 Kubernetes rules (see
-[Kubernetes](#kubernetes)), and 12 GitHub rules (see [GitHub](#github)):
+[Kubernetes](#kubernetes)), 12 GitHub rules (see [GitHub](#github)), and 6 antivirus rules
+(log source category `antivirus`, which names no product: any antivirus product's alerts in
+the Malware data model, by threat name and file; see [Antivirus](antivirus.md)):
 
 | Sigma log source | Windows events | Data model |
 | --- | --- | --- |
@@ -929,10 +931,33 @@ feed [risk-based alerting](#risk) without flooding the queue. Each is tagged
 `sigma`, the pack name, the product and the log source.
 
 On the **Detections** page, the pack card shows how many rules are on.
-**Turn on N high and critical rules** is the suggested start; **Browse rules** lists
+**Turn on N starter rules** is the suggested start; **Browse rules** lists
 the pack so you can filter, read a rule's source and turn rules on or off one at a
 time or all shown at once (with Undo). Pack rules cannot be deleted, only turned
 off; editing one saves an override that keeps the credit.
+
+### The starter set
+
+The starter set is about 140 high and critical rules from both packs (tagged
+`starter`) that read only what hosts send as installed: the Windows event logs
+the Signalith Agent collects by default (the Security events Windows audits by
+default, System, Application, Defender, Code Integrity, BITS, the DNS client, the
+firewall and the like) and web server access logs. Most pack rules read logging a
+default install does not have, and stay quiet until hosts send it. Browse rules
+marks them, and each is tagged for what it needs:
+
+| Tag | Shown as | What hosts must send |
+|---|---|---|
+| `needs-sysmon` | Needs Sysmon | Sysmon events: tick **Sysmon** on the Windows install line |
+| `needs-process-auditing` | Needs process auditing | Program starts: Sysmon, or the Security log's 4688 events with the command line (**Audit Process Creation** and **Include command line in process creation events**) |
+| `needs-powershell-logging` | Needs PowerShell logging | PowerShell script block or module logging: tick **PowerShell** on the Windows install line and turn the logging on by group policy |
+| `needs-auditd` | Needs the audit log | The Linux audit log, recording the programs that run |
+
+Type a tag in the filter of Browse rules to list those rules, such as `starter` or
+`needs-sysmon`. The starter set also leaves out rules for cloud services and
+network sensors, and Security events that need an audit policy Windows leaves off
+(object access, file shares, directory service changes, the filtering platform,
+scheduled task changes).
 
 Licence: the SigmaHQ rules are under the [Detection Rule License 1.1](https://github.com/SigmaHQ/Detection-Rule-License)
 (full text in the pack folder). As it requires, every finding from a pack rule
@@ -1375,7 +1400,7 @@ BITS rules (`Microsoft-Windows-Bits-Client/Operational`), app package rules
 (`Microsoft-Windows-TerminalServices-LocalSessionManager/Operational`), shell
 (`Microsoft-Windows-Shell-Core/Operational`), SMB client security
 (`Microsoft-Windows-SmbClient/Security`) and exploit protection
-(`Microsoft-Windows-Security-Mitigations/KernelMode`) rules, and the rules for the logs in the
+(`Microsoft-Windows-Security-Mitigations/KernelMode` and `/UserMode`) rules, and the rules for the logs in the
 table below, find their events in Other by
 event ID, and name their data the way Windows does: each value is the log's prefix
 (`firewall_`, `bits_`, `appx_`, `wmi_`, `rdp_`, `shell_`, `smbclient_`, `mitigation_`, or the one
@@ -1398,6 +1423,10 @@ its name in snake case (`ApplicationPath` is `firewall_application_path`,
 | OpenSSH server (`OpenSSH/Operational`) | `openssh_` | When OpenSSH Server is installed |
 | DNS Server (`DNS Server`) | `dnsserver_` | On DNS servers |
 | IIS configuration (`Microsoft-IIS-Configuration/Operational`) | `iisconfig_` | On web servers, after `wevtutil sl Microsoft-IIS-Configuration/Operational /e:true` |
+
+The Signalith Agent's install line turns on the DNS client, Task Scheduler, CryptoAPI and
+device driver logs with `-EnableLogs` (**Also turn on logs that are off by default** on
+**Add data**); see [Logs that are off by default](signalith-agent.md#logs-that-are-off-by-default-on-windows).
 
 Fluent Bit skips the logs a computer doesn't have. The OpenTelemetry Collector stops on a log
 it can't open, so its configuration leaves out the OpenSSH, DNS Server and IIS logs; add a
@@ -1578,7 +1607,8 @@ its test events, so CI checks real events too:
 go run ./internal/detect/attackgen -write   # downloads the recordings, about 2 GB
 ```
 
-On the pack card, **Turn on N TTP rules** is the suggested start.
+On the pack card, **Turn on N starter rules** turns on this pack's rules of the
+[starter set](#the-starter-set).
 
 Licence: the rules are © Splunk Inc. under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the licence text
@@ -1596,10 +1626,11 @@ go test ./internal/detect/ ./internal/splcheck/
 
 ### Content updates
 
-Pack rules can be updated without a new Signalith release. Every week the Signalith
-project rebuilds both packs from the newest SigmaHQ and Splunk rules, runs every check
-above on them (in memory and against a real OpenSearch), and publishes the ones that
-pass as one signed bundle. A server only installs a bundle that:
+Pack rules can be updated without a new Signalith release. A Signalith maintainer
+rebuilds both packs from newer SigmaHQ and Splunk rules and opens the change as a pull
+request, pinned to the upstream commits, so the new and changed rules
+are reviewed before anything ships. Once it merges, every check above runs on them (in
+memory and against a real OpenSearch), and the packs are published as one signed bundle. A server only installs a bundle that:
 
 - is signed by a key built into Signalith (Ed25519; the keys are in
   `internal/content/trusted.keys`), so a copy from anywhere else is as good as the

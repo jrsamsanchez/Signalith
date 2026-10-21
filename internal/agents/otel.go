@@ -146,8 +146,9 @@ func generateOTel(o Options) (*Agent, error) {
 		b.WriteString("  windowseventlog/shell:\n    channel: Microsoft-Windows-Shell-Core/Operational\n    storage: file_storage/signalith\n")
 		b.WriteString("  windowseventlog/smbclient:\n    channel: Microsoft-Windows-SmbClient/Security\n    storage: file_storage/signalith\n")
 		b.WriteString("  windowseventlog/mitigations:\n    channel: Microsoft-Windows-Security-Mitigations/KernelMode\n    storage: file_storage/signalith\n")
+		b.WriteString("  windowseventlog/mitigations_user:\n    channel: Microsoft-Windows-Security-Mitigations/UserMode\n    storage: file_storage/signalith\n")
 		receivers = append(receivers, "windowseventlog/firewall", "windowseventlog/bits", "windowseventlog/appx", "windowseventlog/wmi",
-			"windowseventlog/rdp", "windowseventlog/shell", "windowseventlog/smbclient", "windowseventlog/mitigations")
+			"windowseventlog/rdp", "windowseventlog/shell", "windowseventlog/smbclient", "windowseventlog/mitigations", "windowseventlog/mitigations_user")
 		// The DNS client, Task Scheduler, NTLM, LSA, CryptoAPI, device
 		// driver, packaged app, app package and certificate logs, which
 		// every Windows has (some turned off until an admin turns them on).

@@ -8,8 +8,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -22,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -464,5 +467,151 @@ func TestSwVersName(t *testing.T) {
 	}
 	if got := swVersName("nothing"); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// The agent keeps the server's revision only when it holds over the
+// bytes it got: one with a field this agent doesn't know is kept, so the
+// next poll is a 304, not the whole configuration again; a forged one is
+// replaced by the agent's own sum. It reports the fingerprints of the
+// certificate authorities it trusts.
+func TestAgentRecomputesRevision(t *testing.T) {
+	var mu sync.Mutex
+	var body []byte
+	var etag string
+	full := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		full++
+		w.Header().Set("ETag", etag)
+		w.Write(body)
+	}))
+	defer srv.Close()
+	serve := func(b []byte, claim string) {
+		mu.Lock()
+		body, etag, full = b, `"`+claim+`"`, 0
+		mu.Unlock()
+	}
+	a := syncAgent(t, srv.URL)
+	ctx := context.Background()
+
+	// A newer server: a field this agent doesn't know, summed over what
+	// it sends.
+	newer := []byte(`{"revision":"","poll_seconds":300,"future":{"x":[1,2]},"fluentbit":{"config":"a & <b>"}}` + "\n")
+	rev, ok := agentproto.RawRevision(newer)
+	if !ok {
+		t.Fatal("no revision in the newer configuration")
+	}
+	newer = []byte(strings.Replace(string(newer), `"revision":""`, `"revision":"`+rev+`"`, 1))
+	serve(newer, rev)
+	for range 3 {
+		if err := a.sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := a.Status(); st.Revision != rev {
+		t.Fatalf("revision %q, want the server's %q", st.Revision, rev)
+	}
+	if kept, err := a.loadConfig(); err != nil || kept.Revision != rev {
+		t.Fatalf("kept %+v %v", kept, err)
+	}
+	mu.Lock()
+	if full != 1 {
+		t.Errorf("fetched the whole configuration %d times", full)
+	}
+	mu.Unlock()
+
+	// An older server summed json.Marshal, which escapes & while what it
+	// sent doesn't.
+	cfg := agentproto.Config{PollSeconds: 120, FluentBit: &agentproto.FluentBit{Config: "x & y"}}
+	legacy := agentproto.LegacyRevisionOf(cfg)
+	cfg.Revision = legacy
+	serve(agentproto.Encode(cfg), legacy)
+	for range 2 {
+		if err := a.sync(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if st := a.Status(); st.Revision != legacy {
+		t.Fatalf("older server: revision %q, want %q", st.Revision, legacy)
+	}
+	mu.Lock()
+	if full != 1 {
+		t.Errorf("older server: fetched the whole configuration %d times", full)
+	}
+	mu.Unlock()
+
+	// A forged claim: the agent's own sum, and a configuration claiming
+	// the revision in use is still applied.
+	forged := agentproto.Config{PollSeconds: 60, Revision: legacy}
+	serve(agentproto.Encode(forged), legacy+"x")
+	if err := a.sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	own := agentproto.RevisionOf(forged)
+	if st := a.Status(); st.Revision != own || st.Revision == legacy {
+		t.Fatalf("forged: revision %q, want %q", st.Revision, own)
+	}
+
+	if st := a.Status(); len(st.CAs) != 0 {
+		t.Errorf("CAs with no ca.pem: %v", st.CAs)
+	}
+	der := selfSigned(t)
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := a.writeCA(string(ca), nil); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(der)
+	if st := a.Status(); len(st.CAs) != 1 || st.CAs[0] != hex.EncodeToString(sum[:]) {
+		t.Errorf("CAs %v", st.CAs)
+	}
+	if st := a.Status().Clean(); len(st.CAs) != 1 {
+		t.Errorf("Clean dropped the CAs: %v", st.CAs)
+	}
+}
+
+// Copies of one certificate authority can't push another out of the
+// report, a bundle of more than MaxCAs distinct ones is refused with
+// ca.pem kept, and a ca.pem written by someone else with more says so.
+func TestCABundleLimits(t *testing.T) {
+	a := syncAgent(t, "http://127.0.0.1:1")
+	pemOf := func(der []byte) string {
+		return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	}
+	fpOf := func(der []byte) string { sum := sha256.Sum256(der); return hex.EncodeToString(sum[:]) }
+	known, stranger := selfSigned(t), selfSigned(t)
+	bundle := strings.Repeat(pemOf(known), agentproto.MaxCAs) + pemOf(stranger)
+	if err := a.writeCA(bundle, nil); err != nil {
+		t.Fatal(err)
+	}
+	if st := a.Status(); !slices.Equal(st.CAs, []string{fpOf(known), fpOf(stranger)}) {
+		t.Errorf("CAs %v", st.CAs)
+	}
+
+	var many string
+	for range agentproto.MaxCAs + 1 {
+		many += pemOf(selfSigned(t))
+	}
+	if err := a.writeCA(many, nil); err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Fatalf("%d distinct CAs: %v", agentproto.MaxCAs+1, err)
+	}
+	if b, _ := os.ReadFile(a.Paths.caFile()); string(b) != bundle {
+		t.Error("ca.pem changed")
+	}
+
+	if err := os.WriteFile(a.Paths.caFile(), []byte(many), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := a.Status()
+	if len(st.CAs) != agentproto.MaxCAs || st.CAs[agentproto.MaxCAs-1] != agentproto.TooManyCAs {
+		t.Errorf("too many: %v", st.CAs)
+	}
+	if c := st.Clean(); len(c.CAs) != agentproto.MaxCAs || c.CAs[agentproto.MaxCAs-1] != agentproto.TooManyCAs {
+		t.Errorf("Clean dropped the marker: %v", c.CAs)
 	}
 }

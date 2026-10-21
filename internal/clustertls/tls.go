@@ -23,6 +23,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -71,9 +73,38 @@ type Body struct {
 	Retired []RetiredCA `json:"retired,omitempty"`
 	// PublishedBy is the server that published the certificate authority,
 	// PublishedAt when.
-	PublishedBy  string    `json:"published_by"`
-	PublishedAt  time.Time `json:"published_at"`
+	PublishedBy string    `json:"published_by"`
+	PublishedAt time.Time `json:"published_at"`
+	// Next is the certificate authority prepared to replace this one
+	// (signalith cluster tls rotate-ca prepare): every server hands it
+	// out with the one in use until the switch. Previous is the one a
+	// switch replaced: still handed out, and its key still kept, until it
+	// is retired. At most one of them is set.
+	Next         *OtherCA `json:"next,omitempty"`
+	Previous     *OtherCA `json:"previous,omitempty"`
 	shared.Extra `json:"-"`
+}
+
+// OtherCA is a certificate authority of the cluster besides the one in
+// use, while it is replaced.
+type OtherCA struct {
+	CACertPEM string `json:"ca_cert_pem"`
+	// CAKey is its key, sealed with the cluster key and bound to
+	// CASHA256, as Body.CAKey is; "" when reset-key emptied it.
+	CAKey    string `json:"ca_key"`
+	CASHA256 string `json:"ca_sha256"`
+	// By is who prepared it or switched away from it, At when.
+	By string    `json:"by,omitempty"`
+	At time.Time `json:"at"`
+}
+
+// Cert returns the certificate authority of o.
+func (o *OtherCA) Cert() (*x509.Certificate, error) {
+	c := parsePEM(o.CACertPEM)
+	if c == nil {
+		return nil, errors.New("the tls document's other certificate authority cannot be read")
+	}
+	return c, nil
 }
 
 // RetiredCA is a certificate authority the cluster no longer uses.
@@ -113,13 +144,61 @@ func validate(b *Body) error {
 	if !SameFingerprint(tlsauto.Fingerprint(c.Raw), b.CASHA256) {
 		return errors.New("the tls document's fingerprint does not match its certificate")
 	}
-	if !secrets.IsSealed(b.CAKey) {
+	// An empty key is the one reset-key could not open again: the
+	// certificate authority stays known, and tls import gives it back.
+	if b.CAKey != "" && !secrets.IsSealed(b.CAKey) {
 		return errors.New("the tls document's key is not sealed")
 	}
 	if len(b.Names) > MaxNames {
 		return fmt.Errorf("the tls document has %d names, more than %d", len(b.Names), MaxNames)
 	}
+	if b.Next != nil && b.Previous != nil {
+		return errors.New("the tls document has both a next and a previous certificate authority")
+	}
+	for _, o := range []*OtherCA{b.Next, b.Previous} {
+		if o == nil {
+			continue
+		}
+		oc, err := o.Cert()
+		if err != nil {
+			return err
+		}
+		if !SameFingerprint(tlsauto.Fingerprint(oc.Raw), o.CASHA256) {
+			return errors.New("the tls document's other certificate authority does not match its fingerprint")
+		}
+		// Every server trusts it as it trusts the one in use: it must be
+		// a certificate authority with the same limits. A next one is
+		// always made with no intermediate below it; an old one may come
+		// from a version that didn't say so.
+		if !oc.IsCA || (o == b.Next && !oc.MaxPathLenZero) {
+			return errors.New("the tls document's other certificate is not a certificate authority, or a next one allows intermediates below it")
+		}
+		if !sameConstraints(oc, c) {
+			return errors.New("the tls document's other certificate authority may vouch for other names than the one in use")
+		}
+		if SameFingerprint(o.CASHA256, b.CASHA256) {
+			return errors.New("the tls document names the certificate authority in use twice")
+		}
+		if o.CAKey != "" && !secrets.IsSealed(o.CAKey) {
+			return errors.New("the tls document's other key is not sealed")
+		}
+	}
 	return nil
+}
+
+// sameConstraints reports whether a and b may vouch for the same names
+// and addresses.
+func sameConstraints(a, b *x509.Certificate) bool {
+	nets := func(ns []*net.IPNet) []string {
+		out := make([]string, len(ns))
+		for i, n := range ns {
+			out[i] = n.String()
+		}
+		return out
+	}
+	return a.PermittedDNSDomainsCritical == b.PermittedDNSDomainsCritical &&
+		slices.Equal(a.PermittedDNSDomains, b.PermittedDNSDomains) && slices.Equal(a.ExcludedDNSDomains, b.ExcludedDNSDomains) &&
+		slices.Equal(nets(a.PermittedIPRanges), nets(b.PermittedIPRanges)) && slices.Equal(nets(a.ExcludedIPRanges), nets(b.ExcludedIPRanges))
 }
 
 // SameFingerprint compares two SHA-256 fingerprints written with or
@@ -136,6 +215,24 @@ type TLS struct {
 	hub  *shared.Hub
 	doc  *shared.Doc[Body]
 	subs []func(old, new *Body)
+	log  *slog.Logger
+}
+
+// SetLog sets where the holder logs what it does by itself (a key it
+// could not reseal); nil is slog.Default.
+func (t *TLS) SetLog(l *slog.Logger) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.log = l
+}
+
+func (t *TLS) logger() *slog.Logger {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.log == nil {
+		return slog.Default()
+	}
+	return t.log
 }
 
 // New returns the holder; Track makes the document.
@@ -274,8 +371,13 @@ func (t *TLS) open(b *Body) (*x509.Certificate, crypto.Signer, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	fp := tlsauto.Fingerprint(ca.Raw)
-	if !SameFingerprint(fp, b.CASHA256) {
+	return t.openSealed(ca, b.CASHA256, b.CAKey)
+}
+
+// openSealed opens sealed, the key of ca whose fingerprint the document
+// says is fp, with the cluster's keys.
+func (t *TLS) openSealed(ca *x509.Certificate, fp, sealed string) (*x509.Certificate, crypto.Signer, error) {
+	if !SameFingerprint(tlsauto.Fingerprint(ca.Raw), fp) {
 		return nil, nil, errors.New("the tls document's fingerprint does not match its certificate")
 	}
 	// Opened each time, from the copy held now, and never kept here: the
@@ -286,9 +388,12 @@ func (t *TLS) open(b *Body) (*x509.Certificate, crypto.Signer, error) {
 	if h == nil {
 		return nil, nil, errors.New("the shared settings are not open")
 	}
+	if sealed == "" {
+		return nil, nil, ErrKeyNotSealed
+	}
 	// The field names the fingerprint the document says, so a key sealed
 	// for another certificate does not open.
-	plain, err := opener(h.Keys()).Open(keyField(b.CASHA256), b.CAKey)
+	plain, err := opener(h.Keys()).Open(keyField(fp), sealed)
 	if err != nil {
 		return nil, nil, fmt.Errorf("the cluster's certificate authority key cannot be opened: %w", err)
 	}

@@ -276,6 +276,20 @@ func (l *Lease) fence(stop <-chan struct{}) {
 	}
 }
 
+// lapsedLocked stops holding the lease when it ran out while a renewal
+// or a confirming read was on its way, and reports whether it did. An
+// answer that comes after the fence time never revives the lease: once
+// Valid has said false, the jobs and the tenants' requests may have been
+// refused, and must not be served again by a holding that already ended.
+// The caller holds l.mu.
+func (l *Lease) lapsedLocked() bool {
+	if l.state == standby || l.validLocked() {
+		return false
+	}
+	l.loseLocked("its last renewal of the job lease is too old (OpenSearch did not answer in time)")
+	return true
+}
+
 // Valid reports whether this server holds the lease and may do a unit of
 // work now. Jobs check it before each one.
 func (l *Lease) Valid() bool {
@@ -365,6 +379,9 @@ func (l *Lease) renew(ctx context.Context, c *store.Client, index string) time.D
 	if l.state != holding && l.state != releasing {
 		return l.Timing.Watch
 	}
+	if l.lapsedLocked() {
+		return l.Timing.Watch
+	}
 	switch {
 	case err == nil:
 		l.ver, l.doc, l.lastGood, l.lastGoodWall, l.lastErr = nv, doc, sent, sentWall, ""
@@ -401,7 +418,7 @@ func (l *Lease) blocked(ctx context.Context, c *store.Client, index string, werr
 	cancel()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.state == standby {
+	if l.state == standby || l.lapsedLocked() {
 		return l.Timing.Watch
 	}
 	var doc LeaseDoc
@@ -453,7 +470,7 @@ func (l *Lease) renewFrozen(ctx context.Context, c *store.Client, index string) 
 	case err == nil:
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		if l.state != frozen {
+		if l.state != frozen || l.lapsedLocked() {
 			return l.Timing.Watch
 		}
 		l.state, l.ver, l.doc, l.lastGood, l.lastGoodWall, l.lastErr = holding, nv, doc, sent, sentWall, ""

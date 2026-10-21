@@ -770,6 +770,11 @@ func productScope(ls map[string]any, category string) query.Expr {
 			return st
 		}
 		if ch, ok := sigmaNamedChannels[category]; ok {
+			if ch == ingest.MitigationsChannel {
+				// Exploit protection logs blocks in kernel and in user
+				// mode, in two logs.
+				return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:Microsoft-Windows-Security-Mitigations/*"}
+			}
 			return &query.Compare{Field: "sourcetype", Op: "=", Value: "WinEventLog:" + ch}
 		}
 		if category == "security_named" {

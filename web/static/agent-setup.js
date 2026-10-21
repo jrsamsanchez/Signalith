@@ -45,9 +45,10 @@
   };
   // S.data is the latest line as the server sent it, S.wait the wait for
   // the agent after a copy, S.os the system picked, S.osquery whether the
-  // line installs osquery and S.sysmon whether the Windows line installs
-  // Sysmon too.
-  const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', osquery: true, sysmon: false };
+  // line installs osquery, S.sysmon whether the Windows line installs
+  // Sysmon too and S.logs whether it turns on the logs that are off by
+  // default.
+  const S = { data: null, seq: 0, error: null, wait: null, os: 'linux', osquery: true, sysmon: false, logs: false };
   try {
     const saved = localStorage.getItem(OS_KEY);
     if (saved === 'windows' || saved === 'darwin') S.os = saved;
@@ -183,13 +184,16 @@
       el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, win
         ? 'The script downloads it from osquery.io and checks its signature. The agent runs it with Signalith as its management server; nothing else to set up.'
         : 'The script installs it from osquery’s signed package repository. It runs as its own service with the settings the agent gets from Signalith; nothing else to set up.')));
-    let sysmon = null;
+    let sysmon = null, logs = null;
     if (win) {
       sysmon = el('div', { class: 'agent-install__opt' },
         el('label', { class: 'check' }, option('agent-install-sysmon', 'sysmon'), el('span', {}, el('b', {}, 'Also install Sysmon'), ' for detailed process, network and registry events')),
         el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, 'The script downloads it from Microsoft and checks Microsoft signed it. Choosing it accepts the ',
           el('a', { href: SYSMON_LICENSE, target: '_blank', rel: 'noopener' }, 'Sysinternals license', icon('external-link', 'icon--xs')),
           '. A computer that has Sysmon already keeps its own configuration.')));
+      logs = el('div', { class: 'agent-install__opt' },
+        el('label', { class: 'check' }, option('agent-install-logs', 'logs'), el('span', {}, el('b', {}, 'Also turn on logs that are off by default'), ' for the PowerShell, DNS client, Task Scheduler, CryptoAPI and device rules')),
+        el('p', { class: 'hint' }, icon('shield-check'), el('span', {}, 'PowerShell script block logging records the scripts that run, with any password typed into them, so give search access only to people who may see such values. Removing the agent turns off what this turned on.')));
     }
     const ca = d.ca_sha256
       ? el('p', { class: 'hint' }, icon('fingerprint'), el('span', {}, 'The computer trusts Signalith’s certificate authority only if its fingerprint is ',
@@ -201,6 +205,7 @@
       noProgram,
       osquery,
       sysmon,
+      logs,
       el('div', { class: 'agent-file sensor-line' },
         el('div', { class: 'agent-file__bar' }, icon('terminal'),
           el('span', { class: 'agent-file__name' }, win ? 'Run on each computer, in PowerShell opened with Run as administrator' : mac ? 'Run on each Mac, in Terminal, as an administrator' : 'Run on each computer, as a user who can use sudo'),
@@ -222,7 +227,7 @@
     if (!d) return '';
     if (S.os === 'darwin') return d.macos;
     if (S.os !== 'windows') return d.linux + (S.osquery ? ' --osquery' : '');
-    return d.windows + (S.osquery ? ' -Osquery' : '') + (S.sysmon ? ' -Sysmon' : '');
+    return d.windows + (S.osquery ? ' -Osquery' : '') + (S.sysmon ? ' -Sysmon' : '') + (S.logs ? ' -EnableLogs' : '');
   }
 
   function pickOS(os) {

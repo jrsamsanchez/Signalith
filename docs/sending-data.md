@@ -278,3 +278,41 @@ different port than Signalith listens on, because Docker or a firewall forwards 
 listens on 5514 and sets it to 514). The **Health** page (and `/api/health`, under `syslog`) shows the
 listeners, how many messages were received, dropped, not written and rejected, and the
 most recent senders.
+
+### When OpenSearch is down
+
+Syslog devices do not send a message again, so Signalith keeps what it cannot write.
+When OpenSearch cannot be reached, does not answer in time, is too busy (429), blocks
+writes (such as `cluster_block_exception` when its disk is full) or fails with a 5xx
+error, the batch goes to a spool on this server's disk: the private folder
+`syslog-spool` in the state folder. Signalith writes the spooled batches again, oldest
+first, as soon as OpenSearch takes writes, trying again after a second and then waiting
+longer each time, up to a minute. While OpenSearch refuses them, new batches go straight
+to the spool, so the receiver never waits for OpenSearch and keeps reading from devices.
+The spool survives a restart: a server that starts with batches in it writes them once
+OpenSearch is ready. Each event gets its own document ID before its first write and keeps
+it in the spool, so a batch written again is stored once, even one OpenSearch stored but
+answered with a timeout or a reset connection: the copy is refused as a duplicate.
+
+Only batch files Signalith wrote are read back: on start, anything else in the folder
+(links, pipes, folders, other names, or files larger than a batch may be) is left alone
+and counted as `spool_skipped`.
+
+An event OpenSearch refuses for good, such as one with a value its mapping cannot take,
+is not spooled: it is counted as not written, as before.
+
+The spool is bounded by **Spool size (MB)** on the Settings page, under Syslog
+(`syslog.spool_mb`, 1024 MB by default, read at start):
+
+```yaml
+syslog:
+  spool_mb: 4096
+```
+
+When a batch does not fit, the oldest batches in the spool are dropped to make room, and
+counted. The **Health** page shows how many events were spooled, written from the spool
+and dropped because it was full, and how much it holds, and warns when it has dropped
+events or is more than half full; `/api/health` has them under `syslog` (`spooled`,
+`replayed`, `spool_dropped`, `spool_events`, `spool_bytes` and `spool_max_bytes`). With
+several servers, each spools the syslog it receives on its own disk, and writes it
+itself.

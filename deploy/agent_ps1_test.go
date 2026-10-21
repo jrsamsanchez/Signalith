@@ -159,7 +159,9 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	for _, want := range []string{"its certificate authority is the one the line names", "the token is an agent token Signalith knows",
-		"would download https://packages.fluentbit.io/windows/fluent-bit-", "the agent program (", "New-Service -Name SignalithAgent", "Done."} {
+		"would download https://packages.fluentbit.io/windows/fluent-bit-", "the agent program (", "New-Service -Name SignalithAgent", "Done.",
+		// Process creation auditing with the command line (BUY-03).
+		"auditpol /set /subcategory:{0CCE922B-69AE-11D9-BED3-505054503030} /success:enable", "ProcessCreationIncludeCmdLine_Enabled 1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -215,6 +217,13 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Fatalf("-Sysmon: %v\n%s", err, out)
 	}
 
+	// -EnableLogs turns on script block logging and the logs that are off
+	// by default (BUY-04), and -Uninstall turns them off again.
+	out, err = w.run(t, "", append(again, "-EnableLogs")...)
+	if err != nil || !strings.Contains(out, "EnableScriptBlockLogging 1") || !strings.Contains(out, `wevtutil sl "Microsoft-Windows-DNS-Client/Operational" /e:true`) {
+		t.Fatalf("-EnableLogs: %v\n%s", err, out)
+	}
+
 	// -Osquery too; a run again after it keeps osquery.
 	out, err = w.run(t, "", append(again, "-Osquery")...)
 	if err != nil || !strings.Contains(out, "would download https://pkg.osquery.io/windows/osquery-") {
@@ -226,7 +235,8 @@ func TestAgentPS1DryRun(t *testing.T) {
 	}
 
 	out, err = w.run(t, "", "-Uninstall", "-DryRun", root)
-	if err != nil || !strings.Contains(out, "sc.exe delete SignalithAgent") || !strings.Contains(out, "Sysmon64.exe -u force") {
+	if err != nil || !strings.Contains(out, "sc.exe delete SignalithAgent") || !strings.Contains(out, "Sysmon64.exe -u force") ||
+		!strings.Contains(out, "Remove-ItemProperty") || !strings.Contains(out, `wevtutil sl "Microsoft-Windows-CAPI2/Operational" /e:false`) {
 		t.Fatalf("uninstall: %v\n%s", err, out)
 	}
 	for _, p := range []string{conf, prog} {

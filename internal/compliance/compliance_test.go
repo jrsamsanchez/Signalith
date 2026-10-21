@@ -396,7 +396,7 @@ func TestExports(t *testing.T) {
 	rep := Evaluate(s, map[string]Attestation{Key("pci-dss", "10.6.1"): {Status: External, Note: "=HYPERLINK(\"x\")", By: "ann", At: now}})
 	f, _ := rep.Find("pci-dss")
 	var b bytes.Buffer
-	if err := WriteCSV(&b, rep, f, "siem-1"); err != nil {
+	if err := WriteCSV(&b, rep, f, Export{Server: "siem-1"}); err != nil {
 		t.Fatal(err)
 	}
 	recs, err := csv.NewReader(&b).ReadAll()
@@ -414,7 +414,7 @@ func TestExports(t *testing.T) {
 		}
 	}
 	b.Reset()
-	if err := WriteHTML(&b, rep, f, "siem-1", "0.2.0"); err != nil {
+	if err := WriteHTML(&b, rep, f, Export{Server: "siem-1", Version: "0.2.0"}); err != nil {
 		t.Fatal(err)
 	}
 	h := b.String()
@@ -436,7 +436,7 @@ func TestExports(t *testing.T) {
 	rep = Evaluate(s, map[string]Attestation{Key("nist-800-53", "RA-5"): {Status: NotApplicable, Note: `<script>alert("x")</script>`, By: "ann", At: now}})
 	nist, _ := rep.Find("nist-800-53")
 	b.Reset()
-	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil {
+	if err := WriteHTML(&b, rep, nist, Export{Server: "siem-1", Version: "0.2.0"}); err != nil {
 		t.Fatal(err)
 	}
 	if h := b.String(); strings.Contains(h, "<script") || strings.Contains(h, "<img") || !strings.Contains(h, "&lt;script&gt;") || !strings.Contains(h, "&lt;img src=x") {
@@ -445,11 +445,11 @@ func TestExports(t *testing.T) {
 
 	// The hosts a check fails on are named in both exports.
 	b.Reset()
-	if err := WriteCSV(&b, rep, nist, "siem-1"); err != nil || !strings.Contains(b.String(), "1 host: <img") {
+	if err := WriteCSV(&b, rep, nist, Export{Server: "siem-1"}); err != nil || !strings.Contains(b.String(), "1 host: <img") {
 		t.Errorf("CSV does not name the failing host: %v", err)
 	}
 	b.Reset()
-	if err := WriteHTML(&b, rep, nist, "siem-1", "0.2.0"); err != nil || !strings.Contains(b.String(), "1 host: &lt;img") {
+	if err := WriteHTML(&b, rep, nist, Export{Server: "siem-1", Version: "0.2.0"}); err != nil || !strings.Contains(b.String(), "1 host: &lt;img") {
 		t.Errorf("report does not name the failing host: %v", err)
 	}
 }
