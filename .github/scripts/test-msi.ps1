@@ -12,8 +12,14 @@ $ErrorActionPreference = "Stop"
 $exe = "$env:ProgramFiles\Signalith\signalith.exe"
 $config = "$env:ProgramData\Signalith\signalith.yaml"
 
-function Invoke-Msi([string]$Action, [string]$Msi, [string]$Log) {
-  $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @($Action, "`"$((Resolve-Path $Msi).Path)`"", "/qn", "/l*v", "`"$Log`"")
+function Invoke-Msi([string]$Action, [string]$Msi, [string]$Log, [string[]]$Properties = @(), [switch]$Fails) {
+  $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList (@($Action, "`"$((Resolve-Path $Msi).Path)`"", "/qn", "/l*v", "`"$Log`"") + $Properties)
+  if ($Fails) {
+    if ($p.ExitCode -eq 0) { throw "msiexec $Action $Msi worked, but it should have failed" }
+    Write-Host "msiexec failed as it should (exit code $($p.ExitCode))"
+    if (Test-Path "$env:windir\Temp\signalith-rollback.log") { Get-Content "$env:windir\Temp\signalith-rollback.log" }
+    return
+  }
   if ($p.ExitCode -ne 0) {
     Get-Content $Log -Tail 80
     if (Test-Path "$env:windir\Temp\signalith-install.log") { Get-Content "$env:windir\Temp\signalith-install.log" }
@@ -68,6 +74,20 @@ foreach ($sid in $sids) {
 $account = (Get-CimInstance Win32_Service -Filter "Name='Signalith'").StartName
 if ($account -ne "NT SERVICE\Signalith") { throw "the service runs as $account" }
 
+Write-Host "== A failed upgrade puts $Previous back"
+# A config the new version cannot start with makes its setup fail.
+$good = Get-Content -Raw -LiteralPath $config
+Add-Content -LiteralPath $config "`n:: not a setting ::"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-upgrade-fail.log" -Fails
+Set-Content -LiteralPath $config $good -NoNewline
+$installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
+if ($installed.Count -ne 1 -or $installed[0].Version -eq $Version) { throw "after the failed upgrade, Signalith $($installed.Version -join ', ') is installed, want the previous version only" }
+if (-not (Test-Path $exe) -or (& $exe version) -like "*$Version*") { throw "after the failed upgrade, $exe is missing or is the new version" }
+# The rollback starts the previous version's service a minute later.
+for ($i = 0; $i -lt 60 -and (Get-Service Signalith -ErrorAction SilentlyContinue).Status -ne "Running"; $i++) { Start-Sleep 3 }
+Wait-Up
+Test-SignIn $password
+
 Write-Host "== Upgrade to $New"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-upgrade.log"
 Wait-Up
@@ -79,6 +99,26 @@ if ((& $exe initial-password).Trim() -ne $password) { throw "the first password 
 Test-SignIn $password
 $installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
 if ($installed.Count -ne 1) { throw "$($installed.Count) Signalith products are installed after the upgrade" }
+# The server hands Windows computers the agent program the .msi carries.
+if (-not (Test-Path "$env:ProgramFiles\Signalith\agents\signalith-agent-windows-amd64.exe")) { throw "the .msi did not install the Windows agent program" }
+
+Write-Host "== Windows PowerShell 5.1 downloads the agent install script as the install line does"
+$want = Join-Path $env:RUNNER_TEMP "agent-install-7.ps1"
+$got51 = Join-Path $env:RUNNER_TEMP "agent-install-51.ps1"
+Invoke-WebRequest "https://127.0.0.1:7779/api/agent/install.ps1" -OutFile $want -SkipCertificateCheck -MaximumRedirection 0
+# The same download as the pasted line's Windows PowerShell 5.1 part (a
+# Go test keeps this C# the same as the line's).
+$get51 = Join-Path $env:RUNNER_TEMP "get51.ps1"
+Set-Content -LiteralPath $get51 -Value @'
+param([string]$Url, [string]$Out)
+$ErrorActionPreference = "Stop"
+if (-not ('SignalithGet' -as [type])) { Add-Type -TypeDefinition 'public static class SignalithGet { static bool Any(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain h, System.Net.Security.SslPolicyErrors e) { return true; } public static void Save(string url, string file) { var r = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url); r.AllowAutoRedirect = false; r.ServerCertificateValidationCallback = Any; using (var p = (System.Net.HttpWebResponse)r.GetResponse()) { if ((int)p.StatusCode != 200) { throw new System.Net.WebException("the server answered " + (int)p.StatusCode); } using (var s = p.GetResponseStream()) using (var o = System.IO.File.Create(file)) { s.CopyTo(o); } } } }' }
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+[SignalithGet]::Save($Url, $Out)
+'@
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $get51 -Url "https://127.0.0.1:7779/api/agent/install.ps1" -Out $got51
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $got51)) { throw "Windows PowerShell 5.1 could not download the agent install script" }
+if ((Get-FileHash $got51).Hash -ne (Get-FileHash $want).Hash) { throw "Windows PowerShell 5.1 got another agent install script" }
 
 Write-Host "== Uninstall"
 Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall.log"
@@ -86,6 +126,17 @@ if (Get-Service Signalith -ErrorAction SilentlyContinue) { throw "the service is
 if (Test-Path $exe) { throw "$exe is still there" }
 if (-not (Test-Path $config)) { throw "the config was not kept" }
 if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are still there" }
+if (Test-Path "$env:ProgramFiles\Signalith\agents") { throw "the agent programs are still there" }
+
+Write-Host "== A failed install over the kept config is undone like a new one, not like an upgrade"
+$good = Get-Content -Raw -LiteralPath $config
+Add-Content -LiteralPath $config "`n:: not a setting ::"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall-fail.log" -Fails
+Set-Content -LiteralPath $config $good -NoNewline
+if (Get-Service Signalith -ErrorAction SilentlyContinue) { throw "the service is left after the failed install" }
+if (Test-Path $exe) { throw "$exe is left after the failed install" }
+if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are left after the failed install" }
+if (-not (Test-Path $config)) { throw "the config was not kept" }
 
 Write-Host "== Install again: the kept config and password are used"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall.log"
@@ -94,6 +145,14 @@ Test-SignIn $password
 Write-Host "== A new install sets up OpenSearch on this computer"
 Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall-2.log"
 Remove-Item -Recurse -Force "$env:ProgramData\Signalith"
+# A first install that fails undoes what it set up.
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh-fail.log" -Properties @("OPENSEARCHZIP=C:\no-such-opensearch.zip") -Fails
+if (Get-Service Signalith, SignalithOpenSearch -ErrorAction SilentlyContinue) { throw "a service is left after the failed install" }
+if (Test-Path $exe) { throw "$exe is left after the failed install" }
+if (Test-Path "$env:ProgramFiles\Signalith\OpenSearch") { throw "OpenSearch's program is left after the failed install" }
+if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are left after the failed install" }
+Remove-Item -Recurse -Force "$env:ProgramData\Signalith" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:ProgramData\SignalithOpenSearch" -ErrorAction SilentlyContinue
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh.log"
 # The pinned SHA-512 is the one OpenSearch publishes for the release.
 $status = (& $exe opensearch status) -join "`n"
@@ -105,6 +164,18 @@ if (($published -split "\s+")[0].ToLower() -ne $pin) { throw "the pinned SHA-512
 $os = Get-CimInstance Win32_Service -Filter "Name='SignalithOpenSearch'"
 if (-not $os -or $os.State -ne "Running") { throw "the SignalithOpenSearch service is not running" }
 if ($os.StartName -ne "NT SERVICE\SignalithOpenSearch") { throw "OpenSearch runs as $($os.StartName)" }
+# Signalith's own account may not use OpenSearch's folder, which holds the
+# CA key and the admin certificate; OpenSearch's account only its own
+# folders, never the CA.
+$osSid = (New-Object Security.Principal.NTAccount "NT SERVICE\SignalithOpenSearch").Translate([Security.Principal.SecurityIdentifier]).Value
+foreach ($dir in @("$env:ProgramData\SignalithOpenSearch", "$env:ProgramData\SignalithOpenSearch\ca")) {
+  $allowed = @("S-1-5-18", "S-1-5-32-544")
+  if ($dir -notlike "*\ca") { $allowed += $osSid }
+  $sids = (Get-Acl $dir).Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } | Sort-Object -Unique
+  foreach ($sid in $sids) {
+    if ($sid -notin $allowed) { throw "$sid may use $dir" }
+  }
+}
 $osPort = (Get-Content -Raw "$env:ProgramData\SignalithOpenSearch\installed.json" | ConvertFrom-Json).port
 $listen = @(Get-NetTCPConnection -State Listen -LocalPort $osPort | ForEach-Object { $_.LocalAddress } | Sort-Object -Unique)
 if (($listen -join ",") -ne "127.0.0.1") { throw "OpenSearch listens on $($listen -join ', '), want 127.0.0.1 only" }

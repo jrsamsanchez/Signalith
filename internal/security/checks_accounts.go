@@ -20,6 +20,17 @@ func checkBuiltinPassword(f *Facts) *Check {
 			winExe+" passwd"+configArg(f, "windows")+"; Restart-Service Signalith",
 			dockerCompose+" exec signalith signalith passwd\n"+dockerCompose+" restart signalith"),
 		Docs: doc(docUsersBuiltin)}
+	if a.Shared {
+		// The cluster's password: the page changes it, and so does
+		// signalith passwd, at once on every server.
+		fix = &Fix{Steps: []string{"Sign in as the built-in admin and choose Change password in the account menu. " +
+			"The new password is in use at once on every server, with no restart. The command below does the same."},
+			Page: &PageLink{ID: "change-password", Label: "Change password"},
+			Commands: cmds("sudo signalith passwd"+configArg(f, "linux"),
+				winExe+" passwd"+configArg(f, "windows"),
+				dockerCompose+" exec signalith signalith passwd"),
+			Docs: doc(docUsersBuiltin)}
+	}
 	removeEnv := "Then remove SIGNALITH_ADMIN_PASSWORD from where Signalith is started."
 	switch {
 	case a.Public:

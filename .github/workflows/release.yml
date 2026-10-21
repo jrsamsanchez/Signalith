@@ -43,6 +43,9 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/signalith
       VERSION: ${{ needs.packages.outputs.version }}
@@ -224,18 +227,38 @@ jobs:
         with:
           name: windows-signed
           path: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent-programs
+          path: ${{ runner.temp }}/agent-programs
       - name: Install script and Windows zip
         run: |
           # The script that installs a server and joins it to a cluster (each
           # server hands out the same one), and the program with install.ps1
-          # for Windows computers set up without the .msi. Made before the
+          # and the agent programs for Windows computers set up without the
+          # .msi. Made before the
           # checksums, so they cover both.
           cp deploy/linux/install.sh release/install.sh
           name="signalith-$VERSION-windows-amd64"
           mkdir "$RUNNER_TEMP/$name"
           cp release/signalith-windows-amd64.exe "$RUNNER_TEMP/$name/signalith.exe"
           cp deploy/windows/install.ps1 LICENSE NOTICE "$RUNNER_TEMP/$name/"
+          # The agent programs next to signalith.exe, where it looks for them.
+          cp -r "$RUNNER_TEMP/agent-programs" "$RUNNER_TEMP/$name/agents"
           (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" "$name")
+      - name: Docker quick start locked to the image
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          # deploy/docker with Signalith's image as IMAGE:VERSION@DIGEST,
+          # the image this release pushed and signed. Made before the
+          # checksums, so they cover it. A dry run that got no digest from
+          # the build uses a placeholder.
+          if [ -z "$DIGEST" ] && [ "$PUBLISH" != true ]; then
+            DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+          fi
+          sh .github/scripts/docker-release.sh "$VERSION" "$IMAGE" "$DIGEST" release
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         id: syft
         with:

@@ -87,6 +87,16 @@ left and the category is still over its cap, the page says so. Days in
 [cold storage](cold-storage.md) take no space on OpenSearch's disks, so they neither
 count toward a cap nor are deleted by it or by the disk guard.
 
+**Keep and the shard limit.** Each day of each data model is its own index, and
+OpenSearch allows at most `cluster.max_shards_per_node` shards (1,000 unless set)
+per data node. On one node, a data model kept 90 days holds 91 shards, so 11 or more
+data models kept 90 days fill the limit, and OpenSearch then refuses each new day's
+indices. The OpenSearch card on the Servers page warns ahead of that, from the data
+models written today and their keep days. Keeping fewer days, especially for
+categories you search least, makes room; so do more data nodes or a higher
+`cluster.max_shards_per_node`. See
+[How many shards a day uses](settings.md) under Shards. Compacted days still count.
+
 A day that OpenSearch cannot read, because a primary shard is missing (a red index,
 for example while its node is down), is left alone: it is not deleted, archived or
 compacted until OpenSearch recovers, and the page lists it.
@@ -112,7 +122,10 @@ OpenSearch protects itself when a data disk fills up. At 85% (the low watermark)
 stops placing new replica shards on the node. At 90% (the high watermark) it moves
 shards away from the node. At 95% (the flood stage) it makes every index with a
 shard on that node read-only, and ingest stops until space is freed. The page counts
-the indices OpenSearch has blocked this way.
+the indices OpenSearch has blocked this way. When every data disk is past the high
+watermark, OpenSearch also refuses to create indices (`cluster.blocks.create_index`),
+so a new day's events, cases and detection runs fail although the cluster stays green.
+The Health page and the Health card show either block as **OpenSearch refuses writes**.
 
 The disk guard acts first. When the fullest OpenSearch data disk is above
 **Max disk use** (default 85%), it deletes the oldest event days, in any category,

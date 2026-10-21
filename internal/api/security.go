@@ -238,6 +238,15 @@ func (s *Server) gatherSecurity(ctx context.Context) *security.Report {
 	c := s.conf()
 	now := time.Now()
 	h := security.ServerHost(c, s.inContainer())
+	if s.SharedUsers != nil {
+		h.Builtin = func() (string, time.Time, bool) {
+			v, _, ok := s.SharedUsers.Docs.BuiltinUser()
+			if !ok {
+				return "", time.Time{}, false
+			}
+			return v.PasswordHash, v.Updated, true
+		}
+	}
 	f := security.NewFacts(h, now, security.ServerInfoFor(h, s.serverName(), s.Version))
 	if !s.Started.IsZero() {
 		f.Uptime = now.Sub(s.Started)
@@ -548,7 +557,7 @@ func (s *Server) handleSecurityCA(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		s.Log.Error("could not change the certificate authority", "action", req.Action, "err", err)
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("%s didn't work: %w", caDoing[req.Action], err))
+		writeError(w, http.StatusInternalServerError, errHidden(caDoing[req.Action]+" didn't work", err))
 		return
 	}
 	s.audit(r, msg, args...)

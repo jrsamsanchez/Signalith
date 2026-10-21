@@ -114,18 +114,26 @@ var capabilities = []Capability{
 			if f.Stale > 0 {
 				return Partial, fmt.Sprintf("%s new %s waited more than 7 days for review; %s open in all.", count(int64(f.Stale)), plural(f.Stale, "finding has", "findings have"), count(int64(f.Open)))
 			}
-			if f.Open == 0 {
-				return Met, "No open findings."
+			// An empty queue shows no review: there must be findings
+			// someone has looked at.
+			if f.Total == 0 {
+				return Missing, "No finding has been raised yet, so there is no review to show."
 			}
-			return Met, fmt.Sprintf("No new finding has waited more than 7 days; %s open, %s not looked at yet.", count(int64(f.Open)), count(int64(f.New)))
+			if f.Reviewed == 0 {
+				return Partial, fmt.Sprintf("%s %s raised, but none has been looked at yet.", count(int64(f.Total)), plural(f.Total, "finding was", "findings were"))
+			}
+			return Met, fmt.Sprintf("%s %s looked at, and no new finding has waited more than 7 days; %s open, %s not looked at yet.", count(int64(f.Reviewed)), plural(f.Reviewed, "finding was", "findings were"), count(int64(f.Open)), count(int64(f.New)))
 		}},
 	{ID: "cases", Name: "Incident investigations", Page: "cases",
 		Description: "Cases record each investigation: its findings, notes, evidence and who did what.",
-		Fix:         "Investigations are off on this server.",
+		Fix:         "Open an investigation from a finding on the Findings page; on a server where they are off, turn them on.",
 		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
 			c := s.Cases
 			if c == nil {
 				return Missing, "Investigations are off."
+			}
+			if c.Total == 0 {
+				return Partial, "Investigations are on, but none has been recorded yet."
 			}
 			return Met, fmt.Sprintf("Investigations are on: %s %s, %s open.", count(int64(c.Total)), plural(c.Total, "case", "cases"), count(int64(c.Open)))
 		}},
@@ -180,7 +188,7 @@ var capabilities = []Capability{
 	// Checking hosts.
 	{ID: "config-checks", Name: "Configuration checks", Page: "endpoints",
 		Description: "osquery checks each host's settings against hardening rules based on the SCAP Security Guide.",
-		Fix:         "Enroll hosts with osquery (Add data > osquery) and fix the failing checks on the Endpoints page.",
+		Fix:         "Enroll hosts with osquery (Add data > osquery) and fix the failing checks on the Endpoints page. Where no built-in check covers your hosts' platform, show the setting another way.",
 		eval:        evalChecks},
 	{ID: "vuln-scan", Name: "Vulnerability scanning", Page: "vulns",
 		Description: "Scheduled Nmap scans find hosts, open ports and known vulnerabilities (CVEs).",
@@ -259,17 +267,20 @@ var capabilities = []Capability{
 			if !s.Retention.Guard {
 				return Missing, "The disk guard is off, so a full disk would stop events arriving."
 			}
+			if !s.HasData("") {
+				return Partial, "The disk guard is on, but no events arrived in the last 7 days, so there is no log storage to show yet."
+			}
 			return Met, "The disk guard is on: it frees space before the disk fills, and the Health page warns first."
 		}},
 
 	// Built into Signalith.
-	builtin("timestamps", "Consistent time stamps", "health",
+	builtinWithData("timestamps", "Consistent time stamps", "health",
 		"Every event's time is stored in UTC alongside the original text, so events from different time zones line up. Hosts still need their clocks synchronized (NTP), which their configuration checks cover."),
-	builtin("record-content", "Detailed log records", "search",
+	builtinWithData("record-content", "Detailed log records", "search",
 		"Events are mapped to data models with the same fields for every source: time, host, user, source, action and outcome, and the original text is kept."),
-	builtin("search", "Log search and reports", "search",
+	builtinWithData("search", "Log search and reports", "search",
 		"Search, dashboards and exports filter and summarize events on demand, without changing them."),
-	builtin("source-health", "Log source monitoring", "health",
+	builtinWithData("source-health", "Log source monitoring", "health",
 		"The Health page and the posture dashboard list sources that stopped sending, and the disk and OpenSearch state; the built-in detection data-source-stopped raises a finding when a host that sent all day goes quiet."),
 	{ID: "siem-access", Name: "Access to the logs is limited", Page: "users",
 		Description: "Everyone signs in with their own account and a role (Viewer, Analyst or Admin); events cannot be changed from Signalith.",
@@ -287,13 +298,16 @@ var capabilities = []Capability{
 			return Partial, "Only the built-in admin account is used, so actions cannot be traced to a person."
 		}},
 	{ID: "siem-tls", Name: "Logs are encrypted in transit", Page: "security",
-		Description: "The web UI, the API and the agents use HTTPS.",
-		Fix:         "Serve Signalith over HTTPS (it does by default); see Settings > Security.",
+		Description: "The web UI, the API, the agents and syslog use encrypted connections.",
+		Fix:         "Serve Signalith over HTTPS (it does by default), move syslog senders to syslog over TLS and turn plain syslog off on Add data > Syslog.",
 		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
-			if s.HTTPS {
-				return Met, "The web UI, the API and agent ingest use HTTPS."
+			if !s.HTTPS {
+				return Missing, "Signalith is served over plain HTTP."
 			}
-			return Missing, "Signalith is served over plain HTTP."
+			if len(s.PlainSyslog) > 0 {
+				return Partial, "The web UI, the API and agent ingest use HTTPS, but plain syslog is on (" + strings.Join(s.PlainSyslog, ", ") + "), so devices sending there do so unencrypted."
+			}
+			return Met, "The web UI, the API and agent ingest use HTTPS, and plain syslog is off."
 		}},
 	{ID: "siem-mfa", Name: "Two-step sign-in", Page: "settings",
 		Description: "People who sign in to Signalith with a password must also enter a code from an authenticator app or use a passkey.",
@@ -323,6 +337,20 @@ var capabilityByID = func() map[string]Capability {
 	return m
 }()
 
+// builtinWithData is something Signalith always does to the events it
+// receives, so it counts only once events arrive: on a server that has
+// none there is nothing to show.
+func builtinWithData(id, name, page, desc string) Capability {
+	return Capability{ID: id, Name: name, Description: desc, Page: page,
+		Fix: "Send events to Signalith (Add data); this is then done for every one of them.",
+		eval: func(s *Snapshot, _ *controlCtx) (Status, string) {
+			if !s.HasData("") {
+				return Missing, "Built in, but no events arrived in the last 7 days, so there is nothing to show yet."
+			}
+			return Met, "Built in, for the events that arrive: " + lowerFirst(desc)
+		}}
+}
+
 func builtin(id, name, page, desc string) Capability {
 	return Capability{ID: id, Name: name, Description: desc, Page: page,
 		eval: func(*Snapshot, *controlCtx) (Status, string) { return Met, "Built in: " + lowerFirst(desc) }}
@@ -347,8 +375,39 @@ func dataCap(id, name, desc, fix string, models ...string) Capability {
 			if !last.IsZero() {
 				d += fmt.Sprintf(", the latest %s", ago(s.Now.Sub(last)))
 			}
+			if slices.ContainsFunc(models, func(m string) bool { return slices.Contains(HostModels, m) }) {
+				return hostCoverage(s, models, d)
+			}
 			return Met, d + "."
 		}}
+}
+
+// hostCoverage rates data every computer should send by how many of the
+// computers Signalith knows sent it: one host sending is not all of them.
+func hostCoverage(s *Snapshot, models []string, d string) (Status, string) {
+	if s.HostsErr != "" {
+		return Partial, d + ". Which computers sent them could not be read: " + s.HostsErr + "."
+	}
+	if len(s.Computers) == 0 {
+		return Met, d + ". No computer runs the agent or osquery, so Signalith cannot tell whether every computer sends them."
+	}
+	var missing []string
+	for _, c := range s.Computers {
+		if !slices.ContainsFunc(models, func(m string) bool { return s.DataHosts[m][c] }) {
+			missing = append(missing, c)
+		}
+	}
+	n := len(s.Computers)
+	if len(missing) == 0 {
+		return Met, fmt.Sprintf("%s, from all %s %s that %s the agent or osquery.", d, count(int64(n)), plural(n, "computer", "computers"), plural(n, "runs", "run"))
+	}
+	sort.Strings(missing)
+	names := strings.Join(missing[:min(len(missing), MaxHosts)], ", ")
+	if more := len(missing) - MaxHosts; more > 0 {
+		names += fmt.Sprintf(" and %s more", count(int64(more)))
+	}
+	return Partial, fmt.Sprintf("%s, from %s of the %s %s that %s the agent or osquery; none from %s.", d,
+		count(int64(n-len(missing))), count(int64(n)), plural(n, "computer", "computers"), plural(n, "runs", "run"), names)
 }
 
 func detectCap(id, name, desc string, match func(Detection) bool) Capability {
@@ -428,10 +487,17 @@ func evalChecks(s *Snapshot, c *controlCtx) (Status, string) {
 		return Missing, "Endpoints are off, so no configuration checks run."
 	}
 	ev := &CheckEvidence{Failing: []CheckRef{}}
+	// covers are the platforms the matching checks are for; only those
+	// with a host that runs them count.
+	covers := map[string]bool{}
 	for _, ch := range s.Checks {
 		if c != nil && !slices.ContainsFunc(c.control.NIST, func(n string) bool {
 			return slices.ContainsFunc(ch.Refs, func(r string) bool { return refMatches(n, r) })
 		}) {
+			continue
+		}
+		covers[ch.Platform] = true
+		if s.Platforms != nil && s.Platforms[ch.Platform] == 0 {
 			continue
 		}
 		ev.Checks++
@@ -456,19 +522,71 @@ func evalChecks(s *Snapshot, c *controlCtx) (Status, string) {
 	if c != nil {
 		c.checks = ev
 	}
+	// The hosts no matching check is for are not checked at all.
+	var uncovered []string
+	for _, p := range sortedKeys(s.Platforms) {
+		if !covers[p] && s.Platforms[p] > 0 {
+			uncovered = append(uncovered, fmt.Sprintf("%d %s %s", s.Platforms[p], PlatformName(p), plural(s.Platforms[p], "host", "hosts")))
+		}
+	}
+	more := ""
+	if ev.Error > 0 {
+		more += fmt.Sprintf(" %s %s could not be read on the host.", count(int64(ev.Error)), plural(ev.Error, "result", "results"))
+	}
+	if !s.HostsSeen[0].IsZero() {
+		more += fmt.Sprintf(" Hosts last reported between %s and %s.", ago(s.Now.Sub(s.HostsSeen[0])), ago(s.Now.Sub(s.HostsSeen[1])))
+	}
+	seen := more
+	if len(uncovered) > 0 {
+		more = " No check covers your " + strings.Join(uncovered, " or ") + "." + more
+	}
 	switch {
 	case s.Hosts == 0:
 		return Missing, "No host runs osquery yet, so no configuration checks run."
-	case ev.Checks == 0:
+	case len(covers) == 0:
 		return Missing, "No configuration check covers this yet."
+	case ev.Checks == 0:
+		var on []string
+		for _, p := range sortedKeys(covers) {
+			on = append(on, PlatformName(p))
+		}
+		return Missing, fmt.Sprintf("The checks for this run only on %s, and none of your hosts does.%s", strings.Join(on, " and "), seen)
+	case ev.Pass+ev.Fail == 0 && ev.Error > 0 && ev.Pending == 0:
+		return Missing, fmt.Sprintf("%d %s apply, but no host could run %s.%s", ev.Checks, plural(ev.Checks, "check", "checks"), plural(ev.Checks, "it", "them"), more)
 	case ev.Pass+ev.Fail == 0:
-		return Missing, fmt.Sprintf("%d %s apply, but no host has reported results yet.", ev.Checks, plural(ev.Checks, "check", "checks"))
+		return Missing, fmt.Sprintf("%d %s apply, but no host has reported results yet.%s", ev.Checks, plural(ev.Checks, "check", "checks"), more)
 	case ev.Fail > 0:
-		return Partial, fmt.Sprintf("%d %s: %s %s and %s %s across %d %s.", ev.Checks, plural(ev.Checks, "check", "checks"),
-			count(int64(ev.Pass)), plural(ev.Pass, "pass", "passes"), count(int64(ev.Fail)), plural(ev.Fail, "failure", "failures"), s.Hosts, plural(s.Hosts, "host", "hosts"))
+		return Partial, fmt.Sprintf("%d %s: %s %s and %s %s across %d %s.%s", ev.Checks, plural(ev.Checks, "check", "checks"),
+			count(int64(ev.Pass)), plural(ev.Pass, "pass", "passes"), count(int64(ev.Fail)), plural(ev.Fail, "failure", "failures"), s.Hosts, plural(s.Hosts, "host", "hosts"), more)
 	}
-	return Met, fmt.Sprintf("%d %s pass on every host that reported (%s %s across %d %s).", ev.Checks, plural(ev.Checks, "check", "checks"),
-		count(int64(ev.Pass)), plural(ev.Pass, "result", "results"), s.Hosts, plural(s.Hosts, "host", "hosts"))
+	st := Met
+	if len(uncovered) > 0 {
+		st = Partial
+	}
+	return st, fmt.Sprintf("%d %s pass on every host that reported (%s %s across %d %s).%s", ev.Checks, plural(ev.Checks, "check", "checks"),
+		count(int64(ev.Pass)), plural(ev.Pass, "result", "results"), s.Hosts, plural(s.Hosts, "host", "hosts"), more)
+}
+
+// PlatformName is how the report names an osquery platform.
+func PlatformName(p string) string {
+	switch p {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	}
+	return p
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func evalRetention(s *Snapshot, days int, archiveCounts bool) (Status, string) {
@@ -479,14 +597,29 @@ func evalRetention(s *Snapshot, days int, archiveCounts bool) (Status, string) {
 	var st Status
 	var d string
 	switch {
+	case r.KeepDays == 0 && r.Guard:
+		st, d = Partial, "Event data is kept until it is deleted by hand, but the disk guard deletes the oldest days when the disk fills, so how long it is kept depends on disk space."
 	case r.KeepDays == 0:
 		st, d = Met, "Event data is kept until it is deleted by hand."
 	case r.KeepDays >= days:
 		st, d = Met, fmt.Sprintf("Event data is kept %d days.", r.KeepDays)
 	case archiveCounts && r.Archive:
-		st, d = Met, fmt.Sprintf("Event data is searchable %d days, then archived before it is deleted. Keep the archive files for the rest of the year.", r.KeepDays)
+		st, d = Partial, fmt.Sprintf("Event data is searchable %d days, then archived before it is deleted. Signalith cannot see whether the archive files are kept for the rest of the year.", r.KeepDays)
 	default:
 		return Missing, fmt.Sprintf("Event data is kept only %d days.", r.KeepDays)
+	}
+	// The policy is not the data: say how far back events really go.
+	if r.OldestRead {
+		switch {
+		case r.Oldest.IsZero():
+			st = Partial
+			d += " No event data is stored yet."
+		case s.Now.Sub(r.Oldest) < time.Duration(days-1)*24*time.Hour:
+			st = Partial
+			d += fmt.Sprintf(" The oldest events kept are from %s (%s), so %d days cannot be shown yet.", day(r.Oldest), ago(s.Now.Sub(r.Oldest)), days)
+		default:
+			d += fmt.Sprintf(" The oldest events kept are from %s.", day(r.Oldest))
+		}
 	}
 	if len(r.Shorter) > 0 {
 		st = Partial

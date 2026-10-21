@@ -32,8 +32,8 @@ func TestStatusAndHeartbeats(t *testing.T) {
 	if !StatusOf(m, "", "").ChangePending {
 		t.Error("change not reported")
 	}
-	if StatusOf(nil, "", "") != nil {
-		t.Error("nil manager")
+	if st := StatusOf(nil, "", ""); st == nil || st.Mode != ModeOff || !st.CoversShared || st.CASHA256 != "" {
+		t.Errorf("no HTTPS: %+v", st)
 	}
 
 	now := time.Now()

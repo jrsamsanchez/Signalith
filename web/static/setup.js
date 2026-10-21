@@ -71,7 +71,7 @@
     security: {
       icon: 'shield', title: 'Fix what the security check finds',
       why: 'Signalith checks its own setup every hour: HTTPS, encryption at rest, OpenSearch, accounts and more. Start with anything marked at risk.',
-      done: 'Nothing is at risk.',
+      done: 'Nothing is at risk or needs attention.',
       unknown: 'The first check runs shortly after Signalith starts.',
       action: 'Open Security', page: 'security',
     },
@@ -219,6 +219,7 @@
     let status = null;
     if (s.done) status = el('p', { class: 'setup__status', 'data-state': 'done' }, icon('circle-check'), def.done);
     else if (s.id === 'security' && s.count > 0) status = el('p', { class: 'setup__status', 'data-state': 'risk' }, icon('circle-alert'), `${s.count} ${s.count === 1 ? 'check is' : 'checks are'} at risk.`);
+    else if (s.id === 'security' && s.attention > 0) status = el('p', { class: 'setup__status', 'data-state': 'risk' }, icon('circle-alert'), `${s.attention} ${s.attention === 1 ? 'thing needs' : 'things need'} attention.`);
     else if (s.unknown && def.unknown) status = el('p', { class: 'setup__status' }, icon('info'), def.unknown);
 
     const actions = el('div', { class: 'setup__actions' },

@@ -180,17 +180,24 @@ if ($Join) {
       if ($PSVersionTable.PSEdition -eq "Core") {
         Invoke-WebRequest $uri -OutFile $download -SkipCertificateCheck -MaximumRedirection 0
       } else {
-        [Net.ServicePointManager]::SecurityProtocol = "Tls12"
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-        try { Invoke-WebRequest $uri -OutFile $download -UseBasicParsing -MaximumRedirection 0 } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback = $null }
+        # A script block as the certificate check fails here ("There is
+        # no Runspace available"): Windows PowerShell 5.1 checks it on
+        # another thread. SignalithGet is the same C# as the pasted line's.
+        if (-not ('SignalithGet' -as [type])) { Add-Type -TypeDefinition 'public static class SignalithGet { static bool Any(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain h, System.Net.Security.SslPolicyErrors e) { return true; } public static void Save(string url, string file) { var r = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url); r.AllowAutoRedirect = false; r.ServerCertificateValidationCallback = Any; using (var p = (System.Net.HttpWebResponse)r.GetResponse()) { if ((int)p.StatusCode != 200) { throw new System.Net.WebException("the server answered " + (int)p.StatusCode); } using (var s = p.GetResponseStream()) using (var o = System.IO.File.Create(file)) { s.CopyTo(o); } } } }' }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        [SignalithGet]::Save($uri, $download)
       }
     } catch {
+      Remove-Item -LiteralPath $download -ErrorAction SilentlyContinue
+      # [SignalithGet]::Save's error comes wrapped in PowerShell's own.
+      $e = $_.Exception
+      while ($e -and -not $e.Response -and $e.InnerException) { $e = $e.InnerException }
       $code = 0
-      if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+      if ($e.Response) { $code = [int]$e.Response.StatusCode }
       if ($code -eq 404) {
         throw "$From cannot hand out the program for Windows $arch (it runs on another kind of computer). Install the Signalith $Version .msi first (https://signalith.io/docs/install-packages/), then run the same line again."
       }
-      throw "Could not download the program from $From ($($_.Exception.Message)). Check that this computer can reach it (the web port), then run the same line again."
+      throw "Could not download the program from $From ($($e.Message)). Check that this computer can reach it (the web port), then run the same line again."
     }
     Test-Sha256 $download "The program downloaded from $From"
     $source = $download

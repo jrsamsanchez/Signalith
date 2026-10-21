@@ -19,7 +19,7 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    `ghcr.io/jrsamsanchez/signalith:<version>` (and `:latest` unless the version has a
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
    provenance. (Between releases, the **Image (main)** workflow publishes the same kind
-   of signed image as `:main` on every push to `main`; the Docker quick start runs it.)
+   of signed image as `:main` on every push to `main`; the public demo runs it.)
 4. Packages the Helm chart (`deploy/helm/signalith`) with the release's version, which
    also picks the image it runs, pushes it to `oci://ghcr.io/jrsamsanchez/charts/signalith`
    and signs it with Sigstore. Its `.tgz` goes on the release page with the other files.
@@ -27,7 +27,9 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
    it, and weekly; see [Kubernetes](kubernetes.md).)
 5. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
-   the key is set up (below), and GitHub build provenance for every file.
+   the key is set up (below), and GitHub build provenance for every file. Before the
+   checksums it makes `signalith-<version>-docker.tar.gz`, the Docker quick start with
+   the image locked to the digest pushed in step 3 (`.github/scripts/docker-release.sh`).
 6. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
    with the version's own notes (`.github/releases/<version>.md`, such as `0.3.0.md`,
    when there is one), install and verify steps (`.github/release-notes.md`) and the
@@ -55,6 +57,13 @@ version would get.
 
 3. Watch Actions > Release. When it is green, the release is on the Releases page and
    the image on GHCR.
+4. Move the Docker quick start to it: set the version in `${SIGNALITH_VERSION:-<version>}`
+   in `deploy/docker/docker-compose.yml`, `docker-compose.server.yml` and
+   `docker-compose.cluster.yml` to the new one and merge that, so `git pull` moves
+   quick-start users to the release. It waits for the release because the image must
+   exist first (CI starts the quick start from it). Until then the quick start runs the
+   previous release, so a change to those files that needs a newer image waits for this
+   step. The release's own `signalith-<version>-docker.tar.gz` always runs its own image.
 
 The first time an image is pushed, check that the package is public: the repository's
 **Packages** list > **signalith** > **Package settings** > **Change visibility** >
@@ -64,6 +73,9 @@ The first time an image is pushed, check that the package is public: the reposit
 
 Every release is signed with [Sigstore](https://www.sigstore.dev) and has GitHub build
 provenance without any setup: GitHub vouches for the workflow that built it.
+
+[Key management](key-management.md) lists every key, how to replace each one, and
+what to do when one leaks.
 
 ### Where the keys are kept
 
@@ -112,10 +124,16 @@ make a new one before then.
 
 ### Content updates
 
-The weekly **Content** workflow (`.github/workflows/content.yml`) rebuilds the SigmaHQ
-and Splunk packs from the newest upstream rules, runs every pack check, and publishes
-them as a signed bundle on the `content` release, which servers check for (see
-[Content updates](detections.md#content-updates)). It signs with an Ed25519 key in the
+To take in newer upstream rules, a maintainer rebuilds the SigmaHQ and Splunk packs
+from checkouts of the upstream repositories
+(`go run ./internal/detect/packgen -sigma <checkout>` and
+`go run ./internal/detect/splunkgen -splunk <checkout>`) and opens the result as a
+pull request, which is reviewed like any other and never auto-merged. The packs' `pack.yaml` pins the upstream commit, and the diff and
+`REPORT.md` show what changed. When a pack change merges to main, the **Content**
+workflow (`.github/workflows/content.yml`) runs every pack check and publishes the
+packs as a signed bundle on the `content` release, which servers check for (see
+[Content updates](detections.md#content-updates)). Nothing from upstream is signed
+before it is reviewed and merged. It signs with an Ed25519 key in the
 `SIGNALITH_CONTENT_KEY` secret; without the secret it builds and tests but publishes
 nothing. Servers only take bundles signed by a key listed in
 `internal/content/trusted.keys`, so a new key reaches them with the next release.
@@ -130,7 +148,7 @@ docker run --rm alpine:3.20 sh -c 'apk add -q openssl && openssl genpkey -algori
 line as the secret `SIGNALITH_CONTENT_KEY` of the `signing` environment (see [Where the
 keys are kept](#where-the-keys-are-kept)).
 Add the public key line to `internal/content/trusted.keys` (the workflow log also prints
-it, and warns while it is missing). Keep a copy of the private key somewhere safe and
+it, and the publish fails while it is missing). Keep a copy of the private key somewhere safe and
 offline. To replace a key, add the new public key next to the old one, release, switch
 the secret, and remove the old key in a later release.
 

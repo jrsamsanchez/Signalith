@@ -36,6 +36,89 @@ type Report struct {
 	// Candidates are the certificate authorities to choose from while
 	// none is published, the preselected first; empty once one is.
 	Candidates []Candidate `json:"candidates"`
+	// Rotation is how far replacing the cluster's certificate authority
+	// came, nil while none is published.
+	Rotation *RotationView `json:"rotation,omitempty"`
+}
+
+// RotationView is how far replacing the cluster's certificate authority
+// came.
+type RotationView struct {
+	// State is none, prepared (Next is handed out with the one in use)
+	// or switched (Previous is still handed out until it is retired).
+	State    string     `json:"state"`
+	Next     *OtherView `json:"next,omitempty"`
+	Previous *OtherView `json:"previous,omitempty"`
+	// Blockers are the servers running that are not ready for the next
+	// step (switch, or retire), with why; empty when they all are.
+	Blockers []string `json:"blockers"`
+	// Agents counts the managed agents that have the new certificate
+	// authority (the next one, or the one in use after a switch), nil
+	// with none under way or the agents unread.
+	Agents *RotationAgents `json:"agents,omitempty"`
+}
+
+// RotationAgents counts the Signalith Agents in the inventory: how many
+// there are, how many report the certificate authorities they trust
+// (older versions don't), and how many of those have the new one.
+type RotationAgents struct {
+	Managed   int `json:"managed"`
+	Reporting int `json:"reporting"`
+	HaveNew   int `json:"have_new"`
+}
+
+// countAgents counts agents for a rotation to the certificate
+// authority fp.
+func countAgents(agents []agentinv.Agent, fp string) *RotationAgents {
+	want := strings.ToLower(strings.ReplaceAll(fp, ":", ""))
+	c := &RotationAgents{}
+	for _, a := range agents {
+		if a.Managed == nil {
+			continue
+		}
+		c.Managed++
+		if len(a.Managed.CAs) == 0 {
+			continue
+		}
+		c.Reporting++
+		if slices.ContainsFunc(a.Managed.CAs, func(h string) bool { return strings.EqualFold(h, want) }) {
+			c.HaveNew++
+		}
+	}
+	return c
+}
+
+// Waiting is how many managed agents don't have the new certificate
+// authority, or don't say.
+func (c *RotationAgents) Waiting() int {
+	if c == nil {
+		return 0
+	}
+	return c.Managed - c.HaveNew
+}
+
+// OtherView is the cluster's next or previous certificate authority. At
+// is when it was prepared, or when the switch away from it happened.
+type OtherView struct {
+	CASHA256 string    `json:"ca_sha256"`
+	Subject  string    `json:"subject"`
+	NotAfter time.Time `json:"not_after"`
+	By       string    `json:"by,omitempty"`
+	At       time.Time `json:"at"`
+	// KeyLost is true when its key was emptied (reset-key): a next one
+	// must then be aborted and prepared again.
+	KeyLost bool `json:"key_lost,omitempty"`
+}
+
+func otherView(o *OtherCA) *OtherView {
+	if o == nil {
+		return nil
+	}
+	v := &OtherView{CASHA256: o.CASHA256, By: o.By, At: o.At, KeyLost: o.CAKey == ""}
+	if c, err := o.Cert(); err == nil {
+		v.Subject, v.NotAfter = c.Subject.CommonName, c.NotAfter.UTC()
+	}
+	return v
 }
 
 // CAView is the cluster's certificate authority.
@@ -50,6 +133,9 @@ type CAView struct {
 	Names       []string  `json:"names"`
 	PublishedBy string    `json:"published_by"`
 	PublishedAt time.Time `json:"published_at"`
+	// KeyLost is true when the cluster lost the key with the cluster key
+	// (reset-key): no server can renew until tls import gives it back.
+	KeyLost bool `json:"key_lost,omitempty"`
 }
 
 // RetiredView is a certificate authority a server used before the
@@ -81,6 +167,10 @@ type ServerView struct {
 	CoversShared  bool       `json:"covers_shared"`
 	ChangePending bool       `json:"change_pending,omitempty"`
 	LeafExpires   *time.Time `json:"leaf_expires,omitempty"`
+	// LeafCASHA256 is the certificate authority its certificate comes
+	// from, and NextCASHA256 the cluster's next one it hands out with it.
+	LeafCASHA256 string `json:"leaf_ca_sha256,omitempty"`
+	NextCASHA256 string `json:"next_ca_sha256,omitempty"`
 	// Problem says why it has not taken the cluster's certificate
 	// authority, "" when it has or there is none.
 	Problem string `json:"problem,omitempty"`
@@ -97,7 +187,9 @@ type ReportInput struct {
 	// Founder is the node id of the server that founded the cluster, and
 	// Self this server's.
 	Founder, Self string
-	// Agents is the agent inventory, read only while none is published.
+	// Agents is the agent inventory, read while none is published or
+	// while the published one is being replaced (Body.Rotation); nil
+	// when unread.
 	Agents []agentinv.Agent
 	Now    time.Time
 }
@@ -112,7 +204,8 @@ func BuildReport(in ReportInput) *Report {
 	var clusterFP string
 	if b := in.Body; b != nil && b.CASHA256 != "" {
 		r.Published, clusterFP = true, b.CASHA256
-		v := &CAView{CASHA256: b.CASHA256, Names: append([]string{}, b.Names...), PublishedBy: b.PublishedBy, PublishedAt: b.PublishedAt}
+		v := &CAView{CASHA256: b.CASHA256, Names: append([]string{}, b.Names...), PublishedBy: b.PublishedBy, PublishedAt: b.PublishedAt,
+			KeyLost: b.KeyLost()}
 		if ca, err := b.Cert(); err == nil {
 			v.Subject, v.NotBefore, v.NotAfter = ca.Subject.CommonName, ca.NotBefore.UTC(), ca.NotAfter.UTC()
 			if info := tlsauto.InfoOf(ca); info != nil {
@@ -120,6 +213,18 @@ func BuildReport(in ReportInput) *Report {
 			}
 		}
 		r.CA = v
+		r.Rotation = &RotationView{State: b.Rotation(), Next: otherView(b.Next), Previous: otherView(b.Previous),
+			Blockers: Blockers(b, in.Heartbeats, now)}
+		if r.Rotation.Blockers == nil {
+			r.Rotation.Blockers = []string{}
+		}
+		switch {
+		case in.Agents == nil:
+		case b.Next != nil:
+			r.Rotation.Agents = countAgents(in.Agents, b.Next.CASHA256)
+		case b.Previous != nil:
+			r.Rotation.Agents = countAgents(in.Agents, b.CASHA256)
+		}
 		for i := len(b.Retired) - 1; i >= 0; i-- {
 			old := b.Retired[i]
 			if ca := parsePEM(old.CACertPEM); ca != nil {
@@ -169,6 +274,7 @@ func serverView(hb cluster.Heartbeat, self, clusterFP string, roots map[string]b
 	v.Reported = true
 	v.Mode, v.CASHA256, v.Cluster, v.CoversShared, v.ChangePending, v.LeafExpires, v.Problem =
 		t.Mode, t.CASHA256, t.Cluster, t.CoversShared, t.ChangePending, t.LeafExpires, t.AdoptError
+	v.LeafCASHA256, v.NextCASHA256 = t.LeafCASHA256, t.NextCASHA256
 	v.Names = append(v.Names, t.Names...)
 	v.Outside = append(v.Outside, t.Outside...)
 	if len(t.Outside) > 0 {

@@ -16,7 +16,7 @@ name: signalith-server
 
 services:
   signalith:
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
     pull_policy: always
     # This server's name on the Servers page and in its HTTPS certificate.
     hostname: ${SIGNALITH_NODE_NAME:-signalith-2}

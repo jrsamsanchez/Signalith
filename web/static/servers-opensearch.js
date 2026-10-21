@@ -52,6 +52,7 @@
     if (d.nodes != null) parts.push(n(d.nodes, 'node', 'nodes'));
     if (d.manager_eligible != null) parts.push(`${d.manager_eligible} can be cluster manager`);
     if (d.unassigned_shards) parts.push(n(d.unassigned_shards, 'shard', 'shards') + ' on no node');
+    if (d.shards_used != null && d.shard_limit) parts.push(`${d.shards_used} of ${d.shard_limit} shards allowed`);
     return parts.join(' · ');
   }
 

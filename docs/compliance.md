@@ -10,10 +10,10 @@ It covers eight frameworks:
 | --- | --- | --- |
 | NIST SP 800-53 | Rev. 5 | 30 |
 | CIS Controls | v8 | 20 |
-| PCI DSS | v4.0 | 27 |
+| PCI DSS | v4.0.1 | 26 |
 | ISO/IEC 27001 | 2022 (Annex A) | 13 |
-| HIPAA Security Rule | 45 CFR 164 Subpart C | 8 |
-| SOC 2 | Trust Services Criteria 2017 (revised 2022) | 6 |
+| HIPAA Security Rule | 45 CFR 164 Subpart C | 7 |
+| SOC 2 | Trust Services Criteria 2017 (revised 2022) | 5 |
 | NIS2 Directive | (EU) 2022/2555 | 14 |
 | GDPR | (EU) 2016/679 | 11 |
 
@@ -32,37 +32,62 @@ on its own, right now. For example:
 
 - **Data arriving**: authentication, process, network, DNS, account change, antivirus,
   file integrity and inventory events in the last 7 days. Sample data never counts.
+  Sign-in and process events count for every computer: when computers run the agent or
+  osquery, each of them must have sent some in the last 7 days, and the evidence names
+  those that did not (partial). Without agents or osquery Signalith cannot tell which
+  computers should send them, and says so.
 - **Detections**: enabled detections that match the control (sign-in attacks, privilege
   misuse, malware, network intrusions, persistence), with the data they read arriving
   and scheduled detections turned on.
 - **Configuration checks**: the [osquery checks](endpoints.md) whose NIST SP 800-53
   references match the control, and how many pass and fail across your hosts. Each
   failing check names the hosts it fails on (up to 25, then a count); analysts and
-  admins can click a host to open it as on the Endpoints page.
+  admins can click a host to open it as on the Endpoints page. Each check runs on one
+  platform (Windows, Linux or macOS): hosts on a platform no matching check covers make
+  the evidence partial, and when none of your hosts runs the checks' platform there is
+  no evidence. The evidence says when hosts last reported.
 - **Vulnerability scanning**: a [scan](vulnerabilities.md) finished in the last month
   (in the last three months counts as partial).
-- **Findings reviewed**: no new finding has waited more than 7 days.
+- **Findings reviewed**: findings have been raised and looked at, and no new finding has
+  waited more than 7 days. An empty queue is not evidence of review.
+- **Investigations**: at least one investigation recorded (the feature being on is not
+  enough).
 - **Settings**: [data retention](retention.md) (90 days searchable, a year kept, the
   disk guard), [notifications](notifications.md), [response actions](response-actions.md),
-  [threat intel feeds](threat-intel.md), named [user accounts](users.md) and HTTPS.
+  [threat intel feeds](threat-intel.md), named [user accounts](users.md), and HTTPS with
+  plain syslog off.
 - **Settings**: also [two-step sign-in](users.md) required for everyone, and event data
   deleted after a set time instead of kept forever.
-- **Built in**: things Signalith always does, such as storing event times in UTC with
-  the original text, and its own [audit trail](audit.md).
+- **Built in**: things Signalith always does to the events it receives, such as storing
+  event times in UTC with the original text. These count only once events arrive: on a
+  server that has received nothing they are gaps. Signalith's own [audit trail](audit.md)
+  and encrypted secrets are facts about Signalith and always count.
+
+Retention evidence reads the policy and the data: a policy of a year on a server whose
+oldest events are from last week is partial until the data is there. Archives count only
+partly, since Signalith cannot see whether the archive files are kept, and so does
+"keep until deleted by hand" while the disk guard may delete the oldest days.
 
 A control shows:
 
 - **Evidence** when every source behind it is in place,
-- **Partial** when some are, or when configuration checks fail on some hosts,
+- **Partial** when some are, when configuration checks fail on some hosts, or when the
+  control asks for more than Signalith can see,
 - **Gap** when none are.
+
+Some controls ask for things no SIEM can show: a written incident response plan or
+policy, a lockout setting on every system, a report you send to an authority. Those say so under
+**Outside what Signalith sees**, and are at most partial however much evidence Signalith
+has, so the page never reads as if Signalith covered them.
 
 Open a control to see each source, what Signalith found, and what to do about anything
 missing, with a link to the page where you fix it. The **Evidence sources** tab lists
 every source once, missing ones first, ordered by how many controls each one affects, so
 the top of that list is where a fix raises coverage most.
 
-The **coverage score** on each framework counts controls with evidence as 1 and partial
-ones as ½, out of the controls that apply.
+The **evidence coverage** on each framework counts controls with evidence as 1 and
+partial ones as ½, out of the mapped controls that apply. It is coverage of the controls
+listed here, not of the whole framework, and it is not a compliance assessment.
 
 The page reads the system again when you open it and caches the result for a minute.
 Click the refresh button to check again at once.
@@ -136,12 +161,16 @@ Some controls are met by something Signalith cannot see: clock synchronization c
 by another tool, an incident response plan kept in a wiki. An admin can open the control
 and choose:
 
-- **Handled outside Signalith**: the control counts as covered.
+- **Handled outside Signalith**: the control shows the note, but the score still counts
+  what Signalith itself found, so a note never raises it. The framework card shows how
+  many controls are noted. This is only for controls Signalith has no evidence for.
 - **Not applicable**: the control does not apply to you and is left out of the score.
 
 Either one needs a note saying how the control is handled or why it does not apply. The
 note, who wrote it and when appear on the page and in every report, next to what
 Signalith's own evidence would say. Remove the note to go back to the evidence alone.
+Every change to a note is written to the [audit trail](audit.md), with the note it
+replaced.
 
 Notes are kept in `compliance-notes.json` in the server's state folder. With
 [several servers](servers.md#shared-detections-dashboards-and-asset-lists), they are kept
@@ -152,13 +181,16 @@ in the shared settings instead, so every server shows the same notes.
 Each framework has two exports:
 
 - **CSV**: one row per control and piece of evidence, with the status, the details, the
-  NIST SP 800-53 controls it lines up with, any note, the server and the time. Cells
+  NIST SP 800-53 controls it lines up with, any note, the server, the time, the
+  Signalith version, the mapping version and who exported it. Cells
   that start with `=`, `+`, `-` or `@` are prefixed with `'` so spreadsheet programs do
   not run them as formulas.
 - **Report (PDF)**: a report page that opens in a new tab. Use your browser's
   **Print** command and choose **Save as PDF**. It has the score, a summary and every
   control grouped as in the framework, with the evidence, failing checks and their hosts, detections and
-  notes.
+  notes. Its header names the server, the Signalith version, the mapping version (the
+  start of the SHA-256 of the control mapping, which changes whenever a control does)
+  and who exported it, and it says how each kind of evidence was measured.
 
 Over the API (any role):
 
@@ -193,6 +225,13 @@ it lines up with.
 - The configuration checks follow the [SCAP Security Guide](https://github.com/ComplianceAsCode/content)
   (BSD-3-Clause) and carry the NIST SP 800-53 references of the rules they are based
   on. No CIS Benchmark text is used.
+
+Every control was read again against its standard. Controls a SIEM cannot give
+evidence for are left out rather than shown as covered: account lockout (PCI DSS
+8.3.4, which is shown under 10.2.1.4 as failed attempts being logged), a risk
+analysis (HIPAA 164.308(a)(1)(ii)(A)) and the evaluation of every control (SOC 2
+CC4.1). The mapping has not yet been reviewed by a practising assessor of each
+framework; reviews are welcome as issues or pull requests.
 
 The mapping shows where Signalith gives evidence. It does not by itself make a system
 compliant, and your assessor decides what evidence is enough.

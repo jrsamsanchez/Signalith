@@ -24,6 +24,7 @@ func (s *Server) routeBaselines(api *router) {
 	api.admin("GET /api/baselines", s.handleBaselines)
 	api.admin("PUT /api/baselines", s.handleSaveBaselines)
 	api.admin("POST /api/baselines/{check}/reset", s.handleResetBaseline)
+	api.admin("POST /api/baselines/{check}/unlearn", s.handleUnlearnBaseline)
 }
 
 // tenantUser reports whether the request is a tenant's user's, not one
@@ -41,12 +42,16 @@ type baselineCheck struct {
 	On       bool  `json:"on"`
 	Score    int   `json:"score"`
 	Profiles int64 `json:"profiles"`
+	// MaxValues is the most values it keeps per user or host.
+	MaxValues int `json:"max_values"`
 	baselines.CheckState
 	// LearningUntil is when the users or hosts seen since the check
 	// started have all learned for the learning period.
 	LearningUntil time.Time `json:"learning_until,omitzero"`
 	// Waiting says why the check cannot learn yet, if it cannot.
 	Waiting string `json:"waiting,omitempty"`
+	// Unlearning counts the values that wait to be forgotten.
+	Unlearning int `json:"unlearning,omitempty"`
 }
 
 type baselinesView struct {
@@ -111,6 +116,7 @@ func (s *Server) baselinesView(ctx context.Context) (*baselinesView, error) {
 			"rare_hosts": baselines.DefaultRareHosts, "min_mb": baselines.DefaultMinMB,
 			"ip_database": baselines.DefaultIPDatabase, "max_profiles": baselines.MaxProfiles,
 			"max_values": baselines.MaxValues, "max_raised_per_hour": baselines.MaxRaisedPerHour,
+			"replay_days": int(baselines.Replay(set) / (24 * time.Hour)),
 		}}
 	if v.Settings.Checks == nil {
 		v.Settings.Checks = map[string]baselines.CheckSettings{}
@@ -122,15 +128,17 @@ func (s *Server) baselinesView(ctx context.Context) (*baselinesView, error) {
 		v.Behind = int64(max(time.Since(state.Through), 0) / time.Second)
 	}
 	for _, c := range baselines.Checks {
-		bc := baselineCheck{Check: c, On: set.On(c.ID), Score: set.Score(c.ID)}
+		bc := baselineCheck{Check: c, On: set.On(c.ID), Score: set.Score(c.ID), MaxValues: baselines.ValueLimit(c.ID)}
 		if cs := state.Checks[c.ID]; cs != nil {
 			bc.CheckState = *cs
 		}
+		bc.Unlearning = len(pendingUnlearn(set.Checks[c.ID].Unlearn, bc.CheckState))
 		if bc.On && !bc.Started.IsZero() {
 			bc.LearningUntil = bc.Started.Add(set.Learning())
-			if !state.LiveFrom.IsZero() && bc.Started.Equal(state.LiveFrom) {
-				// The first run learned from the history already stored,
-				// so users and hosts with a history are judged at once.
+			if (!state.LiveFrom.IsZero() && bc.Started.Equal(state.LiveFrom)) || bc.Started.Equal(bc.CheckState.LiveFrom) {
+				// The first run, or a check turned on or reset since,
+				// learned from the history already stored, so users and
+				// hosts with a history are judged at once.
 				bc.LearningUntil = time.Time{}
 			}
 		}
@@ -191,17 +199,18 @@ func (s *Server) handleSaveBaselines(w http.ResponseWriter, r *http.Request) {
 			"error": "Where the IP database comes from is set by the provider that runs Signalith.", "code": "provider_only"})
 		return
 	}
-	// A reset is asked for only with the reset route, and carries over.
+	// A reset and values to forget are asked for only with their own
+	// routes, and carry over.
 	for id, cs := range next.Checks {
-		cs.ResetAt = saved.Checks[id].ResetAt
+		cs.ResetAt, cs.Unlearn = saved.Checks[id].ResetAt, saved.Checks[id].Unlearn
 		next.Checks[id] = cs
 	}
 	for id, cs := range saved.Checks {
-		if _, ok := next.Checks[id]; !ok && !cs.ResetAt.IsZero() {
+		if _, ok := next.Checks[id]; !ok && (!cs.ResetAt.IsZero() || len(cs.Unlearn) > 0) {
 			if next.Checks == nil {
 				next.Checks = map[string]baselines.CheckSettings{}
 			}
-			next.Checks[id] = baselines.CheckSettings{ResetAt: cs.ResetAt}
+			next.Checks[id] = baselines.CheckSettings{ResetAt: cs.ResetAt, Unlearn: cs.Unlearn}
 		}
 	}
 	next.Exceptions = stampExceptions(next.Exceptions, saved.Exceptions, userOf(r), time.Now().UTC())
@@ -300,4 +309,95 @@ func (s *Server) handleResetBaseline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusConflict, errors.New("the settings kept changing; try again"))
+}
+
+// handleUnlearnBaseline asks for one value a user or host learned to be
+// forgotten, so the check treats it as new again, without resetting the
+// check for everyone: the server that runs the background jobs forgets
+// it at its next round.
+func (s *Server) handleUnlearnBaseline(w http.ResponseWriter, r *http.Request) {
+	if s.baselinesMissing(w) {
+		return
+	}
+	id := r.PathValue("check")
+	if _, ok := baselines.CheckByID(id); !ok {
+		writeError(w, http.StatusNotFound, errors.New("there is no such check"))
+		return
+	}
+	var req struct {
+		Entity string `json:"entity"`
+		Value  string `json:"value"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.Entity, req.Value = strings.TrimSpace(req.Entity), strings.TrimSpace(req.Value)
+	if err := baselines.ForgetProblem(id, req.Entity, req.Value); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	ctx := r.Context()
+	state, _, _, err := s.Baselines.State(ctx)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	for range 3 {
+		set, cur, err := s.Baselines.Settings(ctx)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		if set.Checks == nil {
+			set.Checks = map[string]baselines.CheckSettings{}
+		}
+		cs := set.Checks[id]
+		var st baselines.CheckState
+		if p := state.Checks[id]; p != nil {
+			st = *p
+		}
+		// The ones already forgotten are dropped.
+		cs.Unlearn = pendingUnlearn(cs.Unlearn, st)
+		if len(cs.Unlearn) >= baselines.MaxUnlearn {
+			writeError(w, http.StatusConflict, errors.New("too many values wait to be forgotten; try again after the next round, within the hour"))
+			return
+		}
+		// After everything already asked and applied, even when this
+		// server's clock is behind the one that applied it.
+		at := time.Now().UTC()
+		for _, t := range []time.Time{st.Unlearned, st.Started} {
+			if !at.After(t) {
+				at = t.Add(time.Microsecond)
+			}
+		}
+		if n := len(cs.Unlearn); n > 0 && !at.After(cs.Unlearn[n-1].At) {
+			at = cs.Unlearn[n-1].At.Add(time.Microsecond)
+		}
+		cs.Unlearn = append(cs.Unlearn, baselines.ForgetValue{Entity: req.Entity, Value: req.Value, At: at, By: userOf(r)})
+		set.Checks[id] = cs
+		if _, err := s.Baselines.SaveSettings(ctx, set, cur); err != nil {
+			if errors.Is(err, store.ErrConflict) {
+				continue
+			}
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		s.audit(r, "behavior baseline value forgotten", "check", id, "entity", req.Entity, "value", req.Value)
+		s.handleBaselines(w, r)
+		return
+	}
+	writeError(w, http.StatusConflict, errors.New("the settings kept changing; try again"))
+}
+
+// pendingUnlearn returns the values asked to be forgotten that a check
+// has not forgotten yet.
+func pendingUnlearn(all []baselines.ForgetValue, st baselines.CheckState) []baselines.ForgetValue {
+	out := []baselines.ForgetValue{}
+	for _, f := range all {
+		if f.At.After(st.Unlearned) && f.At.After(st.Started) {
+			out = append(out, f)
+		}
+	}
+	return out
 }

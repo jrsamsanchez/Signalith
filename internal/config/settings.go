@@ -414,6 +414,10 @@ var Registry = []Setting{
 	{Key: "syslog.public_port", Scope: ScopeCluster, Section: "syslog", Label: "Port devices send to", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(65535),
 		Help:       "When Docker or a firewall forwards another port to the one Signalith listens on, the port devices send to. Add data shows it.",
 		EmptyMeans: "the listen port"},
+	{Key: "syslog.spool_mb", Scope: ScopeServer, Section: "syslog", Label: "Spool size (MB)", Type: TypeNumber, Restart: true, Min: intp(0), Max: intp(MaxSyslogSpoolMB),
+		Help: "While OpenSearch is down, too busy or blocks writes, this server keeps the syslog events it cannot write in a folder on its own disk and writes them once OpenSearch takes them again. " +
+			"This is the most disk space that folder may use; when it is full, the oldest events in it are dropped and counted on the Health page.",
+		Placeholder: "1024", EmptyMeans: "1024 (1 GB)"},
 
 	{Key: "detections.scheduler", Scope: ScopeServer, Section: "detections", Label: "Run detections on schedule", Type: TypeBool, Restart: true, LegacyOnly: true,
 		Help:    "Lets this server run detections, threat intel downloads, notifications and retention. Servers that share one OpenSearch take turns automatically; turn it off only on a server that should never run them.",
@@ -451,7 +455,8 @@ var Registry = []Setting{
 	{Key: "detections.sync", Scope: ScopeServer, Section: "detections", Label: "Detection and dashboard folders", Type: TypeChoice, SharedOnly: true,
 		Help: "The servers of a cluster share one set of detections and dashboards; this server's folders are an inbox for them. " +
 			"Inbox: a file added or changed in a folder, such as by a git pull, is shared with every server, and removing a file changes nothing. " +
-			"Mirror: removing a file also removes that detection or dashboard from every server.",
+			"Mirror: removing a file also removes that detection or dashboard from every server. " +
+			"Removing all files of a folder or many at once (an emptied folder) is refused unless a file named allow-mass-delete, less than an hour old, is in that folder.",
 		Choices: []Choice{{SyncInbox, "Inbox"}, {SyncMirror, "Mirror"}}, EmptyMeans: SyncInbox},
 	{Key: "detections.content_url", Scope: ScopeCluster, Section: "detections", Label: "Content update address", Type: TypeURL,
 		Help:        "Where content updates are downloaded from, such as a copy on your own web server. Only bundles signed by the Signalith project are installed, wherever they come from.",

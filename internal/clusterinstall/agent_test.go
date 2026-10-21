@@ -18,6 +18,7 @@ import (
 	"github.com/jrsamsanchez/signalith/deploy"
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 func TestAgentLines(t *testing.T) {
@@ -42,7 +43,7 @@ func TestAgentLines(t *testing.T) {
 		t.Errorf("Windows script SHA-256 %s", c.WindowsSHA256)
 	}
 	for _, want := range []string{"$u='https://siem:7779'", "Invoke-WebRequest 'https://siem:7779/api/agent/install.ps1' -OutFile $f -SkipCertificateCheck",
-		"ServerCertificateValidationCallback=$null", "-ne '" + strings.ToUpper(c.WindowsSHA256) + "'",
+		"[SignalithGet]::Save(", "-ne '" + strings.ToUpper(c.WindowsSHA256) + "'",
 		"'" + agents.TokenPlaceholder + "' | & $f -From $u -CaSha256 " + caSum + " -Version 0.4.0 -Token -"} {
 		if !strings.Contains(c.Windows, want) {
 			t.Errorf("Windows line has no %q:\n%s", want, c.Windows)
@@ -204,5 +205,52 @@ func TestSignedPrograms(t *testing.T) {
 	}
 	if _, _, _, err := p.Manifest(); !errors.Is(err, ErrNoManifest) {
 		t.Errorf("no signature: %v", err)
+	}
+}
+
+// A kept revocation list that cannot be read could revoke the key the
+// manifest is signed with, so no manifest is handed out.
+func TestUnreadableRevocationListRefusesManifest(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootPub, rootPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, oldRoots := agentproto.ReleaseKeys, keytrust.Roots
+	agentproto.ReleaseKeys, keytrust.Roots = []ed25519.PublicKey{pub}, []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { agentproto.ReleaseKeys, keytrust.Roots = old, oldRoots })
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "signalith-agent-linux-amd64"), []byte("one"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SignPrograms(dir, "1.0.0", priv); err != nil {
+		t.Fatal(err)
+	}
+	store := &keytrust.Store{Dir: filepath.Join(t.TempDir(), "keytrust")}
+	list := []byte(`{"format":1,"issued":"2026-10-20T00:00:00Z","revoked":[{"id":"` + keytrust.KeyID(pub) + `"}]}`)
+	if _, err := store.Offer(list, keytrust.Sign(rootPriv, list)); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(store.Dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("kept files: %v %v", entries, err)
+	}
+	if err := os.WriteFile(filepath.Join(store.Dir, entries[0].Name()), []byte("broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &Programs{Dir: dir, Revocations: &keytrust.Store{Dir: store.Dir}}
+	if _, _, _, err := p.Manifest(); err == nil || errors.Is(err, ErrNoManifest) || !strings.Contains(err.Error(), "revocation list") {
+		t.Fatalf("manifest = %v, want refused for the unreadable list", err)
+	}
+	if u, err := p.Update("linux", "amd64", "0.9.0"); u != nil || err == nil {
+		t.Fatalf("update = %+v %v, want none", u, err)
+	}
+	// The store that read the list before keeps refusing the revoked key.
+	p.Revocations = store
+	if _, _, _, err := p.Manifest(); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("with the list read before: %v, want revoked", err)
 	}
 }

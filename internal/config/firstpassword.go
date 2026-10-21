@@ -131,6 +131,11 @@ func (c *Config) InitialPasswordFile() (file string, own bool) { return InitialP
 // as the state folder kept it when c was loaded, or "".
 func (c *Config) FirstPasswordHash() string { return c.firstPassword.Hash }
 
+// FirstPasswordChanged returns when the first password Signalith made
+// was replaced, as the state folder kept it when c was loaded, or the
+// zero time.
+func (c *Config) FirstPasswordChanged() time.Time { return c.firstPassword.Changed }
+
 // readFirstPassword reads FirstPassword from the state folder, or the
 // hash noted next to the config file (RecordFirstPasswordNextTo) where the
 // state folder has nothing. A damaged file counts as none.

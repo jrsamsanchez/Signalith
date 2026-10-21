@@ -52,6 +52,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 	"github.com/jrsamsanchez/signalith/internal/lookuptables"
 	"github.com/jrsamsanchez/signalith/internal/m365"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
@@ -1155,10 +1156,13 @@ type instance struct {
 	node     *cluster.Node
 	// store is the OpenSearch client, whose idle connections stop says
 	// goodbye to.
-	store  *store.Client
-	cancel context.CancelFunc
-	jobs   sync.WaitGroup // what runs on every server, such as index creation
-	log    *slog.Logger
+	store *store.Client
+	// downloads are clients made for this instance's downloads (NVD, KEV
+	// and EPSS), whose idle connections stop closes too.
+	downloads []*http.Client
+	cancel    context.CancelFunc
+	jobs      sync.WaitGroup // what runs on every server, such as index creation
+	log       *slog.Logger
 	// tenants runs the tenants' data, when there may be tenants.
 	tenants *tenantRuntime
 }
@@ -1182,12 +1186,19 @@ func (in *instance) stop() {
 		// Stop receiving and write out what is queued.
 		in.receiver.Wait()
 		s := in.receiver.Stats()
-		in.log.Info("syslog receiver stopped", "received", s.Received, "dropped", s.Dropped, "write_failed", s.WriteFailed, "rejected", s.Rejected)
+		in.log.Info("syslog receiver stopped", "received", s.Received, "dropped", s.Dropped, "write_failed", s.WriteFailed, "rejected", s.Rejected,
+			"spooled", s.Spooled, "replayed", s.Replayed, "left_in_spool", s.SpoolEvents, "spool_dropped", s.SpoolDropped)
 	}
 	if in.store != nil {
 		in.store.CloseIdleConnections()
 	}
+	for _, c := range in.downloads {
+		c.CloseIdleConnections()
+	}
 }
+
+// syslogSpoolDir is the syslog spool's folder in the state folder.
+const syslogSpoolDir = "syslog-spool"
 
 // start builds every component from c and starts the background jobs.
 // On an error, what had started is stopped again.
@@ -1299,6 +1310,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			MaxAge: maxAge, PublicPort: c.Syslog.PublicPort,
 			Servers: indexingServers,
 			Proxy:   proxyFor(c, c.Syslog.ProxyProtocol, log),
+			// Batches OpenSearch refuses for now wait here, on this
+			// server's own disk, until it takes them.
+			SpoolDir:      filepath.Join(c.StateDir(), syslogSpoolDir),
+			SpoolMaxBytes: c.Syslog.SpoolBytes(),
 		}
 		if certs != nil {
 			sc.GetCertificate = certs.GetCertificate
@@ -1372,7 +1387,10 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	// A content update installed earlier goes into use before the
 	// detections load.
-	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log}
+	// The newest signing key revocation list this server has seen, which
+	// content checks download and agents are handed (docs/key-management.md).
+	revocations := &keytrust.Store{Dir: filepath.Join(c.StateDir(), "keytrust")}
+	updater := &content.Updater{Dir: filepath.Join(c.DetectionsDir(), "content"), Log: log, Revocations: revocations}
 	updater.Start()
 	lib, problems, err := detect.NewLibrary(c.DetectionsDir())
 	if err != nil {
@@ -1480,6 +1498,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// The SSH and Windows logins OpenVAS signs in with, encrypted.
 	vstore.Keys = newLoginKeys(c, r.clusterKey, clusteredRuntime(r.shared))
 	nvd := vulnscan.NewNVD(c.NVDURL(), c.Vulns.NVDAPIKey)
+	// The addresses are set on the Settings page: download them as feeds
+	// are, never from this machine, its OpenSearch or a metadata service.
+	nvd.HTTP = newDownloadClient(c)
+	nvd.HTTP.Timeout = 2 * time.Minute
+	in.downloads = append(in.downloads, nvd.HTTP)
 	sensorHosts := &sensorDiscovery{cl: cl, prefix: c.OpenSearch.IndexPrefix, log: log}
 	in.jobs.Go(func() { feedFoundAssets(ctx, estore, vstore, sensorHosts, lists, log) })
 	// Notifications: the channels and rules set on the Notifications
@@ -1648,6 +1671,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	// CISA's KEV catalog and FIRST's EPSS scores rank what scans find.
 	exploits := vulnscan.NewExploitFeeds(vstore, c.Vulns.KEVURL, c.Vulns.EPSSURL)
+	exploits.HTTP = newDownloadClient(c)
+	exploits.HTTP.Timeout = 5 * time.Minute
+	in.downloads = append(in.downloads, exploits.HTTP)
 	exploits.Log = log
 	scanner := &vulnscan.Scanner{
 		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas, Exploits: exploits,
@@ -1713,6 +1739,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:           updater,
+		Revocations:       revocations,
 		Endpoints:         estore,
 		SensorTuning:      tuning,
 		Vulns:             &api.Vulns{Store: vstore, Scanner: scanner},
@@ -2141,6 +2168,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		settings.Traffic = trafficOf(agentsInv, receiver)
 		if rt := r.shared; rt != nil {
 			settings.Shared = func() cluster.SharedStatus { return sharedStatus(rt, r.sharedContent) }
+			settings.Problems = r.sharedContent.library.problems
 			settings.Restart = r.restartStatus
 			settings.Pending = func() (restart, refused []string) {
 				restart, refused, _ = r.sharedContent.settingsStatus()

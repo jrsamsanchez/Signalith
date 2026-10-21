@@ -21,6 +21,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/agents"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 // The Signalith Agent's install (Add data > Signalith Agent): one pasted
@@ -144,18 +145,16 @@ func agentMacLine(l AgentLine, base string) (string, string) {
 }
 
 // agentWindowsLine is the Windows line: as for the server's own join
-// line, Windows PowerShell 5.1 needs the certificate check turned off for
-// the one download (and back on after it), PowerShell 7 has
-// -SkipCertificateCheck. The token goes to the script through the
-// pipeline, in the same PowerShell, so it is on no program's command
-// line.
+// line, Windows PowerShell 5.1 downloads with SignalithGet (see
+// signalithGetCS) and PowerShell 7 has -SkipCertificateCheck. The token
+// goes to the script through the pipeline, in the same PowerShell, so it
+// is on no program's command line.
 func agentWindowsLine(l AgentLine, base string) (string, string) {
 	sha := scriptSHA.AgentPS1
 	u := base + agentproto.RouteInstallPS1
 	line := fmt.Sprintf("$u='%s'; $f=Join-Path $env:TEMP 'signalith-agent-install.ps1'; $ProgressPreference='SilentlyContinue'; "+
 		"if ($PSVersionTable.PSVersion.Major -ge 6) { Invoke-WebRequest '%s' -OutFile $f -SkipCertificateCheck -MaximumRedirection 0 } "+
-		"else { [Net.ServicePointManager]::SecurityProtocol='Tls12'; [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; "+
-		"try { Invoke-WebRequest '%s' -OutFile $f -UseBasicParsing -MaximumRedirection 0 } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; "+
+		"else { "+ps51Get+"[SignalithGet]::Save('%s', $f) }; "+
 		"if ((Get-FileHash $f -Algorithm SHA256).Hash -ne '%s') { throw 'The downloaded script is not the one this line names, so it was not run.' }; "+
 		"Set-ExecutionPolicy -Scope Process Bypass -Force; '%s' | & $f -From $u",
 		base, u, u, strings.ToUpper(sha), agents.TokenPlaceholder)
@@ -184,6 +183,10 @@ const AgentProgramsEnv = "SIGNALITH_AGENT_PROGRAMS"
 type Programs struct {
 	// Dir is the folder; empty looks in DefaultProgramsDir.
 	Dir string
+	// Revocations is the server's kept revocation list, whose revoked
+	// keys the manifest may not be signed with; nil uses the built-in
+	// list alone. A kept list that cannot be read refuses the manifest.
+	Revocations *keytrust.Store
 
 	mu   sync.Mutex
 	sums map[string]programSum
@@ -337,12 +340,20 @@ func (p *Programs) Manifest() (data, sig []byte, m *agentproto.Manifest, err err
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	m, err = agentproto.VerifyManifest(agentproto.ReleaseKeys, data, sig)
+	var list *keytrust.List
+	if p.Revocations != nil {
+		// A kept list that cannot be read could revoke the key the
+		// manifest is signed with, so no update is offered until it can.
+		if list, _, _, err = p.Revocations.Load(); err != nil {
+			return nil, nil, nil, fmt.Errorf("agent updates are refused until the kept signing key revocation list can be read: %w", err)
+		}
+	}
+	m, err = agentproto.VerifyManifest(agentproto.TrustedKeys(list), data, sig)
 	if errors.Is(err, agentproto.ErrNoReleaseKey) {
 		return nil, nil, nil, ErrNoManifest
 	}
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, keytrust.Explain(err, sig, keytrust.RevokedIDs(list))
 	}
 	return data, sig, m, nil
 }

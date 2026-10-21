@@ -6,6 +6,7 @@
 #
 # Every OpenSearch call Signalith makes, and the permission that allows it:
 #   GET    _cluster/health                         cluster_monitor
+#   GET    _cluster/state/blocks (full disk)       cluster_monitor
 #   GET    _nodes/stats/fs (retention disk guard)  cluster_monitor
 #   GET    _tasks/<id> (retention waits on these)  cluster_monitor
 #   GET    _nodes/_local/stats/os                  cluster_monitor

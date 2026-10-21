@@ -142,7 +142,11 @@
       el('div', { class: 'bl-status__text' }, el('b', {}, title), el('p', {}, text)),
       el('a', { class: 'btn btn--ghost btn--sm bl-status__docs', href: DOCS, target: '_blank', rel: 'noopener noreferrer' },
         icon('book-open'), 'How it works', el('span', { class: 'sr-only' }, ' (opens in a new tab)')))];
-    if (v.last_error && !off) {
+    const waiting = (v.checks || []).filter((c) => c.on && c.behind && c.error);
+    if (waiting.length && !off) {
+      kids.push(dxAlert('warning', waiting.length === 1 ? waiting[0].title + ' is waiting' : waiting.length + ' checks are waiting',
+        'Their searches failed, so they wait while the other checks go on. See the check below.'));
+    } else if (v.last_error && !off) {
       kids.push(dxAlert('danger', 'The last round failed' + (v.last_run ? ' (' + ago(v.last_run) + ')' : ''), sentence(v.last_error)));
     }
     return el('div', { class: 'card bl-status' }, ...kids);
@@ -172,9 +176,21 @@
     meta.push('From ' + c.data.replace('_', ' ') + ' data');
     const notes = [];
     if (c.waiting) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, c.waiting)));
-    if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only the first ${B.view.defaults.max_raised_per_hour} added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
+    if (c.capped) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `Some hours had more than ${B.view.defaults.max_raised_per_hour} new or rare ${many}, so only ${B.view.defaults.max_raised_per_hour} of them added risk (${riNumText(c.capped)} held back). A software rollout or a network change can do this.`)));
+    if (c.unlearning) notes.push(el('p', { class: 'st-warn is-info' }, icon('info'), el('span', {}, `${riNumText(c.unlearning)} ${c.unlearning === 1 ? 'value is' : 'values are'} forgotten once the hour they were asked in is learned, within two hours.`)));
     if (c.full) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `It has learned the most ${many} it keeps (${riNumText(B.view.defaults.max_profiles)}); new ones are learned once old ones are forgotten.`)));
-    if (c.truncated) notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'An hour had more combinations than one search returns, so some of it was not learned.')));
+    if (c.truncated) {
+      const after = c.truncated_after ? ` Those after ${c.truncated_after} in name order were not learned that hour.` : ' Some of it was not learned.';
+      notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, `The hour of ${hourOf(c.truncated)} had more combinations than one search reads.` + after)));
+    }
+    if (on && c.behind && c.error) {
+      notes.push(dxAlert('danger', 'Waiting since ' + hourOf(c.behind), sentence(c.error) + ' The other checks go on; this one catches up once its search works.'));
+    } else if (on && c.behind) {
+      notes.push(el('p', { class: 'st-warn is-info' }, icon('hourglass'), el('span', {}, 'Learning the stored history, up to ' + hourOf(c.behind) + ' so far. It adds no risk for those hours.')));
+    }
+    if (c.skipped && new Date(c.skipped) > new Date(Date.now() - 30 * 86400e3)) {
+      notes.push(el('p', { class: 'st-warn' }, icon('triangle-alert'), el('span', {}, 'It could not learn for over a week, so the hours before ' + hourOf(c.skipped) + ' were skipped.')));
+    }
 
     const box = el('input', { type: 'checkbox', id: id + '-on', role: 'switch', 'aria-label': c.title });
     box.checked = !cur.off;
@@ -190,6 +206,7 @@
     });
     const menu = dxMenu('More for ' + c.title, [
       { icon: 'search', label: 'Show its risk in Search', run: () => openSearch('datamodel=Risk detection_id=baseline-' + c.id, '-7d') },
+      { icon: 'circle-x', label: c.id === 'data-volume' ? 'Forget one host’s usual volume…' : 'Forget one value…', run: () => unlearnDialog(c.id, '', '') },
       'sep',
       { icon: 'rotate-ccw', label: 'Forget what it learned…', danger: true, run: () => reset(c) },
     ]);
@@ -208,7 +225,7 @@
   async function reset(c) {
     const [, many] = ENTITY[c.entity] || ['', ''];
     const ok = await caseConfirm({ title: 'Forget what “' + c.title + '” learned?',
-      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned and starts learning again from the next hour, so for the learning period it adds no risk. Risk it already added stays.`,
+      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned, then learns again from the last ${riNumText(B.view.defaults.replay_days)} days of stored events without adding risk for them, so ${many} with a history are judged at once. Risk it already added stays.`,
       confirm: 'Forget and relearn' });
     if (!ok) return;
     try {
@@ -346,6 +363,56 @@
     exceptionDialog({ match });
   };
 
+  // blUnlearn forgets the value one baseline risk event was about, for
+  // that user or host only, from the Risk page.
+  window.blUnlearn = async function (ev) {
+    try {
+      if (!B.view) B.view = await api('api/baselines');
+    } catch (e) { toastError('Couldn’t load the behavior baselines', e); return; }
+    const check = String(ev.baseline || ev.detection_id || '').replace(/^baseline-/, '');
+    unlearnDialog(check, ev.risk_object || '', check === 'data-volume' || ev.baseline_value == null ? '' : String(ev.baseline_value));
+  };
+
+  // unlearnDialog asks for one value a user or host learned to be
+  // forgotten, so the check treats it as new again; the rest of the check
+  // keeps what it learned.
+  function unlearnDialog(check, who, value) {
+    const c = B.view.checks.find((x) => x.id === check);
+    if (!c) return;
+    const volume = check === 'data-volume';
+    const [one] = ENTITY[c.entity] || ['user or host'];
+    const d = modalDialog('bl-un-dialog');
+    const whoIn = el('input', { id: 'bl-un-who', class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', value: who });
+    const whatIn = volume ? null : el('input', { id: 'bl-un-what', class: 'input mono', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'none', placeholder: VALUE_HINT[check] || '', value });
+    const alert = formAlert();
+    const save = el('button', { type: 'button', class: 'btn btn--danger' }, 'Forget it');
+    const form = el('form', { class: 'modal__body bl-ex-form', novalidate: '' },
+      alert,
+      el('p', {}, volume
+        ? `It forgets how much this ${one} usually sends and learns it again, so its volume adds no risk for the next 3 days.`
+        : `It forgets this value for this ${one} only, so the next time it is seen it adds risk as new. Use it for something learned while an account or host was misused. Other ${(ENTITY[c.entity] || ['', 'users and hosts'])[1]} keep what they learned.`),
+      dxField(one[0].toUpperCase() + one.slice(1), whoIn, 'As the risk event names it.'),
+      volume ? null : dxField('Value', whatIn, 'As the risk event’s value has it, such as ' + ((VALUE_HINT[check] || '').replace(/^.*such as /, '') || 'BR') + '.'));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const restore = busy(save, 'Saving…');
+      try {
+        B.view = await api('api/baselines/' + encodeURIComponent(check) + '/unlearn', { entity: whoIn.value.trim(), value: whatIn ? whatIn.value.trim() : '' });
+        render();
+        d.close();
+        toast('It is forgotten once this hour is learned, within two hours.');
+      } catch (err) {
+        restore();
+        showAlert(alert, 'Nothing was forgotten', sentence(err.message));
+      }
+    });
+    fill(d, modalHead('bl-un-dialog', volume ? 'Forget a host’s usual volume' : 'Forget one value', c.title, () => d.close()),
+      form, el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), save));
+    save.addEventListener('click', () => form.requestSubmit());
+    d.showModal();
+    (who ? (whatIn && !value ? whatIn : save) : whoIn).focus();
+  }
+
   // ---------- learning settings ----------
   function settingsCard() {
     const v = B.view;
@@ -361,7 +428,7 @@
     return el('section', { class: 'card st-card', 'aria-labelledby': 'bl-set-title' },
       el('div', { class: 'st-card__head' }, el('div', { class: 'st-card__heading' },
         el('h3', { class: 'st-card__title', id: 'bl-set-title' }, 'Learning'),
-        el('p', { class: 'st-card__desc' }, 'Every server shares these. Each check keeps at most ' + d.max_values + ' values per user or host, and at most ' + riNumText(d.max_profiles) + ' users or hosts.'))),
+        el('p', { class: 'st-card__desc' }, 'Every server shares these. Each check keeps at most ' + riNumText(d.max_profiles) + ' users or hosts, and a bounded number of values for each.'))),
       el('div', { class: 'st-card__body' }, ...rows));
   }
 

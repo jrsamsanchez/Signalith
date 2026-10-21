@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,13 +15,16 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/compliance"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 func TestComplianceReport(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv("SIGNALITH_STATE_DIR", state)
-	ts, _ := newRoleServer(t)
+	ts, srv := newRoleServer(t)
+	var logs logBuffer
+	srv.Log = slog.New(slog.NewTextHandler(&logs, nil))
 
 	// Every signed-in user can read it, so an auditor can be a Viewer.
 	code, out := doAs(t, ts, "vera", "role-password", "GET", "/api/compliance", "")
@@ -59,6 +63,16 @@ func TestComplianceReport(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(state, compliance.NotesFile)); err != nil {
 		t.Errorf("notes file: %v", err)
+	}
+	// Changing a note is audited, with what it replaced.
+	if code, out := do(t, ts, "PUT", "/api/compliance/notes", `{"framework":"pci-dss","control":"10.6.1","status":"external","note":"Chrony, checked weekly."}`, true); code != 200 {
+		t.Fatalf("second PUT = %d %v", code, out)
+	}
+	line := auditLine(t, logs.String(), `note="Chrony, checked weekly."`)
+	for _, want := range []string{`msg="compliance.note: compliance note changed"`, "audit=true", "by=admin", "control=10.6.1", `previous_note="Chrony on every host."`, "previous_status=external"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("note audit line lacks %s: %s", want, line)
+		}
 	}
 	_, out = do(t, ts, "GET", "/api/compliance", "", true)
 	found := false
@@ -172,5 +186,27 @@ func TestComplianceSharedNotes(t *testing.T) {
 	notes.paused = true
 	if code, out := do(t, ts, "PUT", "/api/compliance/notes", body, true); code != 503 {
 		t.Errorf("paused PUT = %d %v", code, out)
+	}
+}
+
+// The report reads which hosts sent each data model every computer
+// should send (COMP-08).
+func TestComplianceComputers(t *testing.T) {
+	s := &Server{Engine: &search.Engine{Store: &fakeOS{}}}
+	snap := &compliance.Snapshot{Now: time.Now(), Computers: []string{"db-01", "10.0.0.9", "db-01", ""}}
+	s.complianceComputers(context.Background(), snap)
+	if snap.HostsErr != "" || len(snap.Computers) != 2 {
+		t.Fatalf("computers %v, error %q", snap.Computers, snap.HostsErr)
+	}
+	for _, m := range compliance.HostModels {
+		if !snap.DataHosts[m]["10.0.0.9"] || snap.DataHosts[m]["db-01"] {
+			t.Errorf("%s hosts = %v", m, snap.DataHosts[m])
+		}
+	}
+	// Without computers to compare with, nothing is searched.
+	snap = &compliance.Snapshot{Now: time.Now()}
+	s.complianceComputers(context.Background(), snap)
+	if snap.DataHosts != nil {
+		t.Errorf("searched without computers: %v", snap.DataHosts)
 	}
 }

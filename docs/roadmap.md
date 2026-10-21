@@ -145,7 +145,7 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,638 from
+- Content packs of tested community rules: 2,644 from
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,330 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
@@ -245,6 +245,6 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
 - [Backup and restore](backup.md) of a server's files and OpenSearch data.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
-- [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
+- [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1,
   ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.

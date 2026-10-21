@@ -918,6 +918,13 @@ full:
 
 - Sessions it has already checked keep working for 5 minutes after it last confirmed
   them with OpenSearch, even one signed out on another server meanwhile.
+- A session it cannot check (it just restarted and has no copy of it, or its copy is
+  older than 5 minutes) is not signed out: requests answer `503` with the code
+  `session_unchecked` and a `Retry-After`, and the page says to try again in a few
+  seconds. The same happens for a moment when one read of a session fails, after the
+  server tried it again briefly. A session OpenSearch says was signed out, changed
+  outside Signalith or belongs to a user who was deleted, disabled or given a new
+  password is refused as always.
 - Only admins can sign in, with a session or with HTTP Basic credentials: the
   built-in admin (with the password this server last read, or the one
   `signalith passwd -local` set), and local admins when this server's copy of the users
@@ -1093,7 +1100,7 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
 `GET /api/fields/values`, `GET /api/language`, `GET /api/ask`,
 `GET /api/detections`, `GET /api/detections/{id}`, `GET /api/detections/{id}/yaml`,
-`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/findings`, `GET /api/findings/summary`,
+`GET /api/coverage`, `GET /api/detections/packs`, `GET /api/detections/content`, `GET /api/detections/exceptions`, `GET /api/findings`, `GET /api/findings/summary`,
 `GET /api/findings/{id}`, `GET /api/cases`, `GET /api/cases/summary`,
 `GET /api/cases/{id}`, `GET /api/cases/{id}/tickets` (a case's [Jira and ServiceNow tickets](ticketing.md)), `GET /api/lookups/context`, `GET /api/lookups/{kind}`, `GET /api/lookuptables`, `GET /api/lookuptables/{name}`,
 `GET /api/risk`, `GET /api/risk/object`, `GET /api/storyline` (the [attack storyline](storyline.md)), `GET /api/intel`, `GET /api/intel/feeds`,
@@ -1150,7 +1157,7 @@ Signalith Agents of an install line collect; see
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`,
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/detections/exceptions`, `DELETE /api/detections/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`,
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,
@@ -1170,12 +1177,12 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 (setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
 Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
-`POST /api/baselines/{check}/reset` (the [behavior baselines](baselines.md) and their exceptions),
+`POST /api/baselines/{check}/reset`, `POST /api/baselines/{check}/unlearn` (the [behavior baselines](baselines.md) and their exceptions),
 `GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
-`POST /api/cluster/tls/choose` (the cluster's one certificate authority; see
-[servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+`POST /api/cluster/tls/choose`, `POST /api/cluster/tls/rotate-ca` (the cluster's one certificate authority, and
+replacing it; see [servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
 `POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
 the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
 `POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their

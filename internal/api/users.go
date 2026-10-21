@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -208,6 +207,11 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	s.audit(r, "password changed", "user", p.Username, "other_sessions_ended", ended)
 	if builtin && p.MustChangePassword {
 		s.firstPasswordChanged()
+	}
+	if builtin && s.security().Report() != nil {
+		// The Security page shows the new password's check at once,
+		// not after the next hourly run.
+		go s.security().run(context.WithoutCancel(r.Context()), s.gatherSecurity, true)
 	}
 	np.Method = p.Method
 	s.noteMFA(np)
@@ -803,7 +807,7 @@ func (s *Server) handlePutDirectory(w http.ResponseWriter, r *http.Request) {
 	case err != nil && sharedError(w, err):
 		return
 	case err != nil:
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not save the directory settings: %w", err))
+		writeError(w, http.StatusInternalServerError, errHidden("could not save the directory settings", err))
 		return
 	}
 	after := d.Settings()

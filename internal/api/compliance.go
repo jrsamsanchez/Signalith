@@ -121,19 +121,23 @@ func (s *Server) handleComplianceExport(w http.ResponseWriter, r *http.Request) 
 	}
 	rep := s.complianceReport(r)
 	f, _ := rep.Find(fw)
-	server := s.serverName()
+	x := compliance.Export{Server: s.serverName(), Version: s.Version, By: userOf(r)}
 	name := "signalith-" + fw + "-evidence-" + rep.Generated.UTC().Format("2006-01-02")
 	if format == "csv" {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
-		_ = compliance.WriteCSV(w, rep, f, server)
+		if err := compliance.WriteCSV(w, rep, f, x); err != nil {
+			s.Log.Warn("compliance: the CSV export was cut short", "framework", fw, "err", err)
+		}
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if q.Get("download") == "1" {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.html"`)
 	}
-	_ = compliance.WriteHTML(w, rep, f, server, s.Version)
+	if err := compliance.WriteHTML(w, rep, f, x); err != nil {
+		s.Log.Warn("compliance: the report export failed", "framework", fw, "err", err)
+	}
 }
 
 func frameworkIDs() []string {
@@ -158,7 +162,20 @@ func (s *Server) handleComplianceNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// "Handled outside Signalith" is for controls Signalith has no
+	// evidence for; on one it has, a note would only hide what it found.
+	if in.Status == compliance.External {
+		if f, ok := s.complianceReport(r).Find(in.Framework); ok {
+			for _, c := range f.Controls {
+				if c.ID == in.Control && c.Computed == compliance.Met {
+					writeError(w, http.StatusBadRequest, errors.New("Signalith already has evidence for this control, so it cannot be noted as handled outside Signalith."))
+					return
+				}
+			}
+		}
+	}
 	by := userOf(r)
+	prev, hadPrev := s.complianceNotes().All()[compliance.Key(in.Framework, in.Control)]
 	a, err := s.complianceNotes().Set(r.Context(), in.Framework, in.Control, in.Status, in.Note, by, time.Now())
 	var ie *compliance.InputError
 	switch {
@@ -171,7 +188,11 @@ func (s *Server) handleComplianceNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.Log.Info("compliance note changed", "framework", in.Framework, "control", in.Control, "status", string(in.Status), "by", by)
+	attrs := []any{"audit", true, "by", by, "framework", in.Framework, "control", in.Control, "status", string(in.Status), "note", strings.TrimSpace(in.Note)}
+	if hadPrev {
+		attrs = append(attrs, "previous_status", string(prev.Status), "previous_note", prev.Note, "previous_by", prev.By)
+	}
+	s.Log.Info("compliance.note: compliance note changed", slices.Concat(attrs, s.client(r).logAttrs())...)
 	writeJSON(w, http.StatusOK, map[string]any{"attestation": a})
 }
 
@@ -183,6 +204,12 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	conf := s.conf()
 	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
 	snap.MFA = conf.MFARequiredMode()
+	if conf.Syslog.UDP != "" {
+		snap.PlainSyslog = append(snap.PlainSyslog, "UDP "+conf.Syslog.UDP)
+	}
+	if conf.Syslog.TCP != "" {
+		snap.PlainSyslog = append(snap.PlainSyslog, "TCP "+conf.Syslog.TCP)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -198,6 +225,11 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	if s.Endpoints != nil {
 		s.complianceChecks(ctx, snap)
 	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.complianceComputers(ctx, snap)
+	}()
 	if s.Vulns != nil && s.Vulns.Store != nil {
 		v := &compliance.Vulns{}
 		if set, err := s.Vulns.Store.CachedSettings(ctx); err == nil {
@@ -215,6 +247,10 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	if s.Findings != nil {
 		if sum, err := s.Findings.Summary(ctx); err == nil {
 			f := &compliance.Findings{Open: sum.Open, New: sum.ByStatus[findings.StatusNew]}
+			for _, n := range sum.ByStatus {
+				f.Total += n
+			}
+			f.Reviewed = f.Total - f.New
 			if _, recent, err := s.Findings.Search(ctx, findings.Filter{Status: []string{findings.StatusNew}, Since: now.Add(-compliance.TriageWindow), Limit: 1}); err == nil {
 				f.Stale = max(0, f.New-recent)
 			}
@@ -293,6 +329,17 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 					rt.Shorter = append(rt.Shorter, c.Name+" ("+strconv.Itoa(p.KeepDays)+" days)")
 				}
 			}
+			if ov := s.retentionOverview(ctx); ov != nil && ov.Error == "" {
+				rt.OldestRead = true
+				for _, c := range ov.Categories {
+					if c.Kind != retention.KindEvents || c.ID == strings.ToLower(datamodel.RiskModel) || c.OldestDay == "" {
+						continue
+					}
+					if d, err := time.Parse(time.DateOnly, c.OldestDay); err == nil && (rt.Oldest.IsZero() || d.Before(rt.Oldest)) {
+						rt.Oldest = d
+					}
+				}
+			}
 			snap.Retention = rt
 		}
 	}
@@ -343,6 +390,64 @@ func (s *Server) complianceData(ctx context.Context, snap *compliance.Snapshot) 
 		snap.Data[m] = d
 	}
 }
+
+// complianceComputers adds the computers whose agent sent in the data
+// window to those that run osquery, and reads which hosts sent each data
+// model every computer should send.
+func (s *Server) complianceComputers(ctx context.Context, snap *compliance.Snapshot) {
+	if s.Agents != nil {
+		agents, _, err := s.Agents.List(ctx)
+		if err != nil {
+			s.Log.Warn("compliance: the agents could not be read", "err", err)
+			snap.HostsErr = "the agents could not be read"
+		}
+		for _, a := range agents {
+			if a.Name != "" && snap.Now.Sub(a.LastSeen) <= compliance.DataWindow {
+				snap.Computers = append(snap.Computers, compliance.ShortHost(a.Name))
+			}
+		}
+	}
+	slices.Sort(snap.Computers)
+	snap.Computers = slices.Compact(slices.DeleteFunc(snap.Computers, func(c string) bool { return c == "" }))
+	if len(snap.Computers) == 0 || snap.HostsErr != "" {
+		return
+	}
+	if s.Engine == nil {
+		snap.HostsErr = "search is not available"
+		return
+	}
+	snap.DataHosts = map[string]map[string]bool{}
+	for _, m := range compliance.HostModels {
+		q, err := query.Parse("datamodel=" + m + " NOT " + datamodel.SampleField + "=* | stats count by host")
+		if err != nil {
+			s.Log.Warn("compliance: the host search does not parse", "err", err)
+			snap.HostsErr = "the search failed"
+			return
+		}
+		q.Earliest = "-7d"
+		q.MaxRows = complianceHostRows
+		res, err := s.Engine.Execute(ctx, q)
+		if err != nil {
+			s.Log.Warn("compliance: could not read which hosts sent events", "model", m, "err", err)
+			snap.HostsErr = "the search failed"
+			return
+		}
+		if res.Truncated {
+			snap.HostsErr = "more than " + strconv.Itoa(complianceHostRows) + " hosts sent " + m + " events"
+			return
+		}
+		seen := map[string]bool{}
+		for _, row := range res.Rows {
+			if h, _ := row["host"].(string); h != "" {
+				seen[compliance.ShortHost(h)] = true
+			}
+		}
+		snap.DataHosts[m] = seen
+	}
+}
+
+// complianceHostRows is the most hosts read for each data model.
+const complianceHostRows = 100_000
 
 // cellNumber reads a numeric search result cell; anything else is 0.
 func cellNumber(v any) float64 {
@@ -404,8 +509,23 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 	byPlatform := map[string]int{}
 	for _, n := range nodes {
 		byPlatform[n.Platform]++
+		if n.LastSeen.IsZero() {
+			continue
+		}
+		if snap.HostsSeen[0].IsZero() || n.LastSeen.Before(snap.HostsSeen[0]) {
+			snap.HostsSeen[0] = n.LastSeen
+		}
+		if n.LastSeen.After(snap.HostsSeen[1]) {
+			snap.HostsSeen[1] = n.LastSeen
+		}
 	}
-	snap.Hosts = len(nodes)
+	snap.Hosts, snap.Platforms = len(nodes), byPlatform
+	for _, n := range nodes {
+		// A host gone for a week is likely retired.
+		if snap.Now.Sub(n.LastSeen) <= compliance.DataWindow {
+			snap.Computers = append(snap.Computers, compliance.ShortHost(cmp.Or(n.Hostname, n.HostIdentifier)))
+		}
+	}
 	snap.Checks = []compliance.CheckStat{}
 	for _, c := range checks.All() {
 		st := compliance.CheckStat{ID: c.ID, Title: c.Title, Platform: c.Platform, Refs: c.References}
@@ -432,4 +552,13 @@ func (s *Server) complianceChecks(ctx context.Context, snap *compliance.Snapshot
 		}
 		snap.Checks = append(snap.Checks, st)
 	}
+}
+
+// retentionOverview is the retention page's view of the stored data, for
+// how far back events go; nil when retention cannot reach OpenSearch.
+func (s *Server) retentionOverview(ctx context.Context) *retention.Overview {
+	if s.Retention == nil || s.Retention.Cluster == nil {
+		return nil
+	}
+	return s.Retention.Overview(ctx)
 }

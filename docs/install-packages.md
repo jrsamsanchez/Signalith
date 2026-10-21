@@ -165,6 +165,14 @@ that removes the services, OpenSearch's program and the firewall rules, and keep
 settings, certificates and events), so installing again carries on with them. Delete
 those folders by hand to remove everything.
 
+If an install or upgrade fails, the installer undoes it: a failed upgrade puts the
+previous version back and starts it again a minute later, and a failed first install
+removes the services and firewall rules it set up. If a new OpenSearch's service does not
+start, the previous OpenSearch runs again (one that starts but never answers is not
+undone, since it may have changed its data already: run the `.msi` again). What went wrong is in
+`C:\Windows\Temp\signalith-install.log`, and what was undone in
+`C:\Windows\Temp\signalith-rollback.log`. Fix the cause and run the `.msi` again.
+
 ### OpenSearch on Windows
 
 From 0.3.1, on a new install, unless you gave `OPENSEARCHURL`, the installer sets up OpenSearch for
@@ -220,9 +228,34 @@ docker pull ghcr.io/jrsamsanchez/signalith:0.3.1
 ```
 
 The [Docker quick start](getting-started.md#docker-quick-start) runs this image with
-OpenSearch: the newest code on `main` by default (the `:main` image, rebuilt on every
-change), or a release when you set `SIGNALITH_VERSION`, for example
-`SIGNALITH_VERSION=0.3.1`.
+OpenSearch: the newest release by default, or another version when you set
+`SIGNALITH_VERSION`, for example `SIGNALITH_VERSION=main` for the `:main` image, rebuilt on
+every change to `main` and not yet released.
+
+### The quick start locked to a release
+
+Each release also has `signalith-<version>-docker.tar.gz`: the same quick start with
+Signalith's image locked to the digest the release pushed and signed
+(`ghcr.io/jrsamsanchez/signalith:<version>@sha256:...`), so it runs exactly that image
+whatever later happens to the tag, and `SIGNALITH_VERSION` doesn't change it. It needs no
+`git`: check it against `SHA256SUMS` (below), unpack it and run the quick start's
+commands from its folder:
+
+```sh
+tar -xzf signalith-0.3.2-docker.tar.gz
+cd signalith-0.3.2-docker
+docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+To update, unpack the next release's file and run the same command from its folder. It is
+the same Compose project as before (`docker`), so your data is kept. To check the image's
+own Sigstore signature as well:
+
+```sh
+cosign verify ghcr.io/jrsamsanchez/signalith:0.3.2 \
+  --certificate-identity-regexp '^https://github.com/jrsamsanchez/Signalith/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## Supported upgrade paths
 

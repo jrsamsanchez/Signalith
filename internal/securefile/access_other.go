@@ -15,6 +15,8 @@ func newFileAccess(tmp *os.File, _ string) error { return tmp.Chmod(0o600) }
 
 func privateDir(dir, _ string, _ bool) error { return os.Chmod(dir, 0o700) }
 
+func adminDir(dir, parent string, created bool) error { return privateDir(dir, parent, created) }
+
 func linkAllowed(string, os.FileInfo) error { return nil }
 
 func otherLinks(string) int { return 0 }

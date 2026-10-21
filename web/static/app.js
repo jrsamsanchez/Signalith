@@ -201,6 +201,12 @@ function apiVersion(resp) {
 // apiRaw makes a request with the headers every page sends and returns
 // the response as it is: for uploads, streams and text that api() does
 // not handle. Paths are relative to the page.
+// viewerZone is the browser's IANA time zone, which searches use for @d,
+// timechart days, bin and strftime; empty (UTC) when the browser has none.
+function viewerZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; }
+}
+
 async function apiRaw(path, opts) {
   opts = opts || {};
   const method = (opts.method || 'GET').toUpperCase();
@@ -247,6 +253,9 @@ async function api(path, body, method, extraHeaders) {
     else if (typeof toast === 'function') toast(data.error, null, { tone: 'danger', title: 'Your role can’t do that' });
   }
   if ((resp.status === 409 || resp.status === 503) && data.code === 'tenant_unavailable') tenantUnavailable(resp.status, data.error);
+  // The server could not check the session just now (it restarted while
+  // OpenSearch was slow): the session still stands, so the page stays.
+  if (resp.status === 503 && data.code === 'session_unchecked') sessionUnchecked(data.error);
   if (!resp.ok) {
     const err = new Error(data.error || resp.statusText);
     err.status = resp.status;
@@ -259,6 +268,16 @@ async function api(path, body, method, extraHeaders) {
     throw err;
   }
   return data;
+}
+
+// sessionUnchecked says, at most once in 30 seconds, that the
+// server could not check the session; the request can be tried again.
+let sessionNoted = false;
+function sessionUnchecked(text) {
+  if (sessionNoted) return;
+  sessionNoted = true;
+  setTimeout(() => { sessionNoted = false; }, 30000);
+  if (typeof toast === 'function') toast(sentence(text || 'Signalith can’t check your sign-in right now.'), null, { tone: 'danger', title: 'Try again in a few seconds' });
 }
 
 // tenantUnavailable tells that the tenant the session works in can't be
@@ -356,7 +375,18 @@ function setScope(m) {
   }
 }
 // meReady resolves once api/me has answered (to null if it failed).
-const meReady = api('api/me').then((m) => {
+// A server that could not check the session yet is asked again a few
+// times before the page gives up.
+async function fetchMe(tries) {
+  try {
+    return await api('api/me');
+  } catch (err) {
+    if (err.status !== 503 || err.code !== 'session_unchecked' || tries <= 1) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    return fetchMe(tries - 1);
+  }
+}
+const meReady = fetchMe(5).then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
   if (m.must_setup_mfa) { toSignIn(false, true); return m; }
   me = m;
@@ -1173,9 +1203,9 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // colouring for its examples.
 const lang = {
   commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous', 'union', 'geostats', 'extract', 'outlier', 'gauge', 'multisearch', 'timewrap', 'cluster', 'xpath', 'abstract', 'highlight', 'anomalydetection', 'correlate', 'predict', 'set', 'setfields', 'kmeans', 'eventcount', 'outputlookup', 'from'],
-  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
+  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'stdevp', 'var', 'varp', 'sumsq', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
-  evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
+  evalFunctions: ['abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'cos', 'cosh', 'exact', 'exp', 'false', 'floor', 'hypot', 'if', 'in', 'ipmask', 'isbool', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pi', 'pow', 'printf', 'random', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'sha512', 'sin', 'sinh', 'spath', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'tan', 'tanh', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
 };
 const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
@@ -1384,6 +1414,8 @@ async function toggleField(f) {
 // ---------- autocomplete ----------
 let suggestions = [];
 let suggestIndex = 0;
+// suggestPicked is set once the arrow keys move through the suggestions.
+let suggestPicked = false;
 
 function currentWord() {
   const ta = queryBox;
@@ -1411,6 +1443,7 @@ function updateSuggestions() {
   const w = word.toLowerCase();
   suggestions = items.filter((i) => i.text.toLowerCase().startsWith(w) && i.text.toLowerCase() !== w).slice(0, 8);
   suggestIndex = 0;
+  suggestPicked = false;
   renderSuggestions();
 }
 function renderSuggestions() {
@@ -1460,13 +1493,22 @@ function acceptSuggestion(i) {
   ta.focus();
   onQueryInput();
 }
+// Enter runs the search, as in other search tools; Shift+Enter starts a
+// new line. With suggestions open, Tab takes the highlighted one, and so
+// does Enter once the arrow keys picked one.
 queryBox.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return; }
+  const enter = ev.key === 'Enter' && !ev.isComposing && !ev.altKey;
+  if (enter && !ev.shiftKey && (ev.ctrlKey || ev.metaKey || !(suggestions.length && suggestPicked))) {
+    ev.preventDefault(); suggestions = []; renderSuggestions(); runSearch({ writeLookups: true }); return;
+  }
   if (!suggestions.length) return;
-  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; renderSuggestions(); }
-  else if (ev.key === 'Tab' || ev.key === 'Enter') { ev.preventDefault(); acceptSuggestion(suggestIndex); }
-  else if (ev.key === 'Escape') { ev.preventDefault(); suggestions = []; renderSuggestions(); }
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); suggestIndex = (suggestIndex + 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); suggestIndex = (suggestIndex + suggestions.length - 1) % suggestions.length; suggestPicked = true; renderSuggestions(); }
+  else if (ev.key === 'Tab' || (enter && !ev.shiftKey)) { ev.preventDefault(); acceptSuggestion(suggestIndex); }
+  else if (enter || ev.key === 'Escape') {
+    if (ev.key === 'Escape') ev.preventDefault();
+    suggestions = []; renderSuggestions();
+  }
 });
 queryBox.addEventListener('blur', () => setTimeout(() => { suggestions = []; renderSuggestions(); }, 100));
 
@@ -1681,7 +1723,7 @@ function syncTimePicker() {
   sel.title = own ? 'The query sets this time range with ' + Object.keys(t).map((k) => k + '=').join(' and ') + '. Pick another range to replace it.' : '';
 }
 
-// runSearch runs the query box's search. Only Run and Ctrl+Enter pass
+// runSearch runs the query box's search. Only Run and Enter pass
 // writeLookups, so an outputlookup in the query writes its table when the
 // user runs it, not again when a time change, sort, filter or drilldown
 // re-runs it, nor when the Ask box runs a query it wrote.
@@ -1696,7 +1738,7 @@ async function runSearch(opts) {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, time_zone: viewerZone(), write_lookups: true } : { query, earliest, time_zone: viewerZone() });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1828,7 +1870,16 @@ function renderResult() {
   if ((res.summaries || []).length) {
     stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
   }
-  if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
+  if (res.time_zone) stats.push(el('span', { class: 'badge hide-sm', title: `Days, weeks, @d and strftime use your browser's time zone, ${res.time_zone}.` }, res.time_zone));
+  if (res.sampled) stats.push(el('span', { class: 'badge badge--warning', title: `${(res.matched || 0).toLocaleString()} events matched, but the commands after the search ran over only the newest ${res.sampled.toLocaleString()}, so these results cover only those. Narrow the search, or put stats right after it to count every event.` }, 'Sampled'));
+  if (res.truncated) {
+    const why = res.ranked
+      ? 'There were more groups than the server keeps, so it kept those with the most events (or that rank first in the sort that follows). Narrow the search to see the rest.'
+      : 'The server stopped at its row limit, so some rows are missing, and a sort or top over these rows may rank the wrong ones. Narrow the search to see them all.';
+    stats.push(el('span', { class: 'badge badge--warning', title: why }, 'Truncated'));
+  } else if (res.ranked) {
+    stats.push(el('span', { class: 'badge hide-sm', title: 'There were more groups than the server keeps, so OpenSearch ranked them and returned the top ones. With several shards, counts of groups near the cut can be slightly low.' }, 'Ranked'));
+  }
   if ((res.rows || []).length) {
     stats.push(el('button', {
       type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Download as CSV', 'aria-label': 'Download results as CSV', onclick: exportResults,
@@ -1905,7 +1956,7 @@ async function showTab(id) {
   }
   box.replaceChildren(skeletonTable());
   try {
-    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest });
+    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest, time_zone: viewerZone() });
   } catch (e) {
     if (lastSearch !== run || run.tab !== 'events') return;
     box.replaceChildren(stateBox({ tone: 'danger', iconName: 'circle-alert', title: 'Could not load the events', text: e.message, action: retryButton(() => showTab('events')) }));
@@ -2219,7 +2270,7 @@ async function loadHistogram(seq, query, earliest) {
   if (['where', 'threatmatch', 'head', 'dedup'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
   const search = segs[0].trim() || '*';
   const ownTime = /\b(earliest|latest)\s*=/i.test(search);
-  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest });
+  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest, time_zone: viewerZone() });
   let res;
   try {
     res = await fetchHist(ownTime ? '' : HIST_SPAN[$('time').value] || '1d');
@@ -2573,7 +2624,7 @@ $('explain').addEventListener('click', async () => {
   if (!box.classList.contains('hidden')) { hideExplanation(); return; }
   $('explain').disabled = true;
   try {
-    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest() });
+    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest(), time_zone: viewerZone() });
     box.replaceChildren(
       el('div', { class: 'explain__head' }, el('b', {}, 'What this query does'),
         el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Close', 'aria-label': 'Close the explanation', onclick: hideExplanation }, icon('x'))),
@@ -2674,8 +2725,14 @@ async function ask(question, mode) {
   const switchTo = res.source !== 'ai' && askInfo.ai_available ? ['Ask the AI model instead', 'ai'] : res.source === 'ai' ? ['Use the built-in translator instead', 'rules'] : null;
   kids.push(el('span', { class: 'ask-read__actions' },
     switchTo ? el('button', { type: 'button', class: 'link-btn', onclick: () => ask(question, switchTo[1]) }, switchTo[0]) : null, askClose()));
+  // A query the translator was unsure of waits for the analyst, so a
+  // half-understood question does not show results for another one.
+  if (!res.run) {
+    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'Not run: part of the question was not understood. Check the query, then ',
+      el('button', { type: 'button', class: 'link-btn', onclick: () => runSearch() }, 'run it'), '.'));
+  }
   showAskResult(...kids);
-  if (res.source === 'ai' || res.confidence > 0) runSearch();
+  if (res.run) runSearch();
 }
 $('ask-form').addEventListener('submit', (ev) => { ev.preventDefault(); ask($('ask').value); });
 
@@ -4660,6 +4717,7 @@ function healthPageRender(h) {
   if (noAnswer) alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it answers again.'));
   else if (status === 'unreachable') alerts.push(healthPageAlert('danger', 'circle-alert', 'Signalith can’t reach OpenSearch.', 'Searches and new events fail until it is back.'));
   else if (status === 'refused' && os.problem === 'busy') alerts.push(healthPageAlert('warning', 'triangle-alert', osProblem(os.problem)[2], 'Searches and new events may fail until it catches up.'));
+  else if (status === 'refused' && os.problem === 'blocked') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'New events, findings and detection runs fail until this is fixed; searches still work.'));
   else if (status === 'refused') alerts.push(healthPageAlert('danger', 'circle-alert', osProblem(os.problem)[2], 'Searches and new events fail until this is fixed.'));
   else if (status === 'red') alerts.push(healthPageAlert('danger', 'circle-alert', 'OpenSearch is red.', 'Some data cannot be searched or stored until it recovers.'));
   if (failed) alerts.push(healthPageAlert('warning', 'triangle-alert', `${healthPageNum(failed)} ${failed === 1 ? 'event' : 'events'} could not be stored.`, 'Counted since the server started. OpenSearch rejected them or did not answer.'));
@@ -4814,7 +4872,7 @@ function healthSyslogCard(sl) {
     stat('Received', sl.received),
     stat('Dropped', sl.dropped, 'warning', 'Lost because OpenSearch could not keep up, or while stopping'),
     stat('Rejected', sl.rejected, 'warning', 'Turned away: senders outside syslog.allow, messages too large, or too many connections'),
-    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch did not store them'));
+    stat('Write failed', sl.write_failed, 'warning', 'OpenSearch refused them for good, or it was down and they could not be spooled'));
 
   let body;
   const rejected = healthSyslogRejected(sl);
@@ -4852,7 +4910,7 @@ function healthSyslogCard(sl) {
   return el('div', { class: 'card hp-syslog' },
     el('div', { class: 'card__head' }, el('div', {}, title, el('p', { class: 'card__sub' }, last ? 'Last message ' + ago(last) : `Nothing ${sl.rejected ? 'accepted' : 'received'} since the server started`)),
       el('span', { class: 'hp-state' }, pulse, state[1])),
-    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected),
+    el('div', { class: 'hp-sl-top' }, listeners, stats, rejected, healthSyslogSpool(sl)),
     body);
 }
 
@@ -4879,6 +4937,34 @@ function healthSyslogRejected(sl) {
     el('b', {}, `${healthPageNum(sl.rejected)} ${sl.rejected === 1 ? 'message was' : 'messages were'} turned away since the server started.`),
     one ? el('p', {}, ...line(why[0])) : el('ul', { role: 'list' }, ...why.map((w) => el('li', {}, ...line(w))))));
 }
+// healthSyslogSpool says what the spool on disk did while OpenSearch
+// refused syslog events for now: a warning when it dropped events because
+// it was full or is more than half full, a note while it holds events,
+// and null otherwise.
+function healthSyslogSpool(sl) {
+  const max = sl.spool_max_bytes || 0;
+  if (!max || !(sl.spooled || sl.spool_events || sl.spool_dropped)) return null;
+  const size = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.max(b ? 1 : 0, Math.round(b / 1048576)).toLocaleString() + ' MB');
+  const events = (n) => `${healthPageNum(n)} ${n === 1 ? 'event' : 'events'}`;
+  const pct = Math.round((100 * (sl.spool_bytes || 0)) / max);
+  const holds = `The spool holds ${events(sl.spool_events || 0)} (${size(sl.spool_bytes || 0)} of ${size(max)}, ${pct}%).`;
+  const counts = `Since the server started, ${events(sl.spooled || 0)} went to the spool and ${events(sl.replayed || 0)} were written from it.`;
+  const where = can('admin') ? ['Its size is ', el('button', { type: 'button', class: 'link-btn', onclick: () => openSetting('syslog.spool_mb') }, 'Spool size (MB)'), ' on the Settings page, under Syslog.']
+    : ['Its size is Spool size (MB) on the Settings page, under Syslog.'];
+  if (sl.spool_dropped || pct > 50) {
+    const head = sl.spool_dropped
+      ? `${events(sl.spool_dropped)} ${sl.spool_dropped === 1 ? 'was' : 'were'} dropped because the syslog spool was full.`
+      : `The syslog spool is ${pct}% full.`;
+    return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'warning' }, icon('triangle-alert'), el('div', {},
+      el('b', {}, head),
+      el('p', {}, 'OpenSearch refused syslog events for now, so they wait on this server’s disk until it takes them again; when the spool is full, the oldest are dropped. ', holds, ' ', counts, ' ', ...where)));
+  }
+  if (!sl.spool_events) return null;
+  return el('div', { class: 'alert hp-sl-rejected', 'data-tone': 'info' }, icon('info'), el('div', {},
+    el('b', {}, `${events(sl.spool_events)} ${sl.spool_events === 1 ? 'waits' : 'wait'} in the syslog spool.`),
+    el('p', {}, 'OpenSearch refused them for now; they are written once it takes them again. ', holds, ' ', counts)));
+}
+
 // syslogAllowWhere says where a sender is added to the allowed ones: a
 // link to the Settings page for admins, who can open it.
 function syslogAllowWhere() {
@@ -4925,7 +5011,7 @@ function healthPageError(e) {
 // ---------- startup ----------
 (async function init() {
   document.querySelectorAll('.mod-key').forEach((k) => { k.textContent = isMac ? '⌘' : 'Ctrl'; });
-  $('run').title = `Search (${isMac ? '⌘' : 'Ctrl'}+Enter)`;
+  $('run').title = 'Search (Enter; Shift+Enter starts a new line)';
   renderGuide();
   renderEditor();
   try { if (localStorage.getItem('signalith.builder') === 'open') $('builder').open = true; } catch (_) { /* ignore */ }
