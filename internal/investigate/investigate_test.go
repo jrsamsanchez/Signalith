@@ -394,7 +394,8 @@ func TestGuardMaskedValuesOnAliases(t *testing.T) {
 		`* | where if(TargetUserName = "x", 1, 0) = 0`:               false,
 		`* | where case(TargetUserName = "x", 1, true(), 0) = 0`:     false,
 		`* | where lower(TargetUserName) = "bob"`:                    false,
-		`* | where TargetUserName = other_name`:                      true,
+		`* | where TargetUserName = "other_name"`:                    true,
+		`* | where TargetUserName = other_name`:                      false,
 		`* | where in(TargetUserName, "bob", "carol")`:               true,
 		`* | where isnotnull(TargetUserName) AND NOT dest_port = 22`: true,
 		// The stand-in works on any field, and other values still do.

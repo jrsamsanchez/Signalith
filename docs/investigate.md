@@ -107,7 +107,7 @@ can do:
   value is an address. `<` and `>` work only on `_time` and on counts made earlier by
   `stats` or `top` (`| stats count by src | where count > 10`): on a field that holds
   text they compare text, so `src_ip>=10.23 src_ip<10.24` on an unmasked copy of a masked
-  address would close in on it. `where` may only compare a field with one value as
+  address would close in on it. `where` may only compare a field with one value (not with another field) as
   written: `=`, `!=`, `<` and `>` on `_time` and counts, `like(field, "pattern")`, `in(field, values)`, `cidrmatch("network", field)`,
   `isnull` and `isnotnull`, joined with `AND`, `OR` and `NOT`. Nothing computed from a
   field (`len()`, `ltrim()`, `min()`, `if()`, joined strings) is allowed, so every value is
