@@ -69,6 +69,11 @@ type Control struct {
 	Title string `yaml:"title" json:"title"`
 	// Caps are the capabilities that support the control.
 	Caps []string `yaml:"caps" json:"caps"`
+	// Also says what else the control asks for that Signalith cannot
+	// show, such as a written plan or a setting on every system. A
+	// control with it is at most partly supported by Signalith's
+	// evidence.
+	Also string `yaml:"also,omitempty" json:"also,omitempty"`
 	// NIST are the NIST SP 800-53 controls this control lines up with.
 	// Configuration checks that reference one of them are evidence for it.
 	NIST []string `yaml:"nist" json:"nist"`
@@ -196,6 +201,9 @@ type Snapshot struct {
 	Assets int
 	// HTTPS is whether the web UI and API are served over HTTPS.
 	HTTPS bool
+	// PlainSyslog lists the plain (unencrypted) syslog listeners that
+	// are on, such as "UDP 0.0.0.0:5514".
+	PlainSyslog []string
 	// MFA is who must use two-step sign-in: off, admins or everyone;
 	// empty when unknown.
 	MFA string
@@ -254,6 +262,9 @@ type Findings struct {
 	New  int // nobody has looked at yet
 	// Stale are new findings older than TriageWindow.
 	Stale int
+	// Total counts every finding kept; Reviewed those someone has
+	// looked at (any status but new).
+	Total, Reviewed int
 }
 
 // TriageWindow is how long a new finding may wait before triage counts as
@@ -289,6 +300,10 @@ type Retention struct {
 	Guard     bool
 	// Shorter names the data categories with their own, shorter policy.
 	Shorter []string
+	// Oldest is the oldest day of event data kept, zero when there is
+	// none; OldestRead says it could be read.
+	Oldest     time.Time
+	OldestRead bool
 	// Longer names the event categories with their own policy that keeps
 	// data longer than the default, and findings and investigations when
 	// they are kept forever, with how long.
@@ -329,8 +344,9 @@ type Report struct {
 // FrameworkReport is one framework with every control's status.
 type FrameworkReport struct {
 	Framework
-	// Score is the share of applicable controls with evidence, 0-100;
-	// partly supported controls count half.
+	// Score is the share of applicable controls with Signalith's own
+	// evidence, 0-100; partly supported controls count half, and notes
+	// that a control is handled outside Signalith count for nothing.
 	Score    int             `json:"score"`
 	Counts   map[Status]int  `json:"counts"`
 	Controls []ControlReport `json:"controls"`
@@ -426,14 +442,18 @@ func Evaluate(s *Snapshot, notes map[string]Attestation) *Report {
 				cr.Status = a.Status
 			}
 			fr.Counts[cr.Status]++
-			switch cr.Status {
-			case Met, External:
+			// The score is Signalith's own evidence: a control noted as
+			// handled outside counts as applicable, with what Signalith
+			// found, so notes never raise it.
+			switch {
+			case cr.Status == NotApplicable:
+			case cr.Computed == Met:
 				points++
 				applicable++
-			case Partial:
+			case cr.Computed == Partial:
 				points += 0.5
 				applicable++
-			case Missing:
+			default:
 				applicable++
 			}
 			fr.Controls = append(fr.Controls, cr)
@@ -486,7 +506,7 @@ func evalControl(s *Snapshot, fw string, c Control) ControlReport {
 		cr.Detections = append(cr.Detections, DetectionRef{ID: d.ID, Name: d.Name, Data: detectionHasData(s, d), Tagged: slices.ContainsFunc(tagged, func(t Detection) bool { return t.ID == d.ID })})
 	}
 	switch {
-	case total > 0 && met == total:
+	case total > 0 && met == total && c.Also == "":
 		cr.Computed = Met
 	case met > 0 || partial > 0:
 		cr.Computed = Partial
