@@ -111,7 +111,7 @@ $OsqueryVersion = "5.12.1"
 $OsqueryUrl = "https://pkg.osquery.io/windows/osquery-$OsqueryVersion.msi"
 # Sysmon, from Microsoft's Sysinternals.
 $SysmonUrl = "https://download.sysinternals.com/files/Sysmon.zip"
-$Systems = "Windows 10 or 11 and Windows Server 2016 or later (64-bit x86)"
+$Systems = "Windows 10 or 11 and Windows Server 2016 or later on 64-bit x86, and Windows 11 on ARM"
 
 $ServiceName = "SignalithAgent"
 $system = "S-1-5-18"
@@ -406,15 +406,24 @@ function Check-Machine {
   if (-not [Environment]::Is64BitOperatingSystem) { Fail "The agent runs on 64-bit Windows only." }
   $machine = $env:PROCESSOR_ARCHITECTURE
   if ($env:PROCESSOR_ARCHITEW6432) { $machine = $env:PROCESSOR_ARCHITEW6432 }
-  if ($machine -ne "AMD64") {
-    Fail "The agent runs on 64-bit x86 Windows, not $machine yet." "Set up Fluent Bit by hand from Add data > Windows instead."
+  if ($machine -eq "ARM64") {
+    # The agent runs as an ARM program. Fluent Bit and osquery are their
+    # x86 builds, which Windows 11 runs on ARM: Fluent Bit's own ARM
+    # build (5.1.3) crashes as it starts sending. Windows 10 on ARM runs
+    # no 64-bit x86 programs.
+    $script:arch = "arm64"
+    if ([Environment]::OSVersion.Version.Build -lt 22000) {
+      Fail "On ARM the agent needs Windows 11, which runs the x86 Fluent Bit it uses." "Upgrade to Windows 11, or set up Fluent Bit by hand from Add data > Windows instead."
+    }
+  } elseif ($machine -ne "AMD64") {
+    Fail "The agent runs on 64-bit x86 and ARM Windows, not $machine." "Set up Fluent Bit by hand from Add data > Windows instead."
   }
   # A 32-bit PowerShell would install into Program Files (x86) and see
   # another registry.
   if (-not [Environment]::Is64BitProcess) {
     Fail "This is the 32-bit PowerShell." "Open the 64-bit Windows PowerShell (not the one marked x86) as administrator and paste the line again."
   }
-  Ok "processor: amd64"
+  Ok "processor: $script:arch"
   $v = [Environment]::OSVersion.Version
   if ($v.Major -lt 10 -or $v.Build -lt 14393) {
     Fail "The agent runs on $Systems; this computer runs Windows $v." "Set up Fluent Bit by hand from Add data > Windows instead."
@@ -743,7 +752,7 @@ function Sysmon-Install {
     }
     return
   }
-  $existing = @(Get-Service -Name "Sysmon64", "Sysmon" -ErrorAction SilentlyContinue)
+  $existing = @(Get-Service -Name "Sysmon64", "Sysmon64a", "Sysmon" -ErrorAction SilentlyContinue)
   if ($existing.Count -gt 0) {
     Ok "Sysmon is installed already ($($existing[0].Name)); it keeps its own configuration"
     return
@@ -756,13 +765,15 @@ function Sysmon-Install {
   }
   $dir = Join-Path $script:tmp "sysmon"
   Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
-  $exe = Join-Path $dir "Sysmon64.exe"
-  if (-not (Test-Path -LiteralPath $exe)) { Fail "The Sysmon zip holds no Sysmon64.exe." }
+  # Sysmon's driver must match the processor: Sysmon64a.exe is its ARM build.
+  $sysmonName = if ($script:arch -eq "arm64") { "Sysmon64a.exe" } else { "Sysmon64.exe" }
+  $exe = Join-Path $dir $sysmonName
+  if (-not (Test-Path -LiteralPath $exe)) { Fail "The Sysmon zip holds no $sysmonName." }
   $sig = Get-AuthenticodeSignature -LiteralPath $exe
   if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
-    Fail "Sysmon64.exe from $SysmonUrl is not signed by Microsoft (signature: $($sig.Status)), so it was not installed." "Run the line again later, or without -Sysmon."
+    Fail "$sysmonName from $SysmonUrl is not signed by Microsoft (signature: $($sig.Status)), so it was not installed." "Run the line again later, or without -Sysmon."
   }
-  Ok "Sysmon64.exe is signed by Microsoft"
+  Ok "$sysmonName is signed by Microsoft"
   $conf = Join-Path $ConfDir "sysmon.xml"
   Put-Text $conf $SysmonConfig | Out-Null
   # Choosing -Sysmon accepts the Sysinternals license, as the page says.
@@ -1192,12 +1203,11 @@ function Remove-Agent {
   if ($lines -contains "sysmon") {
     if ($DryRun) {
       Would "Sysmon64.exe -u force"
-    } elseif (Test-Path -LiteralPath (Join-Path $env:SystemRoot "Sysmon64.exe")) {
-      $sysmonExe = Join-Path $env:SystemRoot "Sysmon64.exe"
+    } elseif (($sysmonExe = @("Sysmon64.exe", "Sysmon64a.exe") | ForEach-Object { Join-Path $env:SystemRoot $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)) {
       $ErrorActionPreference = "Continue"
       & $sysmonExe -u force 2>&1 | Out-Null
       $ErrorActionPreference = "Stop"
-      if ($LASTEXITCODE -eq 0) { Ok "removed Sysmon, which the script installed" } else { Warn "Removing Sysmon failed (exit code $LASTEXITCODE)." "Sysmon64.exe -u force, in an elevated PowerShell." }
+      if ($LASTEXITCODE -eq 0) { Ok "removed Sysmon, which the script installed" } else { Warn "Removing Sysmon failed (exit code $LASTEXITCODE)." "$(Split-Path -Leaf $sysmonExe) -u force, in an elevated PowerShell." }
     }
   }
   if ($lines -contains "osquery-msi") {

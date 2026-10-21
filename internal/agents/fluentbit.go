@@ -837,7 +837,7 @@ func Generate(o Options) (*Agent, error) {
 		if o.PowerShell {
 			a.Steps = append(a.Steps, scriptBlockLoggingStep, moduleLoggingStep)
 		}
-		a.Steps = append(a.Steps, "Install Fluent Bit for Windows, 3.1 or later (64-bit installer), from https://docs.fluentbit.io/manual/installation/windows")
+		a.Steps = append(a.Steps, "Install Fluent Bit for Windows, 3.1 or later, from https://docs.fluentbit.io/manual/installation/windows: the 64-bit x86 installer (win64), on ARM PCs too, since the ARM build (winarm64) 5.1.3 crashes as it starts sending")
 		files := "fluent-bit.conf"
 		if useCA {
 			a.CAPath = WindowsCAPath
