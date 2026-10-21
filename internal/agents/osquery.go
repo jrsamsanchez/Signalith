@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/jrsamsanchez/signalith/internal/agentproto"
 )
 
 // The osquery option: hosts run osquery and Signalith is their management
@@ -86,7 +88,7 @@ func OsqueryFlags(platform, hostPort, secretPath, ca string) string {
 	if platform == "darwin" {
 		flags = append(flags, "--disable_endpointsecurity=false")
 	}
-	flags = append(flags, "--utc")
+	flags = append(flags, "--utc", "--disable_tables="+agentproto.OsqueryDisabledTables)
 	return strings.Join(flags, "\n") + "\n"
 }
 

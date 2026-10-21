@@ -124,3 +124,13 @@ func TestManagedOsqueryFlags(t *testing.T) {
 		t.Error("plain http accepted")
 	}
 }
+
+// Every osquery set up from Signalith runs with the curl tables off
+// (ASI-12).
+func TestOsqueryFlagsDisableCurlTables(t *testing.T) {
+	for _, platform := range []string{"linux", "windows", "darwin"} {
+		if f := OsqueryFlags(platform, "siem.example.com:7779", "", ""); !strings.Contains(f, "\n--disable_tables=curl,curl_certificate\n") {
+			t.Errorf("%s flags:\n%s", platform, f)
+		}
+	}
+}

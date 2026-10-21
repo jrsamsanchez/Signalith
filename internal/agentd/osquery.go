@@ -62,6 +62,9 @@ func (p Paths) localOsqueryFlags(withCA bool) []string {
 		"--database_path="+filepath.Join(p.osqueryState(), "osquery.db"),
 		"--pidfile="+filepath.Join(p.osqueryState(), "osqueryd.pidfile"),
 		"--disable_extensions=true",
+		// Last, so it is the list osquery keeps whatever the server
+		// sent.
+		"--disable_tables="+agentproto.OsqueryDisabledTables,
 	)
 }
 
