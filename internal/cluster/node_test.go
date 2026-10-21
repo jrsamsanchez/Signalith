@@ -303,15 +303,19 @@ func TestTwoServersOneRunsTheJobs(t *testing.T) {
 	b := testNode(t, t.TempDir(), c, false)
 	waitReady(t, a, 5*time.Second)
 	waitReady(t, b, 5*time.Second)
+	// b's view of the lease and a's own are read at different moments, and
+	// a renewal answered late (a slow runner) costs a its lease until it
+	// takes it again: both views are waited for, never assumed together.
 	var st Status
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		st = b.Status()
-		if len(st.Servers) == 2 && st.Jobs.HolderName == a.Name() && st.Servers[0].State == StateReady && st.Servers[1].State == StateReady {
+		if len(st.Servers) == 2 && st.Jobs.HolderName == a.Name() && st.Servers[0].State == StateReady && st.Servers[1].State == StateReady &&
+			a.RunsJobs() && b.JobHolder() == a.Name() {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("status %+v", st)
+			t.Fatalf("status %+v; a runs the jobs %v, b sees %q run them", st, a.RunsJobs(), b.JobHolder())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -321,8 +325,8 @@ func TestTwoServersOneRunsTheJobs(t *testing.T) {
 			t.Errorf("%s: jobs %q state %q", s.Name, s.Jobs, s.State)
 		}
 	}
-	if !a.RunsJobs() || b.RunsJobs() || b.JobHolder() != a.Name() {
-		t.Error("jobs on the wrong server")
+	if b.RunsJobs() {
+		t.Error("b runs the jobs too")
 	}
 	// a stops: b sees it stopped at once, and the warning that nobody runs
 	// the jobs.
