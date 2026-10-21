@@ -236,6 +236,7 @@ func (l *Library) resolve(id string) *Detection {
 		if l.shipped(id) != nil {
 			c.Source = "override"
 		}
+		c.Scoped = l.scopedFor(&c)
 		return &c
 	}
 	if d := l.shipped(id); d != nil {
@@ -250,9 +251,80 @@ func (l *Library) resolve(id string) *Detection {
 			}
 			c.Exceptions = st.Exceptions
 		}
+		c.Scoped = l.scopedFor(&c)
 		return &c
 	}
 	return nil
+}
+
+// ScopedID is the reserved name the library keeps the exceptions for
+// many detections under, as the state of a detection that cannot exist:
+// Dir/state/scoped-exceptions.yaml, or that item of a cluster's shared
+// settings. So they are kept, shared and versioned like the exceptions
+// of a built-in detection.
+const ScopedID = "scoped-exceptions"
+
+// scopedFor returns the exceptions for many detections that cover d;
+// l.mu is held.
+func (l *Library) scopedFor(d *Detection) []Exception {
+	st := l.state[ScopedID]
+	if st == nil {
+		return nil
+	}
+	var out []Exception
+	for i := range st.Exceptions {
+		if st.Exceptions[i].InScope(d) {
+			out = append(out, st.Exceptions[i])
+		}
+	}
+	return out
+}
+
+// ScopedExceptions returns the exceptions for many detections: each has a
+// Scope (all, pack:<name> or tag:<tag>) and suppresses the results it
+// matches of every detection in that scope, before the detection's own
+// exceptions are checked.
+func (l *Library) ScopedExceptions() []Exception {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if st := l.state[ScopedID]; st != nil {
+		return slices.Clone(st.Exceptions)
+	}
+	return nil
+}
+
+// ScopedETag is the version of the exceptions for many detections, for
+// If-Match.
+func (l *Library) ScopedETag() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return ETag(nil, l.state[ScopedID])
+}
+
+// UpdateScopedExceptionsIf changes the exceptions for many detections
+// with fn, which gets a copy of the current ones, by the user by, for a
+// page that read them at etag ("" for any version). They have the limits
+// and checks of a detection's own exceptions, and each needs a scope. It
+// returns them as saved.
+func (l *Library) UpdateScopedExceptionsIf(ctx context.Context, by, etag string, fn func([]Exception) ([]Exception, error)) ([]Exception, error) {
+	err := l.apply(ctx, by, []string{ScopedID}, etag, func(_ string, cust *Detection, st *State) (*Detection, *State, error) {
+		var cur []Exception
+		if st != nil {
+			cur = st.Exceptions
+		}
+		next, err := fn(slices.Clone(cur))
+		if err != nil {
+			return nil, nil, err
+		}
+		if p := ScopedProblems(next); len(p) > 0 {
+			return nil, nil, &ValidationError{ID: ScopedID, Problems: p}
+		}
+		return cust, &State{Exceptions: next}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return l.ScopedExceptions(), nil
 }
 
 // List returns every detection, sorted by ID.
@@ -396,7 +468,7 @@ func (l *Library) UpdateExceptionsIf(ctx context.Context, by, id, etag string, f
 		if err != nil {
 			return nil, nil, err
 		}
-		if p := exceptionProblems(next); len(p) > 0 {
+		if p := append(exceptionProblems(next), ownProblems(next)...); len(p) > 0 {
 			return nil, nil, &ValidationError{ID: id, Problems: p}
 		}
 		if cust != nil {
