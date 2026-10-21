@@ -7,6 +7,8 @@
 #   sudo lab-loadtest          starts the test in the background (about 4.5 hours)
 #   sudo lab-loadtest spread   starts the detection spread test instead (about
 #                              4.5 hours; needs loadtest_servers = 2 or 3)
+#   sudo lab-loadtest soak     starts the 7-day soak instead: real recorded
+#                              Windows events at about 1 TB a day
 #   sudo lab-loadtest status   shows how far it is
 #   sudo lab-loadtest stop     stops it, keeping what it measured so far
 #
@@ -29,6 +31,13 @@
 # systemctl; 4 signalith-3 (or the last server) killed with kill -9, left
 # down 10 minutes and started again. The plan's phase 5 (a noisy tenant)
 # is done by hand: see docs/cloud-lab.md.
+#
+# soak runs loadtest/soak-7d.yaml (real recorded Windows events, replayed,
+# at about 1 TB a day) through every server's agent port for 7 days. It
+# keeps the detections' run state every 10 minutes rather than every
+# minute, so a week of samples fits on signalith-1's disk, and the report
+# adds the stored bytes per event, the events per Signalith core and the
+# shards over time.
 set -uo pipefail
 
 LAB=/root/lab
@@ -65,19 +74,23 @@ need_spread() {
 }
 
 case "${1:-start}" in
-  start | spread)
+  start | spread | soak)
     [ -n "$(ip_of loadgen)" ] || { echo "This lab has no load generator: make it with terraform apply -var size=loadtest (docs/cloud-lab.md)." >&2; exit 2; }
     mode=tb-day
+    took="about 4.5 hours"
     if [ "${1:-start}" = spread ]; then
       need_spread
       mode=spread
+    elif [ "${1:-start}" = soak ]; then
+      mode=soak
+      took="7 days and about 30 minutes"
     fi
     if systemctl is-active -q "$UNIT"; then
       echo "The load test is already running: sudo lab-loadtest status" >&2
       exit 1
     fi
     systemd-run -q --unit="$UNIT" --collect -p StandardOutput="append:$LOG" -p StandardError="append:$LOG" -p TimeoutStopSec=300 "$0" run "$mode"
-    echo "Started. It takes about 4.5 hours; see how far it is with: sudo lab-loadtest status"
+    echo "Started. It takes $took; see how far it is with: sudo lab-loadtest status"
     exit 0
     ;;
   status)
@@ -98,7 +111,7 @@ case "${1:-start}" in
     [ "$MODE" != spread ] || need_spread
     ;;
   *)
-    echo "Usage: lab-loadtest [start|spread|status|stop]" >&2
+    echo "Usage: lab-loadtest [start|spread|soak|status|stop]" >&2
     exit 2
     ;;
 esac
@@ -187,6 +200,11 @@ if mode == "spread":
     print(f"Results folder: `{out}`. The load: 10,000 events a second of about 500 bytes for 4 hours "
           "(loadtest/spread-10k.yaml) through every server's agent port, with 5 analysts searching, "
           "while the phases below turn detections.spread on, restart one server and kill another.\n")
+elif mode == "soak":
+    print("# 7-day soak\n")
+    print(f"Results folder: `{out}`. The load: real recorded Windows and Sysmon events, replayed at 7,200 a second "
+          "(about 1 TB a day at their 1.6 KB average) for 7 days (loadtest/soak-7d.yaml) through every server's agent port, "
+          "one in a thousand sent as recorded so the detections fire, with 5 analysts searching.\n")
 else:
     print("# Terabyte-a-day load test\n")
     print(f"Results folder: `{out}`. The load: 25,000 events a second of about 500 bytes for 4 hours "
@@ -312,6 +330,11 @@ def pct(v, p):
         return None
     s = sorted(v)
     return s[max(0, min(len(s) - 1, int(round(len(s) * p)) - 1))]
+
+def gb(v):
+    """A size from _cat (bytes, as sampled with bytes=b) in GB."""
+    n = num(v)
+    return str(v) if n is None else f"{n / 2**30:.1f} GB"
 
 def fmt(v, unit=""):
     return "-" if v is None else f"{v:,.0f}{unit}"
@@ -499,7 +522,7 @@ if idx and idx.get("indices"):
     print("| Index | Primary shards | Replicas | Documents | Size |")
     print("| --- | --- | --- | --- | --- |")
     for r in sorted(idx["indices"], key=lambda r: r.get("index") or ""):
-        print(f"| {r.get('index')} | {r.get('pri')} | {r.get('rep')} | {r.get('docs.count')} | {r.get('store.size')} |")
+        print(f"| {r.get('index')} | {r.get('pri')} | {r.get('rep')} | {r.get('docs.count')} | {gb(r.get('store.size'))} |")
     print()
 else:
     print("Not sampled (indices.jsonl).\n")
@@ -529,6 +552,56 @@ if logs:
         print("No index reached the rollover size.\n")
 else:
     print("Not collected (logs-*.txt).\n")
+
+if mode == "soak":
+    print("## Over the week\n")
+    # Stored events per Signalith core: the median rate over the cores of
+    # every Signalith server (cores.txt, written at the start).
+    cores = 0
+    try:
+        with open(os.path.join(out, "cores.txt")) as f:
+            cores = sum(int(l.split()[1]) for l in f if len(l.split()) == 2)
+    except (OSError, ValueError):
+        pass
+    o = rows(os.path.join(out, "opensearch.csv"))
+    docs = [num(x["docs"]) for x in o if num(x["docs"]) is not None]
+    rates = [(b - a) / 30 for a, b in zip(docs, docs[1:]) if b >= a]
+    if rates and cores:
+        print(f"- Events stored a second per Signalith core: {statistics.median(rates) / cores:,.0f} "
+              f"(median {statistics.median(rates):,.0f} a second over {cores} cores).")
+    print("- Each day: the event indices (signalith-*) at the first sample of the day.\n")
+    print("| Day | Time | Events | Primary size | Bytes per event (primary) | Size with replicas | Event indices | Shards in the cluster |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    nshards = {}
+    for x in jsonl("shards.jsonl"):
+        nshards[x.get("t")] = len(x.get("shards") or [])
+    first, day = None, -1
+    for x in jsonl("indices.jsonl"):
+        t = ts(x.get("t"))
+        if t is None:
+            continue
+        if first is None:
+            first = t
+        d = int((t - first) // 86400)
+        if d == day:
+            continue
+        day = d
+        ix = x.get("indices") or []
+        ndocs = sum(num(r.get("docs.count")) or 0 for r in ix)
+        pri = sum(num(r.get("pri.store.size")) or 0 for r in ix)
+        tot = sum(num(r.get("store.size")) or 0 for r in ix)
+        per = f"{pri / ndocs:,.0f}" if ndocs else "-"
+        print(f"| {d + 1} | {x.get('t')} | {ndocs:,.0f} | {pri / 2**30:,.1f} GB | {per} | {tot / 2**30:,.1f} GB | {len(ix)} | {nshards.get(x.get('t'), '-')} |")
+    print()
+    lag = [num(x["lag_s"]) for x in o if num(x["lag_s"]) is not None]
+    if lag:
+        per_day = {}
+        for x in o:
+            t, v = ts(x["time"]), num(x["lag_s"])
+            if t is not None and v is not None and first is not None:
+                per_day.setdefault(int((t - first) // 86400) + 1, []).append(v)
+        print("Lag per day (the clock minus the newest stored event): " + "; ".join(
+            f"day {d}: median {statistics.median(v):.0f} s, highest {max(v):.0f} s" for d, v in sorted(per_day.items())) + ".\n")
 
 if mode == "spread":
     print("### CPU per phase\n")
@@ -612,11 +685,14 @@ det_samples() {
   JAR=$JAR-samples
   while :; do
     t=$(date -u +%FT%TZ)
-    # Each detection's run state, one JSON line per rule.
+    # Each detection's run state, one JSON line per rule; in the soak
+    # every 10 minutes, which a week of fits on the disk.
+    if [ "$MODE" != soak ] || [ $((i % 10)) = 0 ]; then
     os_admin "/$RUNTIME/_search?ignore_unavailable=true&allow_no_indices=true" -H 'Content-Type: application/json' \
       -d '{"size":10000,"query":{"term":{"kind":"detstate"}},"_source":["detection_id","last_slot","last_run","last_duration_ms","lag_ms","late_runs","node","det_epoch","error_kind","schedule","attempts"]}' |
       jq -c --arg t "$t" '.hits.hits[] | {t: $t, tenant: (._index | if . == "signalith_runtime" then "default" else (sub("^signalith\\.t\\."; "") | sub("_runtime$"; "")) end)} + ._source' \
         >>"$OUT/detstate.jsonl" || echo "$t detstate: could not be read" >>"$OUT/detections-errors.txt"
+    fi
     os_admin "/$RUNTIME/_search?ignore_unavailable=true&allow_no_indices=true" -H 'Content-Type: application/json' \
       -d '{"size":100,"query":{"term":{"kind":"detassign"}},"_source":["tenant","lease_epoch","search_budget"]}' |
       jq -c --arg t "$t" '.hits.hits[] | {t: $t} + ._source' >>"$OUT/detassign.jsonl" 2>/dev/null || true
@@ -627,7 +703,7 @@ det_samples() {
       echo "$t GET /api/cluster: could not be read" >>"$OUT/detections-errors.txt"
     if [ $((i % 10)) = 0 ]; then
       os_admin '/_cat/shards?format=json' | jq -c --arg t "$t" '{t: $t, shards: .}' >>"$OUT/shards.jsonl" || true
-      os_admin '/_cat/indices/signalith-*?format=json' | jq -c --arg t "$t" '{t: $t, indices: .}' >>"$OUT/indices.jsonl" || true
+      os_admin '/_cat/indices/signalith-*?format=json&bytes=b' | jq -c --arg t "$t" '{t: $t, indices: .}' >>"$OUT/indices.jsonl" || true
     fi
     i=$((i + 1))
     sleep 60
@@ -702,21 +778,39 @@ start_servers() {
   for m in $(servers); do on "$m" 'systemctl is-active -q signalith || systemctl start signalith' </dev/null || true; done
 }
 
-spread_test() {
-  local m victim t0 bundle=$LAB/servers-ca.pem targets
-  # The agents send to every server's agent port, checked with each
-  # server's CA, fetched over the lab's own SSH (a CA twice does no harm).
+# every_server SCENARIO RUN copies loadtest/SCENARIO.yaml to the load
+# generator as RUN.yaml, with the agents sent to every server's agent
+# port, checked with each server's CA, fetched over the lab's own SSH (a
+# CA twice does no harm). It prints the agent addresses.
+every_server() {
+  local m bundle=$LAB/servers-ca.pem targets
   for m in $(servers); do on "$m" 'cat /var/lib/signalith/tls/ca.pem' </dev/null; done >"$bundle"
   for m in $(servers); do
     curl -fsS -o /dev/null --max-time 10 --cacert "$bundle" "https://$m.$DOMAIN:7779/readyz" ||
-      { say "FAILED: $m does not answer on its agent port (https://$m.$DOMAIN:7779/readyz)."; return 1; }
+      { say "FAILED: $m does not answer on its agent port (https://$m.$DOMAIN:7779/readyz)." >&2; return 1; }
   done
   on loadgen 'umask 077 && cat >/root/loadtest/servers-ca.pem' <"$bundle"
   targets=$(servers | sed "s|.*|https://&.$DOMAIN:7779|" | paste -sd, - | sed 's/,/, /g')
   sed -e "s|^agent_targets:.*|agent_targets: [$targets]|" -e "s|^ca_file:.*|ca_file: /root/loadtest/servers-ca.pem|" \
-    "$LAB/src/loadtest/spread-10k.yaml" | on loadgen 'umask 077 && cat >/root/loadtest/spread-run.yaml'
-  on loadgen '/root/loadtest/signalith-loadgen check /root/loadtest/spread-run.yaml' </dev/null >/dev/null ||
-    { say "FAILED: the load generator refused loadtest/spread-10k.yaml."; return 1; }
+    "$LAB/src/loadtest/$1.yaml" | on loadgen "umask 077 && cat >/root/loadtest/$2.yaml"
+  on loadgen "/root/loadtest/signalith-loadgen check /root/loadtest/$2.yaml" </dev/null >/dev/null ||
+    { say "FAILED: the load generator refused loadtest/$1.yaml." >&2; return 1; }
+  printf '%s\n' "$targets"
+}
+
+# soak_test runs the 7-day soak.
+soak_test() {
+  local targets m
+  targets=$(every_server soak-7d soak-run) || return 1
+  for m in $(servers); do printf '%s %s\n' "$m" "$(on "$m" nproc </dev/null)"; done >"$OUT/cores.txt"
+  say "  the load generator runs loadtest/soak-7d.yaml through $targets (7 days)"
+  on loadgen 'cd /root/loadtest && rm -f report.json && ./signalith-loadgen run -f soak-run.yaml -json report.json' </dev/null >"$OUT/loadgen.txt" 2>&1
+  say "  the load generator finished (exit $?)"
+}
+
+spread_test() {
+  local m victim t0 targets
+  targets=$(every_server spread-10k spread-run) || return 1
   api GET /api/cluster | jq -r '.servers[] | select(.removed != true) | "  \(.name): \(.state)\(if .not_eligible then ", may not run detections: \(.not_eligible)" else "" end)"' |
     while read -r line; do say "$line"; done
 
@@ -777,6 +871,9 @@ finish() {
     if [ -n "${SPREAD_WAS:-}" ] && [ "$(spread_value)" != "$SPREAD_WAS" ]; then set_spread "$SPREAD_WAS" || true; fi
   fi
   stop_samplers
+  # OpenSearch's own counters (searches, indexing, merges per node) before
+  # the held updates may restart it and zero them.
+  os_admin '/_nodes/stats/indices,os,jvm,fs,thread_pool' >"$OUT/node-stats-end.json" 2>/dev/null || rm -f "$OUT/node-stats-end.json"
   release_updates
   local m
   for m in $(names); do on "$m" "cat $SAMPLES 2>/dev/null" </dev/null >"$OUT/$m.csv"; done
@@ -832,6 +929,8 @@ rules >"$OUT/rules.json" 2>/dev/null || { rm -f "$OUT/rules.json"; say "  the de
 
 if [ "$MODE" = spread ]; then
   spread_test || say "  the spread test stopped early"
+elif [ "$MODE" = soak ]; then
+  soak_test || say "  the soak stopped early"
 else
   say "  the load generator runs loadtest/tb-day.yaml (about 4.5 hours)"
   on loadgen 'cd /root/loadtest && rm -f report.json && ./signalith-loadgen run -f tb-day.yaml -json report.json' </dev/null >"$OUT/loadgen.txt" 2>&1
