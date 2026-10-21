@@ -26,6 +26,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -127,10 +128,70 @@ var macosCategories = map[string]string{
 	"process_creation": "rules/macos/process_creation",
 }
 
-// webCategories are the log source categories of web servers' logs, which
-// name no product, and the folders their rules live in.
+// webCategories are the log source categories that name no product, web
+// servers' logs and antivirus alerts, and the folders their rules live in.
 var webCategories = map[string]string{
 	"webserver": "rules/web/webserver_generic",
+	// Antivirus alerts name no product either: any antivirus product's
+	// alert in the Malware data model (its threat's name and file). Their
+	// test events are Defender's threat detected events
+	// (sigmacheck.AntivirusChannel).
+	"antivirus": "rules/category/antivirus",
+}
+
+// unreadNotes say why folders packgen does not read are left out, for
+// the report: a folder and the folders in it.
+var unreadNotes = map[string]string{
+	// No data model holds these logs' messages by field, and free text
+	// matches words of the raw event rather than exactly.
+	"rules/linux/builtin": "syslog (sshd, cron, ...) rules that search the raw message as free text, which does not convert exactly",
+}
+
+// unreadNote is the note on a folder packgen does not read, if any.
+func unreadNote(dir string) string {
+	best := ""
+	for d := range unreadNotes {
+		if (dir == d || strings.HasPrefix(dir, d+"/")) && len(d) > len(best) {
+			best = d
+		}
+	}
+	return unreadNotes[best]
+}
+
+// unreadFolders counts the rules of a SigmaHQ checkout (every .yml file
+// under its rules* folders) and, by folder, the ones not in read (paths
+// relative to the checkout, with forward slashes).
+func unreadFolders(root string, read map[string]bool) (map[string]int, int, error) {
+	unread := map[string]int{}
+	total := 0
+	tops, err := os.ReadDir(root)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, top := range tops {
+		if !top.IsDir() || !strings.HasPrefix(top.Name(), "rules") {
+			continue
+		}
+		err := filepath.WalkDir(filepath.Join(root, top.Name()), func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".yml") {
+				return err
+			}
+			rel, err := filepath.Rel(root, p)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			total++
+			if !read[rel] {
+				unread[path.Dir(rel)]++
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return unread, total, nil
 }
 
 // cloudCategories are the log sources of cloud services, by product, and
@@ -219,7 +280,7 @@ func main() {
 	pack := &detect.Pack{
 		Name:  "sigmahq",
 		Title: "SigmaHQ community rules",
-		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, and network rules for Zeek's logs and for DNS, web proxy and firewall data, from the SigmaHQ project, converted to Signalith detections. " +
+		Description: "Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, network rules for Zeek's logs and for DNS, web proxy and firewall data, and antivirus rules for any antivirus product's alerts, from the SigmaHQ project, converted to Signalith detections. " +
 			"Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.",
 		Source:     "https://github.com/SigmaHQ/sigma",
 		Version:    commit,
@@ -241,6 +302,7 @@ func main() {
 	skipped := map[string][]string{}
 	skip := func(reason, file string) { skipped[reason] = append(skipped[reason], file) }
 	used := map[string]bool{}
+	read := map[string]bool{} // rule files read, relative to the checkout
 	type source struct{ product, cat, dir string }
 	var sources []source
 	for c, dir := range categories {
@@ -283,6 +345,10 @@ func main() {
 		for _, f := range files {
 			rel, _ := filepath.Rel(*sigmaDir, f)
 			rel = filepath.ToSlash(rel)
+			if read[rel] {
+				log.Fatalf("%s is in two of the folders packgen reads", rel)
+			}
+			read[rel] = true
 			src, err := os.ReadFile(f)
 			if err != nil {
 				log.Fatal(err)
@@ -467,12 +533,25 @@ func main() {
 	if err := os.WriteFile(filepath.Join(*outDir, "pack.yaml"), buf.Bytes(), 0o644); err != nil {
 		log.Fatal(err)
 	}
-	writeReport(pack, skipped)
-	n := 0
+	unread, total, err := unreadFolders(*sigmaDir, read)
+	if err != nil {
+		log.Fatal(err)
+	}
+	n, u := 0, 0
 	for _, v := range skipped {
 		n += len(v)
 	}
-	fmt.Printf("%d rules shipped, %d left out (see %s)\n", len(pack.Rules), n, filepath.Join(*outDir, "REPORT.md"))
+	for _, c := range unread {
+		u += c
+	}
+	// Every rule of the checkout is shipped, left out with its reason,
+	// or in a folder packgen does not read.
+	if len(pack.Rules)+n != len(read) || len(read)+u != total {
+		log.Fatalf("%d rules shipped, %d left out and %d not read do not add up to the %d rules read and %d in the checkout",
+			len(pack.Rules), n, u, len(read), total)
+	}
+	writeReport(pack, skipped, unread, total)
+	fmt.Printf("%d rules shipped, %d left out, %d in folders not read yet, of %d (see %s)\n", len(pack.Rules), n, u, total, filepath.Join(*outDir, "REPORT.md"))
 }
 
 func short(err error) string {
@@ -615,14 +694,22 @@ func regression(root, rel string, rule *sigmacheck.Rule, cat string) []sigmachec
 	return out
 }
 
-func writeReport(p *detect.Pack, skipped map[string][]string) {
+// unreadHeading is the report's section on folders packgen does not read.
+const unreadHeading = "## Folders not read yet"
+
+func writeReport(p *detect.Pack, skipped map[string][]string, unread map[string]int, total int) {
 	var b strings.Builder
-	n := 0
+	n, u := 0, 0
 	for _, v := range skipped {
 		n += len(v)
 	}
+	for _, c := range unread {
+		u += c
+	}
 	fmt.Fprintf(&b, "# SigmaHQ pack report\n\nGenerated by `go run ./internal/detect/packgen` from SigmaHQ commit `%s` on %s.\n\n", p.Version, p.Date)
-	fmt.Fprintf(&b, "%d rules shipped. %d Windows, Linux, macOS and network rules for these log sources were left out:\n\n", len(p.Rules), n)
+	fmt.Fprintf(&b, "The checkout has %d rules (the .yml files under its rules* folders): %d shipped, %d left out from the folders packgen reads, "+
+		"and %d in %d folders it does not read yet (see [Folders not read yet](#folders-not-read-yet)).\n\n", total, len(p.Rules), n, u, len(unread))
+	fmt.Fprintf(&b, "%d rules shipped. %d rules of the folders packgen reads were left out:\n\n", len(p.Rules), n)
 	reasons := make([]string, 0, len(skipped))
 	for r := range skipped {
 		reasons = append(reasons, r)
@@ -643,6 +730,20 @@ func writeReport(p *detect.Pack, skipped map[string][]string) {
 		for _, f := range skipped[r] {
 			fmt.Fprintf(&b, "- %s\n", strings.ReplaceAll(f, "|", `\|`))
 		}
+	}
+	fmt.Fprintf(&b, "\n%s\n\n%d rules in %d folders packgen does not read yet, by folder (a folder's own rules, not those of the folders in it):\n\n", unreadHeading, u, len(unread))
+	b.WriteString("| Rules | Folder | Why |\n| ---: | --- | --- |\n")
+	dirs := make([]string, 0, len(unread))
+	for d := range unread {
+		dirs = append(dirs, d)
+	}
+	sort.Strings(dirs)
+	for _, d := range dirs {
+		why := unreadNote(d)
+		if why == "" {
+			why = "not read yet"
+		}
+		fmt.Fprintf(&b, "| %d | %s | %s |\n", unread[d], d, why)
 	}
 	b.WriteString(networkReportNote)
 	if err := os.WriteFile(filepath.Join(*outDir, "REPORT.md"), []byte(b.String()), 0o644); err != nil {

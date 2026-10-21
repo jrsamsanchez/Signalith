@@ -785,3 +785,40 @@ func TestFingerprintGuardHolderHook(t *testing.T) {
 		}
 	}
 }
+
+// noFenceTimer is a clock whose deadline waits never end, so a test sees
+// what the renewals alone do, without the fence timer acting first.
+type noFenceTimer struct{ Clock }
+
+func (noFenceTimer) Until(time.Duration) <-chan time.Time { return nil }
+
+func TestLateRenewalNeverRevivesTheLease(t *testing.T) {
+	s := newSim(t)
+	a := s.add("n_a", noFenceTimer{s.clock})
+	p := &probe{}
+	a.l.SetJobs([]Job{p.job("detections", false)})
+	s.run(time.Second)
+	eventually(t, "the job", func() bool { _, r := p.state(); return r == 1 })
+	// The next renewal is sent in time, but its answer comes once the
+	// previous one's fence time has passed, though not its own: the
+	// lease ran out here meanwhile, and a job or request saw it had.
+	var once sync.Once
+	ranOut := false
+	s.os.SetFault(func(m, path string) *ostest.Fault {
+		if m == "PUT" && strings.Contains(path, leaseID) {
+			once.Do(func() {
+				s.clock.Advance(DefaultTiming.Fence - DefaultTiming.Renew + DefaultTiming.Renew/2)
+				ranOut = !a.l.Valid()
+			})
+		}
+		return nil
+	})
+	s.run(DefaultTiming.Renew)
+	if !ranOut {
+		t.Fatal("the lease had not run out while the renewal was on its way")
+	}
+	if a.l.Valid() || a.l.Holding() {
+		t.Fatalf("a renewal answered after the fence time revived the lease: %+v", a.l.View())
+	}
+	eventually(t, "the job to stop", func() bool { _, r := p.state(); return r == 0 })
+}

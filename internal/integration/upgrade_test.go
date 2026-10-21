@@ -110,6 +110,24 @@ func startBin(s *testServer, bin string) {
 	s.api = s.httpsClient()
 }
 
+// upgradeLogLines is how much of each server's log a failed upgrade test
+// shows: both versions' runs, which the servers' own cleanup cuts short.
+const upgradeLogLines = 800
+
+// dumpLogsOnFailure shows the end of each server's log, every run of it
+// on either version, when the test fails. Call it after the servers were
+// added and before they start, so it runs once they stopped.
+func dumpLogsOnFailure(t *testing.T, servers ...*testServer) {
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		for _, s := range servers {
+			t.Logf("log of %s (last %d lines):\n%s", s.name, upgradeLogLines, s.logTail(upgradeLogLines))
+		}
+	})
+}
+
 // stopGraceful stops the server as a service stop does, and waits until
 // it exited.
 func stopGraceful(s *testServer) {
@@ -308,6 +326,7 @@ func TestUpgradeRollingPair(t *testing.T) {
 		return ok && v.Lease.Mine
 	})
 	sb := h.add("siem-b", serverOptions{})
+	dumpLogsOnFailure(t, a, sb)
 	startBin(sb, b.prev)
 	waitStandby(t, a, sb)
 	caps := detectCaps(t, b, a)
@@ -386,8 +405,18 @@ func TestUpgradeRollingPair(t *testing.T) {
 		t.Logf("prev %s: no cluster level, skipped (level now %d)", b.prevVersion, clusterLevel(t, a, b.next))
 	}
 	if session != nil {
-		if code := a.me(session); code != http.StatusOK {
-			t.Errorf("the session from before the upgrade: %d", code)
+		// A server that cannot check a session for a moment (OpenSearch
+		// slow on a busy runner) answers 503, which the page tries again;
+		// only 401 signs the browser out. Both servers restarted, so
+		// neither has a copy of the session: each reads it.
+		for _, s := range []*testServer{a, sb} {
+			code := s.me(session)
+			for end := time.Now().Add(30 * time.Second); code == http.StatusServiceUnavailable && time.Now().Before(end); code = s.me(session) {
+				time.Sleep(time.Second)
+			}
+			if code != http.StatusOK {
+				t.Errorf("the session from before the upgrade on %s: %d", s.name, code)
+			}
 		}
 	}
 }

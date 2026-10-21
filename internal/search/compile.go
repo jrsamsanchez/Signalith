@@ -281,17 +281,32 @@ func ipv6Query(field string, p netip.Prefix) (map[string]any, bool) {
 
 var queryStringReserved = regexp.MustCompile(`[+\-=&|><!(){}\[\]^"~:\\/]`)
 
+// plainWord is a search word of letters, digits and underscores only.
+var plainWord = regexp.MustCompile(`^[\pL\pN_]+$`)
+
 func textQuery(v string) map[string]any {
 	if strings.ContainsAny(v, " \t") {
 		return map[string]any{"match_phrase": map[string]any{StoredRawField: v}}
 	}
 	escaped := queryStringReserved.ReplaceAllString(v, `\$0`)
-	return map[string]any{"query_string": map[string]any{
+	q := map[string]any{"query_string": map[string]any{
 		"query":                  escaped,
 		"default_field":          StoredRawField,
 		"analyze_wildcard":       true,
 		"allow_leading_wildcard": true,
 	}}
+	if !plainWord.MatchString(v) {
+		return q
+	}
+	// The raw text is split into words where Splunk splits it too, except
+	// at dots and underscores, which stay inside a word: mimikatz.exe is
+	// one. A plain word also matches the start of such a word, as it does
+	// in Splunk, so mimikatz finds mimikatz.exe (LP-04).
+	w := strings.ToLower(v)
+	return map[string]any{"bool": map[string]any{"should": []any{q,
+		map[string]any{"prefix": map[string]any{StoredRawField: map[string]any{"value": w + "."}}},
+		map[string]any{"prefix": map[string]any{StoredRawField: map[string]any{"value": w + "_"}}},
+	}, "minimum_should_match": 1}}
 }
 
 func parseNumber(s string) (any, bool) {

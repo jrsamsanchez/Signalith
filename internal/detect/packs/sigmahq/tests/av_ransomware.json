@@ -1,0 +1,4 @@
+{"rule": "4c6ca276-d4d0-4a8c-9e4c-d69832f8671f", "cases": [
+  {"expect":true,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{"Signature":"GrandCrab"}},
+  {"expect":false,"source":"synthesized","channel":"antivirus","event_id":"1116","data":{}}
+]}

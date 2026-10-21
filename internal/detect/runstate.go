@@ -66,8 +66,12 @@ type DetState struct {
 	Attempts int       `json:"attempts"`
 	LagMS    int64     `json:"lag_ms"`
 	LastLate time.Time `json:"last_late,omitzero"`
-	LateRuns int       `json:"late_runs"`
-	Skipped  Skipped   `json:"skipped,omitzero"`
+	// LateNode is the server that ran the rule late at LastLate: the rule
+	// may have moved to another server since (Node). Empty when a version
+	// before it was kept wrote LastLate.
+	LateNode string  `json:"late_node,omitempty"`
+	LateRuns int     `json:"late_runs"`
+	Skipped  Skipped `json:"skipped,omitzero"`
 	// Schedule and Enabled are what the rule said when this server last
 	// saw it: a change of either resets the watermark.
 	Schedule  string    `json:"schedule"`
@@ -513,7 +517,8 @@ func runStateOf(st DetState) RunState {
 		LastResults: st.LastResults, LastFindings: st.LastFindings, LastRisk: st.LastRisk,
 		LastThrottled: st.LastThrottled, LastDuplicates: st.LastDuplicates, LastSuppressed: st.LastSuppressed,
 		LastError: st.LastError, ErrorKind: st.ErrorKind, TimedOut: st.TimedOut, Capped: st.Capped,
-		Lag: st.LagMS, LateRuns: st.LateRuns, LastLate: st.LastLate, Node: st.Node,
+		Lag: st.LagMS, LateRuns: st.LateRuns, LastLate: st.LastLate, LateNode: st.LateNode, Node: st.Node,
+		Since: st.Created,
 	}
 	if st.Skipped.Count > 0 {
 		sk := st.Skipped

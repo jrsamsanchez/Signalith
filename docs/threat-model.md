@@ -117,7 +117,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 | Changing shared settings, users or detections through OpenSearch | Shared settings are signed with the cluster key, which is kept only in each server's state folder, encrypted with its master key ([Shared settings and the cluster key](servers.md#shared-settings-and-the-cluster-key)) |
 | Stealing the CA's key | It is stored in OpenSearch only encrypted with the cluster key, and deleted from disk once shared ([One certificate authority](servers.md#one-certificate-authority)) |
 | A stolen CA key signing anything | The CA is name-constrained to private names or to the server's own names, and limited to TLS server certificates ([Certificate authority](security.md#certificate-authority)) |
-| A removed server keeping access | Each server has its own OpenSearch certificate, which can be revoked at once, and the cluster key can be rotated ([Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)) |
+| A removed server keeping access | Each server has its own OpenSearch certificate, which can be revoked at once, and the cluster key can be rotated ([Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once)). A removed server, or a backup of any server's state folder, may still hold the cluster's HTTPS CA key. HTTPS certificates have no revocation, so it can make certificates agents trust until the cluster's CA is replaced: replace it after removing a server you no longer trust ([Replacing the cluster's CA](servers.md#replacing-the-clusters-ca)) |
 
 ### OpenSearch
 
@@ -167,7 +167,8 @@ Each arrow is a boundary where data from the other side is not trusted:
 | Threat | What stands in the way |
 | --- | --- |
 | Feeds or downloads reaching internal addresses | Threat intel feed downloads are checked after DNS and on every redirect, and never reach link-local or cloud metadata addresses, or this machine unless allowed ([Threat intel](threat-intel.md)). The CVE, KEV and EPSS addresses are admin settings and are downloaded under the same checks; the NVD API key never follows a redirect to another server |
-| A tampered detection content update | Bundles must be signed by a key built into Signalith and newer than the rules in use ([Content packs](detections.md#content-packs)) |
+| A tampered detection content update | Bundles must be signed by a key built into Signalith and newer than the rules in use ([Content packs](detections.md#content-packs)). Only pack changes merged after review are signed |
+| A bad or hostile upstream rule | Upstream SigmaHQ and Splunk rules arrive as a pull request pinned to an upstream commit, with the rule diff and the report of what was left out, and are signed only after it merges |
 | A tampered release | Release files and images are signed with Sigstore and come with build provenance and an SBOM ([Check a download](install-packages.md#check-a-download)) |
 | Vulnerable dependencies | govulncheck, Dependabot, CodeQL and Trivy image scans in CI |
 
@@ -185,6 +186,10 @@ Each arrow is a boundary where data from the other side is not trusted:
 - **The release key, the content key and the offline root key** built into Signalith.
   A leaked release or content key is revoked with a list signed by the root key
   ([Key management](key-management.md)).
+- **SigmaHQ and Splunk security_content**, the upstream projects the content packs come
+  from. Their rules reach a content update only through a reviewed pull request that pins
+  the upstream commit and shows the changed rules; the Content workflow signs only what
+  is merged ([Content updates](detections.md#content-updates)).
 
 ## Out of scope and known limits
 

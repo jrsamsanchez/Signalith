@@ -207,6 +207,17 @@ func TestPostureMetrics(t *testing.T) {
 	if h.NotRun != h.Enabled-2 {
 		t.Errorf("not run = %d of %d enabled", h.NotRun, h.Enabled)
 	}
+	// A rule turned on yesterday is too new to call silent (LP-03).
+	status["endpoint-shadow-copy-delete"] = detect.RunState{LastRun: now.Add(-time.Minute), Since: now.Add(-24 * time.Hour)}
+	h2 := p.Report(context.Background(), 24*time.Hour, "24h").Health
+	for _, s := range h2.Silent {
+		if s.ID == "endpoint-shadow-copy-delete" {
+			t.Errorf("a rule turned on yesterday is silent")
+		}
+	}
+	if h2.TooNew != 1 || len(h2.Silent) != len(h.Silent)-1 {
+		t.Errorf("too new = %d, silent %d then %d", h2.TooNew, len(h.Silent), len(h2.Silent))
+	}
 	if h.Sources != 2 || len(h.StaleSources) != 1 || h.StaleSources[0].Host != "DC01" || h.StaleAfter != "2h" {
 		t.Errorf("sources = %+v", h)
 	}

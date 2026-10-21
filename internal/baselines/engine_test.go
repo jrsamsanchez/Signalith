@@ -26,12 +26,19 @@ type fakeRunner struct {
 	mu       sync.Mutex
 	rows     func(by string, start time.Time) []search.Row
 	searches int
+	// truncated marks every result truncated; maxRows is the most rows
+	// a search asked for.
+	truncated bool
+	maxRows   int
+	// fail, when set, makes the searches it returns an error for fail.
+	fail func(by string, start time.Time) error
 }
 
 func (f *fakeRunner) Execute(_ context.Context, q *query.Query) (*search.Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.searches++
+	f.maxRows = max(f.maxRows, q.MaxRows)
 	var by []string
 	for _, c := range q.Commands {
 		if s, ok := c.(*query.Stats); ok {
@@ -45,11 +52,16 @@ func (f *fakeRunner) Execute(_ context.Context, q *query.Query) (*search.Result,
 	if !strings.Contains(q.Search.String(), "NOT signalith_sample=*") {
 		return nil, fmt.Errorf("sample data not left out: %s", q.Search)
 	}
+	if f.fail != nil {
+		if err := f.fail(strings.Join(by, ","), start); err != nil {
+			return nil, err
+		}
+	}
 	var rows []search.Row
 	if f.rows != nil {
 		rows = f.rows(strings.Join(by, ","), start)
 	}
-	return &search.Result{Kind: "table", Rows: rows}, nil
+	return &search.Result{Kind: "table", Rows: rows, Truncated: f.truncated && len(rows) > 0}, nil
 }
 
 // fakeRisk keeps risk events by ID, as the risk index does.
@@ -427,10 +439,18 @@ func TestExceptionsAndCap(t *testing.T) {
 	if len(evs) != MaxRaisedPerHour {
 		t.Fatalf("raised %d", len(evs))
 	}
+	late := 0
 	for _, e := range evs {
 		if strings.HasPrefix(e.Object, "svc_") {
 			t.Errorf("excepted %s raised", e.Object)
 		}
+		if e.Object >= "user50" {
+			late++
+		}
+	}
+	// Which ones were held back does not go by name.
+	if late == 0 {
+		t.Error("only the first names in A-Z order added risk")
 	}
 	st, _, _, _ := r.store.State(context.Background())
 	cs := st.Checks[NewChange]

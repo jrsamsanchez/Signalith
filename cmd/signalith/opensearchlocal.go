@@ -188,9 +188,17 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	if err := sys.prepare(l, home); err != nil {
 		return err
 	}
+	// The OpenSearch running now, which an upgrade goes back to when the
+	// new one's service cannot be set up or started.
+	var previous string
 	// Stopped before its settings are written, so it changes nothing
 	// while they are.
 	if sys.exists() {
+		if st.Version != version {
+			if _, err := os.Stat(filepath.Join(l.VersionHome(st.Version), "bin")); err == nil {
+				previous = st.Version
+			}
+		}
 		fmt.Fprintln(out, "Stopping OpenSearch to set it up again...")
 		if err := sys.stop(); err != nil {
 			return err
@@ -206,15 +214,24 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	if err := oslocal.WriteConfig(l, home, port, oslocal.HeapMB(sys.memoryMB())); err != nil {
 		return fmt.Errorf("writing OpenSearch's settings: %w", err)
 	}
-	if err := sys.install(l, home); err != nil {
-		return err
-	}
-	if err := oslocal.SaveState(l, oslocal.State{Version: version, Port: port}); err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "Starting OpenSearch %s (the %s service)...\n", version, oslocal.ServiceName)
-	if err := sys.start(); err != nil {
-		return err
+	if err := startService(out, sys, l, home, version, port); err != nil {
+		if previous == "" {
+			return err
+		}
+		fmt.Fprintf(out, "OpenSearch %s did not start (%v); going back to OpenSearch %s...\n", version, err, previous)
+		if sys.exists() {
+			sys.stop()
+			sys.remove()
+		}
+		back := oslocal.WriteConfig(l, l.VersionHome(previous), port, oslocal.HeapMB(sys.memoryMB()))
+		if back == nil {
+			back = startService(out, sys, l, l.VersionHome(previous), previous, port)
+		}
+		if back != nil {
+			return fmt.Errorf("upgrading OpenSearch to %s failed (%w), and going back to %s failed too (%v). "+
+				"Its data is kept in %s; run the installer again to retry", version, err, previous, back, l.Data)
+		}
+		return fmt.Errorf("upgrading OpenSearch to %s failed, so OpenSearch %s runs again: %w", version, previous, err)
 	}
 	if err := waitOpenSearch(ctx, out, sys, l, home, port); err != nil {
 		return err
@@ -324,6 +341,19 @@ func answers(addr string) bool {
 	}
 	conn.Close()
 	return true
+}
+
+// startService installs and starts the service for the version in home,
+// and records it as the one installed.
+func startService(out io.Writer, sys localOpenSearch, l oslocal.Layout, home, version string, port int) error {
+	if err := sys.install(l, home); err != nil {
+		return err
+	}
+	if err := oslocal.SaveState(l, oslocal.State{Version: version, Port: port}); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Starting OpenSearch %s (the %s service)...\n", version, oslocal.ServiceName)
+	return sys.start()
 }
 
 // Waits, as variables so the tests take less time.

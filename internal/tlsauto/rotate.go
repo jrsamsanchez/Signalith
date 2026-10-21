@@ -195,6 +195,16 @@ func (m *Manager) Next() *CAInfo {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.inCluster() {
+		// The cluster's next one, prepared for every server at once.
+		next, _ := m.clusterCAsLocked()
+		if next == nil {
+			return nil
+		}
+		in := infoOf(next.Cert)
+		in.At = next.At
+		return in
+	}
 	return m.infoIn(nextDir, stampMade)
 }
 
@@ -234,6 +244,13 @@ func (m *Manager) NextPEM() []byte {
 }
 
 func (m *Manager) nextPEMLocked() []byte {
+	if m.inCluster() {
+		next, _ := m.clusterCAsLocked()
+		if next == nil {
+			return nil
+		}
+		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: next.Cert.Raw})
+	}
 	b, err := os.ReadFile(m.path(nextDir, CAFile))
 	if err != nil {
 		return nil
@@ -247,7 +264,9 @@ func (m *Manager) nextPEMLocked() []byte {
 
 // AgentCAPEM is the CA file agents and syslog devices should get: while a
 // new certificate authority is prepared, the one in use and the new one
-// together, so they keep working after the switch; otherwise CAPEM.
+// together, so they keep working after the switch; otherwise CAPEM. With
+// the cluster's, the one a switch replaced also stays in it until it is
+// retired, since a server may still serve a certificate from it.
 func (m *Manager) AgentCAPEM() []byte {
 	cur := m.CAPEM()
 	if cur == nil || !m.LocalCA() {
@@ -255,9 +274,98 @@ func (m *Manager) AgentCAPEM() []byte {
 	}
 	next := m.NextPEM()
 	if next == nil {
+		next = m.clusterPreviousPEM()
+	}
+	if next == nil {
 		return cur
 	}
 	return append(append(slices.Clone(cur), '\n'), next...)
+}
+
+// ClusterCA is one of the cluster's certificate authorities besides the
+// one in use: At is when it was prepared, or when the switch away from it
+// happened.
+type ClusterCA struct {
+	Cert *x509.Certificate
+	At   time.Time
+}
+
+// SetClusterCAs sets where a Manager that uses the cluster's certificate
+// authority finds the cluster's next one (prepared, handed out with the
+// one in use, and what Next describes) and the previous one (switched
+// away from, still handed out until it is retired). fn is called with the
+// Manager's lock held, so it must not call the Manager; it returns nil
+// for none.
+func (m *Manager) SetClusterCAs(fn func() (next, previous *ClusterCA)) {
+	if fn == nil {
+		m.clusterCAs.Store(nil)
+		return
+	}
+	m.clusterCAs.Store(&fn)
+}
+
+// clusterCAsLocked returns the cluster's next and previous certificate
+// authorities, other than the one in use. The caller holds m.mu.
+func (m *Manager) clusterCAsLocked() (next, previous *ClusterCA) {
+	fn := m.clusterCAs.Load()
+	if fn == nil || !m.inCluster() || m.ca == nil {
+		return nil, nil
+	}
+	next, previous = (*fn)()
+	same := func(c *ClusterCA) bool { return c == nil || c.Cert == nil || c.Cert.Equal(m.ca) }
+	if same(next) {
+		next = nil
+	}
+	if same(previous) {
+		previous = nil
+	}
+	return next, previous
+}
+
+// clusterPreviousPEM is the cluster's previous certificate authority, in
+// PEM, or nil.
+func (m *Manager) clusterPreviousPEM() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, prev := m.clusterCAsLocked()
+	if prev == nil {
+		return nil
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: prev.Cert.Raw})
+}
+
+// NewCALike makes a certificate authority to replace cur: a new key, and
+// the template every certificate authority of Signalith's own has (see
+// caTemplate), with exactly cur's name constraints, valid from now for
+// CAYears. The cluster's next certificate authority is made so.
+func NewCALike(cur *x509.Certificate, cn string, now time.Time) (*x509.Certificate, crypto.Signer, error) {
+	if cur == nil || !cur.IsCA {
+		return nil, nil, errors.New("no certificate authority to replace")
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	tmpl := caTemplate(cn, now, slices.Clone(cur.PermittedDNSDomains), slices.Clone(cur.ExcludedDNSDomains), slices.Clone(cur.PermittedIPRanges))
+	tmpl.ExcludedIPRanges = slices.Clone(cur.ExcludedIPRanges)
+	tmpl.PermittedDNSDomainsCritical = cur.PermittedDNSDomainsCritical
+	if len(cur.PermittedEmailAddresses) > 0 || len(cur.ExcludedEmailAddresses) > 0 {
+		tmpl.PermittedEmailAddresses = slices.Clone(cur.PermittedEmailAddresses)
+		tmpl.ExcludedEmailAddresses = slices.Clone(cur.ExcludedEmailAddresses)
+	}
+	if len(cur.PermittedURIDomains) > 0 || len(cur.ExcludedURIDomains) > 0 {
+		tmpl.PermittedURIDomains = slices.Clone(cur.PermittedURIDomains)
+		tmpl.ExcludedURIDomains = slices.Clone(cur.ExcludedURIDomains)
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		return nil, nil, err
+	}
+	ca, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ca, key, nil
 }
 
 // WouldCover lists the names a certificate authority made now with scope

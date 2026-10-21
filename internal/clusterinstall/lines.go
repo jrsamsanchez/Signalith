@@ -122,8 +122,7 @@ func Lines(l Line) (Commands, error) {
 	// slower while it draws a progress bar.
 	ps := fmt.Sprintf("$u='%s'; $f=Join-Path $env:TEMP 'signalith-join.ps1'; $ProgressPreference='SilentlyContinue'; "+
 		"if ($PSVersionTable.PSVersion.Major -ge 6) { Invoke-WebRequest \"$u/api/cluster/join/install.ps1\" -OutFile $f -SkipCertificateCheck } "+
-		"else { [Net.ServicePointManager]::SecurityProtocol='Tls12'; [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; "+
-		"try { Invoke-WebRequest \"$u/api/cluster/join/install.ps1\" -OutFile $f -UseBasicParsing } finally { [Net.ServicePointManager]::ServerCertificateValidationCallback=$null } }; "+
+		"else { "+ps51Get+"[SignalithGet]::Save(\"$u/api/cluster/join/install.ps1\", $f) }; "+
 		"if ((Get-FileHash $f -Algorithm SHA256).Hash -ne '%s') { throw 'The downloaded script is not the one this line names, so it was not run.' }; "+
 		"Set-ExecutionPolicy -Scope Process Bypass -Force; & $f -From $u -Version %s",
 		base, strings.ToUpper(sha.PS1), l.Version)
@@ -167,3 +166,19 @@ func platformName(goos string) string {
 	}
 	return goos
 }
+
+// signalithGetCS is Windows PowerShell 5.1's download for the pasted
+// lines and the install scripts, in C#: it saves one https address to a
+// file without checking the certificate (the line checks the file's
+// SHA-256 instead), follows no redirect and takes only a 200. A script
+// block as the certificate check does not work there: Invoke-WebRequest
+// checks the certificate on a thread with no PowerShell to run it ("There
+// is no Runspace available"), and the download fails with "An unexpected
+// error occurred on a send". The check is also only for this one request,
+// not for the whole PowerShell.
+const signalithGetCS = `public static class SignalithGet { static bool Any(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain h, System.Net.Security.SslPolicyErrors e) { return true; } public static void Save(string url, string file) { var r = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url); r.AllowAutoRedirect = false; r.ServerCertificateValidationCallback = Any; using (var p = (System.Net.HttpWebResponse)r.GetResponse()) { if ((int)p.StatusCode != 200) { throw new System.Net.WebException("the server answered " + (int)p.StatusCode); } using (var s = p.GetResponseStream()) using (var o = System.IO.File.Create(file)) { s.CopyTo(o); } } } }`
+
+// ps51Get defines SignalithGet once in this PowerShell and turns TLS 1.2
+// on; the line then calls [SignalithGet]::Save(url, $f).
+const ps51Get = "if (-not ('SignalithGet' -as [type])) { Add-Type -TypeDefinition '" + signalithGetCS + "' }; " +
+	"[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12; "

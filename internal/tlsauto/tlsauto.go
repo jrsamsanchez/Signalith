@@ -104,6 +104,10 @@ type Manager struct {
 	// sharedNames replaces Options.SharedNames once SetSharedNames is
 	// called; it is read under mu, so it is not mu's.
 	sharedNames atomic.Pointer[func() []string]
+	// clusterCAs gives, while the cluster's certificate authority is in
+	// use, the cluster's next and previous ones (SetClusterCAs); it is
+	// read under mu, so it is not mu's.
+	clusterCAs atomic.Pointer[func() (next, previous *ClusterCA)]
 
 	mu    sync.Mutex
 	ca    *x509.Certificate // the CA agents should trust; nil when none is known

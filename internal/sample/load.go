@@ -398,6 +398,9 @@ func isRiskModel(d *detect.Detection) bool {
 	return strings.Contains(q, "datamodel="+strings.ToLower(datamodel.RiskModel))
 }
 
+// backfillWorkers is how many detections the backfill runs at once.
+const backfillWorkers = 4
+
 // backfill runs every enabled detection over the sample's own documents at
 // the sample's run times, marking the findings and risk events it raises.
 // Component detections run first (they write risk), then the risk-incident
@@ -430,8 +433,11 @@ func (l *Loader) backfill(ctx context.Context, d *Data, r *reporter) (findingsN,
 	total := len(d.RunTimes) * (len(normal) + len(riskModel))
 	done := 0
 	riskIndices := l.Prefix + "-" + strings.ToLower(datamodel.RiskModel) + "-*"
+	var mu sync.Mutex
 	run := func(det *detect.Detection, at time.Time) {
 		res, rerr := bf.RunAt(ctx, det, at)
+		mu.Lock()
+		defer mu.Unlock()
 		done++
 		r.within("Running detections", 27, 97, done, total)
 		if rerr != nil {
@@ -446,11 +452,29 @@ func (l *Loader) backfill(ctx context.Context, d *Data, r *reporter) (findingsN,
 		riskN += res.Risk
 	}
 	for _, at := range d.RunTimes {
+		// The detections of one run time are independent of each other,
+		// so a few run side by side: with pack rules on, one at a time
+		// took the best part of an hour (LP-03). Each detection still
+		// runs its times in order.
+		next := make(chan *detect.Detection)
+		var wg sync.WaitGroup
+		for range backfillWorkers {
+			wg.Go(func() {
+				for det := range next {
+					run(det, at)
+				}
+			})
+		}
 		for _, det := range normal {
-			if err := ctx.Err(); err != nil {
-				return findingsN, riskN, err
+			if ctx.Err() != nil {
+				break
 			}
-			run(det, at)
+			next <- det
+		}
+		close(next)
+		wg.Wait()
+		if err := ctx.Err(); err != nil {
+			return findingsN, riskN, err
 		}
 		// Risk-only detections throttle on the risk events they wrote,
 		// which are searchable only after a refresh; without one, the next

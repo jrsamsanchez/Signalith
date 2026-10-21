@@ -331,6 +331,37 @@ collects with osquery, which reads what the detections need through Apple's inte
   with `curl`, which macOS does not mark as downloaded from the internet, so Gatekeeper
   does not stop it; do not copy the program to Macs by other means.
 
+## Process creation auditing on Windows
+
+Most Windows detections read program starts with their command lines. Without Sysmon,
+these come from the Security log's event 4688, which Windows writes only when **Audit
+Process Creation** is on, and which names the command line only when **Include command
+line in process creation events** is on. Both are off in a new Windows and both are in
+the CIS benchmarks, so the install script turns them on (`auditpol` for the first, the
+`ProcessCreationIncludeCmdLine_Enabled` policy value for the second). Add
+`-NoProcessAuditing` to the line to leave them as they are. A domain group policy that
+sets either one wins over the script; set them there for every computer instead.
+
+Command lines can hold secrets that someone typed into one, such as a password given to
+a program as an argument. The Security log is readable only by administrators, and in
+Signalith by the roles that may search the Windows events. `-Uninstall` leaves the
+auditing on.
+
+## Logs that are off by default on Windows
+
+PowerShell rules read script block logging (event 4104), and a few rules read logs Windows
+keeps turned off: the DNS client, Task Scheduler (on clients), CryptoAPI and device driver
+logs. With `-EnableLogs` on the line (**Also turn on logs that are off by default** on
+**Add data**), the install script turns on script block logging (the
+`EnableScriptBlockLogging` policy value) and those logs (`wevtutil sl <log> /e:true`), and
+`-Uninstall` turns off what it turned on. A domain group policy wins over the script; set
+them there for every computer instead.
+
+Script block logging records the scripts that run, with any password or key written into
+them. In Signalith those events are searchable by the roles that may search the Windows
+events, so give that access only to people who may see such values. Module logging, which
+also records the values passed to each command, is not turned on.
+
 ## Sysmon on Windows
 
 Sysmon records process starts with their command lines, network connections, DNS
