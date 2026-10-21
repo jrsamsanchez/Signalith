@@ -140,6 +140,10 @@ func (c *Client) mget(ctx context.Context, refs []Ref, source bool) ([]Doc, erro
 			PrimaryTerm int64           `json:"_primary_term"`
 			Version     int64           `json:"_version"`
 			Source      json.RawMessage `json:"_source"`
+			Error       *struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"error"`
 		} `json:"docs"`
 	}
 	path := "/_mget?realtime=true&_source=" + strconv.FormatBool(source)
@@ -152,8 +156,15 @@ func (c *Client) mget(ctx context.Context, refs []Ref, source bool) ([]Doc, erro
 		if i >= len(out.Docs) {
 			continue
 		}
-		// A document in a missing index comes back with an error instead.
+		// A document in a missing index comes back with an error instead,
+		// and is missing too. Any other error, such as a shard still
+		// starting after a restart, says nothing about the document: the
+		// read fails, rather than report it gone.
 		d := out.Docs[i]
+		if d.Error != nil && d.Error.Type != "index_not_found_exception" {
+			body, _ := json.Marshal(map[string]any{"error": d.Error, "status": http.StatusServiceUnavailable})
+			return nil, &Error{Status: http.StatusServiceUnavailable, Body: string(body)}
+		}
 		if d.Found && d.SeqNo != nil {
 			docs[i].Found = true
 			docs[i].Version = Version{SeqNo: *d.SeqNo, PrimaryTerm: d.PrimaryTerm, Version: d.Version}

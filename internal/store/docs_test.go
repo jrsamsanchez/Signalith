@@ -240,3 +240,26 @@ func TestWithWriteID(t *testing.T) {
 		t.Errorf("%s %v", raw, err)
 	}
 }
+
+// A shard still starting after a restart fails the read: the document
+// is not reported missing.
+func TestMGetFailsWhileShardsStart(t *testing.T) {
+	c, os := newDocsClient(t)
+	ctx := context.Background()
+	if _, err := c.Create(ctx, "s_config", "cluster", map[string]any{"n": 1}, false); err != nil {
+		t.Fatal(err)
+	}
+	os.SetStarting("s_config")
+	refs := []Ref{{"s_config", "cluster"}, {"s_nope", "x"}}
+	if docs, err := c.MGet(ctx, refs); err == nil || !strings.Contains(err.Error(), "No shard available") {
+		t.Errorf("mget while starting: %+v %v", docs, err)
+	}
+	if vers, err := c.MGetVersions(ctx, refs); err == nil {
+		t.Errorf("mget versions while starting: %v", vers)
+	}
+	os.SetStarting()
+	docs, err := c.MGet(ctx, refs)
+	if err != nil || !docs[0].Found || docs[1].Found {
+		t.Errorf("mget after start: %+v %v", docs, err)
+	}
+}

@@ -17,7 +17,7 @@
 //     index's uuid and creation_date, new each time it is created);
 //   - GET, PUT and DELETE /<index>/_doc/<id>, PUT /<index>/_create/<id>,
 //     POST /<index>/_update/<id> (each with if_seq_no and if_primary_term);
-//   - POST /_mget;
+//   - POST /_mget (see SetStarting);
 //   - POST /<pattern>/_search with match_all, term, terms, ids, range,
 //     exists and bool queries, size, sort, search_after,
 //     seq_no_primary_term, _source and max aggregations;
@@ -93,8 +93,11 @@ type Server struct {
 	// unrefreshed are document ids searches do not see yet (see
 	// SetUnrefreshed).
 	unrefreshed map[string]bool
-	requests    []string
-	autoID      int
+	// starting are indices whose shards are not assigned yet (see
+	// SetStarting).
+	starting map[string]bool
+	requests []string
+	autoID   int
 	// uuids counts the indices made, for their uuids.
 	uuids int
 	// security, when set, is the account every request must sign in as
@@ -239,6 +242,19 @@ func (s *Server) SetUnrefreshed(ids ...string) {
 	s.unrefreshed = map[string]bool{}
 	for _, id := range ids {
 		s.unrefreshed[id] = true
+	}
+}
+
+// SetStarting makes a get of a document in these indices fail inside an
+// _mget answer, as OpenSearch answers while their shards are still being
+// assigned after a restart (no_shard_available_action_exception). No
+// indices makes them all readable again.
+func (s *Server) SetStarting(indices ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.starting = map[string]bool{}
+	for _, ix := range indices {
+		s.starting[ix] = true
 	}
 }
 
@@ -870,6 +886,9 @@ func (s *Server) mget(w http.ResponseWriter, q url.Values, body []byte) {
 		case ix == nil:
 			docs = append(docs, map[string]any{"_index": ref.Index, "_id": ref.ID,
 				"error": map[string]any{"type": "index_not_found_exception", "reason": "no such index [" + ref.Index + "]"}})
+		case s.starting[ref.Index]:
+			docs = append(docs, map[string]any{"_index": ref.Index, "_id": ref.ID,
+				"error": map[string]any{"type": "no_shard_available_action_exception", "reason": "No shard available for [get [" + ref.Index + "][" + ref.ID + "]: routing [null]]"}})
 		case ix.docs[ref.ID] == nil:
 			docs = append(docs, map[string]any{"_index": ref.Index, "_id": ref.ID, "found": false})
 		default:

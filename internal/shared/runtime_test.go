@@ -759,3 +759,62 @@ func TestImportHoldCoversNothingToImport(t *testing.T) {
 		}
 	}
 }
+
+// OpenSearch restarted with its shards still being assigned: the shared
+// settings cannot be read for a while, but are never reported deleted,
+// and the server stays a member once they can be read again (#514).
+func TestShardsStartingAreNotGone(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+
+	e.os.SetStarting(testIndex)
+	if err := a.rt.Hub().Cycle(context.Background()); err == nil {
+		t.Error("a read while the shards start succeeded")
+	}
+	a.step()
+	if m := a.mode(); m == ModeGone {
+		t.Fatal("the shared settings are reported gone while the shards start")
+	}
+	if tamper := a.rt.Hub().Tamper(); len(tamper) != 0 {
+		t.Errorf("reported changed outside Signalith while the shards start: %v", tamper)
+	}
+	e.os.SetStarting()
+	a.step()
+	a.wantMode(ModeMember)
+}
+
+// A document read once as missing and then found again at the version in
+// use is back: it is neither missing nor changed outside Signalith, and
+// the server leaves gone by itself.
+func TestDocumentFoundAgainUnchanged(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+
+	h := a.rt.Hub()
+	h.mu.Lock()
+	doc, uuid := h.singles[ClusterDocID], h.uuid
+	h.mu.Unlock()
+	got, err := e.c.MGet(context.Background(), []store.Ref{{Index: testIndex, ID: ClusterDocID}})
+	if err != nil || !got[0].Found {
+		t.Fatalf("read the cluster document: %+v %v", got, err)
+	}
+	doc.apply(store.Doc{Ref: got[0].Ref}, uuid, doc.gen())
+	if tamper := h.Tamper(); len(tamper) != 1 || tamper[0] != ClusterDocID {
+		t.Fatalf("a missing document is not reported: %v", tamper)
+	}
+	a.rt.afterCycle(context.Background())
+	a.wantMode(ModeGone)
+
+	doc.apply(got[0], uuid, doc.gen())
+	if tamper := h.Tamper(); len(tamper) != 0 {
+		t.Errorf("still reported changed outside Signalith: %v", tamper)
+	}
+	a.rt.afterCycle(context.Background())
+	a.wantMode(ModeMember)
+}

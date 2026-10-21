@@ -212,7 +212,18 @@ func (d *Doc[T]) apply(doc store.Doc, uuid string, gen uint64) bool {
 		return false
 	}
 	if d.cur != nil && doc.Found && d.cur.same(uuid, doc.Version) {
+		// The copy in use, read again. After a read that found nothing it
+		// is back as it was (a delete would have moved its version), so it
+		// is no longer missing nor its problem.
+		var changed func()
+		if d.missing {
+			d.missing = false
+			changed = d.h.fine(d.id, d.cur.env.Rev)
+		}
 		d.mu.Unlock()
+		if changed != nil {
+			changed()
+		}
 		return true
 	}
 	d.missing = !doc.Found
