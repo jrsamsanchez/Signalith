@@ -93,7 +93,7 @@ func caLossText(certs []certExpiry) string {
 	}
 	b.WriteString("Before you go on, choose one:\n" +
 		"  - Stop here and find a copy of the cluster key: a file signalith cluster export-key wrote, which signalith cluster import-key takes back. " +
-		"A folder signalith cluster export --to-files wrote also holds the certificate authority's key (ca.key in its tls folder); keep it.\n")
+		"A folder signalith cluster export --to-files wrote also holds the certificate authority's key (ca.key in its tls folder): keep it, and give it back afterwards with signalith cluster tls import.\n")
 	fmt.Fprintf(&b, "  - Or plan to have agents, browsers and syslog senders trust a new certificate authority before %s.\n", before)
 	return b.String()
 }

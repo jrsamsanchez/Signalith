@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -35,6 +36,11 @@ type ClusterTLS interface {
 	// Publish asks the server node to publish its certificate authority,
 	// whose fingerprint is fp, as the cluster's, for the user by.
 	Publish(ctx context.Context, node, fp, by string) (*shared.Request, error)
+	// RotateCA asks the server that runs the background jobs to take
+	// step (clustertls.StepPrepare, StepSwitch or StepRetire) of
+	// replacing the cluster's certificate authority, for the user by who
+	// saw it at fp.
+	RotateCA(ctx context.Context, step, fp, by string) (*shared.Request, error)
 }
 
 func (s *Server) routeClusterTLS(api *router) {
@@ -42,6 +48,7 @@ func (s *Server) routeClusterTLS(api *router) {
 	// only, like the rest of the Servers page.
 	api.admin("GET /api/cluster/tls", s.handleClusterTLS)
 	api.admin("POST /api/cluster/tls/choose", s.handleClusterTLSChoose)
+	api.admin("POST /api/cluster/tls/rotate-ca", s.handleClusterTLSRotate)
 }
 
 // clusterTLSReport is GET /api/cluster/tls.
@@ -95,13 +102,20 @@ func (s *Server) clusterTLSReport(ctx context.Context) clusterTLSReport {
 		}
 	}
 	out := clusterTLSReport{On: true}
-	if b, ok := s.ClusterTLS.CA(); ok {
+	b, ok := s.ClusterTLS.CA()
+	if ok {
 		in.Body = b
-	} else if s.Agents != nil {
+	}
+	// The agents count while none is published (which to choose), and
+	// while the published one is replaced (who has the new one).
+	if s.Agents != nil && (!ok || b.Rotation() != clustertls.RotationNone) {
 		actx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		agents, _, err := s.Agents.List(actx)
 		cancel()
 		in.Agents = agents
+		if in.Agents == nil {
+			in.Agents = []agentinv.Agent{}
+		}
 		if err != nil {
 			out.AgentsUnread = "The agents couldn't all be read from OpenSearch, so the counts may be short: " + err.Error()
 		}
@@ -117,7 +131,7 @@ func (s *Server) handleClusterTLS(w http.ResponseWriter, r *http.Request) {
 }
 
 // errCAPublished: the cluster has its certificate authority already.
-var errCAPublished = errors.New("the cluster already has a certificate authority; changing it comes in a later version")
+var errCAPublished = errors.New("the cluster already has a certificate authority; to change it, replace it (rotate-ca)")
 
 // handleClusterTLSChoose answers POST /api/cluster/tls/choose
 // {ca_sha256}: the server that holds that certificate authority is asked
@@ -179,6 +193,64 @@ func (s *Server) handleClusterTLSChoose(w http.ResponseWriter, r *http.Request) 
 	s.audit(r, "certificate authority chosen for the cluster", "server", c.Servers[0], "ca_sha256", c.CASHA256,
 		"agents", c.AgentCount, "breaks", c.BreakCount, "request", rq.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"request_id": rq.ID, "server": c.Servers[0], "ca_sha256": c.CASHA256})
+}
+
+// handleClusterTLSRotate answers POST /api/cluster/tls/rotate-ca {step}:
+// the server that runs the background jobs is asked to take that step of
+// replacing the cluster's certificate authority (a tls_rotate_ca request,
+// which checks the servers again), and the answer is 202 with the
+// request's id, which GET /api/requests/{id} follows.
+func (s *Server) handleClusterTLSRotate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Step string `json:"step"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	step := strings.ToLower(strings.TrimSpace(req.Step))
+	if _, err := clustertls.CheckStep(&clustertls.Body{}, nil, step); errors.Is(err, clustertls.ErrBadStep) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if off := s.clusterTLSOff(); off != "" {
+		writeError(w, http.StatusServiceUnavailable, errors.New(off))
+		return
+	}
+	if err := s.ClusterTLS.Writable(); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	b, ok := s.ClusterTLS.CA()
+	if !ok {
+		writeError(w, http.StatusConflict, errors.New("the cluster has no certificate authority yet, so there is none to replace"))
+		return
+	}
+	rep := s.clusterTLSReport(r.Context())
+	if rep.Report == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New(rep.Off))
+		return
+	}
+	var blockers []string
+	if rep.Rotation != nil {
+		blockers = rep.Rotation.Blockers
+	}
+	fp, err := clustertls.CheckStep(b, blockers, step)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	rq, err := s.ClusterTLS.RotateCA(ctx, step, fp, userOf(r))
+	if err != nil {
+		if !sharedError(w, err) {
+			writeError(w, http.StatusServiceUnavailable, err)
+		}
+		return
+	}
+	s.audit(r, "asked to replace the cluster's certificate authority", "step", step, "ca_sha256", fp, "request", rq.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"request_id": rq.ID, "step": step, "ca_sha256": fp})
 }
 
 // clusterCAOwner is "cluster" when this server's certificate comes from

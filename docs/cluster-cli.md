@@ -27,7 +27,7 @@ may run while it runs.
 | [`found`](#found) | Makes the cluster from this server's files |
 | [`reset-key`](#reset-key) | Makes a new cluster key when every copy of it is lost |
 | [`accept-restore`](#accept-restore) | Accepts the shared settings after an OpenSearch snapshot was restored |
-| [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster |
+| [`tls`](#tls) | The cluster's certificate authority and each server's; `tls choose` keeps one for the whole cluster, `tls import` gives back its key after `reset-key`, `tls rotate-ca` replaces it |
 | [`token`](#token) | Makes a join token, which adds a server with `signalith join` |
 | [`approve`](#approve) | Approves a server that waits to join, by its fingerprint |
 | [`rotate-key`](#rotate-key) | Gives the cluster a new key, so copies of the old one open nothing new |
@@ -217,15 +217,18 @@ confirm (`-yes` skips the question), makes a new key and signs the documents wit
 it. A document whose signature fails under a key this server has was changed outside
 Signalith: it is not signed again, so every server keeps ignoring it. Passwords and
 API keys stored with the old key cannot be read and are emptied; the command lists
-them, so you can enter them again on the Threat intel page. Then give the other
+them, so you can enter them again on the Threat intel page. The cluster's HTTPS
+certificate authority key is among them: servers keep their certificates until they
+expire, and can't renew them until `tls import` gives the key back (see
+[tls](#tls)). Then give the other
 servers the new key. Settings in a server's signalith.yaml that it already applied
 are not applied again because of the new key: each server records them afresh at
 its next start.
 
 The key of the cluster's [certificate authority](https.md) (`tls ca_key`) is sealed
-with the cluster key too, so `reset-key` empties it with the rest, and it cannot be
-entered again. Afterwards no server can renew its HTTPS certificate or make a new
-one: each keeps the certificate it has until it expires (at most 397 days after it
+with the cluster key too, so `reset-key` empties it with the rest. Until
+[`tls import`](#tls) gives it back from a copy, no server can renew its HTTPS
+certificate or make a new one: each keeps the certificate it has until it expires (at most 397 days after it
 was issued), and from then on agents, browsers and syslog senders refuse it.
 `reset-key` says so before it changes anything, with the day each server's
 certificate expires (from this server's `tls` folder and the others' last
@@ -234,14 +237,15 @@ the warning. Before you go on, either:
 
 - stop and find a copy of the cluster key: a file `export-key` wrote, which
   `import-key` takes back, so nothing is lost. A folder `export --to-files` wrote
-  also holds the certificate authority's key (`ca.key` in its `tls` folder); keep
-  it; or
+  also holds the certificate authority's key (`ca.key` in its `tls` folder): keep
+  it, and give it back after the reset with `tls import`; or
 - plan to have agents, browsers and syslog senders trust a new certificate
   authority before the first of those days.
 
 After such a reset, each server logs it, and the Servers page and the Security
 page's certificate check warn: "The cluster's certificate authority key was lost;
-HTTPS certificates expire on ... and cannot be renewed."
+HTTPS certificates expire on ... and cannot be renewed." The warning ends once
+`tls import` gives the key back.
 
 ## accept-restore
 
@@ -279,8 +283,15 @@ signalith cluster leave  [-c file] [-yes] [-no-rotate]
 of servers. The server must be drained (on the Servers page), stopped, or offline for
 10 minutes. `leave` does it for this server: stop Signalith first. It also deletes this
 server's copy of the cluster key and of the shared settings, and keeps its HTTPS
-certificate. Uninstall the server afterwards, or run `new-identity` on it before you
-add it again.
+certificate. That certificate can't be renewed once the server is out: `leave` prints
+the date it expires. To use the server on its own after that, delete its `tls` folder
+before it starts, and give its agents a new configuration. Uninstall the server
+afterwards, or run `new-identity` on it before you add it again.
+
+Both print that the removed server may still hold the cluster's HTTPS certificate
+authority key, in a backup of its state folder or its copy of the shared settings. It
+could make certificates agents trust until the cluster's certificate authority is
+replaced with `tls rotate-ca` (see [When a server leaves](servers.md#when-a-server-leaves)).
 
 Both then rotate the cluster key, so the removed server's copy opens nothing new;
 `-no-rotate` skips that, and `rotate-key` does it later. A removed server that starts
@@ -342,13 +353,14 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | A new server says it is not part of the cluster | `export-key` on a member, `import-key` on it |
 | Someone deleted the `<prefix>_config` index | `import -from-cache` on the server with the newest copy |
 | OpenSearch was restored from a snapshot | `accept-restore` |
-| Every copy of the cluster key is lost | Stop every server, `reset-key`, then `export-key` and `import-key` |
+| Every copy of the cluster key is lost | Stop every server, `reset-key`, then `export-key` and `import-key`, then `tls import` the certificate authority's key from your offline copy |
 | No server can run the background jobs, and you need the cluster now | `found` |
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
 | Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
 | A server is retired for good | Drain it and remove it on the Servers page, or `remove`; on the server itself, stop it and `leave` |
-| A copy of the cluster key may have leaked | `rotate-key` |
+| A copy of the cluster key may have leaked | `rotate-key`, then `tls rotate-ca` |
+| A removed server, or a backup, may hold the cluster's certificate authority key | `tls rotate-ca prepare`, `switch`, then `retire` |
 | A server was cloned from another, or its state folder copied | Stop the copy, `new-identity`, then `import-key` |
 
 ## tls
@@ -356,6 +368,8 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 ```
 signalith cluster tls        [-c file] [-json]
 signalith cluster tls choose [-c file] [-yes] <server or fingerprint>
+signalith cluster tls import [-c file] [-cert ca.pem] [-yes] <ca.key>
+signalith cluster tls rotate-ca [-c file] [-yes] prepare|switch|retire|abort
 ```
 
 Once every server runs a version that shares one, the servers of a cluster share one certificate
@@ -378,7 +392,44 @@ publish it: start it first. When the agents can't all be read from OpenSearch, t
 counts may be short, so it refuses unless you add `-yes`. The other servers take it within
 seconds: each keeps its old one in `tls/retired` in its state folder, and the agents set
 up with an old one are marked as needing a new configuration. The choice is made once:
-changing the cluster's certificate authority comes in a later version.
+to change the cluster's certificate authority afterwards, replace it with `tls rotate-ca`.
+
+`tls import` gives the cluster its certificate authority's key again, after `reset-key`
+emptied it. `tls` then says the key was lost with the cluster key, and no server can
+renew its certificate. Give it the `tls/ca.key` of an `export --to-files` folder, or a
+founder's old `tls/ca.key` from a backup. It reads only a plain file (not a link) of at
+most 64 KB, and never prints the key. When `ca.pem` is next to the key, or you name a
+certificate with `-cert`, its fingerprint must be the cluster's. The key must belong to
+the cluster's certificate authority: any other key is refused, and nothing changes. The
+key is sealed with the cluster key, bound to the fingerprint, as when the certificate
+authority was first shared. Every server renews from it within seconds. It asks first
+unless you add `-yes`, and is written to the audit log. Keep the key file offline
+afterwards, or delete it (see
+[Backing up the cluster's CA](servers.md#backing-up-the-clusters-ca)).
+
+`tls rotate-ca` replaces the cluster's certificate authority, one step at a time, as the
+Servers page does (see [Replacing the cluster's CA](servers.md#replacing-the-clusters-ca)):
+
+- `prepare` makes a new one, with the same limits as the one in use, and every server
+  hands out both;
+- `switch` makes every server issue its certificate from the new one, once every running
+  server hands it out. The old one is still handed out;
+- `retire` stops handing out the old one and deletes its key, once every running
+  server's certificate comes from the new one;
+- `abort` drops the prepared one and its key, before the switch. Every server then hands
+  out only the one in use again. After a switch there is nothing to abort: retire the
+  old one, then replace the new one if needed.
+
+`reset-key` empties the prepared one's key too, and `tls import` can't give it back. `tls`
+then says its key is lost, and `switch` and `prepare` are refused: run `abort`, then
+`prepare` again.
+
+Each asks first unless you add `-yes`, then asks the server that runs the background
+jobs to take the step, and waits for it. A step that isn't ready is refused with the
+servers it waits for. `tls` shows which step the cluster is at, and its date, and how
+many managed agents have the new certificate authority (agents of older versions don't
+say). `switch` warns when some don't have it yet, but doesn't wait for them: an agent
+that is offline can't fetch it. Each step is written to the audit log.
 
 ## upgrade-check
 
@@ -473,12 +524,12 @@ signalith cluster approve [-c file] [-fingerprint fp] [-yes] [<server|fingerprin
 A server started with the cluster's OpenSearch settings but without the cluster key
 waits to join and shows a fingerprint, such as `4F2A-91C0-…`, on its sign-in page
 and in its log. Without an argument, `approve` lists the servers that wait, with
-their fingerprints. With a fingerprint (dashes and case do not matter), it approves
+the first group of each fingerprint. With a fingerprint (dashes and case do not matter), it approves
 that server. What is approved is always a fingerprint you read on the new server,
 never the name the waiting server gives itself, which anyone who can write to
 OpenSearch could copy: with a name or node id, give the fingerprint with
-`-fingerprint`, or compare the one shown and answer yes at a terminal (`-yes` does not
-do that comparison for you, so with a name it needs `-fingerprint`). The server then
+`-fingerprint`, or type it when asked at a terminal (`-yes` cannot do that for you, so
+with a name it needs `-fingerprint`). The server then
 gets the cluster key, encrypted so only it can read it, and joins within a minute. A
 fingerprint that does not match is refused, as is any approval while OpenSearch is not
 secured or while the cluster key is being rotated, and a server that would take the

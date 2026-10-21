@@ -35,8 +35,8 @@ func TestStatusAndHeartbeats(t *testing.T) {
 	if !StatusOf(m, "", "").ChangePending {
 		t.Error("change not reported")
 	}
-	if StatusOf(nil, "", "") != nil {
-		t.Error("nil manager")
+	if st := StatusOf(nil, "", ""); st == nil || st.Mode != ModeOff || !st.CoversShared || st.CASHA256 != "" {
+		t.Errorf("no HTTPS: %+v", st)
 	}
 
 	now := time.Now()
@@ -61,13 +61,13 @@ func TestStatusAndHeartbeats(t *testing.T) {
 
 // KeyLost: after signalith cluster reset-key empties the tls document's
 // key, a server that starts with the cluster's certificate authority and
-// no ca.key reports it lost; one still holding the key, or one whose
-// shared settings have no such problem, does not.
+// no ca.key reports it lost; one still holding the key, or one whose tls
+// document still holds its key, does not.
 func TestKeyLost(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	ca := makeCA(t, "a", time.Now().Add(-time.Hour))
-	tl, h := e.server("siem-a")
+	tl, _ := e.server("siem-a")
 	if err := tl.Publish(ctx, "admin", "siem-a", ca.pem, ca.key, []string{"agents.lan"}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +81,9 @@ func TestKeyLost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !d.CAKeyMissing() || KeyLost(d, h.Problems()) {
-		t.Fatalf("before the reset: missing %v, lost %v", d.CAKeyMissing(), KeyLost(d, h.Problems()))
+	b, ok := tl.Get()
+	if !ok || !d.CAKeyMissing() || KeyLost(d, b) {
+		t.Fatalf("before the reset: missing %v, lost %v", d.CAKeyMissing(), KeyLost(d, b))
 	}
 
 	// Every copy of the cluster key lost: reset-key signs the documents
@@ -101,15 +102,16 @@ func TestKeyLost(t *testing.T) {
 		t.Fatalf("resign: %v, dropped %v", err, dropped)
 	}
 	e.key = k2
-	tl2, h2 := e.server("siem-a")
-	if _, ok := tl2.Get(); ok {
-		t.Error("a tls document without its key was used")
+	tl2, _ := e.server("siem-a")
+	b2, ok := tl2.Get()
+	if !ok || !b2.KeyLost() {
+		t.Fatalf("the tls document after the reset: %v %+v", ok, b2)
 	}
-	if !KeyLost(d, h2.Problems()) {
-		t.Errorf("not lost: %+v", h2.Problems())
+	if !KeyLost(d, b2) {
+		t.Error("not lost")
 	}
-	if KeyLost(m, h2.Problems()) || KeyLost(nil, h2.Problems()) {
-		t.Error("lost with the key in hand, or without a Manager")
+	if KeyLost(m, b2) || KeyLost(nil, b2) || KeyLost(d, nil) {
+		t.Error("lost with the key in hand, without a Manager or without a tls document")
 	}
 
 	exp := time.Now().Add(-time.Hour).AddDate(1, 0, 0).UTC()

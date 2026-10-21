@@ -50,6 +50,10 @@ func newFileAccess(tmp *os.File, dir string) error {
 	return nil
 }
 
+// adminDir is privateDir: on Unix a private folder is already its
+// owner's only.
+func adminDir(dir, parent string, created bool) error { return privateDir(dir, parent, created) }
+
 // privateDir sets dir to mode 0700 and, for a folder root just made, the
 // owner of the folder above it. It works on the folder opened without
 // following links, so a link put in its place meanwhile is not followed.

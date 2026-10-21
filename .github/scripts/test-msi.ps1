@@ -12,8 +12,14 @@ $ErrorActionPreference = "Stop"
 $exe = "$env:ProgramFiles\Signalith\signalith.exe"
 $config = "$env:ProgramData\Signalith\signalith.yaml"
 
-function Invoke-Msi([string]$Action, [string]$Msi, [string]$Log) {
-  $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @($Action, "`"$((Resolve-Path $Msi).Path)`"", "/qn", "/l*v", "`"$Log`"")
+function Invoke-Msi([string]$Action, [string]$Msi, [string]$Log, [string[]]$Properties = @(), [switch]$Fails) {
+  $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList (@($Action, "`"$((Resolve-Path $Msi).Path)`"", "/qn", "/l*v", "`"$Log`"") + $Properties)
+  if ($Fails) {
+    if ($p.ExitCode -eq 0) { throw "msiexec $Action $Msi worked, but it should have failed" }
+    Write-Host "msiexec failed as it should (exit code $($p.ExitCode))"
+    if (Test-Path "$env:windir\Temp\signalith-rollback.log") { Get-Content "$env:windir\Temp\signalith-rollback.log" }
+    return
+  }
   if ($p.ExitCode -ne 0) {
     Get-Content $Log -Tail 80
     if (Test-Path "$env:windir\Temp\signalith-install.log") { Get-Content "$env:windir\Temp\signalith-install.log" }
@@ -68,6 +74,20 @@ foreach ($sid in $sids) {
 $account = (Get-CimInstance Win32_Service -Filter "Name='Signalith'").StartName
 if ($account -ne "NT SERVICE\Signalith") { throw "the service runs as $account" }
 
+Write-Host "== A failed upgrade puts $Previous back"
+# A config the new version cannot start with makes its setup fail.
+$good = Get-Content -Raw -LiteralPath $config
+Add-Content -LiteralPath $config "`n:: not a setting ::"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-upgrade-fail.log" -Fails
+Set-Content -LiteralPath $config $good -NoNewline
+$installed = @(Get-CimInstance Win32_Product -Filter "Name='Signalith'")
+if ($installed.Count -ne 1 -or $installed[0].Version -eq $Version) { throw "after the failed upgrade, Signalith $($installed.Version -join ', ') is installed, want the previous version only" }
+if (-not (Test-Path $exe) -or (& $exe version) -like "*$Version*") { throw "after the failed upgrade, $exe is missing or is the new version" }
+# The rollback starts the previous version's service a minute later.
+for ($i = 0; $i -lt 60 -and (Get-Service Signalith -ErrorAction SilentlyContinue).Status -ne "Running"; $i++) { Start-Sleep 3 }
+Wait-Up
+Test-SignIn $password
+
 Write-Host "== Upgrade to $New"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-upgrade.log"
 Wait-Up
@@ -87,6 +107,16 @@ if (Test-Path $exe) { throw "$exe is still there" }
 if (-not (Test-Path $config)) { throw "the config was not kept" }
 if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are still there" }
 
+Write-Host "== A failed install over the kept config is undone like a new one, not like an upgrade"
+$good = Get-Content -Raw -LiteralPath $config
+Add-Content -LiteralPath $config "`n:: not a setting ::"
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall-fail.log" -Fails
+Set-Content -LiteralPath $config $good -NoNewline
+if (Get-Service Signalith -ErrorAction SilentlyContinue) { throw "the service is left after the failed install" }
+if (Test-Path $exe) { throw "$exe is left after the failed install" }
+if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are left after the failed install" }
+if (-not (Test-Path $config)) { throw "the config was not kept" }
+
 Write-Host "== Install again: the kept config and password are used"
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-reinstall.log"
 Wait-Up
@@ -94,6 +124,14 @@ Test-SignIn $password
 Write-Host "== A new install sets up OpenSearch on this computer"
 Invoke-Msi "/x" $New "$env:RUNNER_TEMP\msi-uninstall-2.log"
 Remove-Item -Recurse -Force "$env:ProgramData\Signalith"
+# A first install that fails undoes what it set up.
+Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh-fail.log" -Properties @("OPENSEARCHZIP=C:\no-such-opensearch.zip") -Fails
+if (Get-Service Signalith, SignalithOpenSearch -ErrorAction SilentlyContinue) { throw "a service is left after the failed install" }
+if (Test-Path $exe) { throw "$exe is left after the failed install" }
+if (Test-Path "$env:ProgramFiles\Signalith\OpenSearch") { throw "OpenSearch's program is left after the failed install" }
+if (Get-NetFirewallRule -DisplayName "Signalith*" -ErrorAction SilentlyContinue) { throw "firewall rules are left after the failed install" }
+Remove-Item -Recurse -Force "$env:ProgramData\Signalith" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:ProgramData\SignalithOpenSearch" -ErrorAction SilentlyContinue
 Invoke-Msi "/i" $New "$env:RUNNER_TEMP\msi-fresh.log"
 # The pinned SHA-512 is the one OpenSearch publishes for the release.
 $status = (& $exe opensearch status) -join "`n"
@@ -105,6 +143,18 @@ if (($published -split "\s+")[0].ToLower() -ne $pin) { throw "the pinned SHA-512
 $os = Get-CimInstance Win32_Service -Filter "Name='SignalithOpenSearch'"
 if (-not $os -or $os.State -ne "Running") { throw "the SignalithOpenSearch service is not running" }
 if ($os.StartName -ne "NT SERVICE\SignalithOpenSearch") { throw "OpenSearch runs as $($os.StartName)" }
+# Signalith's own account may not use OpenSearch's folder, which holds the
+# CA key and the admin certificate; OpenSearch's account only its own
+# folders, never the CA.
+$osSid = (New-Object Security.Principal.NTAccount "NT SERVICE\SignalithOpenSearch").Translate([Security.Principal.SecurityIdentifier]).Value
+foreach ($dir in @("$env:ProgramData\SignalithOpenSearch", "$env:ProgramData\SignalithOpenSearch\ca")) {
+  $allowed = @("S-1-5-18", "S-1-5-32-544")
+  if ($dir -notlike "*\ca") { $allowed += $osSid }
+  $sids = (Get-Acl $dir).Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } | Sort-Object -Unique
+  foreach ($sid in $sids) {
+    if ($sid -notin $allowed) { throw "$sid may use $dir" }
+  }
+}
 $osPort = (Get-Content -Raw "$env:ProgramData\SignalithOpenSearch\installed.json" | ConvertFrom-Json).port
 $listen = @(Get-NetTCPConnection -State Listen -LocalPort $osPort | ForEach-Object { $_.LocalAddress } | Sort-Object -Unique)
 if (($listen -join ",") -ne "127.0.0.1") { throw "OpenSearch listens on $($listen -join ', '), want 127.0.0.1 only" }

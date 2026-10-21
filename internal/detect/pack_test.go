@@ -189,8 +189,11 @@ func TestPackDetections(t *testing.T) {
 		// Each rule reads only its own system's events: a network rule
 		// its Zeek log's, or its data model's (a DNS lookup, a web request
 		// or a connection from any source); a web server rule the Web
-		// data model's.
-		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) {
+		// data model's; an antivirus rule (category: antivirus, which
+		// names no product) the Malware data model's, any antivirus
+		// product's alerts.
+		if strings.Contains(d.Query, "sourcetype=zeek:") || networkPackRule(d) ||
+			slices.Contains(d.Tags, "antivirus") && strings.HasPrefix(d.Query, "datamodel=Malware ") {
 			continue
 		}
 		if !strings.Contains(d.Query, "sourcetype=WinEventLog:") && !strings.Contains(d.Query, `sourcetype="WinEventLog:`) &&
@@ -223,4 +226,92 @@ func networkPackRule(d *Detection) bool {
 		}
 	}
 	return false
+}
+
+// DQ-01: the Splunk pack ranks its TTPs, so severity filters and the
+// high-and-critical button see its strongest rules. security_content gives
+// nearly every TTP the same risk score, so a change upstream that flattens
+// them again fails here.
+func TestSplunkPackSeverities(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := map[string]int{}
+	sev := map[string]string{}
+	for _, d := range ds {
+		if d.Origin != nil && d.Origin.Pack == "splunk" {
+			n[d.Severity]++
+			sev[d.ID] = d.Severity
+		}
+	}
+	t.Logf("splunk severities: %v", n)
+	if n["critical"] < 20 || n["high"] < 100 || n["medium"] < 100 || n["low"] < 100 {
+		t.Errorf("splunk severities: %v", n)
+	}
+	for id, want := range map[string]string{
+		"splunk-windows-steal-authentication-certificates-esc1-abuse": "high",
+		"splunk-dump-lsass-via-procdump":                              "high",
+		"splunk-bcdedit-failure-recovery-modification":                "critical",
+	} {
+		if sev[id] != want {
+			t.Errorf("%s: %q, want %s", id, sev[id], want)
+		}
+	}
+}
+
+// The starter set is 100 to 150 high and critical pack rules that read
+// only what hosts send as installed (BUY-03).
+func TestStarterSet(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]*Detection{}
+	tagged := 0
+	for _, d := range ds {
+		byID[d.ID] = d
+		if slices.Contains(d.Tags, StarterTag) {
+			tagged++
+		}
+	}
+	if n := len(starterIDs); n < 100 || n > 150 || tagged != n {
+		t.Errorf("starter set: %d listed, %d tagged", n, tagged)
+	}
+	for id := range starterIDs {
+		d := byID[id]
+		if d == nil {
+			t.Errorf("%s: no such pack rule", id)
+			continue
+		}
+		if d.Severity != "high" && d.Severity != "critical" {
+			t.Errorf("%s: %s", id, d.Severity)
+		}
+		for _, tag := range d.Tags {
+			if strings.HasPrefix(tag, "needs-") {
+				t.Errorf("%s: %s", id, tag)
+			}
+		}
+	}
+}
+
+// TestMitigationsRulesReadBothLogs checks that the exploit protection
+// rules read the user mode log as well as the kernel mode one (BUY-05).
+func TestMitigationsRulesReadBothLogs(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, d := range ds {
+		if strings.HasPrefix(d.ID, "sigma-win-security-mitigations-") {
+			found++
+			if !strings.Contains(d.Query, "sourcetype=WinEventLog:Microsoft-Windows-Security-Mitigations/* ") {
+				t.Errorf("%s reads one log only: %s", d.ID, d.Query)
+			}
+		}
+	}
+	if found == 0 {
+		t.Error("no exploit protection rules in the Sigma pack")
+	}
 }

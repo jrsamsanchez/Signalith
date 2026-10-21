@@ -7,6 +7,7 @@ package securefile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -65,16 +66,16 @@ func contains(list []string, s string) bool {
 }
 
 // privateACL returns the protected access list: full control for the
-// trustees and nobody else. inherit makes the entries apply to the files
-// and folders inside a folder.
-func privateACL(inherit bool) (*windows.ACL, error) {
+// given trustees and nobody else. inherit makes the entries apply to the
+// files and folders inside a folder.
+func privateACL(inherit bool, who []string) (*windows.ACL, error) {
 	flags := ""
 	if inherit {
 		flags = "OICI"
 	}
 	var b strings.Builder
 	b.WriteString("D:P")
-	for _, sid := range trustees() {
+	for _, sid := range who {
 		b.WriteString("(A;" + flags + ";FA;;;" + sid + ")")
 	}
 	sd, err := windows.SecurityDescriptorFromString(b.String())
@@ -86,8 +87,11 @@ func privateACL(inherit bool) (*windows.ACL, error) {
 }
 
 // protect gives path the protected access list.
-func protect(path string, folder bool) error {
-	dacl, err := privateACL(folder)
+func protect(path string, folder bool) error { return protectFor(path, folder, trustees()) }
+
+// protectFor gives path the protected access list of the trustees who.
+func protectFor(path string, folder bool, who []string) error {
+	dacl, err := privateACL(folder, who)
 	if err != nil {
 		return err
 	}
@@ -126,6 +130,21 @@ func newFileAccess(tmp *os.File, _ string) error { return protect(tmp.Name(), fa
 // privateDir gives a folder the protected access list, inherited by the
 // files and folders inside it.
 func privateDir(dir, _ string, _ bool) error { return protect(dir, true) }
+
+// adminDir gives a folder an access list, inherited by everything inside
+// it, of SYSTEM and Administrators only: not Signalith's service account.
+func adminDir(dir, _ string, _ bool) error {
+	// Administrators own it first: an owner may always change the access
+	// list, so a folder another account made would otherwise stay its.
+	admins, err := windows.StringToSid(sidAdmins)
+	if err != nil {
+		return err
+	}
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION, admins, nil, nil, nil); err != nil {
+		return fmt.Errorf("could not make Administrators the owner: %w", err)
+	}
+	return protectFor(dir, true, []string{sidSystem, sidAdmins})
+}
 
 // linkAllowed follows links: on Windows only administrators may make them
 // (folder junctions, which any account may make, are refused by

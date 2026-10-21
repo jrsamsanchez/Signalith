@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -268,6 +269,10 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 func (s *Server) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := s.authenticate(r)
+		if errors.Is(err, clusterauth.ErrSessionUnchecked) {
+			s.sessionUnchecked(w, r)
+			return
+		}
 		if err != nil {
 			writeSignInError(w, err)
 			return
@@ -319,8 +324,11 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 		}
 		return p, nil
 	}
+	var unchecked error
 	if c, err := r.Cookie(s.cookieName(r)); err == nil {
-		if ss, ok := s.sessions().Lookup(r.Context(), c.Value, !background(r)); ok {
+		ss, ok, uerr := s.lookupSession(r.Context(), c.Value, !background(r))
+		unchecked = uerr
+		if ok {
 			// A password changed since signing in (perhaps on another
 			// server sharing the users file) ends the session too.
 			if p := s.principalFor(ss.User); p != nil && (ss.Version == "" || ss.Version == s.passwordStamp(ss.User)) {
@@ -346,7 +354,9 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	}
 	user, pass, ok := r.BasicAuth()
 	if !ok {
-		return nil, nil
+		// A session this server cannot check now is not refused: the
+		// request is answered 503, so the page does not sign out.
+		return nil, unchecked
 	}
 	p, err := s.checkBasic(r, user, pass)
 	if errors.Is(err, errWrongCredentials) {
@@ -358,6 +368,59 @@ func (s *Server) authenticate(r *http.Request) (*principal, error) {
 	}
 	return p, err
 }
+
+// sessionChecker is a SessionStore that tells a session it cannot check
+// now (clusterauth.ErrSessionUnchecked) from one it refuses.
+type sessionChecker interface {
+	Check(ctx context.Context, token string, used bool) (auth.Session, error)
+}
+
+// lookupSession is SessionStore.Lookup; unchecked is
+// clusterauth.ErrSessionUnchecked when the store could not check the
+// session now, rather than refused it.
+func (s *Server) lookupSession(ctx context.Context, token string, used bool) (ss auth.Session, ok bool, unchecked error) {
+	st := s.sessions()
+	if c, is := st.(sessionChecker); is {
+		ss, err := c.Check(ctx, token, used)
+		if errors.Is(err, clusterauth.ErrSessionUnchecked) {
+			return ss, false, err
+		}
+		return ss, err == nil, nil
+	}
+	ss, ok = st.Lookup(ctx, token, used)
+	return ss, ok, nil
+}
+
+// sessionUncheckedRetry is the Retry-After of a request whose session
+// could not be checked.
+const sessionUncheckedRetry = 5 * time.Second
+
+// sessionUnchecked answers a request whose session this server cannot
+// check now (it just started and OpenSearch did not answer, or it cannot
+// use OpenSearch): 503 with Retry-After, never 401, which would send the
+// page to the sign-in page. A page opened in the browser gets a short
+// page that tries again by itself, with a way to sign in, which an admin
+// can do while OpenSearch cannot be used.
+func (s *Server) sessionUnchecked(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(sessionUncheckedRetry.Seconds())))
+	w.Header().Set("Cache-Control", "no-store")
+	if !strings.HasPrefix(r.URL.Path, "/api/") && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		(r.Header.Get("Sec-Fetch-Mode") == "navigate" || strings.Contains(r.Header.Get("Accept"), "text/html")) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, sessionUncheckedPage, int(sessionUncheckedRetry.Seconds()))
+		return
+	}
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "session_unchecked",
+		"error": "Signalith can't check your sign-in right now. Try again in a few seconds."})
+}
+
+const sessionUncheckedPage = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="%d">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Signalith</title></head>
+<body><p>Signalith can't check your sign-in right now. This page tries again in a few seconds.</p>
+<p><a href="/login">Sign in again</a></p></body></html>
+`
 
 // principalFor looks up a signed-in user's current role and state, or
 // returns nil if they may no longer sign in. Directory users are checked

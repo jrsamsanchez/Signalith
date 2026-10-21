@@ -5,6 +5,8 @@ package api
 
 import (
 	"testing"
+
+	"github.com/jrsamsanchez/signalith/internal/security"
 )
 
 // stepIDs returns the ids of a setup guide reply's steps, and which are
@@ -98,5 +100,41 @@ func TestSetupGuide(t *testing.T) {
 	// Don't ask again sticks.
 	if code, body, _ = admin("PUT", "/api/me/setup", `{"state":"never"}`); code != 200 || body["ask"] != false || body["state"] != "never" {
 		t.Errorf("never = %d %v", code, body)
+	}
+}
+
+// TestSetupGuideSecurityAttention checks that the security step is done
+// only when nothing is at risk and nothing needs attention (LP-02).
+func TestSetupGuideSecurityAttention(t *testing.T) {
+	ts, srv := newUsersServer(t, nil)
+	step := func() map[string]any {
+		t.Helper()
+		_, body, _ := call(t, ts, "GET", "/api/me/setup", "", "admin", adminPass, nil)
+		for _, r := range body["steps"].([]any) {
+			if s := r.(map[string]any); s["id"] == "security" {
+				return s
+			}
+		}
+		t.Fatalf("no security step in %v", body)
+		return nil
+	}
+	setSummary := func(risk, attention int) {
+		c := srv.security()
+		c.mu.Lock()
+		c.report = &security.Report{Summary: security.Summary{Risk: risk, Attention: attention}}
+		c.mu.Unlock()
+	}
+
+	setSummary(0, 2)
+	if s := step(); s["done"] == true || s["attention"] != float64(2) || s["count"] != nil {
+		t.Errorf("two needing attention: step = %v, want not done with attention 2", s)
+	}
+	setSummary(1, 2)
+	if s := step(); s["done"] == true || s["count"] != float64(1) {
+		t.Errorf("one at risk: step = %v, want not done with count 1", s)
+	}
+	setSummary(0, 0)
+	if s := step(); s["done"] != true {
+		t.Errorf("all good: step = %v, want done", s)
 	}
 }

@@ -241,6 +241,10 @@ type Result struct {
 	// later, such as while its disk is full or it is too busy.
 	Temporary int                   `json:"temporary,omitempty"`
 	Errors    []store.BulkItemError `json:"errors,omitempty"`
+	// TemporaryAt are the positions, in the events given, of those
+	// rejected for now (all of them, unlike Errors), so a sender that
+	// keeps events, such as syslog's spool, can send just those again.
+	TemporaryAt []int `json:"-"`
 	// Retimed and FieldsDropped are as in Stats, for this call.
 	Retimed       int `json:"retimed,omitempty"`
 	FieldsDropped int `json:"fields_dropped,omitempty"`
@@ -439,10 +443,23 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
 	res.Sensor = storedSensor(events, errs, recv)
+	limited := 0
 	for _, e := range errs {
-		if temporary(e) {
+		if Temporary(e) {
 			res.Temporary++
+			if e.Pos >= 0 && e.Pos < res.Received && !slices.Contains(res.TemporaryAt, e.Pos) {
+				res.TemporaryAt = append(res.TemporaryAt, e.Pos)
+			}
 		}
+		if shardLimit(e) {
+			limited++
+		}
+	}
+	if limited > 0 {
+		p.warn("shards", "OpenSearch refused to create a new index: the cluster holds the most shards it allows (cluster.max_shards_per_node times the data nodes). "+
+			"The events were refused for now and senders that retry send them again; keep fewer days, send fewer data models, add a data node, "+
+			"or raise cluster.max_shards_per_node (a soft limit)",
+			"events", limited, "first", firstShardLimit(errs))
 	}
 	if len(errs) > maxErrors {
 		errs = errs[:maxErrors]
@@ -547,17 +564,57 @@ func retryable(errs []store.BulkItemError, events []Event, docs []store.IndexedD
 	return retry, pos, removed
 }
 
-// temporary reports whether OpenSearch turned an event away for a reason
+// Temporary reports whether OpenSearch turned an event away for a reason
 // that may pass, so the sender should send it again later: too busy
 // (429, es_rejected_execution_exception), a write block such as a full
-// disk (cluster_block_exception), or a failure on its side (5xx).
-func temporary(e store.BulkItemError) bool {
+// disk (cluster_block_exception), no room for the day's new index under
+// the shard limit (see shardLimit), or a failure on its side (5xx).
+func Temporary(e store.BulkItemError) bool {
+	if shardLimit(e) {
+		return true
+	}
 	switch e.Type {
 	case "cluster_block_exception", "es_rejected_execution_exception", "circuit_breaking_exception",
 		"unavailable_shards_exception", "process_cluster_event_timeout_exception", "timeout_exception":
 		return true
 	}
 	return e.Status == http.StatusTooManyRequests || e.Status >= 500
+}
+
+// TemporaryError reports whether a whole write failed for a reason that
+// may pass, as Temporary does for one event: OpenSearch could not be
+// reached or did not answer in time, or it answered 429, a 5xx or a
+// cluster block. A request it refused for good (another 4xx, such as a
+// wrong password) is not.
+func TemporaryError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *store.Error
+	if errors.As(err, &se) {
+		return se.Status == http.StatusTooManyRequests || se.Status >= 500 ||
+			strings.Contains(se.Body, "cluster_block_exception") || strings.Contains(se.Body, "es_rejected_execution_exception")
+	}
+	return true
+}
+
+// shardLimit reports whether OpenSearch refused to create the event's
+// index because the cluster holds the most shards it allows
+// (cluster.max_shards_per_node times the data nodes). Like a full disk,
+// it passes once room is made, so the event is sent again rather than
+// dropped.
+func shardLimit(e store.BulkItemError) bool {
+	return e.Type == "validation_exception" && strings.Contains(e.Reason, "maximum") && strings.Contains(e.Reason, "shards open")
+}
+
+// firstShardLimit returns the reason of the first shard-limit refusal.
+func firstShardLimit(errs []store.BulkItemError) string {
+	for _, e := range errs {
+		if shardLimit(e) {
+			return e.Reason
+		}
+	}
+	return ""
 }
 
 // fieldRejection reports whether OpenSearch turned a document away because

@@ -303,3 +303,31 @@ func TestWithMaxResponse(t *testing.T) {
 		t.Errorf("search without a cap: %v", err)
 	}
 }
+
+func TestWriteBlocks(t *testing.T) {
+	answer := `{"cluster_name":"x","blocks":{}}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_cluster/state/blocks" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, answer)
+	}))
+	defer ts.Close()
+	c := New(Config{URL: ts.URL})
+	if says, err := c.WriteBlocks(context.Background()); err != nil || len(says) != 0 {
+		t.Fatalf("no blocks: %v %v", says, err)
+	}
+	// Past the high watermark: OpenSearch sets cluster.blocks.create_index.
+	// A read block alone is not a write block.
+	answer = `{"blocks":{"global":{"10":{"description":"cluster create-index blocked (api)","retryable":false,"levels":["create_index"]},
+		"99":{"description":"reads only","levels":["read"]}},
+		"indices":{"signalith-2026.10.21":{"12":{"description":"disk usage exceeded flood-stage watermark, index has read-only-allow-delete block","levels":["write","metadata_write"]}},
+		"signalith-2026.10.20":{"12":{"description":"disk usage exceeded flood-stage watermark, index has read-only-allow-delete block","levels":["write","metadata_write"]}}}}}`
+	says, err := c.WriteBlocks(context.Background())
+	if err != nil || len(says) != 2 || !strings.Contains(says[0], "cluster.blocks.create_index") ||
+		!strings.Contains(says[1], "2 indices, signalith-2026.10.20 among them,") {
+		t.Fatalf("blocks: %q %v", says, err)
+	}
+}

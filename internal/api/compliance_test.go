@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/compliance"
+	"github.com/jrsamsanchez/signalith/internal/search"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -185,5 +186,27 @@ func TestComplianceSharedNotes(t *testing.T) {
 	notes.paused = true
 	if code, out := do(t, ts, "PUT", "/api/compliance/notes", body, true); code != 503 {
 		t.Errorf("paused PUT = %d %v", code, out)
+	}
+}
+
+// The report reads which hosts sent each data model every computer
+// should send (COMP-08).
+func TestComplianceComputers(t *testing.T) {
+	s := &Server{Engine: &search.Engine{Store: &fakeOS{}}}
+	snap := &compliance.Snapshot{Now: time.Now(), Computers: []string{"db-01", "10.0.0.9", "db-01", ""}}
+	s.complianceComputers(context.Background(), snap)
+	if snap.HostsErr != "" || len(snap.Computers) != 2 {
+		t.Fatalf("computers %v, error %q", snap.Computers, snap.HostsErr)
+	}
+	for _, m := range compliance.HostModels {
+		if !snap.DataHosts[m]["10.0.0.9"] || snap.DataHosts[m]["db-01"] {
+			t.Errorf("%s hosts = %v", m, snap.DataHosts[m])
+		}
+	}
+	// Without computers to compare with, nothing is searched.
+	snap = &compliance.Snapshot{Now: time.Now()}
+	s.complianceComputers(context.Background(), snap)
+	if snap.DataHosts != nil {
+		t.Errorf("searched without computers: %v", snap.DataHosts)
 	}
 }

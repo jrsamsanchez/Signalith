@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -34,6 +35,8 @@ type fakeOpenSearch struct {
 	// loaded is whether the security settings are loaded.
 	loaded    atomic.Bool
 	adminRuns int
+	// failHome is a program the service does not start with.
+	failHome string
 }
 
 func (f *fakeOpenSearch) prepare(l oslocal.Layout, home string) error {
@@ -62,6 +65,9 @@ func (f *fakeOpenSearch) securityAdmin(oslocal.Layout, string, int) error {
 func (f *fakeOpenSearch) start() error {
 	if f.srv != nil {
 		return nil
+	}
+	if f.installed == f.failHome {
+		return errors.New("the service stopped at once")
 	}
 	st, err := oslocal.LoadState(f.l)
 	if err != nil {
@@ -197,6 +203,45 @@ func TestInstallOpenSearch(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.NodeCertFile)); err != nil {
 		t.Fatal("the data and certificates were not kept")
+	}
+}
+
+// An upgrade whose new OpenSearch does not start goes back to the one that
+// ran before, which is kept.
+func TestInstallOpenSearchGoesBack(t *testing.T) {
+	shortWaits(t)
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "client")}
+	fakeRelease(t, l, "3.0.0")
+	fakeRelease(t, l, oslocal.Version)
+	sys := &fakeOpenSearch{t: t, l: l, failHome: l.VersionHome(oslocal.Version)}
+	sys.loaded.Store(true)
+	os.MkdirAll(l.Data, 0o700)
+	if err := oslocal.MakeCerts(l, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	port, err := oslocal.FreePort(oslocal.FirstPort)
+	if err != nil {
+		t.Skip(err)
+	}
+	oslocal.SaveState(l, oslocal.State{Version: "3.0.0", Port: port})
+	sys.installed = l.VersionHome("3.0.0")
+	var out strings.Builder
+	err = installOpenSearch(context.Background(), &out, sys, l, "", nil)
+	if err == nil || !strings.Contains(err.Error(), "OpenSearch 3.0.0 runs again") {
+		t.Fatalf("got %v\n%s", err, out.String())
+	}
+	if sys.installed != l.VersionHome("3.0.0") || sys.srv == nil {
+		t.Fatalf("the service runs %q (started: %v), want 3.0.0", sys.installed, sys.srv != nil)
+	}
+	if st, _ := oslocal.LoadState(l); st.Version != "3.0.0" || st.Port != port {
+		t.Fatalf("state %+v", st)
+	}
+	if _, err := os.Stat(filepath.Join(l.VersionHome("3.0.0"), "bin")); err != nil {
+		t.Fatal("the old program was removed")
 	}
 }
 

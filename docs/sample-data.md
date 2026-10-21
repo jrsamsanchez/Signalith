@@ -169,6 +169,12 @@ turn on only looks at the last few minutes):
   plant story. It is off by default because its first runs list every host that
   commands each controller today.
 
+The same goes for content pack rules: rules you turn on after the sample is
+loaded watch new events only, and the Detections page says so when you turn
+them on. To run them over the sample week, remove the sample data and load it
+again. The load runs four detections at a time, so with the starter rules on it
+takes a few minutes longer than with the built-in detections alone.
+
 ## How it stays apart from your data
 
 - **Detections.** The load runs the detections over the sample's own events

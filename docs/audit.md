@@ -60,8 +60,9 @@ action and what its line holds:
 | `finding.create` | A finding raised by hand | the finding (`target`), its `title`, `severity` and `query` (up to 500 characters) |
 | `finding.update` | A finding's status, owner, severity or disposition changed, or a comment was added | the finding (`target`), its detection, `changes` (such as `status: new -> closed`), `commented` |
 | `finding.bulk_update` | Several findings changed at once | one line for the request: the `update`, how many were `updated` and `failed`, and the first 50 `findings` |
-| `finding.suppress` | **Don't alert on this again** from a finding | the detection (`target`), the exception, the `finding`, its `match`, `until` and `comment`; the finding's own change is a `finding.update` line |
+| `finding.suppress` | **Don't alert on this again** from a finding | the detection (`target`), the `scope` when the exception is for many detections, the exception, the `finding`, its `match`, `until` and `comment`; the finding's own change is a `finding.update` line |
 | `detection.exception_add`, `detection.exception_remove` | An exception added to or removed from a detection | the detection (`target`), the exception, its `match` and `until`; on removal also who added it (`added_by`) |
+| `detection.scoped_exception_add`, `detection.scoped_exception_remove` | An [exception for many detections](detections.md#exceptions-for-many-detections) added or removed | its `scope` (`all`, `pack:<name>` or `tag:<tag>`), the exception, its `match` and `until`; when added its `comment`, on removal who added it (`added_by`) |
 | `detection.create`, `detection.save`, `detection.delete`, `detection.enable` | A detection created, saved, deleted (or its override removed), or turned on or off | the detection (`target`), whether it is `enabled`; for several at once, the `count` and the first 50 |
 | `case.create`, `case.update` | An investigation case created or changed | the case (`target`); its title, severity, owner and linked findings when created; `changes` (status, owner, severity, title; for the description and resolution only that they were edited) and `commented` when changed |
 | `case.close_findings` | A case closed with its findings | the case, the `status` and `disposition` set, how many were `closed` and `failed`, and the first 50 |
@@ -122,7 +123,10 @@ removed** (not signed with a key the server holds, though their server signed it
 them: a server that signs keeps signing, so the MAC was removed or replaced, or the line was
 put in), **not linked** (the line before was changed, or one was put in), **removed** (missing from a
 chain, and no signed `audit.lost` line names them), and **removed at the end** (a checkpoint saw
-later lines of a server than there are). It exits 2 when it finds any. Only signed `audit.lost` and
+later lines of a server than there are). When it finds no line of the servers the cluster
+settings say sign theirs in the part of the range in the current month after they started
+(retention never deletes those), at least two hours long, it also reports lines **removed at
+the end**: the audit indices, or every line in them, were deleted. It exits 2 when it finds any. Only signed `audit.lost` and
 `audit.checkpoint` lines count, as anyone who can write to OpenSearch could write unsigned
 ones; a gap where nothing is signed and only an unsigned `audit.lost` line names it is
 counted as **unverifiable**. It also counts the lines dropped and recorded, the unsigned ones, those signed with a cluster key this server

@@ -133,9 +133,12 @@ type Health struct {
 	// or the last 24 hours; nil when there was none.
 	Skipped *SkippedGap `json:"skipped,omitempty"`
 	// Silent lists enabled detections with no findings and no risk events
-	// in SilentWindow.
+	// in SilentWindow. TooNew counts those that first ran less than
+	// SilentWindow ago, which are left out of Silent: they have not had the
+	// time to match.
 	Silent       []DetectionIssue `json:"silent"`
 	SilentWindow string           `json:"silent_window"`
+	TooNew       int              `json:"too_new,omitempty"`
 	// Sources counts host and source type pairs seen in SourceLookback.
 	Sources        int      `json:"sources"`
 	StaleSources   []Source `json:"stale_sources"`
@@ -525,7 +528,11 @@ func (p *Posture) health(fs *findingStats, r30, sources *search.Result, errs map
 				g.Detections++
 			}
 			if canJudgeSilence && !matched[d.ID] && st.LastResults == 0 {
-				h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), LastRun: st.LastRun})
+				if !st.Since.IsZero() && now.Sub(st.Since) < silentWindow {
+					h.TooNew++
+				} else {
+					h.Silent = append(h.Silent, DetectionIssue{ID: d.ID, Title: d.BaseTitle(), LastRun: st.LastRun})
+				}
 			}
 		}
 	}

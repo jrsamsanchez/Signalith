@@ -104,6 +104,31 @@ func TestSessionLimitEvictsLeastRecentlyUsed(t *testing.T) {
 	}
 }
 
+// TestOneUserCannotEvictOthers: sign-ins by one account past PerUser end
+// that account's own oldest sessions, never another user's.
+func TestOneUserCannotEvictOthers(t *testing.T) {
+	c := &clock{time.Now()}
+	s := NewSessions(time.Hour)
+	s.Now, s.Limit, s.PerUser = c.now, 50, 5
+	admin := s.Create("admin", false)
+	var viewer []string
+	for range 60 {
+		c.t = c.t.Add(time.Second)
+		viewer = append(viewer, s.Create("Viewer", false))
+	}
+	if _, ok := s.Lookup(admin); !ok {
+		t.Fatal("another user's sign-ins ended the admin's session")
+	}
+	for i, tok := range viewer {
+		if _, ok := s.Lookup(tok); ok != (i >= len(viewer)-5) {
+			t.Errorf("viewer session %d kept = %v", i, ok)
+		}
+	}
+	if n := s.Len(); n != 6 {
+		t.Errorf("%d sessions, want 6", n)
+	}
+}
+
 func TestEndUser(t *testing.T) {
 	s := NewSessions(time.Hour)
 	a1, a2 := s.Create("ann", false), s.Create("ann", true)

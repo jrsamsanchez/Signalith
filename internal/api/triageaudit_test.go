@@ -73,6 +73,17 @@ func TestTriageAndCaseChangesAreAudited(t *testing.T) {
 	}
 	wantAudit(t, &logs, "detection.exception_remove:", "exception="+exID, "203.0.113.*", "added_by=admin")
 
+	code, out = do(t, ts, "POST", "/api/detections/exceptions", `{"scope":"all","match":{"user":"svc-ansible"},"for":"30d","comment":"config runs"}`, true)
+	if code != 200 {
+		t.Fatalf("scoped exception = %d %v", code, out)
+	}
+	scID := out["exception"].(map[string]any)["id"].(string)
+	wantAudit(t, &logs, "detection.scoped_exception_add:", "scope=all", "exception="+scID, "svc-ansible", `comment="config runs"`, "until=")
+	if code, _ := do(t, ts, "DELETE", "/api/detections/exceptions/"+scID, "", true); code != 200 {
+		t.Fatalf("remove scoped exception = %d", code)
+	}
+	wantAudit(t, &logs, "detection.scoped_exception_remove:", "scope=all", "exception="+scID, "svc-ansible", "added_by=admin")
+
 	if code, out := do(t, ts, "POST", "/api/findings/f-2/suppress", `{"fields":["dest"],"update":{"status":"closed"}}`, true); code != 200 {
 		t.Fatalf("suppress = %d %v", code, out)
 	}

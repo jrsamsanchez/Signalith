@@ -31,6 +31,11 @@ type Query struct {
 	// is UTC. Set by callers, such as the Search page from the browser's
 	// zone, not parsed.
 	TimeZone string
+	// MaxRows, when over the engine's own limit, is how many stats rows
+	// the search may read: background jobs that group a whole estate in
+	// one search need more than an analyst's search. Set by callers,
+	// not parsed.
+	MaxRows int
 }
 
 // Expr is a boolean filter expression.
@@ -83,6 +88,11 @@ func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")"
 func (e *Not) String() string { return "NOT " + e.Child.String() }
 func (e *Compare) String() string {
 	v := FormatValue(e.Value)
+	if e.Ref {
+		// It parsed as a bare name, so it reads back as one even when
+		// FormatValue would quote it, as a field named by is.
+		v = e.Value
+	}
 	if e.lit && !e.Ref && v == e.Value && isEvalIdent(v) && e.Op != "=~" {
 		v = quote(v) // bare, it would name a field
 	}

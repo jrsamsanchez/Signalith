@@ -4,10 +4,11 @@
 package clustertls
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
-	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
@@ -15,6 +16,8 @@ import (
 const (
 	ModeAuto  = "auto"
 	ModeFiles = "files"
+	// ModeOff is a server that does not serve HTTPS itself.
+	ModeOff = "off"
 )
 
 // StatusOf is what m serves, for this server's heartbeat: sharedHost is
@@ -23,41 +26,50 @@ const (
 // none).
 func StatusOf(m *tlsauto.Manager, sharedHost, adoptErr string) *cluster.TLSStatus {
 	if m == nil {
-		return nil
+		// Nothing to hand out, and nothing to wait for while the
+		// cluster's certificate authority is replaced.
+		return &cluster.TLSStatus{Mode: ModeOff, CoversShared: true, CARotation: true}
 	}
 	st := &cluster.TLSStatus{Mode: ModeFiles, Names: m.Names(), Outside: m.Outside(), AdoptError: adoptErr,
-		CoversShared: sharedHost == "" || m.Covers(sharedHost)}
+		CoversShared: sharedHost == "" || m.Covers(sharedHost), CARotation: true}
 	if m.LocalCA() {
 		st.Mode = ModeAuto
 		st.Cluster = m.Store() == tlsauto.KindCluster
 		st.ChangePending = m.Next() != nil || m.Previous() != nil
 	}
-	if pem := m.CAPEM(); pem != nil {
-		st.CACertPEM, st.CASHA256 = string(pem), m.Fingerprint()
+	var ca *x509.Certificate
+	if p := m.CAPEM(); p != nil {
+		st.CACertPEM, st.CASHA256 = string(p), m.Fingerprint()
+		if block, _ := pem.Decode(p); block != nil {
+			ca, _ = x509.ParseCertificate(block.Bytes)
+		}
 	}
 	if leaf := m.Leaf(); leaf != nil {
 		exp := leaf.NotAfter.UTC()
 		st.LeafExpires = &exp
+		if ca != nil && leaf.CheckSignatureFrom(ca) == nil {
+			st.LeafCASHA256 = tlsauto.Fingerprint(ca.Raw)
+		}
+	}
+	if st.Cluster {
+		if next := m.Next(); next != nil {
+			st.NextCASHA256 = next.Fingerprint
+		}
 	}
 	return st
 }
 
 // KeyLost reports whether the cluster's certificate authority key is
 // lost for good: m uses the cluster's certificate authority without its
-// key, and the tls document, among the shared settings' problems, is
-// refused because its key was emptied (signalith cluster reset-key does
-// that when every copy of the cluster key is lost). While OpenSearch
-// cannot be reached the key is only not available yet, which is not this.
-func KeyLost(m *tlsauto.Manager, problems []shared.Problem) bool {
-	if m == nil || !m.CAKeyMissing() {
+// key, and the tls document b names that certificate authority with its
+// key emptied (signalith cluster reset-key does that when every copy of
+// the cluster key is lost). While OpenSearch cannot be reached the key
+// is only not available yet, which is not this.
+func KeyLost(m *tlsauto.Manager, b *Body) bool {
+	if m == nil || b == nil || !b.KeyLost() || !m.CAKeyMissing() {
 		return false
 	}
-	for _, p := range problems {
-		if p.ID == DocID && p.Kind == shared.ProblemInvalid && p.Reason == ErrKeyNotSealed.Error() {
-			return true
-		}
-	}
-	return false
+	return SameFingerprint(m.Fingerprint(), b.CASHA256)
 }
 
 // KeyLostText is the warning shown while the cluster's certificate
@@ -68,7 +80,8 @@ func KeyLostText(expires time.Time) string {
 	if !expires.IsZero() {
 		head = "The cluster's certificate authority key was lost; HTTPS certificates expire on " + expires.UTC().Format("2 Jan 2006") + " and cannot be renewed. "
 	}
-	return head + "Before then, agents, browsers and syslog senders need a new certificate authority to trust."
+	return head + "Give the key back with signalith cluster tls import <ca.key> if a copy is kept (an export's tls folder holds one); " +
+		"otherwise, before then, agents, browsers and syslog senders need a new certificate authority to trust."
 }
 
 // UpWithin is how fresh a heartbeat must be for its server to count as

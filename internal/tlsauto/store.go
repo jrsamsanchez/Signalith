@@ -49,7 +49,7 @@ const (
 
 // ErrClusterCA refuses a change of certificate authority on a server that
 // uses the cluster's.
-var ErrClusterCA = &StateError{"This server uses the cluster's certificate authority. Changing it comes in a later version."}
+var ErrClusterCA = &StateError{"This server uses the cluster's certificate authority. Replace it for every server at once on the Servers page, or with signalith cluster tls rotate-ca."}
 
 // errNoCAKey: the cluster's certificate authority is known but its key is
 // not available here yet.
@@ -536,4 +536,18 @@ func LocalFiles(dir string) (*x509.Certificate, crypto.Signer, []string) {
 		return nil, nil, nil
 	}
 	return ca, key, s.Names()
+}
+
+// LeafExpiry returns when the HTTPS certificate in dir (server.pem)
+// expires, for a server that left the cluster and can no longer renew it.
+func LeafExpiry(dir string) (time.Time, error) {
+	b, err := os.ReadFile(filepath.Join(dir, certFile))
+	if err != nil {
+		return time.Time{}, err
+	}
+	c, err := parseCert(b)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return c.NotAfter.UTC(), nil
 }

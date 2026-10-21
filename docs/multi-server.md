@@ -215,8 +215,10 @@ same `.env` file.
 
 A server started with the cluster's OpenSearch settings but without a token (or a cluster
 key) waits to join. It shows a fingerprint on its sign-in page and in its log, and the
-Servers page lists it under **waits to join**. Compare the fingerprint the page shows with
-the one on the new server, then click **Approve**: only then does it get the cluster key.
+Servers page lists it under **waits to join**. Click **Approve** and type (or paste) the
+fingerprint the new server shows: only when it matches the server's key does it get the
+cluster key. The list shows only the first group of each fingerprint, so you check against
+the new server itself, not against what OpenSearch says.
 
 ## Automation
 

@@ -833,3 +833,16 @@ func TestSysmonLongMultiLineValueIsLinear(t *testing.T) {
 		t.Fatalf("CommandLine is %d bytes, User %q", len(kv["CommandLine"]), kv["User"])
 	}
 }
+
+// TestMitigationsUserModeEvents checks that exploit protection blocks from
+// the user mode log are read as the kernel mode log's are (BUY-05).
+func TestMitigationsUserModeEvents(t *testing.T) {
+	ev := otlpWindows(map[string]any{"channel": MitigationsUserChannel, "computer": "WS1", "event_id": map[string]any{"id": "12"},
+		"provider": map[string]any{"name": "Microsoft-Windows-Security-Mitigations"}, "event_data": map[string]any{
+			"ProcessPath": `C:\ProgramData\Microsoft\Windows Defender\Platform\4.18\MpCmdRun.exe`, "ImageName": `\Users\Public\evil.dll`}})
+	if ev.Fields["sourcetype"] != "WinEventLog:"+MitigationsUserChannel ||
+		ev.Fields["mitigation_process_path"] != `C:\ProgramData\Microsoft\Windows Defender\Platform\4.18\MpCmdRun.exe` ||
+		ev.Fields["mitigation_image_name"] != `\Users\Public\evil.dll` {
+		t.Errorf("user mode block = %v", ev.Fields)
+	}
+}

@@ -355,6 +355,17 @@ type TLSStatus struct {
 	// CAKeyLost is true when the cluster's certificate authority key was
 	// lost (see clustertls.KeyLost): the certificate cannot be renewed.
 	CAKeyLost bool `json:"ca_key_lost,omitempty"`
+	// LeafCASHA256 is the fingerprint of the certificate authority that
+	// signed the certificate served now ("" when it is not CASHA256's).
+	// NextCASHA256 is the cluster's next certificate authority, which the
+	// server hands out to agents with the one in use while the cluster's
+	// is replaced. Replacing it waits for both on every server.
+	LeafCASHA256 string `json:"leaf_ca_sha256,omitempty"`
+	NextCASHA256 string `json:"next_ca_sha256,omitempty"`
+	// CARotation is true on a version that keeps the cluster's next and
+	// previous certificate authorities (and reseals their keys in a key
+	// rotation): replacing the cluster's waits for every server to say so.
+	CARotation bool `json:"ca_rotation,omitempty"`
 }
 
 // SettingsRev is the revisions of the settings document and of a server's
