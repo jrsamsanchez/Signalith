@@ -29,6 +29,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agents"
 	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/keytrust"
 )
 
 func agentDo(t *testing.T, ts *httptest.Server, method, path, token, name, body string, h map[string]string) (int, http.Header, string) {
@@ -529,6 +530,43 @@ func TestManagedAgentUpdate(t *testing.T) {
 	if code, _, _ := sensorGet(t, ts, agentproto.RouteManifest, ""); code != 401 {
 		t.Errorf("manifest without a token: %d", code)
 	}
+
+	// The server hands its revocation list to agents with the manifest,
+	// and refuses a manifest signed with a revoked key itself.
+	rootPub, rootPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRoots := keytrust.Roots
+	keytrust.Roots = []ed25519.PublicKey{rootPub}
+	t.Cleanup(func() { keytrust.Roots = oldRoots })
+	store := &keytrust.Store{Dir: t.TempDir()}
+	s.Revocations, s.AgentPrograms.Revocations = store, store
+	offer := func(issued time.Time, ids ...string) []byte {
+		t.Helper()
+		l := keytrust.List{Format: keytrust.Format, Issued: issued}
+		for _, id := range ids {
+			l.Revoked = append(l.Revoked, keytrust.RevokedKey{ID: id})
+		}
+		data, _ := json.Marshal(l)
+		if kept, err := store.Offer(data, keytrust.Sign(rootPriv, data)); !kept || err != nil {
+			t.Fatalf("offer: %v %v", kept, err)
+		}
+		return data
+	}
+	list := offer(time.Now().Add(-time.Hour), "0123456789ab")
+	code, _, body = sensorGet(t, ts, agentproto.RouteManifest, agent)
+	if json.Unmarshal([]byte(body), &ans) != nil || code != 200 || ans.Revocation != string(list) || ans.RevocationSignature == "" {
+		t.Errorf("manifest with a revocation list: %d %s", code, body)
+	}
+	offer(time.Now(), keytrust.KeyID(pub))
+	if cfg := fetch("1.0.0"); cfg.Update != nil {
+		t.Errorf("offered an update signed with a revoked key: %+v", cfg.Update)
+	}
+	if code, _, body := sensorGet(t, ts, agentproto.RouteManifest, agent); code == 200 {
+		t.Errorf("manifest signed with a revoked key handed out: %s", body)
+	}
+	s.Revocations, s.AgentPrograms.Revocations = nil, nil
 
 	// Paused for the install line: no offer until it is turned back on.
 	if code, _, raw := call(t, ts, "PUT", "/api/agent-tokens/"+id+"/collect", `{"updates":"off"}`, "admin", adminPass, nil); code != 200 {

@@ -74,6 +74,9 @@ The first time an image is pushed, check that the package is public: the reposit
 Every release is signed with [Sigstore](https://www.sigstore.dev) and has GitHub build
 provenance without any setup: GitHub vouches for the workflow that built it.
 
+[Key management](key-management.md) lists every key, how to replace each one, and
+what to do when one leaks.
+
 ### Where the keys are kept
 
 The signing keys are secrets of two GitHub environments, never of the whole repository,

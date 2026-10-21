@@ -100,7 +100,7 @@ func runAgentPrograms(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "Agent programs in %s: %v\n", *dir, p.Available())
 		_, _, m, err := p.Manifest()
 		switch {
-		case errors.Is(err, clusterinstall.ErrNoManifest) && len(agentproto.ReleaseKeys) == 0:
+		case errors.Is(err, clusterinstall.ErrNoManifest) && len(agentproto.TrustedKeys()) == 0:
 			fmt.Fprintln(out, "This build has no release key, so agents are offered no updates.")
 		case errors.Is(err, clusterinstall.ErrNoManifest):
 			fmt.Fprintln(out, "No signed manifest: agents are offered no updates.")
@@ -118,7 +118,7 @@ func runAgentPrograms(args []string, out io.Writer) error {
 
 // trustedKey says whether agents built from this source trust k.
 func trustedKey(k ed25519.PublicKey) bool {
-	for _, r := range agentproto.ReleaseKeys {
+	for _, r := range agentproto.TrustedKeys() {
 		if r.Equal(k) {
 			return true
 		}
