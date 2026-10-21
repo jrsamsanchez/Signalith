@@ -123,7 +123,7 @@ func (s *Server) handleInstallBinary(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.Log.Warn("cannot hand out this server's program to a new server", "err", err)
-		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read its own program"))
+		writeError(w, http.StatusInternalServerError, errUser("this server cannot read its own program"))
 		return
 	}
 	defer file.Close()

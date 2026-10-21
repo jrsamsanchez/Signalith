@@ -286,3 +286,18 @@ func TestCheckOsqueryFlags(t *testing.T) {
 		}
 	}
 }
+
+// osquery's curl tables stay off whatever the server sends (ASI-12): the
+// agent's own list comes last, which is the one osquery keeps.
+func TestOsqueryFlagsDisableCurlTables(t *testing.T) {
+	p := testPaths(t)
+	cfg := &agentproto.Config{Osquery: &agentproto.Osquery{Flags: "--tls_hostname=siem.example.com:7779\n--disable_tables=processes\n"}}
+	text, dropped := p.osqueryFlagsFile(cfg)
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if want := "--disable_tables=curl,curl_certificate"; lines[len(lines)-1] != want || len(dropped) != 0 {
+		t.Errorf("flags end %q (dropped %v), want %q:\n%s", lines[len(lines)-1], dropped, want, text)
+	}
+	if _, err := CheckOsqueryFlags(p, text); err != nil {
+		t.Errorf("the check refuses the agent's own flags: %v", err)
+	}
+}

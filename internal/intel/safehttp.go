@@ -501,7 +501,9 @@ func scrub(msg string, fd Feed) string {
 }
 
 // RedactURL returns a URL safe to log: without a user name or password,
-// and with the query (which may hold an API key) replaced by "…".
+// and with the query and the fragment (either may hold an API key)
+// replaced by "…". A key written into the path itself stays: there is no
+// telling it from the rest of the path.
 func RedactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -513,10 +515,14 @@ func RedactURL(raw string) string {
 		return redact.URL(raw)
 	}
 	u.User = nil
+	frag := u.Fragment != "" || u.RawFragment != "" || strings.HasSuffix(raw, "#")
+	u.Fragment, u.RawFragment = "", ""
 	if u.RawQuery != "" || u.ForceQuery {
 		u.RawQuery, u.ForceQuery = "", false
-		u.Fragment, u.RawFragment = "", ""
 		return u.String() + "?…"
+	}
+	if frag {
+		return u.String() + "#…"
 	}
 	return u.String()
 }

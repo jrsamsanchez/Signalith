@@ -85,6 +85,10 @@ func (in Input) Build(now time.Time) (Indicator, error) {
 	typ, val, err := Normalize(in.Type, in.Value)
 	if err != nil {
 		msgs = append(msgs, err.Error())
+	} else if p, ok := prefixOf(val); ok && typ == TypeCIDR && tooBroad(p) {
+		// Feeds skip these too. Private and other reserved ranges are
+		// allowed by hand, for watching an internal address.
+		msgs = append(msgs, fmt.Sprintf("network %s is too broad to be an indicator: it would match a large part of the internet; use /8 or narrower for IPv4, /16 or narrower for IPv6", val))
 	}
 	weight := 1.0
 	if w := strings.TrimSpace(in.Weight); w != "" {

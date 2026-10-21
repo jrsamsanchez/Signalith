@@ -666,6 +666,11 @@ UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=read-only
+# osquery's own watchdog keeps its worker near 200 MB and 10% of a CPU;
+# these are the ceiling should it fail.
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target
@@ -772,6 +777,13 @@ RestrictNamespaces=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# Fluent Bit runs in this service too. A busy computer's agent uses well
+# under these; they stop a fault from taking the computer's memory or
+# CPU, and systemd starts the service again if it is stopped for it.
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=200%
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target
