@@ -494,7 +494,7 @@
         el('span', { class: 'sc-group__icon' }, icon('shield-check')),
         el('div', { class: 'sc-group__heading' },
           el('h2', { class: 'sc-group__title', id: 'sc-cluster-ca-title' }, 'Cluster certificate authority'),
-          el('p', { class: 'sc-group__desc' }, 'This server’s HTTPS certificate comes from the certificate authority every server of the cluster shares, so agents and browsers trust one file for all of them. It isn’t changed here: changing it comes in a later version.'))),
+          el('p', { class: 'sc-group__desc' }, 'This server’s HTTPS certificate comes from the certificate authority every server of the cluster shares, so agents and browsers trust one file for all of them. It isn’t changed here: replace it for every server at once on the Servers page.'))),
       el('div', { class: 'sc-cluster-ca__body' },
         cur ? el('p', { class: 'sc-cluster-ca__fp' }, el('span', { class: 'sc-others__label' }, 'Fingerprint'), el('span', { class: 'mono' }, cur.fingerprint)) : null,
         el('div', { class: 'sc-actions' },

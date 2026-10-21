@@ -114,11 +114,11 @@ func TestAgentFlagsPlainHTTP(t *testing.T) {
 	s := &Server{}
 	now := time.Now()
 	a := agentinv.Agent{Name: "web-01", Transport: agentinv.TransportPlain, LastSeen: now}
-	if got := s.agentFlags(a, "", "", now).NeedsConfig; !slices.Equal(got, []string{"plain"}) {
+	if got := s.agentFlags(a, "", "", nil, now).NeedsConfig; !slices.Equal(got, []string{"plain"}) {
 		t.Errorf("from another computer: %v", got)
 	}
 	a.Local = true
-	if got := s.agentFlags(a, "", "", now).NeedsConfig; len(got) != 0 {
+	if got := s.agentFlags(a, "", "", nil, now).NeedsConfig; len(got) != 0 {
 		t.Errorf("from this computer: %v", got)
 	}
 }
