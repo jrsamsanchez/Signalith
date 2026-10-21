@@ -53,8 +53,9 @@ func TestOpenSearchIndexUpkeep(t *testing.T) {
 	if err := s.EnsureIndex(ctx); err != nil {
 		t.Errorf("index exists = %v", err)
 	}
-	if err := s.Upgrade(ctx); err != nil || len(d.calls) != 3 || d.calls[1] != "PUT /sig_findings/_mapping" ||
-		!strings.HasPrefix(d.calls[2], "POST /sig_findings/_update_by_query") || !strings.Contains(d.bodies[2], "ctx._source.urgency = ctx._source.severity") {
+	if err := s.Upgrade(ctx); err != nil || len(d.calls) != 4 || d.calls[1] != "PUT /sig_findings/_mapping" ||
+		!strings.HasPrefix(d.calls[2], "POST /sig_findings/_update_by_query") || !strings.Contains(d.bodies[2], "ctx._source.urgency = ctx._source.severity") ||
+		!strings.Contains(d.bodies[3], "ctx._source.responded_at = ctx._source.updated") {
 		t.Errorf("upgrade = %v %v", err, d.calls)
 	}
 	boom := errors.New("mapping refused")
