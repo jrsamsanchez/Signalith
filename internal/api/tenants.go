@@ -406,7 +406,7 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 		ts, err := s.Tenants.List()
 		if err != nil {
 			s.Log.Error("could not read the tenants", "file", s.Tenants.Path, "err", err)
-			writeError(w, http.StatusInternalServerError, errors.New("the list of tenants cannot be read; see the server's log"))
+			writeError(w, http.StatusInternalServerError, errUser("the list of tenants cannot be read; see the server's log"))
 			return
 		}
 		for _, t := range ts {

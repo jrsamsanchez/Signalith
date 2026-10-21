@@ -11,6 +11,7 @@
     ['30d', 'Last 30 days', 30 * 864e5], ['all', 'All time', 0]];
   // Most records are found by their words; these actions are named.
   const ACTIONS = [['', 'All actions'], ['retention.', 'Data retention'], ['config.', 'Shared settings'], ['search.', 'Searches'],
+    ['finding.', 'Findings'], ['case.', 'Cases'], ['detection.', 'Detections'], ['intel.', 'Threat intel'],
     ['audit.lost', 'Audit records lost'], ['audit.checkpoint', 'Audit checkpoints']];
 
   const page = () => $('page-audit');

@@ -250,6 +250,7 @@ warning (it goes on), **-** is for your information.
 | A supported Linux, 64-bit, with systemd, run with `sudo` | ✗ stops |
 | Each program chosen has signed packages for this system, with a signing key the script can check (see [Signing keys](#signing-keys)) | ✗ stops, before anything is installed, and says what works instead (`--docker`, or `--no-zeek`) |
 | Signalith answers, its certificate authority matches `--ca-sha256`, and it accepts the token | ✗ stops, before anything is installed |
+| Fluent Bit's or Suricata's own service is not already running here (for something else) | ✗ stops, before anything is changed: install with `--docker`, which leaves it alone, or add `--take-over` to stop and mask it (`--uninstall` starts it again) |
 | 4 or more processor cores, 8 GB or more memory, 50 GB or more free under `/var` and `/opt` | ! Zeek and Suricata may drop packets, or run out of room |
 | The capture port has a link, receives packets in 10 seconds, and has no IP address | ! check the cable, the mirror port, and remove the address |
 | A second network port, to reach Signalith | ! a sensor needs two |
@@ -297,6 +298,7 @@ so on `--uninstall`). It never changes the machine's network settings files.
 | `--zeek-workers <n>` | Zeek processes reading the port (default: one Zeek process below 8 cores; from 8 cores, a quarter of them, at most 8). |
 | `--suricata-threads <n>` | Suricata capture threads (default: half the cores). |
 | `--docker` | Run the three programs in containers. |
+| `--take-over` | Stop and mask Fluent Bit's or Suricata's own service when it already runs here, so the sensor's copies are the only ones; `--uninstall` starts it again. |
 | `--check-only` | Check the machine and Signalith, change nothing. |
 | `--dry-run <folder>` | Write every file under the folder and print the commands, changing nothing. |
 | `--uninstall [--purge]` | Remove what the script added (`--purge`: the logs too). |
@@ -337,7 +339,8 @@ What it writes:
 - The systemd units `signalith-zeek`, `signalith-suricata`, `signalith-fluent-bit`,
   `signalith-sensor-capture`, and the timers `signalith-suricata-update`,
   `signalith-sensor-status` and `signalith-zeekctl-cron`. The packages' own `suricata` and
-  `fluent-bit` services are masked, so only Signalith's run.
+  `fluent-bit` services are masked, so only Signalith's run (one already running stops the
+  install unless you add `--take-over`).
 
 ### Who runs as whom
 

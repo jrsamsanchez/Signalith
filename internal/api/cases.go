@@ -21,6 +21,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -254,6 +255,8 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.audit(r, "case.create: investigation created", "target", c.ID, "title", c.Title, "severity", c.Severity,
+		"owner", c.Owner, "findings", auditIDs(req.Findings))
 	failed := map[string]string{}
 	if len(req.Findings) > 0 {
 		var err error
@@ -359,7 +362,9 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userOf(r)
+	var changes []findings.Change
 	c, err := s.modifyCase(r.Context(), r.PathValue("id"), func(c *cases.Case) (bool, error) {
+		changes = nil
 		status := c.Status
 		if req.Status != nil {
 			status = *req.Status
@@ -367,15 +372,23 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		if req.CloseFindings && findings.IsOpen(status) {
 			return false, badRequest{errors.New("set the case to resolved or closed to close its findings")}
 		}
-		return c.Apply(req.Update, user, time.Now().UTC()), nil
+		n := len(c.History)
+		changed := c.Apply(req.Update, user, time.Now().UTC())
+		changes = slices.Clone(c.History[n:])
+		return changed, nil
 	})
 	if err != nil {
 		s.writeModifyError(w, err)
 		return
 	}
+	commented := strings.TrimSpace(req.Comment) != ""
+	if len(changes) > 0 || commented {
+		s.audit(r, "case.update: investigation changed", "target", c.ID, "changes", describeHistory(changes), "commented", commented)
+	}
 	resp := map[string]any{"case": c}
 	if req.CloseFindings && s.Findings != nil {
-		closed, failed := 0, map[string]string{}
+		var closedIDs []string
+		failed := map[string]string{}
 		for _, id := range c.Findings {
 			f, err := s.Findings.Get(r.Context(), id)
 			if err != nil {
@@ -394,9 +407,11 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 				failed[id] = err.Error()
 				continue
 			}
-			closed++
+			closedIDs = append(closedIDs, id)
 		}
-		resp["findings_closed"], resp["failed"] = closed, failed
+		s.audit(r, "case.close_findings: findings closed with their investigation", "target", c.ID, "status", c.Status,
+			"disposition", req.Disposition, "closed", len(closedIDs), "failed", len(failed), "findings", auditIDs(closedIDs))
+		resp["findings_closed"], resp["failed"] = len(closedIDs), failed
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -501,6 +516,8 @@ func (s *Server) handleAddCaseFindings(w http.ResponseWriter, r *http.Request) {
 		writeCaseError(w, err)
 		return
 	}
+	s.audit(r, "case.finding_add: findings linked to an investigation", "target", c.ID, "asked", len(req.IDs),
+		"failed", len(failed), "findings", auditIDs(req.IDs))
 	writeJSON(w, http.StatusOK, map[string]any{"case": c, "failed": failed})
 }
 
@@ -519,6 +536,7 @@ func (s *Server) handleRemoveCaseFinding(w http.ResponseWriter, r *http.Request)
 		writeCaseError(w, err)
 		return
 	}
+	s.audit(r, "case.finding_remove: finding taken out of an investigation", "target", c.ID, "finding", fid)
 	if s.Findings != nil {
 		// Only while the finding still names this case: if it moved on to
 		// another meanwhile, that link stays.
@@ -633,6 +651,7 @@ func (s *Server) handleAddCaseEntry(w http.ResponseWriter, r *http.Request) {
 		s.writeModifyError(w, err)
 		return
 	}
+	s.audit(r, "case.entry_add: added to an investigation's timeline", "target", c.ID, "entry", added.ID, "kind", added.Kind)
 	writeJSON(w, http.StatusCreated, map[string]any{"case": c, "entry": added})
 }
 
@@ -642,11 +661,11 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	id, user := r.PathValue("entry"), userOf(r)
 	p := principalOf(r)
-	var removed cases.Entry
+	var gone cases.Entry
 	c, err := s.modifyCase(r.Context(), r.PathValue("id"), func(c *cases.Case) (bool, error) {
 		i := slices.IndexFunc(c.Entries, func(e cases.Entry) bool { return e.ID == id })
 		if i >= 0 {
-			removed = c.Entries[i]
+			gone = c.Entries[i]
 		}
 		if i >= 0 && c.Entries[i].Kind == cases.KindFinding {
 			return false, badRequest{errors.New("remove the finding from the case instead")}
@@ -668,7 +687,11 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		s.writeModifyError(w, err)
 		return
 	}
-	s.removeCaseFile(r, c.ID, removed)
+	s.removeCaseFile(r, c.ID, gone)
+	// What was removed is evidence: name its kind, author, when it was
+	// added and its text or query.
+	s.audit(r, "case.entry_remove: removed from an investigation's timeline", "target", c.ID, "entry", id, "kind", gone.Kind,
+		"added_by", gone.Author, "added", gone.Time.UTC().Format(time.RFC3339), "text", safelog.Cut(gone.Text, 500), "query", safelog.Cut(gone.Query, 500))
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -686,18 +709,24 @@ func (s *Server) handleAddCaseEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := userOf(r)
+	added := false
 	c, err := s.modifyCase(r.Context(), r.PathValue("id"), func(c *cases.Case) (bool, error) {
+		added = false
 		if !c.AddEntity(e) {
 			return false, nil
 		}
 		now := time.Now().UTC()
 		c.History = append(c.History, findings.Change{Author: user, Field: "entity", To: e.Field + "=" + e.Value, Time: now})
 		c.Updated = now
+		added = true
 		return true, nil
 	})
 	if err != nil {
 		writeCaseError(w, err)
 		return
+	}
+	if added {
+		s.audit(r, "case.entity_add: entity added to an investigation", "target", c.ID, "entity", e.Field+"="+e.Value)
 	}
 	writeJSON(w, http.StatusOK, c)
 }

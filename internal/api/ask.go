@@ -17,7 +17,8 @@ import (
 )
 
 // aiThreshold is the translator confidence below which "auto" asks the AI
-// model, when one is configured.
+// model, when one is configured, and the Search page waits for the analyst
+// to run the query instead of running it.
 const aiThreshold = 0.8
 
 // askExamples are shown under the Ask box.
@@ -29,6 +30,9 @@ var askExamples = []string{
 	"blocked connections by source ip",
 	"accounts created yesterday",
 	"which hosts have the highest risk score",
+	"dns queries for example.com",
+	"web requests with status 500",
+	"registry changes by powershell",
 }
 
 func (s *Server) routeAsk(api *router) {
@@ -108,6 +112,9 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		resp["query"] = q.String()
 		resp["explanation"] = Explain(q)
 	}
+	// run tells the Search page whether to run the query at once: the AI
+	// model's, or the translator's when it understood the question.
+	resp["run"] = resp["source"] == "ai" || res.Confidence >= aiThreshold
 	writeJSON(w, http.StatusOK, resp)
 }
 

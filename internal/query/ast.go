@@ -25,6 +25,12 @@ type Query struct {
 	// detections must see events that arrived late at once, not when
 	// the summaries are next checked. Set by callers, not parsed.
 	EventsOnly bool
+
+	// TimeZone is the IANA time zone (America/New_York) that snaps such
+	// as @d, dates without a zone, timechart days and strftime use; empty
+	// is UTC. Set by callers, such as the Search page from the browser's
+	// zone, not parsed.
+	TimeZone string
 }
 
 // Expr is a boolean filter expression.
@@ -126,8 +132,9 @@ func FormatValue(v string) string {
 	case "AND", "OR", "NOT", "IN", "AS", "BY":
 		needs = true
 	}
-	// Brackets would end or open a join's subsearch.
-	needs = needs || strings.ContainsAny(v, "[]")
+	// Brackets would end or open a join's subsearch, and a leading ' would
+	// read as a field name in where.
+	needs = needs || strings.ContainsAny(v, "[]") || strings.HasPrefix(v, "'")
 	if !needs {
 		return v
 	}
@@ -154,12 +161,16 @@ func quote(v string) string {
 func sortKeysString(ks []SortKey) string {
 	keys := make([]string, len(ks))
 	for i, k := range ks {
+		name := k.Field
+		if k.As != "" {
+			name = k.As + "(" + k.Field + ")"
+		}
 		if k.Desc {
-			keys[i] = "-" + k.Field
-		} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
-			keys[i] = "+" + k.Field // the sign is part of the name
+			keys[i] = "-" + name
+		} else if k.As == "" && (strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+")) {
+			keys[i] = "+" + name // the sign is part of the name
 		} else {
-			keys[i] = k.Field
+			keys[i] = name
 		}
 	}
 	return strings.Join(keys, ", ")
@@ -222,6 +233,10 @@ type Timechart struct {
 	// Limit is how many of the by field's values become series: 0 the
 	// default of 10, NoTimechartLimit as many as Signalith charts.
 	Limit int
+	// NoOther leaves out the OTHER series of the values beyond Limit, and
+	// NoNull the NULL series of events without the by field
+	// (useother=f, usenull=f).
+	NoOther, NoNull bool
 }
 
 // NoTimechartLimit is timechart limit=0.
@@ -276,14 +291,24 @@ type Where struct {
 	Search bool
 }
 
-// SortKey is one sort field.
+// SortKey is one sort field. As is how its values compare: "num" as
+// numbers, "str" as text, "ip" as addresses, or "" (auto) numbers as
+// numbers and the rest as text.
 type SortKey struct {
 	Field string
 	Desc  bool
+	As    string
 }
 
-// Sort orders rows: sort -count, src.
-type Sort struct{ Keys []SortKey }
+// SortFuncs are the functions a sort key may be written in: sort num(x).
+var SortFuncs = []string{"auto", "ip", "num", "str"}
+
+// Sort orders rows: sort -count, src. Limit, when above 0, keeps only
+// that many rows: sort 10 -count, or sort limit=10 -count.
+type Sort struct {
+	Keys  []SortKey
+	Limit int
+}
 
 // Head keeps the first N rows.
 type Head struct{ N int }
@@ -376,6 +401,12 @@ func CommandString(c Command) string {
 		case c.Limit > 0 && c.Limit != 10:
 			s += " limit=" + strconv.Itoa(c.Limit)
 		}
+		if c.NoOther {
+			s += " useother=f"
+		}
+		if c.NoNull {
+			s += " usenull=f"
+		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
 			s += " by " + c.By
@@ -410,6 +441,10 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
+		// A first key named with digits would read as the limit.
+		if c.Limit > 0 || len(c.Keys) > 0 && !c.Keys[0].Desc && c.Keys[0].As == "" && isDigits(c.Keys[0].Field) {
+			return "sort " + strconv.Itoa(c.Limit) + " " + sortKeysString(c.Keys)
+		}
 		return "sort " + sortKeysString(c.Keys)
 	case *Head:
 		return "head " + strconv.Itoa(c.N)
