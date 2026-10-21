@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
 )
 
@@ -126,7 +129,9 @@ func TestResetReplaysHistory(t *testing.T) {
 		t.Errorf("the replay raised %d", n)
 	}
 	st, _, _, _ := r.store.State(ctx)
-	if cs := st.Checks[NewChange]; !cs.Behind.IsZero() || !cs.Started.Equal(r.now) {
+	// LiveFrom stays once caught up, so the page does not show the check
+	// learning again.
+	if cs := st.Checks[NewChange]; !cs.Behind.IsZero() || !cs.Started.Equal(r.now) || !cs.LiveFrom.Equal(r.now) {
 		t.Errorf("state %+v", cs)
 	}
 	// The next time is not new.
@@ -185,5 +190,44 @@ func TestTruncatedSearchSaysWhere(t *testing.T) {
 	st, _, _, _ := r.store.State(context.Background())
 	if cs := st.Checks[RareProcess]; cs.Truncated.IsZero() || cs.TruncatedAfter != "m-host" {
 		t.Errorf("state %+v", cs)
+	}
+}
+
+// countingRunner counts the searches running at once.
+type countingRunner struct {
+	*fakeRunner
+	now, peak atomic.Int32
+}
+
+func (c *countingRunner) Execute(ctx context.Context, q *query.Query) (*search.Result, error) {
+	n := c.now.Add(1)
+	defer c.now.Add(-1)
+	for p := c.peak.Load(); n > p && !c.peak.CompareAndSwap(p, n); p = c.peak.Load() {
+	}
+	time.Sleep(time.Millisecond)
+	return c.fakeRunner.Execute(ctx, q)
+}
+
+// Every engine in the process, one per tenant, shares searchSlots, as
+// each search can hold searchRows rows.
+func TestSearchesShareSlots(t *testing.T) {
+	c := &countingRunner{fakeRunner: &fakeRunner{}}
+	var rigs []*rig
+	for range 4 {
+		r := newRig(t, Settings{LearningDays: 1, IPDatabase: "off"})
+		r.e.Search = c
+		rigs = append(rigs, r)
+	}
+	var wg sync.WaitGroup
+	for _, r := range rigs {
+		wg.Go(func() {
+			if _, err := r.e.Round(context.Background()); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if p := c.peak.Load(); p > 2 || p == 0 {
+		t.Errorf("%d searches at once", p)
 	}
 }

@@ -71,6 +71,10 @@ const (
 	// more than 50,000 hosts and programs.
 	searchTimeout = 2 * time.Minute
 	searchRows    = 250_000
+	// searchSlots is how many baselines searches run at once across every
+	// tenant's engine: each can hold searchRows rows in memory, and every
+	// engine learns the same hour minutes after it ends.
+	searchSlots = 2
 	// ipdbFresh is how often the IP database is downloaded again, and
 	// ipdbRetry how soon after a failed download it is tried again.
 	ipdbFresh = 7 * 24 * time.Hour
@@ -535,7 +539,7 @@ func (u unit) advance(st *State, h, now time.Time) {
 		}
 		cs.Behind, cs.Error = next, ""
 		if !next.Before(st.Through) {
-			cs.Behind, cs.LiveFrom = time.Time{}, time.Time{}
+			cs.Behind = time.Time{} // LiveFrom stays: the page shows it replayed
 		}
 	}
 	st.LastRun = now
@@ -555,7 +559,7 @@ func (u unit) clear(st *State) bool {
 	changed := false
 	for _, cs := range u.states(st) {
 		if !cs.Behind.IsZero() || cs.Error != "" {
-			cs.Behind, cs.LiveFrom, cs.Error, changed = time.Time{}, time.Time{}, "", true
+			cs.Behind, cs.Error, changed = time.Time{}, "", true
 		}
 	}
 	return changed
@@ -599,6 +603,12 @@ func (e *Engine) back(set Settings) time.Duration {
 	if e.history > 0 {
 		return e.history
 	}
+	return Replay(set)
+}
+
+// Replay is how much stored history a check learns from when the
+// baselines first run, or it is turned on or reset.
+func Replay(set Settings) time.Duration {
 	return max(set.Learning(), backfill)
 }
 
@@ -646,6 +656,10 @@ func (e *Engine) learnHour(ctx context.Context, set Settings, st *State, h time.
 }
 
 // search runs one search over the hour, with sample data left out.
+// searching holds a slot for each baselines search running, in every
+// engine of the process.
+var searching = make(chan struct{}, searchSlots)
+
 func (r *hourRun) search(ctx context.Context, check, src string) ([]search.Row, error) {
 	q, err := query.Parse(src)
 	if err != nil {
@@ -656,6 +670,12 @@ func (r *hourRun) search(ctx context.Context, check, src string) ([]search.Row, 
 	detect.ScopeSample(q, "")
 	q.EventsOnly = true // it raises risk, as detections do
 	q.MaxRows = searchRows
+	select {
+	case searching <- struct{}{}:
+		defer func() { <-searching }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("%s: %w", check, ctx.Err())
+	}
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 	res, err := r.e.Search.Execute(ctx, q)

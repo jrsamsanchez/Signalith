@@ -223,7 +223,7 @@
   async function reset(c) {
     const [, many] = ENTITY[c.entity] || ['', ''];
     const ok = await caseConfirm({ title: 'Forget what “' + c.title + '” learned?',
-      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned, then learns again from the last 30 days of stored events without adding risk for them, so ${many} with a history are judged at once. Risk it already added stays.`,
+      text: `It forgets the ${riNumText(c.profiles)} ${many} it learned, then learns again from the last ${riNumText(B.view.defaults.replay_days)} days of stored events without adding risk for them, so ${many} with a history are judged at once. Risk it already added stays.`,
       confirm: 'Forget and relearn' });
     if (!ok) return;
     try {

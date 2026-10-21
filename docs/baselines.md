@@ -93,7 +93,9 @@ Its menu opens its risk in Search, or **forgets what it learned**: the check
 deletes its profiles at its next round, then learns the stored history again (up to
 30 days, or the learning period if longer) without adding risk, as the first run
 does, so users and hosts with a history are judged at once. Risk it already added
-stays. A check you turn on later learns the history the same way.
+stays. A check you turn on later learns the history the same way. **New country**
+and **New network** learn from the same searches, so forgetting one also holds
+back the other's risk until the replay is done.
 
 First-seen checks only know what happened within the history they read and what
 they still remember (**Forget after**). Something done less often, such as a

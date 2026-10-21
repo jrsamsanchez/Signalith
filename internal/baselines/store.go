@@ -156,7 +156,7 @@ type CheckState struct {
 	// the others: after one of its searches failed, or while it learns
 	// the history after it was turned on or reset. Zero when it keeps
 	// up. LiveFrom is when it was turned on or reset: the hours before
-	// only teach it.
+	// only teach it. It stays once the check caught up.
 	Behind   time.Time `json:"behind,omitzero"`
 	LiveFrom time.Time `json:"live_from,omitzero"`
 	// Error is why it last could not learn an hour, ErrorAt when; empty
