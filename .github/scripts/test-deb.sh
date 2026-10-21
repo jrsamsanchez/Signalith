@@ -21,11 +21,18 @@ up() {
   done
   echo "Signalith does not answer on https://localhost:9000 (or 8080)"; sudo journalctl -u signalith --no-pager | tail -50; exit 1
 }
-# The previous release named the built-in admin admin, which the upgrade
-# and a new install over the kept config both keep.
+# Releases before 0.3.1 named the built-in admin admin; 0.3.1 and later
+# name it signalithadmin. The upgrade and a new install over the kept
+# config both keep the name the first install chose.
+admin=''
 signin() {
-  curl -skf -o /dev/null -H 'Content-Type: application/json' \
-    -d "$(jq -n --arg p "$1" '{username: "admin", password: $p}')" "https://localhost:$port/api/login"
+  for name in ${admin:-signalithadmin admin}; do
+    if curl -skf -o /dev/null -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg u "$name" --arg p "$1" '{username: $u, password: $p}')" "https://localhost:$port/api/login"; then
+      admin=$name; return 0
+    fi
+  done
+  echo "cannot sign in as ${admin:-signalithadmin or admin}"; exit 1
 }
 
 echo "== Install $prev"
