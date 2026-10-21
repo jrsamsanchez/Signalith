@@ -10,7 +10,8 @@
 # with certificates from a CA of its own. Signalith signs in to it with a
 # certificate; no password is made. -OpenSearchZip uses a copy of the
 # release's .zip instead of downloading it (a computer without internet
-# access). To use an OpenSearch you run yourself instead, give its address:
+# access); -OpenSearchProxy downloads it through a proxy (host:port; by
+# default the computer's WinHTTP proxy setting is used). To use an OpenSearch you run yourself instead, give its address:
 #   .\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200
 # An upgrade upgrades the OpenSearch Signalith installed, keeping its data;
 # an OpenSearch of your own is left as it is. An upgrade of an install whose
@@ -54,6 +55,7 @@ param(
   # Empty: a new install installs OpenSearch on this computer.
   [string]$OpenSearchUrl = "",
   [string]$OpenSearchZip = "",
+  [string]$OpenSearchProxy = "",
   # The web page and API; agents send to 7779 (server.agent_listen).
   [string]$Listen = "0.0.0.0:9000",
   # Plain, unencrypted syslog: off unless an address is given.
@@ -296,6 +298,7 @@ if ($managed) {
   Write-Host "OpenSearch"
   $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
+  if ($OpenSearchProxy) { $osArgs += @("-proxy", $OpenSearchProxy) }
   Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
 } elseif (-not $Join -and -not $OpenSearchUrl -and -not (Get-Service | Where-Object { $_.Name -like "*opensearch*" -or $_.Name -like "*elastic*" })) {
   # An upgrade of an install made before the installer set up OpenSearch:
@@ -306,6 +309,7 @@ if ($managed) {
   Write-Host "OpenSearch"
   $osArgs = @("opensearch", "adopt", "-c", $config, "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
+  if ($OpenSearchProxy) { $osArgs += @("-proxy", $OpenSearchProxy) }
   Invoke-Checked "Setting up OpenSearch" { & $exe @osArgs }
   $managed = Test-Path -LiteralPath $osState
 }
