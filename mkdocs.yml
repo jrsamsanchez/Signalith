@@ -143,6 +143,7 @@ nav:
       - Sample data: sample-data.md
   - Using Signalith:
       - Query language: query-language.md
+      - Splunk SPL compatibility: compatibility.md
       - Lookup tables: lookups.md
       - Detections: detections.md
       - Investigations (cases): cases.md

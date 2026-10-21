@@ -68,7 +68,9 @@ func (s *Server) handleContentCheck(w http.ResponseWriter, r *http.Request) {
 	st, err := s.Content.Check(r.Context(), s.conf().Detections.ContentUpdateURL())
 	s.audit(r, "content update check", "result", st.LastResult, "version", st.Version)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		// Written for the admin checking: it names only the update
+		// site's host, which signalith.yaml sets.
+		writeError(w, http.StatusBadGateway, &userError{msg: err.Error(), err: err})
 		return
 	}
 	writeJSON(w, http.StatusOK, s.contentView())

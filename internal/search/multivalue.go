@@ -512,12 +512,12 @@ func convertValue(ev *evaluator, fn string, v any, format string) (any, bool) {
 		if !ok {
 			return v, true
 		}
-		return ev.str(strftime(t, format)), true
+		return ev.str(strftime(t.In(ev.loc), format)), true
 	case "mktime":
 		if !isStr {
 			return v, true
 		}
-		t, ok := strptime(s, format)
+		t, ok := strptimeIn(s, format, ev.loc)
 		if !ok {
 			return v, true
 		}
