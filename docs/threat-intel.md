@@ -210,7 +210,9 @@ reserved ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10
 `fe80::/10`, `ff00::/8`), and networks broader than /8 (IPv4) or /16 (IPv6), are
 skipped in feeds and counted as reserved, so a feed such as FireHOL level 1, which
 lists the bogon ranges for firewalls, never matches your own network. Add an
-internal address by hand if you need to.
+internal address by hand if you need to. A network broader than /8 (IPv4) or /16
+(IPv6), such as `0.0.0.0/0`, is refused by hand and in an upload too, since it would
+match nearly every address.
 
 ### Schedule and aging
 

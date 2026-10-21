@@ -117,6 +117,10 @@ var EvalFuncs = map[string][2]int{
 	"printf": {1, -1}, "isint": {1, 1}, "validate": {2, -1},
 	"bit_and": {2, -1}, "bit_or": {2, -1}, "bit_xor": {2, -1}, "bit_not": {1, 2},
 	"bit_shift_left": {2, 2}, "bit_shift_right": {2, 2},
+	"sha512": {1, 1}, "random": {0, 0}, "pi": {0, 0}, "exact": {1, 1}, "isbool": {1, 1}, "ipmask": {2, 2},
+	"sin": {1, 1}, "cos": {1, 1}, "tan": {1, 1}, "asin": {1, 1}, "acos": {1, 1}, "atan": {1, 1},
+	"sinh": {1, 1}, "cosh": {1, 1}, "tanh": {1, 1}, "asinh": {1, 1}, "acosh": {1, 1}, "atanh": {1, 1},
+	"atan2": {2, 2}, "hypot": {2, 2},
 }
 
 // maxEvalDepth bounds how deeply an expression may nest, so a hostile

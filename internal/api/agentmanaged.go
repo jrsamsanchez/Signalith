@@ -68,6 +68,9 @@ func (s *Server) agentPrograms() *clusterinstall.Programs {
 		if s.AgentPrograms == nil {
 			s.AgentPrograms = &clusterinstall.Programs{}
 		}
+		if s.AgentPrograms.Revocations == nil {
+			s.AgentPrograms.Revocations = s.Revocations
+		}
 	})
 	return s.AgentPrograms
 }
@@ -390,11 +393,17 @@ func (s *Server) handleAgentManagedManifest(w http.ResponseWriter, r *http.Reque
 	}
 	if err != nil {
 		s.Log.Warn("cannot hand out the agent manifest", "err", err)
-		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent programs' manifest"))
+		writeError(w, http.StatusInternalServerError, errUser("this server cannot read the agent programs' manifest"))
 		return
 	}
+	ans := agentproto.ManifestAnswer{Manifest: string(data), Signature: string(sig)}
+	if s.Revocations != nil {
+		if l, ldata, lsig, err := s.Revocations.Load(); err == nil && l != nil {
+			ans.Revocation, ans.RevocationSignature = string(ldata), string(lsig)
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, agentproto.ManifestAnswer{Manifest: string(data), Signature: string(sig)})
+	writeJSON(w, http.StatusOK, ans)
 }
 
 // agentOsquery is the osquery part of the configuration of an agent
@@ -470,7 +479,7 @@ func (s *Server) handleAgentManagedProgram(w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		s.Log.Warn("cannot hand out the agent program", "os", goos, "arch", goarch, "err", err)
-		writeError(w, http.StatusInternalServerError, errors.New("this server cannot read the agent program"))
+		writeError(w, http.StatusInternalServerError, errUser("this server cannot read the agent program"))
 		return
 	}
 	defer f.Close()
