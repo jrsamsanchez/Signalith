@@ -808,18 +808,18 @@ sensor_pick_port() {
 # masked is the sensor's already.
 sensor_vendor_checks() {
   [ "$docker" != yes ] && [ -z "$dryrun" ] || return 0
-  units=fluent-bit.service
-  if [ "$suricata" = yes ]; then units="suricata.service $units"; fi
-  for u in $units; do
-    state=$(systemctl is-enabled "$u" 2>/dev/null || true)
-    [ "$state" != masked ] || continue
-    if ! systemctl is-active --quiet "$u" && [ "$state" != enabled ]; then continue; fi
+  vunits=fluent-bit.service
+  if [ "$suricata" = yes ]; then vunits="suricata.service $vunits"; fi
+  for vu in $vunits; do
+    vstate=$(systemctl is-enabled "$vu" 2>/dev/null || true)
+    [ "$vstate" != masked ] || continue
+    if ! systemctl is-active --quiet "$vu" && [ "$vstate" != enabled ]; then continue; fi
     if [ "$take_over" = yes ]; then
-      warn "$u already runs here: it will be stopped and masked, so whatever it sends elsewhere stops (--take-over). --uninstall starts it again."
+      warn "$vu already runs here: it will be stopped and masked, so whatever it sends elsewhere stops (--take-over). --uninstall starts it again."
     elif [ "$check_only" = yes ]; then
-      warn "$u already runs here, probably for something else: installing would stop it." "Install with --docker, which leaves it alone, or add --take-over to stop it and run the sensor's own copy."
+      warn "$vu already runs here, probably for something else: installing would stop it." "Install with --docker, which leaves it alone, or add --take-over to stop it and run the sensor's own copy."
     else
-      fail "$u already runs here, probably for something else: installing would stop it and mask it. Nothing was changed." "Install with --docker, which leaves it alone, or add --take-over to the line to stop it and run the sensor's own copy (--uninstall starts it again)."
+      fail "$vu already runs here, probably for something else: installing would stop it and mask it. Nothing was changed." "Install with --docker, which leaves it alone, or add --take-over to the line to stop it and run the sensor's own copy (--uninstall starts it again)."
     fi
   done
 }

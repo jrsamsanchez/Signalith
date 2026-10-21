@@ -43,6 +43,18 @@ line=$(jq -r .linux install.json | sed "s|$placeholder|$token|")
 line="$line --name ci-sensor --local-rules $work/ci.rules"
 printf '%s\n' "$line" | sed "s|$token|<token>|"
 
+step "A Fluent Bit already running here for something else: the line stops, changing nothing"
+printf '[Service]\nExecStart=/bin/sleep infinity\n' | sudo tee /etc/systemd/system/fluent-bit.service >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl start fluent-bit.service
+if sh -c "$line" >vendor.out 2>&1; then cat vendor.out; echo "installed over a running fluent-bit.service without --take-over"; exit 1; fi
+grep -q "fluent-bit.service already runs here" vendor.out || { cat vendor.out; exit 1; }
+if [ -e /etc/signalith-sensor ]; then echo "changed the machine before stopping"; exit 1; fi
+systemctl is-active --quiet fluent-bit.service || { echo "stopped the running fluent-bit.service"; exit 1; }
+sudo systemctl stop fluent-bit.service
+sudo rm -f /etc/systemd/system/fluent-bit.service
+sudo systemctl daemon-reload
+
 step "Install"
 sh -c "$line"
 
