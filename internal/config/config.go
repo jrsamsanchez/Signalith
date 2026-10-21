@@ -31,6 +31,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agents"
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/detect"
+	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/retention"
@@ -1146,6 +1147,13 @@ type Detections struct {
 	// CatchUp is how far back detection runs missed while no server ran
 	// them are made up, such as 6h; "0" turns that off. Empty means 6h.
 	CatchUp string `yaml:"catch_up,omitempty"`
+	// SLA is how soon findings of each urgency should be picked up and
+	// resolved; see FindingSLA.
+	SLA FindingSLA `yaml:"sla,omitempty"`
+	// RequireDisposition asks analysts for a disposition (true positive,
+	// false positive...) when they resolve or close a finding from the
+	// queue. Unset means on (see RequireDispositionOn).
+	RequireDisposition *bool `yaml:"require_disposition,omitempty"`
 	// Spread runs each tenant's detections on every server that may run
 	// background work, each rule on one of them, instead of all on the
 	// server running the background jobs. Unset means on (see SpreadOn).
@@ -1584,6 +1592,71 @@ func (c *Config) StaleAfter() time.Duration {
 		return d
 	}
 	return 2 * time.Hour
+}
+
+// RequireDispositionOn reports whether resolving a finding from the
+// queue needs a disposition: on unless turned off.
+func (d Detections) RequireDispositionOn() bool {
+	return d.RequireDisposition == nil || *d.RequireDisposition
+}
+
+// FindingSLA is the targets for findings: per urgency, how soon a person
+// should first pick one up and how soon it should be resolved, such as
+// 15m and 4h. Empty means the default; "0" means no target.
+type FindingSLA struct {
+	CriticalRespond string `yaml:"critical_respond,omitempty"`
+	CriticalResolve string `yaml:"critical_resolve,omitempty"`
+	HighRespond     string `yaml:"high_respond,omitempty"`
+	HighResolve     string `yaml:"high_resolve,omitempty"`
+	MediumRespond   string `yaml:"medium_respond,omitempty"`
+	MediumResolve   string `yaml:"medium_resolve,omitempty"`
+	LowRespond      string `yaml:"low_respond,omitempty"`
+	LowResolve      string `yaml:"low_resolve,omitempty"`
+}
+
+// MaxSLATarget is the longest due time a finding can have.
+const MaxSLATarget = 90 * 24 * time.Hour
+
+// slaTargets lists the targets with their keys, urgency and kind.
+func (s *FindingSLA) slaTargets() []struct {
+	key, urgency string
+	resolve      bool
+	v            string
+} {
+	return []struct {
+		key, urgency string
+		resolve      bool
+		v            string
+	}{
+		{"critical_respond", "critical", false, s.CriticalRespond}, {"critical_resolve", "critical", true, s.CriticalResolve},
+		{"high_respond", "high", false, s.HighRespond}, {"high_resolve", "high", true, s.HighResolve},
+		{"medium_respond", "medium", false, s.MediumRespond}, {"medium_resolve", "medium", true, s.MediumResolve},
+		{"low_respond", "low", false, s.LowRespond}, {"low_resolve", "low", true, s.LowResolve},
+	}
+}
+
+// FindingSLA returns the targets in use: each one set, or the default.
+func (c *Config) FindingSLA() findings.SLA {
+	def := findings.DefaultSLA()
+	out := findings.SLA{Respond: map[string]time.Duration{}, Resolve: map[string]time.Duration{}}
+	for _, t := range c.Detections.SLA.slaTargets() {
+		m, dm := out.Respond, def.Respond
+		if t.resolve {
+			m, dm = out.Resolve, def.Resolve
+		}
+		d := dm[t.urgency]
+		if v := strings.TrimSpace(t.v); v == "0" {
+			d = 0
+		} else if v != "" {
+			if p, err := detect.ParseDuration(v); err == nil && p > 0 && p <= MaxSLATarget {
+				d = p
+			}
+		}
+		if d > 0 {
+			m[t.urgency] = d
+		}
+	}
+	return out
 }
 
 // DetectionsCatchUp returns detections.catch_up as a duration: 6h when it
@@ -2743,6 +2816,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Detections.SearchBudget < 0 || c.Detections.SearchBudget > detect.MaxSearchBudget {
 		p = append(p, fmt.Sprintf("detections.search_budget must be between 0 (automatic) and %d", detect.MaxSearchBudget))
+	}
+	for _, t := range c.Detections.SLA.slaTargets() {
+		if v := strings.TrimSpace(t.v); v != "" && v != "0" {
+			if d, err := detect.ParseDuration(v); err != nil || d <= 0 || d > MaxSLATarget {
+				p = append(p, fmt.Sprintf("detections.sla.%s %q must be 0 (no target) or a duration up to 90d, for example 4h", t.key, t.v))
+			}
+		}
 	}
 	if v := strings.TrimSpace(c.Detections.CatchUp); v != "" && v != "0" {
 		if d, err := detect.ParseDuration(v); err != nil || d < 0 || d > detect.MaxCatchUp {
