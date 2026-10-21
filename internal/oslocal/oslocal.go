@@ -79,6 +79,9 @@ var Releases = map[string]Release{
 // release is this system's; File is empty where there is none.
 var release = Releases[runtime.GOOS+"/"+runtime.GOARCH]
 
+// maxRelease is the most a release file may be; the tests change it.
+var maxRelease int64 = 1500 << 20
+
 // pinned is release's SHA-512; the tests change it.
 var pinned = release.SHA512
 
@@ -275,7 +278,11 @@ func save(r io.Reader, dir, what string) (string, error) {
 	}
 	name := f.Name()
 	h := sha512.New()
-	_, err = io.Copy(io.MultiWriter(f, h), r)
+	// The release is about 1.1 GB; nothing much larger is read.
+	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(r, maxRelease+1))
+	if err == nil && n > maxRelease {
+		err = fmt.Errorf("%s is larger than any OpenSearch release (%d MB); nothing was installed", what, maxRelease>>20)
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -382,9 +389,10 @@ func Extract(file, dest string) error {
 
 // unpacker writes a release's files into root.
 type unpacker struct {
-	root *os.Root
-	file string
-	top  string // the opensearch-x.y.z folder
+	root  *os.Root
+	file  string
+	top   string      // the opensearch-x.y.z folder
+	links [][2]string // name, target
 }
 
 // name is where the entry n goes in root, or "" for the top folder.
@@ -451,6 +459,11 @@ func (u *unpacker) tarGz(f io.Reader) error {
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
+			for _, l := range u.links {
+				if err := u.link(l[0], l[1]); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 		if err != nil {
@@ -469,7 +482,8 @@ func (u *unpacker) tarGz(f io.Reader) error {
 		case tar.TypeReg:
 			err = u.write(name, tr, h.FileInfo().Mode())
 		case tar.TypeSymlink:
-			err = u.link(name, h.Linkname)
+			// Made last, so nothing is written through one.
+			u.links = append(u.links, [2]string{name, h.Linkname})
 		default:
 			err = fmt.Errorf("%s has %q, which is not a file, a folder or a link", u.file, h.Name)
 		}
@@ -530,6 +544,12 @@ func (u *unpacker) link(name, target string) error {
 	if err := u.root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
+	// The folders it goes in are folders, not other links.
+	for d := filepath.Dir(name); d != "."; d = filepath.Dir(d) {
+		if fi, err := u.root.Lstat(d); err != nil || !fi.IsDir() {
+			return refuse
+		}
+	}
 	return u.root.Symlink(t, name)
 }
 
@@ -561,7 +581,14 @@ func HeapMB(total uint64) int {
 // because its config folder was deleted before installing again, it gets
 // a new client certificate from the kept CA.
 func MakeCerts(l Layout, now time.Time) error {
-	if _, err := os.Stat(filepath.Join(l.Certs(), ospki.NodeCertFile)); err == nil {
+	// Whether this is the first install is the CA's to say, in a folder
+	// only administrators can change: never the config folder's, which
+	// the service may have been able to change.
+	if _, err := os.Stat(filepath.Join(l.CA(), ospki.RootCAFile)); err == nil {
+		if _, err := os.Lstat(filepath.Join(l.Certs(), ospki.NodeCertFile)); err != nil {
+			return fmt.Errorf("OpenSearch's certificates are missing from %s, but its CA is kept in %s: "+
+				"restore them from a backup, or move %s aside to install OpenSearch anew", l.Certs(), l.CA(), l.Data)
+		}
 		ca, cert, key := l.ClientFiles()
 		if haveAll(ca, cert, key) {
 			return nil
@@ -587,16 +614,55 @@ func MakeCerts(l Layout, now time.Time) error {
 		l.Client:  set.SignalithFiles(),
 		l.CA():    caFiles,
 	} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		if err := writeFiles(dir, files); err != nil {
 			return err
-		}
-		for name, b := range files {
-			if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
+}
+
+// writeFiles writes files to dir, making it if it is missing, through
+// os.Root and only over plain files.
+func writeFiles(dir string, files map[string][]byte) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a folder", dir)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for name, b := range files {
+		if err := putIn(root, dir, name, b); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// putIn writes the file name in root (at dir) anew: what was there must
+// be a plain file, and is removed first, so nothing linked to it changes.
+func putIn(root *os.Root, dir, name string, b []byte) error {
+	if fi, err := root.Lstat(name); err == nil {
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a file", filepath.Join(dir, name))
+		}
+		if err := root.Remove(name); err != nil {
+			return err
+		}
+	}
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func haveAll(paths ...string) bool {
@@ -619,16 +685,8 @@ func remakeClient(l Layout, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(l.Client, 0o700); err != nil {
-		return err
-	}
 	set := ospki.Set{CA: ca, Client: client}
-	for name, b := range set.SignalithFiles() {
-		if err := os.WriteFile(filepath.Join(l.Client, name), b, 0o600); err != nil {
-			return err
-		}
-	}
-	return nil
+	return writeFiles(l.Client, set.SignalithFiles())
 }
 
 // ClientFiles are the files Signalith signs in to OpenSearch with:
@@ -644,20 +702,41 @@ func (l Layout) ClientFiles() (ca, cert, key string) {
 // Signalith's files replace the release's on every run, so an upgrade
 // brings the new release's defaults.
 func WriteConfig(l Layout, home string, port, heapMB int) error {
-	for _, d := range []string{l.Config(), l.Security(), filepath.Join(l.Config(), "jvm.options.d")} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			return err
-		}
-	}
-	src := filepath.Join(home, "config")
-	if err := copyFile(filepath.Join(src, "log4j2.properties"), filepath.Join(l.Config(), "log4j2.properties")); err != nil {
+	// Everything is written through os.Root, never following a link out
+	// of the config folder, and only over plain files: the service may
+	// have been able to change this folder.
+	if err := writeFiles(l.Config(), nil); err != nil {
 		return err
 	}
-	// Only Signalith's own options: the service may write to this folder.
+	root, err := os.OpenRoot(l.Config())
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, d := range []string{"opensearch-security", "jvm.options.d"} {
+		if err := root.MkdirAll(d, 0o700); err != nil {
+			return err
+		}
+		if fi, err := root.Lstat(d); err != nil || !fi.IsDir() {
+			return fmt.Errorf("%s is not a folder", filepath.Join(l.Config(), d))
+		}
+	}
+	put := func(name string, b []byte) error {
+		return putIn(root, l.Config(), name, b)
+	}
+	src := filepath.Join(home, "config")
+	log4j, err := os.ReadFile(filepath.Join(src, "log4j2.properties"))
+	if err != nil {
+		return err
+	}
+	if err := put("log4j2.properties", log4j); err != nil {
+		return err
+	}
+	// Only Signalith's own options.
 	if entries, err := os.ReadDir(filepath.Join(l.Config(), "jvm.options.d")); err == nil {
 		for _, e := range entries {
 			if e.Name() != "heap.options" {
-				if err := os.RemoveAll(filepath.Join(l.Config(), "jvm.options.d", e.Name())); err != nil {
+				if err := root.RemoveAll(filepath.Join("jvm.options.d", e.Name())); err != nil {
 					return err
 				}
 			}
@@ -667,7 +746,7 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(l.Config(), "jvm.options"), []byte(JVMOptions(l, string(jvm))), 0o600); err != nil {
+	if err := put("jvm.options", []byte(JVMOptions(l, string(jvm)))); err != nil {
 		return err
 	}
 	// The release's other security files (action groups, tenants, ...),
@@ -678,21 +757,25 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 	}
 	for _, e := range entries {
 		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".yml") {
-			if err := copyFile(filepath.Join(src, "opensearch-security", e.Name()), filepath.Join(l.Security(), e.Name())); err != nil {
+			b, err := os.ReadFile(filepath.Join(src, "opensearch-security", e.Name()))
+			if err != nil {
+				return err
+			}
+			if err := put(filepath.Join("opensearch-security", e.Name()), b); err != nil {
 				return err
 			}
 		}
 	}
 	for name, b := range ospki.SecurityFiles() {
-		if err := os.WriteFile(filepath.Join(l.Security(), name), b, 0o600); err != nil {
+		if err := put(filepath.Join("opensearch-security", name), b); err != nil {
 			return err
 		}
 	}
 	heap := fmt.Sprintf("# Written by Signalith: a quarter of this computer's memory, 1 to 8 GB.\n-Xms%dm\n-Xmx%dm\n", heapMB, heapMB)
-	if err := os.WriteFile(filepath.Join(l.Config(), "jvm.options.d", "heap.options"), []byte(heap), 0o600); err != nil {
+	if err := put(filepath.Join("jvm.options.d", "heap.options"), []byte(heap)); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(l.Config(), "opensearch.yml"), []byte(Settings(l, port)), 0o600)
+	return put("opensearch.yml", []byte(Settings(l, port)))
 }
 
 // JVMOptions is the release's jvm.options with its paths, which are
@@ -736,11 +819,3 @@ http.port: ` + strconv.Itoa(port) + `
 // yamlPath quotes a Windows path for YAML (backslashes are kept as they
 // are inside single quotes).
 func yamlPath(p string) string { return "'" + strings.ReplaceAll(p, "'", "''") + "'" }
-
-func copyFile(from, to string) error {
-	b, err := os.ReadFile(from)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(to, b, 0o600)
-}

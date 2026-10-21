@@ -27,7 +27,12 @@ func TestOpenSearchUnit(t *testing.T) {
 		"ExecStart=/opt/signalith-opensearch/" + oslocal.Version + "/bin/opensearch -q\n",
 		"Environment=OPENSEARCH_PATH_CONF=/var/lib/signalith-opensearch/config\n",
 		"Environment=OPENSEARCH_JAVA_HOME=/opt/signalith-opensearch/" + oslocal.Version + "/jdk\n",
-		"ReadWritePaths=/var/lib/signalith-opensearch/config /var/lib/signalith-opensearch/data /var/lib/signalith-opensearch/logs /var/lib/signalith-opensearch/tmp\n",
+		// Not its config: root's, which it may only read.
+		"ReadWritePaths=/var/lib/signalith-opensearch/data /var/lib/signalith-opensearch/logs /var/lib/signalith-opensearch/tmp\n",
+		"KillMode=mixed\n",
+		"IPAddressDeny=any\n",
+		"IPAddressAllow=localhost\n",
+		"PrivateIPC=true\n",
 		"InaccessiblePaths=-/var/lib/signalith-opensearch/ca -/var/lib/signalith-opensearch/download\n",
 		"ProtectSystem=strict\n",
 		"NoNewPrivileges=true\n",
@@ -37,6 +42,9 @@ func TestOpenSearchUnit(t *testing.T) {
 		if !strings.Contains(unit, want) {
 			t.Errorf("the unit has no %q:\n%s", want, unit)
 		}
+	}
+	if strings.Contains(unit, "SendSIGKILL=no") {
+		t.Error("a stuck OpenSearch is never killed")
 	}
 	if l.Home != "/opt/signalith-opensearch" || l.Data != "/var/lib/signalith-opensearch" || l.Client != "/etc/signalith/opensearch" ||
 		oslocal.ServiceName != "signalith-opensearch" {
@@ -63,6 +71,84 @@ func TestOnlyRootChanges(t *testing.T) {
 	os.Chmod(dir, 0o777)
 	if err := onlyRootChanges(dir); err == nil {
 		t.Errorf("%s: no error", dir)
+	}
+}
+
+func TestRootTree(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root, to own the files")
+	}
+	parent := filepath.Join("/root", "signalith-test-"+strings.ReplaceAll(t.Name(), "/", "-"))
+	os.RemoveAll(parent)
+	os.MkdirAll(filepath.Join(parent, "home", "bin"), 0o755)
+	t.Cleanup(func() { os.RemoveAll(parent) })
+	if err := onlyRootChanges(parent); err != nil {
+		t.Skipf("the folders above %s are not only root's: %v", parent, err)
+	}
+	home := filepath.Join(parent, "home")
+	os.WriteFile(filepath.Join(home, "bin", "opensearch"), []byte("run"), 0o755)
+	os.Symlink("opensearch", filepath.Join(home, "bin", "link"))
+	if err := rootTree(home); err != nil {
+		t.Fatal(err)
+	}
+	// Any file deep in it that someone else may change is refused.
+	lib := filepath.Join(home, "lib.jar")
+	os.WriteFile(lib, []byte("x"), 0o644)
+	os.Chmod(lib, 0o666)
+	if err := rootTree(home); err == nil || !strings.Contains(err.Error(), "lib.jar") {
+		t.Errorf("a file anyone may change: %v", err)
+	}
+	os.Chmod(lib, 0o644)
+	os.Chown(lib, 1, 1)
+	if err := rootTree(home); err == nil || !strings.Contains(err.Error(), "lib.jar") {
+		t.Errorf("a file of another user's: %v", err)
+	}
+}
+
+func TestShareConfig(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root, to give the files to a group")
+	}
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "certs"), 0o700)
+	os.WriteFile(filepath.Join(dir, "certs", "node-key.pem"), []byte("key"), 0o600)
+	os.WriteFile(filepath.Join(dir, "opensearch.yml"), []byte("x"), 0o600)
+	if err := shareConfig(dir, 4242); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]os.FileMode{
+		dir: 0o750, filepath.Join(dir, "certs"): 0o750,
+		filepath.Join(dir, "certs", "node-key.pem"): 0o640, filepath.Join(dir, "opensearch.yml"): 0o640,
+	} {
+		fi, err := os.Lstat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uid, gid, _ := ownerOf(fi)
+		if fi.Mode().Perm() != want || uid != 0 || gid != 4242 {
+			t.Errorf("%s: %s %d:%d", p, fi.Mode(), uid, gid)
+		}
+	}
+	// A link the service planted is refused, and where it points is left
+	// as it was.
+	outside := filepath.Join(t.TempDir(), "shadow")
+	os.WriteFile(outside, []byte("x"), 0o600)
+	os.Symlink(outside, filepath.Join(dir, "certs", "planted"))
+	if err := shareConfig(dir, 4242); err == nil || !strings.Contains(err.Error(), "planted") {
+		t.Errorf("a link: %v", err)
+	}
+	if fi, _ := os.Stat(outside); fi.Mode().Perm() != 0o600 {
+		t.Errorf("the file outside became %s", fi.Mode())
+	}
+}
+
+func TestToolEnv(t *testing.T) {
+	t.Setenv("JAVA_OPTS", "-javaagent:/tmp/x.jar")
+	l := oslocal.DefaultLayout()
+	env := strings.Join(toolEnv(l, l.VersionHome(oslocal.Version)), "\n")
+	if strings.Contains(env, "javaagent") || !strings.Contains(env, "\nJAVA_OPTS=\n") ||
+		!strings.Contains(env, "OPENSEARCH_PATH_CONF=/var/lib/signalith-opensearch/config") {
+		t.Errorf("env:\n%s", env)
 	}
 }
 

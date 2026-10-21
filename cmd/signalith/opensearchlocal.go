@@ -132,7 +132,10 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	if err != nil {
 		return err
 	}
-	if st == nil {
+	// fresh is a new install: it unpacks the release it checked, never a
+	// program someone left in Home.
+	fresh := st == nil
+	if fresh {
 		// A new install starts from an empty folder: files someone left
 		// there are not trusted.
 		if entries, err := os.ReadDir(l.Data); err == nil && len(entries) > 0 {
@@ -162,35 +165,39 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		version = st.Version
 	}
 	home := l.VersionHome(version)
-	if st.Version == version && sys.exists() {
+	if !fresh && st.Version == version && sys.exists() {
 		if _, err := os.Stat(filepath.Join(home, "bin")); err == nil {
 			fmt.Fprintf(out, "OpenSearch %s is installed; checking it runs.\n", version)
+			if err := sys.prepare(l, home); err != nil {
+				return err
+			}
 			if err := sys.start(); err != nil {
 				return err
 			}
 			return waitOpenSearch(ctx, out, sys, l, home, st.Port)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, "bin")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, "bin")); fresh || err != nil {
 		if version != oslocal.Version {
 			return fmt.Errorf("OpenSearch %s is not in %s any more; install Signalith with OpenSearch %s or newer", version, home, version)
 		}
-		if err := oslocal.CheckRoom(l); err != nil {
-			return err
-		}
-		file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
-		if err != nil {
-			return err
-		}
-		defer os.Remove(file)
-		os.RemoveAll(home)
-		fmt.Fprintf(out, "Unpacking OpenSearch %s to %s...\n", version, home)
-		if err := oslocal.Extract(file, home); err != nil {
+		if err := unpackRelease(ctx, out, l, zip, client, home); err != nil {
 			return err
 		}
 	}
 	if err := sys.prepare(l, home); err != nil {
 		return err
+	}
+	// Stopped before its settings are written, so it changes nothing
+	// while they are.
+	if sys.exists() {
+		fmt.Fprintln(out, "Stopping OpenSearch to set it up again...")
+		if err := sys.stop(); err != nil {
+			return err
+		}
+		if err := sys.remove(); err != nil {
+			return err
+		}
 	}
 	port := st.Port
 	if err := oslocal.MakeCerts(l, time.Now()); err != nil {
@@ -198,15 +205,6 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	}
 	if err := oslocal.WriteConfig(l, home, port, oslocal.HeapMB(sys.memoryMB())); err != nil {
 		return fmt.Errorf("writing OpenSearch's settings: %w", err)
-	}
-	if sys.exists() {
-		fmt.Fprintln(out, "Stopping OpenSearch to upgrade it...")
-		if err := sys.stop(); err != nil {
-			return err
-		}
-		if err := sys.remove(); err != nil {
-			return err
-		}
 	}
 	if err := sys.install(l, home); err != nil {
 		return err
@@ -230,6 +228,25 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		}
 	}
 	return nil
+}
+
+// unpackRelease checks there is room, downloads the release (or copies
+// zip), checks it against the pin and unpacks it to home, in place of
+// whatever was there. The tests change it.
+var unpackRelease = func(ctx context.Context, out io.Writer, l oslocal.Layout, zip string, client *http.Client, home string) error {
+	if err := oslocal.CheckRoom(l); err != nil {
+		return err
+	}
+	file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file)
+	if err := os.RemoveAll(home); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Unpacking OpenSearch %s to %s...\n", filepath.Base(home), home)
+	return oslocal.Extract(file, home)
 }
 
 // oldDefaultOpenSearch is the address installers before 0.3.1 wrote when

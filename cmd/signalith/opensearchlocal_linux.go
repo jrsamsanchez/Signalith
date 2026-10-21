@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
@@ -72,13 +73,33 @@ func (linuxOpenSearch) prepare(l oslocal.Layout, home string) error {
 	if home == "" {
 		return nil
 	}
-	// The service runs these, so only root may change them.
-	for _, exe := range []string{filepath.Join(home, "bin", "opensearch"), filepath.Join(home, "jdk", "bin", "java")} {
-		if err := onlyRootChanges(exe); err != nil {
+	// The service runs it, and root runs its tools, so only root may
+	// change any of it.
+	return rootTree(home)
+}
+
+// rootTree checks that only root can change dir, the folders above it
+// and everything in it.
+func rootTree(dir string) error {
+	if err := onlyRootChanges(dir); err != nil {
+		return err
+	}
+	return filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
-	}
-	return nil
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		uid, _, ok := ownerOf(fi)
+		// A link's own mode means nothing; where it points is checked
+		// as its own entry, since it stays in the tree.
+		if !ok || uid != 0 || fi.Mode()&os.ModeSymlink == 0 && fi.Mode().Perm()&0o022 != 0 {
+			return fmt.Errorf("%s may be changed by someone other than root (%s, owner %d), so OpenSearch is not run from it", p, fi.Mode(), uid)
+		}
+		return nil
+	})
 }
 
 // rootFolder makes dir (and the folders above it) if it is missing, and
@@ -154,15 +175,22 @@ func (linuxOpenSearch) install(l oslocal.Layout, home string) error {
 	if err != nil {
 		return err
 	}
-	// It may change its config (its keystore), data, logs and temporary
-	// files; the CA and the download stay root's.
-	for _, d := range l.ServiceFolders() {
+	// It may change its data, logs and temporary files only. Its config
+	// stays root's, which it may read; the CA and the download stay root's
+	// alone.
+	for _, d := range serviceFolders(l) {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}
 		if err := giveTree(d, uid, gid, chownFD); err != nil {
 			return fmt.Errorf("could not give %s to %s: %w", d, openSearchUser, err)
 		}
+	}
+	if err := makeKeystore(l, home); err != nil {
+		return err
+	}
+	if err := shareConfig(l.Config(), gid); err != nil {
+		return err
 	}
 	if err := giveClientFiles(l); err != nil {
 		return err
@@ -179,6 +207,72 @@ func (linuxOpenSearch) install(l oslocal.Layout, home string) error {
 	}
 	fmt.Printf("Installed the %s service; it runs as %s.\n", oslocal.ServiceName, openSearchUser)
 	return nil
+}
+
+// serviceFolders are the folders the service may change on Linux.
+func serviceFolders(l oslocal.Layout) []string { return []string{l.DataDir(), l.Logs(), l.Tmp()} }
+
+// toolEnv is the environment root runs OpenSearch's tools in: only
+// what they need, none of root's own Java options.
+func toolEnv(l oslocal.Layout, home string) []string {
+	jdk := filepath.Join(home, "jdk")
+	return []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"OPENSEARCH_HOME=" + home,
+		"OPENSEARCH_PATH_CONF=" + l.Config(),
+		"OPENSEARCH_JAVA_HOME=" + jdk,
+		"JAVA_HOME=" + jdk,
+		"JAVA_OPTS=",
+		"OPENSEARCH_JAVA_OPTS=",
+	}
+}
+
+// makeKeystore makes OpenSearch's keystore anew, empty, as root:
+// OpenSearch makes one when there is none, and cannot in its config
+// folder, which it may not change.
+func makeKeystore(l oslocal.Layout, home string) error {
+	root, err := os.OpenRoot(l.Config())
+	if err != nil {
+		return err
+	}
+	err = root.Remove("opensearch.keystore")
+	root.Close()
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	cmd := exec.Command(filepath.Join(home, "bin", "opensearch-keystore"), "create")
+	cmd.Env = toolEnv(l, home)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("opensearch-keystore create failed (%w): %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// shareConfig gives the config folder and everything in it to root,
+// group gid, which may read it but not change it. It holds only folders
+// and plain files: anything else is refused, never followed.
+func shareConfig(dir string, gid int) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0o640)
+		switch {
+		case d.IsDir():
+			mode = 0o750
+		case !d.Type().IsRegular():
+			return fmt.Errorf("%s is not a file or a folder, so OpenSearch's settings are not given to it", filepath.Join(dir, p))
+		}
+		if err := root.Lchown(p, 0, gid); err != nil {
+			return err
+		}
+		return root.Chmod(p, mode)
+	})
 }
 
 // openSearchAccount returns the account OpenSearch runs as, making it the
@@ -262,7 +356,8 @@ func maxMapCount() {
 
 // openSearchUnit is the systemd unit for the program in home: OpenSearch's
 // own start script with its bundled Java, as its own account, which may
-// write only to its config, data, logs and temporary folders.
+// write only to its data, logs and temporary folders, and reach only this
+// computer.
 func openSearchUnit(l oslocal.Layout, home string) string {
 	jdk := filepath.Join(home, "jdk")
 	return `# Written by signalith opensearch install, which writes it again on
@@ -293,10 +388,10 @@ LimitNPROC=4096
 LimitAS=infinity
 LimitFSIZE=infinity
 LimitCORE=0
-# It stops by itself on SIGTERM; Java exits 143 then.
+# It stops by itself on SIGTERM (Java exits 143 then); what is left
+# after TimeoutStopSec is killed.
 KillSignal=SIGTERM
-KillMode=process
-SendSIGKILL=no
+KillMode=mixed
 SuccessExitStatus=143
 TimeoutStartSec=180
 TimeoutStopSec=120
@@ -307,7 +402,7 @@ UMask=0027
 NoNewPrivileges=true
 CapabilityBoundingSet=
 ProtectSystem=strict
-ReadWritePaths=` + strings.Join(l.ServiceFolders(), " ") + `
+ReadWritePaths=` + strings.Join(serviceFolders(l), " ") + `
 InaccessiblePaths=-` + l.CA() + ` -` + l.Download() + `
 ProtectHome=true
 PrivateTmp=true
@@ -324,6 +419,12 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
 SystemCallArchitectures=native
+ProtectProc=invisible
+PrivateIPC=true
+RemoveIPC=true
+# It listens on 127.0.0.1 and talks to nothing else.
+IPAddressDeny=any
+IPAddressAllow=localhost
 
 [Install]
 WantedBy=multi-user.target
@@ -343,8 +444,7 @@ func (linuxOpenSearch) securityAdmin(l oslocal.Layout, home string, port int) er
 		"-cacert", filepath.Join(l.CA(), ospki.RootCAFile),
 		"-cert", filepath.Join(l.CA(), ospki.AdminCertFile),
 		"-key", filepath.Join(l.CA(), ospki.AdminKeyFile))
-	jdk := filepath.Join(home, "jdk")
-	cmd.Env = append(os.Environ(), "OPENSEARCH_JAVA_HOME="+jdk, "JAVA_HOME="+jdk, "OPENSEARCH_PATH_CONF="+l.Config())
+	cmd.Env = toolEnv(l, home)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("securityadmin.sh failed (%w):\n%s", err, out)

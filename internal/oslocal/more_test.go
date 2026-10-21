@@ -181,6 +181,38 @@ func TestWriteConfigProblems(t *testing.T) {
 		t.Errorf("complete = %v", err)
 	}
 
+	// What the service may have planted in its config folder is never
+	// written through.
+	if runtime.GOOS != "windows" {
+		outside := filepath.Join(t.TempDir(), "outside")
+		os.WriteFile(outside, []byte("keep"), 0o600)
+		yml := filepath.Join(l.Config(), "opensearch.yml")
+		os.Remove(yml)
+		if err := os.Symlink(outside, yml); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err == nil || !strings.Contains(err.Error(), "not a file") {
+			t.Errorf("over a link = %v", err)
+		}
+		os.Remove(yml)
+		if err := os.Link(outside, yml); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err != nil {
+			t.Errorf("over a hard link = %v", err)
+		}
+		os.RemoveAll(filepath.Join(l.Config(), "jvm.options.d"))
+		if err := os.Symlink(t.TempDir(), filepath.Join(l.Config(), "jvm.options.d")); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err == nil {
+			t.Error("wrote into a linked folder")
+		}
+		if b, _ := os.ReadFile(outside); string(b) != "keep" {
+			t.Errorf("the file outside became %q", b)
+		}
+	}
+
 	blocked := testLayout(t)
 	os.MkdirAll(filepath.Dir(blocked.Data), 0o700)
 	os.WriteFile(blocked.Data, []byte("x"), 0o600)
@@ -268,6 +300,10 @@ func TestExtractTarGz(t *testing.T) {
 			tarEntry{name: "opensearch-3.9.0/d/", kind: tar.TypeDir, mode: 0o755},
 			tarEntry{name: "opensearch-3.9.0/d/y", kind: tar.TypeSymlink, link: "../d"},
 			tarEntry{name: "opensearch-3.9.0/d/y/f", kind: tar.TypeSymlink, link: "../../x"}),
+		"file into a link made before": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/d/", kind: tar.TypeDir, mode: 0o755},
+			tarEntry{name: "opensearch-3.9.0/l", kind: tar.TypeSymlink, link: "d"},
+			tarEntry{name: "opensearch-3.9.0/l/f", kind: tar.TypeReg, mode: 0o644, body: "1"}),
 		"hard link":   makeTarGz(t, tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeLink, link: "opensearch-3.9.0/b"}),
 		"other top":   makeTarGz(t, tarEntry{name: "x/a", kind: tar.TypeReg, mode: 0o644, body: "1"}),
 		"escape name": makeTarGz(t, tarEntry{name: "opensearch-3.9.0/../a", kind: tar.TypeReg, mode: 0o644, body: "1"}),
@@ -293,5 +329,18 @@ func TestExtractTarGz(t *testing.T) {
 	os.WriteFile(bad, []byte{0x1f, 0x8b, 0, 0}, 0o600)
 	if err := Extract(bad, filepath.Join(t.TempDir(), "d")); err == nil {
 		t.Error("extracted a broken .tar.gz")
+	}
+}
+
+func TestSaveRefusesTooLarge(t *testing.T) {
+	keep := maxRelease
+	maxRelease = 10
+	t.Cleanup(func() { maxRelease = keep })
+	dir := t.TempDir()
+	if _, err := save(strings.NewReader(strings.Repeat("x", 11)), dir, "the release"); err == nil || !strings.Contains(err.Error(), "larger") {
+		t.Fatalf("got %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("left %d files", len(entries))
 	}
 }

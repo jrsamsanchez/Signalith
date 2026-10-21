@@ -118,8 +118,9 @@ It sets up OpenSearch for Signalith the same way the Windows installer does
 - The program goes to `/opt/signalith-opensearch`, which only root can change. Its
   settings, data and logs go to `/var/lib/signalith-opensearch`.
 - It runs as the `signalith-opensearch` systemd service under its own system account,
-  `signalith-opensearch`, sandboxed so it may write only to its settings, data, logs and
-  temporary folders.
+  `signalith-opensearch`, sandboxed so it may write only to its data, logs and temporary
+  folders and reach only this server. Its settings are root's, which it may read but not
+  change; the installer writes them again on every run.
 - It listens on this server only (`127.0.0.1`, port 9200, or the next free one), over
   HTTPS with certificates from a CA of its own. There are no passwords and no demo users;
   the CA's key and the admin certificate stay in `/var/lib/signalith-opensearch/ca`, which

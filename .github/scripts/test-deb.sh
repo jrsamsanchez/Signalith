@@ -82,6 +82,10 @@ test "$(sudo stat -c %U:%a /var/lib/signalith-opensearch)" = root:711
 test "$(sudo stat -c %U:%a /var/lib/signalith-opensearch/ca)" = root:700
 test "$(sudo stat -c %U:%G:%a /etc/signalith/opensearch/opensearch-client-key.pem)" = root:signalith:640
 test "$(sudo stat -c %U /var/lib/signalith-opensearch/data)" = signalith-opensearch
+# Its settings are root's, which it may read but not change.
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config)" = root:signalith-opensearch:750
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config/opensearch.yml)" = root:signalith-opensearch:640
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config/opensearch.keystore)" = root:signalith-opensearch:640
 up
 ready=no
 for _ in $(seq 1 40); do

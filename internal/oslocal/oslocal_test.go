@@ -361,6 +361,14 @@ func TestMakeCertsRemakesClient(t *testing.T) {
 		t.Fatalf("client certificate %v is not Signalith's from the kept CA", client.Cert.Subject)
 	}
 
+	// With the CA kept, OpenSearch's own certificates are never made
+	// anew: they were lost, or someone took them away.
+	os.Rename(filepath.Join(l.Certs(), ospki.NodeCertFile), filepath.Join(d, "node"))
+	if err := MakeCerts(l, time.Now()); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("no node certificate = %v", err)
+	}
+	os.Rename(filepath.Join(d, "node"), filepath.Join(l.Certs(), ospki.NodeCertFile))
+
 	// Without the CA's key, it says what is missing.
 	os.Remove(filepath.Join(l.CA(), ospki.RootCAKeyFile))
 	os.RemoveAll(l.Client)
