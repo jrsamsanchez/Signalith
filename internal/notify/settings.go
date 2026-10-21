@@ -141,6 +141,10 @@ type Rule struct {
 	// IncludeSample sends findings raised from the one-click sample data
 	// too, to try a channel out. Off by default.
 	IncludeSample bool `yaml:"include_sample,omitempty" json:"include_sample"`
+	// Late also sends a matching finding again when it is still open and
+	// unassigned past its due time (detections.sla), once, so a finding
+	// nobody picked up is escalated.
+	Late bool `yaml:"late,omitempty" json:"late"`
 	// Since is when the rule was added or last turned on: only findings
 	// raised from then on match, so a new rule does not send old ones.
 	Since time.Time `yaml:"since" json:"since"`
@@ -301,6 +305,9 @@ func (r Rule) Summary(s Settings) string {
 	}
 	if len(to) == 0 {
 		return strings.Join(parts, " ") + " go nowhere yet: pick a channel."
+	}
+	if r.Late {
+		return strings.Join(parts, " ") + " go to " + joinAnd(to) + ", and again if nobody picks one up by its due time."
 	}
 	return strings.Join(parts, " ") + " go to " + joinAnd(to) + "."
 }

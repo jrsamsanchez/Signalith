@@ -54,6 +54,7 @@ type Report struct {
 	OpenByUrgency      map[string]int    `json:"open_by_urgency"`
 	FindingsOverTime   *search.Result    `json:"findings_over_time,omitempty"`
 	TopDetections      []DetectionCount  `json:"top_detections"`
+	NoisyDetections    []NoisyDetection  `json:"noisy_detections"`
 	TopRiskObjects     []search.Row      `json:"top_risk_objects"`
 	Tactics            []TacticCount     `json:"tactics"`
 	EventsByDatamodel  *search.Result    `json:"events_by_datamodel,omitempty"`
@@ -89,6 +90,18 @@ type DetectionCount struct {
 	Title      string `json:"title"`
 	Findings   int64  `json:"findings"`
 	RiskEvents int64  `json:"risk_events"`
+}
+
+// NoisyDetection is how often one detection's findings closed in the
+// period were judged false positives (AW-4).
+type NoisyDetection struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// Judged counts the findings closed with a disposition; FalsePositive
+	// those of them marked false positive.
+	Judged        int64   `json:"judged"`
+	FalsePositive int64   `json:"false_positive"`
+	Rate          float64 `json:"rate"`
 }
 
 // TacticCount is activity for one ATT&CK tactic.
@@ -198,7 +211,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 	lookback := max(7*24*time.Hour, 4*stale)
 	rep := &Report{
 		Range: rangeLabel, Start: start, End: now, PrevStart: prevStart,
-		OpenByUrgency: map[string]int{}, TopDetections: []DetectionCount{}, TopRiskObjects: []search.Row{}, Tactics: []TacticCount{},
+		OpenByUrgency: map[string]int{}, TopDetections: []DetectionCount{}, NoisyDetections: []NoisyDetection{}, TopRiskObjects: []search.Row{}, Tactics: []TacticCount{},
 		Queries: map[string]string{
 			"events": qEvents, "events_by_datamodel": qByDatamodel, "events_by_sourcetype": qBySourcetype,
 			"risk_objects": qRiskObjects, "risk_by_detection": qRiskByDetection, "risk_by_tactic": qRiskByTactic,
@@ -413,6 +426,7 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 		return a.ID < b.ID
 	})
 	rep.TopDetections = rep.TopDetections[:min(10, len(rep.TopDetections))]
+	rep.NoisyDetections = noisiest(fs, func(id string) string { return get(id).Title })
 
 	if riskObjects != nil {
 		rep.TopRiskObjects = riskObjects.Rows
@@ -540,16 +554,25 @@ type findingStats struct {
 	triageCur, triagePrev   []time.Duration
 	resolveCur, resolvePrev []time.Duration
 	byDetection             map[string]int64
+	judged, falsePositive   map[string]int64
 	titles                  map[string]string
 	tactics                 map[string]int64
 	seen30                  map[string]bool
 	overTime                *search.Result
 }
 
-// TriagedAt is when an analyst first acted on a finding: the first status
-// change or owner assignment.
+// TriagedAt is when an analyst first acted on a finding: its recorded
+// first response, or for a finding from before that was recorded, the
+// first status change or owner assignment a person made.
 func TriagedAt(f *findings.Finding) (time.Time, bool) {
+	if f.RespondedAt != nil {
+		return *f.RespondedAt, true
+	}
 	for _, c := range f.History {
+		if findings.IsAutomation(c.Author) {
+			// A playbook assigning a finding is not a person looking at it.
+			continue
+		}
 		if c.Field == "status" || (c.Field == "owner" && c.To != "") {
 			return c.Time, true
 		}
@@ -573,7 +596,7 @@ func ResolvedAt(f *findings.Finding) (time.Time, bool) {
 }
 
 func computeFindingStats(list []*findings.Finding, start, end, prevStart time.Time, rng time.Duration) *findingStats {
-	fs := &findingStats{byDetection: map[string]int64{}, titles: map[string]string{}, tactics: map[string]int64{}, seen30: map[string]bool{}}
+	fs := &findingStats{byDetection: map[string]int64{}, judged: map[string]int64{}, falsePositive: map[string]int64{}, titles: map[string]string{}, tactics: map[string]int64{}, seen30: map[string]bool{}}
 	in := func(t time.Time) int { // 1 current, -1 previous, 0 neither
 		switch {
 		case !t.Before(start) && !t.After(end):
@@ -632,6 +655,12 @@ func computeFindingStats(list []*findings.Finding, start, end, prevStart time.Ti
 			case 1:
 				fs.closedCur++
 				fs.resolveCur = append(fs.resolveCur, t.Sub(f.Created))
+				if f.Disposition != "" {
+					fs.judged[f.DetectionID]++
+					if f.Disposition == "false_positive" {
+						fs.falsePositive[f.DetectionID]++
+					}
+				}
 			case -1:
 				fs.closedPrev++
 				fs.resolvePrev = append(fs.resolvePrev, t.Sub(f.Created))
@@ -653,6 +682,27 @@ func computeFindingStats(list []*findings.Finding, start, end, prevStart time.Ti
 	}
 	fs.overTime = res
 	return fs
+}
+
+// noisiest lists the detections with false positives in the period, most
+// false positives first, at most ten.
+func noisiest(fs *findingStats, title func(string) string) []NoisyDetection {
+	out := []NoisyDetection{}
+	for id, fp := range fs.falsePositive {
+		n := fs.judged[id]
+		out = append(out, NoisyDetection{ID: id, Title: title(id), Judged: n, FalsePositive: fp, Rate: float64(fp) / float64(n)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.FalsePositive != b.FalsePositive {
+			return a.FalsePositive > b.FalsePositive
+		}
+		if a.Rate != b.Rate {
+			return a.Rate > b.Rate
+		}
+		return a.ID < b.ID
+	})
+	return out[:min(10, len(out))]
 }
 
 // bucketFor picks the findings-over-time bucket for a range.
