@@ -469,7 +469,15 @@ function syncSettingsTabs(inSettings) {
   bar.classList.toggle('hidden', !inSettings || tabs.length < 2);
   const list = bar.querySelector('.set-tabs__list');
   const cur = tabs.find((t) => t.hasAttribute('aria-current'));
-  if (!inSettings || !cur || list.scrollWidth <= list.clientWidth) return;
+  if (!inSettings || !cur || list.scrollWidth <= list.clientWidth) {
+    list.classList.remove('has-more');
+    return;
+  }
+  if (!list.dataset.fade) {
+    list.dataset.fade = '1';
+    list.addEventListener('scroll', () => list.classList.toggle('has-more', list.scrollLeft + list.clientWidth < list.scrollWidth - 1), { passive: true });
+  }
+  list.classList.add('has-more');
   const left = cur.offsetLeft - 16;
   const right = cur.offsetLeft + cur.offsetWidth + 16;
   if (left < list.scrollLeft) list.scrollLeft = left;
