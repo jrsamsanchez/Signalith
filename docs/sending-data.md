@@ -127,7 +127,7 @@ message saying what to change, and nothing from it is stored. When many agents s
 once, the extra requests wait their turn and then get 503, so Fluent Bit sends them again.
 A server writes 32 batches at once (`ingest.max_concurrent`, under Settings > Web; lower it
 on a server with little memory). Batches being written at the same time go to OpenSearch
-together, in at most 8 requests at once of up to 16 MB each, so many agents each sending a
+together, in at most 2 requests at once of up to 16 MB each, so many agents each sending a
 small batch make a few large writes rather than many small ones. While others wait, one agent token gets at most a quarter
 of them, so one busy agent cannot hold up the rest. In [multi-tenant mode](multi-tenant.md)
 these slots, and the memory for batches arriving described below, are shared by all tenants,

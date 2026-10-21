@@ -9,8 +9,12 @@ import (
 )
 
 // DefaultBulkInFlight is how many bulk requests a BulkGroup sends at once
-// when NewBulkGroup is given 0.
-const DefaultBulkInFlight = 8
+// when NewBulkGroup is given 0. Few, so that batches waiting meanwhile make
+// large requests: OpenSearch writes one request's shards in parallel, and
+// on network volumes the per-request disk syncs, not the CPU, set the rate
+// (on the cloud lab, 8 at once from each of 3 servers stored about 1,800
+// real Windows events a second, with the volumes doing ~450 syncs a second).
+const DefaultBulkInFlight = 2
 
 // DefaultBulkGroupBytes is the most a BulkGroup puts in one request when
 // it joins callers' documents. A caller's own documents are never split,
