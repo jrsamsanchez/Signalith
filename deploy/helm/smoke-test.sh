@@ -4,8 +4,9 @@
 # Smoke test of the Helm chart, run by .github/workflows/helm.yml after
 # installing it with ci/kind-values.yaml into a namespace that enforces the
 # restricted Pod Security Standard: the servers and the scanner form one
-# cluster, an agent's events get in, OpenSearch refuses pods outside the
-# release, and an upgrade keeps every secret.
+# cluster, an agent's events can be searched, OpenSearch refuses pods
+# outside the release, an upgrade keeps every secret, the admin and the
+# events, and a rollback to the first release still serves both.
 set -eu
 NS=${NS:-signalith}
 REL=${REL:-sig}
@@ -32,14 +33,21 @@ secret() { kubectl -n "$NS" get secret "$FULL-secrets" -o "jsonpath={.data.$1}" 
 helm test -n "$NS" "$REL" --logs || fail "helm test"
 echo "ok: helm test"
 
-kubectl -n "$NS" port-forward "service/$FULL" "$PORT:9000" "$AGENT_PORT:7779" >/tmp/port-forward.log 2>&1 &
-PF=$!
+# forward (again, after an upgrade or rollback replaced the pods) the web
+# and agent ports of the Service to this machine.
+PF=
+forward() {
+  [ -z "$PF" ] || kill "$PF" 2>/dev/null || true
+  kubectl -n "$NS" port-forward "service/$FULL" "$PORT:9000" "$AGENT_PORT:7779" >>/tmp/port-forward.log 2>&1 &
+  PF=$!
+  until_ok 120 "the web Service answers through port-forward" sh -c "curl -sfk $URL/readyz | grep -q '\"ready\":true'"
+}
 # Passwords and the token go to curl in files only this user can read,
 # never on a command line.
 SECRETS=$(mktemp -d)
 chmod 700 "$SECRETS"
-trap 'kill $PF 2>/dev/null || true; rm -rf "$SECRETS"' EXIT
-until_ok 60 "the web Service answers through port-forward" sh -c "curl -sfk $URL/readyz | grep -q '\"ready\":true'"
+trap '[ -z "$PF" ] || kill $PF 2>/dev/null || true; rm -rf "$SECRETS"' EXIT
+forward
 
 PW=$(secret initial-admin-password)
 TOKEN=$(secret ingest-token)
@@ -78,16 +86,27 @@ code=$(curl -sk -o /dev/null -w '%{http_code}' -H "@$SECRETS/agent" -H "X-Signal
   "$URL/api/ingest?tag=linux_secure" -d '[{"log":"x"}]')
 [ "$code" = 503 ] || fail "the web port answered an agent batch with $code, not 503"
 echo "ok: the web port turns agents away"
+# Each event carries this run's own host name, and today's time: events
+# older than the store keeps are refused.
+HOST=smoke$(date +%s)
 i=0
 while [ $i -lt 5 ]; do
   curl -sfk -o /dev/null -H "@$SECRETS/agent" -H "X-Signalith-Agent: smoke" \
-    "$AGENT_URL/api/ingest?tag=linux_secure" -d "[{\"log\":\"Oct 14 12:00:00 smoke sshd[1]: Failed password for bob from 10.9.9.$i port 22 ssh2\"}]" \
+    "$AGENT_URL/api/ingest?tag=linux_secure" -d "[{\"log\":\"$(date -u '+%b %e %H:%M:%S') $HOST sshd[1]: Failed password for bob from 10.9.9.$i port 22 ssh2\"}]" \
     || fail "agent batch $i"
   i=$((i + 1))
 done
 until_ok 60 "Health counts the agent batches" sh -c "curl -sfk -K '$SECRETS/admin' '$URL/api/health?scope=cluster' | python3 -c '
 import json, sys
 sys.exit(0 if json.load(sys.stdin)[\"cluster\"][\"totals\"][\"ingest\"][\"batches\"] >= 5 else 1)'"
+# searchable says whether a search for this run's host finds all five
+# events: they were parsed, written to OpenSearch and can be read back.
+searchable() {
+  python3 -c 'import json, sys; print(json.dumps({"query": "host=" + sys.argv[1], "earliest": "-1h", "latest": "now"}))' "$HOST" |
+    curl -sfk -K "$SECRETS/admin" -H "Origin: $URL" -H 'Content-Type: application/json' --data-binary @- "$URL/api/search" |
+    python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin).get("matched", 0) >= 5 else 1)'
+}
+until_ok 120 "a search finds the agent's events" searchable
 
 # OpenSearch takes connections from the release's pods only.
 probe() {
@@ -103,10 +122,24 @@ echo "ok: the servers reach OpenSearch"
 
 # An upgrade runs the setup Job again, which keeps every secret.
 before=$(kubectl -n "$NS" get secret "$FULL-secrets" "$FULL-opensearch-certs" "$FULL-opensearch-ca" -o jsonpath='{.items[*].data}')
-helm upgrade -n "$NS" "$REL" "$CHART" -f "$VALUES" --wait --timeout 10m
+# The upgrade rolls the pods (a changed annotation), as a new version does.
+helm upgrade -n "$NS" "$REL" "$CHART" -f "$VALUES" --set-string "server.podAnnotations.smoke=$HOST" --wait --timeout 10m
 after=$(kubectl -n "$NS" get secret "$FULL-secrets" "$FULL-opensearch-certs" "$FULL-opensearch-ca" -o jsonpath='{.items[*].data}')
 [ "$before" = "$after" ] || fail "the upgrade changed the secrets"
 echo "ok: an upgrade keeps the secrets"
 kubectl -n "$NS" get role,rolebinding,serviceaccount -o name | grep -q setup && fail "the setup Job's rights outlived it"
 echo "ok: the setup Job's rights are gone"
+signed_in() { curl -sfk -o /dev/null -K "$SECRETS/admin" "$URL/api/me"; }
+forward
+until_ok 120 "after the upgrade the admin signs in with the new password" signed_in
+until_ok 120 "after the upgrade a search finds the agent's events" searchable
+
+# A rollback to the first release works and keeps the admin and events.
+helm rollback -n "$NS" "$REL" 1 --wait --timeout 10m
+helm history -n "$NS" "$REL"
+[ "$(helm history -n "$NS" "$REL" -o json | python3 -c 'import json, sys; h = json.load(sys.stdin); print(h[-1]["status"])')" = deployed ] \
+  || fail "the rollback is not the deployed release"
+forward
+until_ok 120 "after the rollback the admin signs in with the new password" signed_in
+until_ok 120 "after the rollback a search finds the agent's events" searchable
 echo "Helm chart smoke test passed"

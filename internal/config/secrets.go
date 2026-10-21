@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/jrsamsanchez/signalith/internal/incontainer"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
@@ -372,16 +373,8 @@ func (c *Config) secretWarnings() []string {
 	return w
 }
 
-// inContainer reports whether Signalith runs in a Docker or Podman
-// container.
-func inContainer() bool {
-	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(f); err == nil {
-			return true
-		}
-	}
-	return false
-}
+// inContainer reports whether Signalith runs in a container.
+func inContainer() bool { return incontainer.Here() }
 
 // urlPassword returns the password written into a URL, if any.
 func urlPassword(raw string) string {

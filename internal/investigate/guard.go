@@ -103,6 +103,10 @@ func guardExpr(e query.Expr, m *Masker, piped bool) error {
 		if guarded(e.Field, m) && ((e.Op != "=" && e.Op != "!=") || !m.isToken(e.Value)) {
 			return fmt.Errorf("%s is masked: match it only with = or != and one of its stand-ins, such as masked-%s-1", e.Field, kindOf(e.Field))
 		}
+		if e.Ref && guarded(e.Value, m) {
+			// where src < user would compare with the masked field's values.
+			return fmt.Errorf("%s is masked: a where cannot compare another field with it", e.Value)
+		}
 	case *query.In:
 		if guarded(e.Field, m) {
 			for _, v := range e.Values {
@@ -178,7 +182,9 @@ func (m *Masker) revealQuery(q *query.Query) {
 		case *query.Not:
 			walk(e.Child)
 		case *query.Compare:
-			e.Value = m.real(e.Value)
+			if r := m.real(e.Value); r != e.Value {
+				e.Value, e.Ref = r, false // a real value is text, never a field
+			}
 		case *query.In:
 			for i, v := range e.Values {
 				e.Values[i] = m.real(v)

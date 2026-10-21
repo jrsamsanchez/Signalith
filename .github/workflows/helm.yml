@@ -2,8 +2,10 @@ name: Helm chart
 # The Kubernetes Helm chart (deploy/helm/signalith): lint and schema checks
 # of what it renders with several sets of values, then an install on kind,
 # from an image built from this code, into a namespace that enforces the
-# restricted Pod Security Standard, and deploy/helm/smoke-test.sh. Not a
-# required check.
+# restricted Pod Security Standard, and deploy/helm/smoke-test.sh: events
+# get in and can be searched, and the admin and the events are still there
+# after an upgrade and a rollback. It also runs for changes to the settings
+# the chart sets (internal/config). Not a required check.
 on:
   push:
     branches: [main]
@@ -12,6 +14,8 @@ on:
       - 'deploy/docker/Dockerfile'
       - 'deploy/docker/opensearch/**'
       - 'cmd/signalith/bootstrap*.go'
+      - 'internal/config/**'
+      - 'internal/api/server.go'
       - '.github/workflows/helm.yml'
   pull_request:
     paths:
@@ -19,6 +23,8 @@ on:
       - 'deploy/docker/Dockerfile'
       - 'deploy/docker/opensearch/**'
       - 'cmd/signalith/bootstrap*.go'
+      - 'internal/config/**'
+      - 'internal/api/server.go'
       - '.github/workflows/helm.yml'
   schedule:
     - cron: '41 4 * * 2'
