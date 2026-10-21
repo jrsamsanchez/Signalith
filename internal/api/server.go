@@ -40,7 +40,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
+	"github.com/jrsamsanchez/signalith/internal/exceptionreqs"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/m365"
@@ -140,6 +142,12 @@ type Server struct {
 	// SetupGuide keeps each user's answers to the setup guide; nil keeps
 	// them in this server's memory.
 	SetupGuide setupguide.Store
+	// FindingViews keeps each user's saved views of the findings queue;
+	// nil keeps them in this server's memory.
+	FindingViews findingviews.Store
+	// ExceptionRequests keeps the exceptions analysts propose until an
+	// admin decides; nil keeps them in memory.
+	ExceptionRequests exceptionreqs.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -291,29 +299,31 @@ type Server struct {
 	// TenantRuntime runs the servers of the other tenants; nil runs none.
 	TenantRuntime TenantRuntime
 
-	authOnce          sync.Once
-	ssoOnce           sync.Once
-	samlOnce          sync.Once
-	samlReplays       saml.Replays // SAML assertions used, until they expire
-	samlEntity        atomic.Value // the SAML provider's entity ID, from its metadata
-	samlLoading       atomic.Bool  // whether its metadata is being read for samlIssuerOK
-	scimRefused       scimRefusals // when a refused SCIM token was last logged, by address
-	creds             credCache    // recently checked Basic credentials
-	passkeyChallenges challengeSet // passkey challenges answered on this server
-	routes            []route      // every API route and its role, from Handler
-	apiMux            http.Handler // the routes of routes, each behind allow
-	caseLocks         caseLocks    // one lock per case being changed
-	checksMu          sync.Mutex
-	dirChecks         map[string]dirCheck // when each directory user was last checked
-	dirSlotsOnce      sync.Once
-	dirSlots          chan struct{}  // limits directory connections at once
-	background        sync.WaitGroup // directory checks and API token use records still running
-	settingsMu        sync.Mutex     // serializes saves on the Settings page
-	testMu            sync.Mutex     // one connection test at a time
-	aiModels          modelCache     // model lists read from the AI model's service
-	sampleJob         sampleJob      // the one running sample-data load or remove
-	setupGuideMem     setupguide.Memory
-	pageCache         pages // index.html and login.html, rendered
+	authOnce             sync.Once
+	ssoOnce              sync.Once
+	samlOnce             sync.Once
+	samlReplays          saml.Replays // SAML assertions used, until they expire
+	samlEntity           atomic.Value // the SAML provider's entity ID, from its metadata
+	samlLoading          atomic.Bool  // whether its metadata is being read for samlIssuerOK
+	scimRefused          scimRefusals // when a refused SCIM token was last logged, by address
+	creds                credCache    // recently checked Basic credentials
+	passkeyChallenges    challengeSet // passkey challenges answered on this server
+	routes               []route      // every API route and its role, from Handler
+	apiMux               http.Handler // the routes of routes, each behind allow
+	caseLocks            caseLocks    // one lock per case being changed
+	checksMu             sync.Mutex
+	dirChecks            map[string]dirCheck // when each directory user was last checked
+	dirSlotsOnce         sync.Once
+	dirSlots             chan struct{}  // limits directory connections at once
+	background           sync.WaitGroup // directory checks and API token use records still running
+	settingsMu           sync.Mutex     // serializes saves on the Settings page
+	testMu               sync.Mutex     // one connection test at a time
+	aiModels             modelCache     // model lists read from the AI model's service
+	sampleJob            sampleJob      // the one running sample-data load or remove
+	setupGuideMem        setupguide.Memory
+	findingViewsMem      findingviews.Memory
+	exceptionRequestsMem exceptionreqs.Memory
+	pageCache            pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
 	// expired API token (tokenRefused).
@@ -455,6 +465,8 @@ func (s *Server) Handler() http.Handler {
 	s.routeRequests(api)
 	s.routeSample(api)
 	s.routeSetupGuide(api)
+	s.routeFindingViews(api)
+	s.routeExceptionRequests(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)

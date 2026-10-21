@@ -448,6 +448,7 @@
   const ruleInput = (r) => ({
     id: r.id, name: r.name, enabled: r.enabled, channels: [...r.channels], min_urgency: r.min_urgency,
     detections: [...(r.detections || [])], min_risk_score: r.min_risk_score || 0, include_sample: !!r.include_sample,
+    late: !!r.late,
   });
 
   // save changes the settings with change(input) and sends them; it
@@ -822,14 +823,14 @@
     if (r.include_sample) parts.push('including sample data');
     const to = r.channels.map(channelByID).filter(Boolean).map(label);
     const list = to.length <= 1 ? to.join('') : to.slice(0, -1).join(', ') + ' and ' + to[to.length - 1];
-    return parts.join(' ') + (to.length ? ' go to ' + list + '.' : ' go nowhere yet: pick a channel.');
+    return parts.join(' ') + (to.length ? ' go to ' + list + (r.late ? ', and again if nobody picks one up by its due time.' : '.') : ' go nowhere yet: pick a channel.');
   }
 
   async function openRule(r, channelID) {
     const dlg = $('nt-rule-dialog');
     const edit = !!r;
     const id = edit ? r.id : newID();
-    const st = edit ? ruleInput(r) : { id, name: '', enabled: true, channels: channelID ? [channelID] : NT.data.channels.length === 1 ? [NT.data.channels[0].id] : [], min_urgency: 'high', detections: [], min_risk_score: 0, include_sample: false };
+    const st = edit ? ruleInput(r) : { id, name: '', enabled: true, channels: channelID ? [channelID] : NT.data.channels.length === 1 ? [NT.data.channels[0].id] : [], min_urgency: 'high', detections: [], min_risk_score: 0, include_sample: false, late: true };
     const msg = el('div', { class: 'nt-msg', 'aria-live': 'polite' });
     const form = el('form', { class: 'nt-form', novalidate: '', autocomplete: 'off' });
     const preview = el('p', { class: 'nt-preview__text' });
@@ -907,6 +908,9 @@
     const sample = el('input', { type: 'checkbox' });
     sample.checked = st.include_sample;
     sample.addEventListener('change', () => { st.include_sample = sample.checked; sync(); });
+    const late = el('input', { type: 'checkbox' });
+    late.checked = st.late;
+    late.addEventListener('change', () => { st.late = late.checked; sync(); });
     const on = el('input', { type: 'checkbox', role: 'switch' });
     on.checked = st.enabled;
     on.addEventListener('change', () => { st.enabled = on.checked; });
@@ -936,6 +940,8 @@
     const chanField = el('div', { class: 'field', 'data-field': 'channels' }, el('span', { class: 'label' }, 'Send to'), chans);
     const urgField = el('div', { class: 'field', 'data-field': 'min_urgency' }, el('span', { class: 'label' }, 'How urgent'), urg, urgHint);
     const detField = el('div', { class: 'field', 'data-field': 'detections' }, el('span', { class: 'label' }, 'From'), detSeg, detBox);
+    const lateField = el('div', { class: 'field', 'data-field': 'late' }, el('label', { class: 'check' }, late, el('span', {}, 'Send again if nobody picks it up in time')),
+      el('p', { class: 'hint' }, 'A finding still unassigned past its due time (Settings > Detections) is sent once more, marked late.'));
     const more = el('details', { class: 'nt-more' }, el('summary', {}, icon('chevron-right', 'nt-chev'), 'More options'),
       el('div', { class: 'nt-more__body' },
         field('Least risk score', risk, 'Only for findings of risk detections, which carry a risk score. Others are sent whatever this says.'),
@@ -943,7 +949,7 @@
           el('p', { class: 'hint' }, 'Findings from the one-click sample data are skipped unless this is on. Turn it on to try a channel out.'))));
     if (st.min_risk_score || st.include_sample) more.open = true;
     fill(form,
-      el('div', { class: 'modal__body' }, msg, field('Name', name), chanField, urgField, detField, more,
+      el('div', { class: 'modal__body' }, msg, field('Name', name), chanField, urgField, detField, lateField, more,
         el('div', { class: 'nt-preview' }, icon('bell'), el('div', {}, el('b', {}, 'This rule'), preview))),
       el('div', { class: 'modal__foot nt-foot' }, el('label', { class: 'switch' }, on, el('span', {}, 'On')), el('span', { class: 'spacer' }),
         el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => dlg.close() }, 'Cancel'), saveBtn));
