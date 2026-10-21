@@ -141,7 +141,7 @@ func TestSensorWatchHostAgents(t *testing.T) {
 		t.Fatalf("events: %+v", out.events)
 	}
 	ev := out.events[0]
-	if f := ev.Fields; f["sourcetype"] != "agent:health" || f["host"] != "db-01" || f["signature"] != "Signalith Agent silent" ||
+	if f := ev.Fields; f["sourcetype"] != "agent:health" || f["host"] != "db-01" || f["signature"] != "Signalith Agent silent" || f["signature_id"] != "h1" ||
 		!strings.Contains(f["message"].(string), "The Signalith Agent on db-01 has sent nothing for 1 hour (last heard 2026-10-15 10:59 UTC)") ||
 		!strings.HasPrefix(ev.ID, "agent-health-") {
 		t.Errorf("event: %+v", ev)

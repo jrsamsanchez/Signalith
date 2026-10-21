@@ -81,6 +81,13 @@ func (p Paths) fluentBitStates() []string {
 	return []string{filepath.Join(p.State, "fluent-bit"), filepath.Join(DefaultPaths().State, "fluent-bit")}
 }
 
+// fluentBitRules are what the agent checks Fluent Bit's configuration
+// against: its server, its folders and its certificate authority files.
+func (a *Agent) fluentBitRules() fbRules {
+	return fbRules{server: a.Settings.Server, states: a.Paths.fluentBitStates(),
+		caFile: []string{a.Paths.caFile(), DefaultPaths().caFile()}, goos: runtime.GOOS}
+}
+
 // StatusFile is the last status the agent reported, as JSON.
 func (p Paths) StatusFile() string { return filepath.Join(p.State, "status.json") }
 

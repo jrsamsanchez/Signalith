@@ -5,6 +5,7 @@ package agentproto
 
 import (
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -15,9 +16,16 @@ import (
 // Signalith Agent refuses a Fluent Bit configuration that tails one
 // (ASI-03).
 func SecretPath(p, goos string) bool {
+	// A path that could name a file other than as written (.., ~, a
+	// relative path) counts as one.
+	if strings.Contains(p, "..") {
+		return true
+	}
 	deny := linuxDenied
 	if goos == "windows" {
-		if len(p) < 3 || p[1] != ':' {
+		// So does a device path, a short name such as PROGRA~3 or an
+		// alternate data stream.
+		if len(p) < 3 || p[1] != ':' || strings.Contains(p[2:], ":") || shortName.MatchString(p) {
 			return true
 		}
 		// Windows paths do not care about case, the kind of slash or, here,
@@ -25,8 +33,14 @@ func SecretPath(p, goos string) bool {
 		p = "?" + strings.ToLower(strings.ReplaceAll(p[1:], `\`, "/"))
 		deny = windowsDenied
 	}
+	if goos != "windows" && (!strings.HasPrefix(p, "/") || strings.Contains(p, "~")) {
+		return true
+	}
 	return secretPath(p, deny)
 }
+
+// shortName is a Windows 8.3 short name.
+var shortName = regexp.MustCompile(`~[0-9]`)
 
 // Files and folders that hold secrets. Folders end in /.
 var (

@@ -203,6 +203,9 @@ func hostSilentEvent(a Agent, s silence, now time.Time) ingest.Event {
 		"sourcetype":     AgentHealthSourcetype,
 		"vendor_product": "Signalith Agent",
 		"signature":      "Signalith Agent silent",
+		// The agent itself, so two computers with one name are told
+		// apart and neither's alert holds back the other's.
+		"signature_id": a.Key,
 		"message": fmt.Sprintf("The Signalith Agent on %s has sent nothing for %s (last heard %s UTC): the computer is off, the agent stopped, or its token was refused",
 			name, quietFor(quiet), a.LastSeen.UTC().Format("2006-01-02 15:04")),
 	}

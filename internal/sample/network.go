@@ -535,7 +535,7 @@ func (g *gen) sensorUpkeep() {
 func (g *gen) agentSilent() {
 	silent := g.day(2, 1, 10)
 	g.b.signalith(silent, "agent:health", map[string]any{
-		"vendor_product": "Signalith Agent", "signature": "Signalith Agent silent", "host": "file-01", "dvc": "file-01",
+		"vendor_product": "Signalith Agent", "signature": "Signalith Agent silent", "signature_id": "file-01-agent", "host": "file-01", "dvc": "file-01",
 		"message": "The Signalith Agent on file-01 has sent nothing for 1 hour (last heard " + silent.Add(-time.Hour).Format("2006-01-02 15:04") +
 			" UTC): the computer is off, the agent stopped, or its token was refused",
 	})

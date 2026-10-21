@@ -109,8 +109,14 @@ that folder and prints the commands instead of running them.
   journal, Windows event logs) and sends them to the Signalith server it was installed
   for, over TLS that checks the certificate. It refuses one that would run a program,
   load a plugin, open a port, read a file that holds secrets (the agent's own token,
-  password and key stores) or send anywhere else, keeps the configuration in use, and
-  shows why on the Endpoints page.
+  password and key stores) or send anywhere else: every section, plugin and setting must
+  be one Signalith writes, and file paths must be plain (no `..`, `~`, variables, short
+  names or streams). It keeps the Fluent Bit configuration in use, still takes the rest
+  of the configuration (so an agent update that knows the new settings still arrives),
+  and shows why on the Endpoints page. At startup it checks the Fluent Bit configuration
+  on disk the same way and runs Fluent Bit only once it passes. The check reads the
+  paths as written: a link under `/var/log` that someone with root made to a secret file
+  is followed.
 - **Packages come from their publishers.** On Linux, Fluent Bit comes from Fluent Bit's
   own signed package repository; the script refuses its signing key unless its
   fingerprint is the one pinned in the script. On Windows, the script downloads the
