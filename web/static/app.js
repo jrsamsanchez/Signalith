@@ -201,6 +201,12 @@ function apiVersion(resp) {
 // apiRaw makes a request with the headers every page sends and returns
 // the response as it is: for uploads, streams and text that api() does
 // not handle. Paths are relative to the page.
+// viewerZone is the browser's IANA time zone, which searches use for @d,
+// timechart days, bin and strftime; empty (UTC) when the browser has none.
+function viewerZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; }
+}
+
 async function apiRaw(path, opts) {
   opts = opts || {};
   const method = (opts.method || 'GET').toUpperCase();
@@ -1173,9 +1179,9 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 // colouring for its examples.
 const lang = {
   commands: ['search', 'stats', 'eventstats', 'timechart', 'top', 'rare', 'where', 'eval', 'rex', 'dedup', 'fillnull', 'sort', 'head', 'table', 'rename', 'lookup', 'inputlookup', 'transaction', 'join', 'enrich', 'threatmatch', 'intel', 'streamstats', 'bin', 'bucket', 'fields', 'regex', 'makeresults', 'append', 'appendpipe', 'tstats', 'chart', 'xyseries', 'untable', 'spath', 'mvexpand', 'makemv', 'reverse', 'addtotals', 'addcoltotals', 'convert', 'tail', 'uniq', 'fromjson', 'nomv', 'mvcombine', 'strcat', 'rangemap', 'fieldformat', 'foreach', 'replace', 'xmlkv', 'iplocation', 'map', 'accum', 'delta', 'autoregress', 'fieldsummary', 'transpose', 'filldown', 'addinfo', 'trendline', 'concurrency', 'contingency', 'format', 'return', 'makecontinuous', 'union', 'geostats', 'extract', 'outlier', 'gauge', 'multisearch', 'timewrap', 'cluster', 'xpath', 'abstract', 'highlight', 'anomalydetection', 'correlate', 'predict', 'set', 'setfields', 'kmeans', 'eventcount', 'outputlookup', 'from'],
-  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'var', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
+  functions: ['count', 'dc', 'sum', 'avg', 'min', 'max', 'median', 'perc95', 'stdev', 'stdevp', 'var', 'varp', 'sumsq', 'range', 'mode', 'values', 'list', 'first', 'last', 'earliest', 'latest'],
   // eval and where expression functions (query.EvalFuncs).
-  evalFunctions: ['abs', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'exp', 'false', 'floor', 'if', 'in', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pow', 'printf', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'split', 'spath', 'sqrt', 'strftime', 'strptime', 'substr', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
+  evalFunctions: ['abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh', 'bit_and', 'bit_not', 'bit_or', 'bit_shift_left', 'bit_shift_right', 'bit_xor', 'case', 'ceil', 'ceiling', 'cidrmatch', 'coalesce', 'cos', 'cosh', 'exact', 'exp', 'false', 'floor', 'hypot', 'if', 'in', 'ipmask', 'isbool', 'isint', 'isnotnull', 'isnull', 'isnum', 'isstr', 'json_array', 'json_array_to_mv', 'json_extract', 'json_keys', 'json_object', 'json_valid', 'len', 'like', 'ln', 'log', 'lower', 'ltrim', 'match', 'max', 'md5', 'min', 'mvappend', 'mvcount', 'mvdedup', 'mvfilter', 'mvfind', 'mvindex', 'mvjoin', 'mvmap', 'mvrange', 'mvsort', 'mvzip', 'now', 'null', 'nullif', 'pi', 'pow', 'printf', 'random', 'relative_time', 'replace', 'round', 'rtrim', 'sha1', 'sha256', 'sha512', 'sin', 'sinh', 'spath', 'split', 'sqrt', 'strftime', 'strptime', 'substr', 'tan', 'tanh', 'time', 'tonumber', 'tostring', 'trim', 'true', 'typeof', 'upper', 'urldecode', 'validate'],
 };
 const QL_KEYWORDS = new Set(['and', 'or', 'not', 'in', 'as', 'by', 'over', 'xor', 'like', 'output', 'outputnew']);
 const QL_FUNCS = new Set(lang.functions);
@@ -1696,7 +1702,7 @@ async function runSearch(opts) {
   $('starter').classList.add('hidden');
   showResultsLoading();
   try {
-    const res = await api('api/search', writeLookups ? { query, earliest, write_lookups: true } : { query, earliest });
+    const res = await api('api/search', writeLookups ? { query, earliest, time_zone: viewerZone(), write_lookups: true } : { query, earliest, time_zone: viewerZone() });
     if (seq !== searchSeq) return;
     lastSearch = { query, earliest, res, events: res.kind === 'events' ? res : null, eventsQuery: res.kind === 'events' ? null : eventsPart(query) };
     lastSearch.tab = res.kind === 'timechart' && (res.rows || []).length ? 'viz' : res.kind === 'events' ? 'events' : 'stats';
@@ -1828,7 +1834,16 @@ function renderResult() {
   if ((res.summaries || []).length) {
     stats.push(el('span', { class: 'badge hide-sm', title: `Read the summaries of ${res.summaries.map((m) => m.replaceAll('_', ' ')).join(', ')} for most of the time range and events for the rest, which is faster on long ranges.` }, 'Summarized'));
   }
-  if (res.truncated) stats.push(el('span', { class: 'badge badge--warning', title: 'The server stopped at its row limit, so some rows are missing. Narrow the search to see them all.' }, 'Truncated'));
+  if (res.time_zone) stats.push(el('span', { class: 'badge hide-sm', title: `Days, weeks, @d and strftime use your browser's time zone, ${res.time_zone}.` }, res.time_zone));
+  if (res.sampled) stats.push(el('span', { class: 'badge badge--warning', title: `${(res.matched || 0).toLocaleString()} events matched, but the commands after the search ran over only the newest ${res.sampled.toLocaleString()}, so these results cover only those. Narrow the search, or put stats right after it to count every event.` }, 'Sampled'));
+  if (res.truncated) {
+    const why = res.ranked
+      ? 'There were more groups than the server keeps, so it kept those with the most events (or that rank first in the sort that follows). Narrow the search to see the rest.'
+      : 'The server stopped at its row limit, so some rows are missing, and a sort or top over these rows may rank the wrong ones. Narrow the search to see them all.';
+    stats.push(el('span', { class: 'badge badge--warning', title: why }, 'Truncated'));
+  } else if (res.ranked) {
+    stats.push(el('span', { class: 'badge hide-sm', title: 'There were more groups than the server keeps, so OpenSearch ranked them and returned the top ones. With several shards, counts of groups near the cut can be slightly low.' }, 'Ranked'));
+  }
   if ((res.rows || []).length) {
     stats.push(el('button', {
       type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Download as CSV', 'aria-label': 'Download results as CSV', onclick: exportResults,
@@ -1905,7 +1920,7 @@ async function showTab(id) {
   }
   box.replaceChildren(skeletonTable());
   try {
-    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest });
+    run.events = await api('api/search', { query: run.eventsQuery, earliest: run.earliest, time_zone: viewerZone() });
   } catch (e) {
     if (lastSearch !== run || run.tab !== 'events') return;
     box.replaceChildren(stateBox({ tone: 'danger', iconName: 'circle-alert', title: 'Could not load the events', text: e.message, action: retryButton(() => showTab('events')) }));
@@ -2219,7 +2234,7 @@ async function loadHistogram(seq, query, earliest) {
   if (['where', 'threatmatch', 'head', 'dedup'].includes(commandOf(segs[1]))) { hideHistogram(); return; }
   const search = segs[0].trim() || '*';
   const ownTime = /\b(earliest|latest)\s*=/i.test(search);
-  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest });
+  const fetchHist = (span) => api('api/search', { query: search + '\n| timechart ' + (span ? 'span=' + span + ' ' : '') + 'count', earliest, time_zone: viewerZone() });
   let res;
   try {
     res = await fetchHist(ownTime ? '' : HIST_SPAN[$('time').value] || '1d');
@@ -2573,7 +2588,7 @@ $('explain').addEventListener('click', async () => {
   if (!box.classList.contains('hidden')) { hideExplanation(); return; }
   $('explain').disabled = true;
   try {
-    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest() });
+    const res = await api('api/explain', { query: queryBox.value || '*', earliest: timeEarliest(), time_zone: viewerZone() });
     box.replaceChildren(
       el('div', { class: 'explain__head' }, el('b', {}, 'What this query does'),
         el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Close', 'aria-label': 'Close the explanation', onclick: hideExplanation }, icon('x'))),
@@ -2674,8 +2689,14 @@ async function ask(question, mode) {
   const switchTo = res.source !== 'ai' && askInfo.ai_available ? ['Ask the AI model instead', 'ai'] : res.source === 'ai' ? ['Use the built-in translator instead', 'rules'] : null;
   kids.push(el('span', { class: 'ask-read__actions' },
     switchTo ? el('button', { type: 'button', class: 'link-btn', onclick: () => ask(question, switchTo[1]) }, switchTo[0]) : null, askClose()));
+  // A query the translator was unsure of waits for the analyst, so a
+  // half-understood question does not show results for another one.
+  if (!res.run) {
+    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'Not run: part of the question was not understood. Check the query, then ',
+      el('button', { type: 'button', class: 'link-btn', onclick: () => runSearch() }, 'run it'), '.'));
+  }
   showAskResult(...kids);
-  if (res.source === 'ai' || res.confidence > 0) runSearch();
+  if (res.run) runSearch();
 }
 $('ask-form').addEventListener('submit', (ev) => { ev.preventDefault(); ask($('ask').value); });
 

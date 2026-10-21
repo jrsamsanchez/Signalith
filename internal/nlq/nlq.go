@@ -55,6 +55,7 @@ func Translate(question string, hints Hints) (*Result, error) {
 	t.used = make([]bool, len(t.toks))
 	t.malware = mentionsMalware(t.toks)
 	t.vuln = mentionsVulns(t.toks)
+	t.qModel = questionModel(t.toks)
 	for t.i < len(t.toks) {
 		if n := t.step(); n > 0 {
 			for k := t.i; k < t.i+n && k < len(t.toks); k++ {
@@ -66,6 +67,20 @@ func Translate(question string, hints Hints) (*Result, error) {
 		}
 	}
 	q := t.finish()
+	// A noun that ended up neither filtering, grouping nor choosing the
+	// data model was not understood, whatever it seemed to be: "service
+	// account logins from workstations" must not read as fully understood
+	// when only "logins" made it into the query.
+	for i := range t.pending {
+		if t.pendUsed[i] || t.pendModel[i] != "" && t.pendModel[i] == q.Datamodel {
+			continue
+		}
+		at := t.pendTok[i]
+		for k := at[0]; k < at[0]+at[1] && k < len(t.used); k++ {
+			t.used[k] = false
+		}
+		t.steps[t.pendStep[i]].Meaning = "not used in the query"
+	}
 	text := q.String()
 	if _, err := query.Parse(text); err != nil {
 		return nil, fmt.Errorf("could not build a valid query from that question: %v", err)
@@ -252,6 +267,81 @@ var modelWords = map[string]string{
 	"vulnerability": "Vulnerabilities", "vulnerabilities": "Vulnerabilities", "vuln": "Vulnerabilities",
 	"vulns": "Vulnerabilities", "vulnerable": "Vulnerabilities", "cve": "Vulnerabilities", "cves": "Vulnerabilities",
 	"kev": "Vulnerabilities",
+	"dns": "Network_Resolution", "lookup": "Network_Resolution", "lookups": "Network_Resolution",
+	"nxdomain": "Network_Resolution", "resolution": "Network_Resolution", "resolved": "Network_Resolution",
+	"web": "Web", "http": "Web", "website": "Web", "websites": "Web", "browsing": "Web", "proxy": "Web",
+	"registry": "Registry", "regedit": "Registry",
+	"suricata": "Intrusion_Detection", "snort": "Intrusion_Detection", "ids": "Intrusion_Detection",
+	"intrusion": "Intrusion_Detection", "intrusions": "Intrusion_Detection",
+	"wazuh": "Alerts", "alert": "Alerts", "alerts": "Alerts",
+	"certificate": "Certificates", "certificates": "Certificates", "cert": "Certificates", "certs": "Certificates",
+	"tls": "Certificates", "ssl": "Certificates", "x509": "Certificates",
+}
+
+// productModels are model words that name one kind of data outright, so
+// they decide the model over a general word such as "alerts" anywhere
+// in the question.
+var productModels = map[string]bool{"suricata": true, "snort": true, "ids": true, "intrusion": true, "intrusions": true, "wazuh": true}
+
+// modelNouns are field nouns that mean another field in one data model:
+// "status" is the HTTP status in web requests, the outcome elsewhere.
+var modelNouns = map[string]map[string]noun{
+	"Network_Resolution": {
+		"query": {field: "query", name: "name looked up", model: "Network_Resolution"}, "queries": {field: "query", name: "name looked up", model: "Network_Resolution"},
+		"domain": {field: "query", name: "name looked up", model: "Network_Resolution"}, "domains": {field: "query", name: "name looked up", model: "Network_Resolution"},
+		"name": {field: "query", name: "name looked up", model: "Network_Resolution"}, "names": {field: "query", name: "name looked up", model: "Network_Resolution"},
+		"answer": {field: "answer", name: "answer", model: "Network_Resolution"}, "answers": {field: "answer", name: "answer", model: "Network_Resolution"},
+		"type": {field: "query_type", name: "record type", model: "Network_Resolution"},
+	},
+	"Web": {
+		"status": {field: "status", name: "HTTP status", numeric: true, model: "Web"},
+		"url":    {field: "url", name: "URL", model: "Web"}, "urls": {field: "url", name: "URL", model: "Web"},
+		"request": {field: "url", name: "URL", model: "Web"}, "requests": {field: "url", name: "URL", model: "Web"},
+		"domain": {field: "url_domain", name: "web domain", model: "Web"}, "domains": {field: "url_domain", name: "web domain", model: "Web"},
+		"site": {field: "url_domain", name: "web domain", model: "Web"}, "sites": {field: "url_domain", name: "web domain", model: "Web"},
+		"method": {field: "http_method", name: "HTTP method", model: "Web"}, "methods": {field: "http_method", name: "HTTP method", model: "Web"},
+		"useragent": {field: "http_user_agent", name: "user agent", model: "Web"}, "agent": {field: "http_user_agent", name: "user agent", model: "Web"},
+	},
+	"Registry": {
+		"key": {field: "registry_key_name", name: "registry key", model: "Registry"}, "keys": {field: "registry_key_name", name: "registry key", model: "Registry"},
+		"path": {field: "registry_path", name: "registry path", model: "Registry"}, "paths": {field: "registry_path", name: "registry path", model: "Registry"},
+		"value": {field: "registry_value_name", name: "registry value", model: "Registry"}, "values": {field: "registry_value_name", name: "registry value", model: "Registry"},
+	},
+	"Intrusion_Detection": {
+		"alert": {field: "signature", name: "alert", model: "Intrusion_Detection"}, "alerts": {field: "signature", name: "alert", model: "Intrusion_Detection"},
+		"category": {field: "category", name: "category", model: "Intrusion_Detection"}, "categories": {field: "category", name: "category", model: "Intrusion_Detection"},
+		"severity": {field: "severity", name: "severity", model: "Intrusion_Detection"},
+	},
+	"Alerts": {
+		"alert": {field: "description", name: "alert", model: "Alerts"}, "alerts": {field: "description", name: "alert", model: "Alerts"},
+		"severity": {field: "severity", name: "severity", model: "Alerts"},
+		"tool":     {field: "app", name: "tool", model: "Alerts"}, "tools": {field: "app", name: "tool", model: "Alerts"},
+	},
+	"Certificates": {
+		"issuer": {field: "ssl_issuer", name: "issuer", model: "Certificates"}, "issuers": {field: "ssl_issuer", name: "issuer", model: "Certificates"},
+		"subject": {field: "ssl_subject", name: "subject", model: "Certificates"}, "subjects": {field: "ssl_subject", name: "subject", model: "Certificates"},
+		"server": {field: "ssl_server_name", name: "server name", model: "Certificates"}, "servers": {field: "ssl_server_name", name: "server name", model: "Certificates"},
+		"version": {field: "ssl_version", name: "TLS version", model: "Certificates"},
+	},
+}
+
+// questionModel is the data model the question's words name, product
+// words first, so field nouns anywhere in it can take that model's
+// meaning.
+func questionModel(toks []token) string {
+	first := ""
+	for _, tk := range toks {
+		if tk.quoted {
+			continue
+		}
+		if productModels[tk.low] {
+			return modelWords[tk.low]
+		}
+		if m := modelWords[tk.low]; m != "" && first == "" {
+			first = m
+		}
+	}
+	return first
 }
 
 var modelNames = map[string]string{
@@ -259,6 +349,9 @@ var modelNames = map[string]string{
 	"Network_Traffic": "network data (Network_Traffic)", "Change": "account and group changes (Change)",
 	"Risk": "risk events (Risk)", "Malware": "antivirus data (Malware)",
 	"Vulnerabilities": "vulnerability scan results (Vulnerabilities)", "Filesystem": "file changes (Filesystem)",
+	"Network_Resolution": "DNS lookups (Network_Resolution)", "Web": "web requests (Web)",
+	"Registry": "registry changes (Registry)", "Intrusion_Detection": "intrusion detection alerts (Intrusion_Detection)",
+	"Alerts": "alerts from other security tools (Alerts)", "Certificates": "TLS certificates (Certificates)",
 }
 
 var actionWords = map[string]string{
@@ -268,6 +361,7 @@ var actionWords = map[string]string{
 	"blocked": "blocked", "denied": "blocked", "dropped": "blocked", "rejected": "blocked", "block": "blocked",
 	"allowed": "allowed", "permitted": "allowed", "accepted": "allowed",
 	"created": "created", "new": "created", "added": "created", "deleted": "deleted", "removed": "deleted",
+	"deletion": "deleted", "deletions": "deleted", "creation": "created", "creations": "created",
 	"disabled": "modified", "modified": "modified", "changed": "modified",
 }
 
@@ -331,6 +425,11 @@ type translator struct {
 	by        []string
 	pending   []string // nouns that may be a group-by
 	pendStep  []int    // the step that explains each pending noun
+	pendTok   [][2]int // each pending noun's first token and token count
+	pendModel []string // the data model each pending noun implies
+	pendUsed  []bool   // whether the query uses each pending noun
+	qModel    string   // the data model the question's words name
+	lockout   bool     // the question asks about account lockouts
 	chartStep int      // the step that chose a chart
 	groupNext bool
 	span      string
@@ -909,11 +1008,19 @@ func (t *translator) rulePreposition() int {
 	switch {
 	case kind == "src" && t.isKnownUser(v) && !isIP(v):
 		f = "user"
+	case kind == "user" && processNames[nt.low] != "":
+		// "registry changes by powershell": the process that made them.
+		f, v = "process_name", processNames[nt.low]
 	case kind == "user" && (t.isKnownHost(v) || isIP(v)):
 		f = hostField
 		if isIP(v) {
 			f = "src"
 		}
+	case (kind == "user" || kind == "dest") && !isIP(v) && t.qModel == "Network_Resolution" && strings.Contains(v, "."):
+		// "dns queries for evil.com": the name looked up.
+		f = "query"
+	case kind == "dest" && !isIP(v) && (t.qModel == "Web" || t.qModel == "Certificates"):
+		f = "dest_host"
 	case kind == "dest" && !isIP(v):
 		f = hostField
 	case kind == "parent":
@@ -927,7 +1034,14 @@ func (t *translator) rulePreposition() int {
 	return t.note(k+1, "%s %s %s", fieldName(f), negWord(t.lastNeg()), v)
 }
 
+// wordPhrases are two words ruleWords reads together, which a field
+// noun must not take apart: "domain admins" is a group, not a domain.
+var wordPhrases = set("domain admins", "admin group", "admins group", "administrators group", "locked out", "self signed")
+
 func (t *translator) ruleNoun() int {
+	if wordPhrases[t.low(0)+" "+t.low(1)] {
+		return 0
+	}
 	nn, k := t.nounAt(0)
 	if k == 0 {
 		return 0
@@ -939,7 +1053,11 @@ func (t *translator) ruleNoun() int {
 	if w := t.low(j); w == "is" || w == "=" || w == "equals" || w == "was" || w == "named" || w == "called" {
 		j++
 	}
-	if nt, ok := t.tok(j); ok && t.looksLikeValue(nt) && nouns[nt.low].field == "" && modelWords[nt.low] == "" && actionWords[nt.low] == "" {
+	if nt, ok := t.tok(j); ok && t.looksLikeValue(nt) && nouns[nt.low].field == "" && modelWords[nt.low] == "" && actionWords[nt.low] == "" &&
+		!(j == k && t.pluralNoun(k, nn) && t.plainWord(nt)) {
+		// "user alice" names a user; "accounts locked" does not name an
+		// account "locked": after a plural noun a plain word is a verb or
+		// another noun, unless it is a known user or host.
 		if !nn.numeric || isNumber(nt.text) {
 			v := nt.text
 			if p, ok := processNames[nt.low]; ok && (nn.field == "process_name" || nn.field == "parent_process_name") {
@@ -969,6 +1087,9 @@ func (t *translator) ruleNoun() int {
 	}
 	t.pending = append(t.pending, nn.field)
 	t.pendStep = append(t.pendStep, len(t.steps))
+	t.pendTok = append(t.pendTok, [2]int{t.i, k})
+	t.pendModel = append(t.pendModel, nn.model)
+	t.pendUsed = append(t.pendUsed, false)
 	if nn.model != "" {
 		return t.note(k, "%s", modelNames[nn.model])
 	}
@@ -994,8 +1115,29 @@ func (t *translator) ruleWords() int {
 		t.setModel("Change")
 		t.group = true
 		return t.note(2, "group changes")
+	case "locked out":
+		return t.lockedOut(2)
+	case "self signed":
+		t.setModel("Certificates")
+		t.filters = append(t.filters, filter{"ssl_self_signed", "=", "true"})
+		return t.note(2, "self-signed certificates")
 	}
 	switch w {
+	case "lockout", "lockouts":
+		return t.lockedOut(1)
+	case "self-signed", "selfsigned":
+		t.setModel("Certificates")
+		t.filters = append(t.filters, filter{"ssl_self_signed", "=", "true"})
+		return t.note(1, "self-signed certificates")
+	case "alert", "alerts":
+		// Alerts from Suricata are intrusion detection; from other
+		// tools, such as Wazuh, the Alerts data.
+		m := "Alerts"
+		if t.qModel == "Intrusion_Detection" {
+			m = t.qModel
+		}
+		t.setModel(m)
+		return t.note(1, "%s", modelNames[m])
 	case "ssh", "sshd":
 		t.setModel("Authentication")
 		t.filters = append(t.filters, filter{"app", "=", "sshd"})
@@ -1042,6 +1184,14 @@ func (t *translator) ruleWords() int {
 	return 0
 }
 
+// lockedOut reads n tokens that ask about account lockouts: Windows
+// event 4740, "A user account was locked out".
+func (t *translator) lockedOut(n int) int {
+	t.lockout = true
+	t.filters = append(t.filters, filter{"signature_id", "=", "4740"})
+	return t.note(n, "account lockouts (Windows event 4740)")
+}
+
 // ruleValue handles a bare IP address, file name or known user or host.
 func (t *translator) ruleValue() int {
 	tk, _ := t.tok(0)
@@ -1073,6 +1223,9 @@ var opWords = map[string]string{">": "more than", ">=": "at least", "<": "fewer 
 func (t *translator) nounAt(k int) (noun, int) {
 	if n, ok := twoWordNouns[t.low(k)+" "+t.low(k+1)]; ok && t.low(k+1) != "" {
 		return n, 2
+	}
+	if n, ok := modelNouns[t.qModel][t.low(k)]; ok && t.low(k) != "" {
+		return n, 1
 	}
 	if t.malware {
 		if n, ok := malwareNouns[t.low(k)]; ok {
@@ -1134,6 +1287,44 @@ func (t *translator) looksLikeValue(tk token) bool {
 		"logged", "signed", "logging", "signing", "sent", "received", "spawned", "launched", "opened", "highest",
 		"except", "containing", "contains", "per", "distinct", "unique", "total", "average", "count", "trend":
 		return false
+	}
+	return true
+}
+
+// pluralNoun reports whether the field noun just read, k tokens long,
+// ends in a plural word such as "accounts" or "users".
+func (t *translator) pluralNoun(k int, n noun) bool {
+	w := t.low(k - 1)
+	if !strings.HasSuffix(w, "s") {
+		return false
+	}
+	for _, one := range []string{strings.TrimSuffix(w, "s"), strings.TrimSuffix(w, "es"), strings.TrimSuffix(w, "ies") + "y"} {
+		if m, ok := t.nounWord(one); ok && m.field == n.field && one != w {
+			return true
+		}
+	}
+	return false
+}
+
+// nounWord is the field noun one word means in this question.
+func (t *translator) nounWord(w string) (noun, bool) {
+	if n, ok := modelNouns[t.qModel][w]; ok {
+		return n, true
+	}
+	n, ok := nouns[w]
+	return n, ok
+}
+
+// plainWord reports whether a token is an ordinary word (letters only,
+// unquoted) that is not a known user or host: "locked", "admins".
+func (t *translator) plainWord(tk token) bool {
+	if tk.quoted || tk.low == "" || t.isKnownUser(tk.text) || t.isKnownHost(tk.text) {
+		return false
+	}
+	for _, r := range tk.low {
+		if !unicode.IsLetter(r) {
+			return false
+		}
 	}
 	return true
 }
@@ -1254,10 +1445,28 @@ func (t *translator) finish() *query.Query {
 	// "risky users": rank risk objects.
 	if model == "Risk" && t.mode == "" && len(t.by) == 0 && len(t.pending) > 0 {
 		t.by, t.mode = t.pending[:1], "stats"
+		t.pendUsed[0] = true
 		t.steps[t.pendStep[0]].Meaning = "rank " + fieldName(t.pending[0]) + "s by total risk"
 	}
 	if model != t.model && model != "" {
 		t.steps = append(t.steps, Step{Phrase: "", Meaning: "searching " + modelNames[model]})
+	}
+	for i, f := range t.pending {
+		// "accounts created": in account changes the account is what
+		// changed, which object_category=user says.
+		if model == "Change" && f == "user" {
+			t.pendUsed[i] = true
+		}
+	}
+	// "accounts locked out today": the accounts, most lockouts first.
+	if t.lockout && t.mode == "" && len(t.by) == 0 {
+		for i, f := range t.pending {
+			if f == "user" {
+				t.mode, t.by, t.pendUsed[i] = "stats", []string{"user"}, true
+				t.steps[t.pendStep[i]].Meaning = "one row per user"
+				break
+			}
+		}
 	}
 	q := &query.Query{Datamodel: model, Earliest: t.earliest, Latest: t.latest}
 	var terms []query.Expr
@@ -1385,6 +1594,7 @@ func (t *translator) finish() *query.Query {
 	// values, most common first.
 	if (model == "Malware" || model == "Vulnerabilities") && mode == "" && len(by) == 0 && len(t.fields) == 0 && len(t.pending) > 0 {
 		mode, by = "stats", []string{resolve(t.pending[0])}
+		t.pendUsed[0] = true
 		t.steps[t.pendStep[0]].Meaning = "one row per " + fieldName(t.pending[0])
 	}
 	if t.threshold != nil && mode == "timechart" {
@@ -1399,10 +1609,17 @@ func (t *translator) finish() *query.Query {
 	if len(by) == 0 && needEntity {
 		if len(t.pending) > 0 {
 			by = []string{resolve(t.pending[0])}
+			t.pendUsed[0] = true
 			t.steps[t.pendStep[0]].Meaning = "one row per " + fieldName(t.pending[0])
 		} else {
 			by = []string{defaultEntity[model]}
 			t.steps = append(t.steps, Step{Meaning: "one row per " + fieldName(by[0])})
+		}
+	}
+	for i, f := range t.pending {
+		// "top alert signatures": both nouns name the field ranked.
+		if slices.Contains(by, resolve(f)) {
+			t.pendUsed[i] = true
 		}
 	}
 
