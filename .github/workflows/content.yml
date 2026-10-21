@@ -5,8 +5,8 @@ name: Content
 # bundle on the "content" release, which Signalith servers check for
 # (Detections page, or detections.content_updates: daily). The packs come
 # from this repository, at the upstream commits their pack.yaml pins, so
-# only rules merged here after review are ever signed; the weekly upstream
-# refresh arrives as a pull request. Nothing is published when the packs
+# only rules merged here after review are ever signed; newer upstream
+# rules arrive as a pull request a maintainer opens. Nothing is published when the packs
 # did not change, or without the SIGNALITH_CONTENT_KEY secret (see
 # docs/releasing.md); running it by hand with "publish" off is a dry run.
 on:
@@ -31,6 +31,9 @@ concurrency:
 jobs:
   content:
     runs-on: ubuntu-latest
+    # Only main is signed, whatever the signing environment allows: a run by
+    # hand on another branch would otherwise sign that branch's packs.
+    if: github.ref == 'refs/heads/main'
     # The content key is a secret of the signing environment, which only
     # main can use (docs/releasing.md).
     environment: signing

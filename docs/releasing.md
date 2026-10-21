@@ -124,10 +124,11 @@ make a new one before then.
 
 ### Content updates
 
-Each week the SigmaHQ and Splunk packs are rebuilt from the newest upstream rules
+To take in newer upstream rules, a maintainer rebuilds the SigmaHQ and Splunk packs
+from checkouts of the upstream repositories
 (`go run ./internal/detect/packgen -sigma <checkout>` and
-`go run ./internal/detect/splunkgen -splunk <checkout>`), and the result is opened as a
-pull request. The packs' `pack.yaml` pins the upstream commit, and the diff and
+`go run ./internal/detect/splunkgen -splunk <checkout>`) and opens the result as a
+pull request, which is reviewed like any other and never auto-merged. The packs' `pack.yaml` pins the upstream commit, and the diff and
 `REPORT.md` show what changed. When a pack change merges to main, the **Content**
 workflow (`.github/workflows/content.yml`) runs every pack check and publishes the
 packs as a signed bundle on the `content` release, which servers check for (see
